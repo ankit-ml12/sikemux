@@ -1,25 +1,11 @@
-# Sikemux v0.3.4
+# Sikemux v0.3.5
 
-Sikemux 0.3.4 adds OMP and Grok as first-class coding agents, gives Markdown files a rendered preview, and lets you reveal hidden side rails without leaving a focused workspace.
+Sikemux 0.3.5 opens the nightly update channel, so you can follow prerelease builds without leaving the app.
 
-## Agents and browser
+## Updates
 
-- Run OMP and Grok in agent panes with resumable sessions, launch modes, native provider marks, and the same embedded-browser flow available to the other supported agents.
-- Extend embedded-browser setup to Hermes, Pi, and OpenCode, including browser tools and the packaged runtime each CLI needs.
-- Use Codex's indexed task titles, detect standard OpenCode installations, ignore empty Claude sessions, and survive Claude's self-update handoff without losing the launch.
+- Choose between the stable and nightly channels in Settings → About. Stable follows the latest signed release. Nightly follows the newest signed prerelease build.
+- Nightly builds are signed and delivered exactly like stable ones, through the same in-app updater.
+- Switching back to stable keeps the build you are on until a stable release passes it, so you are never moved onto an older version.
 
-## Editor and workspace
-
-- Switch Markdown files between source and a styled rendered preview. GitHub Flavored Markdown tables, task lists, strikethrough, and links render in the preview, while raw HTML stays disabled.
-- Reload clean editor buffers when their files change on disk while preserving unsaved buffers for conflict handling.
-- Hover at either window edge to reveal a hidden project or agent rail. A revealed rail remains open while it contains keyboard focus, then closes when focus leaves.
-
-## Git, updates, and Windows
-
-- Load visible review diffs first, defer distant files more aggressively, and cap expensive token and word-diff work so large reviews respond sooner.
-- Render updater release notes as Markdown inside the app.
-- Resolve Windows agent profiles from their real home directories, detect the bundled Chromium runtime on Windows, and keep Unix-only PTY login checks out of ConPTY builds.
-
-The published automatic-update feed continues to target Apple Silicon macOS.
-
-For the complete patch history, compare [`v0.3.3...v0.3.4`](https://github.com/nodelike/sikemux/compare/v0.3.3...v0.3.4).
+For the complete patch history, compare [`v0.3.4...v0.3.5`](https://github.com/nodelike/sikemux/compare/v0.3.4...v0.3.5).
