@@ -35,7 +35,7 @@
           "image-name" : "wordmark.svg",
           "name" : "Wordmark",
           "position" : {
-            "scale" : 1.6,
+            "scale" : 0.86,
             "translation-in-points" : [ 0, 0 ]
           }
         }
