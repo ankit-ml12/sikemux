@@ -640,13 +640,8 @@ pub async fn downloads_dir(app: tauri::AppHandle) -> AppResult<String> {
     Ok(dir.to_string_lossy().into_owned())
 }
 
-/// The picture on the system clipboard as base64 PNG, or `None` when the
-/// clipboard holds something else. WKWebView does not reliably put a pasted
-/// image into the DOM clipboard event, so the composer asks AppKit directly.
-/// Data is read off the pasteboard rather than built into an `NSImage`, which
-/// keeps this off the main thread.
 #[cfg(target_os = "macos")]
-pub fn clipboard_png_sync() -> Option<String> {
+fn clipboard_png() -> Option<Vec<u8>> {
     use objc2_app_kit::{
         NSBitmapImageFileType, NSBitmapImageRep, NSPasteboard, NSPasteboardTypePNG,
         NSPasteboardTypeTIFF,
@@ -654,46 +649,55 @@ pub fn clipboard_png_sync() -> Option<String> {
     use objc2_foundation::NSDictionary;
 
     let pasteboard = NSPasteboard::generalPasteboard();
-
-    // Already a PNG on the clipboard: hand it straight over.
     if let Some(png) = unsafe { pasteboard.dataForType(NSPasteboardTypePNG) } {
-        return Some(general_purpose::STANDARD.encode(png.to_vec()));
+        return Some(png.to_vec());
     }
-
-    // A screenshot arrives as TIFF, which has to be re-encoded.
+    // Screenshots land on the clipboard as TIFF.
     let tiff = unsafe { pasteboard.dataForType(NSPasteboardTypeTIFF) }?;
     let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)?;
     let empty = NSDictionary::new();
     let png =
         unsafe { bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &empty) }?;
-    Some(general_purpose::STANDARD.encode(png.to_vec()))
+    Some(png.to_vec())
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn clipboard_png_sync() -> Option<String> {
+fn clipboard_png() -> Option<Vec<u8>> {
     None
 }
 
-#[tauri::command]
-pub async fn clipboard_png() -> AppResult<Option<String>> {
-    spawn_blocking(clipboard_png_sync)
-        .await
-        .map_err(|e| AppError::Other(format!("clipboard_png join: {e}")))
-}
-
-/// Where a picture pasted into a chat is written. An agent is given a path, not
-/// bytes, so a pasted image has to become a file first — and it belongs in the
-/// app's own cache rather than in the project or the user's Downloads.
-#[tauri::command]
-pub async fn chat_attachment_dir(app: tauri::AppHandle) -> AppResult<String> {
+fn chat_attachment_path(app: &tauri::AppHandle) -> PathBuf {
     use tauri::Manager;
-    let dir = app
-        .path()
+    app.path()
         .app_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
-        .join("pasted");
+        .join("pasted")
+}
+
+/// Pictures pasted into a chat are kept in the app cache, not the project.
+#[tauri::command]
+pub async fn chat_attachment_dir(app: tauri::AppHandle) -> AppResult<String> {
+    let dir = chat_attachment_path(&app);
     std::fs::create_dir_all(&dir)?;
     Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Saves the clipboard's picture beside other pasted ones; `None` when it holds no picture.
+#[tauri::command]
+pub async fn save_clipboard_image(
+    app: tauri::AppHandle,
+    name: String,
+) -> AppResult<Option<String>> {
+    let dir = chat_attachment_path(&app);
+    spawn_blocking(move || {
+        let Some(png) = clipboard_png() else {
+            return Ok(None);
+        };
+        let file_name = leaf_name(&name)?;
+        write_new_in_dir(&dir, &file_name, |destination| destination.write_all(&png)).map(Some)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("save_clipboard_image join: {e}")))?
 }
 
 /// Write base64 bytes into `dir` under `name`, the way a copied file lands
@@ -705,14 +709,17 @@ pub async fn save_base64_into_dir(dir: String, name: String, data: String) -> Ap
         .map_err(|e| AppError::Other(format!("save_base64_into_dir join: {e}")))?
 }
 
-fn save_base64_into_dir_sync(dir: String, name: String, data: String) -> AppResult<String> {
-    // The name is whatever named the picture, which may be a path an agent
-    // wrote. Only the last part of it can say where the file goes.
-    let file_name = Path::new(&name)
+// The name may be a path an agent wrote. Only its last part can say where the file goes.
+fn leaf_name(name: &str) -> AppResult<std::ffi::OsString> {
+    Path::new(name)
         .file_name()
         .filter(|name| !name.is_empty())
-        .ok_or(AppError::BadArg("a saved file needs a name"))?
-        .to_os_string();
+        .map(|name| name.to_os_string())
+        .ok_or(AppError::BadArg("a saved file needs a name"))
+}
+
+fn save_base64_into_dir_sync(dir: String, name: String, data: String) -> AppResult<String> {
+    let file_name = leaf_name(&name)?;
     let bytes = general_purpose::STANDARD
         .decode(data.as_bytes())
         .map_err(|_| AppError::BadArg("a saved file needs base64 contents"))?;

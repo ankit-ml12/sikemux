@@ -1225,12 +1225,6 @@ function ChatComposer({
                     }}
                     onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
                     onPaste={(event) => {
-                        /* A picture the event carries is taken here and the
-                           keystroke stopped. When it carries none the paste is
-                           left alone — text has to keep working — and AppKit is
-                           asked afterwards, because WKWebView often reports an
-                           empty clipboard for an image it is perfectly happy to
-                           hand over natively. */
                         if (imagesInClipboard(event.clipboardData).length > 0) event.preventDefault();
                         void savePastedClipboard(event.clipboardData)
                             .then((paths) => {

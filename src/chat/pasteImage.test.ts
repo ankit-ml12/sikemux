@@ -3,7 +3,7 @@ import { fsapi } from "../api/fs";
 import { attachmentName, base64Of, imagesInClipboard, savePastedClipboard, savePastedImages } from "./pasteImage";
 
 vi.mock("../api/fs", () => ({
-    fsapi: { chatAttachmentDir: vi.fn(), saveBase64IntoDir: vi.fn(), clipboardPng: vi.fn() },
+    fsapi: { chatAttachmentDir: vi.fn(), saveBase64IntoDir: vi.fn(), saveClipboardImage: vi.fn() },
 }));
 
 /** A drop, or the rare paste that fills `files`. */
@@ -26,7 +26,7 @@ describe("pasting a picture into the composer", () => {
         vi.clearAllMocks();
         vi.mocked(fsapi.chatAttachmentDir).mockResolvedValue("/cache/pasted");
         vi.mocked(fsapi.saveBase64IntoDir).mockImplementation(async (dir, name) => `${dir}/${name}`);
-        vi.mocked(fsapi.clipboardPng).mockResolvedValue(null);
+        vi.mocked(fsapi.saveClipboardImage).mockResolvedValue(null);
     });
 
     it("takes the pictures out of a clipboard and leaves everything else", () => {
@@ -85,20 +85,27 @@ describe("pasting a picture into the composer", () => {
         expect(fsapi.chatAttachmentDir).not.toHaveBeenCalled();
     });
 
-    it("asks AppKit when the paste event carries nothing", async () => {
-        vi.mocked(fsapi.clipboardPng).mockResolvedValue("UE5H");
+    it("asks the system clipboard when the paste event carries nothing", async () => {
+        vi.mocked(fsapi.saveClipboardImage).mockResolvedValue("/cache/pasted/pasted-1.png");
 
-        const saved = await savePastedClipboard({ files: [], items: [] } as unknown as DataTransfer);
+        const saved = await savePastedClipboard({ files: [], items: [], types: [] } as unknown as DataTransfer);
 
-        expect(fsapi.clipboardPng).toHaveBeenCalledTimes(1);
-        expect(saved).toHaveLength(1);
-        expect(fsapi.saveBase64IntoDir).toHaveBeenCalledWith("/cache/pasted", expect.stringMatching(/^pasted-.*\.png$/), "UE5H");
+        expect(fsapi.saveClipboardImage).toHaveBeenCalledWith(expect.stringMatching(/^pasted-.*\.png$/));
+        expect(saved).toEqual(["/cache/pasted/pasted-1.png"]);
     });
 
-    it("does not ask AppKit when the event already had the picture", async () => {
+    it("does not ask the system clipboard when the event already had the picture", async () => {
         await savePastedClipboard(clipboard([png("diagram.png")]));
 
-        expect(fsapi.clipboardPng).not.toHaveBeenCalled();
+        expect(fsapi.saveClipboardImage).not.toHaveBeenCalled();
+    });
+
+    it("does not ask the system clipboard for a text paste, even one with a picture behind it", async () => {
+        const finderCopy = { files: [], items: [], types: ["text/plain", "text/uri-list"] } as unknown as DataTransfer;
+        vi.mocked(fsapi.saveClipboardImage).mockResolvedValue("/cache/pasted/icon.png");
+
+        expect(await savePastedClipboard(finderCopy)).toEqual([]);
+        expect(fsapi.saveClipboardImage).not.toHaveBeenCalled();
     });
 
     it("attaches nothing when neither the event nor AppKit has a picture", async () => {

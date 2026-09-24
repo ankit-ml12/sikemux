@@ -1,7 +1,5 @@
 import { fsapi } from "../api/fs";
 
-/* Clipboard types the systems people paste from actually produce. Anything else
-   that calls itself an image still lands, under the subtype it declared. */
 const EXTENSIONS: Record<string, string> = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -13,10 +11,7 @@ const EXTENSIONS: Record<string, string> = {
     "image/bmp": "bmp",
 };
 
-/* `items` is read first and `files` only as a fallback: WebKit fills `files`
-   for a drop but frequently leaves it empty for a paste, handing the picture
-   over as an item instead. Reading only `files` is why pasting looked like it
-   did nothing. */
+// WebKit fills `files` for a drop but often leaves it empty for a paste, so `items` comes first.
 export function imagesInClipboard(data: DataTransfer | null | undefined): File[] {
     if (!data) return [];
     const found: File[] = [];
@@ -41,12 +36,7 @@ function extensionFor(type: string): string {
     return type.slice(type.indexOf("/") + 1).replace(/[^a-z0-9]/gi, "") || "png";
 }
 
-/**
- * What the picture is called once it is a file. A screenshot pasted from the
- * clipboard arrives as the placeholder `image.png` every time, so it is given
- * the moment instead — two pastes in one conversation should not read as the
- * same attachment.
- */
+// A pasted screenshot is always called `image.png`, so it is named after the moment instead.
 export function attachmentName(file: File, now = new Date()): string {
     const placeholder = !file.name || /^(image|screenshot)\.\w+$/i.test(file.name);
     if (!placeholder) return file.name;
@@ -55,8 +45,7 @@ export function attachmentName(file: File, now = new Date()): string {
     return `pasted-${stamp}.${extensionFor(file.type)}`;
 }
 
-/* Chunked because a screenshot is megabytes, and one `String.fromCharCode`
-   over the whole buffer overflows the argument list. */
+// Chunked: one `String.fromCharCode` over a whole screenshot overflows the argument list.
 export function base64Of(bytes: Uint8Array): string {
     const CHUNK = 0x8000;
     let binary = "";
@@ -66,23 +55,18 @@ export function base64Of(bytes: Uint8Array): string {
     return btoa(binary);
 }
 
-/**
- * What the paste actually attaches. The DOM event is tried first, and AppKit
- * asked only when it turned up nothing: WKWebView often hands a paste handler
- * an event with neither files nor items on it, which is why pasting a
- * screenshot appeared to do nothing at all.
- */
+/* WKWebView often hands over an empty event for a pasted screenshot, so the
+   system clipboard is asked then — but never for a text paste, whose clipboard
+   can carry a picture too, such as a Finder file's icon. */
 export async function savePastedClipboard(data: DataTransfer | null | undefined): Promise<string[]> {
     const fromEvent = imagesInClipboard(data);
     if (fromEvent.length > 0) return savePastedImages(fromEvent);
+    if (Array.from(data?.types ?? []).some((type) => type.startsWith("text/"))) return [];
 
-    const png = await fsapi.clipboardPng();
-    if (!png) return [];
-    const dir = await fsapi.chatAttachmentDir();
-    return [await fsapi.saveBase64IntoDir(dir, attachmentName(new File([], "image.png", { type: "image/png" })), png)];
+    const saved = await fsapi.saveClipboardImage(attachmentName(new File([], "image.png", { type: "image/png" })));
+    return saved ? [saved] : [];
 }
 
-/** Writes pasted pictures into the app's scratch directory, newest name first. */
 export async function savePastedImages(files: readonly File[]): Promise<string[]> {
     if (files.length === 0) return [];
     const dir = await fsapi.chatAttachmentDir();
