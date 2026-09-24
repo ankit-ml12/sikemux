@@ -55,7 +55,7 @@ import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
-import { cutLongText, LONG_TEXT_LIMIT } from "./longText";
+import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -579,18 +579,13 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
 
-/* Folded only when the message was already this long on arrival. One the reader
-   watched stream in is left whole: collapsing it the moment it finished would
-   take the text away mid-sentence. */
-function FoldedMarkdown({ text, live }: { text: string; live: boolean }) {
-    const [expanded, setExpanded] = useState(false);
-    const foldable = useRef(!live && text.length > LONG_TEXT_LIMIT);
-    const cut = useMemo(() => (foldable.current && !expanded ? cutLongText(text) : null), [text, expanded]);
+function FoldedMarkdown({ id, text, live }: { id: string; text: string; live: boolean }) {
+    const { cut, expand } = useLongTextFold(id, text, live);
     if (!cut) return <LiveMarkdown text={text} live={live} />;
     return (
         <>
             <LiveMarkdown text={cut.head} live={false} />
-            <button type="button" className="chat-show-rest" onClick={() => setExpanded(true)}>
+            <button type="button" className="chat-show-rest" onClick={expand}>
                 Show the rest — {Math.round(cut.hidden / 1000)}k more characters
             </button>
         </>
@@ -601,7 +596,7 @@ const MessagePart = memo(function MessagePart({ part, live }: { part: ChatPart; 
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <FoldedMarkdown text={part.text} live={live} />
+                <FoldedMarkdown id={part.id} text={part.text} live={live} />
             </div>
         );
     }
@@ -609,7 +604,7 @@ const MessagePart = memo(function MessagePart({ part, live }: { part: ChatPart; 
         return (
             <div className="chat-thought">
                 <div className="chat-markdown">
-                    <FoldedMarkdown text={part.text} live={live} />
+                    <FoldedMarkdown id={part.id} text={part.text} live={live} />
                 </div>
             </div>
         );
@@ -1340,6 +1335,7 @@ export function AgentChatPane({
 }) {
     const home = useStore((s) => s.home);
     const [state, dispatch] = useReducer(chatReducer, initialChatState);
+    const [foldMemory] = useState(newFoldMemory);
     const displayStateRef = useRef(state);
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
@@ -1439,7 +1435,12 @@ export function AgentChatPane({
         if (!active) return;
         const controller = new AbortController();
         let mounted = true;
-        dispatch({ type: "reset", hold: Boolean(agentRef.current.resumeId) });
+        const hold = Boolean(agentRef.current.resumeId);
+        dispatch({ type: "reset", hold });
+        if (!hold) {
+            foldMemory.streamed.clear();
+            foldMemory.expanded.clear();
+        }
         setAppliedPermissionMode(null);
         setChangingPermissions(false);
         sessionIdRef.current = null;
@@ -1558,6 +1559,7 @@ export function AgentChatPane({
         profile?.executablePath,
         environmentKeys,
         restartKey,
+        foldMemory,
     ]);
 
     useEffect(() => {
@@ -1830,27 +1832,29 @@ export function AgentChatPane({
                                 )}
                             </div>
                         )}
-                        <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-                            {virtualizer.getVirtualItems().map((item) => {
-                                const message = displayState.messages[item.index];
-                                const meta = rowMeta(displayState.messages, item.index);
-                                return (
-                                    <div
-                                        key={message.id}
-                                        data-index={item.index}
-                                        ref={virtualizer.measureElement}
-                                        className="chat-virtual-row"
-                                        style={{ transform: `translateY(${item.start}px)` }}>
-                                        <ChatMessageRow
-                                            message={message}
-                                            live={displayState.running && item.index === displayState.messages.length - 1}
-                                            copyable={meta.text}
-                                            rate={meta.rate}
-                                        />
-                                    </div>
-                                );
-                            })}
-                        </div>
+                        <FoldMemoryContext value={foldMemory}>
+                            <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+                                {virtualizer.getVirtualItems().map((item) => {
+                                    const message = displayState.messages[item.index];
+                                    const meta = rowMeta(displayState.messages, item.index);
+                                    return (
+                                        <div
+                                            key={message.id}
+                                            data-index={item.index}
+                                            ref={virtualizer.measureElement}
+                                            className="chat-virtual-row"
+                                            style={{ transform: `translateY(${item.start}px)` }}>
+                                            <ChatMessageRow
+                                                message={message}
+                                                live={displayState.running && item.index === displayState.messages.length - 1}
+                                                copyable={meta.text}
+                                                rate={meta.rate}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </FoldMemoryContext>
                         {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} />}
                         {plan !== null && (
                             <details className="chat-plan">

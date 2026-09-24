@@ -273,13 +273,7 @@
     width: 100%;
 }
 
-/* macOS asks for a hit test on hover, and WebKit answers it by laying out the
-   whole document first. Without containment that walk descends into every row
-   in the transcript and re-measures all of its text, which on a long session is
-   seconds of glyph shaping for a mouse movement. `layout style` promises the
-   engine a row cannot disturb anything outside it, so the walk can stop at the
-   rows that actually changed. Size is deliberately not contained: the
-   virtualizer measures each row to learn its real height. */
+/* Size stays uncontained: the virtualizer measures each row's real height. */
 .chat-virtual-row {
     position: absolute;
     top: 0;
