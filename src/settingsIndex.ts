@@ -53,10 +53,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
 
     section("appearance", "Theme", "colours colors palette dark light custom fork editor"),
-    section("appearance", "System appearance", "dark mode light mode automatic"),
-    row("appearance", "System appearance", "Follow system light/dark", "dark mode automatic os"),
-    row("appearance", "System appearance", "Light appearance", "light theme day"),
-    row("appearance", "System appearance", "Dark appearance", "dark theme night"),
     section("appearance", "Interface"),
     row("appearance", "Interface", "Text size", "font zoom scale larger smaller accessibility"),
     ...(IS_MACOS
@@ -93,7 +89,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("actions", "New action", "Description", "detail"),
     row("actions", "New action", "Command", "shell script"),
     row("actions", "New action", "Where output lands", "placement terminal split popup background"),
-    row("actions", "New action", "Contexts", "project ssh aws rundeck bruno"),
+    row("actions", "New action", "Contexts", "project ssh aws bruno plugin"),
 
     section("cli", "Shell integration", "install terminal path sikemux-editor"),
     section("cli", "Usage", "editor git commit open"),

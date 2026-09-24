@@ -59,6 +59,8 @@ export interface GitPaneView {
     selected: Record<GitPanel, number>;
     remoteDrill: string | null;
     remoteBranchSelected: Record<string, number>;
+    /** A repository found inside the project folder, when the folder is not one itself. */
+    repo: string | null;
 }
 
 export const DEFAULT_GIT_VIEW: GitPaneView = {
@@ -66,6 +68,7 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     selected: { status: 0, files: 0, branches: 0, remotes: 0, commits: 0, stashes: 0 },
     remoteDrill: null,
     remoteBranchSelected: {},
+    repo: null,
 };
 
 export interface GlobalSearchView {
@@ -116,24 +119,6 @@ export type EcsLevel =
           tab: "logs" | "tasks";
           taskFilter?: { taskId: string; stream: string };
       };
-
-export type RundeckLevel =
-    | { kind: "matrix" }
-    | { kind: "service"; env: string; project: string; service: string; jobId: string; repoPath?: string }
-    | {
-          kind: "deploy";
-          env: string;
-          project: string;
-          service: string;
-          jobId: string;
-          branch: string;
-          repoPath?: string;
-      }
-    | { kind: "execution"; executionId: number; service: string; project: string; env?: string; jobId?: string; repoPath?: string };
-
-export interface RundeckView {
-    stack: RundeckLevel[];
-}
 
 export type BrunoReqTab = "params" | "body" | "headers" | "auth" | "vars" | "script" | "docs";
 export type BrunoResTab = "body" | "headers" | "timeline" | "tests";

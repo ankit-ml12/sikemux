@@ -20,6 +20,36 @@ export const selectWindowIds =
     (sessionId: string) =>
     (state: StoreState): readonly string[] =>
         state.windowsBySession[sessionId] ?? EMPTY_IDS;
+export interface AgentAttention {
+    agentId: string;
+    agentTitle: string;
+    agentType: import("./types").AgentType;
+    sessionId: string;
+    sessionName: string;
+}
+
+/**
+ * Every agent across every project that stopped to ask the user something. The
+ * rail lists these together because a blocked agent in a project you are not
+ * looking at is exactly the one you cannot see.
+ */
+export function agentsAwaitingInput(
+    state: Pick<StoreState, "sessionOrder" | "sessions" | "windows" | "windowsBySession" | "agents" | "agentActivity">,
+): AgentAttention[] {
+    const waiting: AgentAttention[] = [];
+    for (const sessionId of state.sessionOrder) {
+        const session = state.sessions[sessionId];
+        if (!session) continue;
+        for (const agentId of agentIdsOf(state, sessionId)) {
+            if (state.agentActivity[agentId]?.state !== "blocked") continue;
+            const agent = state.agents[agentId];
+            if (!agent) continue;
+            waiting.push({ agentId, agentTitle: agent.title, agentType: agent.type, sessionId, sessionName: session.name });
+        }
+    }
+    return waiting;
+}
+
 /**
  * The agents a session holds, in strip order. An agent is a window whose one
  * pane carries its id, so this is a read over the windows, not a second list.
@@ -277,7 +307,6 @@ export const selectActiveWindow = (state: StoreState): Window | undefined => {
 export type WorkbenchItemState =
     | StoreState["editorViews"][string]
     | StoreState["gitViews"][string]
-    | StoreState["rundeckViews"][string]
     | StoreState["brunoViews"][string]
     | StoreState["globalSearchBySession"][string]
     | undefined;
@@ -289,8 +318,6 @@ export function selectItemState(state: StoreState, kind: PaneKind, itemId: strin
             return state.editorViews[itemId];
         case "git":
             return state.gitViews[itemId];
-        case "rundeck":
-            return state.rundeckViews[itemId];
         case "bruno":
             return state.brunoViews[itemId];
         case "search":
@@ -298,6 +325,8 @@ export function selectItemState(state: StoreState, kind: PaneKind, itemId: strin
         case "terminal":
         case "aws":
         case "agent":
+            return undefined;
+        default:
             return undefined;
     }
 }

@@ -10,7 +10,6 @@ import type {
     ProviderProfileSelection,
     RailDensity,
     RecentEntry,
-    RundeckSettings,
     Session,
     Window,
 } from "./domain";
@@ -60,9 +59,6 @@ export interface PersistedPrefs {
     projectRoots: ProjectRoot[];
     brunoWorkspaces?: string[];
     themeId: string;
-    themeMode?: "manual" | "system";
-    systemLightThemeId?: string;
-    systemDarkThemeId?: string;
     customThemes?: Theme[];
     uiTextScale?: number;
     windowOpacity: number;
@@ -74,8 +70,10 @@ export interface PersistedPrefs {
     awsService: AwsService;
     sideRailOpen: boolean;
     agentRailOpen: boolean;
+    sideRailWidth?: number;
+    agentRailWidth?: number;
     zenMode: boolean;
-    rundeck?: RundeckSettings;
+    pluginSettings?: Record<string, unknown>;
     restoreAgentTabs?: boolean;
     autoResumeAgents?: boolean;
     railDensity?: RailDensity;

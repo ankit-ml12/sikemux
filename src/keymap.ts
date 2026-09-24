@@ -9,6 +9,9 @@ import type { KeyModifier } from "./state/types";
 import { runMeasuredAction } from "./lib/instrumentation";
 import { applicationActionContext, executeApplicationAction, matchApplicationActionKeybinding } from "./actions/bridge";
 import { reportError } from "./state/toast";
+import { isPluginKind } from "./plugins/kinds";
+import { pluginOverlayOpen } from "./plugins/overlays";
+import { pluginSurface } from "./plugins/registry";
 
 function isTerminalKeyTarget(e: KeyboardEvent): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
@@ -25,7 +28,6 @@ function hasOpenModal(st: StoreState): boolean {
         st.pickerOpen ||
         st.agentPaletteOpen ||
         st.filePaletteOpen ||
-        st.rundeckJobPaletteOpen ||
         st.brunoReqPaletteOpen ||
         st.brunoEnvPaletteOpen ||
         st.commandPaletteOpen ||
@@ -34,7 +36,8 @@ function hasOpenModal(st: StoreState): boolean {
         st.diagnosticsOpen ||
         st.whatsNewOpen ||
         st.settingsOpen ||
-        st.awsAuthModal !== null
+        st.awsAuthModal !== null ||
+        pluginOverlayOpen()
     );
 }
 
@@ -62,10 +65,10 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "palette.commands":
             cmd.toggleCommandPalette();
             return true;
-        case "palette.files":
-            if (active?.kind === "rundeck") {
-                if (st.rundeckJobPaletteOpen) cmd.closeRundeckJobPalette();
-                else cmd.openRundeckJobPalette();
+        case "palette.files": {
+            const quickOpen = active ? pluginSurface(active.kind)?.quickOpen : undefined;
+            if (quickOpen) {
+                quickOpen();
             } else if (active?.kind === "bruno") {
                 if (st.brunoReqPaletteOpen) cmd.closeBrunoReqPalette();
                 else cmd.openBrunoReqPalette();
@@ -75,6 +78,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
                 cmd.openFilePalette();
             }
             return true;
+        }
         case "search.global": {
             const selection = window.getSelection()?.toString() ?? "";
             cmd.focusGlobalSearch(selection.trim() ? selection : undefined);
@@ -141,7 +145,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             else if (active?.kind === "command") cmd.createCommandSession();
             else if (active?.kind === "ssh") cmd.openPicker("ssh");
             else if (active?.kind === "aws") cmd.openAwsSession();
-            else if (active?.kind === "rundeck") cmd.openRundeckSession();
+            else if (active && isPluginKind(active.kind)) cmd.openPluginSession(active.kind);
             else if (active?.kind === "bruno") cmd.openPicker("bruno");
             else return false;
             return true;
@@ -170,7 +174,7 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
             cmd.openAwsSession();
             return true;
         case "bruno.open":
-            cmd.openPicker("bruno");
+            cmd.openBrunoSession();
             return true;
         case "session.command":
             cmd.focusCommandSession();

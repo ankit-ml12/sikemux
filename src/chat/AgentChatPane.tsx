@@ -1,6 +1,8 @@
 import {
+    createContext,
     memo,
     useCallback,
+    useContext,
     useEffect,
     useLayoutEffect,
     useMemo,
@@ -20,17 +22,17 @@ import { fsapi } from "../api/fs";
 import { invokeCommand as invoke } from "../api/invoke";
 import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { rateLabel, rowMeta } from "./messageMeta";
-import { permissionCopyForType } from "../agentLaunch";
 import { CopyButton } from "../components/CopyButton";
 import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
-import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
+import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
 import {
+    AgentIcon,
     IconAgent,
     IconArrowDown,
     IconArrowUp,
@@ -54,7 +56,15 @@ import { CodeRun, CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiff
 import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
+import { YoloToggle } from "./YoloToggle";
+import { ContextMeter } from "./ContextMeter";
+import { guessClaudeWindow } from "./contextWindow";
+import { agentApi } from "../api/agents";
+import { safeWebUrl } from "../terminal/interactions";
 import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "./remarkFilePaths";
+import { remarkHtmlAsText } from "./remarkHtmlAsText";
+import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
+import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -66,6 +76,7 @@ import type {
     ChatMessage,
     ChatPart,
     ChatState,
+    ContextUsage,
 } from "./types";
 
 const MAX_ATTACHMENTS = 32;
@@ -365,9 +376,13 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     );
 }
 
-function openLink(href: string) {
+const ChatAgentContext = createContext("");
+
+function openLink(href: string, agentId: string, external: boolean) {
     const path = localPath(href);
+    const webUrl = safeWebUrl(href);
     if (path) void fsapi.revealInFinder(path).catch(swallow("reveal chat file"));
+    else if (webUrl && agentId && !external) cmd.openUrlInBrowserPane(agentId, webUrl);
     else void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
 }
 
@@ -414,6 +429,7 @@ function ChatLink({ href, className, children }: { href?: string; className?: st
     const imagePath = localImagePath(href);
     const preview = useImagePreview(guessed.includes(PATH_CLASS) ? null : imagePath);
     const file = useFileRef(href);
+    const agentId = useContext(ChatAgentContext);
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
     if (file)
         return (
@@ -431,7 +447,7 @@ function ChatLink({ href, className, children }: { href?: string; className?: st
             href={href}
             onClick={(event) => {
                 event.preventDefault();
-                if (href) openLink(href);
+                if (href) openLink(href, agentId, hasPrimaryModifier(event));
             }}>
             {children}
         </a>
@@ -505,10 +521,11 @@ function ChatTable({ children }: { children?: ReactNode }) {
 
 const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
 const remarkPlugins = [remarkGfm, remarkFilePaths];
+const typedRemarkPlugins = [remarkGfm, remarkHtmlAsText, remarkFilePaths];
 
-const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
+const MarkdownBody = memo(function MarkdownBody({ text, typed }: { text: string; typed: boolean }) {
     return (
-        <Markdown remarkPlugins={remarkPlugins} urlTransform={chatUrlTransform} skipHtml components={markdownComponents}>
+        <Markdown remarkPlugins={typed ? typedRemarkPlugins : remarkPlugins} urlTransform={chatUrlTransform} skipHtml components={markdownComponents}>
             {text}
         </Markdown>
     );
@@ -520,7 +537,7 @@ const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
    is read once more in full. */
 const LIVE_PARSE_MS = 100;
 
-function LiveMarkdown({ text, live }: { text: string; live: boolean }) {
+function LiveMarkdown({ text, live, typed = false }: { text: string; live: boolean; typed?: boolean }) {
     const [shown, setShown] = useState(text);
     const parsedAt = useRef(0);
     useEffect(() => {
@@ -540,7 +557,7 @@ function LiveMarkdown({ text, live }: { text: string; live: boolean }) {
         }, wait);
         return () => window.clearTimeout(timer);
     }, [live, text]);
-    return <MarkdownBody text={shown} />;
+    return <MarkdownBody text={shown} typed={typed} />;
 }
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
@@ -578,11 +595,24 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
 
-const MessagePart = memo(function MessagePart({ part, live }: { part: ChatPart; live: boolean }) {
+function FoldedMarkdown({ id, text, live, typed = false }: { id: string; text: string; live: boolean; typed?: boolean }) {
+    const { cut, expand } = useLongTextFold(id, text, live);
+    if (!cut) return <LiveMarkdown text={text} live={live} typed={typed} />;
+    return (
+        <>
+            <LiveMarkdown text={cut.head} live={false} typed={typed} />
+            <button type="button" className="chat-show-rest" onClick={expand}>
+                Show the rest — {Math.round(cut.hidden / 1000)}k more characters
+            </button>
+        </>
+    );
+}
+
+const MessagePart = memo(function MessagePart({ part, live, typed }: { part: ChatPart; live: boolean; typed: boolean }) {
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <LiveMarkdown text={part.text} live={live} />
+                <FoldedMarkdown id={part.id} text={part.text} live={live} typed={typed} />
             </div>
         );
     }
@@ -590,7 +620,7 @@ const MessagePart = memo(function MessagePart({ part, live }: { part: ChatPart; 
         return (
             <div className="chat-thought">
                 <div className="chat-markdown">
-                    <LiveMarkdown text={part.text} live={live} />
+                    <FoldedMarkdown id={part.id} text={part.text} live={live} />
                 </div>
             </div>
         );
@@ -691,13 +721,13 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
     );
 }
 
-function PartGroups({ parts, live }: { parts: ChatPart[]; live: boolean }) {
+function PartGroups({ parts, live, typed = false }: { parts: ChatPart[]; live: boolean; typed?: boolean }) {
     const groups = groupParts(parts);
     return groups.map((group, index) =>
         "tools" in group ? (
             <ToolGroup key={group.id} tools={group.tools} live={live && index === groups.length - 1} />
         ) : (
-            <MessagePart key={group.id} part={group.part} live={live && index === groups.length - 1} />
+            <MessagePart key={group.id} part={group.part} live={live && index === groups.length - 1} typed={typed} />
         ),
     );
 }
@@ -902,6 +932,7 @@ function QueuedMessages({
                                 aria-label={`Steer the running turn with ${label}`}
                                 onClick={() => onSteer(message)}>
                                 Steer
+                                {messages.length === 1 && <kbd className="chat-queued-steer-key">{PRIMARY_SHORTCUT}↵</kbd>}
                             </button>
                         )}
                         <button type="button" aria-label={`Drop ${label} from the queue`} onClick={() => onDrop(message.id)}>
@@ -927,7 +958,7 @@ function elapsedLabel(seconds: number): string {
 
 /* Keeps its own clock so a ticking second redraws this row alone, not the
    whole transcript. */
-function ChatActivity({ label }: { label: string }) {
+function ChatActivity({ label, agentType }: { label: string; agentType: Agent["type"] }) {
     const [seconds, setSeconds] = useState(0);
     useEffect(() => {
         const started = Date.now();
@@ -936,7 +967,9 @@ function ChatActivity({ label }: { label: string }) {
     }, []);
     return (
         <div className="chat-activity" role="status">
-            <span className="chat-activity-dot" aria-hidden="true" />
+            <span className={`chat-activity-mark agent-glyph ${agentType}`} aria-hidden="true">
+                <AgentIcon type={agentType} size={21} />
+            </span>
             <span className="chat-activity-label">{label}</span>
             {seconds > 0 && (
                 <span className="chat-activity-elapsed" aria-hidden="true">
@@ -968,7 +1001,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
                         ))}
                     </div>
                 )}
-                <PartGroups parts={message.parts} live={live} />
+                <PartGroups parts={message.parts} live={live} typed={message.role === "user"} />
                 {copyable && (
                     <div className="chat-message-meta">
                         <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
@@ -1065,13 +1098,14 @@ function ChatComposer({
     changingConfig,
     changingPermissions,
     permissionApplied,
-    permissionMode,
     placeholder,
     error,
     onError,
     onSend,
     onSteerQueued,
+    onStop,
     queuedCount,
+    usage,
     onConfig,
 }: {
     agent: Agent;
@@ -1088,13 +1122,14 @@ function ChatComposer({
     changingConfig: boolean;
     changingPermissions: boolean;
     permissionApplied: boolean;
-    permissionMode: AgentPermissionMode;
     placeholder: string;
     error: string | null;
     onError: (message: string | null) => void;
     onSend: (text: string, paths: string[], steerNow: boolean) => boolean;
     onSteerQueued: () => void;
+    onStop: () => void;
     queuedCount: number;
+    usage: ContextUsage | null;
     onConfig: (config: SessionConfig, value: string) => void;
 }) {
     const [draft, setDraft] = useState("");
@@ -1121,6 +1156,7 @@ function ChatComposer({
         if (!visible) return;
         const held = document.activeElement;
         if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
+        if (held?.closest(".chat-picker-menu")) return;
         const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
         return () => window.cancelAnimationFrame(frame);
     }, [connection, paneRef, visible]);
@@ -1178,8 +1214,6 @@ function ChatComposer({
         }
     };
 
-    const permission = permissionCopyForType(agent.type, permissionMode);
-
     return (
         <div className="chat-composer">
             {slashCommands.length > 0 && <SlashCommands commands={slashCommands} selected={selected} onSelect={selectCommand} />}
@@ -1209,6 +1243,16 @@ function ChatComposer({
                         onError(null);
                     }}
                     onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                    onPaste={(event) => {
+                        if (imagesInClipboard(event.clipboardData).length > 0) event.preventDefault();
+                        void savePastedClipboard(event.clipboardData)
+                            .then((paths) => {
+                                if (paths.length === 0) return;
+                                setAttachments((current) => mergePaths(current, paths));
+                                onError(null);
+                            })
+                            .catch((failure) => onError(failure instanceof Error ? failure.message : String(failure)));
+                    }}
                     onKeyDown={(event) => {
                         if (slashCommands.length > 0) {
                             if (event.key === "ArrowDown") {
@@ -1248,15 +1292,11 @@ function ChatComposer({
                 <button type="button" className="chat-composer-icon" aria-label="Add files" onClick={() => void chooseFiles()}>
                     <IconPlus size={17} />
                 </button>
-                <button
-                    type="button"
-                    className={`chat-permission-mode tone-${permission.tone}`}
+                <YoloToggle
+                    agent={agent}
+                    relaunches={false}
                     disabled={connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied}
-                    title={permission.detail}
-                    onClick={() => cmd.toggleAgentSkipPermissions(agent.id)}>
-                    <IconShieldBolt size={14} />
-                    <span>{permission.label}</span>
-                </button>
+                />
                 <ComposerPickers
                     agent={agent}
                     profile={profile}
@@ -1269,17 +1309,10 @@ function ChatComposer({
                     }}
                     onConfig={onConfig}
                 />
+                <ContextMeter usage={usage} agent={agent.type} />
                 <span className="chat-composer-spacer" />
                 {running && !drafted ? (
-                    <button
-                        type="button"
-                        className="chat-send stop"
-                        aria-label="Stop agent"
-                        onClick={() =>
-                            void acpApi
-                                .cancel(agent.id)
-                                .catch((failure: unknown) => onError(failure instanceof Error ? failure.message : String(failure)))
-                        }>
+                    <button type="button" className="chat-send stop" aria-label="Stop agent" onClick={onStop}>
                         <span />
                     </button>
                 ) : (
@@ -1321,6 +1354,7 @@ export function AgentChatPane({
 }) {
     const home = useStore((s) => s.home);
     const [state, dispatch] = useReducer(chatReducer, initialChatState);
+    const [foldMemory] = useState(newFoldMemory);
     const displayStateRef = useRef(state);
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
@@ -1420,7 +1454,12 @@ export function AgentChatPane({
         if (!active) return;
         const controller = new AbortController();
         let mounted = true;
-        dispatch({ type: "reset", hold: Boolean(agentRef.current.resumeId) });
+        const hold = Boolean(agentRef.current.resumeId);
+        dispatch({ type: "reset", hold });
+        if (!hold) {
+            foldMemory.streamed.clear();
+            foldMemory.expanded.clear();
+        }
         setAppliedPermissionMode(null);
         setChangingPermissions(false);
         sessionIdRef.current = null;
@@ -1539,11 +1578,19 @@ export function AgentChatPane({
         profile?.executablePath,
         environmentKeys,
         restartKey,
+        foldMemory,
     ]);
 
     useEffect(() => {
-        if (state.connection !== "ready" || changingPermissions || appliedPermissionMode === null || permissionMode === appliedPermissionMode) return;
         const sessionId = sessionIdRef.current;
+        if (
+            sessionId === null ||
+            state.connection !== "ready" ||
+            changingPermissions ||
+            appliedPermissionMode === null ||
+            permissionMode === appliedPermissionMode
+        )
+            return;
         setChangingPermissions(true);
         void acpApi
             .setPermissionMode(agent.id, permissionMode)
@@ -1561,6 +1608,26 @@ export function AgentChatPane({
                 if (sessionIdRef.current === sessionId) setChangingPermissions(false);
             });
     }, [agent.id, state.connection, permissionMode, appliedPermissionMode, changingPermissions]);
+
+    const setupRef = useRef(state.setup);
+    setupRef.current = state.setup;
+    const reported = state.usage !== null;
+    useEffect(() => {
+        const { resumeId, type } = agentRef.current;
+        if (state.connection !== "ready" || reported || !resumeId || (type !== "claude" && type !== "codex")) return;
+        let current = true;
+        void agentApi
+            .sessionContext(type, cwd, resumeId, profile?.configPath)
+            .then((saved) => {
+                if (!current || !saved) return;
+                const size = saved.size ?? guessClaudeWindow(setupRef.current, agentRef.current.model);
+                dispatch({ type: "saved_usage", usage: { used: saved.used, size } });
+            })
+            .catch(() => {});
+        return () => {
+            current = false;
+        };
+    }, [agent.id, agent.resumeId, cwd, profile?.configPath, state.connection, reported]);
 
     useEffect(() => {
         if (state.title && state.title !== agent.title) cmd.setAgentTitle(agent.id, state.title);
@@ -1623,6 +1690,18 @@ export function AgentChatPane({
     }, [displayState.messages.length, displayState.revision, pinToBottom, visible]);
 
     const steerable = state.capabilities.steering === true;
+
+    /* A turn the agent started on its own may end without the report that
+       closes it, so stopping one ends it here too. */
+    const stop = () => {
+        const unprompted = state.unprompted;
+        void acpApi
+            .cancel(agent.id)
+            .then(() => {
+                if (unprompted) dispatch({ type: "turn_completed", stopReason: "cancelled" });
+            })
+            .catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
+    };
 
     /* Steering stops whatever the agent has in flight so it reads this message
        now, so a message only goes this way when it is asked to. */
@@ -1758,181 +1837,186 @@ export function AgentChatPane({
 
     return (
         <PathRootsProvider cwd={cwd} home={home}>
-            <div className="agent-chat-pane" ref={paneRef}>
-                <div
-                    className="chat-scroll"
-                    ref={scrollRef}
-                    onWheel={noteGesture}
-                    onTouchMove={noteGesture}
-                    onMouseDown={noteGesture}
-                    onKeyDown={noteGesture}
-                    onScroll={(event) => {
-                        const element = event.currentTarget;
-                        const previous = lastScrollTopRef.current;
-                        lastScrollTopRef.current = element.scrollTop;
-                        const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
-                        // The transcript also scrolls itself, to hold the bottom
-                        // still while rows settle into their real heights. Only a
-                        // scroll up that a wheel, key or drag just asked for means
-                        // the reader walked away; sitting at the bottom means stuck.
-                        const gesture = lastGestureRef.current;
-                        lastGestureRef.current = 0;
-                        const walkedAway = element.scrollTop < previous - 1 && performance.now() - gesture < 150;
-                        const next = walkedAway ? false : distance < BOTTOM_SLACK ? true : stickToBottomRef.current;
-                        if (next === stickToBottomRef.current) return;
-                        stickToBottomRef.current = next;
-                        setAtBottom(next);
-                    }}>
-                    <div className="chat-scroll-content" ref={scrollContentRef}>
-                        {displayState.messages.length === 0 && (
-                            <div className={`chat-connection-state ${displayState.connection}`} role="status">
-                                {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
-                                <span>
-                                    {reconnecting
-                                        ? "Reconnecting…"
-                                        : (connecting ??
-                                          (displayState.connection === "ready"
-                                              ? "Start a session with this project."
-                                              : displayState.connection === "error"
-                                                ? "Structured session unavailable."
-                                                : "Agent session stopped."))}
-                                </span>
-                                {disconnected && !reconnecting && (
-                                    <div className="chat-connection-actions">
-                                        <button type="button" onClick={reconnect}>
-                                            Reconnect
-                                        </button>
-                                        {agent.resumeId && (
-                                            <button type="button" onClick={startNewChat}>
-                                                Start new chat
+            <ChatAgentContext.Provider value={agent.id}>
+                <div className="agent-chat-pane" ref={paneRef}>
+                    <div
+                        className="chat-scroll"
+                        ref={scrollRef}
+                        onWheel={noteGesture}
+                        onTouchMove={noteGesture}
+                        onMouseDown={noteGesture}
+                        onKeyDown={noteGesture}
+                        onScroll={(event) => {
+                            const element = event.currentTarget;
+                            const previous = lastScrollTopRef.current;
+                            lastScrollTopRef.current = element.scrollTop;
+                            const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+                            // The transcript also scrolls itself, to hold the bottom
+                            // still while rows settle into their real heights. Only a
+                            // scroll up that a wheel, key or drag just asked for means
+                            // the reader walked away; sitting at the bottom means stuck.
+                            const gesture = lastGestureRef.current;
+                            lastGestureRef.current = 0;
+                            const walkedAway = element.scrollTop < previous - 1 && performance.now() - gesture < 150;
+                            const next = walkedAway ? false : distance < BOTTOM_SLACK ? true : stickToBottomRef.current;
+                            if (next === stickToBottomRef.current) return;
+                            stickToBottomRef.current = next;
+                            setAtBottom(next);
+                        }}>
+                        <div className="chat-scroll-content" ref={scrollContentRef}>
+                            {displayState.messages.length === 0 && (
+                                <div className={`chat-connection-state ${displayState.connection}`} role="status">
+                                    {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
+                                    <span>
+                                        {reconnecting
+                                            ? "Reconnecting…"
+                                            : (connecting ??
+                                              (displayState.connection === "ready"
+                                                  ? "Start a session with this project."
+                                                  : displayState.connection === "error"
+                                                    ? "Structured session unavailable."
+                                                    : "Agent session stopped."))}
+                                    </span>
+                                    {disconnected && !reconnecting && (
+                                        <div className="chat-connection-actions">
+                                            <button type="button" onClick={reconnect}>
+                                                Reconnect
                                             </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-                            {virtualizer.getVirtualItems().map((item) => {
-                                const message = displayState.messages[item.index];
-                                const meta = rowMeta(displayState.messages, item.index);
-                                return (
-                                    <div
-                                        key={message.id}
-                                        data-index={item.index}
-                                        ref={virtualizer.measureElement}
-                                        className="chat-virtual-row"
-                                        style={{ transform: `translateY(${item.start}px)` }}>
-                                        <ChatMessageRow
-                                            message={message}
-                                            live={displayState.running && item.index === displayState.messages.length - 1}
-                                            copyable={meta.text}
-                                            rate={meta.rate}
-                                        />
-                                    </div>
-                                );
-                            })}
+                                            {agent.resumeId && (
+                                                <button type="button" onClick={startNewChat}>
+                                                    Start new chat
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <FoldMemoryContext value={foldMemory}>
+                                <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+                                    {virtualizer.getVirtualItems().map((item) => {
+                                        const message = displayState.messages[item.index];
+                                        const meta = rowMeta(displayState.messages, item.index);
+                                        return (
+                                            <div
+                                                key={message.id}
+                                                data-index={item.index}
+                                                ref={virtualizer.measureElement}
+                                                className="chat-virtual-row"
+                                                style={{ transform: `translateY(${item.start}px)` }}>
+                                                <ChatMessageRow
+                                                    message={message}
+                                                    live={displayState.running && item.index === displayState.messages.length - 1}
+                                                    copyable={meta.text}
+                                                    rate={meta.rate}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </FoldMemoryContext>
+                            {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} agentType={agent.type} />}
+                            {plan !== null && (
+                                <details className="chat-plan">
+                                    <summary>Plan</summary>
+                                    <pre>{plan}</pre>
+                                </details>
+                            )}
+                            {displayState.permissions.map((request) => (
+                                <PermissionRequest
+                                    key={request.requestId}
+                                    request={request}
+                                    busy={replyingPermission === request.requestId}
+                                    onReply={(optionId) => void replyPermission(request.requestId, optionId)}
+                                />
+                            ))}
+                            {displayState.error && (
+                                <div className="chat-error" role="alert">
+                                    <IconWarning size={14} />
+                                    <span>{displayState.error}</span>
+                                </div>
+                            )}
+                            {displayState.messages.length > 0 && disconnected && (
+                                <div className="chat-reconnect" role="status">
+                                    {reconnecting ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
+                                    <span>{reconnecting ? "Reconnecting…" : "This session dropped."}</span>
+                                    {!reconnecting && (
+                                        <div className="chat-connection-actions">
+                                            <button type="button" onClick={reconnect}>
+                                                Reconnect
+                                            </button>
+                                            {agent.resumeId && (
+                                                <button type="button" onClick={startNewChat}>
+                                                    Start new chat
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                        {activity && <ChatActivity key={displayState.running ? "turn" : "connect"} label={activity} />}
-                        {plan !== null && (
-                            <details className="chat-plan">
-                                <summary>Plan</summary>
-                                <pre>{plan}</pre>
-                            </details>
+                    </div>
+
+                    <div className="chat-composer-wrap">
+                        {!atBottom && displayState.messages.length > 0 && (
+                            <button
+                                type="button"
+                                className="chat-jump-bottom"
+                                aria-label="Jump to latest message"
+                                onClick={() => {
+                                    stickToBottomRef.current = true;
+                                    setAtBottom(true);
+                                    pinToBottom();
+                                }}>
+                                <IconArrowDown size={14} />
+                            </button>
                         )}
-                        {displayState.permissions.map((request) => (
-                            <PermissionRequest
-                                key={request.requestId}
-                                request={request}
-                                busy={replyingPermission === request.requestId}
-                                onReply={(optionId) => void replyPermission(request.requestId, optionId)}
-                            />
-                        ))}
-                        {displayState.error && (
-                            <div className="chat-error" role="alert">
-                                <IconWarning size={14} />
-                                <span>{displayState.error}</span>
+                        {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
+                            <div className="chat-live-stack">
+                                <RunningSubagents subagents={subagents} />
+                                <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
+                                <QueuedMessages
+                                    messages={queued}
+                                    steerable={steerable && state.running}
+                                    onSteer={(message) => void steer(message)}
+                                    onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
+                                />
                             </div>
                         )}
-                        {displayState.messages.length > 0 && disconnected && (
-                            <div className="chat-reconnect" role="status">
-                                {reconnecting ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
-                                <span>{reconnecting ? "Reconnecting…" : "This session dropped."}</span>
-                                {!reconnecting && (
-                                    <div className="chat-connection-actions">
-                                        <button type="button" onClick={reconnect}>
-                                            Reconnect
-                                        </button>
-                                        {agent.resumeId && (
-                                            <button type="button" onClick={startNewChat}>
-                                                Start new chat
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        <ChatComposer
+                            agent={agent}
+                            profile={profile}
+                            paneRef={paneRef}
+                            visible={visible}
+                            connection={state.connection}
+                            running={state.running}
+                            steerable={steerable}
+                            commands={state.commands}
+                            setup={state.setup}
+                            awaitingPermission={state.permissions.length > 0}
+                            agentLocked={agentLockedRef.current}
+                            changingConfig={changingConfig}
+                            changingPermissions={changingPermissions}
+                            permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
+                            placeholder={composerPlaceholder}
+                            error={composerError}
+                            onError={setComposerError}
+                            onSend={send}
+                            onSteerQueued={() => {
+                                const head = queued[0];
+                                if (head) void steer(head);
+                            }}
+                            onStop={stop}
+                            queuedCount={queued.length}
+                            usage={state.usage}
+                            onConfig={changeConfig}
+                        />
+                    </div>
+                    <div className="chat-drop-target" aria-hidden="true">
+                        <IconFile size={22} />
+                        <span>Drop files or folders into this session</span>
                     </div>
                 </div>
-
-                <div className="chat-composer-wrap">
-                    {!atBottom && displayState.messages.length > 0 && (
-                        <button
-                            type="button"
-                            className="chat-jump-bottom"
-                            aria-label="Jump to latest message"
-                            onClick={() => {
-                                stickToBottomRef.current = true;
-                                setAtBottom(true);
-                                pinToBottom();
-                            }}>
-                            <IconArrowDown size={14} />
-                        </button>
-                    )}
-                    {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
-                        <div className="chat-live-stack">
-                            <RunningSubagents subagents={subagents} />
-                            <BackgroundTasks tasks={displayState.tasks} stopping={stoppingTasks} onStop={(taskId) => void stopTask(taskId)} />
-                            <QueuedMessages
-                                messages={queued}
-                                steerable={steerable && state.running}
-                                onSteer={(message) => void steer(message)}
-                                onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
-                            />
-                        </div>
-                    )}
-                    <ChatComposer
-                        agent={agent}
-                        profile={profile}
-                        paneRef={paneRef}
-                        visible={visible}
-                        connection={state.connection}
-                        running={state.running}
-                        steerable={steerable}
-                        commands={state.commands}
-                        setup={state.setup}
-                        awaitingPermission={state.permissions.length > 0}
-                        agentLocked={agentLockedRef.current}
-                        changingConfig={changingConfig}
-                        changingPermissions={changingPermissions}
-                        permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
-                        permissionMode={permissionMode}
-                        placeholder={composerPlaceholder}
-                        error={composerError}
-                        onError={setComposerError}
-                        onSend={send}
-                        onSteerQueued={() => {
-                            const head = queued[0];
-                            if (head) void steer(head);
-                        }}
-                        queuedCount={queued.length}
-                        onConfig={changeConfig}
-                    />
-                </div>
-                <div className="chat-drop-target" aria-hidden="true">
-                    <IconFile size={22} />
-                    <span>Drop files or folders into this session</span>
-                </div>
-            </div>
+            </ChatAgentContext.Provider>
         </PathRootsProvider>
     );
 }

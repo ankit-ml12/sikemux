@@ -3,7 +3,6 @@ mod agent_detection;
 mod agents;
 mod autopsy;
 mod aws;
-mod bounded_process;
 mod browser;
 mod bruno;
 pub mod cli_client;
@@ -21,8 +20,8 @@ mod git;
 mod harness;
 mod lsp;
 pub mod observability;
+mod plugins;
 mod pty;
-mod rundeck;
 mod search;
 mod settings;
 mod ssh;
@@ -30,14 +29,16 @@ mod state;
 mod system;
 mod transparency;
 mod updates;
+mod wallpaper;
 mod wheel;
 
 use acp::AcpManager;
 use aws::LogsTailManager;
 use browser::BrowserManager;
 use observability::UiWatchdogState;
+use plugins::PluginHost;
 use pty::PtyManager;
-use rundeck::{RundeckLogsManager, RundeckWatchManager};
+use sikemux_process as bounded_process;
 use tauri::Manager;
 
 pub fn run() {
@@ -81,8 +82,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(LogsTailManager::default())
-        .manage(RundeckWatchManager::default())
-        .manage(RundeckLogsManager::default())
         .on_window_event(|window, event| {
             // Drain every live PTY on close so we don't leave orphan
             // shells, agents, or `tail`s alive after the user quits.
@@ -98,6 +97,9 @@ pub fn run() {
                 }
                 if let Some(browser) = window.try_state::<BrowserManager>() {
                     browser.drain();
+                }
+                if let Some(plugins) = window.try_state::<PluginHost>() {
+                    plugins.drain();
                 }
                 if let Some(acp) = window.try_state::<AcpManager>() {
                     acp.drain();
@@ -125,6 +127,9 @@ pub fn run() {
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
                     browser.drain();
                 }
+                if let Some(plugins) = webview.try_state::<PluginHost>() {
+                    plugins.drain();
+                }
                 if let Some(acp) = webview.try_state::<AcpManager>() {
                     acp.drain();
                 }
@@ -133,6 +138,10 @@ pub fn run() {
         })
         .setup(|_app| {
             _app.manage(UiWatchdogState::start()?);
+            _app.manage(PluginHost::with_builtins(
+                &_app.path().app_data_dir()?.join("plugins"),
+                &_app.package_info().version,
+            )?);
             wheel::watch(_app.handle());
             let cli_broker = match cli_server::CliBroker::start(_app.handle().clone()) {
                 Ok(cli_broker) => Some(cli_broker),
@@ -213,6 +222,7 @@ pub fn run() {
             agents::agent_models,
             agents::agent_usage,
             agents::agent_sessions,
+            agents::agent_session_context,
             agents::live_agent_sessions,
             agents::agent_sessions_watch_start,
             agents::agent_sessions_watch_stop,
@@ -230,6 +240,8 @@ pub fn run() {
             fs::create_dir,
             fs::copy_into_dir,
             fs::downloads_dir,
+            fs::chat_attachment_dir,
+            fs::save_clipboard_image,
             fs::save_base64_into_dir,
             fs::rename_path,
             fs::reveal_in_finder,
@@ -237,6 +249,7 @@ pub fn run() {
             fs_watch::repo_watch_start,
             fs_watch::repo_watch_stop,
             git::git_status,
+            git::git_discover_repos,
             git::git_diff,
             git::git_stage,
             git::git_unstage,
@@ -304,6 +317,7 @@ pub fn run() {
             settings::scan_project_roots,
             settings::expand_path,
             settings::is_directory,
+            wallpaper::wallpaper_image,
             search::project_search,
             search::project_search_cancel,
             search::project_search_replace,
@@ -326,28 +340,15 @@ pub fn run() {
             aws::s3::aws_s3_buckets,
             aws::logs::aws_logs_tail_start,
             aws::logs::aws_logs_tail_stop,
-            rundeck::auth::rnd_status,
-            rundeck::auth::rnd_login,
-            rundeck::auth::rnd_logout,
-            rundeck::projects::rnd_projects,
-            rundeck::projects::rnd_jobs,
-            rundeck::projects::rnd_branches_matrix,
-            rundeck::projects::rnd_resolve_job,
-            rundeck::executions::rnd_executions,
-            rundeck::executions::rnd_execution,
-            rundeck::executions::rnd_execution_state,
-            rundeck::executions::rnd_run,
-            rundeck::executions::rnd_abort,
-            rundeck::watch::rnd_watch_start,
-            rundeck::watch::rnd_watch_stop,
-            rundeck::logs::rnd_logs_start,
-            rundeck::logs::rnd_logs_stop,
-            rundeck::plan::rnd_plan,
             external::open_url,
             external::macos_focus_app,
             external::run_background_command,
             transparency::set_window_blur,
             bruno::bru_send,
+            plugins::plugin_manifests,
+            plugins::plugin_call,
+            plugins::plugin_stream_start,
+            plugins::plugin_stream_stop,
             harness::harness_resolve_path,
             harness::harness_claim,
             harness::harness_reply,
@@ -387,6 +388,9 @@ pub fn run() {
                 }
                 if let Some(browser) = app_handle.try_state::<BrowserManager>() {
                     browser.drain();
+                }
+                if let Some(plugins) = app_handle.try_state::<PluginHost>() {
+                    plugins.drain();
                 }
                 lsp::drain_all();
             }

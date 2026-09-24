@@ -10,7 +10,11 @@
 pub mod agents;
 mod favicon;
 #[cfg(target_os = "macos")]
+mod input;
+#[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod recording;
 pub mod tools;
 
 use std::collections::HashMap;
@@ -37,6 +41,7 @@ pub const BLANK_URL: &str = "about:blank";
 /// Injected into every document before its own scripts, so a page's calls are
 /// already recorded by the time an agent asks about them.
 const RECORDER_SCRIPT: &str = include_str!("recorder.js");
+const PAGE_DIALOGS_SCRIPT: &str = include_str!("page-dialogs.js");
 const MAX_URL_LEN: usize = 8192;
 const PARKED_BOUNDS: BrowserBounds = BrowserBounds {
     x: 0.0,
@@ -117,6 +122,15 @@ pub enum DownloadState {
     Started,
     Finished,
     Failed,
+}
+
+/// An alert, confirm or prompt the page is blocked on until someone answers.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PageDialog {
+    pub kind: &'static str,
+    pub message: String,
+    pub default_text: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -229,6 +243,10 @@ pub struct BrowserManager {
     shortcuts_installed: AtomicBool,
     downloads: Mutex<HashMap<(String, String), PathBuf>>,
     icons: Mutex<favicon::IconCache>,
+    dialogs: Mutex<HashMap<String, PageDialog>>,
+    uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
+    #[cfg(target_os = "macos")]
+    recordings: Mutex<HashMap<String, recording::Session>>,
 }
 
 impl BrowserManager {
@@ -284,14 +302,33 @@ impl BrowserManager {
             let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.clone());
             let _ = webview.with_webview(move |platform| {
                 let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
-                macos::adopt(platform.inner(), agent, tab, move |url, back, forward| {
-                    let manager = app_handle.state::<BrowserManager>();
-                    manager.note_page(&app_handle, &moved_agent, &moved_tab, |page| {
-                        page.url = url;
-                        page.can_go_back = back;
-                        page.can_go_forward = forward;
-                    });
-                });
+                let (dialog_app, dialog_tab) = (app_handle.clone(), tab.clone());
+                let (upload_app, upload_tab) = (app_handle.clone(), tab.clone());
+                macos::adopt(
+                    platform.inner(),
+                    agent,
+                    tab,
+                    move |url, back, forward| {
+                        let manager = app_handle.state::<BrowserManager>();
+                        manager.note_page(&app_handle, &moved_agent, &moved_tab, |page| {
+                            page.url = url;
+                            page.can_go_back = back;
+                            page.can_go_forward = forward;
+                        });
+                    },
+                    move |dialog| {
+                        let manager = dialog_app.state::<BrowserManager>();
+                        let mut dialogs = manager.dialogs_lock();
+                        match dialog {
+                            Some(dialog) => dialogs.insert(dialog_tab.clone(), dialog),
+                            None => dialogs.remove(&dialog_tab),
+                        };
+                    },
+                    move || {
+                        let manager = upload_app.state::<BrowserManager>();
+                        manager.take_upload(&upload_tab)
+                    },
+                );
             });
         }
         self.install_shortcuts(app);
@@ -324,7 +361,8 @@ impl BrowserManager {
             .accept_first_mouse(true)
             .focused(false)
             .zoom_hotkeys_enabled(true)
-            .initialization_script(RECORDER_SCRIPT);
+            .initialization_script(RECORDER_SCRIPT)
+            .initialization_script(PAGE_DIALOGS_SCRIPT);
         #[cfg(target_os = "macos")]
         let builder = builder.user_agent(USER_AGENT);
 
@@ -425,6 +463,43 @@ impl BrowserManager {
         );
     }
 
+    fn dialogs_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, PageDialog>> {
+        self.dialogs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn dialog(&self, tab_id: &str) -> Option<PageDialog> {
+        self.dialogs_lock().get(tab_id).cloned()
+    }
+
+    fn uploads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<PathBuf>>> {
+        self.uploads
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Files for the tab's next file chooser, answered in place of the person.
+    pub fn offer_upload(&self, tab_id: &str, paths: Vec<PathBuf>) {
+        self.uploads_lock().insert(tab_id.to_owned(), paths);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn recordings_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, recording::Session>> {
+        self.recordings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn upload_pending(&self, tab_id: &str) -> bool {
+        self.uploads_lock().contains_key(tab_id)
+    }
+
+    /// `None` once the chooser took the files or the offer was withdrawn.
+    pub fn take_upload(&self, tab_id: &str) -> Option<Vec<PathBuf>> {
+        self.uploads_lock().remove(tab_id)
+    }
+
     fn downloads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), PathBuf>> {
         self.downloads
             .lock()
@@ -483,6 +558,8 @@ impl BrowserManager {
 
     pub fn close_agent(&self, app: &AppHandle, agent_id: &str) -> AppResult<()> {
         validate_agent_id(agent_id)?;
+        #[cfg(target_os = "macos")]
+        self.recordings_lock().remove(agent_id);
         let views = self
             .lock()
             .remove(agent_id)
@@ -680,7 +757,7 @@ impl BrowserManager {
     }
 
     pub fn mcp_launch(&self, app: &AppHandle) -> AppResult<BrowserMcpLaunch> {
-        if let Some(command) = std::env::var_os("SIKEMUX_BROWSER_MCP_EXECUTABLE") {
+        if let Some(command) = std::env::var_os("SIKEMUX_TOOLS_MCP_EXECUTABLE") {
             return Ok(BrowserMcpLaunch {
                 command: std::path::PathBuf::from(command)
                     .to_string_lossy()
@@ -689,9 +766,9 @@ impl BrowserManager {
             });
         }
         let executable_name = if cfg!(windows) {
-            "sikemux-browser-mcp.exe"
+            "sikemux-tools-mcp.exe"
         } else {
-            "sikemux-browser-mcp"
+            "sikemux-tools-mcp"
         };
         if let Ok(current) = std::env::current_exe() {
             if let Some(parent) = current.parent() {
