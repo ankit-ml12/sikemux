@@ -132,8 +132,13 @@
         border-color 100ms;
 }
 
-.yolo-toggle:hover {
+.yolo-toggle:hover:not(:disabled) {
     color: var(--ink);
+}
+
+.yolo-toggle:disabled {
+    cursor: default;
+    opacity: 0.42;
 }
 
 .yolo-glyph {
@@ -148,6 +153,10 @@
     font-size: calc(9px * var(--chat-text-em, 1));
     font-weight: 600;
     letter-spacing: 0.02em;
+}
+
+.yolo-hint kbd {
+    font: inherit;
 }
 
 .yolo-toggle.on {
@@ -282,11 +291,13 @@
     width: 100%;
 }
 
+/* Size stays uncontained: the virtualizer measures each row's real height. */
 .chat-virtual-row {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
+    contain: layout style;
 }
 
 .chat-message {
@@ -1174,16 +1185,36 @@ button.chat-tool:hover,
 }
 
 .chat-queued-steer {
+    display: inline-flex;
     flex: none;
-    padding: 2px 7px;
+    align-items: center;
+    gap: 6px;
+    height: 20px;
+    padding: 0 7px;
+    border: 1px solid var(--line);
     border-radius: var(--radius-xs);
-    color: var(--ink-dim);
+    background: color-mix(in srgb, var(--live) 8%, transparent);
+    color: var(--ink);
     font-size: calc(10.5px * var(--chat-text-em, 1));
+    line-height: 1;
+    transition:
+        background 100ms,
+        border-color 100ms;
 }
 
 .chat-queued-steer:hover {
+    border-color: color-mix(in srgb, var(--live) 45%, var(--line));
     background: color-mix(in srgb, var(--live) 18%, transparent);
-    color: var(--ink);
+}
+
+.chat-queued-steer-key {
+    padding-left: 6px;
+    border-left: 1px solid var(--line);
+    color: var(--ink-faint);
+    font-family: var(--kbd);
+    font-size: calc(9px * var(--chat-text-em, 1));
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 
 .chat-queued-message > button:last-child {
@@ -1345,7 +1376,11 @@ button.chat-tool:hover,
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    animation: chat-activity-breathe 1.9s ease-in-out infinite;
+    background: linear-gradient(90deg, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%) 100% 0 / 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: chat-activity-shimmer 2.2s linear infinite;
 }
 
 .chat-activity-elapsed {
@@ -1354,12 +1389,8 @@ button.chat-tool:hover,
     font-size: calc(9.5px * var(--chat-text-em, 1));
 }
 
-.chat-activity-dot {
+.chat-activity-mark {
     flex: none;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--live);
     animation: chat-activity-breathe 1.5s ease-in-out infinite;
 }
 
@@ -1383,6 +1414,12 @@ button.chat-tool:hover,
 @keyframes chat-activity-spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@keyframes chat-activity-shimmer {
+    to {
+        background-position: 0 0;
     }
 }
 
@@ -1643,6 +1680,7 @@ button.chat-tool:hover,
 }
 
 .chat-composer-bar {
+    --control-h: 31px;
     display: flex;
     align-items: center;
     gap: 5px;
@@ -1668,28 +1706,81 @@ button.chat-tool:hover,
     color: var(--ink);
 }
 
-.chat-permission-mode {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+/* Beside the borderless pickers the toggle is text too: the rainbow word
+   carries YOLO, and the ring and key hint stay in the pane header. */
+.chat-composer-bar .yolo-toggle {
+    padding: 0 8px;
+    border-color: transparent;
+    background: none;
+}
+
+.chat-composer-bar .yolo-toggle:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.chat-composer-bar .yolo-ring,
+.chat-composer-bar .yolo-hint {
+    display: none;
+}
+
+.chat-context {
+    --usage-signal: var(--acc);
+    display: grid;
+    place-items: center;
+    width: 31px;
     height: 31px;
-    padding: 0 7px;
-    border-radius: var(--radius-control);
-    color: var(--ink-dim);
-    font-size: calc(10.5px * var(--chat-text-em, 1));
+    border-radius: 50%;
 }
 
-.chat-permission-mode.tone-danger {
-    color: var(--warn);
+.chat-context.claude {
+    --usage-signal: var(--brand-claude);
 }
 
-.chat-permission-mode:hover {
-    background: color-mix(in srgb, currentColor 8%, transparent);
+.chat-context.codex {
+    --usage-signal: var(--brand-codex);
 }
 
-.chat-permission-mode:disabled {
-    cursor: default;
-    opacity: 0.42;
+.chat-context[data-tone="warm"] {
+    --usage-signal: var(--warn);
+}
+
+.chat-context[data-tone="hot"] {
+    --usage-signal: var(--danger);
+}
+
+.chat-context:hover {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.chat-context svg {
+    width: 18px;
+    height: 18px;
+    transform: rotate(-90deg);
+}
+
+.chat-context circle {
+    fill: none;
+    stroke-width: 2.2;
+}
+
+.chat-context-track {
+    stroke: var(--line);
+}
+
+.chat-context-fill {
+    stroke: var(--usage-signal);
+    stroke-linecap: round;
+    transition: stroke-dasharray 240ms ease-out;
+}
+
+.chat-context-tip {
+    display: grid;
+    gap: 2px;
+}
+
+.chat-context-tip span {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 
 .chat-composer-spacer {
@@ -1833,7 +1924,7 @@ button.chat-tool:hover,
     /* The elapsed seconds keep saying the turn is alive without any motion. */
     .chat-activity-label,
     .chat-activity-loader,
-    .chat-activity-dot,
+    .chat-activity-mark,
     .chat-tool-spinner {
         animation: none;
     }
@@ -1842,7 +1933,11 @@ button.chat-tool:hover,
         border-color: var(--live);
     }
 
-    .yolo-toggle.on::before,
+    .chat-context-fill {
+        transition: none;
+    }
+
+    .yolo-toggle.on .yolo-ring::before,
     .yolo-toggle.on .yolo-label,
     .yolo-toggle.on .yolo-glyph {
         animation: none;
@@ -1888,7 +1983,7 @@ button.chat-tool:hover,
     opacity: 0.6;
 }
 
-.chat-picker:nth-child(2) .chat-picker-trigger {
+.chat-picker:first-child .chat-picker-trigger {
     color: var(--acc);
 }
 
@@ -1939,6 +2034,50 @@ button.chat-tool:hover,
     color: var(--ink);
     font: inherit;
     font-size: var(--text-xs);
+}
+
+.chat-picker-agents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px;
+    border-bottom: 1px solid var(--line);
+}
+
+.chat-picker-agents > button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 26px;
+    padding: 0 8px;
+    color: var(--ink-dim);
+    font-size: var(--text-2xs);
+}
+
+.chat-picker-agents > button > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-picker-agents > button > svg {
+    flex-shrink: 0;
+}
+
+.chat-picker-agents > button:hover {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    color: var(--ink);
+}
+
+.chat-picker-agents > button[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--acc) 14%, transparent);
+    color: var(--ink);
+}
+
+.chat-picker-agents > button:focus-visible {
+    outline: 1px solid var(--acc);
+    outline-offset: -1px;
 }
 
 .chat-picker-hint {
@@ -2028,4 +2167,24 @@ button.chat-tool:hover,
         bottom: 120px;
         width: auto;
     }
+}
+
+.chat-show-rest {
+    display: block;
+    margin-top: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--ink-faint);
+    font-family: var(--ui);
+    font-size: var(--text-2xs);
+    cursor: pointer;
+    transition:
+        color 100ms,
+        border-color 100ms;
+}
+.chat-show-rest:hover {
+    border-color: var(--acc-line);
+    color: var(--ink);
 }

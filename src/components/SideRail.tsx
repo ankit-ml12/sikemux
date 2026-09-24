@@ -17,35 +17,32 @@ import * as cmd from "../state/commands";
 import { prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import {
-    AgentIcon,
-    IconAgent,
-    IconAws,
-    IconBruno,
-    IconClose,
-    IconCommand,
-    IconFolder,
-    IconPencil,
-    IconPlus,
-    IconRundeck,
-    Logo,
-    WindowIcon,
-} from "./Icons";
+import { AgentIcon, IconAgent, IconAws, IconBruno, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, Logo, WindowIcon } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
 import { UpdateChip, VersionChip } from "./TopBar";
-import { AgentStateIndicator } from "./AgentStateIndicator";
+import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
+import { frontendPlugin, pluginSurface } from "../plugins/registry";
+import { railGroupOf, type RailGroup } from "../state/railGroups";
+import { isPluginKind, pluginIdOf } from "../plugins/kinds";
+
+/** Something the plugins group can open that is not open yet. */
+interface Opener {
+    label: string;
+    open: () => void;
+}
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
-    if (kind === "aws") return <IconAws />;
-    if (kind === "rundeck") return <IconRundeck size={14} />;
-    if (kind === "bruno") return <IconBruno size={14} />;
+    if (kind === "aws") return <IconAws size={18} />;
+    const surface = pluginSurface(kind);
+    if (surface) return surface.icon(15);
+    if (kind === "bruno") return <IconBruno size={20} />;
     return <IconCommand size={13} />;
 }
 
-const MAX_BADGE_ICONS = 3;
+const MAX_BADGE_ICONS = 5;
 type ProjectDropPlacement = "before" | "after";
 
 interface ProjectDragSession {
@@ -200,13 +197,13 @@ function ProjectBlock({ s }: { s: Session }) {
                                 {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
                             </span>
                         )}
+                        {showsAgentState(rollup ?? "idle", rollupBackground) && (
+                            <span className="proj-row-status">
+                                <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
+                            </span>
+                        )}
                     </button>
                 </Tooltip>
-                {(rollup || rollupBackground) && (
-                    <span className="row-status">
-                        <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
-                    </span>
-                )}
                 <SessionCloseButton session={s} />
             </div>
         );
@@ -289,6 +286,7 @@ function ProjectBlock({ s }: { s: Session }) {
                             <IconFolder size={12} />
                         </span>
                         <span className="proj-name">{s.name}</span>
+                        {(rollup || rollupBackground) && <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />}
                     </button>
                 </Tooltip>
                 <SessionCloseButton session={s} />
@@ -353,6 +351,9 @@ function Group({
     action,
     actionTitle,
     emptyText,
+    singleton,
+    openers = [],
+    className,
 }: {
     label: string;
     list: Session[];
@@ -362,14 +363,18 @@ function Group({
     action?: () => void;
     actionTitle?: string;
     emptyText: string;
+    singleton?: boolean;
+    openers?: readonly Opener[];
+    className?: string;
 }) {
     return (
-        <Panel variant="group">
+        <Panel variant="group" className={className}>
             <PanelHeader
                 label={label}
                 rule
                 extra={
-                    add && (
+                    add &&
+                    !singleton && (
                         <span className="rail-group-actions">
                             {addKbd && <span className="rail-group-kbd">{addKbd}</span>}
                             {action && (
@@ -388,11 +393,14 @@ function Group({
                     )
                 }
             />
-            {list.length === 0 ? (
+            {list.length === 0 && openers.length === 0 ? (
                 <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
             ) : (
                 list.map(renderSession)
             )}
+            {openers.map((opener) => (
+                <EmptyState key={opener.label} variant="inline" message={opener.label} action={{ label: opener.label, onClick: opener.open }} />
+            ))}
         </Panel>
     );
 }
@@ -422,12 +430,21 @@ export const SideRail = memo(function SideRail() {
     const projectDragSequenceRef = useRef(0);
     const suppressProjectClickRef = useRef(false);
 
-    const projects = sessions.filter((s) => s.kind === "project");
-    const sshs = sessions.filter((s) => s.kind === "ssh");
-    const cloud = sessions.filter((s) => s.kind === "aws");
-    const cicd = sessions.filter((s) => s.kind === "rundeck");
-    const apis = sessions.filter((s) => s.kind === "bruno");
-    const commands = sessions.filter((s) => s.kind === "command");
+    const pluginManifests = useStore((s) => s.pluginManifests);
+    const inGroup = (group: RailGroup) => sessions.filter((s) => railGroupOf(s.kind, pluginManifests) === group);
+    const projects = inGroup("project");
+    const sshs = inGroup("ssh");
+    const commands = inGroup("command");
+    const plugins = inGroup("plugins");
+    const openers: Opener[] = [
+        ...(plugins.some((session) => session.kind === "aws") ? [] : [{ label: "open aws", open: cmd.openAwsSession }]),
+        ...(plugins.some((session) => session.kind === "bruno") ? [] : [{ label: "open bruno", open: () => cmd.openBrunoSession() }]),
+        ...pluginManifests.flatMap((manifest) => {
+            const plugin = frontendPlugin(manifest.id);
+            const open = plugins.some((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === manifest.id);
+            return plugin && !open ? [{ label: plugin.openTitle.toLowerCase(), open: plugin.open }] : [];
+        }),
+    ];
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {
         const ghost = projectGhostRef.current;
@@ -655,29 +672,7 @@ export const SideRail = memo(function SideRail() {
                         actionTitle="Edit ~/.ssh/config"
                         emptyText="no ssh hosts"
                     />
-                    <Group
-                        label="Cloud"
-                        list={cloud}
-                        add={cmd.openAwsSession}
-                        addTitle={`Open AWS — ${kb("aws.open")}`}
-                        addKbd={kb("aws.open")}
-                        emptyText="no cloud sessions"
-                    />
-                    <Group
-                        label="CI/CD"
-                        list={cicd}
-                        add={cmd.openRundeckSession}
-                        addTitle="Open Rundeck deploy center"
-                        emptyText="open rundeck deploy center"
-                    />
-                    <Group
-                        label="API"
-                        list={apis}
-                        add={() => cmd.openPicker("bruno")}
-                        addTitle={`Open Bruno workspace — ${kb("bruno.open")}`}
-                        addKbd={kb("bruno.open")}
-                        emptyText="open a bruno workspace"
-                    />
+                    <Group label="Plugins" list={plugins} emptyText="no plugins" openers={openers} className="rail-logos" />
                     <Group label="Command" list={commands} add={cmd.createCommandSession} addTitle="New command session" emptyText="no commands" />
                 </div>
 
