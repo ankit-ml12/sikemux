@@ -20,10 +20,6 @@ function isTerminalKeyTarget(e: KeyboardEvent): boolean {
 
 const TEXT_SCALE_STEP = 0.1;
 
-/* Text-size shortcuts resize whatever the reader is looking at: the chat
-   transcript, the code editor, or — anywhere else — every terminal. Falls back
-   to the focused element for the synthetic event the command deck sends, which
-   carries no target of its own. */
 function isChatKeyTarget(e: KeyboardEvent): boolean {
     return keyTargetIn(e, ".agent-chat-pane");
 }
@@ -32,6 +28,7 @@ function isEditorKeyTarget(e: KeyboardEvent): boolean {
     return keyTargetIn(e, ".cm-editor");
 }
 
+// The command deck sends a synthetic event with no target, so the focused element stands in.
 function keyTargetIn(e: KeyboardEvent, selector: string): boolean {
     const target = e.target instanceof Element ? e.target : document.activeElement;
     return !!target?.closest?.(selector);
@@ -158,17 +155,17 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "pane.close":
             cmd.closeActiveFocusTarget();
             return true;
-        case "terminal.fontIncrease":
+        case "text.sizeIncrease":
             if (isChatKeyTarget(event)) cmd.adjustChatTextScale(TEXT_SCALE_STEP);
             else if (isEditorKeyTarget(event)) cmd.adjustEditorTextScale(TEXT_SCALE_STEP);
             else cmd.adjustTerminalFontSize(1);
             return true;
-        case "terminal.fontDecrease":
+        case "text.sizeDecrease":
             if (isChatKeyTarget(event)) cmd.adjustChatTextScale(-TEXT_SCALE_STEP);
             else if (isEditorKeyTarget(event)) cmd.adjustEditorTextScale(-TEXT_SCALE_STEP);
             else cmd.adjustTerminalFontSize(-1);
             return true;
-        case "terminal.fontReset":
+        case "text.sizeReset":
             if (isChatKeyTarget(event)) cmd.resetChatTextScale();
             else if (isEditorKeyTarget(event)) cmd.resetEditorTextScale();
             else cmd.resetTerminalFontSize();

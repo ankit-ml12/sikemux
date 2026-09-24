@@ -250,11 +250,8 @@
 }
 
 .agent-chat-pane {
-    /* Every text size in this pane goes through this one multiplier. It is
-       deliberately NOT multiplied by the app-wide text scale: stacking the two
-       made the transcript 1.5x when Settings said 1.25 and the reader had
-       pressed zoom twice, and no single key could undo it. Here ⌘0 always
-       returns the transcript to exactly its designed size. */
+    /* Not multiplied by the app-wide text scale, so ⌘0 always returns the
+       transcript to exactly its designed size. */
     --chat-text-em: var(--chat-text-scale, 1);
     --text-3xs: calc(10px * var(--chat-text-em));
     --text-2xs: calc(11px * var(--chat-text-em));

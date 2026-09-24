@@ -8,9 +8,7 @@ export function clampChatTextScale(value: number): number {
     return Math.min(MAX_CHAT_TEXT_SCALE, Math.max(MIN_CHAT_TEXT_SCALE, rounded));
 }
 
-/* Read by `--chat-text-em` in chat.css, which every text size in the transcript
-   is multiplied by. Set on the root so panes mounted later start at the size
-   the user already chose. */
+// Set on the root so a chat opened later starts at the chosen size.
 export function applyChatTextScale(value: number): void {
     document.documentElement.style.setProperty("--chat-text-scale", String(clampChatTextScale(value)));
 }

@@ -5,8 +5,7 @@ import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 import { tags as t } from "@lezer/highlight";
 import type { Theme } from "../themes";
 
-/* Both the content and the root carry it: the gutter takes its size from the
-   root, so scaling only the content would leave the line numbers behind. */
+// The root carries it too: the line-number gutter sizes from the root, not the content.
 const EDITOR_FONT_SIZE = "calc(13px * var(--editor-text-scale, 1))";
 
 export function buildEditorThemeExtensions(theme: Theme): Extension {

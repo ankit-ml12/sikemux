@@ -8,9 +8,7 @@ export function clampEditorTextScale(value: number): number {
     return Math.min(MAX_EDITOR_TEXT_SCALE, Math.max(MIN_EDITOR_TEXT_SCALE, rounded));
 }
 
-/* Read by the CodeMirror theme's font size. Set on the root so an editor opened
-   later starts at the size the reader already chose, and so changing it costs a
-   style recalculation rather than a rebuilt extension. */
+// Set on the root so an editor opened later starts at the chosen size, without rebuilding its theme.
 export function applyEditorTextScale(value: number): void {
     document.documentElement.style.setProperty("--editor-text-scale", String(clampEditorTextScale(value)));
 }

@@ -27,9 +27,7 @@ export function registerTerminalFontSize(entry: RegisteredTerminal): () => void 
     return () => terms.delete(entry);
 }
 
-/* A new font size changes the cell size, so the character grid no longer matches
-   the pane. Each terminal has to refit and tell its PTY the new rows and columns,
-   otherwise the shell keeps drawing to the old grid. */
+// A new cell size needs a refit, or the shell keeps drawing to the old grid.
 export function applyTerminalFontSize(value: number): void {
     current = clampTerminalFontSize(value);
     terms.forEach(({ term, refit }) => {
