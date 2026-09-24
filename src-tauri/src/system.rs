@@ -550,7 +550,10 @@ fn current_fd_count() -> Option<usize> {
     None
 }
 
+// `rlim_t` is `u64` on macOS but narrower on some other Unix targets, so the
+// cast is needed there even though it is a no-op here.
 #[cfg(unix)]
+#[allow(clippy::unnecessary_cast)]
 fn current_fd_limit() -> (Option<u64>, Option<u64>) {
     unsafe {
         let mut lim = std::mem::zeroed::<libc::rlimit>();
