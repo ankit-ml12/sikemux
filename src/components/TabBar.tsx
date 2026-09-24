@@ -142,7 +142,7 @@ export function TabBar({
         : tabs.map((tab, index) => ({ tab, index }));
 
     return (
-        <div ref={scrollRef} className={`tabbar v-${variant}`} role="tablist" aria-label={ariaLabel}>
+        <div ref={scrollRef} className={`tabbar v-${variant}${reorder.dragging ? " is-reordering" : ""}`} role="tablist" aria-label={ariaLabel}>
             {virtualized && <div aria-hidden="true" style={{ flex: `0 0 ${firstVirtual?.start ?? 0}px` }} />}
             {visibleTabs.map(({ tab: t, index }) => {
                 const closable = t.closable ?? !!onClose;

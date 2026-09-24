@@ -1,41 +1,57 @@
 import { describe, expect, it } from "vitest";
-import { resolveTabDrop, type TabBox } from "./tabDrag";
+import { allowedSlot, clampTravel, dropForSlot, settleOffset, slideFor, slotAt, type TabBox } from "./tabDrag";
 
 // Four 100px tabs side by side: a 0–100, b 100–200, c 200–300, d 300–400.
 const boxes: TabBox[] = ["a", "b", "c", "d"].map((id, i) => ({ id, left: i * 100, right: i * 100 + 100 }));
 
-describe("where a dragged tab lands", () => {
-    it("drops before a tab when over its left half and after it over the right", () => {
-        expect(resolveTabDrop(310, boxes, "a")).toEqual({ targetId: "d", placement: "before" });
-        expect(resolveTabDrop(390, boxes, "a")).toEqual({ targetId: "d", placement: "after" });
+describe("sliding a dragged tab through the strip", () => {
+    it("passes a neighbour once its leading edge crosses the neighbour's middle", () => {
+        expect(slotAt(boxes, 0, 40)).toBe(0); // right edge at 140, short of b's middle (150)
+        expect(slotAt(boxes, 0, 60)).toBe(1);
+        expect(slotAt(boxes, 3, -60)).toBe(2); // left edge at 240, past c's middle (250)
+        expect(slotAt(boxes, 1, 0)).toBe(1);
     });
 
-    it("treats past either end of the strip as that end", () => {
-        expect(resolveTabDrop(-40, boxes, "c")).toEqual({ targetId: "a", placement: "before" });
-        expect(resolveTabDrop(900, boxes, "a")).toEqual({ targetId: "d", placement: "after" });
+    it("reaches either end of the strip without leaving it", () => {
+        expect(slotAt(boxes, 0, clampTravel(boxes, 0, 900))).toBe(3);
+        expect(slotAt(boxes, 3, clampTravel(boxes, 3, -900))).toBe(0);
     });
 
-    it("shows nothing while the pointer is over the dragged tab itself", () => {
-        expect(resolveTabDrop(150, boxes, "b")).toBeNull();
+    it("lets a wide tab pass a narrow one at the end", () => {
+        const uneven: TabBox[] = [
+            { id: "wide", left: 0, right: 200 },
+            { id: "narrow", left: 200, right: 280 },
+        ];
+        expect(slotAt(uneven, 0, clampTravel(uneven, 0, 900))).toBe(1);
     });
 
-    it("shows nothing for a drop that would leave the tab where it is", () => {
-        expect(resolveTabDrop(90, boxes, "b")).toBeNull(); // after a, which b already follows
-        expect(resolveTabDrop(210, boxes, "b")).toBeNull(); // before c, which b already precedes
+    it("turns a slot into the drop that lands there", () => {
+        expect(dropForSlot(boxes, 0, 2)).toEqual({ targetId: "c", placement: "after" });
+        expect(dropForSlot(boxes, 3, 1)).toEqual({ targetId: "b", placement: "before" });
+        expect(dropForSlot(boxes, 1, 1)).toBeNull();
     });
 
-    it("still moves a tab one place over a neighbour's far half", () => {
-        expect(resolveTabDrop(10, boxes, "b")).toEqual({ targetId: "a", placement: "before" });
-        expect(resolveTabDrop(290, boxes, "b")).toEqual({ targetId: "c", placement: "after" });
+    it("opens the gap by sliding only the tabs between start and slot", () => {
+        // a held over c: b and c slide left one width, d stays.
+        expect([1, 2, 3].map((i) => slideFor(i, 0, 2, 100))).toEqual([-100, -100, 0]);
+        // d held over b: b and c slide right, a stays.
+        expect([0, 1, 2].map((i) => slideFor(i, 3, 1, 100))).toEqual([0, 100, 100]);
     });
 
-    it("respects a drop the caller rules out", () => {
-        const onlyAfterD = (_s: string, target: string, placement: string) => target === "d" && placement === "after";
-        expect(resolveTabDrop(310, boxes, "a", onlyAfterD)).toBeNull();
-        expect(resolveTabDrop(390, boxes, "a", onlyAfterD)).toEqual({ targetId: "d", placement: "after" });
+    it("settles the dragged tab exactly into its slot", () => {
+        expect(settleOffset(boxes, 0, 2)).toBe(200);
+        expect(settleOffset(boxes, 3, 1)).toBe(-200);
+        expect(settleOffset(boxes, 2, 2)).toBe(0);
     });
 
-    it("has nowhere to land in an empty strip", () => {
-        expect(resolveTabDrop(50, [], "a")).toBeNull();
+    it("stops at the last slot the owner allows", () => {
+        const notPastC = (_s: string, target: string) => target !== "d";
+        expect(allowedSlot(boxes, 0, 3, notPastC)).toBe(2);
+        expect(allowedSlot(boxes, 0, 3, () => false)).toBe(0);
+    });
+
+    it("keeps the dragged tab within the strip", () => {
+        expect(clampTravel(boxes, 1, 900)).toBe(200); // b's right edge stops at d's
+        expect(clampTravel(boxes, 1, -900)).toBe(-100); // b's left edge stops at a's
     });
 });
