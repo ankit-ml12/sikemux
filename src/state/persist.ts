@@ -1,10 +1,11 @@
 import { invokeCommand as invoke } from "../api/invoke";
 import { sshStartup } from "../terminal/sshStartup";
-import { isBuiltinTheme, isTheme } from "../themes";
+import { isTheme } from "../themes";
 import { normaliseKeybindingOverrides } from "../keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
 import { normalizePermissionMode } from "../agentLaunch";
+import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentPaneId } from "./selectors";
 import { collectPanes, removePane } from "./layout";
@@ -13,7 +14,8 @@ import { agentDirectCommand, agentStartup } from "./commands";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
-import { validatePersistedLayout } from "./persistValidation";
+import { isSessionKind, validatePersistedLayout } from "./persistValidation";
+import { isPluginId, isPluginKind } from "../plugins/kinds";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
@@ -21,9 +23,9 @@ import type {
     AgentProvider,
     AgentType,
     BrowserPaneView,
+    CorePaneKind,
     EditorPaneView,
     LayoutNode,
-    PaneKind,
     PersistedAgent,
     PersistedPrefs,
     PersistedSession,
@@ -37,20 +39,21 @@ import type {
 } from "./types";
 
 function deriveRole(w: Window): WindowRole {
-    if (WINDOW_ROLES.has(w.role)) return w.role;
+    if (WINDOW_ROLES.has(w.role) || isPluginKind(w.role)) return w.role;
     if (w.name === "files") return "files";
     if (w.name === "git") return "git";
     if (w.name === "aws") return "aws";
-    if (w.name === "rundeck") return "rundeck";
     if (w.name === "bruno") return "bruno";
     if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
     return "named";
 }
 
-export const VERSION = 9;
+export const VERSION = 11;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
+const PLUGIN_KIND_MIGRATION_VERSION = 10;
+const PLUGIN_SETTINGS_MIGRATION_VERSION = 11;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -75,9 +78,6 @@ const PERSISTED_KEYS = [
     "projectRoots",
     "brunoWorkspaces",
     "themeId",
-    "themeMode",
-    "systemLightThemeId",
-    "systemDarkThemeId",
     "customThemes",
     "uiTextScale",
     "windowOpacity",
@@ -89,8 +89,10 @@ const PERSISTED_KEYS = [
     "awsService",
     "sideRailOpen",
     "agentRailOpen",
+    "sideRailWidth",
+    "agentRailWidth",
     "zenMode",
-    "rundeck",
+    "pluginSettings",
     "restoreAgentTabs",
     "railDensity",
     "onboardingComplete",
@@ -124,9 +126,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         projectRoots: s.projectRoots,
         brunoWorkspaces: s.brunoWorkspaces,
         themeId: s.themeId,
-        themeMode: s.themeMode,
-        systemLightThemeId: s.systemLightThemeId,
-        systemDarkThemeId: s.systemDarkThemeId,
         customThemes: s.customThemes,
         uiTextScale: s.uiTextScale,
         windowOpacity: s.windowOpacity,
@@ -138,8 +137,10 @@ function packPrefs(s: StoreState): PersistedPrefs {
         awsService: s.awsService,
         sideRailOpen: s.sideRailOpen,
         agentRailOpen: s.agentRailOpen,
+        sideRailWidth: s.sideRailWidth,
+        agentRailWidth: s.agentRailWidth,
         zenMode: s.zenMode,
-        rundeck: s.rundeck,
+        pluginSettings: s.pluginSettings,
         restoreAgentTabs: s.restoreAgentTabs,
         railDensity: s.railDensity,
         onboardingComplete: s.onboardingComplete,
@@ -162,20 +163,13 @@ function mergeBrunoWorkspaces(saved: string[] | undefined, sessions: Session[]):
     return out;
 }
 
-const SESSION_KINDS = new Set<Session["kind"]>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
-const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "aws", "rundeck", "bruno", "ssh-config", "named", "agent"]);
+const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "aws", "bruno", "ssh-config", "named", "agent"]);
 const AWS_SERVICES = new Set<StoreState["awsService"]>(["ecs", "ec2", "lambda", "sqs", "billing", "s3"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function isThemeId(value: string, customThemes: unknown): boolean {
-    if (isBuiltinTheme(value)) return true;
-    return Array.isArray(customThemes) && customThemes.some((theme) => isTheme(theme) && theme.id === value);
-}
-
-const COMMAND_CONTEXTS = new Set<CommandContext>(["project", "command", "ssh", "aws", "rundeck", "bruno"]);
 const COMMAND_PLACEMENTS = new Set<CustomCommandPlacement>(["background", "terminal", "split", "popup", "replace"]);
 
 function normaliseCustomCommands(value: unknown): CustomCommand[] {
@@ -186,9 +180,7 @@ function normaliseCustomCommands(value: unknown): CustomCommand[] {
         if (!isRecord(row) || typeof row.id !== "string" || !row.id || seen.has(row.id)) continue;
         if (typeof row.title !== "string" || !row.title.trim() || typeof row.command !== "string" || !row.command.trim()) continue;
         if (!COMMAND_PLACEMENTS.has(row.placement as CustomCommandPlacement)) continue;
-        const contexts = Array.isArray(row.contexts)
-            ? row.contexts.filter((v): v is CommandContext => COMMAND_CONTEXTS.has(v as CommandContext))
-            : [];
+        const contexts = Array.isArray(row.contexts) ? row.contexts.filter((v): v is CommandContext => isSessionKind(v)) : [];
         seen.add(row.id);
         commands.push({
             id: row.id.slice(0, 100),
@@ -248,25 +240,18 @@ function toSession(value: unknown): Session | null {
     if (
         typeof value.id !== "string" ||
         typeof value.name !== "string" ||
-        !SESSION_KINDS.has(value.kind as Session["kind"]) ||
+        !isSessionKind(value.kind) ||
         typeof value.cwd !== "string" ||
         typeof value.pinned !== "boolean" ||
         typeof value.activeWindowId !== "string"
     ) {
         return null;
     }
-    const deploy =
-        isRecord(value.deploy) &&
-        typeof value.deploy.project === "string" &&
-        (value.deploy.folder === null || typeof value.deploy.folder === "string")
-            ? { project: value.deploy.project, folder: value.deploy.folder }
-            : null;
     const session: Session = {
         id: value.id,
         name: value.name,
         kind: value.kind as Session["kind"],
         cwd: value.cwd,
-        deploy,
         pinned: value.pinned,
         activeWindowId: value.activeWindowId,
     };
@@ -283,7 +268,7 @@ function toSession(value: unknown): Session | null {
 }
 
 function isRecent(value: unknown): value is RecentEntry {
-    return isRecord(value) && SESSION_KINDS.has(value.kind as Session["kind"]) && typeof value.name === "string" && typeof value.cwd === "string";
+    return isRecord(value) && isSessionKind(value.kind) && typeof value.name === "string" && typeof value.cwd === "string";
 }
 
 const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode", "omp", "grok"]);
@@ -435,7 +420,7 @@ function durableWindow(s: StoreState, id: string): Window | null {
 }
 
 /** One malformed item must not cost every other item, or the layout, its save. */
-function encodeItemState<Kind extends PaneKind>(
+function encodeItemState<Kind extends CorePaneKind>(
     itemStates: NonNullable<PersistedSnapshot["itemStates"]>,
     itemId: string,
     kind: Kind,
@@ -566,6 +551,48 @@ export function flushPersist(): Promise<boolean> {
     return startSaveLoop();
 }
 
+/** Before v10 Rundeck was built in, and its sessions, windows, panes and command contexts were plain "rundeck". */
+const LEGACY_PLUGIN_KINDS: ReadonlyMap<unknown, string> = new Map([["rundeck", "sikemux.rundeck:deploy"]]);
+
+function renameLegacyPluginKinds(decoded: Record<string, unknown>): void {
+    const rename = (value: unknown) => LEGACY_PLUGIN_KINDS.get(value) ?? value;
+    for (const row of Array.isArray(decoded.sessions) ? decoded.sessions : []) if (isRecord(row)) row.kind = rename(row.kind);
+    const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
+    for (const rows of Object.values(windowsBySession)) {
+        for (const row of Array.isArray(rows) ? rows : []) {
+            if (!isRecord(row)) continue;
+            row.role = rename(row.role);
+            const pending: unknown[] = [row.root];
+            for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+                if (!isRecord(node)) continue;
+                if (node.type === "pane") node.kind = rename(node.kind);
+                else if (Array.isArray(node.children)) for (const child of node.children) pending.push(child);
+            }
+        }
+    }
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    for (const command of Array.isArray(prefs.customCommands) ? prefs.customCommands : []) {
+        if (isRecord(command) && Array.isArray(command.contexts)) command.contexts = command.contexts.map(rename);
+    }
+}
+
+/** Before v11 Rundeck's settings sat among core's, and each session kept the deploy location picked for its folder. */
+function moveRundeckSettings(decoded: Record<string, unknown>): void {
+    const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
+    const deployTargets: Record<string, unknown> = {};
+    for (const row of Array.isArray(decoded.sessions) ? decoded.sessions : []) {
+        if (isRecord(row) && typeof row.cwd === "string" && row.cwd && isRecord(row.deploy)) deployTargets[row.cwd] = row.deploy;
+    }
+    const legacy = isRecord(prefs.rundeck) ? prefs.rundeck : {};
+    const pluginSettings = isRecord(prefs.pluginSettings) ? prefs.pluginSettings : {};
+    decoded.prefs = { ...prefs, pluginSettings: { ...pluginSettings, "sikemux.rundeck": { ...legacy, deployTargets } } };
+}
+
+function normalisePluginSettings(value: unknown): Record<string, unknown> {
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([id]) => isPluginId(id)));
+}
+
 export type HydrationResult = "empty" | "applied" | "invalid" | "unsupported-future";
 
 export function hydrationAllowsPersistence(result: HydrationResult): boolean {
@@ -584,6 +611,8 @@ export function applyHydrate(raw: string): HydrationResult {
     if (decoded.version > VERSION) return "unsupported-future";
     if (decoded.version < MIN_SUPPORTED_VERSION) return "invalid";
     if (!Array.isArray(decoded.sessions)) return "invalid";
+    if (decoded.version < PLUGIN_KIND_MIGRATION_VERSION) renameLegacyPluginKinds(decoded);
+    if (decoded.version < PLUGIN_SETTINGS_MIGRATION_VERSION) moveRundeckSettings(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
@@ -744,8 +773,6 @@ export function applyHydrate(raw: string): HydrationResult {
     for (const sid of Object.keys(sessions)) if (!sessionOrder.includes(sid)) sessionOrder.push(sid);
     const requestedActive = typeof decoded.activeSessionId === "string" ? decoded.activeSessionId : "";
     const activeSessionId = sessions[requestedActive] ? requestedActive : sessionOrder[0];
-    const rundeck = isRecord(prefs.rundeck) ? prefs.rundeck : {};
-    const prodEnvs = Array.isArray(rundeck.prodEnvs) ? rundeck.prodEnvs.filter((v): v is string => typeof v === "string") : cur.rundeck.prodEnvs;
 
     setState({
         sessions,
@@ -772,15 +799,6 @@ export function applyHydrate(raw: string): HydrationResult {
             Object.values(sessions),
         ),
         themeId: typeof prefs.themeId === "string" ? prefs.themeId : cur.themeId,
-        themeMode: prefs.themeMode === "system" || prefs.themeMode === "manual" ? prefs.themeMode : cur.themeMode,
-        systemLightThemeId:
-            typeof prefs.systemLightThemeId === "string" && isThemeId(prefs.systemLightThemeId, prefs.customThemes)
-                ? prefs.systemLightThemeId
-                : cur.systemLightThemeId,
-        systemDarkThemeId:
-            typeof prefs.systemDarkThemeId === "string" && isThemeId(prefs.systemDarkThemeId, prefs.customThemes)
-                ? prefs.systemDarkThemeId
-                : cur.systemDarkThemeId,
         customThemes: Array.isArray(prefs.customThemes) ? prefs.customThemes.filter(isTheme) : cur.customThemes,
         uiTextScale: typeof prefs.uiTextScale === "number" && [1, 1.1, 1.25].includes(prefs.uiTextScale) ? prefs.uiTextScale : cur.uiTextScale,
         windowOpacity: typeof prefs.windowOpacity === "number" && Number.isFinite(prefs.windowOpacity) ? prefs.windowOpacity : cur.windowOpacity,
@@ -792,12 +810,16 @@ export function applyHydrate(raw: string): HydrationResult {
         awsService: AWS_SERVICES.has(prefs.awsService as StoreState["awsService"]) ? (prefs.awsService as StoreState["awsService"]) : cur.awsService,
         sideRailOpen: typeof prefs.sideRailOpen === "boolean" ? prefs.sideRailOpen : cur.sideRailOpen,
         agentRailOpen: typeof prefs.agentRailOpen === "boolean" ? prefs.agentRailOpen : cur.agentRailOpen,
+        sideRailWidth:
+            typeof prefs.sideRailWidth === "number" && Number.isFinite(prefs.sideRailWidth)
+                ? clampRailWidth("start", prefs.sideRailWidth)
+                : cur.sideRailWidth,
+        agentRailWidth:
+            typeof prefs.agentRailWidth === "number" && Number.isFinite(prefs.agentRailWidth)
+                ? clampRailWidth("end", prefs.agentRailWidth)
+                : cur.agentRailWidth,
         zenMode: typeof prefs.zenMode === "boolean" ? prefs.zenMode : cur.zenMode,
-        rundeck: {
-            activeProject: typeof rundeck.activeProject === "string" ? rundeck.activeProject : "",
-            activeEnvFolder: rundeck.activeEnvFolder === null || typeof rundeck.activeEnvFolder === "string" ? rundeck.activeEnvFolder : null,
-            prodEnvs,
-        },
+        pluginSettings: normalisePluginSettings(prefs.pluginSettings),
         restoreAgentTabs,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         onboardingComplete:

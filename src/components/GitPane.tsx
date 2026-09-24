@@ -1072,6 +1072,12 @@ function GitWorkbench({ paneId, repo, active, onLeaveRepo }: { paneId: string; r
         return () => window.removeEventListener("keydown", onKey, true);
     }, [active, branchInput, modalOpen]);
 
+    useEffect(() => {
+        const root = paneRootRef.current;
+        if (!active || !root || root.contains(document.activeElement)) return;
+        (root.querySelector<HTMLElement>(".git-panel.focused .git-row.sel, .git-panel.focused .gg-row.sel") ?? root).focus({ preventScroll: true });
+    }, [active]);
+
     const focusKey = `${panel}:${sel[panel]}:${remoteDrill ?? ""}:${remoteBranchSel}`;
     useEffect(() => {
         if (!document.activeElement?.closest(".git-row, .gg-row")) return;
@@ -1105,7 +1111,7 @@ function GitWorkbench({ paneId, repo, active, onLeaveRepo }: { paneId: string; r
     const commitEmptyText = overviewError ?? (commitQuery ? `Nothing matches "${commitQuery}".` : "No commits on this branch yet.");
 
     return (
-        <div ref={paneRootRef} className="git-pane">
+        <div ref={paneRootRef} className="git-pane" tabIndex={-1}>
             <div className="git-toolbar">
                 {onLeaveRepo && (
                     <button type="button" className="git-tbtn git-tb-back" onClick={onLeaveRepo} title="Back to the repositories in this folder">

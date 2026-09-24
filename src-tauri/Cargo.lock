@@ -4217,9 +4217,14 @@ dependencies = [
  "reqwest 0.12.28",
  "rusqlite",
  "rustix",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
+ "sikemux-plugin-api",
+ "sikemux-plugin-rundeck",
+ "sikemux-plugin-signoz",
+ "sikemux-process",
  "similar",
  "tauri",
  "tauri-build",
@@ -4236,6 +4241,52 @@ dependencies = [
  "url",
  "uuid",
  "vt100",
+]
+
+[[package]]
+name = "sikemux-plugin-api"
+version = "0.1.0"
+dependencies = [
+ "semver",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sikemux-plugin-rundeck"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "git2",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "sikemux-plugin-signoz"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "sikemux-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

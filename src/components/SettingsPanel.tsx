@@ -20,7 +20,9 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, THEMES_BY_ID, type Theme, type ThemeGroupKey } from "../themes";
+import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
+import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
+import { ThemePicker } from "./ThemePicker";
 import {
     IconAgent,
     IconCheck,
@@ -30,7 +32,6 @@ import {
     IconFolder,
     IconGlobe,
     IconInfo,
-    IconPencil,
     IconPlus,
     IconRefresh,
     IconRun,
@@ -39,7 +40,7 @@ import {
     IconTrash,
     IconWindow,
 } from "./Icons";
-import { Dropdown, type DropdownOption } from "./Dropdown";
+import { Dropdown } from "./Dropdown";
 import { Checkbox, Slider, Switch } from "./Controls";
 import { Tooltip } from "./Tooltip";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
@@ -54,6 +55,7 @@ import {
     type SettingsEntry,
     type SettingsPageId,
 } from "../settingsIndex";
+import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
@@ -338,7 +340,7 @@ function SearchResults({ query, results, active, onHover, onOpen }: SearchResult
     );
 }
 
-const COMMAND_CONTEXT_OPTIONS: CommandContext[] = ["project", "command", "ssh", "aws", "rundeck", "bruno"];
+const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh", "aws", "bruno"];
 const COMMAND_PLACEMENTS: CustomCommandPlacement[] = ["terminal", "split", "popup", "background", "replace"];
 
 function blankCommand(): CustomCommand {
@@ -347,6 +349,14 @@ function blankCommand(): CustomCommand {
 
 function ActionsPage() {
     const commands = useStore((s) => s.customCommands);
+    const pluginManifests = useStore((s) => s.pluginManifests);
+    const contextOptions = useMemo(
+        () => [
+            ...CORE_COMMAND_CONTEXTS,
+            ...pluginManifests.flatMap((manifest) => frontendPlugin(manifest.id)?.surfaces.map((surface) => surface.kind) ?? []),
+        ],
+        [pluginManifests],
+    );
     const [draft, setDraft] = useState<CustomCommand>(() => blankCommand());
     const editing = commands.some((item) => item.id === draft.id);
     const save = () => {
@@ -417,7 +427,7 @@ function ActionsPage() {
                     </SettingsRow>
                     <SettingsRow label="Contexts" desc="Leave all unticked to offer it everywhere." stack>
                         <div className="command-contexts">
-                            {COMMAND_CONTEXT_OPTIONS.map((context) => (
+                            {contextOptions.map((context) => (
                                 <Checkbox
                                     key={context}
                                     checked={draft.contexts.includes(context)}
@@ -427,7 +437,7 @@ function ActionsPage() {
                                             contexts: on ? [...draft.contexts, context] : draft.contexts.filter((item) => item !== context),
                                         })
                                     }>
-                                    {context}
+                                    {pluginSurface(context)?.title ?? context}
                                 </Checkbox>
                             ))}
                         </div>
@@ -752,14 +762,17 @@ function AboutPage() {
         <SettingsPage>
             <SettingsSection title="Updates">
                 <SettingsRows>
-                    <SettingsRow label="Channel" desc="Stable follows the latest signed release; nightly the newest prerelease." wide>
+                    <SettingsRow
+                        label="Channel"
+                        desc="Stable follows the latest signed release; nightly the newest build, prerelease or stable."
+                        wide>
                         <Dropdown
                             className="settings-dd"
                             label="update channel"
                             value={updateChannel}
                             options={[
                                 { value: "stable", label: "Stable", detail: "Latest signed release" },
-                                { value: "nightly", label: "Nightly", detail: "Newest signed prerelease build" },
+                                { value: "nightly", label: "Nightly", detail: "Newest signed build, prerelease or stable" },
                             ]}
                             onChange={(value) => cmd.setUpdateChannel(value as "stable" | "nightly")}
                         />
@@ -1137,18 +1150,6 @@ interface ThemeEdit {
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = useStore((state) => state.uiTextScale);
     const customThemes = useStore((s) => s.customThemes);
-    /** Themes matching the requested appearance, plus the current pick so it stays selectable. */
-    const themeOptions = (dark: boolean, selectedId: string): DropdownOption[] =>
-        [...THEMES, ...customThemes]
-            .filter((theme) => theme.dark === dark || theme.id === selectedId)
-            .map((theme) => ({
-                value: theme.id,
-                label: theme.name,
-                ...(customThemes.some((candidate) => candidate.id === theme.id) ? { detail: "custom" } : {}),
-            }));
-    const themeMode = useStore((s) => s.themeMode);
-    const systemLightThemeId = useStore((s) => s.systemLightThemeId);
-    const systemDarkThemeId = useStore((s) => s.systemDarkThemeId);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
 
@@ -1171,9 +1172,21 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
             baseName: src.name,
         });
 
-    const editCustom = (src: Theme) => openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
+    const [readingWallpaper, setReadingWallpaper] = useState(false);
+    const fromWallpaper = async () => {
+        setReadingWallpaper(true);
+        try {
+            const wallpaper = await settingsApi.wallpaperImage();
+            const theme = themeFromColours(wallpaperTheme(await wallpaperPixels(wallpaper.dataUrl), `${wallpaper.name} wallpaper`));
+            openEditor({ theme: cloneTheme(theme, { id: newCustomThemeId() }), original: cloneTheme(theme), isNew: true, baseName: theme.name });
+        } catch (error) {
+            reportError("Theme from wallpaper")(error);
+        } finally {
+            setReadingWallpaper(false);
+        }
+    };
 
-    const newFromActive = () => customizeFrom(THEMES_BY_ID[themeId] ?? customThemes.find((t) => t.id === themeId) ?? THEMES[0]);
+    const editCustom = (src: Theme) => openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
 
     const closeEditor = () => {
         setEdit(null);
@@ -1186,86 +1199,21 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
         setEdit(null);
     };
 
-    const renderCard = (th: Theme, custom: boolean) => {
-        const active = th.id === themeId;
-        const editing = edit?.theme.id === th.id;
-        return (
-            <div key={th.id} className={`settings-theme${active ? " active" : ""}${editing ? " editing" : ""}`}>
-                <button className="settings-theme-hit" onClick={() => cmd.setThemeId(th.id)} title={`Apply ${th.name}`} type="button">
-                    {/* The theme's own ground. `editor.bg` is "transparent" in every theme —
-                        the editor sits on the chrome — so using it painted nothing and left
-                        all ten swatches showing the theme already applied. */}
-                    <div className="settings-theme-preview" style={{ background: th.chrome.bg, color: th.chrome.ink }}>
-                        <span className="settings-theme-preview-mark" style={{ color: th.chrome.acc }}>
-                            Aa
-                        </span>
-                        <span className="settings-theme-preview-code" style={{ color: th.highlight.comment }}>
-                            // make it yours
-                        </span>
-                    </div>
-                    <div className="settings-theme-body">
-                        <div className="settings-theme-name-row">
-                            <span className="settings-theme-name">{th.name}</span>
-                            {active ? (
-                                <span className="settings-theme-current">Current</span>
-                            ) : (
-                                custom && <span className="settings-theme-badge">Custom</span>
-                            )}
-                        </div>
-                        <div className="settings-swatches">
-                            <span style={{ background: th.terminal.red }} />
-                            <span style={{ background: th.terminal.green }} />
-                            <span style={{ background: th.terminal.yellow }} />
-                            <span style={{ background: th.terminal.blue }} />
-                            <span style={{ background: th.terminal.magenta }} />
-                            <span style={{ background: th.terminal.cyan }} />
-                        </div>
-                    </div>
-                </button>
-                <div className="settings-theme-actions">
-                    {custom ? (
-                        <>
-                            <button className="settings-theme-act" onClick={() => editCustom(th)} title="Edit theme" type="button">
-                                <IconPencil size={11} />
-                            </button>
-                            <button
-                                className="settings-theme-act danger"
-                                onClick={() => cmd.deleteCustomTheme(th.id)}
-                                title="Delete theme"
-                                type="button">
-                                <IconTrash size={11} />
-                            </button>
-                        </>
-                    ) : (
-                        <button className="settings-theme-act" onClick={() => customizeFrom(th)} title="Customize a copy" type="button">
-                            <IconPencil size={11} />
-                        </button>
-                    )}
-                </div>
-            </div>
-        );
-    };
-
     return (
         <SettingsPage>
             <SettingsSection
                 title="Theme"
                 meta={`${THEMES.length} built-in · ${customThemes.length} custom`}
-                sub="Applies instantly to chrome, editor and terminal. Hover a card to fork or delete it.">
-                <div className="settings-theme-grid">{THEMES.map((th) => renderCard(th, false))}</div>
-
-                {customThemes.length > 0 && (
-                    <>
-                        <div className="settings-theme-divider">your themes</div>
-                        <div className="settings-theme-grid">{customThemes.map((th) => renderCard(th, true))}</div>
-                    </>
-                )}
-
-                <div className="settings-actions start">
-                    <button className="settings-btn" onClick={newFromActive} type="button" title="Fork the active theme into a new editable copy">
-                        <IconPlus size={12} /> New from current
-                    </button>
-                </div>
+                sub="Applies instantly to chrome, editor and terminal. Arrow keys in the search step through the list.">
+                <ThemePicker
+                    themeId={themeId}
+                    customThemes={customThemes}
+                    editingId={edit?.theme.id}
+                    onCustomize={customizeFrom}
+                    onEdit={editCustom}
+                    onFromWallpaper={fromWallpaper}
+                    readingWallpaper={readingWallpaper}
+                />
             </SettingsSection>
 
             {edit && (
@@ -1290,41 +1238,6 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     />
                 </div>
             )}
-
-            <SettingsSection title="System appearance">
-                <SettingsRows>
-                    <SettingsRow
-                        label="Follow system light/dark"
-                        desc="Switches the moment the host appearance changes."
-                        asLabel
-                        control={
-                            <Switch
-                                checked={themeMode === "system"}
-                                onChange={(enabled) => cmd.setThemeMode(enabled ? "system" : "manual")}
-                                label="Follow system light/dark"
-                            />
-                        }
-                    />
-                    <SettingsRow label="Light appearance" wide>
-                        <Dropdown
-                            className="settings-dd"
-                            label="Light appearance"
-                            value={systemLightThemeId}
-                            options={themeOptions(false, systemLightThemeId)}
-                            onChange={cmd.setSystemLightThemeId}
-                        />
-                    </SettingsRow>
-                    <SettingsRow label="Dark appearance" wide>
-                        <Dropdown
-                            className="settings-dd"
-                            label="Dark appearance"
-                            value={systemDarkThemeId}
-                            options={themeOptions(true, systemDarkThemeId)}
-                            onChange={cmd.setSystemDarkThemeId}
-                        />
-                    </SettingsRow>
-                </SettingsRows>
-            </SettingsSection>
 
             <SettingsSection title="Interface">
                 <SettingsRows>

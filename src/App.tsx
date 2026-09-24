@@ -8,6 +8,7 @@ import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
 import { RailPeek } from "./components/RailPeek";
+import { RailResizer, useRailWidthVars } from "./components/RailResizer";
 import { AgentSessionSync } from "./components/AgentSessionSync";
 import { AgentLifecycleManager } from "./components/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./components/AgentPalettePortal";
@@ -16,7 +17,6 @@ import { NewTabPalette } from "./components/NewTabPalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
 import { AwsAuthModal } from "./components/aws/AwsAuthModal";
-import { RundeckJobPalette } from "./components/rundeck/RundeckJobPalette";
 import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
 import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
@@ -80,6 +80,9 @@ import {
 } from "./actions/bridge";
 import { projectControllerBridge } from "./projects/controllerBridge";
 import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
+import { pluginsApi } from "./api/plugins";
+import "./plugins/builtin";
+import { useInstalledPlugins } from "./plugins/installed";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -635,6 +638,7 @@ export default function App() {
     useBrowserDownloads();
     useBrowserReveal();
     useBrowserStrips();
+    useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
     const zen = useStore((s) => s.zenMode);
@@ -647,8 +651,8 @@ export default function App() {
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
-    const rundeckJobPaletteOpen = useStore((s) => s.rundeckJobPaletteOpen);
     const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
+    const installedPlugins = useInstalledPlugins();
     const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = useStore((s) => s.uiTextScale);
@@ -667,7 +671,6 @@ export default function App() {
             agentPaletteOpen ||
             filePaletteOpen ||
             newTabPaletteOpen ||
-            rundeckJobPaletteOpen ||
             brunoReqPaletteOpen ||
             brunoEnvPaletteOpen ||
             settingsOpen ||
@@ -690,6 +693,7 @@ export default function App() {
             const recorded = performanceTelemetry.endSpan(bootSpan, { outcome });
             if (recorded) performanceTelemetry.recordLatency("startup.boot", recorded.durationMs);
         };
+        void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
         invoke<BootInfo>("boot_init")
             .then((boot) => {
                 if (disposed) return;
@@ -701,7 +705,6 @@ export default function App() {
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
                     applyWindowOpacity(st.windowOpacity);
-                    if (st.themeMode === "system") cmd.applySystemTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
                     cmd.setWindowBlur(st.windowBlur);
                     if (hydrationAllowsPersistence(hydrationResult)) {
                         if (!st.onboardingComplete) cmd.openOnboarding();
@@ -728,7 +731,14 @@ export default function App() {
             .finally(() => {
                 const writable = hydrationResult !== null && hydrationAllowsPersistence(hydrationResult);
                 if (!disposed && writable) {
-                    workbenchRuntime.start();
+                    try {
+                        workbenchRuntime.start();
+                    } catch (error) {
+                        setBootIssue("Sikemux could not open the saved workspace. Nothing has been written; reload to retry.");
+                        finishBoot("error");
+                        swallow("workbench start")(error);
+                        return;
+                    }
                     unsub = subscribePersist();
                     setBootReady(true);
                 }
@@ -751,13 +761,6 @@ export default function App() {
             }),
         [],
     );
-
-    useEffect(() => {
-        const media = window.matchMedia("(prefers-color-scheme: dark)");
-        const apply = () => cmd.applySystemTheme(media.matches);
-        media.addEventListener("change", apply);
-        return () => media.removeEventListener("change", apply);
-    }, []);
 
     useEffect(() => {
         let disposed = false;
@@ -802,18 +805,13 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        return subscribe("rnd-auth-expired", () => {
-            invalidate((kind) => kind.startsWith("rnd."));
-        });
-    }, []);
-
-    useEffect(() => {
         return subscribe("aws-auth-expired", () => {
             invalidate((kind) => kind.startsWith("aws."));
         });
     }, []);
 
     useEffect(() => {
+        if (import.meta.env.DEV) return;
         const firstCheck = window.setTimeout(() => void checkForUpdate(), 4000);
         const poll = window.setInterval(() => void checkForUpdate(), 30 * 60_000);
         return () => {
@@ -906,6 +904,7 @@ export default function App() {
             <TopBar />
             <div className="body">
                 {sideRailVisible && <SideRail />}
+                {sideRailVisible && <RailResizer edge="start" />}
                 {!sideRailOpen && !zen && (
                     <RailPeek edge="start">
                         <SideRail />
@@ -920,6 +919,7 @@ export default function App() {
                     )}
                 </main>
                 {agentRailVisible && activeSessionIsProject && <AgentRail />}
+                {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
                 {!agentRailOpen && !zen && activeSessionIsProject && (
                     <RailPeek edge="end">
                         <AgentRail />
@@ -930,7 +930,7 @@ export default function App() {
             {agentPaletteOpen && <AgentPalette />}
             {filePaletteOpen && <FilePalette />}
             {newTabPaletteOpen && <NewTabPalette />}
-            {rundeckJobPaletteOpen && <RundeckJobPalette />}
+            {installedPlugins.map(({ id, Overlay }) => (Overlay ? <Overlay key={id} /> : null))}
             {brunoReqPaletteOpen && <BrunoRequestPalette />}
             {brunoEnvPaletteOpen && <BrunoEnvPalette />}
             {awsAuthModal && <AwsAuthModal />}

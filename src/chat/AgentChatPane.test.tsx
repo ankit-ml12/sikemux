@@ -24,7 +24,10 @@ const mocks = vi.hoisted(() => ({
     pathKinds: vi.fn(async (paths: string[]): Promise<(string | null)[]> => paths.map(() => null)),
     revealInFinder: vi.fn(async () => {}),
     requestOpenFile: vi.fn(),
+    sessionContext: vi.fn(async (): Promise<{ used: number; size: number | null } | null> => null),
 }));
+
+vi.mock("../api/agents", () => ({ agentApi: { sessionContext: mocks.sessionContext } }));
 
 vi.mock("../api/fs", () => ({
     fsapi: {
@@ -164,11 +167,11 @@ afterEach(cleanup);
 
 /* The virtualizer keeps a row out of the DOM until the scroller has a size,
    and jsdom measures everything as nothing. */
-async function openTranscript(): Promise<void> {
+async function openTranscript(prompt = "Look at the styles"): Promise<void> {
     render(<AgentChatPane agent={{ ...agent, model: "gpt-6-astra" }} cwd="/repo" active visible onBusyChange={() => {}} />);
     const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
     await waitFor(() => expect(editor.placeholder).toContain("Ask about this project"));
-    fireEvent.change(editor, { target: { value: "Look at the styles" } });
+    fireEvent.change(editor, { target: { value: prompt } });
     fireEvent.keyDown(editor, { key: "Enter" });
     const scroller = document.querySelector(".chat-scroll") as HTMLElement;
     fakeScroller(scroller, 400);
@@ -197,6 +200,23 @@ describe("AgentChatPane", () => {
         expect(await screen.findByRole("button", { name: "Allow hidden tool" })).toBeInTheDocument();
     });
 
+    it("shows a resumed session's saved context until the agent reports its own", async () => {
+        mocks.sessionContext.mockResolvedValueOnce({ used: 84_000, size: null });
+        mocks.start.mockResolvedValueOnce({
+            sessionId: "session-1",
+            capabilities: {},
+            setup: { configOptions: [{ id: "model", type: "select", currentValue: "opus[1m]", options: [] }] },
+        });
+        const claude: Agent = { ...agent, type: "claude", startup: "claude", resumeId: "saved-1" };
+        render(<AgentChatPane agent={claude} cwd="/repo" active onBusyChange={() => {}} />);
+
+        expect(await screen.findByRole("img", { name: "Context window 8% used" })).toBeInTheDocument();
+        expect(mocks.sessionContext).toHaveBeenCalledWith("claude", "/repo", "saved-1", undefined);
+
+        emit("session_update", { sessionId: "session-1", update: { sessionUpdate: "usage_update", used: 150_000, size: 200_000 } });
+        expect(await screen.findByRole("img", { name: "Context window 75% used" })).toBeInTheDocument();
+    });
+
     it("keeps the harness editable for a loaded session without messages", async () => {
         render(<AgentChatPane agent={{ ...agent, resumeId: "empty-session" }} cwd="/repo" active onBusyChange={() => {}} />);
         await waitFor(() => expect(screen.getByRole("button", { name: "Agent" })).toBeEnabled());
@@ -205,7 +225,7 @@ describe("AgentChatPane", () => {
             update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Existing message" } },
         });
         emit("ready", { capabilities: {}, setup: {} });
-        await waitFor(() => expect(screen.getByRole("button", { name: "Agent" })).toBeDisabled());
+        await waitFor(() => expect(screen.queryByRole("button", { name: "Agent" })).not.toBeInTheDocument());
     });
 
     it("changes the model live and persists only the confirmed configuration", async () => {
@@ -255,6 +275,19 @@ describe("AgentChatPane", () => {
         await waitFor(() => expect(mocks.setPermissionMode).toHaveBeenCalledWith(agent.id, "bypass"));
         expect(mocks.start).toHaveBeenCalledTimes(1);
         expect(acpApi.stop).not.toHaveBeenCalled();
+    });
+
+    it("leaves YOLO to the TUI once the chat session has stopped", async () => {
+        const props = { agent, cwd: "/repo", active: true, onBusyChange: () => {} };
+        const { rerender } = render(<AgentChatPane {...props} />);
+        await waitFor(() => expect(screen.getByRole("textbox", { name: "Message agent" })).toBeEnabled());
+        rerender(<AgentChatPane {...props} active={false} />);
+
+        rerender(<AgentChatPane {...props} active={false} agent={{ ...agent, permissionMode: "bypass" }} />);
+        await act(async () => {});
+
+        expect(mocks.setPermissionMode).not.toHaveBeenCalled();
+        expect(mocks.setAgentPermissionMode).not.toHaveBeenCalled();
     });
 
     it("serializes rapid permission changes and applies the latest choice", async () => {
@@ -762,6 +795,20 @@ describe("AgentChatPane", () => {
         expect(cell.tagName).toBe("TD");
         expect(screen.getByText("approach").tagName).toBe("TH");
         expect(cell.closest(".chat-table")).not.toBeNull();
+    });
+
+    it("shows markup the person pasted, and still drops markup the agent wrote", async () => {
+        await openTranscript('Use this: “<svg viewBox="0 0 16 16"><path d="M0 0h16"/></svg>”\n\n<div>own line</div>');
+        emit("session_update", {
+            sessionId: "session-1",
+            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done <b>quietly</b>" } },
+        });
+
+        const typed = await screen.findByText(/Use this:/);
+        expect(typed.textContent).toBe('Use this: “<svg viewBox="0 0 16 16"><path d="M0 0h16"/></svg>”');
+        expect(screen.getByText("<div>own line</div>")).toBeInTheDocument();
+        expect(document.querySelector(".chat-message.user .chat-markdown svg")).toBeNull();
+        expect(await screen.findByText(/Done/)).toHaveTextContent(/^Done quietly$/);
     });
 
     it("leaves out the header band when the table has no column labels", async () => {
