@@ -1674,8 +1674,6 @@ function GitWorkbench({ paneId, repo, active, onLeaveRepo }: { paneId: string; r
     );
 }
 
-/* libgit2's message when a path has no repository at or above it. The Git view
-   answers it by looking one level down instead of just reporting the failure. */
 function isMissingRepository(error: string | null | undefined): boolean {
     return !!error && /could not find repository/i.test(error);
 }

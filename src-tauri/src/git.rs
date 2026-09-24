@@ -709,16 +709,12 @@ fn store_walk<T>(cache: &WalkCache<T>, key: String, generation: u64, value: T) {
     cache.insert(key, (generation, value));
 }
 
-/* Only `node_modules` and the `.git` directory itself are skipped, matching what
-VS Code leaves out of its own scan. The much wider `files::should_skip_dir` list
-is deliberately not reused here, because it hides directory names like `vendor`,
-`build` and `out` that are perfectly ordinary repository names. */
+// Not `files::should_skip_dir`: it hides `vendor`, `build` and `out`, which are ordinary repository names.
 fn skip_repo_scan_dir(name: &str) -> bool {
     matches!(name, "node_modules" | ".git")
 }
 
-/* One level below the opened folder, like VS Code's default scan depth. A project
-directory that is not itself a repository is usually a flat container of them. */
+/// The repositories directly inside `root`, one level down like VS Code's default scan.
 #[tauri::command]
 pub async fn git_discover_repos(root: String) -> Result<Vec<DiscoveredRepo>, String> {
     let _permit = git_walk_permit().await?;
@@ -736,8 +732,7 @@ pub async fn git_discover_repos(root: String) -> Result<Vec<DiscoveredRepo>, Str
                 continue;
             }
             let path = entry.path();
-            // `open` rather than `discover`, so a plain directory never reports
-            // the repository it happens to sit inside.
+            // `open`, not `discover`, so a plain folder never reports the repository it sits in.
             let Ok(repo) = Repository::open(&path) else {
                 continue;
             };
@@ -753,7 +748,7 @@ pub async fn git_discover_repos(root: String) -> Result<Vec<DiscoveredRepo>, Str
                 changes: status.files.len(),
             });
         }
-        found.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        found.sort_by_cached_key(|repo| repo.name.to_lowercase());
         Ok(found)
     })
     .await
@@ -4431,8 +4426,6 @@ mod tests {
         assert!(!blame.commits[blame.lines[0] as usize].uncommitted);
     }
 
-    /// `vendor` is a real repository name, so the scan has to return it even
-    /// though the file-palette walker treats that name as noise.
     #[tokio::test]
     async fn discovers_child_repositories_and_skips_only_node_modules() {
         let td = tempdir().expect("tempdir");
@@ -4456,8 +4449,6 @@ mod tests {
         assert_eq!(found[1].changes, 0, "beta is clean");
     }
 
-    /// A directory inside a repository is not itself one, so it must not be
-    /// listed just because `discover` would have walked up and found the parent.
     #[tokio::test]
     async fn plain_directories_never_report_the_repository_above_them() {
         let td = init_repo();
