@@ -7,6 +7,13 @@ export interface SearchOptions {
     isRegex: boolean;
     include: string;
     exclude: string;
+    preserveCase: boolean;
+}
+
+/** Narrows a replace to one file, or to one line of it (1-based). */
+export interface ReplaceScope {
+    path: string;
+    line?: number;
 }
 
 export interface SearchRange {
@@ -74,13 +81,14 @@ export const searchApi = {
         });
     },
     cancel: (repo: string): Promise<void> => invoke("project_search_cancel", { repo }),
-    replace: (repo: string, query: string, replace: string, options: SearchOptions, dryRun: boolean): Promise<ReplaceResults> =>
+    replace: (repo: string, query: string, replace: string, options: SearchOptions, dryRun: boolean, scope?: ReplaceScope): Promise<ReplaceResults> =>
         invoke<ReplaceResults>("project_search_replace", {
             repo,
             query,
             replace,
             options,
             dryRun,
+            scope: scope ?? null,
         }),
     readFileWindow: (path: string, line: number, before: number, after: number): Promise<FileWindow> =>
         invoke<FileWindow>("read_file_window", { path, line, before, after }),

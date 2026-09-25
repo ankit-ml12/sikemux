@@ -246,41 +246,6 @@
     margin-left: 4px;
 }
 
-.sp-replace-btn {
-    background: transparent;
-    color: var(--acc);
-    border: 0;
-    padding: 2px 0;
-    font-family: var(--mono);
-    font-size: var(--text-2xs);
-    font-weight: var(--weight-semibold);
-    text-transform: lowercase;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-    border-bottom: 1px solid var(--border-selected);
-    transition:
-        color 0.12s,
-        border-color 0.12s,
-        opacity 0.12s;
-}
-.sp-replace-btn:hover {
-    color: var(--text-primary);
-    border-bottom-color: var(--text-primary);
-}
-.sp-replace-btn:disabled {
-    color: var(--ink-ghost);
-    border-bottom-color: transparent;
-    cursor: not-allowed;
-}
-.sp-replace-btn.sp-replace-btn-commit {
-    color: var(--live);
-    border-bottom-color: var(--live);
-}
-.sp-replace-btn.sp-replace-btn-commit:hover {
-    color: var(--text-primary);
-    border-bottom-color: var(--text-primary);
-}
-
 .sp-stale {
     background: transparent;
     border: 0;
@@ -790,4 +755,84 @@
 
 .ed-host .cm-panels {
     display: none;
+}
+
+/* VS Code-style actions: a toolbar over the boxes, an icon button for
+   replace-all, and per-row buttons that appear on hover or keyboard focus. */
+.sp-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 2px;
+    padding: 4px 8px 0;
+}
+.sp-icon-btn {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.sp-icon-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover, var(--hl));
+}
+.sp-icon-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.sp-replace-all.commit {
+    color: var(--acc);
+}
+.sp-collapse-glyph {
+    transition: transform 0.15s;
+}
+.sp-collapse-glyph.open {
+    transform: rotate(90deg);
+}
+.sp-replace-confirm {
+    justify-content: space-between;
+    color: var(--text-secondary);
+    font-size: var(--text-2xs);
+}
+.sp-replace-go {
+    padding: 2px 10px;
+    border: 1px solid var(--acc-line);
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--acc);
+    font-size: var(--text-2xs);
+    cursor: pointer;
+}
+.sp-replace-go:hover:not(:disabled) {
+    background: var(--acc-dim);
+}
+.sp-row-shell {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+.sp-row-shell > .sp-thread-who,
+.sp-row-shell > .sp-msg {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.sp-row-actions {
+    display: flex;
+    gap: 1px;
+    padding-right: 6px;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+.sp-row-shell:hover .sp-row-actions,
+.sp-row-shell:focus-within .sp-row-actions {
+    opacity: 1;
 }

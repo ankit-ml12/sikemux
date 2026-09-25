@@ -6,13 +6,13 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { auraExtensions, loadLanguage } from "../editor/codemirror";
 import { registerView } from "../themes/bus";
 import { subscribe } from "../state/bus";
-import { searchApi, type SearchFile, type SearchHit, type SearchResults, type ReplaceResults } from "../api/search";
+import { searchApi, type ReplaceResults, type ReplaceScope, type SearchFile, type SearchHit, type SearchResults } from "../api/search";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { DEFAULT_GLOBAL_SEARCH_VIEW } from "../state/types";
 import { notify, errMessage } from "../state/toast";
 import { FileIcon } from "./FileIcon";
-import { IconSearch } from "./Icons";
+import { IconChevron, IconClose, IconRefresh, IconReplace, IconReplaceAll, IconSearch } from "./Icons";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
 import { PRIMARY_SHORTCUT, SHIFT_SHORTCUT } from "../lib/platform";
 
@@ -23,7 +23,7 @@ const PREVIEW_AFTER_LINES = 80;
 const PREVIEW_LRU_CAP = 4;
 
 type Status = "idle" | "searching" | "ok" | "error";
-type SearchBooleanOption = "caseSensitive" | "wholeWord" | "isRegex";
+type SearchBooleanOption = "caseSensitive" | "wholeWord" | "isRegex" | "preserveCase";
 
 const SEARCH_OPTION_TOGGLES: { key: SearchBooleanOption; label: string; title: string }[] = [
     { key: "caseSensitive", label: "Aa", title: "Match case" },
@@ -64,6 +64,9 @@ export function SearchPane({
     const [replacing, setReplacing] = useState(false);
     const [replacePreview, setReplacePreview] = useState<ReplaceResults | null>(null);
     const [stale, setStale] = useState(false);
+    /* Results the reader has waved away, as `path` for a file or `path:line`
+       for one line. A fresh search brings everything back. */
+    const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
 
     const requestIdRef = useRef(0);
 
@@ -72,6 +75,7 @@ export function SearchPane({
             const id = ++requestIdRef.current;
             setStatus("searching");
             setFiles([]);
+            setDismissed(new Set());
             // A thousand result files would otherwise be a thousand renders.
             const pending: SearchFile[] = [];
             let flushTimer: number | undefined;
@@ -230,15 +234,77 @@ export function SearchPane({
 
     const results: SearchResults | null = useMemo(() => {
         if (!summary && files.length === 0) return null;
+        const shown =
+            dismissed.size === 0
+                ? files
+                : files.flatMap((file) => {
+                      if (dismissed.has(file.path)) return [];
+                      const matches = file.matches.filter((hit) => !dismissed.has(`${file.path}:${hit.line}`));
+                      return matches.length === 0 ? [] : [matches.length === file.matches.length ? file : { ...file, matches }];
+                  });
+        const countFromList = dismissed.size > 0 || !summary;
         return {
-            files,
-            file_count: summary?.file_count ?? files.length,
-            match_count: summary?.match_count ?? files.reduce((n, f) => n + f.matches.length, 0),
+            files: shown,
+            file_count: countFromList ? shown.length : summary.file_count,
+            match_count: countFromList ? shown.reduce((n, f) => n + f.matches.length, 0) : summary.match_count,
             truncated: summary?.truncated ?? false,
             cancelled: summary?.cancelled,
             elapsed_ms: summary?.elapsed_ms ?? 0,
         };
-    }, [summary, files]);
+    }, [summary, files, dismissed]);
+
+    const dismiss = useCallback((file: SearchFile, hit?: SearchHit) => {
+        setDismissed((prev) => new Set(prev).add(hit ? `${file.path}:${hit.line}` : file.path));
+    }, []);
+
+    /* Replaces straight away, the way a row's own button does in any editor:
+       the preview step belongs to replacing across the whole project. */
+    const replaceScoped = useCallback(
+        async (file: SearchFile, hit?: SearchHit) => {
+            if (!cwd || !view.query.trim() || replacing) return;
+            const absolute = joinPath(cwd, file.path);
+            const dirty = new Set(Object.values(useStore.getState().dirtyEditorPaths).flat().map(normalizePath));
+            if (dirty.has(normalizePath(absolute))) {
+                notify("error", `save or close ${basename(file.path)} before replacing in it`);
+                return;
+            }
+            const scope: ReplaceScope = hit ? { path: file.path, line: hit.line } : { path: file.path };
+            setReplacing(true);
+            try {
+                const r = await searchApi.replace(cwd, view.query, view.replace, view.options, false, scope);
+                if (r.errors.length > 0) {
+                    notify("error", `replace failed: ${r.errors[0].reason}`);
+                    return;
+                }
+                setFiles((prev) =>
+                    prev.flatMap((f) => {
+                        if (f.path !== file.path) return [f];
+                        if (!hit) return [];
+                        const matches = f.matches.filter((m) => m.line !== hit.line);
+                        return matches.length === 0 ? [] : [{ ...f, matches }];
+                    }),
+                );
+                setSummary((prev) =>
+                    prev
+                        ? {
+                              ...prev,
+                              match_count: Math.max(0, prev.match_count - (hit ? 1 : file.matches.length)),
+                              file_count: Math.max(0, prev.file_count - (hit && file.matches.length > 1 ? 0 : 1)),
+                          }
+                        : prev,
+                );
+                setReplacePreview(null);
+            } catch (e) {
+                notify("error", `replace failed: ${errMessage(e)}`);
+            } finally {
+                setReplacing(false);
+            }
+        },
+        [cwd, view.query, view.replace, view.options, replacing],
+    );
+
+    const allCollapsed = !!results && results.files.length > 0 && results.files.every((f) => view.collapsed[f.path]);
+    const toggleCollapseAll = () => cmd.setGlobalSearchAllCollapsed(sessionId, allCollapsed ? null : (results?.files ?? []).map((f) => f.path));
 
     return (
         <div className={`search-pane${compact ? " compact" : ""}`}>
@@ -256,6 +322,9 @@ export function SearchPane({
                         stale={stale}
                         onReplaceAll={runReplaceAll}
                         onRefresh={refresh}
+                        onClear={() => cmd.clearGlobalSearch(sessionId)}
+                        allCollapsed={allCollapsed}
+                        onToggleCollapseAll={toggleCollapseAll}
                     />
                     <Threads
                         openOnSelect={compact}
@@ -268,6 +337,9 @@ export function SearchPane({
                         results={results}
                         status={status}
                         error={error}
+                        canReplace={view.replaceOpen && !replacing}
+                        onReplace={replaceScoped}
+                        onDismiss={dismiss}
                     />
                 </div>
                 {!compact && (
@@ -291,6 +363,9 @@ function Header({
     stale,
     onReplaceAll,
     onRefresh,
+    onClear,
+    allCollapsed,
+    onToggleCollapseAll,
 }: {
     sessionId: string;
     view: typeof DEFAULT_GLOBAL_SEARCH_VIEW;
@@ -303,6 +378,9 @@ function Header({
     stale: boolean;
     onReplaceAll: () => void;
     onRefresh: () => void;
+    onClear: () => void;
+    allCollapsed: boolean;
+    onToggleCollapseAll: () => void;
 }) {
     const { query, replace, replaceOpen, options } = view;
     const hasResults = !!results && results.match_count > 0;
@@ -315,6 +393,17 @@ function Header({
 
     return (
         <div className="sp-head">
+            <div className="sp-toolbar" role="toolbar" aria-label="Search actions">
+                <ToolButton label="Refresh" onClick={onRefresh} disabled={!query.trim()}>
+                    <IconRefresh size={13} />
+                </ToolButton>
+                <ToolButton label="Clear search results" onClick={onClear} disabled={!query && !replace}>
+                    <IconClose size={13} />
+                </ToolButton>
+                <ToolButton label={allCollapsed ? "Expand all" : "Collapse all"} onClick={onToggleCollapseAll} disabled={!hasResults}>
+                    <IconChevron size={13} className={`sp-collapse-glyph${allCollapsed ? "" : " open"}`} />
+                </ToolButton>
+            </div>
             <div className="sp-row find">
                 <button
                     type="button"
@@ -330,7 +419,7 @@ function Header({
                 <input
                     ref={findRef}
                     className="sp-input"
-                    placeholder="find in project"
+                    placeholder="Search"
                     value={query}
                     onChange={(e) => cmd.setGlobalSearchQuery(sessionId, e.target.value)}
                     onKeyDown={(e) => {
@@ -364,7 +453,7 @@ function Header({
                     <input
                         ref={replaceRef}
                         className="sp-input"
-                        placeholder="replace with…"
+                        placeholder="Replace"
                         value={replace}
                         onChange={(e) => cmd.setGlobalSearchReplace(sessionId, e.target.value)}
                         onKeyDown={(e) => {
@@ -375,6 +464,44 @@ function Header({
                         }}
                         spellCheck={false}
                     />
+                    <div className="sp-row-toggles">
+                        <Toggle
+                            label="AB"
+                            title="Preserve case"
+                            active={options.preserveCase}
+                            onClick={() => cmd.setGlobalSearchOption(sessionId, "preserveCase", !options.preserveCase)}
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        className={`sp-icon-btn sp-replace-all${replacePreview ? " commit" : ""}`}
+                        onClick={onReplaceAll}
+                        disabled={!canReplace}
+                        aria-label={
+                            replacePreview
+                                ? `Replace ${replacePreview.match_count} in ${replacePreview.file_count} files`
+                                : canReplace
+                                  ? "Replace all (preview first)"
+                                  : "Replace all — run a search first"
+                        }
+                        title={
+                            replacePreview
+                                ? `Replace ${replacePreview.match_count} in ${replacePreview.file_count} files`
+                                : canReplace
+                                  ? "Replace all (preview first)"
+                                  : "Replace all — run a search first"
+                        }>
+                        {replacing ? <span className="sp-spinner" aria-hidden /> : <IconReplaceAll size={14} />}
+                    </button>
+                </div>
+            )}
+            {replaceOpen && replacePreview && (
+                <div className="sp-row sp-replace-confirm">
+                    Replace {replacePreview.match_count} {replacePreview.match_count === 1 ? "match" : "matches"} in {replacePreview.file_count}{" "}
+                    {replacePreview.file_count === 1 ? "file" : "files"}?
+                    <button type="button" className="sp-replace-go" onClick={onReplaceAll} disabled={replacing}>
+                        Replace
+                    </button>
                 </div>
             )}
 
@@ -421,26 +548,6 @@ function Header({
                         <span className="sp-stats-dim">·</span>
                     )}
                 </span>
-                {replaceOpen && (
-                    <button
-                        type="button"
-                        className={`sp-replace-btn${replacePreview ? " sp-replace-btn-commit" : ""}`}
-                        onClick={onReplaceAll}
-                        disabled={!canReplace}
-                        title={
-                            replacePreview
-                                ? `Commit ${replacePreview.match_count} replacements across ${replacePreview.file_count} files`
-                                : canReplace
-                                  ? "Preview replacements"
-                                  : "Run a search first"
-                        }>
-                        {replacing
-                            ? "…"
-                            : replacePreview
-                              ? `commit ${replacePreview.match_count}`
-                              : `preview${results && results.match_count > 0 ? ` ${results.match_count}` : ""}`}
-                    </button>
-                )}
             </div>
         </div>
     );
@@ -450,6 +557,14 @@ function Toggle({ label, title, active, onClick }: { label: string; title: strin
     return (
         <button className={`sp-toggle${active ? " on" : ""}`} onClick={onClick} title={title} aria-label={title} aria-pressed={active} type="button">
             {label}
+        </button>
+    );
+}
+
+function ToolButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
+    return (
+        <button type="button" className="sp-icon-btn" onClick={onClick} disabled={disabled} title={label} aria-label={label}>
+            {children}
         </button>
     );
 }
@@ -495,6 +610,9 @@ function Threads({
     results,
     status,
     error,
+    canReplace,
+    onReplace,
+    onDismiss,
 }: {
     openOnSelect: boolean;
     sessionId: string;
@@ -506,6 +624,9 @@ function Threads({
     results: SearchResults | null;
     status: Status;
     error: string | null;
+    canReplace: boolean;
+    onReplace: (file: SearchFile, hit?: SearchHit) => void;
+    onDismiss: (file: SearchFile, hit?: SearchHit) => void;
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -576,7 +697,18 @@ function Threads({
                         transform: `translateY(${vi.start}px)`,
                     };
                     if (row.kind === "header") {
-                        return <FileHeader key={vi.key} style={style} sessionId={sessionId} file={row.file} collapsed={row.collapsed} />;
+                        return (
+                            <FileHeader
+                                key={vi.key}
+                                style={style}
+                                sessionId={sessionId}
+                                file={row.file}
+                                collapsed={row.collapsed}
+                                canReplace={canReplace}
+                                onReplace={onReplace}
+                                onDismiss={onDismiss}
+                            />
+                        );
                     }
                     return (
                         <MessageRow
@@ -590,6 +722,9 @@ function Threads({
                             hitIndex={row.hitIndex}
                             isSelected={selected?.path === row.file.path && selected.matchIndex === row.hitIndex}
                             replace={replace}
+                            canReplace={canReplace}
+                            onReplace={onReplace}
+                            onDismiss={onDismiss}
                         />
                     );
                 })}
@@ -603,30 +738,65 @@ const FileHeader = memo(function FileHeader({
     sessionId,
     file,
     collapsed,
+    canReplace,
+    onReplace,
+    onDismiss,
 }: {
     style: React.CSSProperties;
     sessionId: string;
     file: SearchFile;
     collapsed: boolean;
+    canReplace: boolean;
+    onReplace: (file: SearchFile, hit?: SearchHit) => void;
+    onDismiss: (file: SearchFile, hit?: SearchHit) => void;
 }) {
     const name = basename(file.path);
     const dir = dirname(file.path);
     return (
-        <button
-            type="button"
-            className="sp-thread-who"
-            style={style}
-            onClick={() => cmd.toggleGlobalSearchFileCollapsed(sessionId, file.path)}
-            aria-expanded={!collapsed}
-            title={collapsed ? "Expand file" : "Collapse file"}>
-            <span className={`sp-thread-chev${collapsed ? "" : " open"}`}>▸</span>
-            <FileIcon name={name} size={13} />
-            <span className="sp-thread-name">{name}</span>
-            {dir && <span className="sp-thread-dir">{dir}/</span>}
-            <span className="sp-thread-count">{file.matches.length}</span>
-        </button>
+        <div className="sp-row-shell" style={style}>
+            <button
+                type="button"
+                className="sp-thread-who"
+                onClick={() => cmd.toggleGlobalSearchFileCollapsed(sessionId, file.path)}
+                aria-expanded={!collapsed}
+                title={collapsed ? "Expand file" : "Collapse file"}>
+                <span className={`sp-thread-chev${collapsed ? "" : " open"}`}>▸</span>
+                <FileIcon name={name} size={13} />
+                <span className="sp-thread-name">{name}</span>
+                {dir && <span className="sp-thread-dir">{dir}/</span>}
+                <span className="sp-thread-count">{file.matches.length}</span>
+            </button>
+            <RowActions subject={`in ${name}`} canReplace={canReplace} onReplace={() => onReplace(file)} onDismiss={() => onDismiss(file)} />
+        </div>
     );
 });
+
+/* Shown on hover and keyboard focus, as in VS Code: replace only when the
+   replace box is open, dismiss always. */
+function RowActions({
+    subject,
+    canReplace,
+    onReplace,
+    onDismiss,
+}: {
+    subject: string;
+    canReplace: boolean;
+    onReplace: () => void;
+    onDismiss: () => void;
+}) {
+    return (
+        <span className="sp-row-actions">
+            {canReplace && (
+                <button type="button" className="sp-icon-btn" onClick={onReplace} title={`Replace ${subject}`} aria-label={`Replace ${subject}`}>
+                    <IconReplace size={13} />
+                </button>
+            )}
+            <button type="button" className="sp-icon-btn" onClick={onDismiss} title={`Dismiss ${subject}`} aria-label={`Dismiss ${subject}`}>
+                <IconClose size={12} />
+            </button>
+        </span>
+    );
+}
 
 const MessageRow = memo(function MessageRow({
     openOnSelect,
@@ -638,6 +808,9 @@ const MessageRow = memo(function MessageRow({
     hitIndex,
     isSelected,
     replace,
+    canReplace,
+    onReplace,
+    onDismiss,
 }: {
     openOnSelect: boolean;
     style: React.CSSProperties;
@@ -648,29 +821,39 @@ const MessageRow = memo(function MessageRow({
     hitIndex: number;
     isSelected: boolean;
     replace: string;
+    canReplace: boolean;
+    onReplace: (file: SearchFile, hit?: SearchHit) => void;
+    onDismiss: (file: SearchFile, hit?: SearchHit) => void;
 }) {
     return (
-        <button
-            type="button"
-            className={`sp-msg${isSelected ? " sel" : ""}`}
-            style={style}
-            onClick={() => {
-                cmd.setGlobalSearchSelected(sessionId, { path: file.path, matchIndex: hitIndex });
-                if (openOnSelect) cmd.requestOpenFile(joinPath(repo, file.path), hit.line - 1, hit.ranges[0]?.start ?? 0);
-            }}
-            onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                    event.preventDefault();
-                    cmd.requestOpenFile(joinPath(repo, file.path), hit.line - 1, hit.ranges[0]?.start ?? 0);
-                }
-            }}
-            onDoubleClick={() => cmd.requestOpenFile(joinPath(repo, file.path), hit.line - 1, hit.ranges[0]?.start ?? 0)}
-            title={replace ? `${hit.text}  →  (with replace)` : hit.text}>
-            <span className="sp-msg-ln">{hit.line}</span>
-            <span className="sp-msg-tx">
-                <HighlightedLine hit={hit} replace={replace} />
-            </span>
-        </button>
+        <div className="sp-row-shell" style={style}>
+            <button
+                type="button"
+                className={`sp-msg${isSelected ? " sel" : ""}`}
+                onClick={() => {
+                    cmd.setGlobalSearchSelected(sessionId, { path: file.path, matchIndex: hitIndex });
+                    if (openOnSelect) cmd.requestOpenFile(joinPath(repo, file.path), hit.line - 1, hit.ranges[0]?.start ?? 0);
+                }}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        cmd.requestOpenFile(joinPath(repo, file.path), hit.line - 1, hit.ranges[0]?.start ?? 0);
+                    }
+                }}
+                onDoubleClick={() => cmd.requestOpenFile(joinPath(repo, file.path), hit.line - 1, hit.ranges[0]?.start ?? 0)}
+                title={replace ? `${hit.text}  →  (with replace)` : hit.text}>
+                <span className="sp-msg-ln">{hit.line}</span>
+                <span className="sp-msg-tx">
+                    <HighlightedLine hit={hit} replace={replace} />
+                </span>
+            </button>
+            <RowActions
+                subject={`on line ${hit.line}`}
+                canReplace={canReplace}
+                onReplace={() => onReplace(file, hit)}
+                onDismiss={() => onDismiss(file, hit)}
+            />
+        </div>
     );
 });
 

@@ -71,6 +71,21 @@ pub struct SearchOptions {
     /// Glob pattern excluding paths (in addition to the built-in denylist).
     #[serde(default)]
     exclude: String,
+    /// Replace keeps the case of what it replaces: `FOO` → `BAR`, `Foo` → `Bar`.
+    #[serde(default)]
+    preserve_case: bool,
+}
+
+/// Narrows a replace to one file, or to one line of it: the results list
+/// offers both, and each only ever touches what its row shows.
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplaceScope {
+    /// Relative to the repository, as search reported it.
+    path: String,
+    /// 1-based, as search reported it; `None` means the whole file.
+    #[serde(default)]
+    line: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -607,6 +622,7 @@ pub async fn project_search_replace(
     replace: String,
     options: SearchOptions,
     dry_run: bool,
+    scope: Option<ReplaceScope>,
 ) -> AppResult<ReplaceResults> {
     if query.is_empty() {
         return Ok(ReplaceResults {
@@ -620,7 +636,7 @@ pub async fn project_search_replace(
     }
 
     tauri::async_runtime::spawn_blocking(move || {
-        run_replace(repo, query, replace, options, dry_run)
+        run_replace(repo, query, replace, options, dry_run, scope)
     })
     .await
     .map_err(|e| AppError::Search(format!("join: {e}")))?
@@ -632,9 +648,11 @@ fn run_replace(
     replace: String,
     options: SearchOptions,
     dry_run: bool,
+    scope: Option<ReplaceScope>,
 ) -> AppResult<ReplaceResults> {
     let started = std::time::Instant::now();
     let rewrite_re = build_bytes_regex(&query, &options)?;
+    let target_line = scope.as_ref().and_then(|s| s.line);
     let include = build_glob(&options.include)?;
     let exclude = build_glob(&options.exclude)?;
 
@@ -733,7 +751,15 @@ fn run_replace(
         scanned_files: &scanned_files,
         limit_exceeded: &limit_exceeded,
     };
-    build_walker(&repo).visit(&mut b);
+    match &scope {
+        Some(scope) => {
+            let path = scoped_path(&repo, &scope.path)?;
+            if let Ok(mut candidates) = candidates.lock() {
+                candidates.push(path);
+            }
+        }
+        None => build_walker(&repo).visit(&mut b),
+    }
 
     if limit_exceeded.load(Ordering::Acquire) {
         return Err(AppError::Search(format!(
@@ -787,11 +813,9 @@ fn run_replace(
             // Count + rewrite in one pass: replace_all does the work; we
             // re-count separately via find_iter (cheap on bytes we just
             // matched against in cache) for the per-file count report.
-            let match_count = rewrite_re.find_iter(&original).count();
-            let rewritten = rewrite_re
-                .replace_all(&original, replace.as_bytes())
-                .into_owned();
-            if rewritten == original {
+            let (rewritten, match_count) =
+                rewrite(&rewrite_re, &original, &replace, &options, target_line);
+            if match_count == 0 || rewritten == original {
                 return Ok(None);
             }
 
@@ -834,6 +858,95 @@ fn run_replace(
         dry_run,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
+}
+
+/// The file a scoped replace names, refused unless it is a file inside the
+/// repository: the path comes from the webview, so `..` must not escape.
+fn scoped_path(repo: &str, relative: &str) -> AppResult<std::path::PathBuf> {
+    let root = fs::canonicalize(repo)?;
+    let path = fs::canonicalize(root.join(relative))
+        .map_err(|e| AppError::Search(format!("{relative}: {e}")))?;
+    if !path.starts_with(&root) || !path.is_file() {
+        return Err(AppError::Search(format!(
+            "{relative} is not a file in this project"
+        )));
+    }
+    Ok(path)
+}
+
+/// Rewrites every match, or only those starting on `line` (1-based), and
+/// returns the new bytes with how many matches it replaced.
+///
+/// A regex query expands `$1` and friends in the replacement; a plain query
+/// inserts the replacement exactly as typed, `$` and all.
+fn rewrite(
+    re: &regex::bytes::Regex,
+    original: &[u8],
+    replace: &str,
+    options: &SearchOptions,
+    line: Option<u32>,
+) -> (Vec<u8>, usize) {
+    let mut out = Vec::with_capacity(original.len());
+    let mut copied = 0;
+    let mut count = 0;
+    let mut current_line = 1u32;
+    let mut scanned = 0;
+    for caps in re.captures_iter(original) {
+        let whole = caps.get(0).expect("group 0 is the whole match");
+        current_line += original[scanned..whole.start()]
+            .iter()
+            .filter(|&&b| b == b'\n')
+            .count() as u32;
+        scanned = whole.start();
+        if line.is_some_and(|wanted| wanted != current_line) {
+            continue;
+        }
+        let mut replacement = Vec::new();
+        if options.is_regex {
+            caps.expand(replace.as_bytes(), &mut replacement);
+        } else {
+            replacement.extend_from_slice(replace.as_bytes());
+        }
+        if options.preserve_case {
+            replacement = with_case_of(whole.as_bytes(), &replacement);
+        }
+        out.extend_from_slice(&original[copied..whole.start()]);
+        out.extend_from_slice(&replacement);
+        copied = whole.end();
+        count += 1;
+    }
+    out.extend_from_slice(&original[copied..]);
+    (out, count)
+}
+
+/// `replacement` in the case pattern of `matched`: all capitals, all lower
+/// case, or leading capital / leading lower case for a mixed-case word.
+fn with_case_of(matched: &[u8], replacement: &[u8]) -> Vec<u8> {
+    let (Ok(matched), Ok(replacement)) = (
+        std::str::from_utf8(matched),
+        std::str::from_utf8(replacement),
+    ) else {
+        return replacement.to_vec();
+    };
+    let letters = || matched.chars().filter(|c| c.is_alphabetic());
+    if letters().next().is_none() {
+        return replacement.as_bytes().to_vec();
+    }
+    let recased = if letters().all(char::is_uppercase) {
+        replacement.to_uppercase()
+    } else if letters().all(char::is_lowercase) {
+        replacement.to_lowercase()
+    } else {
+        let mut chars = replacement.chars();
+        match (chars.next(), letters().next()) {
+            (Some(first), Some(lead)) if lead.is_uppercase() => {
+                first.to_uppercase().chain(chars).collect()
+            }
+            (Some(first), Some(_)) => first.to_lowercase().chain(chars).collect(),
+            _ => replacement.to_string(),
+        }
+    };
+    recased.into_bytes()
 }
 
 fn persist_rewrite(
@@ -949,9 +1062,134 @@ pub async fn read_file_window(
 
 #[cfg(test)]
 mod tests {
-    use super::persist_rewrite;
+    use super::{
+        build_bytes_regex, persist_rewrite, rewrite, run_replace, ReplaceScope, SearchOptions,
+    };
     use std::fs;
     use tempfile::tempdir;
+
+    fn options(is_regex: bool, preserve_case: bool) -> SearchOptions {
+        SearchOptions {
+            case_sensitive: false,
+            whole_word: false,
+            is_regex,
+            include: String::new(),
+            exclude: String::new(),
+            preserve_case,
+        }
+    }
+
+    fn rewritten(
+        query: &str,
+        text: &str,
+        replace: &str,
+        opts: &SearchOptions,
+        line: Option<u32>,
+    ) -> (String, usize) {
+        let re = build_bytes_regex(query, opts).expect("regex");
+        let (bytes, count) = rewrite(&re, text.as_bytes(), replace, opts, line);
+        (String::from_utf8(bytes).expect("utf8"), count)
+    }
+
+    #[test]
+    fn preserve_case_follows_each_match() {
+        let opts = options(false, true);
+        let (out, count) = rewritten("foo", "foo Foo FOO fOO", "bar", &opts, None);
+        assert_eq!(out, "bar Bar BAR bar");
+        assert_eq!(count, 4);
+    }
+
+    #[test]
+    fn preserve_case_off_inserts_the_replacement_as_typed() {
+        let (out, _) = rewritten("foo", "Foo FOO", "bar", &options(false, false), None);
+        assert_eq!(out, "bar bar");
+    }
+
+    #[test]
+    fn plain_query_keeps_dollar_signs_literal() {
+        let (out, _) = rewritten("price", "price", "$5", &options(false, false), None);
+        assert_eq!(out, "$5");
+    }
+
+    #[test]
+    fn regex_query_expands_groups() {
+        let (out, _) = rewritten(r"(\w+)@x", "alice@x", "$1@y", &options(true, false), None);
+        assert_eq!(out, "alice@y");
+    }
+
+    #[test]
+    fn a_line_scope_touches_only_that_line() {
+        let text = "foo 1\nfoo foo 2\nfoo 3\n";
+        let (out, count) = rewritten("foo", text, "bar", &options(false, false), Some(2));
+        assert_eq!(out, "foo 1\nbar bar 2\nfoo 3\n");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn a_line_with_no_match_changes_nothing() {
+        let (out, count) = rewritten("foo", "foo\nnone\n", "bar", &options(false, false), Some(2));
+        assert_eq!(out, "foo\nnone\n");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn scoped_replace_rewrites_only_the_named_file() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), "foo\nfoo\n").expect("write a");
+        fs::write(dir.path().join("b.txt"), "foo\n").expect("write b");
+        let repo = dir.path().to_string_lossy().into_owned();
+        let scope = ReplaceScope {
+            path: "a.txt".into(),
+            line: Some(2),
+        };
+
+        let result = run_replace(
+            repo,
+            "foo".into(),
+            "bar".into(),
+            options(false, false),
+            false,
+            Some(scope),
+        )
+        .expect("replace");
+
+        assert_eq!(result.match_count, 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).expect("a"),
+            "foo\nbar\n"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("b.txt")).expect("b"),
+            "foo\n"
+        );
+    }
+
+    #[test]
+    fn scoped_replace_refuses_a_path_outside_the_project() {
+        let outer = tempdir().expect("tempdir");
+        let repo = outer.path().join("repo");
+        fs::create_dir(&repo).expect("mkdir");
+        fs::write(outer.path().join("secret.txt"), "foo\n").expect("write");
+        let scope = ReplaceScope {
+            path: "../secret.txt".into(),
+            line: None,
+        };
+
+        let result = run_replace(
+            repo.to_string_lossy().into_owned(),
+            "foo".into(),
+            "bar".into(),
+            options(false, false),
+            false,
+            Some(scope),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read_to_string(outer.path().join("secret.txt")).expect("read"),
+            "foo\n"
+        );
+    }
 
     #[cfg(unix)]
     #[test]

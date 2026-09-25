@@ -2626,6 +2626,22 @@ export function toggleGlobalSearchFileCollapsed(sessionId: string, path: string)
     });
 }
 
+/** Collapses every listed file, or expands them all when `paths` is null. */
+export function setGlobalSearchAllCollapsed(sessionId: string, paths: readonly string[] | null): void {
+    const cur = searchViewFor(sessionId);
+    mutate((d) => {
+        d.globalSearchBySession[sessionId] = { ...cur, collapsed: paths ? Object.fromEntries(paths.map((path) => [path, true])) : {} };
+    });
+}
+
+/** Empties the search and replace boxes and forgets the results, keeping the toggles. */
+export function clearGlobalSearch(sessionId: string): void {
+    const cur = searchViewFor(sessionId);
+    mutate((d) => {
+        d.globalSearchBySession[sessionId] = { ...cur, query: "", replace: "", collapsed: {}, selected: null };
+    });
+}
+
 export function setGlobalSearchReplace(sessionId: string, replace: string): void {
     const cur = searchViewFor(sessionId);
     mutate((d) => {

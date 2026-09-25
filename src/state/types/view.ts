@@ -81,6 +81,7 @@ export interface GlobalSearchView {
         isRegex: boolean;
         include: string;
         exclude: string;
+        preserveCase: boolean;
     };
     collapsed: Record<string, boolean>;
     selected: { path: string; matchIndex: number } | null;
@@ -104,6 +105,7 @@ export const DEFAULT_GLOBAL_SEARCH_VIEW: GlobalSearchView = {
         isRegex: false,
         include: "",
         exclude: "",
+        preserveCase: false,
     },
     collapsed: {},
     selected: null,
