@@ -30,6 +30,7 @@ import { HarnessBridge } from "./components/HarnessBridge";
 import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
+import { usePinchZoom } from "./pinchZoom";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
@@ -638,6 +639,7 @@ function ShellBackdrop() {
 
 export default function App() {
     useKeymap();
+    usePinchZoom();
     useBrowserDownloads();
     useBrowserReveal();
     useBrowserStrips();
