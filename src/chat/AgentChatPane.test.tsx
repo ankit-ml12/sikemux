@@ -244,6 +244,34 @@ describe("AgentChatPane", () => {
         expect(screen.getByRole("group", { name: "Agent" })).toBeInTheDocument();
     });
 
+    it("keeps the model menu's focus from a refocus queued before it opened", async () => {
+        const frames = new Map<number, FrameRequestCallback>();
+        let nextFrame = 0;
+        const request = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+            frames.set(++nextFrame, callback);
+            return nextFrame;
+        });
+        const cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+        try {
+            render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
+            await waitFor(() => expect(screen.getByRole("button", { name: "Model" })).toBeEnabled());
+            fireEvent.click(screen.getByRole("button", { name: "Model" }));
+            const search = screen.getByRole("combobox", { name: "Search model" });
+            expect(search).toHaveFocus();
+
+            act(() => {
+                const queued = [...frames.values()];
+                frames.clear();
+                queued.forEach((callback) => callback(performance.now()));
+            });
+
+            expect(search).toHaveFocus();
+        } finally {
+            request.mockRestore();
+            cancel.mockRestore();
+        }
+    });
+
     it("changes the model live and persists only the confirmed configuration", async () => {
         const configs = (model: string) => [
             {
@@ -885,7 +913,7 @@ describe("AgentChatPane", () => {
         expect(strip).toHaveTextContent("search usePty");
 
         const card = document.querySelector(".chat-subagent") as HTMLElement;
-        expect(card).toHaveTextContent("working");
+        expect(card.querySelector('[role="img"][aria-label="working"]')).not.toBeNull();
         expect(card).toHaveTextContent("1 call");
         // The task is a whole prompt, so the row shows its first line only.
         expect(card).toHaveTextContent("You are implementing performance fixes");
@@ -894,7 +922,7 @@ describe("AgentChatPane", () => {
         emit("turn_completed", { stopReason: "cancelled" });
 
         await waitFor(() => expect(screen.queryByLabelText("1 subagent")).not.toBeInTheDocument());
-        expect(document.querySelector(".chat-subagent")).toHaveTextContent("stopped");
+        expect(document.querySelector('.chat-subagent [role="img"][aria-label="stopped"]')).not.toBeNull();
         expect(document.querySelector(".chat-tool-spinner")).toBeNull();
     });
 
@@ -993,13 +1021,13 @@ describe("AgentChatPane", () => {
                 description: "Push 20 commits through pre-push gates",
             },
         });
-        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenCalledWith("agent-1", 1));
+        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenCalledWith("agent-1", 1, 0));
 
         emit("session_update", {
             sessionId: "session-1",
             update: { sessionUpdate: "async_task_state_update", asyncTaskId: "task-1", state: "completed" },
         });
-        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenLastCalledWith("agent-1", 0));
+        await waitFor(() => expect(mocks.noteAgentBackgroundWork).toHaveBeenLastCalledWith("agent-1", 0, 0));
     });
 
     it("says a background task's name once when its description repeats it", async () => {

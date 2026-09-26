@@ -16,9 +16,6 @@ import { FilePalette } from "./components/FilePalette";
 import { NewTabPalette } from "./components/NewTabPalette";
 import { SeshPicker } from "./components/SeshPicker";
 import { SessionSwitcher } from "./components/SessionSwitcher";
-import { AwsAuthModal } from "./components/aws/AwsAuthModal";
-import { BrunoRequestPalette } from "./components/bruno/BrunoRequestPalette";
-import { BrunoEnvPalette } from "./components/bruno/BrunoEnvPalette";
 import { Workspace } from "./components/Workspace";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
@@ -31,12 +28,13 @@ import { CliOpenBridge } from "./components/CliOpenBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./keymap";
 import { usePinchZoom } from "./pinchZoom";
+import { introduceNotifications, useAgentNotifications } from "./agentNotifications";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
 import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
-import { emit, subscribe } from "./state/bus";
+import { emit } from "./state/bus";
 import * as cmd from "./state/commands";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
@@ -86,6 +84,7 @@ import { projectControllerBridge } from "./projects/controllerBridge";
 import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
 import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
+import { recordAgentTurns } from "./state/activityRecorder";
 import { useInstalledPlugins } from "./plugins/installed";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
@@ -98,7 +97,7 @@ const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((modu
  */
 const Onboarding = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.Onboarding })));
 const DiagnosticsOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.DiagnosticsOverlay })));
-const WhatsNewOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.WhatsNewOverlay })));
+const WhatsNewOverlay = lazy(() => import("./components/WhatsNewOverlay").then((module) => ({ default: module.WhatsNewOverlay })));
 
 interface BootInfo {
     home: string;
@@ -640,6 +639,7 @@ function ShellBackdrop() {
 export default function App() {
     useKeymap();
     usePinchZoom();
+    useAgentNotifications();
     useBrowserDownloads();
     useBrowserReveal();
     useBrowserStrips();
@@ -656,9 +656,11 @@ export default function App() {
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
-    const brunoReqPaletteOpen = useStore((s) => s.brunoReqPaletteOpen);
     const installedPlugins = useInstalledPlugins();
-    const brunoEnvPaletteOpen = useStore((s) => s.brunoEnvPaletteOpen);
+    const disabledPlugins = useStore((s) => s.disabledPlugins);
+    useEffect(() => {
+        void pluginsApi.setDisabled(disabledPlugins).catch(swallow("switch plugins"));
+    }, [disabledPlugins]);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = useStore((s) => s.uiTextScale);
     useEffect(() => {
@@ -666,7 +668,6 @@ export default function App() {
     }, [uiTextScale]);
     const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
     const commandPopup = useStore((s) => s.commandPopup);
-    const awsAuthModal = useStore((s) => s.awsAuthModal);
     const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
     const onboardingOpen = useStore((s) => s.onboardingOpen);
     const diagnosticsOpen = useStore((s) => s.diagnosticsOpen);
@@ -676,13 +677,10 @@ export default function App() {
             agentPaletteOpen ||
             filePaletteOpen ||
             newTabPaletteOpen ||
-            brunoReqPaletteOpen ||
-            brunoEnvPaletteOpen ||
             settingsOpen ||
             commandPaletteOpen ||
             sessionSwitcherOpen ||
             onboardingOpen ||
-            Boolean(awsAuthModal) ||
             Boolean(commandPopup),
     );
 
@@ -749,6 +747,7 @@ export default function App() {
                     }
                     unsub = subscribePersist();
                     setBootReady(true);
+                    introduceNotifications();
                 }
                 finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
             });
@@ -769,6 +768,8 @@ export default function App() {
             }),
         [],
     );
+
+    useEffect(() => recordAgentTurns(), []);
 
     useEffect(() => {
         let disposed = false;
@@ -810,12 +811,6 @@ export default function App() {
         return () => {
             controller.abort();
         };
-    }, []);
-
-    useEffect(() => {
-        return subscribe("aws-auth-expired", () => {
-            invalidate((kind) => kind.startsWith("aws."));
-        });
     }, []);
 
     useEffect(() => {
@@ -939,9 +934,6 @@ export default function App() {
             {filePaletteOpen && <FilePalette />}
             {newTabPaletteOpen && <NewTabPalette />}
             {installedPlugins.map(({ id, Overlay }) => (Overlay ? <Overlay key={id} /> : null))}
-            {brunoReqPaletteOpen && <BrunoRequestPalette />}
-            {brunoEnvPaletteOpen && <BrunoEnvPalette />}
-            {awsAuthModal && <AwsAuthModal />}
             {sessionSwitcherOpen && <SessionSwitcher />}
             {commandPaletteOpen && <ApplicationCommandPalette />}
             {commandPopup && (

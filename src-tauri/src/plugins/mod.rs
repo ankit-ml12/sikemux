@@ -1,10 +1,10 @@
 pub mod agent;
 mod builtin;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -21,6 +21,7 @@ use crate::error::{AppError, AppResult};
 struct Loaded {
     plugin: Arc<dyn Plugin>,
     context: Arc<PluginContext>,
+    call_timeout: Duration,
 }
 
 const PLUGIN_THREADS: usize = 2;
@@ -34,7 +35,8 @@ pub struct PluginHost {
     next_stream: AtomicU32,
     runtime: Option<Runtime>,
     spawner: Handle,
-    call_timeout: Duration,
+    /// Switched off in Settings: still built in, but nothing reaches them.
+    disabled: RwLock<HashSet<String>>,
 }
 
 impl PluginHost {
@@ -46,7 +48,7 @@ impl PluginHost {
         data_root: &Path,
         sikemux: &Version,
         plugins: Vec<Arc<dyn Plugin>>,
-        call_timeout: Duration,
+        default_call_timeout: Duration,
     ) -> std::io::Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(PLUGIN_THREADS)
@@ -71,7 +73,17 @@ impl PluginHost {
                 continue;
             }
             let context = Arc::new(PluginContext::new(data_root.join(&manifest.id)));
-            loaded.insert(manifest.id.clone(), Loaded { plugin, context });
+            let call_timeout = manifest
+                .call_timeout_secs
+                .map_or(default_call_timeout, Duration::from_secs);
+            loaded.insert(
+                manifest.id.clone(),
+                Loaded {
+                    plugin,
+                    context,
+                    call_timeout,
+                },
+            );
         }
         Ok(Self {
             plugins: loaded,
@@ -79,15 +91,36 @@ impl PluginHost {
             next_stream: AtomicU32::new(1),
             spawner: runtime.handle().clone(),
             runtime: Some(runtime),
-            call_timeout,
+            disabled: RwLock::default(),
         })
     }
 
     fn get(&self, id: &str) -> AppResult<&Loaded> {
+        if !self.is_enabled(id) {
+            return Err(AppError::Plugin {
+                plugin: id.to_owned(),
+                error: PluginError::new("disabled", format!("`{id}` is switched off in Settings")),
+            });
+        }
         self.plugins.get(id).ok_or_else(|| AppError::Plugin {
             plugin: id.to_owned(),
             error: PluginError::new("not-installed", format!("no plugin named `{id}`")),
         })
+    }
+
+    fn is_enabled(&self, id: &str) -> bool {
+        !self
+            .disabled
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(id)
+    }
+
+    pub fn set_disabled(&self, ids: Vec<String>) {
+        *self
+            .disabled
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = ids.into_iter().collect();
     }
 
     pub fn manifests(&self) -> Vec<Manifest> {
@@ -101,7 +134,7 @@ impl PluginHost {
     /// it. When two plugins name the same tool, the first keeps it.
     pub fn agent_tools(&self) -> Vec<(&str, &AgentTool)> {
         let mut offered: Vec<(&str, &AgentTool)> = Vec::new();
-        for (id, loaded) in &self.plugins {
+        for (id, loaded) in self.plugins.iter().filter(|(id, _)| self.is_enabled(id)) {
             for tool in &loaded.plugin.manifest().tools {
                 if offered.iter().all(|(_, kept)| kept.name != tool.name) {
                     offered.push((id.as_str(), tool));
@@ -127,12 +160,13 @@ impl PluginHost {
         let loaded = self.get(id)?;
         let plugin = Arc::clone(&loaded.plugin);
         let context = Arc::clone(&loaded.context);
+        let call_timeout = loaded.call_timeout;
         let owned_method = method.to_owned();
         let task = self
             .spawner
             .spawn(async move { plugin.call(&context, &owned_method, params).await });
         let abort = task.abort_handle();
-        let outcome = match tokio::time::timeout(self.call_timeout, task).await {
+        let outcome = match tokio::time::timeout(call_timeout, task).await {
             Ok(Ok(result)) => result,
             Ok(Err(stopped)) => Err(PluginError::new("stopped", stopped.to_string())),
             Err(_) => {
@@ -141,7 +175,7 @@ impl PluginHost {
                     "timed-out",
                     format!(
                         "`{method}` did not answer within {}s",
-                        self.call_timeout.as_secs()
+                        call_timeout.as_secs()
                     ),
                 ))
             }
@@ -219,6 +253,11 @@ pub enum StreamEvent {
     Item { value: Value },
     End,
     Error { error: PluginError },
+}
+
+#[tauri::command]
+pub fn plugin_set_disabled(host: tauri::State<'_, PluginHost>, ids: Vec<String>) {
+    host.set_disabled(ids);
 }
 
 #[tauri::command]
@@ -379,6 +418,34 @@ mod tests {
         assert!(host.call_agent_tool("fail", Value::Null).await.is_err());
     }
 
+    #[tokio::test]
+    async fn a_switched_off_plugin_answers_nothing_and_offers_no_tools() {
+        let manifest = Manifest::from_json(
+            &json!({
+                "id": "test.echo", "name": "Echo", "version": "1.0.0", "sikemux": "*",
+                "tools": [{ "name": "echo_back", "method": "echo", "description": "Echo." }],
+            })
+            .to_string(),
+        )
+        .expect("test manifest parses");
+        let host = host(vec![Arc::new(Echo(manifest))]);
+
+        host.set_disabled(vec!["test.echo".into()]);
+        let refused = host
+            .call("test.echo", "echo", Value::Null)
+            .await
+            .expect_err("switched off");
+        assert_eq!(
+            serde_json::to_value(&refused).expect("serializes")["category"],
+            "disabled"
+        );
+        assert!(host.agent_tools().is_empty());
+
+        host.set_disabled(Vec::new());
+        assert!(host.call("test.echo", "echo", Value::Null).await.is_ok());
+        assert_eq!(host.agent_tools().len(), 1);
+    }
+
     #[test]
     fn the_first_plugin_keeps_a_tool_name_two_plugins_claim() {
         let claiming = |id: &str| -> Arc<dyn Plugin> {
@@ -412,6 +479,27 @@ mod tests {
             serde_json::to_value(&error).expect("serializes")["category"],
             "timed-out"
         );
+    }
+
+    #[tokio::test]
+    async fn a_plugin_gets_the_call_timeout_it_declares() {
+        let manifest = Manifest::from_json(
+            &json!({
+                "id": "test.slow", "name": "Slow", "version": "1.0.0", "sikemux": "*",
+                "callTimeoutSecs": 1,
+            })
+            .to_string(),
+        )
+        .expect("test manifest parses");
+        let host = host(vec![
+            Arc::new(Echo(manifest)),
+            Echo::plugin("test.echo", "*"),
+        ]);
+        assert_eq!(
+            host.call("test.slow", "block", Value::Null).await.ok(),
+            Some(Value::Null)
+        );
+        assert!(host.call("test.echo", "block", Value::Null).await.is_err());
     }
 
     #[tokio::test(flavor = "current_thread")]

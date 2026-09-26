@@ -8,7 +8,7 @@ import type { PluginKind } from "../../plugins/kinds";
  * are tabs, and the active pane decides which is on top.
  */
 export type SplitDir = "row" | "column" | "stack";
-export type CorePaneKind = "terminal" | "editor" | "git" | "diff" | "aws" | "search" | "bruno" | "agent" | "browser";
+export type CorePaneKind = "terminal" | "editor" | "git" | "diff" | "search" | "agent" | "browser";
 export type PaneKind = CorePaneKind | PluginKind;
 
 export interface PaneNode {
@@ -34,9 +34,9 @@ export interface SplitNode {
 
 export type LayoutNode = PaneNode | SplitNode;
 
-export type SessionKind = "project" | "command" | "ssh" | "aws" | "bruno" | PluginKind;
+export type SessionKind = "project" | "command" | "ssh" | PluginKind;
 
-export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "aws" | "bruno" | "ssh-config" | "named" | "agent" | PluginKind;
+export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "ssh-config" | "named" | "agent" | PluginKind;
 
 export interface Window {
     id: string;
@@ -79,7 +79,7 @@ export type ProviderProfileSelection = Partial<Record<AgentType, string>>;
 
 export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = [
     { id: "builtin-claude", name: "Claude", provider: "claude", accent: "#d97757" },
-    { id: "builtin-codex", name: "Codex", provider: "codex", accent: "#10a37f" },
+    { id: "builtin-codex", name: "Codex", provider: "codex", accent: "#7a9dff" },
     { id: "builtin-gemini", name: "Gemini", provider: "gemini", accent: "#4285f4" },
 ];
 
@@ -171,25 +171,11 @@ export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; 
 
 /** Which panel the workspace rail is showing. */
 
-/**
- * Durable per-session state for a Bruno (API) workspace. Lives on the Session so
- * it persists with the existing `sessions` slice — no persist version bump.
- * Unsaved request text and typed secret values are not durable and live in
- * `state/brunoRuntime` instead.
- */
-export interface BrunoSessionState {
-    collectionPath: string;
-    /** selected environment id per collection root (workspaces hold many collections) */
-    selectedEnvs: Record<string, string>;
-}
-
 export interface Session {
     id: string;
     name: string;
     kind: SessionKind;
     cwd: string;
-    /** Bruno (API) workspace state — present only when kind === "bruno". */
-    bruno?: BrunoSessionState | null;
     pinned: boolean;
     activeWindowId: string;
 }
@@ -214,9 +200,6 @@ export interface RecentEntry {
     name: string;
     cwd: string;
 }
-
-export type AwsService = "ecs" | "ec2" | "lambda" | "sqs" | "billing" | "s3";
-export const AWS_SERVICES: AwsService[] = ["ecs", "ec2", "lambda", "sqs", "billing", "s3"];
 
 export interface ProjectRoot {
     path: string;
@@ -249,4 +232,4 @@ export interface Divider {
 
 export type FocusDir = "left" | "right" | "up" | "down";
 
-export type PickerMode = "all" | "projects" | "ssh" | "bruno";
+export type PickerMode = "all" | "projects" | "ssh";

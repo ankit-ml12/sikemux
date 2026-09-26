@@ -1,6 +1,6 @@
 [package]
 name = "sikemux"
-version = "0.4.0-nightly.10"
+version = "0.4.2-nightly.1"
 description = "A GUI terminal multiplexer"
 authors = ["nodelike"]
 edition = "2021"
@@ -26,8 +26,10 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["rundeck", "signoz"]
+default = ["aws", "bruno", "rundeck", "signoz"]
 ipc-command-tests = ["tauri/test"]
+aws = ["dep:sikemux-plugin-aws"]
+bruno = ["dep:sikemux-plugin-bruno"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
 signoz = ["dep:sikemux-plugin-signoz"]
 
@@ -35,8 +37,9 @@ signoz = ["dep:sikemux-plugin-signoz"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable"] }
+tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable", "compression"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
@@ -67,13 +70,16 @@ uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
 semver = "1"
 sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
+sikemux-plugin-aws = { path = "plugins/aws", optional = true }
+sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
 sikemux-process = { path = "crates/sikemux-process" }
 agent-client-protocol = "2.0.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util", "net"] }
 tokio-tungstenite = "0.28"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "stream", "cookies", "multipart"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "stream", "cookies", "multipart"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 open = "5"
 trash = "5"
 
