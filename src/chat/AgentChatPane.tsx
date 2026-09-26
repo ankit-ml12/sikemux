@@ -66,6 +66,7 @@ import { chatUrlTransform, PATH_CLASS, PATH_CODE_CLASS, remarkFilePaths } from "
 import { remarkHtmlAsText } from "./remarkHtmlAsText";
 import { FoldMemoryContext, newFoldMemory, useLongTextFold } from "./longText";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
+import { caretAtEdge, recallPrompt, sentPrompts, type HistoryPosition } from "./promptHistory";
 import { showImage } from "../state/imageViewer";
 import type {
     AcpAsyncTask,
@@ -227,8 +228,37 @@ function ToolKindIcon({ tool, kind }: { tool: AcpToolCall; kind?: string }) {
    keeps the rest in the tooltip. A command is not a path and stays as typed. */
 function toolTarget(tool: AcpToolCall): string {
     const line = toolLabel(tool.title).name.split("\n")[0].trim();
-    if (!line.includes("/") || /\s/.test(line)) return line;
+    if (!line.includes("/") || /\s/.test(line) || safeWebUrl(line)) return line;
     return basename(line) || line;
+}
+
+function toolUrl(target: string): { before: string; raw: string; url: string; after: string } | null {
+    const match = /https?:\/\/[^\s<>"'`]+/.exec(target);
+    if (!match) return null;
+    const raw = match[0].replace(/[.,;:!?)\]]+$/, "");
+    const url = safeWebUrl(raw);
+    return url ? { before: target.slice(0, match.index), raw, url, after: target.slice(match.index + raw.length) } : null;
+}
+
+function ToolTarget({ text }: { text: string }) {
+    const agentId = useContext(ChatAgentContext).id;
+    const link = toolUrl(text);
+    if (!link) return <>{text}</>;
+    return (
+        <>
+            {link.before}
+            <a
+                className="chat-tool-link"
+                href={link.url}
+                onClick={(event) => {
+                    event.preventDefault();
+                    openLink(link.url, agentId, hasPrimaryModifier(event));
+                }}>
+                {link.raw}
+            </a>
+            {link.after}
+        </>
+    );
 }
 
 /* Which file a call was about: the one it reported touching, or the one its
@@ -241,7 +271,7 @@ function toolPath(tool: AcpToolCall): string | null {
         if (typeof path === "string" && path) return typeof line === "number" ? `${path}:${line}` : path;
     }
     const named = toolLabel(tool.title).name.split("\n")[0].trim();
-    return named.includes("/") && !/\s/.test(named) ? named : null;
+    return named.includes("/") && !/\s/.test(named) && !safeWebUrl(named) ? named : null;
 }
 
 export function durationLabel(ms: number): string {
@@ -314,6 +344,8 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const detail = diff ?? failure;
     const status = tool.status ?? "pending";
     const file = useFileRef(toolPath(tool));
+    const target = toolTarget(tool);
+    const linked = !file && toolUrl(target) !== null;
     /* A call the turn cut off has a duration, but printing it would read as a
        call that ran that long and then finished. It says why it stopped. */
     const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
@@ -327,7 +359,7 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
             <span className="chat-tool-target">
-                {file ? <ChatFileRef refers={file.ref} state={file.state} label={toolTarget(tool)} size={17} /> : toolTarget(tool)}
+                {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
             </span>
         </>
     );
@@ -346,9 +378,9 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const rowProps = { className: `chat-tool status-${status}`, "data-kind": rowKind, title: tool.title };
     return (
         <div className="chat-tool-node">
-            {/* A row whose target opens a file cannot itself be a button, so
-                what is left of it opens the detail instead. */}
-            {detail && !file ? (
+            {/* A row whose target opens a file or a page cannot itself be a
+                button, so what is left of it opens the detail instead. */}
+            {detail && !file && !linked ? (
                 <button type="button" {...rowProps} aria-expanded={open} onClick={toggle}>
                     {lead}
                     <span className="chat-tool-end">{end}</span>
@@ -1129,6 +1161,7 @@ function ChatComposer({
     queuedCount,
     usage,
     onConfig,
+    history,
 }: {
     agent: Agent;
     profile?: ProviderProfile;
@@ -1153,8 +1186,11 @@ function ChatComposer({
     queuedCount: number;
     usage: ContextUsage | null;
     onConfig: (config: SessionConfig, value: string) => void;
+    history: readonly string[];
 }) {
     const [draft, setDraft] = useState("");
+    const [historyPosition, setHistoryPosition] = useState<HistoryPosition | null>(null);
+    const recalledCaret = useRef<"start" | "end" | null>(null);
     const [caret, setCaret] = useState(0);
     const [attachments, setAttachments] = useState<string[]>([]);
     const [slashSelection, setSlashSelection] = useState(0);
@@ -1168,6 +1204,13 @@ function ChatComposer({
         if (!editor) return;
         editor.style.height = "auto";
         editor.style.height = `${editor.scrollHeight}px`;
+        // A recalled message opens with the caret where the next arrow press keeps browsing.
+        if (recalledCaret.current) {
+            const at = recalledCaret.current === "start" ? 0 : draft.length;
+            editor.setSelectionRange(at, at);
+            setCaret(at);
+            recalledCaret.current = null;
+        }
     }, [draft]);
 
     useEffect(() => {
@@ -1238,6 +1281,7 @@ function ChatComposer({
         setSlashSelection(0);
         setAttachments([]);
         setSlashDismissed(false);
+        setHistoryPosition(null);
     };
 
     const chooseFiles = async () => {
@@ -1309,6 +1353,22 @@ function ChatComposer({
                             }
                             if (event.key === "Escape") {
                                 event.preventDefault();
+                                setSlashDismissed(true);
+                                return;
+                            }
+                        }
+                        const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
+                        const plainArrow = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
+                        if (direction && plainArrow) {
+                            const { value, selectionStart, selectionEnd } = event.currentTarget;
+                            const recalled = caretAtEdge(value, selectionStart, selectionEnd, direction)
+                                ? recallPrompt(history, historyPosition, value, direction)
+                                : null;
+                            if (recalled) {
+                                event.preventDefault();
+                                recalledCaret.current = direction === "older" ? "start" : "end";
+                                setHistoryPosition(recalled.position);
+                                setDraft(recalled.draft);
                                 setSlashDismissed(true);
                                 return;
                             }
@@ -1396,6 +1456,14 @@ export function AgentChatPane({
     if (visible) displayStateRef.current = state;
     const displayState = displayStateRef.current;
     const [queued, setQueued] = useState<QueuedMessage[]>([]);
+    const sentHistory = useMemo(
+        () =>
+            sentPrompts(
+                state.messages,
+                queued.map((message) => message.text),
+            ),
+        [state.messages, queued],
+    );
     const queuedCount = useRef(0);
     const [composerError, setComposerError] = useState<string | null>(null);
     const [replyingPermission, setReplyingPermission] = useState<string | null>(null);
@@ -2047,6 +2115,7 @@ export function AgentChatPane({
                             queuedCount={queued.length}
                             usage={state.usage}
                             onConfig={changeConfig}
+                            history={sentHistory}
                         />
                     </div>
                     <div className="chat-drop-target" aria-hidden="true">
