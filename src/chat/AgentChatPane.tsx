@@ -36,6 +36,7 @@ import {
     IconAgent,
     IconArrowDown,
     IconArrowUp,
+    IconCheck,
     IconChevron,
     IconClock,
     IconClose,
@@ -376,7 +377,7 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     );
 }
 
-const ChatAgentContext = createContext("");
+const ChatAgentContext = createContext<{ id: string; type: Agent["type"] }>({ id: "", type: "claude" });
 
 function openLink(href: string, agentId: string, external: boolean) {
     const path = localPath(href);
@@ -429,7 +430,7 @@ function ChatLink({ href, className, children }: { href?: string; className?: st
     const imagePath = localImagePath(href);
     const preview = useImagePreview(guessed.includes(PATH_CLASS) ? null : imagePath);
     const file = useFileRef(href);
-    const agentId = useContext(ChatAgentContext);
+    const agentId = useContext(ChatAgentContext).id;
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
     if (file)
         return (
@@ -751,6 +752,25 @@ const SUBAGENT_WORDS: Record<AcpSubagent["state"], string> = {
     disconnected: "lost",
 };
 
+function SubagentStateMark({ state }: { state: AcpSubagent["state"] }) {
+    const word = SUBAGENT_WORDS[state];
+    return (
+        <span className="chat-subagent-state" role="img" aria-label={word} title={word}>
+            {state === "running" ? (
+                <span className="chat-subagent-spinner" aria-hidden="true" />
+            ) : state === "completed" ? (
+                <IconCheck size={13} />
+            ) : state === "failed" ? (
+                <IconWarning size={12} />
+            ) : state === "disconnected" ? (
+                <IconPlug size={12} />
+            ) : (
+                <IconClose size={11} />
+            )}
+        </span>
+    );
+}
+
 /* A subagent is handed a whole prompt as its task, and a prompt is paragraphs.
    The row is one line, so it opens with the first line and the tooltip keeps
    the rest. */
@@ -774,6 +794,7 @@ function subagentActivity(subagent: AcpSubagent): string {
 /* A folded subagent keeps streaming into a transcript nobody is reading, so its
    body is only built once the reader opens it. */
 function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
+    const agentType = useContext(ChatAgentContext).type;
     const [open, setOpen] = useState(false);
     const parts = subagent.messages.flatMap((message) => message.parts);
     const calls = parts.filter((part) => part.kind === "tool").length;
@@ -782,7 +803,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
             <summary>
                 <IconChevron size={9} className="chat-subagent-chevron" />
                 <span className="chat-subagent-mark">
-                    <IconAgent size={11} />
+                    <AgentIcon type={agentType} size={18} className={`agent-glyph ${agentType}`} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
                 <span className="chat-subagent-task" title={subagent.task || undefined}>
@@ -794,7 +815,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                             {calls} {calls === 1 ? "call" : "calls"}
                         </span>
                     )}
-                    <span className="chat-subagent-state">{SUBAGENT_WORDS[subagent.state]}</span>
+                    <SubagentStateMark state={subagent.state} />
                 </span>
             </summary>
             {open && (
@@ -856,12 +877,13 @@ function runningSubagents(messages: ChatMessage[]): AcpSubagent[] {
    transcript is where its output went, which is not where you look to find out
    whether it is still going. */
 function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
+    const agentType = useContext(ChatAgentContext).type;
     if (subagents.length === 0) return null;
     return (
         <Group label="subagent" count={subagents.length}>
             {subagents.map((subagent) => (
                 <div className="chat-task chat-task-agent" key={subagent.sessionId}>
-                    <IconAgent size={12} />
+                    <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />
                     <span className="chat-task-name">{subagent.name}</span>
                     <span className="chat-task-detail">{subagentActivity(subagent)}</span>
                     <span className="chat-task-spinner" aria-hidden="true" />
@@ -1139,6 +1161,15 @@ function ChatComposer({
     const [slashDismissed, setSlashDismissed] = useState(false);
     const editorRef = useRef<HTMLTextAreaElement>(null);
 
+    /* The field grows with what is typed until it reaches its CSS max-height,
+       and scrolls from there. */
+    useLayoutEffect(() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.style.height = "auto";
+        editor.style.height = `${editor.scrollHeight}px`;
+    }, [draft]);
+
     useEffect(() => {
         const element = paneRef.current;
         if (!element) return;
@@ -1154,10 +1185,16 @@ function ChatComposer({
        keep the caret wherever it was. */
     useEffect(() => {
         if (!visible) return;
-        const held = document.activeElement;
-        if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return;
-        if (held?.closest(".chat-picker-menu")) return;
-        const frame = window.requestAnimationFrame(() => editorRef.current?.focus());
+        const focusIsElsewhere = () => {
+            const held = document.activeElement;
+            if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return true;
+            return Boolean(held?.closest(".chat-picker-menu"));
+        };
+        if (focusIsElsewhere()) return;
+        // Asked again when the frame runs: a menu opened since this was queued keeps its focus.
+        const frame = window.requestAnimationFrame(() => {
+            if (!focusIsElsewhere()) editorRef.current?.focus();
+        });
         return () => window.cancelAnimationFrame(frame);
     }, [connection, paneRef, visible]);
 
@@ -1234,7 +1271,7 @@ function ChatComposer({
                     value={draft}
                     aria-label="Message agent"
                     placeholder={placeholder}
-                    rows={3}
+                    rows={2}
                     onChange={(event) => {
                         setDraft(event.target.value);
                         setCaret(event.target.selectionStart);
@@ -1329,7 +1366,7 @@ function ChatComposer({
                         }
                         disabled={blocked || !drafted}
                         onClick={() => send()}>
-                        <IconArrowUp size={18} />
+                        <IconArrowUp size={15} />
                     </button>
                 )}
             </div>
@@ -1421,8 +1458,8 @@ export function AgentChatPane({
        what is still running is what says the agent is still in use. */
     const liveTasks = useMemo(() => state.tasks.filter((task) => task.state === "running").length, [state.tasks]);
     const liveSubagents = useMemo(() => runningSubagents(state.messages).length, [state.messages]);
-    useEffect(() => cmd.noteAgentBackgroundWork(agent.id, liveTasks + liveSubagents), [agent.id, liveTasks, liveSubagents]);
-    useEffect(() => () => cmd.noteAgentBackgroundWork(agent.id, 0), [agent.id]);
+    useEffect(() => cmd.noteAgentBackgroundWork(agent.id, liveTasks, liveSubagents), [agent.id, liveTasks, liveSubagents]);
+    useEffect(() => () => cmd.noteAgentBackgroundWork(agent.id, 0, 0), [agent.id]);
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 
@@ -1820,6 +1857,7 @@ export function AgentChatPane({
             detectedExecutablePath: profile?.executablePath || agent.executablePath,
             cwd,
         });
+    const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
     const composerPlaceholder =
         state.connection === "ready"
             ? state.running
@@ -1837,7 +1875,7 @@ export function AgentChatPane({
 
     return (
         <PathRootsProvider cwd={cwd} home={home}>
-            <ChatAgentContext.Provider value={agent.id}>
+            <ChatAgentContext.Provider value={chatAgent}>
                 <div className="agent-chat-pane" ref={paneRef}>
                     <div
                         className="chat-scroll"

@@ -1,10 +1,9 @@
 mod acp;
+mod activity;
 mod agent_detection;
 mod agents;
 mod autopsy;
-mod aws;
 mod browser;
-mod bruno;
 pub mod cli_client;
 mod cli_install;
 mod cli_protocol;
@@ -22,6 +21,7 @@ mod lsp;
 pub mod observability;
 mod plugins;
 mod pty;
+mod release_credits;
 mod search;
 mod settings;
 mod ssh;
@@ -33,7 +33,6 @@ mod wallpaper;
 mod wheel;
 
 use acp::AcpManager;
-use aws::LogsTailManager;
 use browser::BrowserManager;
 use observability::UiWatchdogState;
 use plugins::PluginHost;
@@ -41,7 +40,14 @@ use pty::PtyManager;
 use sikemux_process as bounded_process;
 use tauri::Manager;
 
+// reqwest is built without a TLS crypto backend of its own, so every HTTP
+// client in the app and its plugins uses the one installed here.
+pub(crate) fn install_tls_crypto() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 pub fn run() {
+    install_tls_crypto();
     system::normalize_user_environment();
 
     // Raise our open-file-descriptor limit FIRST, before any subsystem
@@ -79,9 +85,9 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(LogsTailManager::default())
         .on_window_event(|window, event| {
             // Drain every live PTY on close so we don't leave orphan
             // shells, agents, or `tail`s alive after the user quits.
@@ -216,6 +222,8 @@ pub fn run() {
             autopsy::hang_reports,
             updates::update_check,
             updates::update_install,
+            release_credits::release_avatars,
+            release_credits::release_notes,
             state::state_load,
             state::state_save,
             agents::available_agents,
@@ -226,6 +234,9 @@ pub fn run() {
             agents::live_agent_sessions,
             agents::agent_sessions_watch_start,
             agents::agent_sessions_watch_stop,
+            activity::activity_turn_started,
+            activity::activity_turn_ended,
+            activity::activity_summary,
             fs::read_dir,
             fs::read_dirs,
             fs::path_kinds,
@@ -324,28 +335,12 @@ pub fn run() {
             search::read_file_window,
             ssh::ssh_hosts,
             ssh::ssh_config_ensure,
-            aws::auth::aws_profiles,
-            aws::auth::aws_caller_identity,
-            aws::auth::aws_sso_login,
-            aws::auth::aws_sso_cancel,
-            aws::ecs::aws_ecs_clusters,
-            aws::ecs::aws_ecs_services,
-            aws::ecs::aws_ecs_tasks,
-            aws::ecs::aws_ecs_service_log_config,
-            aws::ecs::aws_ecs_task_log_config,
-            aws::ec2::aws_ec2_instances,
-            aws::lambda::aws_lambda_functions,
-            aws::sqs::aws_sqs_queues,
-            aws::billing::aws_billing_months,
-            aws::s3::aws_s3_buckets,
-            aws::logs::aws_logs_tail_start,
-            aws::logs::aws_logs_tail_stop,
             external::open_url,
             external::macos_focus_app,
             external::run_background_command,
             transparency::set_window_blur,
-            bruno::bru_send,
             plugins::plugin_manifests,
+            plugins::plugin_set_disabled,
             plugins::plugin_call,
             plugins::plugin_stream_start,
             plugins::plugin_stream_stop,

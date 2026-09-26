@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { sendTestNotification } from "../agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
 import {
     eventToKeybinding,
     findKeybindingConflict,
-    KEYBINDING_ACTIONS,
-    KEYBINDING_CATEGORIES,
+    keybindingActions,
+    type KeybindingAction,
+    keybindingCategories,
     keybindingHasModifier,
     keybindingLabel,
     resolvedKeybinding,
@@ -23,13 +25,16 @@ import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, t
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
 import {
+    IconActivity,
     IconAgent,
     IconCheck,
     IconClose,
     IconCommand,
+    IconContrast,
     IconEditor,
     IconFolder,
     IconGlobe,
+    IconPlug,
     IconInfo,
     IconPlus,
     IconRefresh,
@@ -37,7 +42,6 @@ import {
     IconSave,
     IconSearch,
     IconTrash,
-    IconWindow,
 } from "./Icons";
 import { Dropdown } from "./Dropdown";
 import { Checkbox, Slider, Switch } from "./Controls";
@@ -54,18 +58,23 @@ import {
     type SettingsEntry,
     type SettingsPageId,
 } from "../settingsIndex";
+import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
+import { ActivityPage } from "./ActivityPage";
+import { SettingsPage, SettingsSection } from "./SettingsLayout";
 import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
     general: <IconFolder size={13} />,
-    appearance: <IconWindow size={13} />,
+    appearance: <IconContrast size={13} />,
     keybindings: <IconCommand size={13} />,
+    activity: <IconActivity size={13} />,
     about: <IconInfo size={13} />,
     agents: <IconAgent size={13} />,
     actions: <IconRun size={13} />,
     cli: <IconEditor size={13} />,
     cloud: <IconGlobe size={13} />,
+    plugins: <IconPlug size={13} />,
 };
 
 const FOCUSABLE = "button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])";
@@ -107,7 +116,7 @@ export function SettingsPanel() {
     const entries = useMemo<SettingsEntry[]>(
         () => [
             ...SETTINGS_INDEX,
-            ...KEYBINDING_ACTIONS.map((action) => ({
+            ...keybindingActions().map((action) => ({
                 page: "keybindings" as const,
                 section: "Shortcuts",
                 label: action.label,
@@ -276,6 +285,8 @@ export function SettingsPanel() {
                                     <KeybindingsPage key={jump?.at} overrides={keybindingOverrides} initialQuery={jump?.entry.filter ?? ""} />
                                 )}
 
+                                {page === "activity" && <ActivityPage />}
+
                                 {page === "about" && <AboutPage />}
 
                                 {page === "agents" && <AgentsPage />}
@@ -285,6 +296,7 @@ export function SettingsPanel() {
                                 {page === "cli" && <CliPage />}
 
                                 {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
+                                {page === "plugins" && <PluginsPage />}
                             </>
                         )}
                     </div>
@@ -337,7 +349,7 @@ function SearchResults({ query, results, active, onHover, onOpen }: SearchResult
     );
 }
 
-const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh", "aws", "bruno"];
+const CORE_COMMAND_CONTEXTS: readonly CommandContext[] = ["project", "command", "ssh"];
 const COMMAND_PLACEMENTS: CustomCommandPlacement[] = ["terminal", "split", "popup", "background", "replace"];
 
 function blankCommand(): CustomCommand {
@@ -467,6 +479,7 @@ function ActionsPage() {
 
 function AgentsPage() {
     const restore = useStore((s) => s.restoreAgentTabs);
+    const notifications = useStore((s) => s.agentNotifications);
     const density = useStore((s) => s.railDensity);
     const profiles = useStore((s) => s.providerProfiles);
     const selectedProfiles = useStore((s) => s.selectedProviderProfileIds);
@@ -635,6 +648,21 @@ function AgentsPage() {
                         desc="Resumable tabs come back asleep and start only when selected."
                         asLabel
                         control={<Switch checked={restore} onChange={cmd.setRestoreAgentTabs} label="Restore agent tabs" />}
+                    />
+                    <SettingsRow
+                        label="Notify when an agent needs you"
+                        desc="While Sikemux is in the background, a notification says when an agent asks for input or finishes."
+                        asLabel
+                        control={<Switch checked={notifications} onChange={cmd.setAgentNotifications} label="Notify when an agent needs you" />}
+                    />
+                    <SettingsRow
+                        label="Test notification"
+                        desc="Sends one now, with its sound. The first one also has macOS ask whether Sikemux may notify you."
+                        control={
+                            <button className="settings-btn" type="button" onClick={sendTestNotification}>
+                                Send test
+                            </button>
+                        }
                     />
                     <SettingsRow label="Rail density" desc="Compact fits more sessions while keeping every state symbol visible." wide>
                         <Dropdown
@@ -996,7 +1024,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
         if (event.key === "Backspace" || event.key === "Delete") {
             cmd.setKeybinding(id, null);
             setRecording(null);
-            setMessage(`${KEYBINDING_ACTIONS.find((action) => action.id === id)?.label} is now unassigned.`);
+            setMessage(`${keybindingActions().find((action) => action.id === id)?.label} is now unassigned.`);
             return;
         }
 
@@ -1014,10 +1042,10 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
 
         cmd.setKeybinding(id, binding);
         setRecording(null);
-        setMessage(`${KEYBINDING_ACTIONS.find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.`);
+        setMessage(`${keybindingActions().find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.`);
     };
 
-    const matches = (action: (typeof KEYBINDING_ACTIONS)[number]) =>
+    const matches = (action: KeybindingAction) =>
         !normalizedQuery ||
         `${action.label} ${action.detail} ${keybindingLabel(resolvedKeybinding(overrides, action.id as KeybindingActionId))}`
             .toLowerCase()
@@ -1027,7 +1055,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
         <SettingsPage>
             <SettingsSection
                 title="Shortcuts"
-                meta={`${KEYBINDING_ACTIONS.length} commands · ${overrideCount} changed`}
+                meta={`${keybindingActions().length} commands · ${overrideCount} changed`}
                 sub="Select a keycap, then press a new combination. Conflicts are blocked.">
                 <div className="keymap-toolbar">
                     <label className="keymap-search">
@@ -1059,8 +1087,8 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
                 </div>
 
                 <div className="keymap-groups">
-                    {KEYBINDING_CATEGORIES.map((category) => {
-                        const actions = KEYBINDING_ACTIONS.filter((action) => action.category === category && matches(action));
+                    {keybindingCategories().map((category) => {
+                        const actions = keybindingActions().filter((action) => action.category === category && matches(action));
                         if (!actions.length) return null;
                         return (
                             <section className="keymap-group" key={category}>
@@ -1114,7 +1142,7 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
                             </section>
                         );
                     })}
-                    {normalizedQuery && !KEYBINDING_ACTIONS.some(matches) && (
+                    {normalizedQuery && !keybindingActions().some(matches) && (
                         <div className="settings-empty">No commands match “{query.trim()}”.</div>
                     )}
                 </div>
@@ -1146,6 +1174,7 @@ interface ThemeEdit {
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = useStore((state) => state.uiTextScale);
+    const paneShader = useStore((state) => state.paneShader);
     const customThemes = useStore((s) => s.customThemes);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -1251,6 +1280,12 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                             onChange={(value) => cmd.setUiTextScale(Number(value))}
                         />
                     </SettingsRow>
+                    <SettingsRow
+                        label="Pane texture"
+                        desc="The dithered grain behind each pane."
+                        asLabel
+                        control={<Switch checked={paneShader} onChange={cmd.setPaneShader} label="Pane texture" />}
+                    />
                 </SettingsRows>
             </SettingsSection>
 
@@ -1465,6 +1500,42 @@ interface CloudPageProps {
     cloudBrowserShortcut: string;
 }
 
+function PluginsPage() {
+    const built = useBuiltPlugins();
+    const manifests = useStore((s) => s.pluginManifests);
+    const disabled = useStore((s) => s.disabledPlugins);
+    return (
+        <SettingsPage>
+            <SettingsSection
+                title="Built-in plugins"
+                sub="A plugin switched off leaves the rail, the top bar and agents' tools, and costs nothing until it is back on.">
+                <SettingsRows>
+                    {built.length === 0 && <div className="settings-empty">No plugins in this build.</div>}
+                    {built.map((plugin) => {
+                        const title = plugin.surfaces[0]?.title ?? plugin.id;
+                        const version = manifests.find((manifest) => manifest.id === plugin.id)?.version;
+                        return (
+                            <SettingsRow
+                                key={plugin.id}
+                                label={title}
+                                desc={`${plugin.id}${version ? ` · ${version}` : ""}`}
+                                asLabel
+                                control={
+                                    <Switch
+                                        checked={!disabled.includes(plugin.id)}
+                                        onChange={(enabled) => cmd.setPluginEnabled(plugin.id, enabled)}
+                                        label={title}
+                                    />
+                                }
+                            />
+                        );
+                    })}
+                </SettingsRows>
+            </SettingsSection>
+        </SettingsPage>
+    );
+}
+
 function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
     return (
         <SettingsPage>
@@ -1493,25 +1564,6 @@ function CloudPage({ cloudBrowser, cloudBrowserShortcut }: CloudPageProps) {
                 </SettingsRows>
             </SettingsSection>
         </SettingsPage>
-    );
-}
-
-function SettingsPage({ children }: { children: ReactNode }) {
-    return <div className="settings-page">{children}</div>;
-}
-
-function SettingsSection({ title, meta, sub, children }: { title: ReactNode; meta?: ReactNode; sub?: ReactNode; children: ReactNode }) {
-    return (
-        <section className="settings-section" data-settings-target={typeof title === "string" ? title : undefined}>
-            <header className="settings-section-head">
-                <div className="settings-section-topline">
-                    <h2 className="settings-section-title">{title}</h2>
-                    {meta && <span className="settings-section-meta">{meta}</span>}
-                </div>
-                {sub && <p className="settings-section-sub">{sub}</p>}
-            </header>
-            <div className="settings-section-body">{children}</div>
-        </section>
     );
 }
 

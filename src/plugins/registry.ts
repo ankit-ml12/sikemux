@@ -1,9 +1,33 @@
 import type { ComponentType, ReactNode } from "react";
+import type { CtxItem } from "../components/FileTree";
 import { isPluginKind, pluginIdOf, type PluginKind } from "./kinds";
 
 export interface PluginSurfaceProps {
     readonly paneId: string;
     readonly visible: boolean;
+}
+
+/** What a document tab in the workspace strip shows. */
+export interface PluginDocumentTab {
+    readonly label: string;
+    readonly title?: string;
+    readonly icon?: ReactNode;
+    readonly dirty?: boolean;
+}
+
+/**
+ * A surface that holds documents, each shown as a tab in the workspace strip
+ * the way an editor's files are. Reads are plain functions of plugin state so
+ * core can walk tabs outside React; `subscribe` says when to read again.
+ */
+export interface PluginDocuments {
+    list(paneId: string): { readonly ids: readonly string[]; readonly activeId: string | null };
+    describe(paneId: string, id: string): PluginDocumentTab;
+    select(paneId: string, id: string): void;
+    close(paneId: string, id: string): void;
+    reorder?(paneId: string, sourceId: string, targetId: string, placement: "before" | "after"): void;
+    menu?(paneId: string, id: string): readonly CtxItem[];
+    subscribe(listener: () => void): () => void;
 }
 
 export interface PluginSurface {
@@ -13,6 +37,7 @@ export interface PluginSurface {
     readonly render: (props: PluginSurfaceProps) => ReactNode;
     /** What ⌘P does while this surface is in front, in place of the file finder. */
     readonly quickOpen?: () => void;
+    readonly documents?: PluginDocuments;
 }
 
 export interface PluginTopBarProps {
@@ -22,11 +47,37 @@ export interface PluginTopBarProps {
     readonly stripHovered: boolean;
 }
 
+/** A shortcut a plugin offers while it is in use; people can rebind it in Settings. */
+export interface PluginShortcut {
+    readonly name: string;
+    readonly label: string;
+    readonly detail: string;
+    readonly defaultBinding: string;
+    /** False when it does not apply right now, which leaves the key to whatever else wants it. */
+    readonly run: () => boolean;
+}
+
+/** Something a plugin can open from the app's session switcher. */
+export interface PluginPickerEntry {
+    readonly id: string;
+    readonly name: string;
+    readonly sub: string;
+    readonly icon: ReactNode;
+    open(): void;
+    /** Removes it from the list, where that means something. */
+    forget?(): void;
+}
+
 export interface FrontendPlugin {
     readonly id: string;
     readonly surfaces: readonly PluginSurface[];
     readonly open: () => void;
     readonly openTitle: string;
+    /** A default shortcut for `open`, like "Alt+KeyA"; people can change it in Settings. */
+    readonly openShortcut?: string;
+    readonly shortcuts?: readonly PluginShortcut[];
+    /** Entries for the session switcher, under this heading. Read from plugin settings, so the switcher follows them. */
+    readonly picker?: { readonly heading: string; entries(): readonly PluginPickerEntry[] };
     /** Always mounted; it decides for itself when to show. */
     readonly Overlay?: ComponentType;
     readonly TopBarItem?: ComponentType<PluginTopBarProps>;

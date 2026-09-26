@@ -1,10 +1,10 @@
 import { IS_MACOS } from "./lib/platform";
 
-export type SettingsPageId = "general" | "appearance" | "keybindings" | "about" | "agents" | "actions" | "cli" | "cloud";
+export type SettingsPageId = "general" | "appearance" | "keybindings" | "activity" | "about" | "agents" | "actions" | "cli" | "cloud" | "plugins";
 
 export const SETTINGS_GROUPS: { label: string; pages: SettingsPageId[] }[] = [
-    { label: "App", pages: ["general", "appearance", "keybindings", "about"] },
-    { label: "Tools", pages: ["agents", "actions", "cli", "cloud"] },
+    { label: "App", pages: ["general", "appearance", "keybindings", "activity", "about"] },
+    { label: "Tools", pages: ["agents", "actions", "cli", "cloud", "plugins"] },
 ];
 
 export const SETTINGS_PAGE_ORDER: SettingsPageId[] = SETTINGS_GROUPS.flatMap((group) => group.pages);
@@ -13,11 +13,13 @@ export const SETTINGS_PAGE_NAMES: Record<SettingsPageId, string> = {
     general: "General",
     appearance: "Appearance",
     keybindings: "Keybindings",
+    activity: "Activity",
     about: "About",
     agents: "Agents",
     actions: "Actions",
     cli: "Command line",
     cloud: "Cloud",
+    plugins: "Plugins",
 };
 
 /**
@@ -49,12 +51,14 @@ const row = (page: SettingsPageId, sectionTitle: string, label: string, keywords
 });
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
+    section("plugins", "Built-in plugins", "aws bruno rundeck signoz enable disable switch off turn on extensions integrations"),
     section("general", "Project folders", "repos repositories directories roots scan depth index picker"),
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
 
     section("appearance", "Theme", "colours colors palette dark light custom fork editor"),
     section("appearance", "Interface"),
     row("appearance", "Interface", "Text size", "font zoom scale larger smaller accessibility"),
+    row("appearance", "Interface", "Pane texture", "dither dithering shader grain noise background effect"),
     ...(IS_MACOS
         ? [
               section("appearance", "Window"),
@@ -64,6 +68,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
         : []),
 
     section("keybindings", "Shortcuts", "keybindings hotkeys keys keyboard remap"),
+
+    section("activity", "Overview", "stats statistics analytics dashboard profile usage totals sessions tokens commits hours"),
+    section("activity", "Calendar", "heatmap contributions streak days year"),
+    section("activity", "By agent", "claude codex share breakdown"),
+    section("activity", "By project", "repositories share breakdown"),
 
     section("about", "Updates", "version upgrade release"),
     row("about", "Updates", "Channel", "nightly stable prerelease beta"),
@@ -80,6 +89,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("agents", "Provider profiles", "Codex default", "profile"),
     section("agents", "Sessions"),
     row("agents", "Sessions", "Restore agent tabs", "resume reopen startup"),
+    row("agents", "Sessions", "Notify when an agent needs you", "notification alert badge dock permission finished"),
+    row("agents", "Sessions", "Test notification", "notification sound permission send try"),
     row("agents", "Sessions", "Rail density", "compact comfortable sidebar"),
     row("agents", "Sessions", "Idle agents", "sleep memory process"),
 

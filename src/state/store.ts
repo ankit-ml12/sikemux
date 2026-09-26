@@ -18,13 +18,10 @@ import type { BrowserSnapshot } from "../api/browser";
 import type {
     Agent,
     AgentPermissionMode,
-    AwsService,
     BrowserPaneView,
-    EcsLevel,
     EditorPaneView,
     CliPendingEditorOpen,
     GitPaneView,
-    BrunoView,
     GlobalSearchView,
     PickerMode,
     ProjectRoot,
@@ -51,12 +48,11 @@ export interface DomainState {
     recent: RecentEntry[];
 
     projectRoots: ProjectRoot[];
-    /** Imported Bruno (API) workspace collection paths, most-recent-first. Survive session close so they stay reopenable. */
-    brunoWorkspaces: string[];
     themeId: string;
     /** User-defined themes, derived from a built-in or another custom theme via the theme editor. */
     customThemes: Theme[];
     uiTextScale: number;
+    paneShader: boolean;
     terminalFontSize: number;
     chatTextScale: number;
     editorTextScale: number;
@@ -65,8 +61,6 @@ export interface DomainState {
     cloudBrowser: string;
     cloudBrowserShortcut: string;
     keybindingOverrides: KeybindingOverrides;
-    awsProfile: string | null;
-    awsService: AwsService;
     sideRailOpen: boolean;
     agentRailOpen: boolean;
     sideRailWidth: number;
@@ -75,7 +69,11 @@ export interface DomainState {
     zenMode: boolean;
     /** Each plugin's own settings, by plugin id, in whatever shape the plugin decodes. */
     pluginSettings: Readonly<Record<string, unknown>>;
+    /** Plugins switched off in Settings; they are built in but act as if absent. */
+    disabledPlugins: readonly string[];
     restoreAgentTabs: boolean;
+    agentNotifications: boolean;
+    notificationsIntroduced: boolean;
     railDensity: RailDensity;
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -120,11 +118,8 @@ export interface ViewState {
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     newTabPaletteOpen: boolean;
-    brunoReqPaletteOpen: boolean;
-    brunoEnvPaletteOpen: boolean;
     settingsOpen: boolean;
     settingsPage: SettingsPageId;
-    awsAuthModal: { profile: string; ssoStartUrl: string | null } | null;
     zoomedPaneId: string | null;
     sessionSwitcher: SessionSwitcherView | null;
 
@@ -140,9 +135,6 @@ export interface ViewState {
     pendingEditorOpens: Record<string, CliPendingEditorOpen[]>;
     dirtyEditorPaths: Record<string, string[]>;
     gitViews: Record<string, GitPaneView>;
-    ecsViews: Record<string, EcsLevel>;
-    brunoViews: Record<string, BrunoView>;
-    expandedBillingMonth: Record<string, string | null>;
 
     gitModal: GitModal | null;
     gitCmdLog: GitCmdEntry[];
@@ -154,6 +146,8 @@ export interface ViewState {
     agentActivity: Record<string, import("./types").AgentRuntimeState>;
     /** How many background shells, monitors and subagents each agent still has going. */
     agentBackgroundWork: Record<string, number>;
+    /** How many of those are subagents, counted on their own so a tab can show them. */
+    agentSubagents: Record<string, number>;
 
     commandPaletteOpen: boolean;
     onboardingOpen: boolean;
@@ -177,7 +171,7 @@ function initialSession(): {
     const pane = makePane("", { kind: "terminal" });
     const win: Window = {
         id: newId("win"),
-        name: "1",
+        name: "Terminal",
         role: "term",
         root: pane,
         activePaneId: pane.id,
@@ -204,10 +198,10 @@ export const useStore = create<StoreState>(() => {
         activeSessionId: session.id,
         recent: [],
         projectRoots: [],
-        brunoWorkspaces: [],
         themeId: DEFAULT_THEME_ID,
         customThemes: [],
         uiTextScale: 1,
+        paneShader: true,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
         editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,
@@ -216,8 +210,6 @@ export const useStore = create<StoreState>(() => {
         cloudBrowser: "",
         cloudBrowserShortcut: "",
         keybindingOverrides: {},
-        awsProfile: null,
-        awsService: "ecs",
         sideRailOpen: true,
         agentRailOpen: true,
         sideRailWidth: RAIL_WIDTH.start.initial,
@@ -225,7 +217,10 @@ export const useStore = create<StoreState>(() => {
         diffTarget: {},
         zenMode: false,
         pluginSettings: {},
+        disabledPlugins: [],
         restoreAgentTabs: true,
+        agentNotifications: true,
+        notificationsIntroduced: false,
         railDensity: "comfortable",
         onboardingComplete: false,
         lastSeenVersion: "",
@@ -244,11 +239,8 @@ export const useStore = create<StoreState>(() => {
         agentPaletteOpen: false,
         filePaletteOpen: false,
         newTabPaletteOpen: false,
-        brunoReqPaletteOpen: false,
-        brunoEnvPaletteOpen: false,
         settingsOpen: false,
         settingsPage: "general",
-        awsAuthModal: null,
         zoomedPaneId: null,
         sessionSwitcher: null,
         editorViews: {},
@@ -258,15 +250,13 @@ export const useStore = create<StoreState>(() => {
         pendingEditorOpens: {},
         dirtyEditorPaths: {},
         gitViews: {},
-        ecsViews: {},
-        brunoViews: {},
-        expandedBillingMonth: {},
         gitModal: null,
         gitCmdLog: [],
         gitCmdLogOpen: false,
         globalSearchBySession: {},
         agentActivity: {},
         agentBackgroundWork: {},
+        agentSubagents: {},
         commandPaletteOpen: false,
         onboardingOpen: false,
         diagnosticsOpen: false,

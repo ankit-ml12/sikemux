@@ -935,13 +935,13 @@ button.chat-tool:hover,
 /* ── a subagent's own thread ──────────────────────────────────────── */
 
 /* The card is the record of what a subagent did, so it keeps to itself until
-   it is opened: a rail in the colour of how it ended, and one line saying so.
-   What it is doing right now lives over the composer instead. */
+   it is opened: one line, and a chip saying how it ended. Opened, what it said
+   hangs off the card on a quieter tray. What it is doing right now lives over
+   the composer instead. */
 .chat-subagent {
     --chat-agent: color-mix(in srgb, var(--acc) 62%, var(--ink-faint));
+    --chat-dock-step: 12px;
     margin: 6px 0;
-    border-left: 2px solid color-mix(in srgb, var(--chat-agent) 55%, transparent);
-    border-radius: 0 var(--radius-2) var(--radius-2) 0;
 }
 
 .chat-subagent.state-completed {
@@ -962,8 +962,10 @@ button.chat-tool:hover,
     align-items: center;
     gap: 7px;
     min-height: 24px;
-    padding: 3px 9px 3px 8px;
-    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+    padding: 4px 12px 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--s-raised);
     font-size: var(--text-2xs);
     list-style: none;
     cursor: pointer;
@@ -974,7 +976,7 @@ button.chat-tool:hover,
 }
 
 .chat-subagent summary:hover {
-    background: color-mix(in srgb, var(--ink) 5%, transparent);
+    background: color-mix(in srgb, var(--ink) 5%, var(--s-raised));
 }
 
 .chat-subagent-chevron {
@@ -1026,14 +1028,32 @@ button.chat-tool:hover,
 }
 
 .chat-subagent-state {
-    padding: 1px 5px;
-    border-radius: var(--radius-chip);
-    background: color-mix(in srgb, var(--chat-agent) 14%, transparent);
+    display: grid;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    place-items: center;
     color: var(--chat-agent);
 }
 
+.chat-subagent-spinner {
+    box-sizing: border-box;
+    width: 10px;
+    height: 10px;
+    border: 1.4px solid color-mix(in oklab, currentcolor 26%, transparent);
+    border-top-color: currentcolor;
+    border-right-color: currentcolor;
+    border-radius: 50%;
+    animation: chat-activity-spin 0.72s linear infinite;
+}
+
 .chat-subagent-body {
-    padding: 2px 10px 8px 22px;
+    margin: 0 var(--chat-dock-step);
+    padding: 4px 10px 8px calc(25px - var(--chat-dock-step));
+    border: 1px solid var(--border);
+    border-top: 0;
+    border-radius: 0 0 var(--radius-2) var(--radius-2);
+    background: color-mix(in srgb, var(--s-raised) 45%, transparent);
 }
 
 .chat-subagent-empty {
@@ -1557,7 +1577,7 @@ button.chat-tool:hover,
 .chat-composer-wrap {
     /* The composer and the jump button float over the same transcript, so they
        share one fill and fade together with the window. */
-    --chat-composer-fill: var(--s-sunken);
+    --chat-composer-fill: color-mix(in srgb, var(--s-raised) 55%, var(--s-sunken));
     /* The gap the field keeps from the box, and how far the stack above tucks
        behind the composer's top edge. */
     --chat-inset: 8px;
@@ -1583,22 +1603,17 @@ button.chat-tool:hover,
     background: var(--chat-composer-fill);
 }
 
-.chat-field {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--s-raised);
-}
-
-.chat-composer:focus-within .chat-field {
+.chat-composer:focus-within {
     border-color: var(--border-selected);
 }
 
 .chat-composer textarea {
     display: block;
     width: 100%;
-    min-height: 66px;
+    max-height: min(320px, 40vh);
+    overflow-y: auto;
     resize: none;
-    padding: 13px 14px;
+    padding: 10px 12px;
     border: 0;
     outline: 0;
     background: transparent;
@@ -1621,7 +1636,7 @@ button.chat-tool:hover,
     display: flex;
     flex-wrap: wrap;
     gap: 7px;
-    padding: 11px 11px 0;
+    padding: 6px 6px 0;
 }
 
 .chat-attachments > span {
@@ -1785,8 +1800,8 @@ button.chat-tool:hover,
 }
 
 .chat-send {
-    width: 37px;
-    height: 37px;
+    width: 30px;
+    height: 30px;
     margin-left: 3px;
     background: var(--ink);
     color: var(--void);
@@ -1802,8 +1817,8 @@ button.chat-tool:hover,
 }
 
 .chat-send.stop span {
-    width: 11px;
-    height: 11px;
+    width: 9px;
+    height: 9px;
     border-radius: 2px;
     background: currentColor;
 }
@@ -1922,7 +1937,8 @@ button.chat-tool:hover,
     .chat-activity-label,
     .chat-activity-loader,
     .chat-activity-mark,
-    .chat-tool-spinner {
+    .chat-tool-spinner,
+    .chat-subagent-spinner {
         animation: none;
     }
 

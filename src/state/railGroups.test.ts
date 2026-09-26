@@ -13,9 +13,7 @@ describe("railGroupOf", () => {
         expect(railGroupOf("sikemux.rundeck:deploy", [])).toBeNull();
     });
 
-    it("puts AWS and Bruno with the plugins and keeps other core sessions where they were", () => {
+    it("keeps core sessions where they were", () => {
         expect(railGroupOf("project", [])).toBe("project");
-        expect(railGroupOf("aws", [])).toBe("plugins");
-        expect(railGroupOf("bruno", [])).toBe("plugins");
     });
 });
