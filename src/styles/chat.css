@@ -782,6 +782,15 @@ button.chat-tool:hover,
     white-space: nowrap;
 }
 
+.chat-tool-link {
+    color: var(--acc);
+    text-decoration: none;
+}
+
+.chat-tool-link:hover {
+    text-decoration: underline;
+}
+
 .chat-tool-end {
     display: flex;
     align-items: center;
@@ -1131,6 +1140,10 @@ button.chat-tool:hover,
     color: color-mix(in srgb, var(--acc) 62%, var(--ink-faint));
 }
 
+.chat-task-agent > .agent-glyph {
+    flex: none;
+}
+
 .chat-task-spinner {
     box-sizing: border-box;
     width: 9px;
@@ -1157,6 +1170,7 @@ button.chat-tool:hover,
 }
 
 .chat-task-detail {
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
     color: var(--ink-faint);
