@@ -34,6 +34,7 @@ import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { invalidate } from "../state/resources";
 import { useStore } from "../state/store";
+import { collectPanes } from "../state/layout";
 import { errCategory, errMessage, notify, reportError, swallow } from "../state/toast";
 import { confirmDialog } from "../state/dialog";
 import { refreshViewTheme, registerView } from "../themes/bus";
@@ -935,6 +936,9 @@ export function EditorPane({
 
     useEffect(() => {
         return subscribe("open-file", (e) => {
+            // An editor split beside another tab shows the one file it was given.
+            const ownWindow = Object.values(useStore.getState().windows).find((win) => collectPanes(win.root).some((pane) => pane.id === paneId));
+            if (ownWindow && ownWindow.role !== "files") return;
             // Project files open in their owning editor. LSP targets may live
             // in GOMODCACHE, rust stdlib, site-packages, etc.; route those to
             // the active editor instead of dropping them.
@@ -949,7 +953,7 @@ export function EditorPane({
             })().catch(reportError("open file"));
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cwd, active]);
+    }, [cwd, active, paneId]);
 
     useEffect(() => {
         const view = viewRef.current;
