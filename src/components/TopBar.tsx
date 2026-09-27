@@ -10,10 +10,24 @@ import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { useStore } from "../state/store";
 import { activeAgentId } from "../state/selectors";
-import { IconAgent, IconBattery, IconChevron, IconCommand, IconFocus, IconFolder, IconGit, IconPanelLeft, IconZoom, WindowIcon } from "./Icons";
+import {
+    IconAgent,
+    IconBattery,
+    IconChevron,
+    IconCommand,
+    IconFocus,
+    IconFolder,
+    IconGit,
+    IconMic,
+    IconPanelLeft,
+    IconZoom,
+    WindowIcon,
+} from "./Icons";
+import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
 import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
+import { RollingText } from "./RollingText";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -71,8 +85,16 @@ function GitChip({ repo }: { repo: string }) {
                         <span className="tb-git-branch">{st.branch}</span>
                         {(ahead > 0 || behind > 0) && (
                             <span className="tb-git-track">
-                                {ahead > 0 && <span className="tb-git-ahead">↑{ahead}</span>}
-                                {behind > 0 && <span className="tb-git-behind">↓{behind}</span>}
+                                {ahead > 0 && (
+                                    <span className="tb-git-ahead">
+                                        ↑<RollingText text={String(ahead)} />
+                                    </span>
+                                )}
+                                {behind > 0 && (
+                                    <span className="tb-git-behind">
+                                        ↓<RollingText text={String(behind)} />
+                                    </span>
+                                )}
                             </span>
                         )}
                     </button>
@@ -163,6 +185,17 @@ function UpdateArrow({ size = 12 }: { size?: number }) {
     );
 }
 
+function VoicePill() {
+    const phase = useVoice((s) => s.phase);
+    if (phase !== "listening" && phase !== "transcribing") return null;
+    return (
+        <span className={`voice-pill voice-pill-${phase}`} role="status">
+            <IconMic size={11} />
+            {phase === "listening" ? "listening" : "writing"}
+        </span>
+    );
+}
+
 function BatteryChip() {
     const batt = useBattery();
     if (!batt || batt.percent == null) return null;
@@ -183,7 +216,7 @@ function ClockChip() {
     const t = twelveHour(now);
     return (
         <span className="tb-clock">
-            {t.h}:{time2(t.m)}
+            <RollingText text={`${t.h}:${time2(t.m)}`} />
             <span className="tb-ampm">{t.ap}</span>
         </span>
     );
@@ -233,6 +266,7 @@ export const TopBar = memo(function TopBar() {
             </div>
 
             <div className="tb-right" onPointerEnter={() => setStripHovered(true)}>
+                <VoicePill />
                 {zoomed && (
                     <span className="zoom-pill">
                         <IconZoom size={11} />
