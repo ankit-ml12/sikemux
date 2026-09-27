@@ -5,7 +5,7 @@ import { prefersReducedMotion } from "../lib/motion";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { IconClose } from "./Icons";
 import { Tooltip } from "./Tooltip";
-import { useTabReorder, type TabDropRule, type TabReorderHandler } from "./useTabReorder";
+import { useTabReorder, type TabDragOut, type TabDropRule, type TabReorderHandler } from "./useTabReorder";
 
 /**
  * One normalized tab. Every tab strip in the app (editor files, agents,
@@ -70,6 +70,8 @@ interface TabBarProps {
     onReorder?: TabReorderHandler;
     /** Rules out drops the owner cannot honour, such as a file leaving its editor. */
     canReorder?: TabDropRule;
+    /** Lets a tab be pulled down out of the strip and dropped on the stage. */
+    dragOut?: TabDragOut;
 }
 
 export function TabBar({
@@ -86,6 +88,7 @@ export function TabBar({
     ariaLabel,
     onReorder,
     canReorder,
+    dragOut,
 }: TabBarProps) {
     const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
     const menuItems = menu && buildMenu ? buildMenu(menu.id) : null;
@@ -107,6 +110,7 @@ export function TabBar({
         tabs.map((tab) => tab.id),
         onReorder,
         canReorder,
+        dragOut,
     );
     const activeIndex = tabs.findIndex((tab) => tab.active);
     const activeId = tabs[activeIndex]?.id;
