@@ -84,7 +84,7 @@ describe("DiffEditor", () => {
         expect(mocks.diffProps?.style["--diffs-addition-color-override"]).toBe("var(--live)");
         expect(mocks.diffProps?.style["--diffs-deletion-color-override"]).toBe("var(--danger)");
 
-        act(() => mocks.diffProps?.editorOptions.onChange({ name: "src/app.ts", contents: "const value = 3;\n" }));
+        act(() => mocks.diffProps?.editorOptions.onChange({ file: { name: "src/app.ts", contents: "const value = 3;\n" } }));
         fireEvent.keyDown(container.querySelector(".diff-editor")!, { key: "s", metaKey: true });
 
         await waitFor(() => expect(mocks.writeFile).toHaveBeenCalledWith("/repo/src/app.ts", "const value = 3;\n"));
@@ -146,6 +146,25 @@ describe("DiffEditor", () => {
             expect(mocks.diffProps?.options.lineDiffType).toBe("none");
             expect(mocks.diffProps?.disableWorkerPool).toBe(false);
         });
+    });
+
+    it("colours a diff once its grammar has loaded", async () => {
+        const { getByTestId } = render(<DiffEditor repo="/repo" path="src/pages/index.astro" baseRev="HEAD" headRev=":index" editable={false} />);
+
+        await waitFor(() => expect(getByTestId("pierre-diff")).toBeInTheDocument());
+        expect(mocks.preloadHighlighter).toHaveBeenCalledWith(expect.objectContaining({ langs: ["astro"] }));
+        await waitFor(() => expect(mocks.diffProps?.newFile.lang).toBe("astro"));
+    });
+
+    it("shows a diff as plain text when its grammar cannot be fetched", async () => {
+        mocks.preloadHighlighter.mockImplementation(({ langs }: { langs: string[] }) =>
+            langs.includes("zig") ? Promise.reject(new Error("offline")) : Promise.resolve(),
+        );
+        const { getByTestId } = render(<DiffEditor repo="/repo" path="src/main.zig" baseRev="HEAD" headRev=":index" editable={false} />);
+
+        await waitFor(() => expect(getByTestId("pierre-diff")).toBeInTheDocument());
+        await waitFor(() => expect(mocks.preloadHighlighter).toHaveBeenCalledWith(expect.objectContaining({ langs: ["text"] })));
+        expect(mocks.diffProps?.newFile.lang).toBe("text");
     });
 
     it("reuses completed reads across virtualized remounts and invalidates them by repository", async () => {

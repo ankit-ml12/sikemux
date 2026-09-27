@@ -45,6 +45,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "update_install",
     "release_avatars",
     "release_notes",
+    "grammar_load",
     "state_load",
     "state_save",
     "available_agents",
@@ -176,4 +177,10 @@ pub const IPC_COMMANDS: &[&str] = &[
     "cli_runtime_info",
     "cli_install_status",
     "cli_install",
+    "voice_status",
+    "voice_prepare",
+    "voice_start",
+    "voice_stop",
+    "voice_cancel",
+    "voice_shutdown",
 ];

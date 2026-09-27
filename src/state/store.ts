@@ -19,7 +19,8 @@ import type { HeldRelease, ReleaseCredits } from "../api/releases";
 import type {
     Agent,
     AgentPermissionMode,
-    BrowserPaneView,
+    Desk,
+    DeskView,
     EditorPaneView,
     CliPendingEditorOpen,
     GitPaneView,
@@ -74,6 +75,8 @@ export interface DomainState {
     disabledPlugins: readonly string[];
     restoreAgentTabs: boolean;
     agentNotifications: boolean;
+    voiceDictation: boolean;
+    voiceWords: readonly string[];
     notificationsIntroduced: boolean;
     railDensity: RailDensity;
     onboardingComplete: boolean;
@@ -126,13 +129,15 @@ export interface ViewState {
     sessionSwitcher: SessionSwitcherView | null;
 
     editorViews: Record<string, EditorPaneView>;
-    /* Which agent a browser pane is showing, by pane id. The pane is an
+    /* Which agent a desk pane is showing, by pane id. The pane is an
        ordinary leaf in the layout; this is the only thing tying it back. */
-    browserPanes: Record<string, string>;
+    deskPanes: Record<string, string>;
+    /** Each agent's desk, by agent id. It outlives the pane, so hiding a desk keeps what is on it. */
+    desks: Record<string, Desk>;
     /** Each browsing agent's tab strip as the app last heard it, by agent id. */
     browserStrips: Record<string, BrowserSnapshot>;
-    /** Tabs a restored pane is holding until someone looks at it, by pane id. */
-    browserRestores: Record<string, BrowserPaneView>;
+    /** Pages a restored desk is holding until someone looks at it, by pane id. */
+    deskRestores: Record<string, DeskView>;
     /** Runtime-only file opens claimed from the CLI broker, keyed by editor pane. */
     pendingEditorOpens: Record<string, CliPendingEditorOpen[]>;
     dirtyEditorPaths: Record<string, string[]>;
@@ -222,6 +227,8 @@ export const useStore = create<StoreState>(() => {
         disabledPlugins: [],
         restoreAgentTabs: true,
         agentNotifications: true,
+        voiceDictation: false,
+        voiceWords: [],
         notificationsIntroduced: false,
         railDensity: "comfortable",
         onboardingComplete: false,
@@ -246,9 +253,10 @@ export const useStore = create<StoreState>(() => {
         zoomedPaneId: null,
         sessionSwitcher: null,
         editorViews: {},
-        browserPanes: {},
+        deskPanes: {},
+        desks: {},
         browserStrips: {},
-        browserRestores: {},
+        deskRestores: {},
         pendingEditorOpens: {},
         dirtyEditorPaths: {},
         gitViews: {},

@@ -20,13 +20,17 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { acpApi, type AcpEvent } from "../api/acp";
 import { fsapi } from "../api/fs";
 import { invokeCommand as invoke } from "../api/invoke";
-import { ComposerPickers, sessionConfigs, type SessionConfig } from "./ComposerPickers";
+import { agentSupportsSkipPermissions } from "../state/commands/agentLogic";
+import { ComposerPickers, effortConfig, sessionConfigs, type SessionConfig } from "./ComposerPickers";
 import { rateLabel, rowMeta } from "./messageMeta";
 import { CopyButton } from "../components/CopyButton";
+import { FileIcon } from "../components/FileIcon";
 import { MarkdownTableHead } from "../lib/markdownTable";
 import { basename } from "../lib/paths";
+import { animate, EASE_IN, foldedFrames, leavingRef } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
+import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
@@ -53,11 +57,13 @@ import {
 } from "../components/Icons";
 import { chatReducer, initialChatState } from "./reducer";
 import { collapseDiff, fencedDiff, type DiffLine, type ToolDiff } from "./diff";
+import { toolDescription, type ToolOutput } from "./toolOutput";
 import { CodeRun, CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiffTokens } from "./codeHighlight";
 import type { CodeLine } from "./types";
 import { localImagePath, localPath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { YoloToggle } from "./YoloToggle";
+import { DictateButton } from "./DictateButton";
 import { ContextMeter } from "./ContextMeter";
 import { guessClaudeWindow } from "./contextWindow";
 import { agentApi } from "../api/agents";
@@ -308,7 +314,7 @@ function DiffBody({ diff }: { diff: ToolDiff }) {
     return (
         <div className="chat-diff">
             <div className="chat-diff-head">
-                <IconFile size={10} />
+                <FileIcon name={basename(diff.path)} size={12} />
                 <span className="chat-diff-path" title={diff.path}>
                     {diff.path}
                 </span>
@@ -334,18 +340,113 @@ function DiffBody({ diff }: { diff: ToolDiff }) {
     );
 }
 
+/* One observer for every row that asks whether its text still fits, rather
+   than one per row in a transcript that can hold hundreds of them. */
+const fitChecks = new Map<Element, () => void>();
+let fitObserver: ResizeObserver | null = null;
+
+function watchFit(element: Element, check: () => void): () => void {
+    fitObserver ??= new ResizeObserver((entries) => {
+        for (const entry of entries) fitChecks.get(entry.target)?.();
+    });
+    fitChecks.set(element, check);
+    fitObserver.observe(element);
+    return () => {
+        fitChecks.delete(element);
+        fitObserver?.unobserve(element);
+    };
+}
+
+function useCutOff(ref: RefObject<HTMLElement | null>, watching: boolean): boolean {
+    const [cutOff, setCutOff] = useState(false);
+    useLayoutEffect(() => {
+        const element = ref.current;
+        if (!watching || !element) return;
+        const check = () => setCutOff(element.scrollWidth > element.clientWidth + 1);
+        check();
+        return watchFit(element, check);
+    }, [ref, watching]);
+    return watching && cutOff;
+}
+
+/* Counts up in whole seconds like the Thinking row does, on a clock of its own
+   so the tick redraws this label and nothing around it. */
+function LiveSeconds({ since, spent = 0 }: { since?: number; spent?: number }) {
+    const [started] = useState(() => since ?? Date.now());
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+    return (
+        <span className="chat-tool-elapsed" aria-hidden="true">
+            {elapsedLabel(Math.max(0, Math.floor((spent + now - started) / 1000)))}
+        </span>
+    );
+}
+
+const OUTPUT_FOLD_LINES = 12;
+
+/* A command and what it printed, the way a terminal would have shown them. */
+function ToolTerminal({ command, output, failed }: { command: string | null; output?: ToolOutput; failed: boolean }) {
+    const [whole, setWhole] = useState(false);
+    const lines = output?.text ? output.text.split("\n") : [];
+    const folds = lines.length > OUTPUT_FOLD_LINES;
+    const folded = folds && !whole;
+    return (
+        <div className="chat-tool-terminal">
+            {command !== null && (
+                <div className="chat-tool-command">
+                    <span className="chat-tool-prompt" aria-hidden="true">
+                        $
+                    </span>
+                    <pre>{command}</pre>
+                    <CopyButton value={command} label="command" size={12} />
+                </div>
+            )}
+            {output?.image && (
+                <div className="chat-tool-picture">
+                    <ChatImage src={`data:${output.image.mimeType};base64,${output.image.data}`} name={attachmentName(output.image.mimeType)} />
+                </div>
+            )}
+            {output &&
+                (output.text ? (
+                    <div className={`chat-tool-output${folded ? " folded" : ""}`}>
+                        <pre>{folded ? lines.slice(0, OUTPUT_FOLD_LINES).join("\n") : output.text}</pre>
+                        <CopyButton value={output.text} label="output" size={12} />
+                    </div>
+                ) : (
+                    !output.image && <div className="chat-tool-output empty">No output</div>
+                ))}
+            {folds && (
+                <button type="button" className="chat-tool-more" onClick={() => setWhole(!whole)}>
+                    {folded ? `Show all ${lines.length} lines` : "Show fewer lines"}
+                </button>
+            )}
+            {output?.cut && (!folds || whole) && <div className="chat-tool-note">The rest of the output was not kept</div>}
+            {failed && output?.exitCode !== undefined && <div className="chat-tool-exit">exit {output.exitCode}</div>}
+        </div>
+    );
+}
+
 function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const [open, setOpen] = useState(false);
+    const targetRef = useRef<HTMLSpanElement>(null);
     const tool = part.tool;
     // An MCP call is named for the server it went to, whatever kind it claims.
     const rowKind = toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind;
-    const diff = part.diff;
-    const failure = part.failure;
-    const detail = diff ?? failure;
+    const { diff, output, failure } = part;
     const status = tool.status ?? "pending";
+    const running = toolRunning(tool);
     const file = useFileRef(toolPath(tool));
     const target = toolTarget(tool);
     const linked = !file && toolUrl(target) !== null;
+    const command = tool.kind === "execute" ? tool.title.trim() : null;
+    /* The row holds one line of a command, so the whole of it is worth
+       opening when the line ends in an ellipsis or leaves lines out. */
+    const overflowing = useCutOff(targetRef, command !== null && !running);
+    const cutOff = command !== null && !running && (overflowing || command !== target);
+    const opens = Boolean(diff || output || failure) || cutOff;
     /* A call the turn cut off has a duration, but printing it would read as a
        call that ran that long and then finished. It says why it stopped. */
     const measured = part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : null;
@@ -358,11 +459,13 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
                 <ToolKindIcon tool={tool} kind={rowKind} />
             </span>
             <span className="chat-tool-kind">{toolKind(tool)}</span>
-            <span className="chat-tool-target">
+            <span className="chat-tool-target" ref={targetRef}>
                 {file ? <ChatFileRef refers={file.ref} state={file.state} label={target} size={17} /> : <ToolTarget text={target} />}
             </span>
         </>
     );
+    // Only a change or a failure asks to be opened; a command's output waits to be pointed at.
+    const quiet = !diff && status !== "failed";
     const end = (
         <>
             {diff && (
@@ -371,39 +474,51 @@ function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
                     <span className="chat-diff-dels">−{diff.dels}</span>
                 </span>
             )}
-            {elapsed ?? <span className="chat-tool-spinner" aria-hidden="true" />}
-            {detail && <IconChevron size={10} className="chat-tool-chevron" />}
+            {running ? <LiveSeconds since={part.startedAt} /> : elapsed}
+            {opens && <IconChevron size={10} className={`chat-tool-chevron${quiet ? " quiet" : ""}`} />}
         </>
     );
-    const rowProps = { className: `chat-tool status-${status}`, "data-kind": rowKind, title: tool.title };
+    const rowProps = { className: `chat-tool status-${status}${running ? " live" : ""}`, "data-kind": rowKind, title: tool.title };
     return (
         <div className="chat-tool-node">
             {/* A row whose target opens a file or a page cannot itself be a
                 button, so what is left of it opens the detail instead. */}
-            {detail && !file && !linked ? (
+            {opens && !file && !linked ? (
                 <button type="button" {...rowProps} aria-expanded={open} onClick={toggle}>
-                    {lead}
-                    <span className="chat-tool-end">{end}</span>
+                    <span className="chat-tool-line">
+                        {lead}
+                        <span className="chat-tool-end">{end}</span>
+                    </span>
                 </button>
             ) : (
                 <div {...rowProps}>
-                    {lead}
-                    {detail ? (
-                        <button
-                            type="button"
-                            className="chat-tool-end"
-                            aria-expanded={open}
-                            aria-label={open ? "Hide what the call did" : "Show what the call did"}
-                            onClick={toggle}>
-                            {end}
-                        </button>
-                    ) : (
-                        <span className="chat-tool-end">{end}</span>
-                    )}
+                    <span className="chat-tool-line">
+                        {lead}
+                        {opens ? (
+                            <button
+                                type="button"
+                                className="chat-tool-end"
+                                aria-expanded={open}
+                                aria-label={open ? "Hide what the call did" : "Show what the call did"}
+                                onClick={toggle}>
+                                {end}
+                            </button>
+                        ) : (
+                            <span className="chat-tool-end">{end}</span>
+                        )}
+                    </span>
                 </div>
             )}
-            {detail && open && (
-                <div className="chat-tool-detail">{diff ? <DiffBody diff={diff} /> : <div className="chat-tool-out">{failure}</div>}</div>
+            {opens && open && (
+                <div className="chat-tool-detail">
+                    {diff ? (
+                        <DiffBody diff={diff} />
+                    ) : command !== null || output ? (
+                        <ToolTerminal command={command} output={output} failed={status === "failed"} />
+                    ) : (
+                        <div className="chat-tool-out">{failure}</div>
+                    )}
+                </div>
             )}
         </div>
     );
@@ -415,7 +530,7 @@ function openLink(href: string, agentId: string, external: boolean) {
     const path = localPath(href);
     const webUrl = safeWebUrl(href);
     if (path) void fsapi.revealInFinder(path).catch(swallow("reveal chat file"));
-    else if (webUrl && agentId && !external) cmd.openUrlInBrowserPane(agentId, webUrl);
+    else if (webUrl && agentId && !external) cmd.openUrlOnDesk(agentId, webUrl);
     else void invoke("open_url", { url: href, app: null, shortcut: null }).catch(swallow("open chat link"));
 }
 
@@ -493,7 +608,18 @@ function codeText(children: ReactNode): string {
     return "";
 }
 
+const InFenceContext = createContext(false);
+
+function ChatPre({ children }: { children?: ReactNode }) {
+    return (
+        <pre>
+            <InFenceContext.Provider value={true}>{children}</InFenceContext.Provider>
+        </pre>
+    );
+}
+
 function ChatCode({ className, children }: { className?: string; children?: ReactNode }) {
+    const inFence = useContext(InFenceContext);
     const info = /language-(\S+)/.exec(className ?? "")?.[1];
     const text = codeText(children);
     const patch = useMemo(() => (text ? fencedDiff(text, info) : null), [text, info]);
@@ -501,10 +627,10 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
     // A patch in a fence is coloured the way the one in a tool call is, which
     // only happens at all when the fence says what file it is a patch to.
     const patchColours = useDiffTokens(patch, info);
-    if (!info && !patch) return <code className={className}>{children}</code>;
+    if (!inFence) return <code className={className}>{children}</code>;
     return (
         <>
-            {info && <CodeTitle info={info} />}
+            <CodeTitle info={info} text={text} />
             {patch ? (
                 <code className={`${className ?? ""} chat-code-diff`}>
                     {patch.map((line, index) => (
@@ -527,19 +653,22 @@ function ChatCode({ className, children }: { className?: string; children?: Reac
 
 /* A fence says what file it quotes, when it says anything at all. The name is
    the file itself where the project has one; a bare language name is not. */
-function CodeTitle({ info }: { info: string }) {
-    const name = decodeURIComponent(info);
-    const file = useFileRef(name);
+function CodeTitle({ info, text }: { info?: string; text: string }) {
+    const name = info ? decodeURIComponent(info) : "";
+    const file = useFileRef(name || undefined);
     return (
         <span className="chat-code-title">
             {file ? (
                 <ChatFileRef refers={file.ref} state={file.state} label={name} size={16} />
             ) : (
-                <>
-                    <IconFile size={10} />
-                    {name}
-                </>
+                name && (
+                    <span className="chat-code-name">
+                        <FileIcon name={name} size={16} />
+                        {name}
+                    </span>
+                )
             )}
+            <CopyButton className="chat-code-copy" value={text.replace(/\n$/, "")} label="code" size={12} />
         </span>
     );
 }
@@ -552,7 +681,7 @@ function ChatTable({ children }: { children?: ReactNode }) {
     );
 }
 
-const markdownComponents = { a: ChatLink, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
+const markdownComponents = { a: ChatLink, pre: ChatPre, code: ChatCode, table: ChatTable, thead: MarkdownTableHead };
 const remarkPlugins = [remarkGfm, remarkFilePaths];
 const typedRemarkPlugins = [remarkGfm, remarkHtmlAsText, remarkFilePaths];
 
@@ -723,10 +852,62 @@ function toolRunning(tool: AcpToolCall): boolean {
    something else follows it or the turn ends, unless the reader says
    otherwise. Watching each call instead would shut the run in the gaps
    between calls, and open it again on the next one. */
+/* Closing folds the calls away. The transcript measures every row as it
+   changes size, so the rows below follow the fold rather than jumping. */
+const foldToolBody = leavingRef<HTMLDivElement>((body) => {
+    const [open, closed] = foldedFrames(body);
+    body.style.overflow = "hidden";
+    return animate(
+        body,
+        [
+            { ...open, opacity: 1 },
+            { ...closed, opacity: 0 },
+        ],
+        { duration: 140, easing: EASE_IN },
+    );
+});
+
+/* Opening grows the calls in and steps them down one after another. Only a
+   change of state animates: a group the list remounts on scroll just shows. */
+function useToolGroupUnfold(group: RefObject<HTMLDivElement | null>, open: boolean): void {
+    const was = useRef<boolean | null>(null);
+    useLayoutEffect(() => {
+        const before = was.current;
+        was.current = open;
+        const body = group.current?.querySelector<HTMLElement>(":scope > .chat-tools-body");
+        if (before === null || before === open || !open || !body) return;
+        const [rest, flat] = foldedFrames(body);
+        body.style.overflow = "hidden";
+        const run = animate(
+            body,
+            [
+                { ...flat, opacity: 0 },
+                { ...rest, opacity: 1 },
+            ],
+            { duration: 180 },
+        );
+        const settle = () => (body.style.overflow = "");
+        if (run) run.finished.then(settle, settle);
+        else settle();
+        [...body.children].forEach((row, i) =>
+            animate(
+                row,
+                [
+                    { opacity: 0, transform: "translateX(-4px)" },
+                    { opacity: 1, transform: "none" },
+                ],
+                { duration: 160, delay: 30 + i * 20, fill: "backwards" },
+            ),
+        );
+    }, [group, open]);
+}
+
 function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>[]; live: boolean }) {
     const [reader, setReader] = useState<boolean | null>(null);
-    const running = tools.some((part) => toolRunning(part.tool));
-    const open = reader ?? (live || running);
+    const current = tools.find((part) => toolRunning(part.tool));
+    const open = reader ?? (live || current !== undefined);
+    const groupRef = useRef<HTMLDivElement>(null);
+    useToolGroupUnfold(groupRef, open);
     const spent = tools.reduce(
         (total, part) => total + (part.startedAt !== undefined && part.endedAt !== undefined ? part.endedAt - part.startedAt : 0),
         0,
@@ -734,17 +915,30 @@ function ToolGroup({ tools, live }: { tools: Extract<ChatPart, { kind: "tool" }>
     /* One column for every call in the run, as wide as the longest name in it:
        a run of reads stays tight, one that called an MCP server gets the room. */
     const kindWidth = Math.min(16, Math.max(4, ...tools.map((part) => toolKind(part.tool).length)));
+    // While a call runs, the header says what Claude said it is for; a finished run counts its calls.
+    const said = current ? toolDescription(current.tool) : null;
     return (
-        <div className="chat-tools">
-            <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={() => setReader(!open)}>
-                <span className="chat-tools-count">
-                    {tools.length} tool {tools.length === 1 ? "call" : "calls"}
-                </span>
-                {spent > 0 && <span className="chat-tools-time">{durationLabel(spent)}</span>}
+        <div className="chat-tools" ref={groupRef}>
+            <button type="button" className={`chat-tools-sum${current ? " live" : ""}`} aria-expanded={open} onClick={() => setReader(!open)}>
+                {said ? (
+                    <>
+                        <span className="chat-tools-label said">{said}</span>
+                        {tools.length > 1 && <span className="chat-tools-calls">{tools.length} calls</span>}
+                    </>
+                ) : (
+                    <span className="chat-tools-label">
+                        {tools.length} tool {tools.length === 1 ? "call" : "calls"}
+                    </span>
+                )}
+                {current ? (
+                    <LiveSeconds key={current.id} since={current.startedAt} spent={spent} />
+                ) : (
+                    spent > 0 && <span className="chat-tools-time">{durationLabel(spent)}</span>
+                )}
                 <IconChevron size={10} className="chat-tools-chevron" />
             </button>
             {open && (
-                <div className="chat-tools-body" style={{ "--chat-kind": `${kindWidth}ch` } as CSSProperties}>
+                <div className="chat-tools-body" ref={foldToolBody} style={{ "--chat-kind": `${kindWidth}ch` } as CSSProperties}>
                     {tools.map((part) => (
                         <ToolRow key={part.id} part={part} />
                     ))}
@@ -769,7 +963,9 @@ function NoticePart({ notice }: { notice: AcpTaskNotice }) {
     return (
         <div className={`chat-notice state-${notice.state}`} role="status">
             <IconTimer size={12} />
-            <span className="chat-notice-name">{notice.name}</span>
+            <span className="chat-notice-name" title={notice.name}>
+                {notice.name}
+            </span>
             <span className="chat-notice-state">{notice.state}</span>
             {notice.summary && <span className="chat-notice-summary">{notice.summary}</span>}
         </div>
@@ -1223,6 +1419,25 @@ function ChatComposer({
         });
     }, [onError, paneRef]);
 
+    useEffect(() => {
+        const element = paneRef.current;
+        if (!element) return;
+        return registerTextInsert(element, (text) => {
+            const editor = editorRef.current;
+            if (!editor) return;
+            const before = editor.value.slice(0, editor.selectionStart);
+            const after = editor.value.slice(editor.selectionEnd);
+            const inserted = `${before && !/\s$/.test(before) ? " " : ""}${text}`;
+            const at = before.length + inserted.length;
+            setDraft(`${before}${inserted}${after}`);
+            setCaret(at);
+            window.requestAnimationFrame(() => {
+                editor.focus();
+                editor.setSelectionRange(at, at);
+            });
+        });
+    }, [paneRef]);
+
     /* A chat is focused again once its session is ready, not only when its pane
        appears: a pane opened while the agent was still starting would otherwise
        keep the caret wherever it was. */
@@ -1230,7 +1445,7 @@ function ChatComposer({
         if (!visible) return;
         const focusIsElsewhere = () => {
             const held = document.activeElement;
-            if (held?.closest('input, textarea, [contenteditable="true"], [data-browser-pane]') && !paneRef.current?.contains(held)) return true;
+            if (held?.closest('input, textarea, [contenteditable="true"], [data-desk]') && !paneRef.current?.contains(held)) return true;
             return Boolean(held?.closest(".chat-picker-menu"));
         };
         if (focusIsElsewhere()) return;
@@ -1267,6 +1482,25 @@ function ChatComposer({
 
     const blocked = changingConfig || changingPermissions || !permissionApplied;
     const drafted = Boolean(draft.trim()) || attachments.length > 0;
+
+    // Send and stop are one button: when it changes job, the new icon turns in rather than swapping in place.
+    const stopping = running && !drafted;
+    const sendButton = useRef<HTMLButtonElement>(null);
+    const wasStopping = useRef(stopping);
+    useLayoutEffect(() => {
+        if (wasStopping.current === stopping) return;
+        wasStopping.current = stopping;
+        animate(
+            sendButton.current?.firstElementChild,
+            [
+                { opacity: 0, transform: `scale(0.5) rotate(${stopping ? -90 : 90}deg)` },
+                { opacity: 1, transform: "none" },
+            ],
+            {
+                duration: 150,
+            },
+        );
+    }, [stopping]);
 
     /* Steering aborts the turn in flight, so the shortcut only fires when there
        is exactly one message waiting and no doubt about which one it takes. */
@@ -1389,11 +1623,15 @@ function ChatComposer({
                 <button type="button" className="chat-composer-icon" aria-label="Add files" onClick={() => void chooseFiles()}>
                     <IconPlus size={17} />
                 </button>
-                <YoloToggle
-                    agent={agent}
-                    relaunches={false}
-                    disabled={connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied}
-                />
+                {agentSupportsSkipPermissions(agent.type) && (
+                    <YoloToggle
+                        agent={agent}
+                        relaunches={false}
+                        disabled={
+                            connection !== "ready" || changingConfig || running || awaitingPermission || changingPermissions || !permissionApplied
+                        }
+                    />
+                )}
                 <ComposerPickers
                     agent={agent}
                     profile={profile}
@@ -1408,12 +1646,14 @@ function ChatComposer({
                 />
                 <ContextMeter usage={usage} agent={agent.type} />
                 <span className="chat-composer-spacer" />
-                {running && !drafted ? (
-                    <button type="button" className="chat-send stop" aria-label="Stop agent" onClick={onStop}>
+                <DictateButton into={paneRef} />
+                {stopping ? (
+                    <button ref={sendButton} type="button" className="chat-send stop" aria-label="Stop agent" onClick={onStop}>
                         <span />
                     </button>
                 ) : (
                     <button
+                        ref={sendButton}
                         type="button"
                         className="chat-send"
                         aria-label="Send message"
@@ -1496,6 +1736,32 @@ export function AgentChatPane({
     /* A restored transcript opens on estimated row heights, and every row that
        measures taller or shorter than the estimate moves the bottom. Anchoring
        to the end makes the list hold the bottom still while that settles. */
+    /* A message that has just arrived rises into place. Only new ones: a row
+       the list remounts on scroll, or a transcript restored all at once, just shows. */
+    const shownMessages = useRef<Set<string> | null>(null);
+    useLayoutEffect(() => {
+        const ids = displayState.messages.map((message) => message.id);
+        const shown = shownMessages.current;
+        if (!shown) {
+            shownMessages.current = new Set(ids);
+            return;
+        }
+        const fresh = ids.filter((id) => !shown.has(id));
+        for (const id of fresh) shown.add(id);
+        if (fresh.length === 0 || fresh.length > 2) return;
+        for (const id of fresh) {
+            const row = scrollRef.current?.querySelector<HTMLElement>(`.chat-virtual-row[data-index="${ids.indexOf(id)}"] > *`);
+            animate(
+                row,
+                [
+                    { opacity: 0, transform: "translateY(10px) scale(0.985)" },
+                    { opacity: 1, transform: "none" },
+                ],
+                { duration: 200 },
+            );
+        }
+    }, [displayState.messages]);
+
     const virtualizer = useVirtualizer({
         count: displayState.messages.length,
         getScrollElement: () => scrollRef.current,
@@ -1504,6 +1770,11 @@ export function AgentChatPane({
         anchorTo: "end",
         scrollEndThreshold: BOTTOM_SLACK,
         getItemKey: (index) => displayState.messages[index]?.id ?? index,
+        /* Rows are placed from the resize observer itself, in the frame a row
+           changes size, rather than on the render after. A row that grows or
+           folds by animation then pushes the rest along with it instead of
+           overlapping them for a frame and catching up. */
+        directDomUpdates: true,
     });
 
     useEffect(() => {
@@ -1740,6 +2011,7 @@ export function AgentChatPane({
 
     const promptNow = useCallback(async (text: string, paths: string[]) => {
         dispatch({ type: "local_prompt", text, paths });
+        cmd.titleAgentFromPrompt(agentRef.current.id, text);
         try {
             await acpApi.prompt(agentRef.current.id, text, paths);
         } catch (error) {
@@ -1881,8 +2153,7 @@ export function AgentChatPane({
             dispatch({ type: "config", options: response.configOptions });
             const options = sessionConfigs({ configOptions: response.configOptions });
             const model = options.find((option) => option.id === "model")?.currentValue ?? agent.model;
-            const effort =
-                options.find((option) => option.id === (agent.type === "claude" ? "effort" : "reasoning_effort"))?.currentValue ?? agent.effort;
+            const effort = effortConfig(options, agent.type)?.currentValue ?? agent.effort;
             const knownEffort = ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(effort ?? "")
                 ? (effort as Agent["effort"])
                 : undefined;
@@ -1942,7 +2213,7 @@ export function AgentChatPane({
                     : "Connecting to agent session…";
 
     return (
-        <PathRootsProvider cwd={cwd} home={home}>
+        <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
             <ChatAgentContext.Provider value={chatAgent}>
                 <div className="agent-chat-pane" ref={paneRef}>
                     <div
@@ -1998,7 +2269,7 @@ export function AgentChatPane({
                                 </div>
                             )}
                             <FoldMemoryContext value={foldMemory}>
-                                <div className="chat-virtual-space" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+                                <div className="chat-virtual-space" ref={virtualizer.containerRef}>
                                     {virtualizer.getVirtualItems().map((item) => {
                                         const message = displayState.messages[item.index];
                                         const meta = rowMeta(displayState.messages, item.index);
@@ -2007,8 +2278,7 @@ export function AgentChatPane({
                                                 key={message.id}
                                                 data-index={item.index}
                                                 ref={virtualizer.measureElement}
-                                                className="chat-virtual-row"
-                                                style={{ transform: `translateY(${item.start}px)` }}>
+                                                className="chat-virtual-row">
                                                 <ChatMessageRow
                                                     message={message}
                                                     live={displayState.running && item.index === displayState.messages.length - 1}

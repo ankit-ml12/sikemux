@@ -43,7 +43,7 @@ import { useNavHistory, type NavEntry } from "../hooks/useNavHistory";
 import { useGitBaseline } from "../hooks/useGitBaseline";
 import { useGitBlame } from "../hooks/useGitBlame";
 import { refreshBlame } from "../editor/gitBlame";
-import type { CliPendingEditorOpen } from "../state/types";
+import type { CliPendingEditorOpen, DeskReveal } from "../state/types";
 import { IconClose, IconEditor, IconEye, IconFile } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import { TabBar } from "./TabBar";
@@ -224,6 +224,9 @@ export function EditorPane({
     showInsights = true,
     onCloseWindow,
     languageHint,
+    bare = false,
+    reveal = null,
+    onRevealed,
 }: {
     paneId: string;
     cwd: string;
@@ -232,6 +235,10 @@ export function EditorPane({
     showInsights?: boolean;
     onCloseWindow?: () => void;
     languageHint?: EditorLanguageHint;
+    /** An editor on an agent's desk: no file tree, and only the files the desk hands it. */
+    bare?: boolean;
+    reveal?: DeskReveal | null;
+    onRevealed?: (seq: number) => void;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
@@ -935,10 +942,25 @@ export function EditorPane({
     }, [paneId]);
 
     useEffect(() => {
+        if (!reveal) return;
+        void (async () => {
+            await openPath(reveal.path);
+            hydratedRef.current = true;
+            if (reveal.line != null && viewRef.current && !isImagePath(reveal.path))
+                scrollToLine(viewRef.current, reveal.line, reveal.character ?? 0);
+        })()
+            .catch(reportError("open file"))
+            .finally(() => onRevealed?.(reveal.seq));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reveal?.seq]);
+
+    useEffect(() => {
+        if (bare) return;
         return subscribe("open-file", (e) => {
-            // An editor split beside another tab shows the one file it was given.
-            const ownWindow = Object.values(useStore.getState().windows).find((win) => collectPanes(win.root).some((pane) => pane.id === paneId));
-            if (ownWindow && ownWindow.role !== "files") return;
+            // A view split beside other work shows the one file it was given.
+            const { windows, editorViews } = useStore.getState();
+            const ownWindow = Object.values(windows).find((win) => collectPanes(win.root).some((pane) => pane.id === paneId));
+            if ((ownWindow && ownWindow.role !== "files") || editorViews[paneId]?.single) return;
             // Project files open in their owning editor. LSP targets may live
             // in GOMODCACHE, rust stdlib, site-packages, etc.; route those to
             // the active editor instead of dropping them.
@@ -953,7 +975,7 @@ export function EditorPane({
             })().catch(reportError("open file"));
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cwd, active, paneId]);
+    }, [bare, cwd, active, paneId]);
 
     useEffect(() => {
         const view = viewRef.current;
@@ -1068,7 +1090,7 @@ export function EditorPane({
 
     return (
         <div className="editor-pane">
-            {!onCloseWindow && (
+            {!onCloseWindow && !bare && (
                 <FileTree width={treeWidth} onResize={setTreeWidth} cwd={cwd} activePath={activePath} onOpenFile={openTreeFile} active={visible} />
             )}
             <div className="ed-main">
@@ -1147,7 +1169,7 @@ export function EditorPane({
                         onNavigate={(path, line, character) => nav.push({ path, line, character })}
                     />
                 )}
-                {tabs.length === 0 && (
+                {tabs.length === 0 && !bare && (
                     <div className="ed-empty">
                         <IconFile size={22} />
                         <p>Open a file to get started</p>
