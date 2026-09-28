@@ -158,6 +158,9 @@ export class ShowcaseBackend implements IpcTransport {
     );
 
     this.on("read_dirs", ({ paths }) => server("read_dirs", { paths }));
+    this.on("markdown_parse", ({ requests }) =>
+      server("markdown", { requests }),
+    );
     this.on(
       "read_file",
       ({ path }) =>
@@ -182,6 +185,7 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("git_file_at", async ({ repo, path }) =>
       server("read_file", { path: `${repo}/${path}` }).catch(() => ""),
     );
+    this.on("git_file_diff", constant([]));
     this.on("git_blame", constant({ commits: [], lines: [] }));
 
     this.on("git_overview", async ({ repo }) => {

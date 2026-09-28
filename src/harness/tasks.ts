@@ -39,6 +39,11 @@ export class HarnessTasks {
         return { ...this.entry(project, executionId).run };
     }
 
+    latest(project: string, taskId: string): HarnessRun | undefined {
+        const runs = this.list(project).filter((run) => run.taskId === taskId);
+        return runs.at(-1);
+    }
+
     existing(project: string, taskId: string, key: string): Promise<HarnessRun> | undefined {
         const previous = this.keys.get(JSON.stringify([project, key]));
         if (previous) {
@@ -147,6 +152,11 @@ export class HarnessTasks {
 
     closeProject(project: string): void {
         for (const run of this.list(project)) void this.stop(project, run.executionId).catch(() => {});
+    }
+
+    closeAgent(agentId: string): void {
+        for (const { run, agentId: owner } of this.entries.values())
+            if (owner === agentId) void this.stop(run.project, run.executionId).catch(() => {});
     }
 
     private entry(project: string, executionId: string): Entry {

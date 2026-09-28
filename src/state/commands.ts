@@ -1084,6 +1084,13 @@ export async function importSessionFromClipboard(): Promise<void> {
     notify("success", "Imported session as a safe, dormant copy");
 }
 
+/** Closes one pane of a split, leaving the rest of the tab open. */
+export function closePane(windowId: string, paneId: string): void {
+    selectWindowId(windowId);
+    focusPane(paneId);
+    guardDiscardDirty(dirtyPathsForPane(getState(), paneId), "close pane", closeActivePane);
+}
+
 function closeActivePane(): void {
     let taskPaneId: string | null = null;
     withActiveWindow((d, w, session) => {
@@ -2558,6 +2565,11 @@ export const setUpdateChannel = (value: "stable" | "nightly"): void => {
     void checkForUpdateNow();
 };
 
+export const setShareUsageData = (value: boolean): void => setState({ shareUsageData: value });
+
+export const setLanguageServerTrust = (project: string, allowed: boolean): void =>
+    setState((s) => ({ languageServerTrust: { ...s.languageServerTrust, [project]: allowed } }));
+
 export function setKeybinding(id: import("../keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
 }
@@ -2603,12 +2615,33 @@ export function setProjectRootDepth(path: string, depth: number): void {
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
 
-export function openEditorTab(paneId: string, path: string, activate = true): void {
+/** Opens `path` as a tab, and returns the preview tab it took the place of, if any. */
+export function openEditorTab(paneId: string, path: string, activate = true, preview = false): string | null {
+    let replaced: string | null = null;
     mutate((d) => {
         const cur = d.editorViews[paneId] ?? { openTabs: [], activePath: null };
-        if (!cur.openTabs.includes(path)) cur.openTabs.push(path);
+        const previewIndex = cur.preview ? cur.openTabs.indexOf(cur.preview) : -1;
+        if (cur.openTabs.includes(path)) {
+            if (!preview && cur.preview === path) delete cur.preview;
+        } else if (preview && previewIndex >= 0) {
+            replaced = cur.openTabs[previewIndex];
+            cur.openTabs[previewIndex] = path;
+            if (cur.activePath === replaced) cur.activePath = path;
+            cur.preview = path;
+        } else {
+            cur.openTabs.push(path);
+            if (preview) cur.preview = path;
+        }
         if (activate) cur.activePath = path;
         d.editorViews[paneId] = cur;
+    });
+    return replaced;
+}
+
+export function keepEditorTab(paneId: string, path: string): void {
+    mutate((d) => {
+        const cur = d.editorViews[paneId];
+        if (cur?.preview === path) delete cur.preview;
     });
 }
 
