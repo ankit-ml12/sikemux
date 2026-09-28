@@ -4,6 +4,7 @@ import { invokeCommand as invoke } from "./api/invoke";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate } from "./api/updater";
+import { reportActive } from "./api/usage";
 import { TopBar } from "./components/TopBar";
 import { SideRail } from "./components/SideRail";
 import { AgentRail } from "./components/AgentRail";
@@ -30,6 +31,7 @@ import { runKeybindingAction, useKeymap } from "./keymap";
 import { usePinchZoom } from "./pinchZoom";
 import { introduceNotifications, useAgentNotifications } from "./agentNotifications";
 import { useVoiceDictation } from "./voice/dictation";
+import { VoiceCaption } from "./voice/VoiceCaption";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
@@ -59,6 +61,7 @@ import { dirname } from "./lib/paths";
 import type { StandaloneCommand } from "./commands/registry";
 import type { ProjectConfigLoadResult } from "./projectConfig";
 import { agentDetectionApi } from "./api/agentDetection";
+import { lsp } from "./api/lsp";
 import { projectActionCommand, trustProjectConfig } from "./projectConfigRuntime";
 import { worktreeHasLiveOwners } from "./worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
@@ -91,11 +94,8 @@ import { useRailEntrance } from "./components/railMotion";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
-/*
- * The welcome, the release notes and the diagnostics panel, none of which exist
- * until someone opens one. They are the only reason react-markdown was in the
- * boot bundle.
- */
+/* The welcome, the release notes and the diagnostics panel, none of which exist
+   until someone opens one. */
 const Onboarding = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.Onboarding })));
 const DiagnosticsOverlay = lazy(() => import("./components/ExperienceOverlays").then((module) => ({ default: module.DiagnosticsOverlay })));
 const WhatsNewOverlay = lazy(() => import("./components/WhatsNewOverlay").then((module) => ({ default: module.WhatsNewOverlay })));
@@ -358,6 +358,7 @@ function ApplicationCommandPalette() {
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
     const activeProjectCwd = useStore(activeProjectCwdOf);
+    const languageServersAllowedHere = useStore((s) => (activeProjectCwd ? s.languageServerTrust[activeProjectCwd] === true : false));
     const activeTerminalWindowId = useStore((s) => {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
         return id && s.windows[id]?.role === "term" ? id : null;
@@ -548,6 +549,28 @@ function ApplicationCommandPalette() {
                       category: "Agents",
                       execute: runStandalone("agents.launch", cmd.openAgentPalette),
                   } satisfies StandaloneCommand,
+              ]
+            : []),
+        ...(activeKind === "project" && activeProjectCwd
+            ? [
+                  languageServersAllowedHere
+                      ? ({
+                            id: "project.language-servers.stop",
+                            title: "Stop language servers for this project",
+                            detail: "Stop them now and do not start them again",
+                            category: "Project · Language servers",
+                            execute: runStandalone("project.language-servers.stop", () => {
+                                cmd.setLanguageServerTrust(activeProjectCwd, false);
+                                void lsp.stop(activeProjectCwd).catch(reportError("stop language servers"));
+                            }),
+                        } satisfies StandaloneCommand)
+                      : ({
+                            id: "project.language-servers.allow",
+                            title: "Allow language servers for this project",
+                            detail: "Start them when you open a file here",
+                            category: "Project · Language servers",
+                            execute: runStandalone("project.language-servers.allow", () => cmd.setLanguageServerTrust(activeProjectCwd, true)),
+                        } satisfies StandaloneCommand),
               ]
             : []),
         {
@@ -828,6 +851,16 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        if (import.meta.env.DEV) return;
+        const firstReport = window.setTimeout(() => void reportActive(), 5000);
+        const poll = window.setInterval(() => void reportActive(), 60 * 60_000);
+        return () => {
+            window.clearTimeout(firstReport);
+            window.clearInterval(poll);
+        };
+    }, []);
+
+    useEffect(() => {
         const clearTreeHover = () => {
             emit({ type: "tree-native-drag-hover", cwd: null, targetDir: null, highlightPath: null });
         };
@@ -970,6 +1003,7 @@ export default function App() {
             </Suspense>
             <DialogHost />
             <ImageViewer />
+            <VoiceCaption />
             <Toaster />
         </div>
     );

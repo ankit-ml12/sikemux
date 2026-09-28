@@ -3508,6 +3508,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+dependencies = [
+ "bitflags 2.13.2",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4308,13 +4319,13 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sikemux-markdown",
  "sikemux-plugin-api",
  "sikemux-plugin-aws",
  "sikemux-plugin-bruno",
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-process",
- "similar",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -4330,6 +4341,15 @@ dependencies = [
  "url",
  "uuid",
  "vt100",
+]
+
+[[package]]
+name = "sikemux-markdown"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4427,15 +4447,6 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
-
-[[package]]
-name = "similar"
-version = "3.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f66ca1f7aca2474dc10c942eb22feffc897735f54cd1db90138c2fddb490987"
-dependencies = [
- "bstr",
-]
 
 [[package]]
 name = "siphasher"

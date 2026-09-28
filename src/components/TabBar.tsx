@@ -33,6 +33,10 @@ export interface TabDescriptor {
     /** Sits after the label, just before the close button, and stays visible. */
     badge?: ReactNode;
     className?: string;
+    /** Tabs next to each other with the same group are outlined together, like the panes of one split. */
+    group?: string;
+    /** A temporary tab the next preview replaces. Drawn in italics until `onKeep` is called for it. */
+    preview?: boolean;
 }
 
 export type TabVariant = "editor" | "agent" | "desk" | "stack";
@@ -98,6 +102,8 @@ interface TabBarProps {
     tabs: TabDescriptor[];
     onSelect: (id: string) => void;
     onClose?: (id: string) => void;
+    /** A preview tab was double-clicked, so it should stay. */
+    onKeep?: (id: string) => void;
     /** Build the right-click menu for a tab. Omit to disable the context menu. */
     buildMenu?: (id: string) => CtxItem[];
     onAdd?: () => void;
@@ -121,6 +127,7 @@ export function TabBar({
     tabs,
     onSelect,
     onClose,
+    onKeep,
     buildMenu,
     onAdd,
     addIcon,
@@ -193,6 +200,24 @@ export function TabBar({
     }, [activeIndex, tabVirtualizer, virtualized]);
 
     useLayoutEffect(() => {
+        const strip = scrollRef.current;
+        if (!strip) return;
+        const mark = () => {
+            const hidden = strip.scrollWidth - strip.clientWidth;
+            strip.toggleAttribute("data-fade-start", strip.scrollLeft > 1);
+            strip.toggleAttribute("data-fade-end", hidden - strip.scrollLeft > 1);
+        };
+        mark();
+        strip.addEventListener("scroll", mark, { passive: true });
+        const resize = new ResizeObserver(mark);
+        resize.observe(strip);
+        return () => {
+            strip.removeEventListener("scroll", mark);
+            resize.disconnect();
+        };
+    }, [tabs.length]);
+
+    useLayoutEffect(() => {
         if (activeId === undefined) return;
         // A virtualized strip may not have mounted the pill yet — the
         // virtualizer above has it roughly in view.
@@ -251,94 +276,115 @@ export function TabBar({
         ? virtualItems.map((item) => ({ tab: tabs[item.index], index: item.index }))
         : tabs.map((tab, index) => ({ tab, index }));
 
+    const renderTab = (t: TabDescriptor, index: number) => {
+        const closable = t.closable ?? !!onClose;
+        // One mark at a time: a tab that is busy says so, a tab that is
+        // only unsaved shows the dot.
+        const status = t.accessory ?? (t.dirty ? <span className="tab-dot" aria-hidden="true" /> : null);
+        return (
+            <div
+                key={t.id}
+                data-index={index}
+                data-tab-id={t.id}
+                ref={wrapRef}
+                className={`tab-wrap${t.active ? " active" : ""}${t.className ? ` ${t.className}` : ""}${reorder.dragClass(t.id)}`}
+                role="presentation">
+                <Tooltip label={t.title}>
+                    <button
+                        ref={(element) => {
+                            if (element) tabRefs.current.set(t.id, element);
+                            else tabRefs.current.delete(t.id);
+                        }}
+                        type="button"
+                        role="tab"
+                        id={t.tabId}
+                        aria-controls={t.panelId}
+                        aria-selected={t.active ?? false}
+                        tabIndex={t.active || (activeIndex < 0 && index === 0) ? 0 : -1}
+                        onKeyDown={(event) => {
+                            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+                                event.preventDefault();
+                                const next =
+                                    event.key === "Home"
+                                        ? 0
+                                        : event.key === "End"
+                                          ? tabs.length - 1
+                                          : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+                                focusTabAt(next);
+                            }
+                            if (event.key === "Delete" && closable && onClose) {
+                                event.preventDefault();
+                                const next = tabs[index + 1] ?? tabs[index - 1];
+                                if (virtualized && next) tabVirtualizer.scrollToIndex(tabs.indexOf(next), { align: "auto" });
+                                onClose(t.id);
+                                if (next) requestAnimationFrame(() => tabRefs.current.get(next.id)?.focus({ preventScroll: true }));
+                            }
+                            if (event.shiftKey && event.key === "F10" && buildMenu) {
+                                event.preventDefault();
+                                const rect = event.currentTarget.getBoundingClientRect();
+                                setMenu({ x: rect.left, y: rect.bottom, id: t.id });
+                            }
+                        }}
+                        aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
+                        className={`tab${t.active ? " active" : ""}${t.preview ? " preview" : ""}`}
+                        onPointerDown={onReorder ? (event) => reorder.onPointerDown(event, t.id) : undefined}
+                        onClick={(event) => {
+                            if (reorder.consumeClick()) return;
+                            event.currentTarget.focus({ preventScroll: true });
+                            onSelect(t.id);
+                        }}
+                        onDoubleClick={t.preview && onKeep ? () => onKeep(t.id) : undefined}
+                        onContextMenu={
+                            buildMenu
+                                ? (e) => {
+                                      e.preventDefault();
+                                      setMenu({ x: e.clientX, y: e.clientY, id: t.id });
+                                  }
+                                : undefined
+                        }>
+                        {t.icon && <span className="tab-mark">{t.icon}</span>}
+                        <span className="tab-label">{t.label}</span>
+                        {t.badge && <span className="tab-badge">{t.badge}</span>}
+                    </button>
+                </Tooltip>
+                {(status || (closable && onClose)) && (
+                    <span className="tab-tail">
+                        {status && <span className="tab-status">{status}</span>}
+                        {closable && onClose && (
+                            <Tooltip label={`Close ${t.label}`}>
+                                <button type="button" className="tab-x" aria-label={`Close ${t.label}`} onClick={() => onClose(t.id)}>
+                                    <IconClose size={11} />
+                                </button>
+                            </Tooltip>
+                        )}
+                    </span>
+                )}
+            </div>
+        );
+    };
+
+    const runs: { group?: string; items: { tab: TabDescriptor; index: number }[] }[] = [];
+    for (const item of visibleTabs) {
+        const last = runs[runs.length - 1];
+        if (!virtualized && item.tab.group && last?.group === item.tab.group) last.items.push(item);
+        else runs.push({ group: virtualized ? undefined : item.tab.group, items: [item] });
+    }
+
     return (
         <div ref={scrollRef} className={`tabbar v-${variant}${reorder.dragging ? " is-reordering" : ""}`} role="tablist" aria-label={ariaLabel}>
             {virtualized && <div aria-hidden="true" style={{ flex: `0 0 ${firstVirtual?.start ?? 0}px` }} />}
-            {visibleTabs.map(({ tab: t, index }) => {
-                const closable = t.closable ?? !!onClose;
-                // One mark at a time: a tab that is busy says so, a tab that is
-                // only unsaved shows the dot.
-                const status = t.accessory ?? (t.dirty ? <span className="tab-dot" aria-hidden="true" /> : null);
-                return (
+            {runs.map((run) =>
+                run.group && run.items.length > 1 ? (
                     <div
-                        key={t.id}
-                        data-index={index}
-                        data-tab-id={t.id}
-                        ref={wrapRef}
-                        className={`tab-wrap${t.active ? " active" : ""}${t.className ? ` ${t.className}` : ""}${reorder.dragClass(t.id)}`}
+                        key={`group:${run.group}`}
+                        className={`tab-group${run.items.some(({ tab }) => tab.active) ? " active" : ""}`}
                         role="presentation">
-                        <Tooltip label={t.title}>
-                            <button
-                                ref={(element) => {
-                                    if (element) tabRefs.current.set(t.id, element);
-                                    else tabRefs.current.delete(t.id);
-                                }}
-                                type="button"
-                                role="tab"
-                                id={t.tabId}
-                                aria-controls={t.panelId}
-                                aria-selected={t.active ?? false}
-                                tabIndex={t.active || (activeIndex < 0 && index === 0) ? 0 : -1}
-                                onKeyDown={(event) => {
-                                    if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-                                        event.preventDefault();
-                                        const next =
-                                            event.key === "Home"
-                                                ? 0
-                                                : event.key === "End"
-                                                  ? tabs.length - 1
-                                                  : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-                                        focusTabAt(next);
-                                    }
-                                    if (event.key === "Delete" && closable && onClose) {
-                                        event.preventDefault();
-                                        const next = tabs[index + 1] ?? tabs[index - 1];
-                                        if (virtualized && next) tabVirtualizer.scrollToIndex(tabs.indexOf(next), { align: "auto" });
-                                        onClose(t.id);
-                                        if (next) requestAnimationFrame(() => tabRefs.current.get(next.id)?.focus({ preventScroll: true }));
-                                    }
-                                    if (event.shiftKey && event.key === "F10" && buildMenu) {
-                                        event.preventDefault();
-                                        const rect = event.currentTarget.getBoundingClientRect();
-                                        setMenu({ x: rect.left, y: rect.bottom, id: t.id });
-                                    }
-                                }}
-                                aria-label={`${t.label}${t.dirty ? ", unsaved changes" : ""}`}
-                                className={`tab${t.active ? " active" : ""}`}
-                                onPointerDown={onReorder ? (event) => reorder.onPointerDown(event, t.id) : undefined}
-                                onClick={(event) => {
-                                    if (reorder.consumeClick()) return;
-                                    event.currentTarget.focus({ preventScroll: true });
-                                    onSelect(t.id);
-                                }}
-                                onContextMenu={
-                                    buildMenu
-                                        ? (e) => {
-                                              e.preventDefault();
-                                              setMenu({ x: e.clientX, y: e.clientY, id: t.id });
-                                          }
-                                        : undefined
-                                }>
-                                {t.icon && <span className="tab-mark">{t.icon}</span>}
-                                <span className="tab-label">{t.label}</span>
-                                {t.badge && <span className="tab-badge">{t.badge}</span>}
-                            </button>
-                        </Tooltip>
-                        {(status || (closable && onClose)) && (
-                            <span className="tab-tail">
-                                {status && <span className="tab-status">{status}</span>}
-                                {closable && onClose && (
-                                    <Tooltip label={`Close ${t.label}`}>
-                                        <button type="button" className="tab-x" aria-label={`Close ${t.label}`} onClick={() => onClose(t.id)}>
-                                            <IconClose size={11} />
-                                        </button>
-                                    </Tooltip>
-                                )}
-                            </span>
-                        )}
+                        {run.items.map(({ tab, index }) => renderTab(tab, index))}
                     </div>
-                );
-            })}
+                ) : (
+                    run.items.map(({ tab, index }) => renderTab(tab, index))
+                ),
+            )}
             {virtualized && (
                 <div aria-hidden="true" style={{ flex: `0 0 ${Math.max(0, tabVirtualizer.getTotalSize() - (lastVirtual?.end ?? 0))}px` }} />
             )}

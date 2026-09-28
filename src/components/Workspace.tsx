@@ -2,7 +2,7 @@ import { pluginDocuments, usePluginDocumentsVersion } from "../plugins/documents
 import { memo, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, CorePaneKind, Divider, PaneKind, Rect, Session, TabRef, Window as WindowT, WindowRole } from "../state/types";
+import type { Agent, CorePaneKind, Divider, PaneKind, PaneNode, Rect, Session, TabRef, Window as WindowT, WindowRole } from "../state/types";
 import { isPluginKind, type PluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC, openSides } from "../state/layout";
@@ -120,18 +120,9 @@ export const Workspace = memo(function Workspace() {
     // The browser pages are native views placed by measurement, so they only
     // travel with their screen if they know the stage is moving.
     useStageMotion(pan.panning);
-    // Counts what the strip would actually show, by asking the list the strip
-    // renders: a project holding only rail-driven surfaces has no tabs, and no
-    // strip, while an editor or a plugin holding documents counts its open ones.
-    const tabCount = useStore((state) => (state.sessions[state.activeSessionId] ? selectTabRefs(state, state.activeSessionId).length : 0));
-
-    // The strip is what the screens start below, so its absence is what the
-    // stage has to know about: with no tabs there is nothing to start below.
-    const strip = activeSession && tabCount > 0 ? <WorkspaceTabsBar session={activeSession} areaRef={areaRef} /> : null;
 
     return (
-        <div className={`window-area${strip ? " window-area--strip" : ""}`} ref={areaRef}>
-            {strip}
+        <div className="window-area" ref={areaRef}>
             {sessions.map((session) => {
                 const isActive = session.id === activeSessionId;
                 const active = activeTabRef(session, windowsById, editorViews);
@@ -218,16 +209,15 @@ type WorkspaceTab = TabDescriptor & { tabId: string; panelId: string };
 interface SplitTarget {
     paneId: string;
     side: SplitSide;
-    /** The half of the pane the dropped tab will take, placed within the stage. */
+    /** The half of the pane the dropped tab will take, in window coordinates. */
     box: { left: number; top: number; width: number; height: number };
 }
 
 /** The pane of the tab on screen that is under `point`, and the edge of it the point is nearest that can still take a pane. */
-function splitTargetAt(area: HTMLElement | null, sessionId: string, point: TabPoint): SplitTarget | null {
+function splitTargetAt(sessionId: string, point: TabPoint): SplitTarget | null {
     const state = getState();
     const shown = state.windows[state.sessions[sessionId]?.activeWindowId ?? ""];
-    const stage = area?.getBoundingClientRect();
-    if (!shown || !stage) return null;
+    if (!shown) return null;
     const open = openSides(shown.root);
     const own = new Set(collectPanes(shown.root).map((pane) => pane.id));
     const cell = document
@@ -248,15 +238,22 @@ function splitTargetAt(area: HTMLElement | null, sessionId: string, point: TabPo
         paneId: cell.dataset.paneId!,
         side,
         box: {
-            left: pane.left - stage.left + (side === "right" ? pane.width / 2 : 0),
-            top: pane.top - stage.top + (side === "bottom" ? pane.height / 2 : 0),
+            left: pane.left + (side === "right" ? pane.width / 2 : 0),
+            top: pane.top + (side === "bottom" ? pane.height / 2 : 0),
             width: across ? pane.width / 2 : pane.width,
             height: across ? pane.height : pane.height / 2,
         },
     };
 }
 
-const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { session: Session; areaRef: RefObject<HTMLDivElement | null> }) {
+/** The active session's tabs. A project holding only rail-driven surfaces has none, and shows no strip. */
+export function WorkspaceTabs() {
+    const session = useStore((s) => s.sessions[s.activeSessionId]);
+    const tabCount = useStore((state) => (state.sessions[state.activeSessionId] ? selectTabRefs(state, state.activeSessionId).length : 0));
+    return session && tabCount > 0 ? <WorkspaceTabsBar session={session} /> : null;
+}
+
+const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: Session }) {
     const [splitTarget, setSplitTarget] = useState<SplitTarget | null>(null);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
@@ -283,8 +280,12 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { 
      * re-render every strip and every layer in the app.
      */
     const termPaneIds = useMemo(
-        () => refs.flatMap((ref) => (ref.doc === undefined && windowsById[ref.id]?.role === "term" ? [windowsById[ref.id]!.activePaneId] : [])),
-        [refs, windowsById],
+        () =>
+            (windowIds ?? EMPTY_IDS).flatMap((id) => {
+                const win = windowsById[id];
+                return win ? collectPanes(win.root).flatMap((pane) => (pane.kind === "terminal" ? [pane.id] : [])) : [];
+            }),
+        [windowIds, windowsById],
     );
     const termTitleList = useStore(useShallow((s) => termPaneIds.map((id) => s.terminalTitles[id] ?? "")));
     const termTitles = useMemo(() => new Map(termPaneIds.map((id, index) => [id, termTitleList[index]])), [termPaneIds, termTitleList]);
@@ -357,7 +358,47 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { 
         return items;
     };
 
-    const tabs = useMemo<WorkspaceTab[]>(() => {
+    const { tabs, paneOfTab } = useMemo(() => {
+        const paneOfTab = new Map<string, { windowId: string; paneId: string }>();
+        const look = (pane: PaneNode): Pick<TabDescriptor, "label" | "title" | "icon"> => {
+            if (pane.kind === "terminal") {
+                const label = termTitles.get(pane.id) || pane.title;
+                return {
+                    label,
+                    title: label,
+                    icon: (
+                        <span className="agent-glyph term">
+                            <WindowIcon role="term" size={13} />
+                        </span>
+                    ),
+                };
+            }
+            if (pane.kind === "agent") {
+                const agent = agentsById[pane.id];
+                const label = agent?.title ?? pane.title;
+                return {
+                    label,
+                    title: label,
+                    icon: agent ? (
+                        <span className={`agent-glyph ${agent.type}`}>
+                            <AgentIcon type={agent.type} size={19} />
+                        </span>
+                    ) : undefined,
+                };
+            }
+            const path = pane.kind === "editor" ? editorViews[pane.id]?.activePath : null;
+            if (path) return { label: basename(path), title: path, icon: <FileIcon name={basename(path)} size={16} /> };
+            const label = roleLabel(paneRole(pane.kind));
+            return {
+                label,
+                title: label,
+                icon: (
+                    <span className={`agent-glyph ${paneRole(pane.kind)}`}>
+                        <WindowIcon role={paneRole(pane.kind)} size={13} />
+                    </span>
+                ),
+            };
+        };
         const build = (ref: TabRef): TabDescriptor[] => {
             const key = tabRefKey(ref);
             const win = windowsById[ref.id];
@@ -376,6 +417,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { 
                         title: ref.doc,
                         active: key === activeKey,
                         dirty: (dirtyEditorPaths[editorPaneOf(win, editorViews)] ?? []).includes(ref.doc),
+                        preview: editorViews[editorPaneOf(win, editorViews)]?.preview === ref.doc,
                         icon: <FileIcon name={name} size={16} />,
                     },
                 ];
@@ -411,20 +453,49 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { 
                     active: key === activeKey,
                     closable: !win.fixed,
                     icon: (
-                        <span className="agent-glyph">
+                        <span className={`agent-glyph ${win.role}`}>
                             <WindowIcon role={win.role} size={13} />
                         </span>
                     ),
                 },
             ];
         };
-        return refs.flatMap((ref) =>
-            build(ref).map((tab) => ({
+        /*
+         * A split holds several panes in one tab, so the strip shows one tab per
+         * pane, outlined together. The window's own tab stands for the pane it
+         * was opened for; the panes brought in beside it get tabs of their own.
+         */
+        const grouped = (windowId: string, own: TabDescriptor[]): TabDescriptor[] => {
+            const win = windowsById[windowId];
+            const panes = win ? collectPanes(win.root).filter((pane) => pane.kind !== "desk") : [];
+            if (!win || panes.length < 2) return own;
+            const live = session.activeWindowId === win.id;
+            const documentsPane = win.role === "files" ? editorPaneOf(win, editorViews) : null;
+            const home = documentsPane ?? (panes.find((pane) => paneRole(pane.kind) === win.role) ?? panes[0]).id;
+            return panes.flatMap((pane): TabDescriptor[] => {
+                const focused = live && win.activePaneId === pane.id;
+                if (pane.id === home) {
+                    return own.map((tab) => {
+                        paneOfTab.set(tab.id, { windowId: win.id, paneId: pane.id });
+                        const kept = pane.id === documentsPane || pane.kind === "agent" ? {} : { ...look(pane), closable: true };
+                        return { ...tab, ...kept, active: !!tab.active && win.activePaneId === pane.id, group: win.id };
+                    });
+                }
+                const id = `${win.id}/${pane.id}`;
+                paneOfTab.set(id, { windowId: win.id, paneId: pane.id });
+                return [{ id, ...look(pane), active: focused, group: win.id }];
+            });
+        };
+        const byWindow = new Map<string, TabRef[]>();
+        for (const ref of refs) byWindow.set(ref.id, [...(byWindow.get(ref.id) ?? []), ref]);
+        const tabs: WorkspaceTab[] = [...byWindow].flatMap(([windowId, windowRefs]) =>
+            grouped(windowId, windowRefs.flatMap(build)).map((tab) => ({
                 ...tab,
                 tabId: `workspace-tab-${session.id}-${encodeURIComponent(tab.id)}`,
                 panelId: `workspace-content-${session.id}`,
             })),
         );
+        return { tabs, paneOfTab };
         // eslint-disable-next-line react-hooks/exhaustive-deps -- a plugin's documents live outside the store
     }, [
         refs,
@@ -437,6 +508,8 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { 
         dirtyEditorPaths,
         activeKey,
         session.id,
+        session.activeWindowId,
+        editorViews,
         documentsVersion,
     ]);
 
@@ -455,10 +528,10 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { 
     };
     const dragOut: TabDragOut = {
         allows: splittable,
-        hover: (_key, point) => setSplitTarget(point ? splitTargetAt(areaRef.current, session.id, point) : null),
+        hover: (_key, point) => setSplitTarget(point ? splitTargetAt(session.id, point) : null),
         drop: (key, point) => {
             const ref = refByKey.get(key);
-            const target = splitTargetAt(areaRef.current, session.id, point);
+            const target = splitTargetAt(session.id, point);
             if (ref && target) cmd.splitWithTab(session.id, ref, target.side, target.paneId);
         },
     };
@@ -471,14 +544,30 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session, areaRef }: { 
                 tabs={tabs}
                 onSelect={(key) => {
                     const ref = refByKey.get(key);
+                    const pane = paneOfTab.get(key);
                     if (ref) cmd.selectTab(ref);
+                    else if (pane) cmd.selectTab({ id: pane.windowId });
+                    if (pane) cmd.focusPane(pane.paneId);
+                }}
+                onKeep={(key) => {
+                    const ref = refByKey.get(key);
+                    const win = ref ? windowsById[ref.id] : undefined;
+                    if (win && ref?.doc !== undefined) cmd.keepEditorTab(editorPaneOf(win, getState().editorViews), ref.doc);
                 }}
                 onClose={(key) => {
                     const ref = refByKey.get(key);
-                    if (ref) cmd.closeTab(ref);
+                    const pane = paneOfTab.get(key);
+                    if (pane && ref?.doc === undefined && windowsById[pane.windowId]?.role !== "agent") cmd.closePane(pane.windowId, pane.paneId);
+                    else if (ref) cmd.closeTab(ref);
                 }}
                 buildMenu={(key) => {
                     const ref = refByKey.get(key);
+                    const pane = paneOfTab.get(key);
+                    if (!ref && pane) {
+                        const win = windowsById[pane.windowId];
+                        const movable = !!win && !!paneToSeparate(win, getState(), pane.paneId);
+                        return [{ label: "Move Back to Tab Bar", disabled: !movable, run: () => cmd.separatePane(pane.windowId, pane.paneId) }];
+                    }
                     if (!ref) return [];
                     const win = windowsById[ref.id];
                     if (!win) return [];
@@ -597,8 +686,9 @@ const WindowLayer = memo(function WindowLayer({
                             onMouseDown={() => live && cmd.focusPane(p.id)}>
                             {/* The pane is a surface, so it carries its own texture — and only
                                 while it is the one being read, so a screen off stage spends no
-                                WebGL context on a field nobody is looking at. */}
-                            <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />
+                                WebGL context on a field nobody is looking at. The editor draws
+                                its own, on the code panel beside its file tree. */}
+                            {p.kind !== "editor" && <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />}
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>
@@ -633,7 +723,7 @@ const WindowLayer = memo(function WindowLayer({
                                 title: stackTitles.get(pane.id) || pane.title,
                                 active: pane.id === stack.activePaneId,
                                 icon: (
-                                    <span className="agent-glyph">
+                                    <span className={`agent-glyph ${paneRole(pane.kind)}`}>
                                         <WindowIcon role={paneRole(pane.kind)} size={12} />
                                     </span>
                                 ),
