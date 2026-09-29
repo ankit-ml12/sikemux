@@ -21,6 +21,7 @@ export const README_SCREENSHOTS = {
   "rundeck-deploy-card": "cicd-rundeck-deploy-view.png",
   "signoz-dashboard-card": "observability-signoz-view.png",
   "bruno-card": "api-bruno-pane-view.png",
+  "github-run-card": "cicd-github-run-view.png",
 };
 
 export const SCENES = [
@@ -167,6 +168,27 @@ export const SCENES = [
       card: {
         selector: ".stage",
         region: { left: 0.1486, top: 0.0019, width: 0.8500, height: 0.5205 },
+      },
+    },
+  },
+  {
+    name: "github-run",
+    settle: 1600,
+    setup: async (page) => {
+      await openWindow(page, "s-sikemux", "w-sikemux-git");
+      await page.waitForTimeout(500);
+      await run(page, async () => {
+        const commands = await import("/src/state/commands.ts");
+        const host = await import("/src/codehost/state.ts");
+        commands.setGitView("p-git", { area: "actions" });
+        host.showRun("p-git", 36316473434);
+      });
+    },
+    crops: {
+      stage: ".stage",
+      card: {
+        selector: ".stage",
+        region: { left: 0, top: 0, width: 1, height: 0.8 },
       },
     },
   },

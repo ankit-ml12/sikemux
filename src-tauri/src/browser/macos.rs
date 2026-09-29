@@ -72,6 +72,9 @@ thread_local! {
     static OPEN_DIALOGS: RefCell<HashMap<String, OpenDialog>> = RefCell::new(HashMap::new());
     static HOLES: RefCell<HashMap<usize, Vec<NSRect>>> = RefCell::new(HashMap::new());
     static PAGE_HIT_TEST: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
+    /// WebKit tears a named world down once nothing holds it, and the element
+    /// numbers the agent was given go with it.
+    static HELPER_WORLD: RefCell<Option<Retained<WKContentWorld>>> = const { RefCell::new(None) };
 }
 
 /// A page dialog showing as a sheet, kept so the agent can answer it too.
@@ -231,6 +234,23 @@ pub fn history(pointer: *mut c_void, delta: i32) {
         } else {
             webview.goForward();
         }
+    }
+}
+
+/// Send `agent` as the tab's agent string, reloading so the site sees the change.
+pub fn introduce_as(pointer: *mut c_void, agent: &str) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    unsafe {
+        if webview
+            .customUserAgent()
+            .is_some_and(|current| current.to_string() == agent)
+        {
+            return;
+        }
+        webview.setCustomUserAgent(Some(&NSString::from_str(agent)));
+        let _ = webview.reload();
     }
 }
 
@@ -476,9 +496,13 @@ pub fn call_async(
     });
     let world = match world {
         World::Page => unsafe { WKContentWorld::pageWorld(mtm) },
-        World::Helper => unsafe {
-            WKContentWorld::worldWithName(&NSString::from_str("sikemux"), mtm)
-        },
+        World::Helper => HELPER_WORLD.with(|slot| {
+            slot.borrow_mut()
+                .get_or_insert_with(|| unsafe {
+                    WKContentWorld::worldWithName(&NSString::from_str("sikemux"), mtm)
+                })
+                .clone()
+        }),
     };
     unsafe {
         webview.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(

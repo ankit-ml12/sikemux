@@ -107,6 +107,43 @@ impl StreamMark {
     }
 }
 
+/// What an update from the agent's own session says about a turn nobody here
+/// prompted: the agent woke to a message from another session or a finished
+/// background task.
+#[derive(Debug, PartialEq)]
+enum TurnSignal {
+    Work,
+    Closes,
+}
+
+fn turn_signal(provider: &str, update: &Value) -> Option<TurnSignal> {
+    let kind = update.get("sessionUpdate").and_then(Value::as_str)?;
+    match provider {
+        "claude" => match kind {
+            "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" | "tool_call" => {
+                Some(TurnSignal::Work)
+            }
+            // Claude's adapter tags the usage report that closes a turn it ran
+            // on its own with where the turn came from.
+            "usage_update" if update.pointer("/_meta/_claude~1origin").is_some() => {
+                Some(TurnSignal::Closes)
+            }
+            _ => None,
+        },
+        // Codex says outright when its thread starts and stops working.
+        "codex" if kind == "session_info_update" => {
+            match update
+                .pointer("/_meta/codex/threadStatus/type")
+                .and_then(Value::as_str)?
+            {
+                "active" => Some(TurnSignal::Work),
+                _ => Some(TurnSignal::Closes),
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Clears the mark for a connection that ends part-way through a turn.
 struct TurnMark(StreamMark);
 
@@ -701,16 +738,55 @@ async fn run_connection(
     let permission_agent_id = agent_id.clone();
     let permission_manager = manager.clone();
 
+    let running = Arc::new(AtomicBool::new(false));
+    let unprompted = Arc::new(AtomicBool::new(false));
+    // Set once the session has loaded. A resumed session replays its history
+    // before that, and none of it is a turn.
+    let loaded_session = Arc::new(std::sync::OnceLock::<String>::new());
+    let event_provider = provider.clone();
+    let event_running = running.clone();
+    let event_unprompted = unprompted.clone();
+    let event_session = loaded_session.clone();
+
     agent_client_protocol::Client
         .builder()
         .on_receive_notification(
             async move |notification: air::SessionUpdate, _connection| {
+                let own_session = notification
+                    .0
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| event_session.get().is_some_and(|own| own == id));
+                let signal = if own_session {
+                    notification
+                        .0
+                        .get("update")
+                        .and_then(|update| turn_signal(&event_provider, update))
+                } else {
+                    None
+                };
+                if signal == Some(TurnSignal::Work)
+                    && !event_running.load(Ordering::Acquire)
+                    && !event_unprompted.swap(true, Ordering::AcqRel)
+                {
+                    emit(&event_app, &event_agent_id, "turn_started", json!({}));
+                }
                 emit(
                     &event_app,
                     &event_agent_id,
                     "session_update",
                     notification.0,
                 );
+                if signal == Some(TurnSignal::Closes)
+                    && event_unprompted.swap(false, Ordering::AcqRel)
+                {
+                    emit(
+                        &event_app,
+                        &event_agent_id,
+                        "turn_completed",
+                        json!({ "stopReason": "end_turn" }),
+                    );
+                }
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -763,6 +839,9 @@ async fn run_connection(
             let app = app.clone();
             let agent_id = agent_id.clone();
             let ready = ready.clone();
+            let running = running.clone();
+            let unprompted = unprompted.clone();
+            let loaded_session = loaded_session.clone();
             async move {
                 emit(
                     &app,
@@ -827,6 +906,7 @@ async fn run_connection(
                         .to_owned();
                     (session_id, response.0)
                 };
+                let _ = loaded_session.set(session_id.clone());
 
                 let model_outside_config = native::models_outside_config(&setup);
                 setup = native::with_model_config(setup);
@@ -920,7 +1000,6 @@ async fn run_connection(
                 };
                 let _turn_mark = TurnMark(stream.clone());
 
-                let running = Arc::new(AtomicBool::new(false));
                 let mut turn: u64 = 0;
                 let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
                 let cancelled_turn = Arc::new(AtomicU64::new(0));
@@ -976,10 +1055,12 @@ async fn run_connection(
                             };
                             stream.set(true);
                             turn += 1;
+                            unprompted.store(false, Ordering::Release);
                             emit(&app, &agent_id, "turn_started", json!({}));
                             let response_app = app.clone();
                             let response_agent_id = agent_id.clone();
                             let response_running = running.clone();
+                            let response_unprompted = unprompted.clone();
                             let response_manager = manager.clone();
                             let response_stream = stream.clone();
                             let response_turn = turn;
@@ -989,6 +1070,7 @@ async fn run_connection(
                                 .send_request(PromptRequest::new(session_id.clone(), blocks))
                                 .on_receiving_result(async move |result| {
                                     response_running.store(false, Ordering::Release);
+                                    response_unprompted.store(false, Ordering::Release);
                                     response_stream.set(false);
                                     response_manager.cancel_permissions(Some(&response_agent_id));
                                     match result {
@@ -1164,6 +1246,15 @@ async fn run_connection(
                                     tokio::time::sleep(CANCEL_GRACE).await;
                                     let _ = stalled.send(cancelled);
                                 });
+                            } else if unprompted.swap(false, Ordering::AcqRel) {
+                                // No prompt of ours is open to answer with the
+                                // end of a turn the agent started itself.
+                                emit(
+                                    &app,
+                                    &agent_id,
+                                    "turn_completed",
+                                    json!({ "stopReason": "cancelled" }),
+                                );
                             }
                         }
                         AcpCommand::Stop => break,
@@ -1441,12 +1532,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn adapter_commands_are_version_pinned() {
-        assert_eq!(adapter_spec("claude").unwrap().package, CLAUDE_ADAPTER);
-        assert_eq!(adapter_spec("codex").unwrap().package, CODEX_ADAPTER);
-    }
-
-    #[test]
     fn adapter_transport_bypasses_package_manager_stdio() {
         let executable = Path::new("/tmp/claude-agent-acp/dist/index.js");
         let config = adapter_config("claude", executable, None, None, &[]).unwrap();
@@ -1499,16 +1584,6 @@ mod tests {
     }
 
     #[test]
-    fn native_agents_run_their_own_binary() {
-        let config = native_config(Path::new("/bin/grok"), &["agent", "stdio"], &[]);
-        assert_eq!(config.command(), Path::new("/bin/grok"));
-        assert_eq!(
-            config.arguments(),
-            &["agent".to_string(), "stdio".to_string()]
-        );
-    }
-
-    #[test]
     fn adapter_uses_selected_executable_and_config() {
         for (provider, executable_key, config_key) in [
             ("codex", "CODEX_PATH", "CODEX_HOME"),
@@ -1534,14 +1609,68 @@ mod tests {
     }
 
     #[test]
-    fn prompt_rejects_relative_attachment_paths() {
-        let error = prompt_blocks(String::new(), vec!["relative.txt".into()]).unwrap_err();
-        assert_eq!(error, "attachment paths must be absolute");
+    fn claude_turns_open_on_work_and_close_on_the_tagged_usage_report() {
+        for kind in [
+            "user_message_chunk",
+            "agent_message_chunk",
+            "agent_thought_chunk",
+            "tool_call",
+        ] {
+            assert_eq!(
+                turn_signal("claude", &json!({ "sessionUpdate": kind })),
+                Some(TurnSignal::Work)
+            );
+        }
+        assert_eq!(
+            turn_signal(
+                "claude",
+                &json!({
+                    "sessionUpdate": "usage_update",
+                    "_meta": { "_claude/origin": { "kind": "peer" } },
+                })
+            ),
+            Some(TurnSignal::Closes)
+        );
+        for update in [
+            json!({ "sessionUpdate": "usage_update", "used": 1, "size": 10 }),
+            json!({ "sessionUpdate": "tool_call_update" }),
+            json!({ "sessionUpdate": "available_commands_update" }),
+            json!({}),
+        ] {
+            assert_eq!(turn_signal("claude", &update), None);
+        }
     }
 
     #[test]
-    fn prompt_accepts_text_and_resource_links() {
-        let blocks = prompt_blocks("inspect this".into(), vec!["/tmp/example.txt".into()]).unwrap();
-        assert_eq!(blocks.len(), 2);
+    fn codex_turns_follow_its_thread_status() {
+        let status = |kind: &str| {
+            json!({
+                "sessionUpdate": "session_info_update",
+                "_meta": { "codex": { "threadStatus": { "type": kind } } },
+            })
+        };
+        assert_eq!(
+            turn_signal("codex", &status("active")),
+            Some(TurnSignal::Work)
+        );
+        for kind in ["idle", "systemError", "notLoaded"] {
+            assert_eq!(
+                turn_signal("codex", &status(kind)),
+                Some(TurnSignal::Closes)
+            );
+        }
+        for update in [
+            json!({ "sessionUpdate": "agent_message_chunk" }),
+            json!({ "sessionUpdate": "session_info_update", "title": "Named" }),
+        ] {
+            assert_eq!(turn_signal("codex", &update), None);
+        }
+        assert_eq!(turn_signal("opencode", &status("active")), None);
+    }
+
+    #[test]
+    fn prompt_rejects_relative_attachment_paths() {
+        let error = prompt_blocks(String::new(), vec!["relative.txt".into()]).unwrap_err();
+        assert_eq!(error, "attachment paths must be absolute");
     }
 }

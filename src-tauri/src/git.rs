@@ -1003,7 +1003,10 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             commits.push(commit);
         }
     }
-    let commits = children_before_parents(commits);
+    Ok(describe_commits(repo, children_before_parents(commits)))
+}
+
+fn describe_commits(repo: &Repository, commits: Vec<git2::Commit<'_>>) -> Vec<GitCommit> {
     let oids: std::collections::HashSet<git2::Oid> = commits.iter().map(|c| c.id()).collect();
     let ref_map = build_ref_map(repo, &oids);
     let unpushed = unpushed_set(repo);
@@ -1028,7 +1031,7 @@ fn read_log(repo: &Repository, limit: usize) -> Result<Vec<GitCommit>, String> {
             refs: ref_map.get(&oid).cloned().unwrap_or_default(),
         });
     }
-    Ok(out)
+    out
 }
 
 #[tauri::command]
@@ -1810,6 +1813,100 @@ pub async fn git_commit_files(repo: String, rev: String) -> Result<Vec<String>, 
         Ok(paths)
     })
     .await
+}
+
+#[derive(Serialize, Clone)]
+pub struct GitCompare {
+    /// Where the branch left its base; diffs are drawn from here.
+    merge_base: String,
+    files: Vec<GitCompareFile>,
+    commits: Vec<GitCommit>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct GitCompareFile {
+    path: String,
+    /// `A`, `M`, `D` or `R`, as the status column shows it.
+    status: &'static str,
+}
+
+/// Prefers the remote's copy of `branch`, since a local base is often behind.
+fn remote_or_local(repo: &Repository, remote: Option<&str>, branch: &str) -> String {
+    match remote {
+        Some(remote)
+            if repo
+                .revparse_single(&format!("refs/remotes/{remote}/{branch}"))
+                .is_ok() =>
+        {
+            format!("refs/remotes/{remote}/{branch}")
+        }
+        _ => branch.to_string(),
+    }
+}
+
+fn read_compare(repo_path: &str, base: &str, head: &str) -> Result<GitCompare, String> {
+    let r = open_repo(repo_path)?;
+    let remote = default_remote(repo_path).ok();
+    let base_commit = revparse_commit(&r, &remote_or_local(&r, remote.as_deref(), base))?;
+    let head_commit = revparse_commit(&r, head)
+        .or_else(|_| revparse_commit(&r, &remote_or_local(&r, remote.as_deref(), head)))?;
+    let merge_base = r
+        .merge_base(base_commit.id(), head_commit.id())
+        .map_err(|e| e.message().to_string())?;
+
+    let old_tree = r
+        .find_commit(merge_base)
+        .and_then(|c| c.tree())
+        .map_err(|e| e.message().to_string())?;
+    let new_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
+    let diff = r
+        .diff_tree_to_tree(Some(&old_tree), Some(&new_tree), None)
+        .map_err(|e| e.message().to_string())?;
+    let files = diff
+        .deltas()
+        .filter_map(|d| {
+            let path = d.new_file().path().or_else(|| d.old_file().path())?;
+            let status = match d.status() {
+                git2::Delta::Added => "A",
+                git2::Delta::Deleted => "D",
+                git2::Delta::Renamed => "R",
+                _ => "M",
+            };
+            Some(GitCompareFile {
+                path: path.to_string_lossy().into_owned(),
+                status,
+            })
+        })
+        .collect();
+
+    let mut revwalk = r.revwalk().map_err(|e| e.message().to_string())?;
+    revwalk
+        .push(head_commit.id())
+        .map_err(|e| e.message().to_string())?;
+    revwalk
+        .hide(merge_base)
+        .map_err(|e| e.message().to_string())?;
+    revwalk
+        .set_sorting(git2::Sort::TIME)
+        .map_err(|e| e.message().to_string())?;
+    let commits = revwalk
+        .flatten()
+        .take(250)
+        .filter_map(|oid| r.find_commit(oid).ok())
+        .collect();
+
+    Ok(GitCompare {
+        merge_base: merge_base.to_string(),
+        files,
+        commits: describe_commits(&r, children_before_parents(commits)),
+    })
+}
+
+/// What `head` would bring into `base`: its files and its commits since the two parted.
+#[tauri::command]
+pub async fn git_compare(repo: String, base: String, head: String) -> Result<GitCompare, String> {
+    let _permit = git_walk_permit().await?;
+    run_blocking(move || read_compare(&repo, &base, &head)).await
 }
 
 // ---- blame ----------------------------------------------------------------
@@ -3925,6 +4022,38 @@ pub async fn git_fetch(repo: String, remote: Option<String>) -> Result<String, S
     .await
 }
 
+/// Fetches one ref from a remote into a local branch, such as a pull request
+/// from a fork, which exists only as `pull/N/head` on the remote it was opened on.
+#[tauri::command]
+pub async fn git_fetch_ref(
+    repo: String,
+    remote: String,
+    source: String,
+    branch: String,
+) -> Result<String, String> {
+    run_blocking(move || -> Result<String, String> {
+        for part in [&remote, &source, &branch] {
+            if !plain_ref_part(part) {
+                return Err(format!("{part:?} cannot be fetched"));
+            }
+        }
+        let spec = format!("+{source}:refs/heads/{branch}");
+        git_ok(&repo, &["fetch", "--end-of-options", &remote, &spec])
+    })
+    .await
+}
+
+/// A remote, ref or branch name that cannot be read as an option or a second refspec.
+fn plain_ref_part(part: &str) -> bool {
+    !part.is_empty()
+        && !part.starts_with('-')
+        && !part.contains(':')
+        && !part.contains("..")
+        && !part
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || "~^?*[\\".contains(c))
+}
+
 // ---- remote branches -----------------------------------------------------
 
 #[derive(Serialize, Clone)]
@@ -4116,6 +4245,16 @@ pub async fn git_set_upstream(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_fetched_ref_part_cannot_smuggle_an_option_or_a_second_refspec() {
+        for good in ["origin", "pull/12/head", "pr-12", "feat/thing"] {
+            assert!(super::plain_ref_part(good), "{good}");
+        }
+        for bad in ["", "-u", "a:b", "a b", "a..b", "a~1", "a^", "*"] {
+            assert!(!super::plain_ref_part(bad), "{bad}");
+        }
+    }
+
     use super::*;
     use std::{fs, path::Path};
     use tempfile::tempdir;
@@ -4161,6 +4300,40 @@ mod tests {
         git(td.path(), &["config", "user.name", "sikemux"]);
         git(td.path(), &["config", "core.autocrlf", "false"]);
         td
+    }
+
+    #[test]
+    fn a_branch_compares_against_where_it_left_its_base() {
+        let td = init_repo();
+        let repo = td.path();
+        fs::write(repo.join("kept.txt"), "one\n").unwrap();
+        fs::write(repo.join("gone.txt"), "bye\n").unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "start"]);
+        git(repo, &["branch", "-M", "main"]);
+        git(repo, &["checkout", "-b", "feat"]);
+        fs::write(repo.join("kept.txt"), "two\n").unwrap();
+        fs::write(repo.join("new.txt"), "hi\n").unwrap();
+        fs::remove_file(repo.join("gone.txt")).unwrap();
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-m", "feat work"]);
+        git(repo, &["checkout", "main"]);
+        fs::write(repo.join("later.txt"), "main moved on\n").unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "main work"]);
+
+        let compare = read_compare(&repo_arg(repo), "main", "feat").expect("compare");
+        let files: Vec<(&str, &str)> = compare
+            .files
+            .iter()
+            .map(|f| (f.path.as_str(), f.status))
+            .collect();
+        assert_eq!(
+            files,
+            vec![("gone.txt", "D"), ("kept.txt", "M"), ("new.txt", "A")]
+        );
+        let subjects: Vec<&str> = compare.commits.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(subjects, vec!["feat work"]);
     }
 
     #[test]

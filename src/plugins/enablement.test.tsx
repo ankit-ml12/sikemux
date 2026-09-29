@@ -9,12 +9,13 @@ import * as cmd from "../state/commands";
 import { applyHydrate } from "../state/persist";
 import { getState, setState } from "../state/store";
 
-const MANIFESTS = ["sikemux.aws", "sikemux.bruno", "sikemux.rundeck", "sikemux.signoz"].map((id) => ({
-    id,
-    name: id,
-    version: "0.1.0",
-    sikemux: ">=0.4",
-}));
+const MANIFESTS = [
+    { id: "sikemux.aws", name: "AWS" },
+    { id: "sikemux.bruno", name: "Bruno" },
+    { id: "sikemux.github", name: "GitHub" },
+    { id: "sikemux.rundeck", name: "Rundeck" },
+    { id: "sikemux.signoz", name: "SigNoz" },
+].map((plugin) => ({ ...plugin, version: "0.1.0", sikemux: ">=0.4" }));
 const initial = getState();
 
 beforeEach(() => setState({ ...initial, pluginManifests: MANIFESTS }, true));
@@ -65,7 +66,8 @@ describe("switching a plugin off", () => {
             </>,
         );
         expect(screen.getByText("Plugins")).toBeTruthy();
-        for (const name of ["AWS", "Bruno", "Rundeck", "SigNoz"]) expect(screen.queryByRole("button", { name })).toBeNull();
+        for (const name of ["AWS", "Bruno", "GitHub", "Rundeck", "SigNoz"]) expect(screen.queryByRole("button", { name })).toBeNull();
         expect(document.querySelector(".tb-deploy-chip")).toBeNull();
+        expect(document.querySelector(".gha-topbar")).toBeNull();
     });
 });

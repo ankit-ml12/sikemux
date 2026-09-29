@@ -99,6 +99,7 @@ pub fn run() {
     // same one-time initialisation. An rc file that runs something slow like
     // `fastfetch` makes that delay visible on the first pane.
     system::warm_login_shell_environment();
+    system::import_from_login_shell(&plugins::shell_variables());
 
     tauri::Builder::default()
         // Must be the first plugin: subsequent GUI launches focus the primary
@@ -322,6 +323,7 @@ pub fn run() {
             git::git_file_at,
             git::git_file_diff,
             git::git_commit_files,
+            git::git_compare,
             git::git_blame,
             git::git_commit,
             git::git_push,
@@ -344,6 +346,7 @@ pub fn run() {
             git::git_remote_rename,
             git::git_remote_set_url,
             git::git_fetch,
+            git::git_fetch_ref,
             git::git_remote_branches,
             git::git_checkout_remote_branch,
             git::git_delete_remote_branch,

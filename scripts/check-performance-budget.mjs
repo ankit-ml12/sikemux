@@ -161,8 +161,8 @@ const budgets = [
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_260_000,
-    gzip: 1_050_000,
+    raw: 3_340_000,
+    gzip: 1_070_000,
   },
   {
     label: "opt-in shader renderer",
@@ -185,8 +185,8 @@ const budgets = [
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 42_800,
-    gzip: 7_980,
+    raw: 44_000,
+    gzip: 8_300,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per

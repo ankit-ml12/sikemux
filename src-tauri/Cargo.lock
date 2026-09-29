@@ -4280,7 +4280,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux"
-version = "0.4.2-nightly.3"
+version = "0.4.3-nightly.1"
 dependencies = [
  "agent-client-protocol",
  "base64 0.23.1",
@@ -4322,7 +4322,9 @@ dependencies = [
  "sikemux-markdown",
  "sikemux-plugin-api",
  "sikemux-plugin-aws",
+ "sikemux-plugin-bitbucket",
  "sikemux-plugin-bruno",
+ "sikemux-plugin-github",
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-process",
@@ -4341,6 +4343,13 @@ dependencies = [
  "url",
  "uuid",
  "vt100",
+]
+
+[[package]]
+name = "sikemux-keychain"
+version = "0.1.0"
+dependencies = [
+ "sikemux-process",
 ]
 
 [[package]]
@@ -4374,6 +4383,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-plugin-bitbucket"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "futures",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "sikemux-plugin-bruno"
 version = "0.1.0"
 dependencies = [
@@ -4384,6 +4409,24 @@ dependencies = [
  "serde_json",
  "sikemux-plugin-api",
  "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "sikemux-plugin-github"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "futures",
+ "http",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
+ "sikemux-process",
  "tokio",
  "url",
 ]
@@ -4413,8 +4456,8 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sikemux-keychain",
  "sikemux-plugin-api",
- "sikemux-process",
  "tokio",
  "url",
 ]

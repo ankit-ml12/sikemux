@@ -181,6 +181,12 @@ an earlier read either reaches the same element or fails with "no element".
 Elements that appear later get new numbers. A page that redraws a list builds
 new elements, so read again after it does.
 
+The list leaves out elements a person cannot reach: ones lying under a
+modal, a banner or an open menu, and ones the page marks `inert` or
+`aria-hidden`. It also leaves out the parts of a listed control, such as a
+label wrapping a listed checkbox or a clickable span inside a link. They keep
+their numbers, so a number read earlier still works.
+
 `browser_find` with a `query` lists the elements whose visible text or
 accessible name contains it, with their numbers, exact matches first. `role`
 narrows it, as in `button`, `link`, `checkbox`, `textbox` or `tab`. When no
@@ -219,6 +225,15 @@ text rather than replace it. `submit: true` presses Enter afterwards. The
 result carries the field's `value` afterwards, so you can check it took. A
 `<select>` picks the option whose value or label matches the text.
 
+`browser_act` plays up to 20 `steps` in one call, each an `action` of
+`click`, `type` or `press` with the same fields as that tool (`index`,
+`text`, `role`, `expectLabel`, `x`, `y`, `submit`, `key`). Use it to fill a
+form and submit it, or to open a menu and pick from it by `text`. It stops at
+the first step that fails, and after any step that navigates, opens a dialog
+or changes tab, because the steps after it were planned for the old page.
+`done` lists what each step did, `stopped` names the step it stopped at and
+why, and `report` covers the page once at the end.
+
 `browser_press` sends one key to the focused element: `Enter`, `Tab`,
 `Escape`, `Backspace`, `Delete`, `ArrowDown`, `Home`, `PageDown`, `Space`, or
 a single character. Hold modifiers with `+`, as in `Meta+a` to select all or
@@ -256,11 +271,12 @@ the pane, and a tab the pane is not showing lays out at the size it last had.
 `mobile` 390×844. `preset: "fit"` lets it follow the pane again. The size
 stays through reloads and navigations in that tab. The page lays out at that
 size and is scaled down to fit the pane, never up, so screenshots and `x`,
-`y` stay in the viewport's CSS pixels. Only the size changes: a mobile preset
-keeps the desktop Safari user agent and a mouse pointer, so sites that sniff
-either still serve their desktop version. The full state reports `viewport`
-with the page's `width` and `height`, and `fixed` holding the size you set or
-`false`. With no arguments it just returns the state.
+`y` stay in the viewport's CSS pixels. The `mobile` preset also sends
+iPhone Safari's user agent and reloads the page, so sites that sniff it serve
+their phone version; any other size sends desktop Safari's, as a real iPad
+does. The pointer stays a mouse, so sites that check for touch still see none.
+The full state reports `viewport` with the page's `width` and `height`, and
+`fixed` holding the size you set or `false`. With no arguments it just returns the state.
 
 `browser_wait` sleeps for `ms` (default 1000, max 30000) and then waits for any
 load to finish. Prefer it over repeated state reads when a page is settling.

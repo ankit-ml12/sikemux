@@ -51,7 +51,7 @@ const row = (page: SettingsPageId, sectionTitle: string, label: string, keywords
 });
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
-    section("plugins", "Built-in plugins", "aws bruno rundeck signoz enable disable switch off turn on extensions integrations"),
+    section("plugins", "Built-in plugins", "aws bruno github actions rundeck signoz enable disable switch off turn on extensions integrations"),
     section("general", "Project folders", "repos repositories directories roots scan depth index picker"),
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
 
@@ -100,7 +100,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
               section("agents", "Voice", "dictation microphone speech talk transcribe"),
               row("agents", "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
               row("agents", "Voice", "Speech model", "parakeet download neural engine"),
-              row("agents", "Voice", "Words to recognise", "vocabulary names spelling"),
           ]
         : []),
 

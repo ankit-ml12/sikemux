@@ -295,7 +295,7 @@ export function demoSnapshot(): PersistedSnapshot {
       languageServerTrust: Object.fromEntries(
         DEMO_PROJECTS.map((project) => [project.path, true]),
       ),
-      themeId: "aura",
+      themeId: "aura-noir",
       windowOpacity: 0.81,
       paneShader: true,
       sideRailWidth: 258,
@@ -314,6 +314,7 @@ export function demoSnapshot(): PersistedSnapshot {
       pluginSettings: {
         "sikemux.rundeck": { activeProject: "platform", activeGroup: null },
         "sikemux.signoz": { minutes: 60, environment: "production" },
+        "sikemux.github": { pinned: [] },
       },
     },
     itemStates: {

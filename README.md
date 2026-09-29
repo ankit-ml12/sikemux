@@ -2,7 +2,9 @@
 
 # Sikemux
 
-**A desktop workspace for terminals, code, Git, coding agents, cloud tools, deployments, and API collections. Built with Tauri, Rust, and React.**
+**A terminal workspace for you and your coding agents.**
+
+Bring Claude Code, Codex or OpenCode. Sikemux gives them your shell, browser, logs and deploys, in one 10 MB native app.
 
 ![Sikemux with a Claude Code agent and its browser tab](public/screenshots/sikemux-hero.png)
 
@@ -147,6 +149,27 @@ Use the refresh action to load changes made in the AWS console.
 <td width="50%"><img src="public/screenshots/cloud-aws-ecs-tasks-logs-view.png" alt="AWS ECS tasks and logs"/></td>
 </tr>
 </table>
+
+### GitHub
+
+The GitHub panel shows the project's repository without a trip to github.com:
+
+- Actions runs, each with its job graph, steps, annotations, searchable logs, step summaries, and artifacts. Re-run, cancel, approve a waiting deployment, or start a workflow with its inputs.
+- Pull requests with their diffs, reviews, comments, and checks. Review, merge, close, or open one from a branch picker.
+- Issues, releases with their notes and assets, and GitHub's notifications.
+
+Sikemux signs in with a token from `GH_TOKEN`, `GITHUB_TOKEN`, or the `gh` CLI, and never copies it. A token you paste goes to the Keychain. GitHub Enterprise hosts use `GH_ENTERPRISE_TOKEN` instead. Agents can read the same data through the `github_*` tools.
+
+![GitHub](public/screenshots/cicd-github-run-view.png)
+
+### Bitbucket
+
+A project whose remote is on bitbucket.org gets the same Git panel, filled from Bitbucket Cloud:
+
+- Pipelines with their steps and logs. Stop one, run it again, or start any pipeline in `bitbucket-pipelines.yml` with variables.
+- Pull requests with their diffs, commits, activity, and checks. Approve, request changes, comment, merge or squash, decline, or open one from a branch picker.
+
+Sign in through the browser and Sikemux keeps the refresh token in the Keychain. Where a workspace turns outside apps away, paste an Atlassian API token with its email, or a repository or workspace access token. Agents can read the same data through the `bitbucket_*` tools.
 
 ### Rundeck
 
