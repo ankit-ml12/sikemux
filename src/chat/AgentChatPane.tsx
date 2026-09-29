@@ -1,6 +1,11 @@
 import {
     createContext,
+    type CSSProperties,
+    lazy,
     memo,
+    type ReactNode,
+    type RefObject,
+    Suspense,
     useCallback,
     useContext,
     useEffect,
@@ -9,9 +14,6 @@ import {
     useReducer,
     useRef,
     useState,
-    type CSSProperties,
-    type ReactNode,
-    type RefObject,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -62,6 +64,7 @@ import { ChatFileRef, PathRootsProvider, useFileRef } from "./FileRef";
 import { YoloToggle } from "./YoloToggle";
 import { DictateButton } from "./DictateButton";
 import { ContextMeter } from "./ContextMeter";
+import { ChatWelcome } from "./ChatWelcome";
 import { guessClaudeWindow } from "./contextWindow";
 import { agentApi } from "../api/agents";
 import { safeWebUrl } from "../terminal/interactions";
@@ -87,12 +90,14 @@ import type {
 
 const MAX_ATTACHMENTS = 32;
 const MAX_DETAIL_CHARS = 120_000;
-const HIDDEN_FLUSH_MS = 250;
+const UPDATE_FLUSH_FALLBACK_MS = 250;
 // How far above the last line still counts as reading the latest message.
 const BOTTOM_SLACK = 72;
 /* A session that drops comes back on its own. The waits grow so an agent that
    cannot come back stops trying and hands the decision over. */
 const RECONNECT_DELAYS = [700, 2_000, 5_000, 12_000];
+
+const ChatFind = lazy(() => import("./ChatFind"));
 
 function recordOf(value: unknown): Record<string, unknown> | null {
     return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -1078,13 +1083,26 @@ function RunningSubagents({ subagents }: { subagents: AcpSubagent[] }) {
 /* One kind of running work, under a label that counts it. The label is what
    makes a stack of eight rows readable, so it stays even for a group of one.
    `plural` is for the kinds that are not a noun with an s on the end. */
-function Group({ label, plural, count, children }: { label: string; plural?: string; count: number; children: ReactNode }) {
+function Group({
+    label,
+    plural,
+    count,
+    action,
+    children,
+}: {
+    label: string;
+    plural?: string;
+    count: number;
+    action?: ReactNode;
+    children: ReactNode;
+}) {
     const word = count === 1 ? label : (plural ?? `${label}s`);
     return (
         <div className="chat-group" aria-label={`${count} ${word}`}>
             <div className="chat-group-label">
                 <span>{word}</span>
                 <span className="chat-group-count">{count}</span>
+                {action}
             </div>
             {children}
         </div>
@@ -1109,6 +1127,26 @@ type QueuedMessage = { id: string; text: string; paths: string[] };
 
 const queuedLabel = (message: QueuedMessage): string => message.text || message.paths.map(basename).join(", ");
 
+const isCommand = (message: QueuedMessage) => message.text.startsWith("/");
+
+/* A slash command only works as the whole prompt, so it goes out on its own. */
+function nextBatch(queued: QueuedMessage[]): QueuedMessage[] {
+    if (queued.length === 0 || isCommand(queued[0])) return queued.slice(0, 1);
+    const command = queued.findIndex(isCommand);
+    return command === -1 ? queued : queued.slice(0, command);
+}
+
+function combineQueued(messages: QueuedMessage[]): QueuedMessage {
+    return {
+        id: messages[0].id,
+        text: messages
+            .map((message) => message.text)
+            .filter(Boolean)
+            .join("\n\n"),
+        paths: [...new Set(messages.flatMap((message) => message.paths))],
+    };
+}
+
 function QueuedMessages({
     messages,
     steerable,
@@ -1117,12 +1155,22 @@ function QueuedMessages({
 }: {
     messages: QueuedMessage[];
     steerable: boolean;
-    onSteer: (message: QueuedMessage) => void;
+    onSteer: (messages: QueuedMessage[]) => void;
     onDrop: (id: string) => void;
 }) {
     if (messages.length === 0) return null;
+    const steerAll = steerable && messages.length > 1 && (
+        <button
+            type="button"
+            className="chat-queued-steer chat-queued-steer-all"
+            aria-label="Steer the running turn with every queued message"
+            onClick={() => onSteer(messages)}>
+            Steer all
+            <kbd className="chat-queued-steer-key">{PRIMARY_SHORTCUT}↵</kbd>
+        </button>
+    );
     return (
-        <Group label="queued" plural="queued" count={messages.length}>
+        <Group label="queued" plural="queued" count={messages.length} action={steerAll}>
             {messages.map((message) => {
                 const label = queuedLabel(message);
                 return (
@@ -1134,7 +1182,7 @@ function QueuedMessages({
                                 type="button"
                                 className="chat-queued-steer"
                                 aria-label={`Steer the running turn with ${label}`}
-                                onClick={() => onSteer(message)}>
+                                onClick={() => onSteer([message])}>
                                 Steer
                                 {messages.length === 1 && <kbd className="chat-queued-steer-key">{PRIMARY_SHORTCUT}↵</kbd>}
                             </button>
@@ -1456,9 +1504,7 @@ function ChatComposer({
         );
     }, [stopping]);
 
-    /* Steering aborts the turn in flight, so the shortcut only fires when there
-       is exactly one message waiting and no doubt about which one it takes. */
-    const canSteerQueued = running && steerable && queuedCount === 1;
+    const canSteerQueued = running && steerable && queuedCount > 0;
 
     const send = (steerNow = false) => {
         const text = draft.trim();
@@ -1613,7 +1659,7 @@ function ChatComposer({
                         aria-label="Send message"
                         title={
                             canSteerQueued
-                                ? `${PRIMARY_SHORTCUT}↵ steers the queued message into this turn`
+                                ? `${PRIMARY_SHORTCUT}↵ steers ${queuedCount === 1 ? "the queued message" : "every queued message"} into this turn`
                                 : running && steerable
                                   ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it`
                                   : undefined
@@ -1731,6 +1777,19 @@ export function AgentChatPane({
         directDomUpdates: true,
     });
 
+    // Find opens on its shortcut while this chat is the pane in use; it counts up so asking again refocuses it.
+    const [findRequest, setFindRequest] = useState(0);
+    useEffect(() => {
+        if (!active) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.shiftKey || event.altKey || event.code !== "KeyF" || !hasPrimaryModifier(event)) return;
+            event.preventDefault();
+            setFindRequest((count) => count + 1);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [active]);
+
     useEffect(() => {
         if (!active) return;
         const backendState =
@@ -1807,16 +1866,13 @@ export function AgentChatPane({
             for (const [sessionId, update] of updates) dispatch({ type: "session_update", sessionId, update });
         };
 
-        /* A hidden window gets no animation frames, so a turn that runs behind
-           another tab would pile its whole transcript into one flush the moment
-           it comes back. A timer keeps it draining. */
+        /* WebKit stops animation frames for a window that is hidden or behind
+           another app, and only the first of those shows in document.hidden.
+           A timer keeps the queue draining either way. */
         const queueUpdate = (sessionId: string, update: Record<string, unknown>) => {
             queuedUpdatesRef.current.push([sessionId, update]);
-            if (document.hidden) {
-                if (updateTimerRef.current === null) updateTimerRef.current = window.setTimeout(flushUpdates, HIDDEN_FLUSH_MS);
-                return;
-            }
-            if (updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
+            if (updateTimerRef.current === null) updateTimerRef.current = window.setTimeout(flushUpdates, UPDATE_FLUSH_FALLBACK_MS);
+            if (!document.hidden && updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
         };
 
         const handleEvent = (event: AcpEvent) => {
@@ -1876,6 +1932,7 @@ export function AgentChatPane({
                 });
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
+                flushUpdates();
                 dispatch({ type: "ready", capabilities: response.capabilities, setup: response.setup });
                 setAppliedPermissionMode(initialMode);
             })
@@ -1973,12 +2030,14 @@ export function AgentChatPane({
         }
     }, []);
 
-    /* A message written mid-turn waits: it goes out as a prompt of its own once
+    /* Messages written mid-turn wait, then go out together as one prompt once
        the running turn ends, so nothing in flight is cut short. */
     useEffect(() => {
         if (state.connection !== "ready" || state.running || queued.length === 0) return;
-        const next = queued[0];
-        setQueued((current) => current.filter((message) => message.id !== next.id));
+        const batch = nextBatch(queued);
+        const sent = new Set(batch.map((message) => message.id));
+        setQueued((current) => current.filter((message) => !sent.has(message.id)));
+        const next = combineQueued(batch);
         void promptNow(next.text, next.paths);
     }, [promptNow, queued, state.connection, state.running]);
 
@@ -2022,22 +2081,16 @@ export function AgentChatPane({
 
     const steerable = state.capabilities.steering === true;
 
-    /* A turn the agent started on its own may end without the report that
-       closes it, so stopping one ends it here too. */
     const stop = () => {
-        const unprompted = state.unprompted;
-        void acpApi
-            .cancel(agent.id)
-            .then(() => {
-                if (unprompted) dispatch({ type: "turn_completed", stopReason: "cancelled" });
-            })
-            .catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
+        void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
     };
 
     /* Steering stops whatever the agent has in flight so it reads this message
        now, so a message only goes this way when it is asked to. */
-    const steer = async (message: QueuedMessage) => {
-        setQueued((current) => current.filter((candidate) => candidate.id !== message.id));
+    const steer = async (messages: QueuedMessage[]) => {
+        const steered = new Set(messages.map((message) => message.id));
+        setQueued((current) => current.filter((candidate) => !steered.has(candidate.id)));
+        const message = combineQueued(messages);
         dispatch({ type: "local_prompt", text: message.text, paths: message.paths });
         try {
             if ((await acpApi.steer(agent.id, message.text, message.paths)) !== "promptRequired") return;
@@ -2061,11 +2114,11 @@ export function AgentChatPane({
         }
 
         /* Written mid-turn, or while the session is still coming up: it waits
-           in the queue and goes out as its own prompt once the session is free. */
+           in the queue and goes out with the rest of it once the session is free. */
         queuedCount.current += 1;
         const message: QueuedMessage = { id: `queued-${queuedCount.current}`, text, paths };
         if (steerNow && steerable && state.running) {
-            void steer(message);
+            void steer([...queued, message]);
             return true;
         }
         setQueued((current) => [...current, message]);
@@ -2143,6 +2196,7 @@ export function AgentChatPane({
                 : null;
     const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
     const reconnecting = disconnected && reconnectAttempt < RECONNECT_DELAYS.length;
+    const welcoming = displayState.messages.length === 0 && displayState.connection === "ready";
     const startNewChat = () =>
         cmd.addAgent(agent.type, undefined, undefined, {
             permissionMode: agent.permissionMode,
@@ -2170,6 +2224,25 @@ export function AgentChatPane({
         <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
             <ChatAgentContext.Provider value={chatAgent}>
                 <div className="agent-chat-pane" ref={paneRef}>
+                    {findRequest > 0 && (
+                        <Suspense fallback={null}>
+                            <ChatFind
+                                request={findRequest}
+                                visible={visible}
+                                messages={displayState.messages}
+                                scrollRef={scrollRef}
+                                virtualizer={virtualizer}
+                                onLeaveBottom={() => {
+                                    stickToBottomRef.current = false;
+                                    setAtBottom(false);
+                                }}
+                                onClose={() => {
+                                    setFindRequest(0);
+                                    paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
+                                }}
+                            />
+                        </Suspense>
+                    )}
                     <div
                         className="chat-scroll"
                         ref={scrollRef}
@@ -2195,18 +2268,15 @@ export function AgentChatPane({
                             setAtBottom(next);
                         }}>
                         <div className="chat-scroll-content" ref={scrollContentRef}>
-                            {displayState.messages.length === 0 && (
+                            {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
+                            {displayState.messages.length === 0 && !welcoming && (
                                 <div className={`chat-connection-state ${displayState.connection}`} role="status">
                                     {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
                                     <span>
                                         {reconnecting
                                             ? "Reconnecting…"
                                             : (connecting ??
-                                              (displayState.connection === "ready"
-                                                  ? "Start a session with this project."
-                                                  : displayState.connection === "error"
-                                                    ? "Structured session unavailable."
-                                                    : "Agent session stopped."))}
+                                              (displayState.connection === "error" ? "Structured session unavailable." : "Agent session stopped."))}
                                     </span>
                                     {disconnected && !reconnecting && (
                                         <div className="chat-connection-actions">
@@ -2307,7 +2377,7 @@ export function AgentChatPane({
                                 <QueuedMessages
                                     messages={queued}
                                     steerable={steerable && state.running}
-                                    onSteer={(message) => void steer(message)}
+                                    onSteer={(messages) => void steer(messages)}
                                     onDrop={(id) => setQueued((current) => current.filter((message) => message.id !== id))}
                                 />
                             </div>
@@ -2332,8 +2402,7 @@ export function AgentChatPane({
                             onError={setComposerError}
                             onSend={send}
                             onSteerQueued={() => {
-                                const head = queued[0];
-                                if (head) void steer(head);
+                                if (queued.length > 0) void steer(queued);
                             }}
                             onStop={stop}
                             queuedCount={queued.length}

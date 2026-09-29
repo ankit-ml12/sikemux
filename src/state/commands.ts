@@ -63,7 +63,7 @@ import {
     type TabSource,
 } from "./selectors";
 import { agentWindow } from "./agentWindow";
-import { DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW } from "./types";
+import { DEFAULT_GIT_VIEW, DEFAULT_GLOBAL_SEARCH_VIEW, type GitArea } from "./types";
 import { copyText, readClipboardText } from "../lib/clipboard";
 import type { SettingsPageId } from "../settingsIndex";
 import {
@@ -733,15 +733,16 @@ export function splitActivePane(dir: SplitDir): void {
 /** Tool panes that can be split into another tab and still be found there by their rail button and shortcut. */
 const SPLITTABLE_TOOLS: ReadonlySet<PaneKind> = new Set(["git", "search"]);
 
-/** The kind of tab a lone pane is, when the tab it was split into has to become what is left of it. */
-function roleOfPane(pane: PaneNode): WindowRole {
-    if (pane.kind === "agent") return "agent";
-    if (pane.kind === "git" || pane.kind === "search") return pane.kind;
-    return pane.startup ? "named" : "term";
+/** The tab a pane is, when it comes back out of a split: the one it had before, or the kind of tab its content makes. */
+function tabOfPane(pane: PaneNode): { name: string; role: WindowRole } {
+    if (pane.tab) return pane.tab;
+    if (pane.kind === "agent") return { name: pane.title, role: "agent" };
+    if (pane.kind === "git" || pane.kind === "search") return { name: pane.title, role: pane.kind };
+    return { name: pane.title, role: pane.startup ? "named" : "term" };
 }
 
 /** Where each pane's tab was in the strip before it was split into another, so moving it out puts it back. */
-const splitOrigins = new Map<string, { windowId: string; name: string; role: WindowRole; previous: string | null; next: string | null }>();
+const splitPlaces = new Map<string, { windowId: string; previous: string | null; next: string | null }>();
 
 export function splitWithTab(sessionId: string, source: TabRef, side: SplitSide, besidePaneId?: string): void {
     if (!tabSplitAllowed(getState(), sessionId, source)) return;
@@ -758,17 +759,12 @@ export function splitWithTab(sessionId: string, source: TabRef, side: SplitSide,
         if (source.doc !== undefined) {
             d.editorViews[moving.id] = { openTabs: [source.doc], activePath: source.doc, single: true };
         } else {
+            for (const win of [shown, from]) for (const pane of collectPanes(win.root)) pane.tab ??= { name: win.name, role: win.role };
             const leaving = host === from ? shown : from;
             const ids = d.windowsBySession[sessionId] ?? [];
             const index = ids.indexOf(leaving.id);
-            const origin = {
-                windowId: leaving.id,
-                name: leaving.name,
-                role: leaving.role,
-                previous: ids[index - 1] ?? null,
-                next: ids[index + 1] ?? null,
-            };
-            for (const pane of collectPanes(leaving.root)) splitOrigins.set(pane.id, origin);
+            const place = { windowId: leaving.id, previous: ids[index - 1] ?? null, next: ids[index + 1] ?? null };
+            for (const pane of collectPanes(leaving.root)) splitPlaces.set(pane.id, place);
             delete d.windows[leaving.id];
             d.windowsBySession[sessionId] = ids.filter((id) => id !== leaving.id);
         }
@@ -784,7 +780,9 @@ export function splitWithTab(sessionId: string, source: TabRef, side: SplitSide,
 /**
  * Moves a pane out of a split tab (the focused one when unnamed): a terminal
  * back to its own tab, in the place and under the name it had before it was
- * split in, still running, and a file back into the editor.
+ * split in, still running, and a file back into the editor. When the pane
+ * leaving is the one the split tab was named after, the tab takes the name of
+ * a pane it still holds.
  */
 export function separatePane(windowId: string, paneId?: string): void {
     const st = getState();
@@ -795,19 +793,25 @@ export function separatePane(windowId: string, paneId?: string): void {
     const view = pane.kind === "editor" ? st.editorViews[pane.id] : undefined;
     // The file showing goes last, so the editor ends on it.
     const paths = view ? [...view.openTabs.filter((open) => open !== view.activePath), ...(view.activePath ? [view.activePath] : [])] : [];
-    const origin = splitOrigins.get(pane.id);
-    splitOrigins.delete(pane.id);
+    const place = splitPlaces.get(pane.id);
+    splitPlaces.delete(pane.id);
     mutate((d) => {
         const host = d.windows[windowId];
         const rest = removePane(host.root, pane.id);
         if (!rest) return;
         host.root = rest;
         if (!collectPanes(rest).some((candidate) => candidate.id === host.activePaneId)) host.activePaneId = collectPanes(rest)[0].id;
-        // A Git or search tab left holding something else is that thing's tab now.
-        if (rest.type === "pane" && (host.role === "git" || host.role === "search") && rest.kind !== host.role) {
-            host.role = roleOfPane(rest);
-            host.name = rest.title;
+        const namesHost = (candidate: PaneNode) => {
+            const tab = tabOfPane(candidate);
+            return tab.name === host.name && tab.role === host.role;
+        };
+        const remaining = collectPanes(rest).filter((candidate) => candidate.kind !== "editor");
+        if (pane.kind !== "editor" && namesHost(pane) && remaining.length > 0 && !remaining.some(namesHost)) {
+            const next = tabOfPane(remaining[0]);
+            host.name = next.name;
+            host.role = next.role;
         }
+        if (rest.type === "pane") delete rest.tab;
         d.zoomedPaneId = null;
         if (pane.kind === "editor") {
             delete d.editorViews[pane.id];
@@ -815,19 +819,18 @@ export function separatePane(windowId: string, paneId?: string): void {
         }
         const ids = d.windowsBySession[sessionId] ?? [];
         const separated: Window = {
-            id: origin && !d.windows[origin.windowId] ? origin.windowId : newId("win"),
-            name: origin?.name ?? pane.title,
-            role: origin?.role ?? roleOfPane(pane),
-            root: pane,
+            id: place && !d.windows[place.windowId] ? place.windowId : newId("win"),
+            ...tabOfPane(pane),
+            root: { ...pane, tab: undefined },
             activePaneId: pane.id,
         };
         // Beside the tab it sat after, or the one it sat before, whichever is still there.
         const at =
-            origin?.previous && ids.includes(origin.previous)
-                ? ids.indexOf(origin.previous) + 1
-                : origin?.next && ids.includes(origin.next)
-                  ? ids.indexOf(origin.next)
-                  : origin && origin.previous === null
+            place?.previous && ids.includes(place.previous)
+                ? ids.indexOf(place.previous) + 1
+                : place?.next && ids.includes(place.next)
+                  ? ids.indexOf(place.next)
+                  : place && place.previous === null
                     ? 0
                     : ids.indexOf(windowId) + 1;
         d.windows[separated.id] = separated;
@@ -2131,7 +2134,7 @@ export const toggleAgentRail = (): void =>
     setState((s) => (s.zenMode ? { zenMode: false, agentRailOpen: true } : { agentRailOpen: !s.agentRailOpen }));
 export const setRailWidth = (edge: RailEdge, px: number): void =>
     setState(edge === "start" ? { sideRailWidth: clampRailWidth(edge, px) } : { agentRailWidth: clampRailWidth(edge, px) });
-export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode }));
+export const toggleZen = (): void => setState((s) => ({ zenMode: !s.zenMode, sideRailOpen: s.zenMode, agentRailOpen: s.zenMode }));
 
 export function requestOpenFile(path: string, line?: number, character?: number): void {
     ensureRoleWindow("files", "editor", "editor", path);
@@ -2145,6 +2148,26 @@ export const openGitWorkbench = (): void => ensureRoleWindow("git", "git", "Git"
 
 export function openGitPane(): void {
     openGitWorkbench();
+}
+
+/** The git pane in the project in front, opening one when there is none. */
+export function gitPaneOfActiveSession(): string | null {
+    const st = getState();
+    const session = st.sessions[st.activeSessionId];
+    if (!session || session.kind !== "project") return null;
+    for (const id of st.windowsBySession[session.id] ?? []) {
+        const pane = st.windows[id] && collectPanes(st.windows[id].root).find((candidate) => candidate.kind === "git");
+        if (pane) return pane.id;
+    }
+    return null;
+}
+
+/** Opens the git pane at its local workbench or at one of the code host's sections, and says which pane that is. */
+export function openGitArea(area: GitArea): string | null {
+    openGitWorkbench();
+    const paneId = gitPaneOfActiveSession();
+    if (paneId) setGitView(paneId, { area });
+    return paneId;
 }
 
 function focusDiff(target: DiffTarget): void {
@@ -2523,7 +2546,6 @@ export function focusBrowserAddress(): boolean {
 export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value });
 export const setAgentNotifications = (value: boolean): void => setState({ agentNotifications: value });
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
-export const setVoiceWords = (words: readonly string[]): void => setState({ voiceWords: [...new Set(words)] });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 

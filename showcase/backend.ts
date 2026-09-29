@@ -3,7 +3,7 @@ import type {
   IpcTransport,
   IpcUnsubscribe,
 } from "../src/api/transport";
-import type { GitOverview } from "../src/api/git";
+import type { GitCommit, GitOverview } from "../src/api/git";
 import {
   AGENT_SCRIPTS,
   AGENT_USAGE,
@@ -13,6 +13,7 @@ import {
 } from "./world/agents";
 import { BRANCHES, GIT_STATUS } from "./world/git";
 import { RUNDECK, rundeckStream } from "./world/rundeck";
+import { GITHUB } from "./world/github";
 import { SIGNOZ, signozTail } from "./world/signoz";
 import { AWS, awsLogLines } from "./world/aws";
 import { demoActivity } from "./world/activity";
@@ -95,8 +96,14 @@ export class ShowcaseBackend implements IpcTransport {
     this.on(
       "plugin_manifests",
       constant(
-        ["rundeck", "signoz", "aws", "bruno"].map((name) => ({
-          id: `sikemux.${name}`,
+        [
+          ["rundeck", "Rundeck"],
+          ["signoz", "SigNoz"],
+          ["aws", "AWS"],
+          ["bruno", "Bruno"],
+          ["github", "GitHub"],
+        ].map(([id, name]) => ({
+          id: `sikemux.${id}`,
           name,
           version: "1.0.0",
           sikemux: "^0.4.0",
@@ -213,6 +220,46 @@ export class ShowcaseBackend implements IpcTransport {
       ]),
     );
     this.on("git_stash_list", constant([]));
+    this.on("git_commit_files", async ({ repo, rev }) => {
+      const project = DEMO_PROJECTS.find(
+        (candidate) => candidate.path === repo,
+      );
+      if (!project) return [];
+      return server<string[]>("commit_files", { project: project.name, rev });
+    });
+    this.on("git_compare", async ({ repo }) => {
+      const project = DEMO_PROJECTS.find(
+        (candidate) => candidate.path === repo,
+      );
+      if (!project) throw new Error("could not find repository");
+      const log = await server<GitCommit[]>("git_log", {
+        project: project.name,
+        count: 4,
+      });
+      const commits = log.slice(0, 3);
+      const paths = new Set<string>();
+      for (const commit of commits) {
+        const files = await server<string[]>("commit_files", {
+          project: project.name,
+          rev: commit.full_hash,
+        });
+        files.forEach((path) => paths.add(path));
+      }
+      return {
+        merge_base: log[3]?.full_hash ?? "",
+        files: [...paths].map((path) => ({ path, status: "M" })),
+        commits,
+      };
+    });
+    this.on("git_remote_branches", ({ repo, remote }) =>
+      (BRANCHES[repo as string] ?? ["main"]).map((name) => ({
+        name,
+        full_ref: `${remote}/${name}`,
+        is_head_pointer: false,
+        tracked_by: name,
+        subject: null,
+      })),
+    );
 
     let nextPty = 1;
     const ptyPanes = new Map<number, { paneId?: string; cwd: string | null }>();
@@ -257,6 +304,7 @@ export class ShowcaseBackend implements IpcTransport {
       "sikemux.signoz": SIGNOZ,
       "sikemux.aws": AWS,
       "sikemux.bruno": { send: () => CHECKOUT_RESPONSE },
+      "sikemux.github": GITHUB,
     };
     this.on("plugin_call", ({ plugin, method, params }) => {
       const answer = plugins[plugin as string]?.[method as string];

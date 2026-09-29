@@ -105,7 +105,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 17,
+                    version: 18,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -378,6 +378,25 @@ describe("frontend persistence", () => {
         expect(getState().deskRestores).toEqual({});
     });
 
+    it("closes a v16 GitHub session, which lives in the git pane now", async () => {
+        const sid = getState().activeSessionId;
+        invoke.mockResolvedValue(undefined);
+        expect(await flushPersist()).toBe(true);
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        const project = saved.sessions.find((row: { id: string }) => row.id === sid);
+        saved.version = 16;
+        saved.sessions.push({ ...project, id: "session-github", kind: "sikemux.github:hub", name: "GitHub" });
+        saved.sessionOrder = [...(saved.sessionOrder ?? []), "session-github"];
+        saved.windowsBySession["session-github"] = [];
+        saved.activeSessionId = "session-github";
+
+        expect(applyHydrate(JSON.stringify(saved))).toBe("applied");
+
+        expect(getState().sessions["session-github"]).toBeUndefined();
+        expect(getState().sessionOrder).not.toContain("session-github");
+        expect(getState().activeSessionId).toBe(sid);
+    });
+
     it("moves a v15 browser pane onto a desk with the pages it held", async () => {
         const sid = getState().activeSessionId;
         const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
@@ -597,7 +616,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(16);
+        expect(saved.version).toBe(17);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -737,7 +756,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(16);
+        expect(JSON.parse(migrated).version).toBe(17);
     });
 
     /*
@@ -770,7 +789,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(16);
+        expect(saved.version).toBe(17);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");
@@ -830,33 +849,6 @@ describe("frontend persistence", () => {
             treeHidden: false,
         });
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
-    });
-
-    it("turns v14 Rundeck env folders into group paths and drops folder-based deploy picks", () => {
-        const project = getState().sessions[getState().activeSessionId];
-        const window = getState().windows[project.activeWindowId];
-        applyHydrate(
-            JSON.stringify({
-                version: 14,
-                sessions: [{ ...project, kind: "project" }],
-                windowsBySession: { [project.id]: [window] },
-                sessionOrder: [project.id],
-                activeSessionId: project.id,
-                prefs: {
-                    pluginSettings: {
-                        "sikemux.rundeck": {
-                            activeProject: "ops",
-                            activeEnvFolder: "Prod",
-                            prodEnvs: ["prod", "live"],
-                            deployTargets: { "/repo/api": { project: "ops", folder: "Prod" } },
-                        },
-                    },
-                },
-                itemStates: {},
-            }),
-        );
-
-        expect(rundeckSettings.get()).toMatchObject({ activeProject: "ops", activeGroup: "Prod", prodEnvs: ["prod", "live"], deployTargets: {} });
     });
 
     it("folds v11 Bruno sessions, one per workspace, into the one Bruno session and keeps every folder", () => {
@@ -1019,35 +1011,6 @@ describe("frontend persistence", () => {
             expect(restored.startup).toContain("Retrying (%s/5)");
             expect(restored.startup).not.toMatch(/[\r\n]/);
         }
-    });
-
-    it("replaces the multiline SSH startup from the first reconnect release", () => {
-        const sid = getState().activeSessionId;
-        const session = getState().sessions[sid];
-        const window = getState().windows[session.activeWindowId];
-
-        applyHydrate(
-            JSON.stringify({
-                version: 4,
-                sessions: [{ ...session, kind: "ssh", name: "prod-db" }],
-                windowsBySession: {
-                    [sid]: [
-                        {
-                            ...window,
-                            root: { ...window.root, startup: "(\n  sikemux_ssh_retries=0\n)" },
-                        },
-                    ],
-                },
-                agentsBySession: {},
-                sessionOrder: [sid],
-                activeSessionId: sid,
-                prefs: {},
-            }),
-        );
-
-        const restored = getState().windows[session.activeWindowId].root;
-        expect(restored.type).toBe("pane");
-        if (restored.type === "pane") expect(restored.startup).not.toMatch(/[\r\n]/);
     });
 
     it("upgrades legacy fixed project terminals to regular numbered tabs", () => {

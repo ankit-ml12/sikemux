@@ -18,10 +18,10 @@ import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { rollupAgentStates } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, Logo, WindowIcon } from "./Icons";
+import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, WindowIcon } from "./Icons";
 import { Tooltip } from "./Tooltip";
 import { EmptyState, Panel, PanelHeader } from "./Panel";
-import { UpdateChip, VersionChip } from "./TopBar";
+import { RailMasthead } from "./RailMasthead";
 import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
@@ -394,7 +394,7 @@ function renderSession(s: Session) {
 }
 
 /** A plugin that is enabled but not open yet: the same row its session will be, opening it on click. */
-function PluginLauncherRow({ plugin }: { plugin: FrontendPlugin }) {
+function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: string }) {
     const surface = plugin.surfaces[0];
     if (!surface) return null;
     return (
@@ -403,7 +403,7 @@ function PluginLauncherRow({ plugin }: { plugin: FrontendPlugin }) {
                 <span className={`sess-icon ${surface.kind}`}>
                     <span className="sess-icon-glyph">{kindIcon(surface.kind)}</span>
                 </span>
-                <span className="sess-name">{surface.title}</span>
+                <span className="sess-name">{name}</span>
             </button>
         </div>
     );
@@ -507,7 +507,8 @@ export const SideRail = memo(function SideRail() {
     // Every enabled plugin always has a row; its session is only made on the first click.
     const pluginRows = enabledPlugins.flatMap((plugin) => {
         const opened = plugins.filter((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === plugin.id);
-        return opened.length > 0 ? opened.map(renderSession) : [<PluginLauncherRow key={plugin.id} plugin={plugin} />];
+        if (opened.length > 0) return opened.map(renderSession);
+        return [<PluginLauncherRow key={plugin.id} plugin={plugin} name={plugin.manifest.name} />];
     });
 
     const resolveProjectDrop = useCallback((x: number, y: number) => {
@@ -717,6 +718,7 @@ export const SideRail = memo(function SideRail() {
     return (
         <RailContext.Provider value={rail}>
             <aside ref={leavingRail} className="side-rail" onClickCapture={settingsOpen ? cmd.closeSettings : undefined}>
+                <RailMasthead />
                 <div className="rail-scroll">
                     <Group
                         label="Projects"
@@ -738,16 +740,6 @@ export const SideRail = memo(function SideRail() {
                     />
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
-                </div>
-
-                <UpdateChip />
-
-                {/* Identity lives at the foot of the rail: present when you look for
-                it, out of the way of the sessions above it. */}
-                <div className="rail-sig">
-                    <Logo size={13} />
-                    <span className="rail-sig-name">Sikemux</span>
-                    <VersionChip />
                 </div>
             </aside>
             {projectDragVisual &&

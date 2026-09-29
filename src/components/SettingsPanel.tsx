@@ -63,7 +63,6 @@ import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { ActivityPage } from "./ActivityPage";
 import { SettingsPage, SettingsSection } from "./SettingsLayout";
 import { useVoice, type VoiceState } from "../voice/dictation";
-import { parseVoiceWords } from "../voice/vocabulary";
 import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
@@ -1518,7 +1517,6 @@ interface CloudPageProps {
 
 function PluginsPage() {
     const built = useBuiltPlugins();
-    const manifests = useStore((s) => s.pluginManifests);
     const disabled = useStore((s) => s.disabledPlugins);
     return (
         <SettingsPage>
@@ -1528,8 +1526,8 @@ function PluginsPage() {
                 <SettingsRows>
                     {built.length === 0 && <div className="settings-empty">No plugins in this build.</div>}
                     {built.map((plugin) => {
-                        const title = plugin.surfaces[0]?.title ?? plugin.id;
-                        const version = manifests.find((manifest) => manifest.id === plugin.id)?.version;
+                        const title = plugin.manifest.name;
+                        const version = plugin.manifest.version;
                         return (
                             <SettingsRow
                                 key={plugin.id}
@@ -1590,7 +1588,6 @@ function voiceModelStatus(voice: VoiceState, enabled: boolean): string {
     switch (voice.phase) {
         case "preparing":
             if (voice.stage === "download") return `Downloading… ${Math.round(voice.fraction * 100)}%`;
-            if (voice.stage === "vocabulary") return "Loading the word list model…";
             return "Preparing for the Neural Engine. The first time takes about half a minute.";
         case "off":
             return "Not loaded.";
@@ -1601,11 +1598,7 @@ function voiceModelStatus(voice: VoiceState, enabled: boolean): string {
 
 function VoiceSection() {
     const enabled = useStore((s) => s.voiceDictation);
-    const words = useStore((s) => s.voiceWords);
     const voice = useVoice();
-    const [draft, setDraft] = useState(() => words.join(", "));
-    useEffect(() => setDraft(words.join(", ")), [words]);
-    const commit = () => cmd.setVoiceWords(parseVoiceWords(draft));
     return (
         <SettingsSection title="Voice">
             <SettingsRows>
@@ -1623,26 +1616,6 @@ function VoiceSection() {
                     }
                 />
                 <SettingsRow label="Speech model" desc={voiceModelStatus(voice, enabled)} />
-                <SettingsRow
-                    label="Words to recognise"
-                    desc="Names to spell your way, separated by commas. The project, its open files and agent names are included already."
-                    wide>
-                    <input
-                        className="settings-input mono"
-                        aria-label="Words to recognise"
-                        placeholder="pnpm, Tauri, worktree"
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        onBlur={commit}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                                event.preventDefault();
-                                commit();
-                            }
-                        }}
-                        spellCheck={false}
-                    />
-                </SettingsRow>
             </SettingsRows>
         </SettingsSection>
     );

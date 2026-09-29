@@ -1,5 +1,4 @@
-import { memo, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { getVersion } from "@tauri-apps/api/app";
+import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBattery } from "../hooks/useBattery";
 import { useClock } from "../hooks/useClock";
@@ -9,13 +8,14 @@ import { swallow } from "../state/toast";
 import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { useStore } from "../state/store";
-import { IconAgent, IconBattery, IconFocus, IconGit, IconMic, IconPanelLeft, IconZoom } from "./Icons";
+import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "./Icons";
 import { WorkspaceTabs } from "./Workspace";
 import { useVoice } from "../voice/dictation";
 import { PRIMARY_SHORTCUT } from "../lib/platform";
 import { Tooltip } from "./Tooltip";
-import { isUpdateBusy, updateDownloadPercent, updateStatusLabel } from "../api/updater";
 import { RollingText } from "./RollingText";
+import { remoteRepoR } from "../codehost/project";
+import { codeHost } from "../codehost/registry";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -56,20 +56,26 @@ function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
  */
 function GitChip({ repo }: { repo: string }) {
     const res = useResource(gitOverviewR, repo);
+    const remote = useResource(remoteRepoR, repo).data ?? null;
+    const host = remote ? codeHost(remote.provider) : undefined;
     const st = res.data?.status;
     if (!st) return null;
 
     const dirty = st.files.length > 0;
     const ahead = st.ahead;
     const behind = st.behind;
-    const title = `${st.branch}${st.upstream ? ` → ${st.upstream}` : ""}${dirty ? ` · ${st.files.length} changed` : " · clean"}${ahead ? ` · ahead ${ahead}` : ""}${behind ? ` · behind ${behind}` : ""}`;
+    const title = `${host && remote ? `${host.name} · ${remote.owner}/${remote.name} · ` : ""}${st.branch}${st.upstream ? ` → ${st.upstream}` : ""}${dirty ? ` · ${st.files.length} changed` : " · clean"}${ahead ? ` · ahead ${ahead}` : ""}${behind ? ` · behind ${behind}` : ""}`;
 
     return (
         <>
             <span className="tb-git" data-no-window-drag>
                 <Tooltip label={title}>
                     <button className="tb-git-chip" onClick={cmd.openGitPane} aria-label={title}>
-                        <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
+                        {host ? (
+                            <span className="tb-git-host">{host.icon(12)}</span>
+                        ) : (
+                            <IconGit size={12} className={`tb-git-ico ${dirty ? "dirty" : "clean"}`} />
+                        )}
                         <span className="tb-git-branch">{st.branch}</span>
                         {(ahead > 0 || behind > 0) && (
                             <span className="tb-git-track">
@@ -107,68 +113,6 @@ function CogIcon({ size = 15 }: { size?: number }) {
             strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-    );
-}
-
-export function VersionChip() {
-    const [version, setVersion] = useState<string | null>(null);
-    useEffect(() => {
-        getVersion().then(setVersion).catch(swallow("getVersion"));
-    }, []);
-    if (!version) return null;
-    return (
-        <Tooltip label={`Sikemux ${version}`}>
-            <span className="tb-version">v{version}</span>
-        </Tooltip>
-    );
-}
-
-export function UpdateChip() {
-    const pending = useStore((s) => s.pendingUpdate);
-    if (!pending) return null;
-
-    const state = pending.state;
-    const busy = isUpdateBusy(state);
-    const statusLabel = updateStatusLabel(pending);
-    const percent = state === "downloading" ? updateDownloadPercent(pending) : null;
-    const onClick = () => {
-        if (busy) return;
-        cmd.openWhatsNew();
-    };
-
-    return (
-        <Tooltip
-            label={
-                state === "error"
-                    ? `Update v${pending.version} failed — ${pending.error ?? "unknown"}. Click to retry.`
-                    : busy
-                      ? `${statusLabel} v${pending.version}`
-                      : `Update v${pending.version} available (current: v${pending.currentVersion}). Click to install + relaunch.${pending.notes ? `\n\n${pending.notes}` : ""}`
-            }>
-            <button className={`tb-update tb-update-${state}${percent === null ? "" : " tb-update-measured"}`} onClick={onClick} disabled={busy}>
-                {percent !== null && <span className="tb-update-fill" style={{ transform: `scaleX(${percent / 100})` }} aria-hidden="true" />}
-                <UpdateArrow size={12} />
-                <span className="tb-update-label">{statusLabel}</span>
-            </button>
-        </Tooltip>
-    );
-}
-
-function UpdateArrow({ size = 12 }: { size?: number }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width={size}
-            height={size}
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true">
-            <path d="M8 2v9M4 7l4 4 4-4M3 14h10" />
         </svg>
     );
 }
@@ -214,8 +158,6 @@ export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const zoomed = useStore((s) => s.zoomedPaneId != null);
     const zen = useStore((s) => s.zenMode);
-    const sideRailVisible = useStore((s) => s.sideRailOpen && !s.zenMode);
-    const agentRailVisible = useStore((s) => s.agentRailOpen && !s.zenMode);
     const [stripHovered, setStripHovered] = useState(false);
     const plugins = useInstalledPlugins();
 
@@ -248,24 +190,6 @@ export const TopBar = memo(function TopBar() {
                     <Tooltip label="Focus mode — hide rails">
                         <button className={`tb-btn${zen ? " on" : ""}`} onClick={cmd.toggleZen} aria-pressed={zen} aria-label="Focus mode">
                             <IconFocus size={15} />
-                        </button>
-                    </Tooltip>
-                    <Tooltip label="Toggle sessions rail">
-                        <button
-                            className={`tb-btn${sideRailVisible ? " on" : ""}`}
-                            onClick={cmd.toggleSideRail}
-                            aria-pressed={sideRailVisible}
-                            aria-label="Toggle sessions rail">
-                            <IconPanelLeft size={15} />
-                        </button>
-                    </Tooltip>
-                    <Tooltip label="Toggle agents rail">
-                        <button
-                            className={`tb-btn${agentRailVisible ? " on" : ""}`}
-                            onClick={cmd.toggleAgentRail}
-                            aria-pressed={agentRailVisible}
-                            aria-label="Toggle agents rail">
-                            <IconAgent size={15} />
                         </button>
                     </Tooltip>
                     <Tooltip label={`Settings — ${PRIMARY_SHORTCUT},`}>
