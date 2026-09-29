@@ -1,6 +1,11 @@
 import {
     createContext,
+    type CSSProperties,
+    lazy,
     memo,
+    type ReactNode,
+    type RefObject,
+    Suspense,
     useCallback,
     useContext,
     useEffect,
@@ -9,9 +14,6 @@ import {
     useReducer,
     useRef,
     useState,
-    type CSSProperties,
-    type ReactNode,
-    type RefObject,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -94,6 +96,8 @@ const BOTTOM_SLACK = 72;
 /* A session that drops comes back on its own. The waits grow so an agent that
    cannot come back stops trying and hands the decision over. */
 const RECONNECT_DELAYS = [700, 2_000, 5_000, 12_000];
+
+const ChatFind = lazy(() => import("./ChatFind"));
 
 function recordOf(value: unknown): Record<string, unknown> | null {
     return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -1773,6 +1777,19 @@ export function AgentChatPane({
         directDomUpdates: true,
     });
 
+    // Find opens on its shortcut while this chat is the pane in use; it counts up so asking again refocuses it.
+    const [findRequest, setFindRequest] = useState(0);
+    useEffect(() => {
+        if (!active) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.shiftKey || event.altKey || event.code !== "KeyF" || !hasPrimaryModifier(event)) return;
+            event.preventDefault();
+            setFindRequest((count) => count + 1);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [active]);
+
     useEffect(() => {
         if (!active) return;
         const backendState =
@@ -2207,6 +2224,25 @@ export function AgentChatPane({
         <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
             <ChatAgentContext.Provider value={chatAgent}>
                 <div className="agent-chat-pane" ref={paneRef}>
+                    {findRequest > 0 && (
+                        <Suspense fallback={null}>
+                            <ChatFind
+                                request={findRequest}
+                                visible={visible}
+                                messages={displayState.messages}
+                                scrollRef={scrollRef}
+                                virtualizer={virtualizer}
+                                onLeaveBottom={() => {
+                                    stickToBottomRef.current = false;
+                                    setAtBottom(false);
+                                }}
+                                onClose={() => {
+                                    setFindRequest(0);
+                                    paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
+                                }}
+                            />
+                        </Suspense>
+                    )}
                     <div
                         className="chat-scroll"
                         ref={scrollRef}
