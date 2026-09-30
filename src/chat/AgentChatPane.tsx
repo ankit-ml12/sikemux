@@ -12,7 +12,7 @@ import { chatReducer, initialChatState } from "./reducer";
 import { PathRootsProvider } from "./FileRef";
 import { ChatWelcome } from "./ChatWelcome";
 import { FoldMemoryContext, newFoldMemory } from "./longText";
-import { sentPrompts } from "./promptHistory";
+import { lastPrompt, sentPrompts } from "./promptHistory";
 import { activeToolLabel } from "./toolLabels";
 import { formatDetail, runningSubagents } from "./transcript";
 import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
@@ -241,6 +241,11 @@ export function AgentChatPane({
     const resuming = recovery?.phase === "resuming";
     const failure = recovery?.phase === "failed" ? recovery : null;
     const welcoming = displayState.messages.length === 0 && displayState.connection === "ready";
+    const failedPrompt =
+        displayState.error && state.connection === "ready" && !state.running && queued.length === 0 ? lastPrompt(state.messages) : null;
+    const retryPrompt = () => {
+        if (failedPrompt) send({ ...failedPrompt, context: [] }, false);
+    };
     const startNewChat = () =>
         cmd.addAgent(agent.type, undefined, undefined, {
             permissionMode: agent.permissionMode,
@@ -357,6 +362,11 @@ export function AgentChatPane({
                                 <div className="chat-error" role="alert">
                                     <IconWarning size={14} />
                                     <span>{displayState.error}</span>
+                                    {failedPrompt && (
+                                        <button type="button" onClick={retryPrompt}>
+                                            Retry
+                                        </button>
+                                    )}
                                 </div>
                             )}
                             {displayState.messages.length > 0 && (resuming || disconnected) && (

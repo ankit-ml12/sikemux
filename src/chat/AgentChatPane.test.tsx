@@ -1172,6 +1172,33 @@ describe("AgentChatPane", () => {
         await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
     });
 
+    it("offers to send the last message again once its turn has failed", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active visible profile={undefined} onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("ready", { capabilities: {}, setup: {} });
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        fireEvent.change(editor, { target: { value: "fix the build" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledTimes(1));
+        expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+
+        emit("error", { message: "overloaded" });
+        fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledTimes(2));
+        expect(mocks.prompt).toHaveBeenLastCalledWith(agent.id, "fix the build", []);
+        expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    });
+
+    it("offers no retry when the session itself has dropped", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active visible profile={undefined} onBusyChange={() => {}} />);
+        await waitFor(() => expect(mocks.eventListener).not.toBeNull());
+        emit("error", { message: "adapter failed" });
+
+        expect(screen.getAllByText("adapter failed")[0]).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    });
+
     describe("an agent that dies under the chat", () => {
         const saved = { ...agent, resumeId: "session-1" };
 
