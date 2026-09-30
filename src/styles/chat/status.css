@@ -145,7 +145,8 @@
 }
 
 .chat-connection-state button,
-.chat-reconnect button {
+.chat-reconnect button,
+.chat-error button {
     height: 28px;
     padding: 0 11px;
     border: 1px solid var(--line);
@@ -156,7 +157,8 @@
 }
 
 .chat-connection-state button:hover,
-.chat-reconnect button:hover {
+.chat-reconnect button:hover,
+.chat-error button:hover {
     border-color: var(--acc-line);
     color: var(--ink);
 }
@@ -265,4 +267,9 @@
 .chat-jump-bottom:hover {
     border-color: var(--acc-line);
     color: var(--ink);
+}
+
+.chat-error button {
+    flex: none;
+    margin-left: auto;
 }
