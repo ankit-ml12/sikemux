@@ -1,7 +1,8 @@
 import { invokeCommand } from "../api/invoke";
 import { browserApi } from "../api/browser";
-import { loadProjectConfig } from "../projectConfig";
-import { trustProjectConfig } from "../projectConfigRuntime";
+import { loadProjectConfig } from "../projects/projectConfig";
+import { trustProjectConfig } from "../projects/projectConfigRuntime";
+import { confirmDialog } from "../state/dialog";
 import { joinPath } from "../lib/paths";
 import { collectPanes } from "../state/layout";
 import { agentIdsOf } from "../state/selectors";
@@ -9,8 +10,9 @@ import { useStore, setState } from "../state/store";
 import * as commands from "../state/commands";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend, WorkbenchTaskTerminalSurface, taskPtyBindings } from "../tasks/nativeRuntime";
+import { appConsole } from "./appConsole";
 import { HarnessEvents } from "./events";
-import { HarnessTasks } from "./tasks";
+import { HarnessTasks, type HarnessHistory, type HarnessLaunch, type HarnessLaunchRequest, type HarnessPrepared, type HarnessRun } from "./tasks";
 
 export interface HarnessRequest {
     id: string;
@@ -53,7 +55,16 @@ export const harnessTasks = new HarnessTasks(
             : preserveFocus(() => commands.openTaskTerminal(request)),
     ),
     harnessEvents,
+    sessionHistory(),
 );
+
+function sessionHistory(): HarnessHistory | undefined {
+    try {
+        return window.sessionStorage;
+    } catch {
+        return undefined;
+    }
+}
 
 function text(params: Record<string, unknown>, key: string, required = true): string | undefined {
     const value = params[key];
@@ -106,29 +117,55 @@ function executionFor(project: string, params: Record<string, unknown>): string 
     if (executionId) return executionId;
     if (!taskId) throw new Error("executionId or taskId is required");
     const latest = harnessTasks.latest(project, taskId);
-    if (!latest) throw new Error(`Task ${taskId} has not been started from this app session; start it with task_start`);
-    return latest.executionId;
+    if (latest) return latest.executionId;
+    if (harnessTasks.startedBeforeReload(project, taskId))
+        throw new Error(
+            `Task ${taskId} was started before the Sikemux window reloaded; a reload stops every task and forgets its runs. Start it again with task_start.`,
+        );
+    throw new Error(
+        `Task ${taskId} has not been started since Sikemux opened; call workspace_inspect to see the runs it knows about, or start it with task_start`,
+    );
 }
 
-async function prepareLaunch(request: HarnessRequest, taskId: string, signal?: AbortSignal) {
-    const { project } = request;
+async function configuredTask(project: string, taskId: string) {
     const config = await loadProjectConfig(project);
     if (config.status === "absent") throw new Error("Project has no sikemux.json; add one that defines tasks");
     if (config.status === "invalid")
         throw new Error(`sikemux.json is invalid: ${config.errors.map((error) => `${error.path} ${error.message}`).join(" · ")}`);
     const task = config.config.tasks.find((task) => task.id === taskId);
     if (!task) throw new Error("Task is not defined in sikemux.json");
-    if (!(await trustProjectConfig(config))) throw new Error("Project configuration was not approved");
-    const fresh = await loadProjectConfig(project);
-    if (fresh.status !== "valid" || fresh.fingerprint !== config.fingerprint) throw new Error("Project configuration changed; inspect and retry");
-    if (signal?.aborted) throw signal.reason;
-    projectSession(request);
-    const userTask = appTaskRuntime.getSnapshot(project);
-    if (userTask?.task?.id === taskId && ["running", "stopping"].includes(userTask.status))
-        throw new Error("This task is already running through the command deck");
-    return (key: string) =>
-        harnessTasks.start(
-            {
+    return { config, task };
+}
+
+/** The person already let a YOLO agent run anything, so its tasks skip the trust prompt. */
+function runsInYoloMode(request: HarnessRequest): boolean {
+    return Boolean(request.agentId && useStore.getState().agents[request.agentId]?.permissionMode === "bypass");
+}
+
+async function launchConfigured(request: HarnessRequest, taskId: string, key: string, replace = false): Promise<HarnessLaunch> {
+    const { project } = request;
+    const existing = replace ? undefined : harnessTasks.existing(project, taskId, key);
+    if (existing) return existing;
+    const { config, task } = await configuredTask(project, taskId);
+    const previous = replace ? harnessTasks.latest(project, taskId) : undefined;
+    const prepare = async (executionId: string, signal: AbortSignal): Promise<HarnessPrepared> => {
+        const trusted =
+            runsInYoloMode(request) ||
+            (await trustProjectConfig(config, (ask) => {
+                harnessTasks.awaitTrust(project, executionId);
+                return confirmDialog(ask);
+            }));
+        if (!trusted) throw new Error("Project configuration was not approved");
+        const fresh = await loadProjectConfig(project);
+        if (fresh.status !== "valid" || fresh.fingerprint !== config.fingerprint) throw new Error("Project configuration changed; inspect and retry");
+        if (signal.aborted) throw signal.reason;
+        projectSession(request);
+        const userTask = appTaskRuntime.getSnapshot(project);
+        if (userTask?.task?.id === taskId && ["running", "stopping"].includes(userTask.status))
+            throw new Error("This task is already running through the command deck");
+        if (previous) await harnessTasks.stop(project, previous.executionId);
+        return {
+            request: {
                 taskId,
                 project,
                 source: "project",
@@ -139,28 +176,167 @@ async function prepareLaunch(request: HarnessRequest, taskId: string, signal?: A
                 cols: 120,
                 rows: 30,
             },
-            key,
-            config.config.preview?.command === task.command ? config.config.preview.url : undefined,
-            request.agentId ?? undefined,
-        );
+            previewUrl: config.config.preview?.command === task.command ? config.config.preview.url : undefined,
+        };
+    };
+    return harnessTasks.start(project, taskId, key, prepare, { agentId: request.agentId ?? undefined, replace });
 }
 
-const READY_WAIT_MS = 45_000;
+const COMMAND_TASK_PREFIX = "sh:";
 
-async function outputAppears(project: string, executionId: string, pattern: string, signal?: AbortSignal): Promise<boolean> {
-    const deadline = Date.now() + READY_WAIT_MS;
-    let cursor = harnessEvents.cursor;
+function commandCwd(value: string | undefined): string {
+    const normalized = (value ?? ".").replaceAll("\\", "/").replace(/\/+$/, "");
+    const parts = normalized.split("/").filter((part) => part !== ".");
+    if (
+        normalized.startsWith("/") ||
+        normalized.startsWith("~") ||
+        /^[A-Za-z]:/.test(normalized) ||
+        parts.some((part) => part === "" || part === "..")
+    )
+        throw new Error("cwd must be a directory inside the project, relative to it");
+    return parts.join("/");
+}
+
+/* The id comes from the command and its directory, so starting the same command
+   again while it runs finds that run instead of launching a second copy. */
+function commandTaskId(command: string, cwd: string, label: string | undefined): string {
+    let hash = 0x811c9dc5;
+    for (const byte of new TextEncoder().encode(`${cwd}\0${command}`)) hash = Math.imul(hash ^ byte, 0x01000193);
+    const slug = (label ?? command)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32)
+        .replace(/-+$/, "");
+    return `${COMMAND_TASK_PREFIX}${slug || "command"}-${(hash >>> 0).toString(16).padStart(8, "0").slice(0, 6)}`;
+}
+
+function commandLaunch(request: HarnessRequest, params: Record<string, unknown>): HarnessLaunchRequest {
+    const command = text(params, "command")!;
+    const label = text(params, "label", false);
+    if (label && label.length > 80) throw new Error("label must be at most 80 characters");
+    const cwd = commandCwd(text(params, "cwd", false));
+    return {
+        taskId: commandTaskId(command, cwd, label),
+        project: request.project,
+        source: "project",
+        label: label ?? (command.length > 80 ? `${command.slice(0, 79)}…` : command),
+        command,
+        cwd: cwd ? joinPath(request.project, cwd) : request.project,
+        env: {},
+        cols: 120,
+        rows: 30,
+    };
+}
+
+function launchCommand(request: HarnessRequest, launch: HarnessLaunchRequest, key: string, replace = false): HarnessLaunch {
+    const { project } = request;
+    const previous = replace ? harnessTasks.latest(project, launch.taskId) : undefined;
+    return harnessTasks.start(
+        project,
+        launch.taskId,
+        key,
+        async () => {
+            projectSession(request);
+            if (previous) await harnessTasks.stop(project, previous.executionId);
+            return { request: launch };
+        },
+        { agentId: request.agentId ?? undefined, replace },
+    );
+}
+
+function earlierCommand(project: string, taskId: string): HarnessLaunchRequest {
+    const launch = harnessTasks.launchRequest(project, taskId);
+    if (launch) return launch;
+    if (harnessTasks.startedBeforeReload(project, taskId))
+        throw new Error(`Task ${taskId} was started before the Sikemux window reloaded, which forgot its command; start it again with command`);
+    throw new Error(`Task ${taskId} has not been started since Sikemux opened; start it with command`);
+}
+
+function launchTask(request: HarnessRequest, key: string): HarnessLaunch | Promise<HarnessLaunch> {
+    const { params, project } = request;
+    const taskId = text(params, "taskId", false);
+    if (taskId && params.command !== undefined) throw new Error("Pass either taskId or command, not both");
+    if (!taskId && params.command === undefined) throw new Error("taskId or command is required");
+    if (!taskId) return launchCommand(request, commandLaunch(request, params), key);
+    if (params.cwd !== undefined || params.label !== undefined) throw new Error("cwd and label go with command; a sikemux.json task sets its own");
+    if (!taskId.startsWith(COMMAND_TASK_PREFIX)) return launchConfigured(request, taskId, key);
+    return harnessTasks.existing(project, taskId, key) ?? launchCommand(request, earlierCommand(project, taskId), key);
+}
+
+/* MCP hosts give up on a tool call after about a minute, and the native bridge
+   after 65 s, so a start answers well before either with whatever state it reached. */
+const START_BUDGET_MS = 30_000;
+
+async function nextEvent(project: string, cursor: string, until: number, executionId: string, done: Promise<unknown>, signal?: AbortSignal) {
+    const local = new AbortController();
+    const forward = () => local.abort(signal?.reason);
+    signal?.addEventListener("abort", forward, { once: true });
+    try {
+        await Promise.race([done, harnessEvents.wait(project, cursor, Math.min(Math.max(until - Date.now(), 0), 30_000), executionId, local.signal)]);
+    } finally {
+        signal?.removeEventListener("abort", forward);
+        local.abort();
+    }
+}
+
+async function settle(project: string, launch: HarnessLaunch, until: number, signal?: AbortSignal): Promise<HarnessRun> {
+    const outcome: { done: boolean; error?: unknown } = { done: false };
+    const done = launch.started.then(
+        () => {
+            outcome.done = true;
+        },
+        (error: unknown) => {
+            outcome.done = true;
+            outcome.error = error ?? new Error("Task could not be started");
+        },
+    );
     for (;;) {
+        if (signal?.aborted) throw signal.reason;
+        const cursor = harnessEvents.cursor;
+        if (outcome.done) {
+            if (outcome.error) throw outcome.error;
+            return harnessTasks.get(project, launch.executionId);
+        }
+        const run = harnessTasks.get(project, launch.executionId);
+        if (run.status === "awaiting-trust" || Date.now() >= until) return run;
+        await nextEvent(project, cursor, until, launch.executionId, done, signal);
+    }
+}
+
+async function outputAppears(project: string, executionId: string, pattern: string, until: number, signal?: AbortSignal): Promise<boolean> {
+    for (;;) {
+        const cursor = harnessEvents.cursor;
         const run = harnessTasks.get(project, executionId);
         if (run.ptyId !== undefined) {
             const page = await readOutput(run.ptyId, { cursor: 0, limit: 4096, tail: 1, search: pattern, context: 0, plain: false });
             if (page.matches) return true;
         }
-        const remaining = deadline - Date.now();
-        if (!["starting", "running"].includes(run.status) || remaining <= 0) return false;
-        cursor = (await harnessEvents.wait(project, cursor, Math.min(remaining, 30_000), executionId, signal)).cursor;
+        if (!["starting", "running"].includes(run.status) || Date.now() >= until) return false;
+        await nextEvent(project, cursor, until, executionId, new Promise(() => {}), signal);
         await new Promise((resolve) => setTimeout(resolve, 250));
     }
+}
+
+const PENDING_NOTES: Partial<Record<HarnessRun["status"], string>> = {
+    "awaiting-trust":
+        "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.",
+    starting: "Still starting. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it runs.",
+};
+
+async function answerStart(project: string, launch: HarnessLaunch, until: number, readyWhen: string | undefined, signal?: AbortSignal) {
+    const run = await settle(project, launch, until, signal);
+    const note = PENDING_NOTES[run.status];
+    if (note) return readyWhen ? { ...run, ready: false, note } : { ...run, note };
+    if (!readyWhen) return run;
+    const ready = await outputAppears(project, run.executionId, readyWhen, until, signal);
+    const latest = harnessTasks.get(project, run.executionId);
+    if (ready || latest.status !== "running") return { ...latest, ready };
+    return {
+        ...latest,
+        ready,
+        note: "The task is running but readyWhen has not appeared yet. Wait with events_wait on this executionId, or task_read with search.",
+    };
 }
 
 export async function handleHarnessRequest(request: HarnessRequest, signal?: AbortSignal): Promise<unknown> {
@@ -204,20 +380,20 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
             };
         }
         case "task.start": {
-            const taskId = text(params, "taskId")!;
+            const until = Date.now() + START_BUDGET_MS;
             const key = text(params, "idempotencyKey")!;
             if (key.length > 128) throw new Error("idempotencyKey must be at most 128 characters");
             const readyWhen = text(params, "readyWhen", false);
-            const existing = harnessTasks.existing(project, taskId, key);
-            const run = await (existing ?? (await prepareLaunch(request, taskId, signal))(key));
-            return readyWhen ? { ...run, ready: await outputAppears(project, run.executionId, readyWhen, signal) } : run;
+            return answerStart(project, await launchTask(request, key), until, readyWhen, signal);
         }
         case "task.restart": {
+            const until = Date.now() + START_BUDGET_MS;
             const taskId = text(params, "taskId")!;
-            const launch = await prepareLaunch(request, taskId, signal);
-            const previous = harnessTasks.latest(project, taskId);
-            if (previous) await harnessTasks.stop(project, previous.executionId);
-            return launch(crypto.randomUUID());
+            const key = crypto.randomUUID();
+            const launch = taskId.startsWith(COMMAND_TASK_PREFIX)
+                ? launchCommand(request, earlierCommand(project, taskId), key, true)
+                : await launchConfigured(request, taskId, key, true);
+            return answerStart(project, launch, until, undefined, signal);
         }
         case "task.read": {
             const run = harnessTasks.get(project, executionFor(project, params));
@@ -327,6 +503,8 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
             harnessEvents.publish({ project, kind: "ui.opened" });
             return result;
         }
+        case "app.console":
+            return appConsole.read(params);
         default:
             throw new Error("Unknown harness method");
     }

@@ -1,10 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "./builtin";
-import { SideRail } from "../components/SideRail";
-import { TopBar } from "../components/TopBar";
-import { Workspace } from "../components/Workspace";
-import { keybindingActions, normaliseKeybindingOverrides } from "../keybindings";
+import { SideRail } from "../rail/SideRail";
+import { TopBar } from "../shell/TopBar";
+import { Workspace } from "../workspace/Workspace";
+import { keybindingActions, normaliseKeybindingOverrides } from "../commands/keybindings";
 import * as cmd from "../state/commands";
 import { applyHydrate } from "../state/persist";
 import { getState, setState } from "../state/store";

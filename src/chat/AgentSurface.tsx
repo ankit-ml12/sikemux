@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
-import { agentSupportsChat } from "../agentLaunch";
+import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { IconAgent, IconCommand, IconPanelRight } from "../components/Icons";
+import { IconAgent, IconCommand, IconPanelRight } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
 import * as cmd from "../state/commands";

@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { git, type GitCompare } from "../../api/git";
-import { CommitReview } from "../../components/CommitReview";
-import { FoldPanel } from "../../components/git/FoldPanel";
-import { GitColumns } from "../../components/git/GitColumns";
-import { GitGraph } from "../../components/git/GitGraph";
-import { FileIcon } from "../../components/FileIcon";
+import { CommitReview } from "../../git/CommitReview";
+import { FoldPanel } from "../../git/FoldPanel";
+import { GitColumns } from "../../git/GitColumns";
+import { GitGraph } from "../../git/GitGraph";
+import { FileIcon } from "../../ui/FileIcon";
 import { basename, dirname } from "../../lib/paths";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";

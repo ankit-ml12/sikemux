@@ -16,7 +16,12 @@ const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
 const MAX_WAIT_MS: u64 = 30_000;
-const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
+const SCRIPT_TIMEOUT_MS: u64 = 30_000;
+/// The sidecar stops waiting for any reply after 70 seconds.
+const MAX_BLOCKING_MS: u64 = 60_000;
+const DEFAULT_CONDITION_WAIT_MS: u64 = 10_000;
+const CONDITION_POLL: Duration = Duration::from_millis(200);
+const NETWORK_QUIET: Duration = Duration::from_millis(500);
 const MAX_SCRIPT_RESULT: usize = 100_000;
 /// A full-page capture goes through a PDF page, and PDF stops at 14,400 points.
 const MAX_PAGE_HEIGHT: f64 = 14_400.0;
@@ -24,7 +29,9 @@ const UPLOAD_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_UPLOAD_FILES: usize = 20;
 const DRAG_STEPS: u32 = 12;
 const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
-const VIEWPORT_SETTLE: Duration = Duration::from_millis(150);
+const NARROW_VIEWPORT: u64 = 700;
+/// How long a page may take to answer before WebKit is asked whether it hangs.
+const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
 use crate::generated_agent_tools::BROWSER_METHODS as METHODS;
 use native::Mouse;
@@ -49,14 +56,65 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         manager.announce_acting(app, agent_id);
         marks.extend(manager.mark_acting(app, agent_id));
     }
-    let result =
+    let before = tab_ids(&manager, agent_id);
+    let sends_input = matches!(
+        request.method.as_str(),
+        "browser.click"
+            | "browser.type"
+            | "browser.press"
+            | "browser.act"
+            | "browser.drag"
+            | "browser.upload"
+    );
+    let held = sends_input
+        .then(|| manager.active_view(agent_id).ok())
+        .flatten()
+        .map(|(_, view)| view);
+    if let Some(view) = &held {
+        let _ = tauri::async_runtime::block_on(native::hold_person_focus(view));
+    }
+    let mut result =
         tauri::async_runtime::block_on(run(app, agent_id, &request.method, &request.params))
             .map_err(|error| error.to_string());
+    if let Some(view) = &held {
+        let _ = tauri::async_runtime::block_on(native::return_person_focus(view));
+    }
     if acts_on_a_tab {
         marks.extend(manager.mark_acting(app, agent_id));
         manager.release_acting(app, agent_id, marks);
     }
+    if !matches!(request.method.as_str(), "browser.navigate" | "browser.tabs") {
+        if let Ok(Value::Object(map)) = &mut result {
+            let opened = opened_tabs(&manager, agent_id, &before);
+            if !opened.is_empty() {
+                map.insert("openedTabs".into(), json!(opened));
+            }
+        }
+    }
     result
+}
+
+fn tab_ids(manager: &BrowserManager, agent_id: &str) -> Vec<String> {
+    manager
+        .snapshot(agent_id)
+        .map(|snapshot| snapshot.tabs.into_iter().map(|tab| tab.id).collect())
+        .unwrap_or_default()
+}
+
+/// Tabs the page opened during an action, such as a link with a new-window
+/// target, which leave the agent on a tab it did not choose.
+fn opened_tabs(manager: &BrowserManager, agent_id: &str, before: &[String]) -> Vec<Value> {
+    manager
+        .snapshot(agent_id)
+        .map(|snapshot| {
+            snapshot
+                .tabs
+                .iter()
+                .filter(|tab| !before.contains(&tab.id))
+                .map(|tab| json!({ "tabId": tab.id, "url": tab.url, "active": tab.active }))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 async fn run(
@@ -91,26 +149,64 @@ async fn run(
         }
         "browser.navigate" => {
             let url = text("url").ok_or("url is required")?;
-            let tab_id = if params.get("newTab").and_then(Value::as_bool) == Some(true)
-                || manager.active_view(agent_id).is_err()
-            {
+            let url = match super::local_files::local_target(&url) {
+                Some(path) => manager.local_files.url_for(&path)?,
+                None => url,
+            };
+            let wanted = super::normalize_url(&url);
+            let current = manager
+                .active_view(agent_id)
+                .ok()
+                .and_then(|(tab_id, _)| manager.page(agent_id, &tab_id))
+                .map(|page| page.url);
+            let new_tab = params.get("newTab").and_then(Value::as_bool) == Some(true);
+            let mut note = None;
+            let tab_id = if new_tab || current.is_none() {
                 manager
                     .open_tab(app, agent_id, Some(&url))
                     .await
                     .map_err(|error| error.to_string())?
             } else {
-                manager
-                    .navigate(app, agent_id, &url)
-                    .map_err(|error| error.to_string())?;
+                let current = current.unwrap_or_default();
+                if current == wanted {
+                    manager
+                        .reload(agent_id)
+                        .map_err(|error| error.to_string())?;
+                    note = Some("the tab was already on this url, so it was reloaded");
+                } else {
+                    if same_document(&current, &wanted) {
+                        note = Some("only the #fragment changed, so the page moved within itself and did not load again; use browser_reload to load it afresh");
+                    }
+                    manager
+                        .navigate(app, agent_id, &url)
+                        .map_err(|error| error.to_string())?;
+                }
                 manager
                     .active_view(agent_id)
                     .map_err(|error| error.to_string())?
                     .0
             };
+            tokio::time::sleep(SETTLE).await;
             let _ = manager
                 .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
                 .await;
-            report(&manager, agent_id, params).await
+            let mut result = arrived(app, agent_id, &tab_id, params).await?;
+            if let Some(note) = note {
+                result["note"] = json!(note);
+            }
+            Ok(result)
+        }
+        "browser.reload" => {
+            let (tab_id, view) = active_tab(&manager, agent_id)?;
+            if params.get("hard").and_then(Value::as_bool) == Some(true) {
+                native::reload_from_origin(&view).await?;
+            } else {
+                manager
+                    .reload(agent_id)
+                    .map_err(|error| error.to_string())?;
+            }
+            settle(&manager, agent_id, &tab_id).await;
+            arrived(app, agent_id, &tab_id, params).await
         }
         "browser.state" => {
             let full_text = params.get("fullText").and_then(Value::as_bool) == Some(true);
@@ -123,13 +219,7 @@ async fn run(
         }
         "browser.click" => {
             let (tab_id, view) = active(&manager, agent_id)?;
-            let (x, y, mut result) = match text("text") {
-                Some(label) => {
-                    let index = call(&view, "locate", &[json!(label), json!(text("role"))]).await?;
-                    point(&view, index, Value::Null).await?
-                }
-                None => target(&view, params, "index", "x", "y").await?,
-            };
+            let (x, y, mut result) = target(&view, params, "index", "x", "y").await?;
             let hover = params.get("hover").and_then(Value::as_bool) == Some(true);
             let clicks = if params.get("double").and_then(Value::as_bool) == Some(true) {
                 2
@@ -243,11 +333,22 @@ async fn run(
                 .get("submit")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+            let replace = params.get("replace").and_then(Value::as_bool) == Some(true);
             let (tab_id, view) = active(&manager, agent_id)?;
-            let at = index("index")
-                .map(|value| json!(value))
-                .unwrap_or(Value::Null);
-            let prepared = call(&view, "focus", &[at.clone(), json!(value)]).await?;
+            let mut at = serde_json::Map::new();
+            if let Some(index) = index("index") {
+                at.insert("index".into(), json!(index));
+            }
+            if let Some(selector) = text("selector") {
+                at.insert("selector".into(), json!(selector));
+            }
+            let at = if at.is_empty() {
+                Value::Null
+            } else {
+                Value::Object(at)
+            };
+            let prepared =
+                call(&view, "focus", &[at.clone(), json!(value), json!(replace)]).await?;
             if prepared.get("selected").is_some() {
                 return Ok(prepared);
             }
@@ -263,10 +364,18 @@ async fn run(
             } else if replacing {
                 native::key(&view, "Backspace").await?;
             }
-            let typed = merge(
-                json!({ "typed": value.chars().count(), "replaced": replacing, "submitted": submit }),
+            let mut typed = merge(
+                json!({
+                    "typed": value.chars().count(),
+                    "into": prepared.get("into").cloned().unwrap_or(Value::Null),
+                    "replaced": replacing,
+                    "submitted": submit,
+                }),
                 call(&view, "valueOf", &[at]).await?,
             )?;
+            if let Some(warning) = typing_missed(&value, &typed) {
+                typed["warning"] = json!(warning);
+            }
             if submit {
                 native::key(&view, "Enter").await?;
                 settle(&manager, agent_id, &tab_id).await;
@@ -302,17 +411,15 @@ async fn run(
             let delta = params
                 .get("deltaY")
                 .and_then(Value::as_f64)
-                .unwrap_or(600.0)
-                .clamp(-20_000.0, 20_000.0);
+                .map(|delta| delta.clamp(-20_000.0, 20_000.0));
             let (_, view) = active(&manager, agent_id)?;
             call(
                 &view,
                 "scroll",
                 &[
                     json!(delta),
-                    index("index")
-                        .map(|value| json!(value))
-                        .unwrap_or(Value::Null),
+                    element_target(params, "index"),
+                    json!(text("to")),
                 ],
             )
             .await
@@ -324,22 +431,23 @@ async fn run(
                 Some(_) => return Err("since must be \"navigation\"".into()),
             };
             let (tab_id, view) = active(&manager, agent_id)?;
+            let passed = |key: &str| params.get(key).cloned().unwrap_or(Value::Null);
             let mut result = read_records(
                 &view,
                 "network",
                 &[
-                    params
-                        .get("limit")
-                        .and_then(Value::as_u64)
-                        .map(|value| json!(value))
-                        .unwrap_or(Value::Null),
-                    text("filter")
-                        .map(|value| json!(value))
-                        .unwrap_or(Value::Null),
+                    passed("limit"),
+                    passed("filter"),
+                    passed("method"),
+                    passed("status"),
+                    passed("id"),
                 ],
             )
             .await
             .unwrap_or_else(|error| json!({ "recording": false, "note": error }));
+            if params.get("id").is_some() {
+                return Ok(result);
+            }
             let needle = text("filter").map(|filter| filter.to_lowercase());
             let documents: Vec<_> = manager
                 .documents(&tab_id, since_current)
@@ -357,16 +465,27 @@ async fn run(
         }
         "browser.evaluate" => {
             let script = text("script").ok_or("script is required")?;
+            let limit = Duration::from_millis(
+                params
+                    .get("timeoutMs")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(SCRIPT_TIMEOUT_MS)
+                    .min(MAX_BLOCKING_MS),
+            );
             let (_, view) = active(&manager, agent_id)?;
-            let answer =
-                match native::run_script(&view, &script_body(&format!("return ({script}\n);")))
-                    .await
-                {
-                    Err(error) if error.contains("SyntaxError") => {
-                        native::run_script(&view, &script_body(&script)).await
-                    }
-                    other => other,
-                }?;
+            let answer = match native::run_script(
+                &view,
+                &script_body(&format!("return ({script}\n);")),
+                limit,
+            )
+            .await
+            {
+                Err(error) if is_parse_error(&error) => {
+                    native::run_script(&view, &script_body(&script), limit).await
+                }
+                other => other,
+            }
+            .map_err(|error| script_failure(&error, limit))?;
             if answer.len() > MAX_SCRIPT_RESULT {
                 let cut = (0..=MAX_SCRIPT_RESULT)
                     .rev()
@@ -374,9 +493,14 @@ async fn run(
                     .unwrap_or(0);
                 return Ok(json!({ "result": answer.get(..cut), "truncated": true }));
             }
-            Ok(json!({
-                "result": serde_json::from_str::<Value>(&answer).unwrap_or(Value::String(answer)),
-            }))
+            let result = serde_json::from_str::<Value>(&answer).unwrap_or(Value::String(answer));
+            let mut answer = json!({ "result": result });
+            if answer["result"].is_null() && !script.contains("return") && script.contains(';') {
+                answer["note"] = json!(
+                    "a script of several statements returns nothing unless it ends with return"
+                );
+            }
+            Ok(answer)
         }
         "browser.console" => {
             let (_, view) = active(&manager, agent_id)?;
@@ -409,6 +533,15 @@ async fn run(
             let (tab_id, view) = active(&manager, agent_id)?;
             let annotate = params.get("annotate").and_then(Value::as_bool) == Some(true);
             let full_page = params.get("fullPage").and_then(Value::as_bool) == Some(true);
+            let named = element_target(params, "index");
+            let area = if named == Value::Null {
+                None
+            } else {
+                if full_page {
+                    return Err("pass fullPage or an element, not both".into());
+                }
+                Some(call(&view, "areaOf", &[named]).await?)
+            };
             let marked = if annotate {
                 let page = state(&manager, agent_id).await?;
                 let shown = call(&view, "showMarks", &[json!(true)]).await?;
@@ -426,7 +559,7 @@ async fn run(
             } else {
                 None
             };
-            let image = screenshot(&view, height).await;
+            let image = screenshot(&view, height, area.as_ref().map(area_rect)).await;
             let _ = if annotate {
                 call(&view, "showMarks", &[json!(false)]).await
             } else {
@@ -442,6 +575,9 @@ async fn run(
             });
             if let Some(elements) = marked {
                 result["elements"] = elements;
+            }
+            if let Some(area) = area {
+                result["element"] = json!({ "index": area["index"], "label": area["label"] });
             }
             if height.is_some_and(|height| height > MAX_PAGE_HEIGHT) {
                 result["cutAt"] = json!(MAX_PAGE_HEIGHT);
@@ -485,17 +621,27 @@ async fn run(
             )
         }
         "browser.wait" => {
-            let ms = params
-                .get("ms")
-                .and_then(Value::as_u64)
-                .unwrap_or(1000)
-                .min(MAX_WAIT_MS);
             let (tab_id, _) = active(&manager, agent_id)?;
-            tokio::time::sleep(Duration::from_millis(ms)).await;
-            let _ = manager
-                .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
-                .await;
-            report(&manager, agent_id, params).await
+            let Some(condition) = wait_condition(params) else {
+                let ms = params
+                    .get("ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1000)
+                    .min(MAX_WAIT_MS);
+                tokio::time::sleep(Duration::from_millis(ms)).await;
+                let _ = manager
+                    .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
+                    .await;
+                return report(&manager, agent_id, params).await;
+            };
+            let limit = params
+                .get("timeoutMs")
+                .and_then(Value::as_u64)
+                .unwrap_or(DEFAULT_CONDITION_WAIT_MS)
+                .min(MAX_BLOCKING_MS);
+            let waited =
+                wait_for(&manager, agent_id, &condition, Duration::from_millis(limit)).await;
+            merge(waited, report(&manager, agent_id, params).await?)
         }
         "browser.viewport" => {
             let (tab_id, _) = active_tab(&manager, agent_id)?;
@@ -522,10 +668,10 @@ async fn run(
                 manager
                     .set_viewport(agent_id, &tab_id, fixed)
                     .map_err(|error| error.to_string())?;
-                tokio::time::sleep(VIEWPORT_SETTLE).await;
                 let _ = manager
                     .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
                     .await;
+                manager.settle_viewport(agent_id, &tab_id).await?;
             }
             state(&manager, agent_id).await
         }
@@ -611,6 +757,197 @@ fn moved_on(before: &Value, now: &Value) -> bool {
         || before["url"] != now["url"]
 }
 
+/// Whether a script failed to parse as an expression, as opposed to throwing
+/// a SyntaxError while it ran, which retrying as a function body would only
+/// run a second time.
+fn is_parse_error(error: &str) -> bool {
+    error.contains("SyntaxError")
+        && ![
+            "JSON Parse error",
+            "did not match the expected pattern",
+            "Invalid regular expression",
+            "is not a valid selector",
+        ]
+        .iter()
+        .any(|runtime| error.contains(runtime))
+}
+
+/// A script error in words an agent can act on.
+fn script_failure(error: &str, limit: Duration) -> String {
+    if error.is_empty() {
+        format!(
+            "the script did not finish within {} seconds; to wait for the page, use browser_wait with text, selector or networkIdle instead of polling in a script",
+            limit.as_secs()
+        )
+    } else if error.contains("no longer reachable") {
+        "the page navigated or reloaded while the script ran, so its result was lost; to reload, use browser_reload".into()
+    } else {
+        error.to_owned()
+    }
+}
+
+fn same_document(current: &str, wanted: &str) -> bool {
+    let without_fragment = |url: &str| url.split('#').next().unwrap_or(url).to_owned();
+    wanted.contains('#') && without_fragment(current) == without_fragment(wanted)
+}
+
+/// The conditions a wait names, or None when it names only a time.
+fn wait_condition(source: &Value) -> Option<Value> {
+    let mut condition = serde_json::Map::new();
+    for key in ["text", "textGone", "selector", "selectorGone", "url"] {
+        if let Some(value) = source.get(key).and_then(Value::as_str) {
+            condition.insert(key.into(), json!(value));
+        }
+    }
+    if source.get("networkIdle").and_then(Value::as_bool) == Some(true) {
+        condition.insert("networkIdle".into(), json!(true));
+    }
+    (!condition.is_empty()).then_some(Value::Object(condition))
+}
+
+/// Polls until every condition holds or `limit` passes, and says which ones
+/// still failed when it gave up.
+async fn wait_for(
+    manager: &BrowserManager,
+    agent_id: &str,
+    condition: &Value,
+    limit: Duration,
+) -> Value {
+    let started = Instant::now();
+    let network = condition.get("networkIdle").is_some();
+    let mut quiet_since: Option<Instant> = None;
+    loop {
+        let failing = match active(manager, agent_id) {
+            Err(error) => {
+                return json!({ "met": false, "waitedMs": started.elapsed().as_millis() as u64, "failing": [error] })
+            }
+            Ok((tab_id, view)) => {
+                if manager
+                    .page(agent_id, &tab_id)
+                    .is_some_and(|page| page.loading)
+                {
+                    vec![json!("the page is still loading")]
+                } else {
+                    let mut failing =
+                        match call(&view, "check", std::slice::from_ref(condition)).await {
+                            Ok(answer) => answer
+                                .get("failing")
+                                .and_then(Value::as_array)
+                                .cloned()
+                                .unwrap_or_default(),
+                            Err(error) => vec![json!(error)],
+                        };
+                    if network {
+                        match pending_requests(&view).await {
+                            Some(0) => {
+                                let since = *quiet_since.get_or_insert_with(Instant::now);
+                                if since.elapsed() < NETWORK_QUIET {
+                                    failing.push(json!("the network has only just gone quiet"));
+                                }
+                            }
+                            Some(open) => {
+                                quiet_since = None;
+                                failing.push(json!(format!(
+                                    "{open} fetch or XHR calls are still waiting on an answer"
+                                )));
+                            }
+                            None => {}
+                        }
+                    }
+                    failing
+                }
+            }
+        };
+        let waited = started.elapsed().as_millis() as u64;
+        if failing.is_empty() {
+            return json!({ "met": true, "waitedMs": waited });
+        }
+        if started.elapsed() >= limit {
+            return json!({ "met": false, "waitedMs": waited, "failing": failing });
+        }
+        tokio::time::sleep(CONDITION_POLL).await;
+    }
+}
+
+async fn pending_requests(view: &Webview) -> Option<u64> {
+    read_records(view, "pending", &[])
+        .await
+        .ok()
+        .and_then(|count| count.as_u64())
+}
+
+/// What a navigation or reload ends with: any wait it asked for, the page,
+/// and why the page is not what was asked for when the load failed or left
+/// nothing to read yet.
+async fn arrived(
+    app: &AppHandle,
+    agent_id: &str,
+    tab_id: &str,
+    params: &Value,
+) -> Result<Value, String> {
+    let manager = app.state::<BrowserManager>();
+    let waited = match params.get("waitFor").and_then(wait_condition) {
+        Some(condition) => {
+            let limit = params["waitFor"]
+                .get("timeoutMs")
+                .and_then(Value::as_u64)
+                .unwrap_or(DEFAULT_CONDITION_WAIT_MS)
+                .min(MAX_BLOCKING_MS);
+            Some(wait_for(&manager, agent_id, &condition, Duration::from_millis(limit)).await)
+        }
+        None => None,
+    };
+    let mut result = report(&manager, agent_id, params).await?;
+    if let Some(waited) = waited {
+        result = merge(waited, result)?;
+    }
+    if let Some(load) = manager.documents(tab_id, true).last() {
+        if let Some(error) = &load.error {
+            result["loadError"] = json!(format!("{} did not load: {error}", load.url));
+        }
+    }
+    let blank = |key: &str| result.get(key).and_then(Value::as_str) == Some("");
+    if blank("elements")
+        && blank("text")
+        && result.get("loadError").is_none()
+        && result["url"] != json!(BLANK_URL)
+    {
+        result["note"] = json!("the page loaded but shows no text or controls yet; a web app may still be drawing it, so wait with browser_wait and a text or selector");
+    }
+    Ok(result)
+}
+
+/// Why a field's value after typing suggests the text did not land where it
+/// was meant to, if it does.
+fn typing_missed(typed: &str, result: &Value) -> Option<&'static str> {
+    let wanted = typed.split_whitespace().collect::<Vec<_>>().join(" ");
+    if wanted.is_empty() {
+        return None;
+    }
+    let Some(value) = result.get("value").and_then(Value::as_str) else {
+        return Some(
+            "the field's value could not be read, so check the page to see where the text went",
+        );
+    };
+    if result.get("valueLength").is_some() && value.starts_with('\u{2022}') {
+        return None;
+    }
+    let chars: Vec<char> = wanted.chars().collect();
+    let ending: String = chars[chars.len().saturating_sub(40)..].iter().collect();
+    if value.is_empty() {
+        Some("the field is still empty, so the text went nowhere; the page may have moved focus, or the element is not a text field")
+    } else if !value.contains(&ending) {
+        Some("the field does not hold what was typed; the page may have reformatted it, or the text landed somewhere else")
+    } else if result.get("replaced") == Some(&json!(false))
+        && chars.len() >= 8
+        && value.matches(ending.as_str()).count() > 1
+    {
+        Some("what was typed now appears more than once; pass replace: true to type over the field's text")
+    } else {
+        None
+    }
+}
+
 /// Wraps an agent's script so whatever it returns, awaited, comes back as JSON.
 /// Elements become their markup, since JSON has no way to spell a node.
 fn script_body(script: &str) -> String {
@@ -641,8 +978,9 @@ async fn show_pointer(view: &Webview, x: f64, y: f64, ripple: bool) {
     let _ = call(view, "mark", &[json!(x), json!(y), json!(ripple)]).await;
 }
 
-/// Where to point: the centre of a numbered element, scrolled into view, or
-/// CSS pixel coordinates in the tab's viewport.
+/// Where to point: the centre of the element a call names by number, `text`
+/// or `selector`, scrolled into view, or CSS pixel coordinates in the tab's
+/// viewport along with what lies under them.
 async fn target(
     view: &Webview,
     params: &Value,
@@ -650,23 +988,53 @@ async fn target(
     x_key: &str,
     y_key: &str,
 ) -> Result<(f64, f64, Value), String> {
-    if let Some(index) = params.get(index_key).and_then(Value::as_u64) {
-        let expected = params.get("expectLabel").cloned().unwrap_or(Value::Null);
-        return point(view, json!(index), expected).await;
+    let expected = params.get("expectLabel").cloned().unwrap_or(Value::Null);
+    let named = element_target(params, index_key);
+    if named != Value::Null {
+        return point(view, named, expected).await;
     }
     match (
         params.get(x_key).and_then(Value::as_f64),
         params.get(y_key).and_then(Value::as_f64),
     ) {
-        (Some(x), Some(y)) => Ok((x, y, json!({ "x": x, "y": y }))),
-        _ => Err(format!("pass {index_key}, or both {x_key} and {y_key}")),
+        (Some(x), Some(y)) => {
+            let hit = call(view, "hitAt", &[json!(x), json!(y), expected]).await?;
+            Ok((x, y, hit))
+        }
+        _ => Err(format!(
+            "pass {index_key}, text or selector, or both {x_key} and {y_key}"
+        )),
     }
 }
 
-/// The centre of a numbered element, refused when `expected` no longer
-/// matches its label.
-async fn point(view: &Webview, index: Value, expected: Value) -> Result<(f64, f64, Value), String> {
-    let point = call(view, "point", &[index, expected]).await?;
+/// The element a call names, as the page script's `resolve` takes it, or
+/// null when it names none and points by coordinates instead.
+fn element_target(params: &Value, index_key: &str) -> Value {
+    let mut named = serde_json::Map::new();
+    if let Some(index) = params.get(index_key).and_then(Value::as_u64) {
+        named.insert("index".into(), json!(index));
+    }
+    if index_key == "index" {
+        for key in ["text", "role", "selector"] {
+            if let Some(value) = params.get(key).and_then(Value::as_str) {
+                named.insert(key.into(), json!(value));
+            }
+        }
+        if !named.contains_key("text") {
+            named.remove("role");
+        }
+    }
+    if named.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(named)
+    }
+}
+
+/// The centre of the element `named` picks out, refused when `expected` no
+/// longer matches its label.
+async fn point(view: &Webview, named: Value, expected: Value) -> Result<(f64, f64, Value), String> {
+    let point = call(view, "point", &[named, expected]).await?;
     let coordinate = |key: &str| {
         point
             .get(key)
@@ -737,11 +1105,39 @@ mod native {
             super::super::super::recording::stop(app, agent_id).await
         }
 
-        pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
-            match run_in(view, body, World::Page, super::super::SCRIPT_TIMEOUT).await {
-                Err(None) => Err("the script did not finish within 30 seconds".into()),
-                other => other.map_err(Option::unwrap_or_default),
-            }
+        /// An empty error means the script ran out of time.
+        pub async fn run_script(
+            view: &Webview,
+            body: &str,
+            limit: std::time::Duration,
+        ) -> Result<String, String> {
+            run_in(view, body, World::Page, limit)
+                .await
+                .map_err(Option::unwrap_or_default)
+        }
+
+        pub async fn hold_person_focus(view: &Webview) -> Result<(), String> {
+            on_tab(view, input::hold_person_focus).await
+        }
+
+        pub async fn return_person_focus(view: &Webview) -> Result<(), String> {
+            on_tab(view, input::return_person_focus).await
+        }
+
+        pub async fn probe_responsiveness(view: &Webview) -> Result<(), String> {
+            on_tab(view, input::probe_responsiveness).await
+        }
+
+        pub async fn reload_from_origin(view: &Webview) -> Result<(), String> {
+            on_tab(view, |tab| {
+                // SAFETY: `on_tab` hands over the tab's WKWebView from inside
+                // `with_webview`, on the main thread, while the view is alive.
+                let webview = unsafe { &*tab.cast::<objc2_web_kit::WKWebView>() };
+                // SAFETY: main thread, and `webview` outlives this call.
+                let _ = unsafe { webview.reloadFromOrigin() };
+                Ok(())
+            })
+            .await
         }
 
         pub async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
@@ -771,7 +1167,17 @@ mod native {
                 );
             })
             .map_err(|error| Some(error.to_string()))?;
-            match tokio::time::timeout(limit, receiver).await {
+            let mut receiver = receiver;
+            match tokio::time::timeout(super::super::SLOW_ANSWER.min(limit), &mut receiver).await {
+                Ok(Ok(result)) => return result.map_err(Some),
+                Ok(Err(_)) => return Err(Some("the tab went away".into())),
+                Err(_) => {
+                    let _ = super::probe_responsiveness(view).await;
+                }
+            }
+            match tokio::time::timeout(limit.saturating_sub(super::super::SLOW_ANSWER), receiver)
+                .await
+            {
                 Ok(Ok(result)) => result.map_err(Some),
                 Ok(Err(_)) => Err(Some("the tab went away".into())),
                 Err(_) => Err(None),
@@ -811,8 +1217,28 @@ mod native {
             Err(UNSUPPORTED.into())
         }
 
-        pub async fn run_script(_: &Webview, _: &str) -> Result<String, String> {
+        pub async fn run_script(
+            _: &Webview,
+            _: &str,
+            _: std::time::Duration,
+        ) -> Result<String, String> {
             Err(UNSUPPORTED.into())
+        }
+
+        pub async fn reload_from_origin(_: &Webview) -> Result<(), String> {
+            Err(UNSUPPORTED.into())
+        }
+
+        pub async fn hold_person_focus(_: &Webview) -> Result<(), String> {
+            Ok(())
+        }
+
+        pub async fn return_person_focus(_: &Webview) -> Result<(), String> {
+            Ok(())
+        }
+
+        pub async fn probe_responsiveness(_: &Webview) -> Result<(), String> {
+            Ok(())
         }
 
         pub async fn run_helper(_: &Webview, _: &str) -> Result<String, String> {
@@ -862,8 +1288,32 @@ mod native {
         platform::insert_text(view, text).await
     }
 
-    pub async fn run_script(view: &Webview, body: &str) -> Result<String, String> {
-        platform::run_script(view, body).await
+    pub async fn run_script(
+        view: &Webview,
+        body: &str,
+        limit: std::time::Duration,
+    ) -> Result<String, String> {
+        platform::run_script(view, body, limit).await
+    }
+
+    /// Notes where the person's keyboard is before the agent sends input, so
+    /// `return_person_focus` can put it back once the tab has taken it.
+    pub async fn hold_person_focus(view: &Webview) -> Result<(), String> {
+        platform::hold_person_focus(view).await
+    }
+
+    pub async fn return_person_focus(view: &Webview) -> Result<(), String> {
+        platform::return_person_focus(view).await
+    }
+
+    /// Nudges WebKit into checking whether the tab's page still answers.
+    pub async fn probe_responsiveness(view: &Webview) -> Result<(), String> {
+        platform::probe_responsiveness(view).await
+    }
+
+    /// Reloads skipping the cache, so a stale script or stylesheet is fetched again.
+    pub async fn reload_from_origin(view: &Webview) -> Result<(), String> {
+        platform::reload_from_origin(view).await
     }
 
     /// Runs `body` where the page's scripts cannot reach it.
@@ -918,6 +1368,9 @@ async fn on_tab<T: Send + 'static>(
 /// waiting on an alert answers nothing, so calling into it would only time out.
 fn active(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview), String> {
     let (tab_id, view) = active_tab(manager, agent_id)?;
+    if let Some(stall) = manager.stalled(&tab_id) {
+        return Err(stall.message().into());
+    }
     match manager.dialog(&tab_id) {
         Some(dialog) => Err(format!(
             "the page is waiting on a {} dialog saying \"{}\"; answer it with browser_dialog",
@@ -930,7 +1383,9 @@ fn active(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview),
 fn active_tab(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview), String> {
     manager
         .active_view(agent_id)
-        .map_err(|_| "no browser tab is open; call browser_navigate first".to_string())
+        .map_err(|_| {
+            "no browser tab is open; call browser_navigate first. Tabs do not outlive Sikemux, so a restart closes them".to_string()
+        })
 }
 
 fn tabs(manager: &BrowserManager, agent_id: &str) -> Value {
@@ -1027,14 +1482,26 @@ async fn read_state(
     };
     if let Some(viewport) = result.get_mut("viewport").and_then(Value::as_object_mut) {
         let fixed = manager.viewport(agent_id, &tab_id);
+        let narrow = fixed.is_none()
+            && viewport
+                .get("width")
+                .and_then(Value::as_u64)
+                .is_some_and(|width| width < NARROW_VIEWPORT);
         viewport.insert(
             "fixed".into(),
             fixed.map_or(json!(false), |fixed| json!(fixed)),
         );
+        if narrow {
+            viewport.insert(
+                "note".into(),
+                json!("the pane is narrow, so the page may show its phone layout; browser_viewport with preset desktop lays it out wide"),
+            );
+        }
     }
     if let Value::Object(map) = &mut result {
         map.insert("tabId".into(), json!(tab_id));
         map.insert("loading".into(), json!(page.loading));
+        map.insert("visible".into(), json!(manager.shown(agent_id, &tab_id)));
         map.insert("tabs".into(), tabs(manager, agent_id)["tabs"].clone());
     }
     Ok(result)
@@ -1114,13 +1581,23 @@ pub(super) async fn eval(view: &Webview, script: &str) -> Result<String, String>
     .map_err(|error| error.to_string())?;
     match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
         Ok(Ok(result)) if !result.is_empty() => Ok(result),
-        Ok(_) => Err("the page did not answer; it may still be loading".into()),
+        Ok(_) => Err("the page did not answer, so it may not have loaded; browser_network's documents show whether its load failed".into()),
         Err(_) => Err("the page took too long to answer".into()),
     }
 }
 
-/// The visible part of the tab, or with `height` the whole page down to it.
-async fn screenshot(view: &Webview, height: Option<f64>) -> Result<Vec<u8>, String> {
+fn area_rect(area: &Value) -> (f64, f64, f64, f64) {
+    let side = |key: &str| area.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+    (side("left"), side("top"), side("width"), side("height"))
+}
+
+/// The visible part of the tab, only `area` of it, or with `height` the
+/// whole page down to it.
+async fn screenshot(
+    view: &Webview,
+    height: Option<f64>,
+    area: Option<(f64, f64, f64, f64)>,
+) -> Result<Vec<u8>, String> {
     #[cfg(target_os = "macos")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -1135,7 +1612,7 @@ async fn screenshot(view: &Webview, height: Option<f64>) -> Result<Vec<u8>, Stri
                 Some(height) => {
                     super::macos::full_page_jpeg(platform.inner(), height, MAX_PAGE_HEIGHT, done)
                 }
-                None => super::macos::snapshot_jpeg(platform.inner(), done),
+                None => super::macos::snapshot_jpeg(platform.inner(), area, done),
             }
         })
         .map_err(|error| error.to_string())?;
@@ -1147,7 +1624,7 @@ async fn screenshot(view: &Webview, height: Option<f64>) -> Result<Vec<u8>, Stri
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (view, height);
+        let _ = (view, height, area);
         Err("screenshots are not available on this platform yet".into())
     }
 }
@@ -1214,6 +1691,100 @@ mod tests {
         let asking =
             json!({ "tabId": "t", "url": "https://a.test/", "loading": false, "dialog": {} });
         assert!(moved_on(&page, &asking));
+    }
+
+    #[test]
+    fn a_call_names_its_element_by_number_text_or_selector() {
+        assert_eq!(
+            element_target(&json!({ "text": "Save", "role": "button" }), "index"),
+            json!({ "text": "Save", "role": "button" })
+        );
+        assert_eq!(
+            element_target(&json!({ "selector": "#go", "role": "button" }), "index"),
+            json!({ "selector": "#go" })
+        );
+        assert_eq!(
+            element_target(&json!({ "x": 3, "y": 4 }), "index"),
+            Value::Null
+        );
+        assert_eq!(
+            element_target(&json!({ "fromIndex": 2, "text": "ignored" }), "fromIndex"),
+            json!({ "index": 2 })
+        );
+    }
+
+    #[test]
+    fn typing_that_went_nowhere_or_doubled_up_is_called_out() {
+        let after = |value: &str, replaced: bool| json!({ "value": value, "replaced": replaced });
+        assert!(typing_missed("hello", &after("hello", true)).is_none());
+        assert!(typing_missed("hello", &after("", true))
+            .unwrap()
+            .contains("still empty"));
+        assert!(typing_missed("hello", &after("goodbye", true))
+            .unwrap()
+            .contains("does not hold"));
+        assert!(
+            typing_missed("adjunctive", &after("adjunctiveadjunctive", false))
+                .unwrap()
+                .contains("replace: true")
+        );
+        assert!(typing_missed("", &after("", true)).is_none());
+        assert!(typing_missed(
+            "secret",
+            &json!({ "value": "\u{2022}\u{2022}", "valueLength": 6 })
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn only_a_script_that_failed_to_parse_is_run_again_as_statements() {
+        assert!(is_parse_error("SyntaxError: Unexpected keyword 'const'"));
+        assert!(!is_parse_error(
+            "SyntaxError: JSON Parse error: Unexpected identifier"
+        ));
+        assert!(!is_parse_error(
+            "SyntaxError: The string did not match the expected pattern."
+        ));
+        assert!(!is_parse_error("TypeError: null is not an object"));
+    }
+
+    #[test]
+    fn script_failures_say_what_to_do_instead() {
+        let limit = Duration::from_secs(30);
+        assert!(script_failure("", limit).contains("browser_wait"));
+        assert!(script_failure(
+            "Completion handler for function call is no longer reachable",
+            limit
+        )
+        .contains("browser_reload"));
+        assert_eq!(script_failure("TypeError: x", limit), "TypeError: x");
+    }
+
+    #[test]
+    fn a_fragment_change_is_told_apart_from_a_new_page() {
+        assert!(same_document(
+            "https://a.test/doc",
+            "https://a.test/doc#size"
+        ));
+        assert!(same_document(
+            "https://a.test/doc#a",
+            "https://a.test/doc#b"
+        ));
+        assert!(!same_document(
+            "https://a.test/doc",
+            "https://a.test/other#size"
+        ));
+        assert!(!same_document("https://a.test/doc#a", "https://a.test/doc"));
+    }
+
+    #[test]
+    fn a_wait_names_its_conditions_or_only_a_time() {
+        assert_eq!(wait_condition(&json!({ "ms": 500 })), None);
+        assert_eq!(
+            wait_condition(&json!({ "text": "Saved", "networkIdle": true, "timeoutMs": 5 })),
+            Some(json!({ "text": "Saved", "networkIdle": true }))
+        );
+        assert_eq!(wait_condition(&json!({ "networkIdle": false })), None);
     }
 
     #[test]
