@@ -49,6 +49,12 @@ jobs:
       - name: Check the grammar manifest matches the installed grammars
         run: pnpm grammars:check
 
+      - name: Check the generated IPC contracts match the Rust commands
+        run: pnpm ipc:check
+
+      - name: Check the generated agent tool list matches its source
+        run: pnpm agent-tools:check
+
       - name: Run frontend tests with all-source coverage
         run: pnpm test:coverage
 
@@ -139,5 +145,5 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Launch the built app and open a real editor target
-        run: pnpm test:e2e:desktop
+      - name: Launch the built app, open a real editor target and drive a browser tab
+        run: pnpm test:e2e:desktop --browser
