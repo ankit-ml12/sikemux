@@ -11,6 +11,7 @@ pub mod agents;
 mod burst;
 mod documents;
 mod favicon;
+mod history;
 #[cfg(target_os = "macos")]
 mod input;
 mod local_files;
@@ -90,7 +91,8 @@ pub struct BrowserSnapshot {
 
 /// Where the page area sits, in the main window's CSS pixels. The clips are
 /// how much of either side lies outside the stage and must not be drawn. The
-/// holes are app elements, like toasts, that must show through the page.
+/// holes are app elements, like toasts, that must show through the page. The
+/// dim is how dark a shade to lay over the page while an app panel floats on it.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserBounds {
@@ -101,6 +103,8 @@ pub struct BrowserBounds {
     pub clip_left: f64,
     pub clip_right: f64,
     pub holes: Vec<BrowserHole>,
+    #[serde(default)]
+    pub dim: f64,
 }
 
 /// A rounded rectangle in the page's own coordinates.
@@ -326,6 +330,7 @@ pub struct BrowserManager {
     shortcuts_installed: AtomicBool,
     downloads: Mutex<HashMap<(String, String), PathBuf>>,
     icons: Mutex<favicon::IconCache>,
+    history: history::History,
     dialogs: Mutex<HashMap<String, PageDialog>>,
     uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
     documents: Mutex<HashMap<String, documents::DocumentLog>>,
@@ -667,7 +672,7 @@ impl BrowserManager {
         tab_id: &str,
         update: impl FnOnce(&mut TabPage),
     ) {
-        let (changed, loading) = {
+        let (changed, loading, shown) = {
             let mut agents = self.lock();
             match agents
                 .get_mut(agent_id)
@@ -677,13 +682,24 @@ impl BrowserManager {
                     let before = page.clone();
                     update(page);
                     let loading = (before.loading != page.loading).then_some(page.loading);
-                    (*page != before, loading)
+                    let visited = !page.loading && (loading.is_some() || before.url != page.url);
+                    let shown = (*page != before && !page.loading).then(|| (page.clone(), visited));
+                    (*page != before, loading, shown)
                 }
-                None => (false, None),
+                None => (false, None, None),
             }
         };
         if changed {
             self.announce(app);
+        }
+        if let Some((page, visited)) = shown {
+            self.history.note(
+                app,
+                &page.url,
+                &page.title,
+                page.favicon.as_deref(),
+                visited,
+            );
         }
         match loading {
             Some(true) => self.relayout(agent_id),
@@ -1207,6 +1223,7 @@ fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
                     })
                     .collect();
                 macos::clip(tab, frame.clip_left, frame.clip_right, holes);
+                macos::dim(tab, frame.dim);
             }
             viewport::Layout::Parked {
                 page: (width, height),
@@ -1249,6 +1266,7 @@ const MAX_HOLES: usize = 32;
 
 fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
     let finite = [
+        bounds.dim,
         bounds.x,
         bounds.y,
         bounds.width,
@@ -1275,6 +1293,7 @@ fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
         || bounds.clip_left < 0.0
         || bounds.clip_right < 0.0
         || bounds.clip_left + bounds.clip_right > bounds.width
+        || !(0.0..=1.0).contains(&bounds.dim)
     {
         return Err(AppError::BadArg("invalid browser bounds"));
     }
@@ -1360,8 +1379,7 @@ pub fn normalize_url(input: &str) -> String {
             }
         );
     }
-    let query = url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>();
-    format!("https://www.google.com/search?q={query}")
+    history::search_url(value)
 }
 
 #[tauri::command]
@@ -1418,7 +1436,18 @@ pub async fn browser_navigate(
     agent_id: String,
     url: String,
 ) -> AppResult<()> {
-    manager.navigate(&app, &agent_id, &url)
+    manager.navigate(&app, &agent_id, &url)?;
+    manager.history.note_typed(&app, &normalize_url(&url));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn browser_suggest(
+    app: AppHandle,
+    manager: State<'_, BrowserManager>,
+    query: String,
+) -> AppResult<history::AddressSuggestions> {
+    Ok(manager.history.suggest(&app, &query))
 }
 
 #[tauri::command]
@@ -1703,8 +1732,19 @@ mod tests {
                 height: 34.0,
                 radius: 13.0,
             }],
+            dim: 0.0,
         };
         assert!(validate_bounds(&good).is_ok());
+        assert!(validate_bounds(&BrowserBounds {
+            dim: 0.2,
+            ..good.clone()
+        })
+        .is_ok());
+        assert!(validate_bounds(&BrowserBounds {
+            dim: 1.5,
+            ..good.clone()
+        })
+        .is_err());
         assert!(validate_bounds(&BrowserBounds {
             holes: vec![BrowserHole {
                 width: 0.0,

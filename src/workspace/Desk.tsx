@@ -3,8 +3,11 @@ import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type Brows
 import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
-import { AgentIcon, IconChevron, IconGlobe, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
+import { SiteIcon } from "../ui/SiteIcon";
+import { AddressBar } from "./AddressBar";
+import { FloatingAddress } from "./FloatingAddress";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";
@@ -23,10 +26,13 @@ import {
 import { TerminalPane } from "../terminal/TerminalPane";
 import { basename } from "../lib/paths";
 import * as cmd from "../state/commands";
+import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 
 const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({ default: module.EditorPane })));
 const NO_FILES: readonly string[] = [];
 const NO_DIRTY: readonly string[] = [];
+/** How dark the page goes under the ⌘L address, so the panel stands apart from it. */
+const UNDER_ADDRESS_DIM = 0.2;
 
 /*
  * Which scrollers can move this pane on screen: its own scrolling ancestors,
@@ -117,14 +123,6 @@ export function DeskHost({
     );
 }
 
-/** The site's own mark once it has arrived, and a globe until then. */
-function SiteIcon({ src }: { src: string | null }) {
-    const [broken, setBroken] = useState(false);
-    useEffect(() => setBroken(false), [src]);
-    if (!src || broken) return <IconGlobe size={13} />;
-    return <img className="tab-favicon" src={src} alt="" onError={() => setBroken(true)} />;
-}
-
 function DeskSession({
     paneId,
     agentId,
@@ -148,6 +146,7 @@ function DeskSession({
     painted: boolean;
     onEmpty: () => void;
 }) {
+    const newTabShortcut = useShortcutLabel("browser.tabNew");
     const snapshot = useStore((state) => state.browserStrips[agentId]) ?? EMPTY_STRIP;
     const desk = useStore((state) => state.desks[agentId]) ?? EMPTY_DESK;
     const editorId = deskEditorId(agentId);
@@ -278,8 +277,8 @@ function DeskSession({
                 }}
                 onAdd={() => cmd.newBrowserTab(agentId)}
                 addIcon={<IconPlus size={13} />}
-                addTitle="New browser tab — ⌘T"
-                addLabel="New browser tab — Command T"
+                addTitle={withShortcut("New browser tab", newTabShortcut)}
+                addLabel="New browser tab"
             />
             <div className="desk-body">
                 <BrowserPage
@@ -341,9 +340,11 @@ function BrowserPage({
     snapshot: BrowserSnapshot;
     refresh: (signal?: AbortSignal) => Promise<void>;
 }) {
+    const backShortcut = useShortcutLabel("browser.back");
+    const forwardShortcut = useShortcutLabel("browser.forward");
+    const reloadShortcut = useShortcutLabel("browser.reload");
     const viewportRef = useRef<HTMLDivElement>(null);
     const measureRef = useRef<() => void>(() => {});
-    const [typed, setTyped] = useState<string | null>(null);
     const [placement, setPlacement] = useState<Placement | null>(null);
     const occluded = useNativeViewsOccluded();
     const appHoles = useNativeViewHoles();
@@ -358,12 +359,8 @@ function BrowserPage({
     const travelling = moving && painted && !!placement && placement.clipLeft + placement.clipRight < placement.width;
     const shown = (visible || travelling) && !hidden && !occluded && !blank && !!activeTab;
 
-    /* The bar follows the page until someone starts typing in it, and goes back
-       to following once they are done. Pages move on their own — a click inside
-       a web app changes the address — and that must not eat a half-typed one. */
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
-    const address = typed ?? pageAddress;
-    useEffect(() => setTyped(null), [activeTab?.id]);
+    const addressFloating = useStore((state) => state.deskAddressOpen === agentId) && visible && !hidden;
 
     useLayoutEffect(() => {
         const host = viewportRef.current;
@@ -421,8 +418,9 @@ function BrowserPage({
     const holesKey = JSON.stringify(placement ? holesOver(placement, appHoles) : []);
     const holes = useMemo<BrowserHole[]>(() => JSON.parse(holesKey), [holesKey]);
     useEffect(() => {
-        void browserApi.setBounds(agentId, shown && placement ? { ...placement, holes } : null).catch(reportError("place browser page"));
-    }, [agentId, placement, holes, shown]);
+        const dim = addressFloating ? { dim: UNDER_ADDRESS_DIM } : {};
+        void browserApi.setBounds(agentId, shown && placement ? { ...placement, holes, ...dim } : null).catch(reportError("place browser page"));
+    }, [agentId, placement, holes, shown, addressFloating]);
 
     useEffect(
         () => () => {
@@ -434,20 +432,15 @@ function BrowserPage({
     const run = (operation: Promise<unknown>, label: string) => {
         void operation.then(() => refresh()).catch(reportError(label));
     };
+    const go = (url: string) => run(browserApi.navigate(agentId, url), "navigate browser");
 
     return (
         <div className="desk-page" hidden={hidden} data-browser-pane>
-            <form
-                className={`browser-toolbar${activeTab?.loading ? " loading" : ""}`}
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    setTyped(null);
-                    run(browserApi.navigate(agentId, address), "navigate browser");
-                }}>
+            <div className={`browser-toolbar${activeTab?.loading ? " loading" : ""}`}>
                 <button
                     type="button"
                     aria-label="Back"
-                    title="Back — ⌘["
+                    title={withShortcut("Back", backShortcut)}
                     disabled={!activeTab?.canGoBack}
                     onClick={() => run(browserApi.back(agentId), "browser back")}>
                     <IconChevron size={13} className="browser-back-icon" />
@@ -455,28 +448,27 @@ function BrowserPage({
                 <button
                     type="button"
                     aria-label="Forward"
-                    title="Forward — ⌘]"
+                    title={withShortcut("Forward", forwardShortcut)}
                     disabled={!activeTab?.canGoForward}
                     onClick={() => run(browserApi.forward(agentId), "browser forward")}>
                     <IconChevron size={13} />
                 </button>
-                <button type="button" aria-label="Reload" title="Reload — ⌘R" onClick={() => run(browserApi.reload(agentId), "reload browser")}>
+                <button
+                    type="button"
+                    aria-label="Reload"
+                    title={withShortcut("Reload", reloadShortcut)}
+                    onClick={() => run(browserApi.reload(agentId), "reload browser")}>
                     <IconRefresh size={13} />
                 </button>
-                <input
-                    className="browser-address"
-                    aria-label="Address and search"
-                    value={address}
-                    placeholder="Search or enter address"
-                    spellCheck={false}
-                    onFocus={(event) => event.currentTarget.select()}
-                    onBlur={() => setTyped(null)}
-                    onChange={(event) => setTyped(event.target.value)}
-                />
-            </form>
+                <AddressBar tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} vacant={addressFloating} />
+            </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
+                {blank && addressFloating && <div className="browser-dim" style={{ opacity: UNDER_ADDRESS_DIM }} />}
             </div>
+            {addressFloating && (
+                <FloatingAddress over={viewportRef} tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} onClose={cmd.closeDeskAddress} />
+            )}
         </div>
     );
 }

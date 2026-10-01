@@ -19,9 +19,11 @@ import {
     dirtyPathsForSession,
     disposePaneState,
     guardDiscardDirty,
+    guardStopAgents,
     makeSession,
     makeWindow,
     pruneWindowViews,
+    withActiveSession,
 } from "./shared";
 
 function projectWindows(cwd: string): Window[] {
@@ -81,6 +83,18 @@ export function createSshSession(alias: string): void {
         }
         const win = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
         attachSession(d as unknown as StoreState, makeSession("ssh", alias, "", win.id), [win]);
+    });
+}
+
+/** Another login on the host, as a tab of its session. */
+export function newSshTerminal(alias: string): void {
+    withActiveSession((d, session) => {
+        if (session.kind !== "ssh") return;
+        const win = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
+        d.windows[win.id] = win;
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), win.id];
+        d.sessions[session.id].activeWindowId = win.id;
+        d.zoomedPaneId = null;
     });
 }
 
@@ -150,7 +164,12 @@ export function reorderSession(sourceId: string, targetId: string, placement: "b
 }
 
 export function closeSession(id: string): void {
-    guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id));
+    const st = getState();
+    if (!st.sessions[id] || st.sessionOrder.length <= 1) return;
+    const name = st.sessions[id].name;
+    guardStopAgents(agentIdsOf(st, id), `Close ${name}?`, () =>
+        guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id)),
+    );
 }
 
 function closeSessionNow(id: string): void {

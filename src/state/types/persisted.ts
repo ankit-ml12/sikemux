@@ -5,10 +5,12 @@ import type { HeldRelease } from "../../api/releases";
 import type {
     Agent,
     AgentPermissionMode,
+    AgentType,
     ProjectRoot,
     ProviderProfile,
     ProviderProfileSelection,
     RailDensity,
+    AgentRailScope,
     RecentEntry,
     Session,
     Window,
@@ -33,6 +35,7 @@ export type PersistedAgent = Pick<
     | "effort"
     | "skipPermissions"
     | "keepAlive"
+    | "renamed"
 >;
 
 export interface PersistedSnapshot {
@@ -59,6 +62,7 @@ export interface PersistedPrefs {
     customThemes?: Theme[];
     uiTextScale?: number;
     paneShader?: boolean;
+    paneImage?: string | null;
     terminalFontSize?: number;
     chatTextScale?: number;
     editorTextScale?: number;
@@ -80,6 +84,8 @@ export interface PersistedPrefs {
     notificationsIntroduced?: boolean;
     autoResumeAgents?: boolean;
     railDensity?: RailDensity;
+    agentRailAllAgents?: boolean;
+    agentRailScope?: AgentRailScope;
     onboardingComplete?: boolean;
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];
@@ -91,5 +97,6 @@ export interface PersistedPrefs {
     providerProfiles?: ProviderProfile[];
     selectedProviderProfileIds?: ProviderProfileSelection;
     defaultAgentPermissionMode?: AgentPermissionMode;
+    lastAgentType?: AgentType | null;
     languageServerTrust?: Record<string, boolean>;
 }

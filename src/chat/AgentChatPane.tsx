@@ -82,19 +82,6 @@ export function AgentChatPane({
         directDomUpdates: true,
     });
 
-    // Find opens on its shortcut while this chat is the pane in use; it counts up so asking again refocuses it.
-    const [findRequest, setFindRequest] = useState(0);
-    useEffect(() => {
-        if (!active) return;
-        const onKey = (event: KeyboardEvent) => {
-            if (event.defaultPrevented || event.shiftKey || event.altKey || event.code !== "KeyF" || !hasPrimaryModifier(event)) return;
-            event.preventDefault();
-            setFindRequest((count) => count + 1);
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [active]);
-
     useEffect(() => {
         if (!active) return;
         cmd.noteAcpAgentState(
@@ -169,6 +156,19 @@ export function AgentChatPane({
         messageCount: displayState.messages.length,
         revision: displayState.revision,
     });
+
+    // Find opens on its shortcut while this chat is the pane in use; it counts up so asking again refocuses it.
+    const [findRequest, setFindRequest] = useState(0);
+    useEffect(() => {
+        if (!active) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.shiftKey || event.altKey || event.code !== "KeyF" || !hasPrimaryModifier(event)) return;
+            event.preventDefault();
+            setFindRequest((count) => count + 1);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [active]);
 
     const stop = () => {
         void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));

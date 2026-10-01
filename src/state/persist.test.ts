@@ -260,6 +260,7 @@ describe("frontend persistence", () => {
             resumeId: "session-123",
             launchState: "live" as const,
             keepAlive: true,
+            renamed: true,
         };
         setState((s) => {
             const slices = withAgents(s, sid, [agent]);
@@ -274,14 +275,22 @@ describe("frontend persistence", () => {
         expect(raw).not.toContain("malicious saved startup");
         const saved = JSON.parse(raw);
         expect(saved.agents).toEqual([
-            { id: agent.id, type: "codex", title: agent.title, resumeId: agent.resumeId, permissionMode: "workspace-write", keepAlive: true },
+            {
+                id: agent.id,
+                type: "codex",
+                title: agent.title,
+                resumeId: agent.resumeId,
+                permissionMode: "workspace-write",
+                keepAlive: true,
+                renamed: true,
+            },
         ]);
         expect(saved.windowsBySession[sid].map((w: { role: string }) => w.role)).toContain("agent");
 
         saved.agents[0].startup = "still malicious";
         applyHydrate(JSON.stringify(saved));
         const restored = getState().agents[agent.id];
-        expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true });
+        expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true, renamed: true });
         expect(restored.startup).toMatch(/^codex resume\b/);
         expect(restored.startup).toContain("session-123");
         expect(restored.startup).not.toContain("still malicious");
@@ -1035,5 +1044,28 @@ describe("frontend persistence", () => {
         const restored = getState().windows[window.id];
         expect(restored).toMatchObject({ name: "Terminal", role: "term" });
         expect(restored.fixed).toBeUndefined();
+    });
+
+    it("makes a legacy fixed Git tab in a project closable", () => {
+        const sid = getState().activeSessionId;
+        const session = getState().sessions[sid];
+        const window = getState().windows[session.activeWindowId];
+
+        applyHydrate(
+            JSON.stringify({
+                version: 4,
+                sessions: [{ ...session, kind: "project", cwd: "/work/demo" }],
+                windowsBySession: {
+                    [sid]: [{ ...window, name: "git", role: "git", root: { ...window.root, kind: "git" }, fixed: true }],
+                },
+                agentsBySession: {},
+                sessionOrder: [sid],
+                activeSessionId: sid,
+                prefs: {},
+            }),
+        );
+
+        expect(getState().windows[window.id]).toMatchObject({ role: "git" });
+        expect(getState().windows[window.id].fixed).toBeUndefined();
     });
 });

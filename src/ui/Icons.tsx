@@ -84,6 +84,13 @@ export function IconPin({ size, className, filled = false }: IconProps & { fille
     );
 }
 
+export const IconMoreVertical = makeSvgIcon(
+    <>
+        <circle cx="8" cy="3.5" r="1" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="12.5" r="1" fill="currentColor" stroke="none" />
+    </>,
+);
 export const IconMore = makeSvgIcon(
     <>
         <circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none" />
@@ -184,11 +191,23 @@ export const IconContrast = makeSvgIcon(
 );
 export const IconCommand = makeSvgIcon(<path d="M3 4.6 6 8l-3 3.4M7.6 11.4H13" />);
 export const IconFolder = makeSvgIcon(<path d="M2 4.4h4l1.6 2H14v7.2H2z" />);
+export const IconInbox = makeSvgIcon(
+    <>
+        <path d="M2.4 9.4 4 3.4h8l1.6 6v3.2H2.4z" />
+        <path d="M2.4 9.4h3.2l.8 1.5h3.2l.8-1.5h3.2" />
+    </>,
+);
 export const IconPlug = makeSvgIcon(
     <>
         <path d="M6.2 2.2v2.6M9.8 2.2v2.6" />
         <path d="M4.4 4.8h7.2v2.6a3.6 3.6 0 0 1-7.2 0z" />
         <path d="M8 11v2.8" />
+    </>,
+);
+export const IconLock = makeSvgIcon(
+    <>
+        <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+        <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
     </>,
 );
 export const IconGlobe = makeSvgIcon(
