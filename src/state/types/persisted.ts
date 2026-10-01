@@ -7,12 +7,14 @@ import type {
     AgentPermissionMode,
     AgentType,
     ProjectRoot,
+    ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
     RailDensity,
     AgentRailScope,
     RecentEntry,
     Session,
+    SpaceView,
     Window,
 } from "./domain";
 import type { EditorPaneView } from "./view";
@@ -79,6 +81,8 @@ export interface PersistedPrefs {
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
+    projectSpaces?: Record<string, ProjectSpace>;
+    spaceView?: SpaceView;
     agentNotifications?: boolean;
     voiceDictation?: boolean;
     notificationsIntroduced?: boolean;
