@@ -15,7 +15,7 @@ import { YoloToggle } from "./YoloToggle";
 import { DictateButton } from "./DictateButton";
 import { ContextMeter } from "./ContextMeter";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
-import { caretAtEdge, recallPrompt, type HistoryPosition } from "./promptHistory";
+import { arrowsBrowse, recallPrompt, type HistoryPosition } from "./promptHistory";
 import { mergePaths, slashTokenAt } from "./composerInput";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
 
@@ -342,8 +342,8 @@ export function ChatComposer({
                         }
                         const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
                         if (direction && plainKey) {
-                            const { value, selectionStart, selectionEnd } = event.currentTarget;
-                            const recalled = caretAtEdge(value, selectionStart, selectionEnd, direction)
+                            const { value } = event.currentTarget;
+                            const recalled = arrowsBrowse(value, history, historyPosition, direction)
                                 ? recallPrompt(history, historyPosition, value, direction)
                                 : null;
                             if (recalled) {
