@@ -21,6 +21,7 @@ import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { isSessionKind, validatePersistedLayout } from "./persistValidation";
 import { isPluginId, isPluginKind } from "../plugins/kinds";
+import { isProjectSpace } from "./projectSpaces";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
@@ -36,6 +37,7 @@ import type {
     PersistedPrefs,
     PersistedSession,
     PersistedSnapshot,
+    ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
     RecentEntry,
@@ -107,6 +109,8 @@ const PERSISTED_KEYS = [
     "pluginSettings",
     "disabledPlugins",
     "restoreAgentTabs",
+    "projectSpaces",
+    "spaceView",
     "agentNotifications",
     "voiceDictation",
     "notificationsIntroduced",
@@ -166,6 +170,8 @@ function packPrefs(s: StoreState): PersistedPrefs {
         pluginSettings: s.pluginSettings,
         disabledPlugins: [...s.disabledPlugins],
         restoreAgentTabs: s.restoreAgentTabs,
+        projectSpaces: s.projectSpaces,
+        spaceView: s.spaceView,
         agentNotifications: s.agentNotifications,
         voiceDictation: s.voiceDictation,
         notificationsIntroduced: s.notificationsIntroduced,
@@ -188,6 +194,13 @@ function packPrefs(s: StoreState): PersistedPrefs {
 }
 
 const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "ssh-config", "named", "agent"]);
+
+function normaliseProjectSpaces(value: unknown): Record<string, ProjectSpace> {
+    if (!isRecord(value)) return {};
+    const spaces: Record<string, ProjectSpace> = {};
+    for (const [cwd, space] of Object.entries(value)) if (isProjectSpace(space)) spaces[cwd] = space;
+    return spaces;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value);
@@ -993,6 +1006,8 @@ export function applyHydrate(raw: string): HydrationResult {
         pluginSettings: normalisePluginSettings(prefs.pluginSettings),
         disabledPlugins: Array.isArray(prefs.disabledPlugins) ? [...new Set(prefs.disabledPlugins.filter(isPluginId))] : [],
         restoreAgentTabs,
+        projectSpaces: normaliseProjectSpaces(prefs.projectSpaces),
+        spaceView: isProjectSpace(prefs.spaceView) ? prefs.spaceView : "all",
         agentNotifications: typeof prefs.agentNotifications === "boolean" ? prefs.agentNotifications : cur.agentNotifications,
         voiceDictation: prefs.voiceDictation === true,
         notificationsIntroduced: prefs.notificationsIntroduced === true,

@@ -2,6 +2,7 @@ import type { PluginManifest } from "../../api/plugins";
 import { fixedSessionName } from "../sessionNames";
 import { isPluginKind, pluginIdOf, type PluginKind } from "../../plugins/kinds";
 import { RAIL_GROUP_ORDER, railGroupOf } from "../railGroups";
+import { isProjectShown } from "../projectSpaces";
 import { filesApi } from "../../api/files";
 import { lsp } from "../../api/lsp";
 import { sshApi } from "../../api/ssh";
@@ -12,7 +13,7 @@ import { getState, mutate, setState, type StoreState } from "../store";
 import { reportError } from "../toast";
 import { agentIdsOf } from "../selectors";
 import { collectPanes } from "../layout";
-import type { Window } from "../types";
+import type { ProjectSpace, SpaceView, Window } from "../types";
 import {
     attachSession,
     closeAgentDesk,
@@ -137,6 +138,34 @@ export function selectSession(id: string): void {
         d.pickerOpen = false;
         d.settingsOpen = false;
     });
+}
+
+export function setSpaceView(view: SpaceView): void {
+    setState({ spaceView: view });
+    leaveHiddenProject();
+}
+
+export function setProjectSpace(cwd: string, space: ProjectSpace | null): void {
+    setState((s) => {
+        const projectSpaces = { ...s.projectSpaces };
+        if (space) projectSpaces[cwd] = space;
+        else delete projectSpaces[cwd];
+        return { projectSpaces };
+    });
+    leaveHiddenProject();
+}
+
+/** The workspace follows the rail: when the open project is hidden, the first project still shown opens instead. */
+function leaveHiddenProject(): void {
+    const { sessions, sessionOrder, activeSessionId, projectSpaces, spaceView } = getState();
+    const shown = (id: string) => {
+        const session = sessions[id];
+        return session?.kind === "project" && isProjectShown(session.cwd, projectSpaces, spaceView);
+    };
+    const active = sessions[activeSessionId];
+    if (active?.kind !== "project" || shown(activeSessionId)) return;
+    const next = sessionOrder.find(shown);
+    if (next) selectSession(next);
 }
 
 export function selectLastSession(): void {

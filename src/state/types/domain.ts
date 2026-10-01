@@ -177,6 +177,12 @@ export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; 
 
 /** Which panel the workspace rail is showing. */
 
+/** A set of projects to show on their own, so other work stays out of sight without being closed. */
+export type ProjectSpace = "work" | "personal";
+
+/** Which projects the rail shows: every one, or one space's along with the projects in no space. */
+export type SpaceView = "all" | ProjectSpace;
+
 export interface Session {
     id: string;
     name: string;
