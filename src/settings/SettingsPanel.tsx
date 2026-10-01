@@ -9,6 +9,7 @@ import {
     type KeybindingAction,
     keybindingCategories,
     keybindingHasModifier,
+    reservedKeybinding,
     keybindingLabel,
     resolvedKeybinding,
     type KeybindingActionId,
@@ -1046,7 +1047,12 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
         const binding = eventToKeybinding(event.nativeEvent);
         if (!binding) return;
         if (!keybindingHasModifier(binding)) {
-            setMessage("Add Command, Control, Option, or Shift so typing stays safe.");
+            setMessage(`Add ${IS_MACOS ? "Command, Control or Option" : "Control or Alt"}: Shift alone only changes what a key types.`);
+            return;
+        }
+        const reserved = reservedKeybinding(binding);
+        if (reserved) {
+            setMessage(`${keybindingLabel(binding)} is ${reserved}, which stays where it is.`);
             return;
         }
         const conflict = findKeybindingConflict(overrides, id, binding);
@@ -1057,7 +1063,11 @@ function KeybindingsPage({ overrides, initialQuery }: { overrides: KeybindingOve
 
         cmd.setKeybinding(id, binding);
         setRecording(null);
-        setMessage(`${keybindingActions().find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.`);
+        const optionOnly = binding.startsWith("Alt+");
+        setMessage(
+            `${keybindingActions().find((action) => action.id === id)?.label} changed to ${keybindingLabel(binding)}.` +
+                (optionOnly ? ` It stays with the terminal or text field while you type in one.` : ""),
+        );
     };
 
     const matches = (action: KeybindingAction) =>
@@ -1190,6 +1200,8 @@ interface ThemeEdit {
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = useStore((state) => state.uiTextScale);
     const paneShader = useStore((state) => state.paneShader);
+    const paneImage = useStore((state) => state.paneImage);
+    const home = useStore((state) => state.home);
     const customThemes = useStore((s) => s.customThemes);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -1301,6 +1313,28 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         asLabel
                         control={<Switch checked={paneShader} onChange={cmd.setPaneShader} label="Pane texture" />}
                     />
+                    <SettingsRow
+                        label="Pane image"
+                        desc={paneImage ? prettyPath(paneImage, home) : "A picture shared by every pane, dithered in place of the grain."}>
+                        <div className="settings-actions">
+                            {paneImage && (
+                                <button className="settings-btn" type="button" onClick={() => cmd.setPaneImage(null)}>
+                                    Remove
+                                </button>
+                            )}
+                            <button
+                                className="settings-btn"
+                                type="button"
+                                onClick={() =>
+                                    void settingsApi
+                                        .pickImage()
+                                        .then((path) => path && cmd.setPaneImage(path))
+                                        .catch(reportError("image picker"))
+                                }>
+                                {paneImage ? "Change…" : "Choose…"}
+                            </button>
+                        </div>
+                    </SettingsRow>
                 </SettingsRows>
             </SettingsSection>
 

@@ -1,19 +1,17 @@
-# Sikemux v0.4.3-nightly.1
+# Sikemux v0.4.3-nightly.3
 
-The first nightly on the 0.4.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The third nightly on the 0.4.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since 0.4.2
+## New since nightly.2
 
-- **Your code host in the Git pane.** GitHub and Bitbucket Cloud live beside your local changes. Pull requests read like local changes and like the host's own page, with their conversation, reviews, checks and who merged them. Check a pull request out from its page, open a failing check's job, or jump from a CI annotation to its file and line. A branch shows its open pull request.
-- **GitHub Actions and Bitbucket Pipelines.** GitHub runs bring their jobs, logs, artifacts, annotations and deployment approvals, with releases and an inbox beside them, and your agents can read them through tools named `github_`. Bitbucket pipelines list beside them.
-- **More than one account per host,** switched per project from the Git pane. Requests hold back once a rate limit is spent.
-- **A new Git pane.** Changes, History and Branches over one review. Stage or unstage a file from its row, discard every unstaged change at once, and write commits in one message box. History shows who wrote each commit, and file headers stick as the review scrolls.
-- **Aura Noir** is the default theme: Aura's colours on near-black surfaces.
-- **The chat.** Queued messages go out together and steer all at once, and a new session opens on the project's activity and calendar.
-- **The rails.** Each rail has its own toggle, focus mode hides both, and the sessions rail opens on a masthead that carries the update.
-- **The agent's browser.** `browser_act` plays several clicks, keys and typing in one call, and the mobile viewport introduces itself as an iPhone.
-- Plugins read your shell's variables even when Sikemux opens from the Dock, so AWS and GitHub find their settings.
+- **Shortcuts.** ⌘N starts an agent, ⌘T a terminal where you are, ⌘J the nearest desk, and Option takes you back to the terminal. ⌘W no longer closes the window and quits every agent, and closing a project or a working agent asks first.
+- **Previews.** PDFs, audio, video, fonts and binaries open in a preview, and Office and iWork documents open through Quick Look.
+- **The desk's browser.** ⌘L opens the address over the middle of the page, suggests the sites you visit most and the pages you have been to, and Escape puts it away. The address bar leads with the site, and ⌘W closes the page rather than the whole desk.
+- **Agents.** Rename a chat from its header, its menu or the agent rail. The agent rail has an All agents tab, saved chats page across providers and projects, and a `sikemux://` link reopens an agent's conversation.
+- **Tabs.** Drag a pane's tab out of its split to give it a tab of its own, and grab a tab anywhere without dragging the window.
+- **Leaner agent tools.** An agent is offered only the plugin tools that work in its repository, SigNoz answers through five tools instead of twelve, and the browser's tools answer in less.
+- Panes share one dithered picture in place of the grain, and an empty workspace always offers somewhere to go.
 
-Thanks to Sujalxcode for the GitHub plugin, and to Ankit Patidar for keeping Git's state fresh.
+Thanks to Sujal Rajput for renaming chats.
 
-For the complete patch history, compare [`v0.4.2...v0.4.3-nightly.1`](https://github.com/nodelike/sikemux/compare/v0.4.2...v0.4.3-nightly.1).
+For the complete patch history, compare [`v0.4.3-nightly.2...v0.4.3-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.4.3-nightly.2...v0.4.3-nightly.3).

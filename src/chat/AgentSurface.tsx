@@ -3,10 +3,13 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { IconAgent, IconCommand, IconPanelRight } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
+import { AgentTitleInput } from "../agents/AgentTitleInput";
+import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import * as cmd from "../state/commands";
+import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
 import { YoloToggle } from "./YoloToggle";
 import "../styles/chat.css";
@@ -16,16 +19,41 @@ type AgentView = "gui" | "tui";
 function DeskButton({ agent }: { agent: Agent }) {
     const open = useStore((state) => shownDeskPaneId(state, agent.id) !== null);
     const label = open ? "Hide desk" : "Show desk";
+    const shortcut = useShortcutLabel("desk.toggle");
     return (
         <button
             type="button"
             className="agent-desk-open"
             aria-pressed={open}
             aria-label={label}
-            title={label}
+            title={withShortcut(label, shortcut)}
             onClick={() => cmd.toggleDesk(agent.id)}>
             <IconPanelRight size={13} />
         </button>
+    );
+}
+
+function AgentMenuButton({ agent, session, onRename }: { agent: Agent; session: Session; onRename: () => void }) {
+    const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+    return (
+        <>
+            <button
+                type="button"
+                className="agent-surface-menu"
+                aria-label="Agent menu"
+                aria-haspopup="menu"
+                aria-expanded={anchor !== null}
+                title="More"
+                onClick={(event) => {
+                    const box = event.currentTarget.getBoundingClientRect();
+                    setAnchor({ x: box.left, y: box.bottom + 4 });
+                }}>
+                <IconMoreVertical size={14} />
+            </button>
+            {anchor && (
+                <AgentContextMenu agent={agent} session={session} x={anchor.x} y={anchor.y} onClose={() => setAnchor(null)} onRename={onRename} />
+            )}
+        </>
     );
 }
 
@@ -34,6 +62,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const [view, setView] = useState<AgentView>(supportsGui ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
+    const [renaming, setRenaming] = useState(false);
 
     const switchView = useCallback(
         async (next: AgentView) => {
@@ -55,9 +84,22 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     return (
         <section className="agent-surface">
             <header className="agent-surface-header">
-                <span className="agent-surface-title" title={agent.title}>
-                    {agent.title}
+                <span className={`agent-surface-mark agent-glyph ${agent.type}`} aria-hidden="true">
+                    <AgentIcon type={agent.type} size={16} />
                 </span>
+                {renaming ? (
+                    <AgentTitleInput
+                        title={agent.title}
+                        className="agent-surface-title"
+                        onSave={(title) => cmd.renameAgent(agent.id, title)}
+                        onDone={() => setRenaming(false)}
+                    />
+                ) : (
+                    <span className="agent-surface-title" title={agent.title} onDoubleClick={() => setRenaming(true)}>
+                        {agent.title}
+                    </span>
+                )}
+                <AgentMenuButton agent={agent} session={session} onRename={() => setRenaming(true)} />
                 {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
                 <div className="agent-view-switch" role="group" aria-label="Agent view">
                     <button

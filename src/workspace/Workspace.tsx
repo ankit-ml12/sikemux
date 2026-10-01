@@ -24,7 +24,8 @@ import {
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
-import { ShaderField } from "../ui/ShaderField";
+import { PaneField } from "../ui/ShaderField";
+import { agentMenu } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
@@ -34,7 +35,8 @@ import { FileIcon } from "../ui/FileIcon";
 import { fsapi } from "../api/fs";
 import { useStageMotion } from "../state/nativeViews";
 import { basename, relativePath } from "../lib/paths";
-import { FILE_MANAGER_NAME, PRIMARY_SHORTCUT } from "../lib/platform";
+import { FILE_MANAGER_NAME } from "../lib/platform";
+import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { notify, reportError } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
@@ -167,6 +169,7 @@ export const Workspace = memo(function Workspace() {
                     </div>
                 );
             })}
+            {activeSession?.kind === "project" && (windowsBySession[activeSession.id] ?? EMPTY_IDS).length === 0 && <EmptyStage />}
             {activeSession && activeOrder.length > 1 && activeSlots.has(activeSession.activeWindowId) && (
                 <WindowScrollIndicator count={activeOrder.length} index={activeOrder.indexOf(activeSession.activeWindowId)} ms={pan.ms} />
             )}
@@ -246,6 +249,28 @@ function splitTargetAt(sessionId: string, point: TabPoint): SplitTarget | null {
     };
 }
 
+/** A project with every tab closed, which would otherwise show nothing to click. */
+function EmptyStage() {
+    const moves = [
+        { label: "New agent", shortcut: useShortcutLabel("agent.new"), run: () => void cmd.startAgent() },
+        { label: "New terminal", shortcut: useShortcutLabel("terminal.new"), run: cmd.newTerminal },
+        { label: "Open file", shortcut: useShortcutLabel("palette.files"), run: cmd.openFilePalette },
+    ];
+    return (
+        <div className="empty-stage">
+            <span className="empty-stage-title">Nothing open in this project</span>
+            <div className="empty-stage-moves">
+                {moves.map((move) => (
+                    <button key={move.label} type="button" className="empty-stage-move" onClick={move.run}>
+                        <span>{move.label}</span>
+                        {move.shortcut && <kbd>{move.shortcut}</kbd>}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 /** The active session's tabs. A project holding only rail-driven surfaces has none, and shows no strip. */
 export function WorkspaceTabs() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
@@ -290,12 +315,15 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const termTitleList = useStore(useShallow((s) => termPaneIds.map((id) => s.terminalTitles[id] ?? "")));
     const termTitles = useMemo(() => new Map(termPaneIds.map((id, index) => [id, termTitleList[index]])), [termPaneIds, termTitleList]);
 
+    const closeShortcut = useShortcutLabel("pane.close");
+    const permissionsShortcut = useShortcutLabel("agent.permissions");
+
     const windowMenu = (win: WindowT): CtxItem[] => {
         const siblings = refs.flatMap((ref) => (ref.doc === undefined ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
         const others = siblings.filter((t) => t.id !== win.id && !t.fixed && t.role !== "agent");
         return [
             { label: "Duplicate", run: () => cmd.duplicateWindow(win.id) },
-            { label: "Close", hint: "⌥W", disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
+            { label: "Close", hint: closeShortcut, disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
             { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((t) => cmd.closeWindowById(t.id)) },
         ];
     };
@@ -310,7 +338,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         const toRight = index >= 0 ? open.slice(index + 1) : [];
         const saved = open.filter((path) => !dirty.has(path));
         return [
-            { label: "Close", hint: `${PRIMARY_SHORTCUT}W`, run: () => close([doc]) },
+            { label: "Close", hint: closeShortcut, run: () => close([doc]) },
             { label: "Close Others", disabled: others.length === 0, run: () => close(others) },
             { label: "Close to the Left", disabled: toLeft.length === 0, run: () => close(toLeft) },
             { label: "Close to the Right", disabled: toRight.length === 0, run: () => close(toRight) },
@@ -327,35 +355,14 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         ];
     };
 
-    const agentMenu = (agent: Agent): CtxItem[] => {
-        const agents = refs
+    const agentTabMenu = (agent: Agent): CtxItem[] => {
+        const others = refs
             .flatMap((ref) => {
                 const win = ref.doc === undefined ? windowsById[ref.id] : undefined;
                 return win?.role === "agent" ? [agentsById[agentPaneId(win) ?? ""]] : [];
             })
-            .filter(Boolean) as Agent[];
-        const others = agents.filter((x) => x.id !== agent.id);
-        const items: CtxItem[] = [
-            ...(agent.launchState === "dormant"
-                ? [{ label: "Resume", run: () => cmd.selectAgent(agent.id) }]
-                : agent.resumeId
-                  ? [{ label: "Sleep", run: () => cmd.sleepAgent(agent.id) }]
-                  : []),
-            ...(agent.resumeId && agent.launchState !== "dormant"
-                ? [{ label: agent.keepAlive ? "Allow Auto-Sleep" : "Keep Alive", run: () => cmd.setAgentKeepAlive(agent.id, !agent.keepAlive) }]
-                : []),
-            ...(agent.resumeId ? [{ sep: true as const }] : []),
-            { label: "Close", hint: "⌥W", run: () => cmd.closeAgent(agent.id) },
-            { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((x) => cmd.closeAgent(x.id)) },
-        ];
-        if (cmd.agentSupportsSkipPermissions(agent.type)) {
-            const skip = agent.permissionMode === "bypass" || agent.skipPermissions === true;
-            items.push(
-                { sep: true },
-                { label: skip ? "Disable YOLO Mode" : "Enable YOLO Mode", hint: "⌥Y", run: () => cmd.toggleAgentSkipPermissions(agent.id) },
-            );
-        }
-        return items;
+            .filter((x): x is Agent => !!x && x.id !== agent.id);
+        return agentMenu(agent, others, session, { close: closeShortcut, permissions: permissionsShortcut });
     };
 
     const { tabs, paneOfTab } = useMemo(() => {
@@ -515,6 +522,24 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
 
     const refByKey = new Map(refs.map((ref) => [tabRefKey(ref), ref]));
 
+    const atGroupEdge = (key: string, placement: "before" | "after") => {
+        const group = tabs.find((tab) => tab.id === key)?.group;
+        if (!group) return true;
+        const members = tabs.filter((tab) => tab.group === group);
+        return (placement === "before" ? members[0] : members[members.length - 1]).id === key;
+    };
+    // Beside a split tab means beside the whole group, so only its outer tabs take a drop.
+    const dropTarget = (key: string, placement: "before" | "after"): TabRef | undefined => {
+        if (!atGroupEdge(key, placement)) return undefined;
+        const pane = paneOfTab.get(key);
+        return refByKey.get(key) ?? (pane ? { id: pane.windowId } : undefined);
+    };
+    const leavingPane = (key: string) => {
+        const pane = refByKey.has(key) ? undefined : paneOfTab.get(key);
+        const win = pane ? windowsById[pane.windowId] : undefined;
+        return pane && win && paneToSeparate(win, getState(), pane.paneId) ? pane : undefined;
+    };
+
     const withSeparate = (win: WindowT, items: CtxItem[]): CtxItem[] => {
         const pane = paneToSeparate(win, getState());
         if (!pane) return items;
@@ -579,7 +604,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     if (ref.doc !== undefined) return fileMenu(win, ref.doc);
                     if (win.role === "agent") {
                         const agent = agentsById[agentPaneId(win) ?? ""];
-                        return agent ? withSeparate(win, agentMenu(agent)) : [];
+                        return agent ? withSeparate(win, agentTabMenu(agent)) : [];
                     }
                     return withSeparate(win, windowMenu(win));
                 }}
@@ -587,13 +612,22 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 addIcon={<IconPlus size={13} />}
                 addTitle="New tab"
                 canReorder={(sourceKey, targetKey, placement) => {
-                    const source = refByKey.get(sourceKey);
-                    const target = refByKey.get(targetKey);
+                    const leaving = leavingPane(sourceKey);
+                    const source = refByKey.get(sourceKey) ?? (leaving ? { id: leaving.windowId } : undefined);
+                    const target = dropTarget(targetKey, placement);
                     return !!source && !!target && workspaceTabDropAllowed(refs, source, target, placement);
                 }}
                 onReorder={(sourceKey, targetKey, placement) => {
+                    const target = dropTarget(targetKey, placement);
+                    const leaving = leavingPane(sourceKey);
+                    if (target && leaving) {
+                        const before = new Set(getState().windowsBySession[session.id]);
+                        cmd.separatePane(leaving.windowId, leaving.paneId);
+                        const separated = getState().windowsBySession[session.id]?.find((id) => !before.has(id));
+                        if (separated) cmd.reorderWindowTab(session.id, separated, target.id, placement);
+                        return;
+                    }
                     const source = refByKey.get(sourceKey);
-                    const target = refByKey.get(targetKey);
                     if (!source || !target) return;
                     // Beside another window's documents means beside that window.
                     if (source.doc !== undefined && target.doc !== undefined) cmd.reorderDocumentTab(source.id, source.doc, target.doc, placement);
@@ -689,8 +723,8 @@ const WindowLayer = memo(function WindowLayer({
                             {/* The pane is a surface, so it carries its own texture — and only
                                 while it is the one being read, so a screen off stage spends no
                                 WebGL context on a field nobody is looking at. The editor draws
-                                its own, on the code panel beside its file tree. */}
-                            {p.kind !== "editor" && <ShaderField preset="ambient" className="pane-field" enabled={paneShader && live && shown} />}
+                                its own, on the code panel beside its file tree, and the desk has none. */}
+                            {p.kind !== "editor" && p.kind !== "desk" && <PaneField enabled={paneShader && live && shown} />}
                             <ErrorBoundary label={`${p.kind} pane`}>
                                 {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
                             </ErrorBoundary>

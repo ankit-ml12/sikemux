@@ -124,6 +124,8 @@ export interface Agent {
     launchState?: "live" | "dormant";
     /** Exempts a resumable live agent from automatic idle sleeping. */
     keepAlive?: boolean;
+    /** The user named this agent, so titles from the provider no longer replace it. */
+    renamed?: boolean;
 }
 
 export interface PtyDirectCommand {
@@ -167,6 +169,8 @@ export interface PtyContext {
 }
 
 export type RailDensity = "comfortable" | "compact";
+/** Whether the agent rail lists the open project or every open project. */
+export type AgentRailScope = "project" | "all";
 
 /** What the diff tab is reviewing: a changed file, or a whole commit. */
 export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; rev: string; subject: string };

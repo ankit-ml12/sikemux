@@ -233,12 +233,14 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
     });
 }
 
-export function closeShownDeskTab(agentId: string): void {
+/** Closes the page, file or terminal the desk is showing; false when it shows nothing. */
+export function closeShownDeskTab(agentId: string): boolean {
     const state = getState();
     const items = deskItemsOf(state, agentId);
     const shown = shownDeskItem(state.desks[agentId] ?? EMPTY_DESK, items);
     const item = items.find((candidate) => isShown(candidate, shown, state.browserStrips[agentId] ?? EMPTY_STRIP));
     if (item) closeDeskItem(agentId, item);
+    return !!item;
 }
 
 export function cycleDeskTab(agentId: string, delta: number): void {
@@ -270,20 +272,18 @@ export function browserHistory(delta: number): boolean {
 export function focusBrowserAddress(): boolean {
     const agentId = activeBrowserAgentId();
     if (!agentId) return false;
-    const selector = `.desk[data-agent-id="${CSS.escape(agentId)}"] .browser-address`;
-    const focus = () => {
-        const input = document.querySelector<HTMLInputElement>(selector);
-        input?.focus();
-        input?.select();
-    };
     const hasPage = (getState().browserStrips[agentId]?.tabs.length ?? 0) > 0;
     openDesk(agentId);
     setDeskActive(agentId, BROWSER_ACTIVE);
-    if (hasPage) window.requestAnimationFrame(focus);
-    else
-        void browserApi
-            .newTab(agentId)
-            .then(() => window.setTimeout(focus, 50))
-            .catch(reportError("open browser address"));
+    if (!hasPage) void browserApi.newTab(agentId).catch(reportError("open browser address"));
+    mutate((d) => {
+        d.deskAddressOpen = agentId;
+    });
     return true;
+}
+
+export function closeDeskAddress(): void {
+    mutate((d) => {
+        d.deskAddressOpen = null;
+    });
 }

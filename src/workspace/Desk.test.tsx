@@ -1,12 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { browserApi, type BrowserSnapshot, type BrowserTab } from "../api/browser";
+import { browserApi, takeKeyboardFromPages, type BrowserSnapshot, type BrowserTab } from "../api/browser";
 import { occludeNativeViews, setNativeViewHoles, useStageMotion } from "../state/nativeViews";
 import { useToasts } from "../state/toast";
 import { getState, setState } from "../state/store";
 import { deskEditorId } from "../state/desks";
 import { taskPtyBindings } from "../tasks/nativeRuntime";
 import type { Session, Window as WindowT } from "../state/types";
+import * as cmd from "../state/commands";
 import { DeskHost } from "./Desk";
 
 vi.mock("../editor/EditorPane", () => ({
@@ -25,6 +26,7 @@ vi.mock("../api/browser", async () => {
     const actual = await vi.importActual<typeof import("../api/browser")>("../api/browser");
     return {
         ...actual,
+        takeKeyboardFromPages: vi.fn().mockResolvedValue(undefined),
         browserApi: {
             snapshot: vi.fn(),
             newTab: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock("../api/browser", async () => {
             switchTab: vi.fn(),
             closeTab: vi.fn(),
             navigate: vi.fn(),
+            suggest: vi.fn(),
             back: vi.fn(),
             forward: vi.fn(),
             reload: vi.fn(),
@@ -109,6 +112,7 @@ beforeEach(() => {
     setState({ browserStrips: {}, deskRestores: {}, desks: {}, editorViews: {} } as never);
     vi.mocked(browserApi.snapshot).mockResolvedValue(snapshot);
     vi.mocked(browserApi.subscribeTabs).mockResolvedValue(vi.fn());
+    vi.mocked(browserApi.suggest).mockResolvedValue({ completion: null, pages: [], searches: false, searchUrl: "" });
     for (const operation of [
         browserApi.newTab,
         browserApi.closeAgent,
@@ -175,8 +179,55 @@ describe("DeskHost", () => {
 
         const address = screen.getByRole("textbox", { name: "Address and search" });
         fireEvent.change(address, { target: { value: "openai.com" } });
-        fireEvent.submit(address.closest("form")!);
+        fireEvent.keyDown(address, { key: "Enter" });
         expect(browserApi.navigate).toHaveBeenCalledWith("agent-one", "openai.com");
+    });
+
+    /* A page is a webview of its own and keeps the keyboard it had, so the app's
+       webview has to take it back before the field can have it. */
+    it("opens the address over the middle of the page on the address shortcut, with the keyboard taken from the page", async () => {
+        renderPane();
+        const agentPane = { type: "pane", id: "agent-one", cwd: "/repo", kind: "agent", title: "codex" };
+        const deskPane = { type: "pane", id: "pane-desk", cwd: "/repo", kind: "desk", title: "desk" };
+        setState({
+            sessions: { project: session },
+            activeSessionId: "project",
+            windows: { window: { ...win, root: { type: "split", id: "split", dir: "row", children: [agentPane, deskPane], sizes: [50, 50] } } },
+        } as never);
+        await announceStrip(snapshot);
+        const toolbarField = screen.getByRole("textbox", { name: "Address and search" });
+
+        act(() => {
+            expect(cmd.focusBrowserAddress()).toBe(true);
+        });
+
+        const panel = await screen.findByRole("dialog", { name: "Open address" });
+        const field = within(panel).getByRole("textbox", { name: "Address and search" });
+        await waitFor(() => expect(field).toHaveFocus());
+        expect(takeKeyboardFromPages).toHaveBeenCalled();
+        expect(browserApi.newTab).not.toHaveBeenCalled();
+        expect(toolbarField).toHaveValue("");
+        expect(toolbarField).not.toHaveAttribute("placeholder");
+        await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", expect.objectContaining({ dim: 0.2 })));
+
+        fireEvent.keyDown(field, { key: "Escape" });
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open address" })).not.toBeInTheDocument());
+        expect(getState().deskAddressOpen).toBeNull();
+        expect(toolbarField).toHaveValue("https://example.com");
+        await waitFor(() => expect(vi.mocked(browserApi.setBounds).mock.lastCall?.[1]).not.toHaveProperty("dim"));
+    });
+
+    it("lets go of the address on Escape and drops what was typed", async () => {
+        renderPane();
+        await announceStrip(snapshot);
+        const address = screen.getByRole("textbox", { name: "Address and search" });
+        address.focus();
+        fireEvent.change(address, { target: { value: "half-typ" } });
+
+        fireEvent.keyDown(address, { key: "Escape" });
+
+        expect(address).not.toHaveFocus();
+        expect(address).toHaveValue("https://example.com");
     });
 
     it("marks the tab the agent is working in with its colour and icon, beside the site's", async () => {
@@ -230,8 +281,9 @@ describe("DeskHost", () => {
         renderPane();
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenCalledWith("agent-one", placed));
 
+        const toasts = {};
         act(() =>
-            setNativeViewHoles([
+            setNativeViewHoles(toasts, [
                 { x: 600, y: 380, width: 200, height: 34, radius: 13 },
                 { x: 10, y: 380, width: 200, height: 34, radius: 13 },
             ]),
@@ -243,7 +295,7 @@ describe("DeskHost", () => {
             }),
         );
 
-        act(() => setNativeViewHoles([]));
+        act(() => setNativeViewHoles(toasts, []));
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", placed));
     });
 
@@ -312,7 +364,7 @@ describe("DeskHost", () => {
         const back = await screen.findByRole("button", { name: "Back" });
         expect(back).toBeEnabled();
         expect(screen.getByRole("button", { name: "Forward" })).toBeDisabled();
-        expect(back.closest("form")).toHaveClass("loading");
+        expect(back.closest(".browser-toolbar")).toHaveClass("loading");
         fireEvent.click(back);
         expect(browserApi.back).toHaveBeenCalledWith("agent-one");
     });

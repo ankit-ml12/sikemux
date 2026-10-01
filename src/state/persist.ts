@@ -90,6 +90,7 @@ const PERSISTED_KEYS = [
     "customThemes",
     "uiTextScale",
     "paneShader",
+    "paneImage",
     "terminalFontSize",
     "chatTextScale",
     "editorTextScale",
@@ -110,6 +111,8 @@ const PERSISTED_KEYS = [
     "voiceDictation",
     "notificationsIntroduced",
     "railDensity",
+    "agentRailAllAgents",
+    "agentRailScope",
     "onboardingComplete",
     "lastSeenVersion",
     "customCommands",
@@ -120,6 +123,7 @@ const PERSISTED_KEYS = [
     "providerProfiles",
     "selectedProviderProfileIds",
     "defaultAgentPermissionMode",
+    "lastAgentType",
     "languageServerTrust",
 ] as const satisfies readonly (keyof StoreState)[];
 type PersistedKey = (typeof PERSISTED_KEYS)[number];
@@ -145,6 +149,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         customThemes: s.customThemes,
         uiTextScale: s.uiTextScale,
         paneShader: s.paneShader,
+        paneImage: s.paneImage,
         terminalFontSize: s.terminalFontSize,
         chatTextScale: s.chatTextScale,
         editorTextScale: s.editorTextScale,
@@ -165,6 +170,8 @@ function packPrefs(s: StoreState): PersistedPrefs {
         voiceDictation: s.voiceDictation,
         notificationsIntroduced: s.notificationsIntroduced,
         railDensity: s.railDensity,
+        agentRailAllAgents: s.agentRailAllAgents,
+        agentRailScope: s.agentRailScope,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
         customCommands: s.customCommands,
@@ -175,6 +182,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         providerProfiles,
         selectedProviderProfileIds: normaliseProviderProfileSelection(s.selectedProviderProfileIds, providerProfiles, {}),
         defaultAgentPermissionMode: s.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
+        lastAgentType: s.lastAgentType,
         languageServerTrust: s.languageServerTrust,
     };
 }
@@ -363,6 +371,7 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (model) agent.model = model;
     if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
     if (value.keepAlive === true) agent.keepAlive = true;
+    if (value.renamed === true) agent.renamed = true;
     return agent;
 }
 
@@ -386,6 +395,7 @@ function persistedAgent(agent: Agent): PersistedAgent {
         ...(agent.model ? { model: agent.model } : {}),
         ...(agent.effort ? { effort: agent.effort } : {}),
         ...(agent.keepAlive ? { keepAlive: true } : {}),
+        ...(agent.renamed ? { renamed: true } : {}),
     };
 }
 
@@ -795,10 +805,8 @@ export function applyHydrate(raw: string): HydrationResult {
                 role: deriveRole(row),
                 activePaneId: ids.panes.includes(row.activePaneId) ? row.activePaneId : ids.panes[0],
             };
-            if (sessions[sid].kind === "project" && restored.role === "term") {
-                restored.name = "Terminal";
-                delete restored.fixed;
-            }
+            if (sessions[sid].kind === "project") delete restored.fixed;
+            if (sessions[sid].kind === "project" && restored.role === "term") restored.name = "Terminal";
             windows[row.id] = restored;
             windowsBySession[sid].push(row.id);
         }
@@ -962,6 +970,7 @@ export function applyHydrate(raw: string): HydrationResult {
         customThemes: Array.isArray(prefs.customThemes) ? prefs.customThemes.filter(isTheme) : cur.customThemes,
         uiTextScale: typeof prefs.uiTextScale === "number" && [1, 1.1, 1.25].includes(prefs.uiTextScale) ? prefs.uiTextScale : cur.uiTextScale,
         paneShader: typeof prefs.paneShader === "boolean" ? prefs.paneShader : cur.paneShader,
+        paneImage: typeof prefs.paneImage === "string" || prefs.paneImage === null ? prefs.paneImage : cur.paneImage,
         terminalFontSize: typeof prefs.terminalFontSize === "number" ? clampTerminalFontSize(prefs.terminalFontSize) : cur.terminalFontSize,
         chatTextScale: typeof prefs.chatTextScale === "number" ? clampChatTextScale(prefs.chatTextScale) : cur.chatTextScale,
         editorTextScale: typeof prefs.editorTextScale === "number" ? clampEditorTextScale(prefs.editorTextScale) : cur.editorTextScale,
@@ -988,6 +997,8 @@ export function applyHydrate(raw: string): HydrationResult {
         voiceDictation: prefs.voiceDictation === true,
         notificationsIntroduced: prefs.notificationsIntroduced === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
+        agentRailAllAgents: prefs.agentRailAllAgents === true,
+        agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"
                 ? prefs.onboardingComplete
@@ -1024,6 +1035,7 @@ export function applyHydrate(raw: string): HydrationResult {
                 : prefs.defaultAgentPermissionMode === "bypass"
                   ? "bypass"
                   : "workspace-write",
+        lastAgentType: AGENT_TYPES.has(prefs.lastAgentType as AgentType) ? (prefs.lastAgentType as AgentType) : null,
         languageServerTrust: normaliseLanguageServerTrust(prefs.languageServerTrust),
     });
     pruneOnDemandWindows();

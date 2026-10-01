@@ -2,6 +2,8 @@ mod acp;
 mod activity;
 mod agent_detection;
 mod agents;
+#[cfg(target_os = "macos")]
+mod app_menu;
 mod autopsy;
 mod browser;
 mod cli_auth;
@@ -9,9 +11,12 @@ pub mod cli_client;
 mod cli_install;
 mod cli_protocol;
 mod cli_server;
+mod deep_link;
 mod diff;
+mod document_preview;
 mod error;
 mod external;
+mod file_serving;
 mod files;
 mod fs;
 mod fs_watch;
@@ -23,6 +28,7 @@ mod lsp;
 mod markdown;
 pub mod observability;
 mod plugins;
+mod preview;
 mod pty;
 mod release_credits;
 mod search;
@@ -101,7 +107,10 @@ pub fn run() {
     system::warm_login_shell_environment();
     system::import_from_login_shell(&plugins::shell_variables());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu::build);
+    builder
         // Must be the first plugin: subsequent GUI launches focus the primary
         // process instead of creating a second workspace/CLI broker.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -157,6 +166,7 @@ pub fn run() {
             {
                 use tauri::Manager;
                 autopsy::forget_web_content_pid();
+                document_preview::clear(webview.app_handle());
                 if let Some(watchdog) = webview.try_state::<UiWatchdogState>() {
                     watchdog.suspend();
                 }
@@ -210,10 +220,13 @@ pub fn run() {
             }
             Ok(())
         })
+        .manage(deep_link::DeepLinks::default())
         .manage(PtyManager::default())
         .manage(AcpManager::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
+        .manage(preview::Previews::default())
+        .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
             acp::acp_prompt,
@@ -243,6 +256,7 @@ pub fn run() {
             browser::browser_switch_tab,
             browser::browser_close_tab,
             browser::browser_navigate,
+            browser::browser_suggest,
             browser::browser_back,
             browser::browser_forward,
             browser::browser_reload,
@@ -268,7 +282,9 @@ pub fn run() {
             agents::models::agent_models,
             agents::usage::agent_usage,
             agents::sessions::agent_sessions,
+            agents::sessions::recent::agent_recent_sessions,
             agents::sessions::context::agent_session_context,
+            agents::sessions::rename::agent_session_rename,
             agents::sessions::live_agent_sessions,
             agents::watch::agent_sessions_watch_start,
             agents::watch::agent_sessions_watch_stop,
@@ -281,7 +297,10 @@ pub fn run() {
             fs::read_file,
             fs::read_file_versioned,
             fs::read_text_file_limited,
-            fs::read_file_base64,
+            fs::open_in_default_app,
+            preview::preview_file,
+            document_preview::document_preview_show,
+            document_preview::document_preview_hide,
             fs::write_file,
             fs::write_file_versioned,
             fs::write_file_new,
@@ -395,6 +414,7 @@ pub fn run() {
             cli_server::cli_open_result,
             cli_server::cli_editor_tabs_closed,
             cli_server::cli_runtime_info,
+            deep_link::take_deep_links,
             cli_install::cli_install_status,
             cli_install::cli_install,
             voice::voice_status,
@@ -407,6 +427,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building sikemux")
         .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                deep_link::receive(app_handle, urls);
+            }
             // The window-close and reload hooks above only fire on their
             // specific events. An in-app update relaunches via the process
             // plugin's `relaunch()` → `app.restart()`, which raises

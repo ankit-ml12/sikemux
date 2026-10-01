@@ -4,13 +4,16 @@ import type { AgentInfo, AgentUsage, AgentUsageWindow } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import * as cmd from "../state/commands";
+import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { type ResourceHandle, useResource, useResourceEnabled } from "../state/resources";
-import { agentCatalogR, agentSessionsR, agentUsageR } from "../state/resources.defs";
+import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClose, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
+import { AgentIcon, IconClose, IconInbox, IconPlus, IconRefresh, IconSearch } from "../ui/Icons";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
+import { AgentTitleInput } from "../agents/AgentTitleInput";
+import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
 import { Panel, PanelHeader } from "../ui/Panel";
@@ -18,22 +21,16 @@ import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef }
 import { CountUp } from "../ui/RollingText";
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
+import { AllProjectsAgents } from "./AllProjectsAgents";
+import { RecentChatList } from "./RecentChatList";
+import { ScopeTrack } from "./ScopeTrack";
+import { useRecentChats } from "./useRecentChats";
 
-const RECENTS_PAGE = 12;
 const USAGE_REFRESH_MS = 5 * 60_000;
 type UsageAgentType = "claude" | "codex";
 
 function isUsageAgent(type: AgentType | null): type is UsageAgentType {
     return type === "claude" || type === "codex";
-}
-
-function ago(unixSecs: number): string {
-    if (!unixSecs) return "";
-    const d = Math.max(0, Date.now() / 1000 - unixSecs);
-    if (d < 90) return "now";
-    if (d < 3600) return `${Math.round(d / 60)}m`;
-    if (d < 86400) return `${Math.round(d / 3600)}h`;
-    return `${Math.round(d / 86400)}d`;
 }
 
 const persistedSessionIdOf = (a: Agent) => a.resumeId ?? a.id;
@@ -78,7 +75,6 @@ function arriveRow(wrap: HTMLElement): void {
     );
     animate(wrap.querySelector(".agent-row"), [{ transform: "translateX(-6px)" }, { transform: "none" }], { duration: 190 });
 }
-const sessionKey = (type: AgentType, id: string) => `${type}:${id}`;
 
 export const AgentRail = memo(function AgentRail() {
     const density = useStore((s) => s.railDensity);
@@ -114,10 +110,16 @@ export function AgentRailBody() {
     usageRefreshRef.current = { claude: claudeUsage.refresh, codex: codexUsage.refresh };
 
     const [type, setType] = useState<AgentType | null>(null);
-    const [visibleRecents, setVisibleRecents] = useState(RECENTS_PAGE);
+    const allAgents = useStore((s) => s.agentRailAllAgents);
+    const scope = useStore((s) => s.agentRailScope);
+    const sessions = useStore((s) => s.sessions);
+    const sessionOrder = useStore((s) => s.sessionOrder);
+    const agentActivity = useStore((s) => s.agentActivity);
     // Recent chats live here and nowhere else, so the search for them does too.
     const [query, setQuery] = useState("");
     const [searchOpen, setSearchOpen] = useState(false);
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
     const searchRef = useRef<HTMLInputElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const selectedType = useMemo(() => {
@@ -151,48 +153,57 @@ export function AgentRailBody() {
     const cwd = session?.cwd ?? "";
 
     const selectedProvider = availableAgents.find((agent) => agent.type === selectedType);
-    const recents = useResourceEnabled(
-        isProject && !!cwd && selectedType != null,
-        agentSessionsR,
-        selectedType ?? "claude",
-        isProject ? cwd : "",
-        selectedProvider?.configPath ?? undefined,
-    );
-    const disk = isProject ? (recents.data ?? []) : [];
     const selectedUsage = selectedType === "claude" ? claudeUsage : selectedType === "codex" ? codexUsage : null;
     const usagePeaks = {
         claude: usagePeak(claudeUsage.data),
         codex: usagePeak(codexUsage.data),
     };
 
-    // Reset the reveal window when the recents list switches out from under us.
-    useEffect(() => {
-        setVisibleRecents(RECENTS_PAGE);
-    }, [selectedType, cwd, query]);
+    const projectCwds = useMemo(
+        () =>
+            sessionOrder
+                .map((id) => sessions[id])
+                .filter((entry) => entry?.kind === "project" && entry.cwd)
+                .map((entry) => entry.cwd),
+        [sessionOrder, sessions],
+    );
+    const openChats = useMemo(() => Object.values(agentsById).map((agent) => ({ agent: agent.type, id: persistedSessionIdOf(agent) })), [agentsById]);
+    const recentProviders = useMemo(
+        () => (allAgents ? availableAgents : availableAgents.filter((agent) => agent.type === selectedType)),
+        [allAgents, availableAgents, selectedType],
+    );
+    const recentProjects = useMemo(() => (scope === "all" ? projectCwds : cwd ? [cwd] : []), [scope, projectCwds, cwd]);
+    const needle = query.trim().toLowerCase();
+    const recent = useRecentChats({
+        enabled: isProject && recentProviders.length > 0 && recentProjects.length > 0,
+        providers: recentProviders,
+        projects: recentProjects,
+        open: openChats,
+        query: needle,
+    });
+    const { hasMore: hasMoreRecents, loadMore: loadMoreRecents } = recent;
 
-    // onRailScroll only reveals more once the list overflows. If the first page
-    // doesn't reach the bottom there's no scrollbar, so the rest would never load
-    // and the rail sits half-empty. Reveal more until it fills — and re-check when
-    // the rail is resized taller.
+    // Scrolling near the bottom asks for the next page. If a page does not
+    // reach the bottom there is no scrollbar, so keep asking until the rail
+    // fills, and check again when the rail is resized taller.
     useLayoutEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
         const fill = () => {
-            if (el.scrollHeight <= el.clientHeight && visibleRecents < disk.length) {
-                setVisibleRecents((v) => Math.min(v + RECENTS_PAGE, disk.length));
-            }
+            if (el.scrollHeight <= el.clientHeight && hasMoreRecents) loadMoreRecents();
         };
         fill();
         const ro = new ResizeObserver(fill);
         ro.observe(el);
         return () => ro.disconnect();
-    }, [visibleRecents, disk.length, cwd, selectedType]);
+    }, [recent.chats.length, hasMoreRecents, loadMoreRecents]);
 
     const currentSession = useRef("");
     currentSession.current = session?.id ?? "";
     const closedRowBoxes = useRef(new Map<string, Box>());
     const leaveRow = useMemo(() => rowLeaving(currentSession, closedRowBoxes.current), []);
-    const seen = useRef<{ session?: string; active?: string; ids?: Set<string>; type?: AgentType | null; stagger?: boolean }>({});
+    const view = `${allAgents ? "all" : (selectedType ?? "")}:${scope}`;
+    const seen = useRef<{ session?: string; active?: string; ids?: Set<string>; view?: string; stagger?: boolean }>({});
     /*
      * The rail's motion, read from what was just drawn: the selection glides
      * between open agents, a new agent opens its slot, and a provider switch
@@ -221,7 +232,7 @@ export function AgentRailBody() {
             }
         }
         closedRowBoxes.current.clear();
-        if (last.type !== undefined && last.type !== selectedType) {
+        if (last.view !== undefined && last.view !== view) {
             animate(
                 scroll?.parentElement?.querySelector(".agent-header-name"),
                 [
@@ -246,7 +257,7 @@ export function AgentRailBody() {
             );
             last.stagger = false;
         }
-        seen.current = { session: session?.id, active, ids, type: selectedType, stagger: last.stagger };
+        seen.current = { session: session?.id, active, ids, view, stagger: last.stagger };
     });
 
     if (!session) return null;
@@ -261,25 +272,22 @@ export function AgentRailBody() {
         backgroundById,
     );
 
-    const activeOpenKeys = new Set(opens.map((a) => sessionKey(a.type, persistedSessionIdOf(a))));
-    const needle = query.trim().toLowerCase();
-    const recentAll = disk.filter((d) => {
-        if (!selectedType) return false;
-        if (needle && !d.title.toLowerCase().includes(needle)) return false;
-        const k = sessionKey(selectedType, d.id);
-        return !activeOpenKeys.has(k);
-    });
-    const recentDisplay = recentAll.slice(0, visibleRecents);
-    const hasMoreRecents = recentDisplay.length < recentAll.length;
+    const menuAgent = menu ? agentsById[menu.agentId] : undefined;
 
     const onRailScroll = () => {
         if (!hasMoreRecents) return;
         const el = scrollRef.current;
-        if (!el) return;
-        if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
-            setVisibleRecents((v) => Math.min(v + RECENTS_PAGE, recentAll.length));
-        }
+        if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) loadMoreRecents();
     };
+
+    const waitingElsewhere = agentsAwaitingInput({
+        sessionOrder,
+        sessions,
+        windows: windowsById,
+        windowsBySession,
+        agents: agentsById,
+        agentActivity,
+    }).filter((entry) => entry.sessionId !== session.id).length;
 
     const toggleSearch = () => {
         setQuery("");
@@ -298,9 +306,10 @@ export function AgentRailBody() {
                     usagePeaks={usagePeaks}
                     plan={selectedUsage?.data?.plan}
                     canOpenPalette={catalogAgents.length > 0}
+                    allAgents={allAgents}
                 />
                 <div className="agent-empty">agents are project-scoped</div>
-                {isUsageAgent(selectedType) && selectedUsage && (
+                {!allAgents && isUsageAgent(selectedType) && selectedUsage && (
                     <AgentUsagePanel
                         provider={selectedType}
                         usage={selectedUsage}
@@ -311,7 +320,7 @@ export function AgentRailBody() {
         );
     }
 
-    const noContent = opens.length === 0 && recentDisplay.length === 0;
+    const noContent = opens.length === 0 && recent.chats.length === 0 && recent.status !== "loading";
 
     return (
         <>
@@ -324,7 +333,9 @@ export function AgentRailBody() {
                 usagePeaks={usagePeaks}
                 plan={selectedUsage?.data?.plan}
                 canOpenPalette={catalogAgents.length > 0}
+                allAgents={allAgents}
             />
+            <ScopeTrack scope={scope} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
             {searchOpen && (
                 <div className="rail-search">
                     <IconSearch size={12} />
@@ -343,7 +354,26 @@ export function AgentRailBody() {
                 </div>
             )}
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
-                {noContent && (
+                {scope === "all" && <AllProjectsAgents />}
+                {scope === "project" && selectedType && (
+                    <button
+                        type="button"
+                        className="agent-row agent-new"
+                        onClick={() =>
+                            allAgents
+                                ? cmd.openAgentPalette()
+                                : cmd.addAgent(selectedType, undefined, undefined, {
+                                      profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
+                                      detectedExecutablePath: selectedProvider?.command,
+                                  })
+                        }>
+                        <span className="agent-glyph">
+                            <IconPlus size={15} />
+                        </span>
+                        <span className="agent-title">New chat</span>
+                    </button>
+                )}
+                {scope === "project" && noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"
                             ? "detecting agent CLIs..."
@@ -355,19 +385,41 @@ export function AgentRailBody() {
                     </div>
                 )}
 
-                {opens.length > 0 && (
+                {scope === "project" && opens.length > 0 && (
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Open" rule />
                         {opens.map((a) => {
                             const active = activeAgentId({ windows: windowsById }, session) === a.id;
+                            const glyph = (
+                                <span className={`agent-glyph ${a.type}`}>
+                                    <AgentIcon type={a.type} size={20} />
+                                </span>
+                            );
                             return (
                                 <div key={a.id} className="agent-row-wrap" data-agent-id={a.id} data-session={session.id} ref={leaveRow}>
-                                    <button className={`agent-row${active ? " active" : ""}`} onClick={() => cmd.selectAgent(a.id)}>
-                                        <span className={`agent-glyph ${a.type}`}>
-                                            <AgentIcon type={a.type} size={20} />
-                                        </span>
-                                        <span className="agent-title">{a.title}</span>
-                                    </button>
+                                    {renamingId === a.id ? (
+                                        <div className={`agent-row${active ? " active" : ""}`}>
+                                            {glyph}
+                                            <AgentTitleInput
+                                                title={a.title}
+                                                className="agent-title"
+                                                onSave={(title) => cmd.renameAgent(a.id, title)}
+                                                onDone={() => setRenamingId(null)}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <button
+                                            className={`agent-row${active ? " active" : ""}`}
+                                            onClick={() => cmd.selectAgent(a.id)}
+                                            onDoubleClick={() => setRenamingId(a.id)}
+                                            onContextMenu={(event) => {
+                                                event.preventDefault();
+                                                setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
+                                            }}>
+                                            {glyph}
+                                            <span className="agent-title">{a.title}</span>
+                                        </button>
+                                    )}
                                     <AgentStateMark state={activityById[a.id]?.state} background={(backgroundById[a.id] ?? 0) > 0} />
                                     <Tooltip label={`Close ${a.title}`}>
                                         <button type="button" className="row-x" aria-label={`Close ${a.title}`} onClick={() => cmd.closeAgent(a.id)}>
@@ -380,34 +432,24 @@ export function AgentRailBody() {
                     </Panel>
                 )}
 
-                <AgentAttentionGroup />
-
-                {selectedType && recentDisplay.length > 0 && (
-                    <Panel variant="group" className="agent-group">
-                        <PanelHeader label="Recent" rule />
-                        {recentDisplay.map((s) => (
-                            <button
-                                key={s.id}
-                                className="agent-row recent"
-                                onClick={() =>
-                                    cmd.addAgent(selectedType, s.id, s.title, {
-                                        profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
-                                        detectedExecutablePath: selectedProvider?.command,
-                                    })
-                                }>
-                                <span className={`agent-glyph ${selectedType}`}>
-                                    <AgentIcon type={selectedType} size={20} />
-                                </span>
-                                <span className="agent-title">{s.title}</span>
-                                <span className="agent-ago">{ago(s.mtime)}</span>
-                            </button>
-                        ))}
-                    </Panel>
+                {menu && menuAgent && (
+                    <AgentContextMenu
+                        agent={menuAgent}
+                        session={session}
+                        x={menu.x}
+                        y={menu.y}
+                        onClose={() => setMenu(null)}
+                        onRename={() => setRenamingId(menuAgent.id)}
+                    />
                 )}
+
+                {scope === "project" && <AgentAttentionGroup />}
+
+                <RecentChatList recent={recent} providers={availableAgents} />
             </div>
             {/* The rail's footer: plan limits sit under the agents they apply
                 to, out of the way of the list you came here to use. */}
-            {isUsageAgent(selectedType) && selectedUsage && (
+            {!allAgents && isUsageAgent(selectedType) && selectedUsage && (
                 <AgentUsagePanel provider={selectedType} usage={selectedUsage} label={availableAgents.find((a) => a.type === selectedType)?.label} />
             )}
         </>
@@ -594,6 +636,7 @@ function AgentHeader({
     usagePeaks,
     plan,
     canOpenPalette,
+    allAgents,
 }: {
     agents: AgentInfo[];
     type: AgentType | null;
@@ -603,12 +646,21 @@ function AgentHeader({
     usagePeaks: Partial<Record<UsageAgentType, number | undefined>>;
     plan?: string | null;
     canOpenPalette: boolean;
+    allAgents: boolean;
 }) {
+    const chooseShortcut = useShortcutLabel("agent.choose");
     const label = agents.find((a) => a.type === type)?.label ?? type;
     return (
         <div className="agent-header">
             <div className="agent-header-top">
-                {type ? (
+                {allAgents ? (
+                    <span className="agent-header-name">
+                        <span className="agent-glyph">
+                            <IconInbox size={16} />
+                        </span>
+                        <span className="agent-header-label">All agents</span>
+                    </span>
+                ) : type ? (
                     <span className="agent-header-name">
                         <span className={`agent-glyph ${type}`}>
                             <AgentIcon type={type} size={16} />
@@ -625,11 +677,12 @@ function AgentHeader({
                             <IconSearch size={15} />
                         </button>
                     </Tooltip>
-                    <Tooltip label={type ? `new ${label} agent — ⌥N` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}>
+                    <Tooltip
+                        label={type ? withShortcut("Choose agent", chooseShortcut) : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}>
                         <button
                             className="agent-header-action"
                             disabled={!type && !canOpenPalette}
-                            aria-label={type ? `New ${label} agent` : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}
+                            aria-label={type ? "Choose agent" : canOpenPalette ? "Review agent setup" : "No agent CLI detected"}
                             onClick={() => {
                                 if (type || canOpenPalette) cmd.openAgentPalette();
                             }}>
@@ -640,6 +693,23 @@ function AgentHeader({
                 </div>
             </div>
             <div className="agent-header-types" role="tablist" aria-label="Agent provider">
+                {agents.length > 1 && (
+                    <Tooltip label="All agents">
+                        <button
+                            role="tab"
+                            aria-selected={allAgents}
+                            tabIndex={allAgents ? 0 : -1}
+                            onKeyDown={navigateTabs}
+                            className={`agent-header-btn all-agents${allAgents ? " active" : ""}`}
+                            aria-label="All agents"
+                            onClick={(event) => {
+                                event.currentTarget.focus();
+                                cmd.setAgentRailAllAgents(true);
+                            }}>
+                            <IconInbox size={17} />
+                        </button>
+                    </Tooltip>
+                )}
                 {agents.map((a) => (
                     <Tooltip
                         key={a.type}
@@ -650,14 +720,15 @@ function AgentHeader({
                         }>
                         <button
                             role="tab"
-                            aria-selected={type === a.type}
-                            tabIndex={type === a.type ? 0 : -1}
+                            aria-selected={!allAgents && type === a.type}
+                            tabIndex={!allAgents && type === a.type ? 0 : -1}
                             onKeyDown={navigateTabs}
-                            className={`agent-header-btn ${a.type}${type === a.type ? " active" : ""}`}
+                            className={`agent-header-btn ${a.type}${!allAgents && type === a.type ? " active" : ""}`}
                             aria-label={a.label}
                             onClick={(event) => {
                                 event.currentTarget.focus();
                                 setType(a.type);
+                                cmd.setAgentRailAllAgents(false);
                             }}>
                             <AgentIcon type={a.type} size={18} />
                         </button>

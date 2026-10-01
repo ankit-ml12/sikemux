@@ -19,6 +19,7 @@ import type { HeldRelease, ReleaseCredits } from "../api/releases";
 import type {
     Agent,
     AgentPermissionMode,
+    AgentType,
     Desk,
     DeskView,
     EditorPaneView,
@@ -31,6 +32,7 @@ import type {
     ProviderProfileSelection,
     RecentEntry,
     RailDensity,
+    AgentRailScope,
     DiffTarget,
     Session,
     SessionSwitcherView,
@@ -55,6 +57,8 @@ export interface DomainState {
     customThemes: Theme[];
     uiTextScale: number;
     paneShader: boolean;
+    /** A picture on disk that panes show, dithered, in place of the grain. */
+    paneImage: string | null;
     terminalFontSize: number;
     chatTextScale: number;
     editorTextScale: number;
@@ -78,6 +82,9 @@ export interface DomainState {
     voiceDictation: boolean;
     notificationsIntroduced: boolean;
     railDensity: RailDensity;
+    /** The agent rail shows every CLI's chats instead of one provider's. */
+    agentRailAllAgents: boolean;
+    agentRailScope: AgentRailScope;
     onboardingComplete: boolean;
     lastSeenVersion: string;
     customCommands: CustomCommand[];
@@ -89,6 +96,8 @@ export interface DomainState {
     providerProfiles: ProviderProfile[];
     selectedProviderProfileIds: ProviderProfileSelection;
     defaultAgentPermissionMode: AgentPermissionMode;
+    /** The agent ⌘N starts: whichever was launched last. */
+    lastAgentType: AgentType | null;
     /** Whether each project, by root path, may start its language servers. A project absent here has not been asked. */
     languageServerTrust: Record<string, boolean>;
 }
@@ -125,6 +134,8 @@ export interface ViewState {
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     newTabPaletteOpen: boolean;
+    /** The agent whose desk has its address open in the middle of the page, from ⌘L. */
+    deskAddressOpen: string | null;
     settingsOpen: boolean;
     settingsPage: SettingsPageId;
     zoomedPaneId: string | null;
@@ -211,6 +222,7 @@ export const useStore = create<StoreState>(() => {
         customThemes: [],
         uiTextScale: 1,
         paneShader: true,
+        paneImage: null,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
         editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,
@@ -232,6 +244,8 @@ export const useStore = create<StoreState>(() => {
         voiceDictation: false,
         notificationsIntroduced: false,
         railDensity: "comfortable",
+        agentRailAllAgents: false,
+        agentRailScope: "project",
         onboardingComplete: false,
         lastSeenVersion: "",
         customCommands: [],
@@ -242,6 +256,7 @@ export const useStore = create<StoreState>(() => {
         providerProfiles: DEFAULT_PROVIDER_PROFILES.map((profile) => ({ ...profile })),
         selectedProviderProfileIds: { ...DEFAULT_PROVIDER_PROFILE_SELECTION },
         defaultAgentPermissionMode: "bypass",
+        lastAgentType: null,
         languageServerTrust: {},
 
         home: "",
@@ -251,6 +266,7 @@ export const useStore = create<StoreState>(() => {
         agentPaletteOpen: false,
         filePaletteOpen: false,
         newTabPaletteOpen: false,
+        deskAddressOpen: null,
         settingsOpen: false,
         settingsPage: "general",
         zoomedPaneId: null,

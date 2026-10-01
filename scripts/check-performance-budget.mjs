@@ -133,8 +133,8 @@ const budgets = [
     // the transcript animates new messages and tool runs opening and closing.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 93_000,
-    gzip: 29_700,
+    raw: 95_800,
+    gzip: 30_400,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -161,8 +161,8 @@ const budgets = [
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_340_000,
-    gzip: 1_070_000,
+    raw: 3_380_000,
+    gzip: 1_085_000,
   },
   {
     label: "opt-in shader renderer",
@@ -185,8 +185,8 @@ const budgets = [
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     label: "ACP chat CSS",
     pattern: /^AgentSurface-.*\.css$/,
-    raw: 44_000,
-    gzip: 8_300,
+    raw: 45_000,
+    gzip: 8_400,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
@@ -195,8 +195,8 @@ const budgets = [
     // glyph is actually rendered. Plugin panes bring their own sheets.
     label: "application CSS",
     pattern: /^index-.*\.css$/,
-    raw: 216_000,
-    gzip: 37_800,
+    raw: 220_000,
+    gzip: 38_500,
   },
   {
     label: "settings lazy CSS",
