@@ -17,6 +17,15 @@ export function sentPrompts(messages: readonly ChatMessage[], queued: readonly s
     return prompts;
 }
 
+/** The last message sent, words and files together, so a turn that failed can be sent again. */
+export function lastPrompt(messages: readonly ChatMessage[]): { text: string; paths: string[] } | null {
+    const message = messages.findLast((candidate) => candidate.role === "user");
+    if (!message) return null;
+    const text = message.parts.map((part) => (part.kind === "text" ? part.text : "")).join("");
+    const paths = message.attachments ?? [];
+    return text.trim() || paths.length > 0 ? { text, paths } : null;
+}
+
 /** Which sent message the composer is showing, and what was typed before browsing began. */
 export interface HistoryPosition {
     index: number;
