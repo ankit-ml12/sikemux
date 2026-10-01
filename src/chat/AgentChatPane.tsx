@@ -310,6 +310,8 @@ export function AgentChatPane({
                                                     live={displayState.running && item.index === displayState.messages.length - 1}
                                                     copyable={meta.text}
                                                     rate={meta.rate}
+                                                    at={meta.at}
+                                                    took={meta.took}
                                                 />
                                             </div>
                                         );
