@@ -7,6 +7,7 @@ import {
     useLayoutEffect,
     useRef,
     useState,
+    type MouseEvent as ReactMouseEvent,
     type PointerEvent as ReactPointerEvent,
     type ReactNode,
     type RefObject,
@@ -30,6 +31,9 @@ import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
 import { isPluginKind, pluginIdOf } from "../plugins/kinds";
 import { leavingRail } from "./railMotion";
+import { TreeContextMenu, type CtxItem } from "./FileTree";
+import { PROJECT_SPACES, shownProjects } from "../state/projectSpaces";
+import type { SpaceView } from "../state/types";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -113,6 +117,7 @@ interface RailContextValue {
     projectDragClass: (id: string) => string;
     onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
     selectProject: (id: string) => void;
+    openSpaceMenu: (event: ReactMouseEvent, session: Session) => void;
     jumpToWindow: (sessionId: string, winId: string) => void;
     jumpToAgents: (sessionId: string) => void;
     kb: (id: KeybindingActionId) => string;
@@ -225,7 +230,7 @@ function ProjectBlock({ s }: { s: Session }) {
         const overflow = agents.length - visible.length;
         return (
             <div ref={treeRef} className={`proj-tree${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
-                <div className="session-row-shell project-row-shell">
+                <div className="session-row-shell project-row-shell" onContextMenu={(event) => rail.openSpaceMenu(event, s)}>
                     <Tooltip label={s.cwd || s.name} side="right">
                         <button
                             className="proj-row collapsed"
@@ -327,7 +332,7 @@ function ProjectBlock({ s }: { s: Session }) {
     ];
     return (
         <div ref={treeRef} className={`proj-tree active${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
-            <div className="session-row-shell project-row-shell">
+            <div className="session-row-shell project-row-shell" onContextMenu={(event) => rail.openSpaceMenu(event, s)}>
                 <Tooltip label={s.cwd || s.name} side="right">
                     <button
                         className="proj-row expanded"
@@ -410,6 +415,42 @@ function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: str
     );
 }
 
+const SPACE_VIEWS: readonly { view: SpaceView; label: string }[] = [
+    { view: "all", label: "All" },
+    ...PROJECT_SPACES.map(({ space, label }) => ({ view: space, label })),
+];
+
+function SpaceSwitch({ view }: { view: SpaceView }) {
+    return (
+        <div className="space-switch" role="radiogroup" aria-label="Projects shown">
+            {SPACE_VIEWS.map((option) => (
+                <button
+                    key={option.view}
+                    type="button"
+                    role="radio"
+                    aria-checked={view === option.view}
+                    className={view === option.view ? "active" : ""}
+                    onClick={() => cmd.setSpaceView(option.view)}>
+                    {option.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function spaceMenu(session: Session, current: string | undefined): CtxItem[] {
+    const mark = (selected: boolean) => (selected ? "✓" : undefined);
+    return [
+        ...PROJECT_SPACES.map(({ space, label }) => ({
+            label,
+            hint: mark(current === space),
+            run: () => cmd.setProjectSpace(session.cwd, space),
+        })),
+        { sep: true },
+        { label: "No space (always shown)", hint: mark(current === undefined), run: () => cmd.setProjectSpace(session.cwd, null) },
+    ];
+}
+
 function Group({
     label,
     list,
@@ -422,6 +463,7 @@ function Group({
     emptyText,
     singleton,
     className,
+    toolbar,
 }: {
     label: string;
     list: Session[];
@@ -435,6 +477,7 @@ function Group({
     /** Rows drawn in place of `list`, for a group that is more than its sessions. */
     rows?: ReactNode;
     className?: string;
+    toolbar?: ReactNode;
 }) {
     return (
         <Panel variant="group" className={className}>
@@ -462,6 +505,7 @@ function Group({
                     )
                 }
             />
+            {toolbar}
             {rows ??
                 (list.length === 0 ? (
                     <EmptyState variant="inline" message={emptyText} action={add ? { label: emptyText, onClick: add } : undefined} />
@@ -500,7 +544,11 @@ export const SideRail = memo(function SideRail() {
     const pluginManifests = useStore((s) => s.pluginManifests);
     const disabledPlugins = useStore((s) => s.disabledPlugins);
     const inGroup = (group: RailGroup) => sessions.filter((s) => railGroupOf(s.kind, pluginManifests, disabledPlugins) === group);
-    const projects = inGroup("project");
+    const projectSpaces = useStore((s) => s.projectSpaces);
+    const spaceView = useStore((s) => s.spaceView);
+    const [spaceMenuAt, setSpaceMenuAt] = useState<{ x: number; y: number; session: Session } | null>(null);
+    const projects = shownProjects(inGroup("project"), projectSpaces, spaceView);
+    const usesSpaces = spaceView !== "all" || Object.keys(projectSpaces).length > 0;
     const sshs = inGroup("ssh");
     const commands = inGroup("command");
     const plugins = inGroup("plugins");
@@ -711,6 +759,10 @@ export const SideRail = memo(function SideRail() {
         projectDragClass,
         onProjectPointerDown,
         selectProject,
+        openSpaceMenu: (event, session) => {
+            event.preventDefault();
+            setSpaceMenuAt({ x: event.clientX, y: event.clientY, session });
+        },
         jumpToWindow,
         jumpToAgents,
         kb,
@@ -727,7 +779,8 @@ export const SideRail = memo(function SideRail() {
                         add={() => cmd.openPicker("projects")}
                         addTitle={`Open project — ${kb("project.open")}`}
                         addKbd={kb("project.open")}
-                        emptyText="no projects"
+                        emptyText={spaceView === "all" ? "no projects" : `no ${spaceView} projects`}
+                        toolbar={usesSpaces && <SpaceSwitch view={spaceView} />}
                     />
                     <Group
                         label="SSH"
@@ -755,6 +808,14 @@ export const SideRail = memo(function SideRail() {
                     />,
                     document.body,
                 )}
+            {spaceMenuAt && (
+                <TreeContextMenu
+                    x={spaceMenuAt.x}
+                    y={spaceMenuAt.y}
+                    items={spaceMenu(spaceMenuAt.session, projectSpaces[spaceMenuAt.session.cwd])}
+                    onClose={() => setSpaceMenuAt(null)}
+                />
+            )}
         </RailContext.Provider>
     );
 });

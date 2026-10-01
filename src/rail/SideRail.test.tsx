@@ -149,3 +149,37 @@ describe("leaving settings from the rail", () => {
         expect(getState().activeSessionId).toBe("beta");
     });
 });
+
+describe("project spaces", () => {
+    it("hides the projects of another space but keeps the ones in no space", () => {
+        setState({ projectSpaces: { "/alpha": "work", "/beta": "personal" }, activeSessionId: "beta" });
+        render(<SideRail />);
+
+        fireEvent.click(screen.getByRole("radio", { name: "Work" }));
+
+        expect(screen.getByRole("button", { name: "alpha" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "beta" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "gamma" })).toBeInTheDocument();
+        expect(getState().sessions.beta).toBeDefined();
+        expect(getState().sessionOrder).toEqual(["alpha", "ssh", "beta", "command", "gamma"]);
+        expect(getState().activeSessionId).toBe("alpha");
+
+        fireEvent.click(screen.getByRole("radio", { name: "All" }));
+        expect(screen.getByRole("button", { name: "beta" })).toBeInTheDocument();
+    });
+
+    it("puts a project in a space from its right-click menu", () => {
+        render(<SideRail />);
+        expect(screen.queryByRole("radiogroup", { name: "Projects shown" })).not.toBeInTheDocument();
+
+        fireEvent.contextMenu(screen.getByRole("button", { name: "gamma" }));
+        fireEvent.click(screen.getByText("Personal"));
+
+        expect(getState().projectSpaces).toEqual({ "/gamma": "personal" });
+        expect(screen.getByRole("radiogroup", { name: "Projects shown" })).toBeInTheDocument();
+
+        fireEvent.contextMenu(screen.getByRole("button", { name: "gamma" }));
+        fireEvent.click(screen.getByText("No space (always shown)"));
+        expect(getState().projectSpaces).toEqual({});
+    });
+});

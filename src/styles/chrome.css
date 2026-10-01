@@ -847,3 +847,29 @@
     background: var(--acc);
     opacity: 1;
 }
+.space-switch {
+    display: flex;
+    gap: 2px;
+    margin: 0 0 6px;
+    padding: 2px;
+    border-radius: 6px;
+    background: var(--surface-hover);
+}
+.space-switch > button {
+    flex: 1;
+    padding: 3px 0;
+    border-radius: 4px;
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    transition:
+        color 0.12s,
+        background 0.12s;
+}
+.space-switch > button:hover {
+    color: var(--text-primary);
+}
+.space-switch > button.active {
+    color: var(--text-primary);
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--border);
+}
