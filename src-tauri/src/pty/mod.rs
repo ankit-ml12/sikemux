@@ -1,373 +1,112 @@
-// PTY layer that scales to 100s of concurrent shells without saturating the
-// webview's WebGL context budget.
-//
-// Architecture:
-//
-//   * Every PTY in Rust owns a `vt100::Parser` — a headless terminal
-//     emulator that maintains the current screen grid + scrollback as
-//     bytes arrive. A cell is 32 bytes, so the cost is the grid: a few
-//     MB per PTY, and less once it drops to the idle scrollback. No
-//     rendering, no DOM, no GPU, always up to date whether or not
-//     anyone is looking.
-//
-//   * The PTY can have ZERO, ONE, or MANY subscribers. A subscriber is a
-//     Tauri raw-bytes `Channel` registered by the frontend when a
-//     TerminalPane mounts an xterm. When the pane unmounts (user
-//     switched away) the subscriber is dropped — the PTY keeps running
-//     in the background, parser keeps grid up to date, nothing is lost.
-//     On re-focus the pane calls `pty_attach`, which hands back an ANSI
-//     dump of the current grid + scrollback and subscribes for live
-//     output in one atomic step.
-//
-//   * Result: the only live xterm + WebGL contexts in the app are the
-//     ones the user is actually looking at.
-//
-// Commands surfaced to the frontend:
-//
-//   pty_spawn       — create a new PTY, returns ptyId
-//   task_spawn      — run one non-interactive task in a durable PTY
-//   pty_attach      — atomic snapshot + subscribe; returns { subId, snapshot }
-//   pty_subscribe   — attach a Channel to a PTY, returns subId
-//                     (kept for cases where the caller already has the
-//                      screen state from a prior attach — e.g. theme reload)
-//   pty_unsubscribe — detach a Channel by subId
-//   pty_write       — send bytes to the PTY's stdin
-//   pty_resize      — change rows/cols (also resizes the parser)
-//   pty_kill        — terminate the PTY process
+//! Terminals live in the background core (`sikemux core`); these commands
+//! forward to it over its socket. Output comes back on the connection and is
+//! fanned out to the webview channels that show each terminal, with the same
+//! ack-based flow control the in-process terminals had.
 
-pub(crate) mod agent_state;
-pub(crate) mod attach;
-pub(crate) mod io;
-mod launch;
-pub(crate) mod output;
-pub(crate) mod process;
-mod screen;
-mod shell;
-mod shell_protocol;
-pub(crate) mod spawn;
-mod sweeper;
-pub(crate) mod task;
+pub(crate) mod commands;
+mod sink;
+mod streams;
 
-pub(crate) use launch::OPTIONAL_PTY_ENV;
+use std::ffi::OsString;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
-use std::collections::HashMap;
-#[cfg(unix)]
-use std::fs::File;
-#[cfg(windows)]
-use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::time::{Duration, Instant};
+use sikemux_core::client::{
+    await_deferred_upgrade, await_upgrade, ensure_running, frozen_request, Attached, ClientError,
+    CoreClient, Reply,
+};
+use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest};
+use sikemux_core::protocol::{BuildIdentity, Request, SessionId, SessionInfo, SessionKind};
+use tauri::{AppHandle, Manager};
 
-use dashmap::DashMap;
-#[cfg(windows)]
-use portable_pty::MasterPty;
-use portable_pty::{Child, PtySize};
-use tauri::AppHandle;
-#[cfg(unix)]
-use tokio::io::unix::AsyncFd;
-
-use crate::agent_detection::{AgentKind, ManifestRegistry};
 use crate::error::{AppError, AppResult};
 
-use output::Subscriber;
-use process::{child_process_id, kill_and_reap_child, terminate_process_tree, DRAIN_GRACE};
-use screen::SemanticParser;
-use shell::ShellLaunchIntegration;
-use task::{
-    notify_task_process_exited, should_signal_process_on_drain, task_process_needs_force_backstop,
-    TaskExitReporter,
-};
+use sink::AppSink;
+use streams::StreamTable;
 
-fn pty_err<E: std::fmt::Display>(e: E) -> AppError {
-    AppError::Pty(e.to_string())
-}
+/// Browser tabs are child webviews of the same app. Every terminal event
+/// belongs to the workbench, so address it by label instead of broadcasting.
+const MAIN_WEBVIEW: &str = "main";
+/// Long enough for the core's shared kill grace plus reaping a few hundred
+/// sessions.
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+/// The core first checks that the sidecar starts, which can take a while the
+/// first time macOS sees a new binary.
+const UPGRADE_ANSWER_TIMEOUT: Duration = Duration::from_secs(15);
+const UPGRADE_RETURN_TIMEOUT: Duration = Duration::from_secs(20);
+/// A core with chat turns running updates once they end, which it gives two
+/// minutes.
+const DEFERRED_RETURN_TIMEOUT: Duration = Duration::from_secs(150);
+/// `ESC c`, which clears a pane's screen and history before its replay.
+const FULL_RESET: &[u8] = b"\x1bc";
 
-/// One running pseudo-terminal: the master fd + child + headless parser +
-/// the set of frontend Channels currently subscribed to live output.
-///
-/// I/O model: the master fd is set non-blocking and wrapped in a SINGLE
-/// `AsyncFd`. The reader tokio task awaits its `readable()` side; every
-/// `pty_write` awaits its `writable()` side under `write_lock` so writes
-/// never block a worker thread and never interleave. We therefore hold
-/// exactly one fd per PTY (down from three: master + read-dup + write-dup)
-/// — see `pty_spawn` for how the lone dup keeps the child's controlling
-/// terminal alive after portable_pty's `MasterPty` is dropped.
-struct Pty {
-    id: u32,
+struct CoreSettings {
     app: AppHandle,
-    /// The PTY master as one non-blocking fd, servicing both directions.
-    /// Resize is an ioctl straight on this fd (see `pty_resize`).
-    #[cfg(unix)]
-    io: AsyncFd<File>,
-    /// Serialises concurrent writers so two `pty_write`s can't interleave
-    /// bytes on the shared fd. Reads need no guard — only the reader task
-    /// reads.
-    #[cfg(unix)]
-    write_lock: tokio::sync::Mutex<()>,
-    /// ConPTY exposes separate blocking pipe handles. They stay behind a
-    /// platform boundary so Unix keeps its single-fd async fast path.
-    #[cfg(windows)]
-    master: Mutex<Box<dyn MasterPty + Send>>,
-    #[cfg(windows)]
-    writer: Mutex<Box<dyn Write + Send>>,
-    child: Mutex<Box<dyn Child + Send + Sync>>,
-    /// Tracks the current screen grid + scrollback. Always up to date,
-    /// even when no one's subscribed — that's the whole point.
-    parser: Mutex<SemanticParser>,
-    /// True when this shell opted into OSC 7/133 reporting. The sweeper uses
-    /// it to skip taking the parser lock on every other PTY four times a second.
-    shell_protocol: bool,
-    /// Live xterm subscribers. Empty = PTY runs invisibly.
-    /// Each chunk crosses the IPC as raw bytes, so JS receives an
-    /// ArrayBuffer instead of a JSON array of numbers.
-    subscribers: Mutex<HashMap<u32, Subscriber>>,
-    /// Signalled by `pty_ack` whenever a renderer reports progress. The reader
-    /// waits on this while a subscriber is too far behind.
-    flow_control: tokio::sync::Notify,
-    /// Millis-since-process-start of the last chunk processed. The idle
-    /// sweeper reads this without contending with the reader because it's
-    /// an atomic, not a Mutex.
-    last_activity_ms: AtomicU64,
-    /// Set true once the sweeper has reseeded the parser at the smaller
-    /// scrollback so we don't repeatedly rebuild a parser that's already
-    /// at idle size. Cleared on any new activity.
-    trimmed: AtomicBool,
-    /// Present only for agent PTYs. Activity is inferred natively so it
-    /// remains observable after the heavyweight xterm renderer detaches.
-    activity_key: Option<String>,
-    agent_kind: Option<AgentKind>,
-    activity_armed: AtomicBool,
-    activity_state: AtomicU8,
-    /// Explicit frontend teardown must not masquerade as a natural provider
-    /// exit after a replacement PTY has already started.
-    report_exit: AtomicBool,
-    last_published_fingerprint: AtomicU64,
-    idle_confirmations: AtomicU8,
-    /// Advances whenever submitted input or parsed output changes the
-    /// semantic evidence. Combined with screen/title contents below to make
-    /// settled detection edge-triggered instead of a perpetual 4 Hz rescan.
-    activity_revision: AtomicU64,
-    last_detection_fingerprint: AtomicU64,
-    /// `activity_revision` as of the last completed detection scan. Unchanged
-    /// means the screen is unchanged, so there is nothing new to read.
-    last_detection_revision: AtomicU64,
-    /// Present only for a durable task PTY. The atomic gate makes natural
-    /// exit, explicit kill, and app drain race to one channel delivery.
-    task_exit: Option<TaskExitReporter>,
-    harness_output: Mutex<crate::harness::OutputLog>,
-    harness_output_pending: Arc<AtomicBool>,
-    /// Monotonic task completion timestamp. Zero means the task is still
-    /// running; completed task snapshots remain attachable for a fixed grace.
-    task_exited_at_ms: AtomicU64,
-    /// Keeps any per-process shell startup files alive for exactly as long as
-    /// the PTY. `TempDir` removes them automatically; user dotfiles are never
-    /// written or replaced.
-    _shell_integration: Option<ShellLaunchIntegration>,
-    /// Acquired before allocating an OS PTY and released only after the last
-    /// native owner drops. This counts launch and reap windows where resources
-    /// exist but no entry is currently published in the manager map.
-    _capacity_permit: PtyCapacityPermit,
+    socket: PathBuf,
+    binary: Option<PathBuf>,
+    log: PathBuf,
+    manifest_dir: Option<PathBuf>,
+    /// Where a core started from here publishes agents' tool endpoint and
+    /// keeps the harness journal.
+    core_args: Vec<OsString>,
 }
 
-#[derive(Debug)]
-struct PtyCapacity {
-    active: AtomicUsize,
-    limit: usize,
-}
-
-impl PtyCapacity {
-    fn new(limit: usize) -> Arc<Self> {
-        Arc::new(Self {
-            active: AtomicUsize::new(0),
-            limit,
-        })
-    }
-
-    fn try_acquire(self: &Arc<Self>) -> AppResult<PtyCapacityPermit> {
-        let mut active = self.active.load(Ordering::Acquire);
-        loop {
-            if active >= self.limit {
-                return Err(AppError::Pty("PTY capacity reached".into()));
-            }
-            match self.active.compare_exchange_weak(
-                active,
-                active + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    return Ok(PtyCapacityPermit {
-                        capacity: self.clone(),
-                    });
-                }
-                Err(current) => active = current,
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-struct PtyCapacityPermit {
-    capacity: Arc<PtyCapacity>,
-}
-
-impl Drop for PtyCapacityPermit {
-    fn drop(&mut self) {
-        let previous = self.capacity.active.fetch_sub(1, Ordering::AcqRel);
-        debug_assert!(previous > 0, "PTY capacity permit underflow");
-    }
-}
-
-/// All live PTYs, keyed by an id handed back to the frontend.
+#[derive(Default)]
 pub struct PtyManager {
-    ptys: DashMap<u32, Arc<Pty>>,
-    capacity: Arc<PtyCapacity>,
-    detection_registry: RwLock<ManifestRegistry>,
+    settings: OnceLock<CoreSettings>,
+    client: Mutex<Option<Arc<CoreClient>>>,
+    connecting: tokio::sync::Mutex<()>,
+    streams: Arc<StreamTable>,
+    /// Set once the app is leaving, so a core that goes away is not started
+    /// again.
+    closing: AtomicBool,
+    /// The process of the core last connected to. A core that comes back in
+    /// the same process after an update still has every session.
+    core_pid: AtomicU32,
+    /// A core this app could neither update nor talk to, already reported.
+    noticed: AtomicU32,
 }
 
-impl Default for PtyManager {
-    fn default() -> Self {
-        Self {
-            ptys: DashMap::new(),
-            capacity: PtyCapacity::new(MAX_ACTIVE_PTYS),
-            detection_registry: RwLock::new(
-                ManifestRegistry::bundled().expect("bundled agent manifests must be valid"),
-            ),
-        }
-    }
-}
-
-impl PtyManager {
-    pub fn counts(&self) -> (usize, usize) {
-        let mut subscribers = 0usize;
-        for entry in self.ptys.iter() {
-            if let Ok(subs) = entry.value().subscribers.lock() {
-                subscribers += subs.len();
-            }
-        }
-        (self.ptys.len(), subscribers)
-    }
-
-    /// Tear down every live PTY: SIGTERM each child's process group, allow a
-    /// brief grace window for well-behaved programs (editors, agents, builds)
-    /// to catch the signal and clean up, then SIGKILL whatever's left and reap
-    /// it. Called from the window-close hook, the reload hook, AND the
-    /// `RunEvent::Exit` hook — so no exit path (quit, `exit()`, or the
-    /// updater's `relaunch()` → `app.restart()`) abandons orphan shells/agents
-    /// to burn resources or AI tokens until the OS reaps them.
-    ///
-    /// SIGTERM rather than a bare SIGKILL is deliberate: it's catchable, and —
-    /// unlike the kernel's SIGHUP-on-master-close we'd otherwise rely on — it
-    /// also terminates `nohup`'d processes (they ignore SIGHUP, not SIGTERM).
-    /// The negative pid targets the child's whole process group (it's a
-    /// session/group leader via `setsid` in `pty_spawn`), so a foreground job
-    /// dies with its shell. SIGKILL is the guaranteed backstop for holdouts.
-    pub fn drain(&self) {
-        // Phase 1: pull every entry out of the map — releasing the DashMap
-        // shards before we sleep — and politely ask each to terminate. The
-        // child lock is held only long enough to read the pid.
-        let ids: Vec<u32> = self.ptys.iter().map(|e| *e.key()).collect();
-        let mut draining: Vec<Arc<Pty>> = Vec::with_capacity(ids.len());
-        for id in ids {
-            if let Some((_, pty)) = self.ptys.remove(&id) {
-                if let Ok(child) = pty.child.lock() {
-                    // Retained task snapshots outlive their reaped process.
-                    // Their numeric pid may already belong to an unrelated
-                    // process group, so never signal after the completion
-                    // stamp has been published. The natural-exit waiter sets
-                    // that stamp before releasing this same child lock.
-                    if should_signal_process_on_drain(
-                        pty.task_exit.is_some(),
-                        pty.task_exited_at_ms.load(Ordering::Acquire),
-                    ) {
-                        if let Some(pid) = child.process_id() {
-                            terminate_process_tree(pid, false);
-                        }
-                    }
-                }
-                draining.push(pty);
-            }
-        }
-        if draining.is_empty() {
-            return;
-        }
-        // Phase 2: a single shared grace window (not per-PTY) keeps quit /
-        // relaunch latency bounded no matter how many shells are open.
-        std::thread::sleep(DRAIN_GRACE);
-        // Phase 3: SIGKILL the holdouts and reap them, so the reload path
-        // (where the app keeps running) doesn't accumulate zombies. Dropping
-        // each `pty` afterwards closes the retained master fd, which HUPs any
-        // job-control children that landed in their own process groups.
-        for pty in draining {
-            let status = if let Ok(mut child) = pty.child.lock() {
-                let is_task = pty.task_exit.is_some();
-                let task_exited_at_ms = pty.task_exited_at_ms.load(Ordering::Acquire);
-                let task_already_exited =
-                    !should_signal_process_on_drain(is_task, task_exited_at_ms);
-                let force_task_tree = task_process_needs_force_backstop(is_task, task_exited_at_ms);
-                if task_already_exited {
-                    // `wait` has already run for a retained task. Poll only to
-                    // recover its cached status; never route a stale pid into
-                    // the force-kill fallback if that poll itself fails.
-                    child.try_wait().ok().flatten()
-                } else if force_task_tree {
-                    // The task shell may have exited while a descendant that
-                    // retained the PTY ignored SIGTERM. Force the still-owned
-                    // process group before reaping its leader; otherwise the
-                    // numeric group id could be reused and the descendant
-                    // would keep the reader and PTY alive indefinitely.
-                    let pid = child_process_id(&mut child);
-                    if let Some(pid) = pid {
-                        terminate_process_tree(pid, true);
-                    }
-                    if let Ok(Some(status)) = child.try_wait() {
-                        Some(status)
-                    } else {
-                        kill_and_reap_child(&mut child, pid)
-                    }
-                } else if let Ok(Some(status)) = child.try_wait() {
-                    Some(status)
-                } else {
-                    let pid = child_process_id(&mut child);
-                    kill_and_reap_child(&mut child, pid) // SIGKILL + reap the zombie
-                }
+pub(crate) fn core_error(error: ClientError) -> AppError {
+    match error {
+        ClientError::Core(message) => {
+            if let Some(reason) = message.strip_prefix("invalid argument: ") {
+                AppError::BadArgText(reason.to_string())
+            } else if let Some(reason) = message.strip_prefix("pty: ") {
+                AppError::Pty(reason.to_string())
             } else {
-                None
-            };
-            notify_task_process_exited(&pty, status.as_ref());
+                AppError::Other(message)
+            }
         }
+        other => AppError::Pty(other.to_string()),
     }
 }
 
-static NEXT_PTY_ID: AtomicU32 = AtomicU32::new(1);
-/// State events from replacement PTYs share one monotonic ordering so a late
-/// delivery from the old process can never overwrite the newer process state.
-static NEXT_ACTIVITY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
-static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(1);
-static OUTPUT_READS: AtomicU64 = AtomicU64::new(0);
-static OUTPUT_BROADCASTS: AtomicU64 = AtomicU64::new(0);
-static OUTPUT_BYTES: AtomicU64 = AtomicU64::new(0);
-const MAX_PTY_ID_COLLISION_PROBES: usize = 4_096;
-/// Includes launching, live, draining, and retained task PTYs. The separate
-/// retained-task cap leaves at least half this budget available for live work.
-const MAX_ACTIVE_PTYS: usize = 256;
-const MAX_PTY_SUBSCRIBERS_PER_PTY: usize = 16;
-const MAX_SUB_ID_COLLISION_PROBES: usize = MAX_PTY_SUBSCRIBERS_PER_PTY + 1;
-const MAX_ATTACH_SNAPSHOT_BYTES: usize = 8 * 1024 * 1024;
-const MAX_PTY_DIMENSION: u16 = 1_000;
+/// What a PTY was opened for, so a process found under it can be traced back
+/// to a terminal pane, an agent or a task.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PtyOwner {
+    pub project: Option<String>,
+    pub pane_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub task_execution_id: Option<String>,
+}
 
-fn validate_pty_dimensions(cols: u16, rows: u16) -> AppResult<()> {
-    if cols == 0 || cols > MAX_PTY_DIMENSION || rows == 0 || rows > MAX_PTY_DIMENSION {
-        return Err(AppError::BadArg("invalid pty terminal dimensions"));
-    }
-    Ok(())
+pub(crate) struct PtyProcess {
+    pub pid: u32,
+    pub pty_id: SessionId,
+    pub owner: PtyOwner,
 }
 
 #[derive(serde::Serialize)]
 pub struct PtyDiagnostics {
-    pub output_reads: u64,
-    pub output_broadcasts: u64,
+    pub core_pid: Option<u32>,
+    pub ptys: usize,
+    pub subscribers: usize,
+    pub output_frames: u64,
     pub output_bytes: u64,
     pub working_agents: usize,
     pub blocked_agents: usize,
@@ -376,146 +115,531 @@ pub struct PtyDiagnostics {
 }
 
 impl PtyManager {
-    pub fn diagnostics(&self) -> PtyDiagnostics {
-        let count_state = |state| {
-            self.ptys
+    /// Remembers where the core lives and starts connecting to it on a worker
+    /// thread. Call once the process environment is final, because a core
+    /// started from here inherits it.
+    pub fn start(&self, app: &AppHandle) {
+        let Some(socket) = sikemux_core::default_socket_path() else {
+            eprintln!("Sikemux terminals are unavailable: HOME is not set");
+            return;
+        };
+        let log = app
+            .path()
+            .app_log_dir()
+            .unwrap_or_else(|_| std::env::temp_dir())
+            .join("core.log");
+        let manifest_dir = app
+            .path()
+            .app_config_dir()
+            .ok()
+            .map(|directory| directory.join("agent-detection"));
+        let mut core_args = Vec::new();
+        if let Some(endpoint) = crate::cli_paths::cli_endpoint_path() {
+            core_args.extend([OsString::from("--cli-endpoint"), endpoint.into()]);
+        }
+        if let Ok(data_dir) = app.path().app_data_dir() {
+            core_args.extend([OsString::from("--data-dir"), data_dir.into()]);
+        }
+        let _ = self.settings.set(CoreSettings {
+            app: app.clone(),
+            socket,
+            binary: crate::cli_paths::cli_executable_path(),
+            log,
+            manifest_dir,
+            core_args,
+        });
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Some(manager) = app.try_state::<PtyManager>() {
+                if let Err(error) = manager.client().await {
+                    eprintln!("Sikemux could not reach its terminal core: {error}");
+                }
+            }
+        });
+    }
+
+    /// The command a core is started with from here, which the login item repeats.
+    pub(crate) fn core_launch(&self) -> Option<crate::login_item::CoreLaunch> {
+        let settings = self.settings.get()?;
+        Some(crate::login_item::CoreLaunch {
+            binary: settings.binary.clone()?,
+            socket: settings.socket.clone(),
+            log: settings.log.clone(),
+            args: settings.core_args.clone(),
+        })
+    }
+
+    pub(crate) fn current_client(&self) -> Option<Arc<CoreClient>> {
+        self.current()
+    }
+
+    fn current(&self) -> Option<Arc<CoreClient>> {
+        self.client
+            .lock()
+            .ok()?
+            .clone()
+            .filter(|client| client.is_connected())
+    }
+
+    /// The live connection to the core, starting the core first if needed.
+    pub(crate) async fn client(&self) -> AppResult<Arc<CoreClient>> {
+        if let Some(client) = self.current() {
+            return Ok(client);
+        }
+        let _connecting = self.connecting.lock().await;
+        if let Some(client) = self.current() {
+            return Ok(client);
+        }
+        let settings = self
+            .settings
+            .get()
+            .ok_or_else(|| AppError::Pty("the terminal core is not configured yet".into()))?;
+        let binary = settings.binary.clone().ok_or_else(|| {
+            AppError::Pty("the sikemux-editor sidecar that runs terminals is missing".into())
+        })?;
+        let socket = settings.socket.clone();
+        let log = settings.log.clone();
+        let core_args = settings.core_args.clone();
+        if let Some(directory) = log.parent() {
+            let _ = std::fs::create_dir_all(directory);
+        }
+        let starting = binary.clone();
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            ensure_running(&socket, &starting, &log, &core_args)
+        })
+        .await
+        .map_err(|error| AppError::Pty(format!("core start join: {error}")))?;
+        match found {
+            Ok(hello) if hello.build.same_build(&crate::build_identity()) => {}
+            Ok(hello) => {
+                match upgrade_core(settings, binary, hello.pid, Some(hello.build), false).await {
+                    Ok(Upgrade::Done) => {}
+                    Ok(Upgrade::Deferred) => eprintln!(
+                        "Sikemux's terminal core updates once its chat turns end; using it as it is until then"
+                    ),
+                    Err(message) => {
+                        eprintln!("Sikemux keeps its terminal core as it is: {message}")
+                    }
+                }
+            }
+            Err(ClientError::VersionMismatch { pid, message, .. }) => {
+                if let Err(reason) = upgrade_core(settings, binary, pid, None, true).await {
+                    self.notice_incompatible(settings, pid);
+                    return Err(AppError::Pty(format!(
+                        "{message}, and it could not be updated: {reason}"
+                    )));
+                }
+            }
+            Err(error) => return Err(core_error(error)),
+        }
+        let sink = Arc::new(AppSink::new(settings.app.clone(), self.streams.clone()));
+        let client = Arc::new(
+            CoreClient::connect_with(&settings.socket, sink)
+                .await
+                .map_err(core_error)?,
+        );
+        client
+            .configure(settings.manifest_dir.clone())
+            .await
+            .map_err(core_error)?;
+        client.register_window().await.map_err(core_error)?;
+        crate::remote::connected(&settings.app, self.core_launch().as_ref(), &client).await;
+        self.core_pid.store(client.core_pid(), Ordering::Release);
+        if let Ok(mut current) = self.client.lock() {
+            *current = Some(client.clone());
+        }
+        Ok(client)
+    }
+
+    /// The core went away. One that answers again from the same process was
+    /// updated in place and still has every session, so the panes take theirs
+    /// back; otherwise every session the app knew is gone with it.
+    fn disconnected(&self) {
+        let settings = self.settings.get();
+        if self.closing.load(Ordering::Acquire) || settings.is_none() {
+            sink::report_all_exited(&self.streams);
+            return;
+        }
+        let Some(settings) = settings else {
+            return;
+        };
+        let previous = self.core_pid.load(Ordering::Acquire);
+        let app = settings.app.clone();
+        tauri::async_runtime::spawn(async move {
+            let Some(manager) = app.try_state::<PtyManager>() else {
+                return;
+            };
+            match manager.client().await {
+                Ok(client) if client.core_pid() == previous => {
+                    manager.reattach(&client).await;
+                    crate::acp::reconnected(&app, Some(&client)).await;
+                }
+                Ok(_) => {
+                    sink::report_all_exited(&manager.streams);
+                    crate::acp::reconnected(&app, None).await;
+                }
+                Err(error) => {
+                    sink::report_all_exited(&manager.streams);
+                    crate::acp::reconnected(&app, None).await;
+                    eprintln!("Sikemux could not restart its terminal core: {error}");
+                }
+            }
+        });
+    }
+
+    /// Sends every pane its screen again from the updated core, followed by
+    /// the live output, and tells tasks that ended meanwhile.
+    async fn reattach(&self, client: &Arc<CoreClient>) {
+        for id in self.streams.core_subscribed() {
+            let streams = self.streams.clone();
+            let submitted = client.submit(Request::Attach { id }, move |reply| match reply {
+                Ok(Reply::Attached(Attached {
+                    alternate_screen,
+                    exited,
+                    replay,
+                    ..
+                })) => {
+                    streams.restart(id);
+                    // An alternate screen repaints itself in full and leaves
+                    // the pane's own normal-screen history alone.
+                    let mut screen = Vec::with_capacity(replay.len() + FULL_RESET.len());
+                    if !alternate_screen {
+                        screen.extend_from_slice(FULL_RESET);
+                    }
+                    screen.extend_from_slice(&replay);
+                    sink::deliver(&streams, id, &screen);
+                    if exited {
+                        streams.channels(id).send(&[]);
+                    }
+                }
+                // A dropped connection is not the session ending; the next
+                // reconnect deals with it.
+                Err(ClientError::Disconnected) => {}
+                _ => sink::report_exited(&streams, id, sink::task_exit(None, None)),
+            });
+            if let Ok(replied) = submitted {
+                let _ = replied.await;
+            }
+        }
+        let watched = self.streams.watched_tasks();
+        if watched.is_empty() {
+            return;
+        }
+        let Ok(sessions) = client.list().await else {
+            return;
+        };
+        for id in watched {
+            let session = sessions.iter().find(|session| session.id == id);
+            if session.is_some_and(|session| session.running) {
+                continue;
+            }
+            let exit = session.and_then(|session| session.exit.clone());
+            let exit_channel = self
+                .streams
+                .lock()
+                .ok()
+                .and_then(|mut guard| guard.take_task_exit(id));
+            if let Some(channel) = exit_channel {
+                let (code, signal) = exit.map_or((None, None), |exit| (exit.code, exit.signal));
+                let _ = channel.send(sink::task_exit(code, signal));
+            }
+        }
+    }
+
+    /// A page load is a quiet moment to move the core to the sidecar's build,
+    /// for a sidecar rebuilt while the app runs.
+    pub fn update_core_if_stale(&self) {
+        let Some(settings) = self.settings.get() else {
+            return;
+        };
+        let app = settings.app.clone();
+        tauri::async_runtime::spawn(async move {
+            let Some(manager) = app.try_state::<PtyManager>() else {
+                return;
+            };
+            let Some(settings) = manager.settings.get() else {
+                return;
+            };
+            let _connecting = manager.connecting.lock().await;
+            let Some(client) = manager.current() else {
+                return;
+            };
+            let build = client.hello().build.clone();
+            let (Some(binary), false) = (
+                settings.binary.clone(),
+                build.same_build(&crate::build_identity()),
+            ) else {
+                return;
+            };
+            match upgrade_core(settings, binary, client.core_pid(), Some(build), false).await {
+                Ok(Upgrade::Done) => {}
+                Ok(Upgrade::Deferred) => {
+                    eprintln!("Sikemux's terminal core updates once its chat turns end")
+                }
+                Err(message) => eprintln!("Sikemux keeps its terminal core as it is: {message}"),
+            }
+        });
+    }
+
+    /// Says once per core that this app cannot use it, and offers to end it.
+    fn notice_incompatible(&self, settings: &CoreSettings, pid: u32) {
+        if self.noticed.swap(pid, Ordering::AcqRel) == pid {
+            return;
+        }
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        let app = settings.app.clone();
+        let socket = settings.socket.clone();
+        settings
+            .app
+            .dialog()
+            .message(format!(
+                "Sikemux's background process (pid {pid}) belongs to another version of Sikemux and could not be updated, so terminals, agents and tasks cannot open in this window.\n\nQuit and Stop Everything ends that process and everything running in it. Sikemux starts a new one when you open it again."
+            ))
+            .title("Terminals are unavailable")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Quit and Stop Everything".into(),
+                "Not Now".into(),
+            ))
+            .show(move |stop| {
+                if !stop {
+                    return;
+                }
+                std::thread::spawn(move || {
+                    stop_core_process(&socket, pid);
+                    app.exit(0);
+                });
+            });
+    }
+
+    fn block_on_core<F>(&self, work: impl FnOnce(Arc<CoreClient>) -> F)
+    where
+        F: std::future::Future<Output = Result<(), ClientError>>,
+    {
+        let Some(client) = self.current() else {
+            return;
+        };
+        let work = work(client);
+        let result = tauri::async_runtime::block_on(async move {
+            tokio::time::timeout(STOP_TIMEOUT, work).await
+        });
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => eprintln!("Sikemux terminal core: {error}"),
+            Err(_) => eprintln!("Sikemux terminal core did not answer within {STOP_TIMEOUT:?}"),
+        }
+        drop(self.streams.take_all());
+    }
+
+    /// The page went away with every channel it held. Terminals and tasks keep
+    /// running in the core, which stops sending what nobody will show.
+    pub fn detach_all(&self) {
+        let subscribed = self.streams.release_all();
+        let Some(client) = self.current() else {
+            return;
+        };
+        for id in subscribed {
+            let _ = client.submit(Request::Detach { id }, |_| ());
+        }
+    }
+
+    /// The app is leaving and its sessions stay with the core.
+    pub fn release(&self) {
+        self.closing.store(true, Ordering::Release);
+        self.detach_all();
+    }
+
+    /// Stops every session and lets the core exit with the app.
+    pub fn stop_everything(&self) {
+        self.closing.store(true, Ordering::Release);
+        self.block_on_core(|client| async move { client.shutdown(true).await });
+    }
+
+    pub(crate) fn core_pid(&self) -> Option<u32> {
+        self.current().map(|client| client.core_pid())
+    }
+
+    pub(crate) async fn sessions(&self) -> AppResult<Vec<SessionInfo>> {
+        self.client().await?.list().await.map_err(core_error)
+    }
+
+    pub(crate) async fn live_processes(&self) -> AppResult<Vec<PtyProcess>> {
+        Ok(self
+            .sessions()
+            .await?
+            .into_iter()
+            .filter(|session| session.running)
+            .filter_map(|session| {
+                Some(PtyProcess {
+                    pid: session.pid?,
+                    pty_id: session.id,
+                    owner: PtyOwner {
+                        project: session.project,
+                        pane_id: session.pane_id,
+                        agent_id: session.agent_id,
+                        task_execution_id: session.task_execution_id,
+                    },
+                })
+            })
+            .collect())
+    }
+
+    pub async fn diagnostics(&self) -> PtyDiagnostics {
+        let sessions = match self.current() {
+            Some(client) => client.list().await.unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let agents = |state: &str| {
+            sessions
                 .iter()
-                .filter(|entry| {
-                    entry.value().agent_kind.is_some()
-                        && entry.value().activity_state.load(Ordering::Relaxed) == state
+                .filter(|session| {
+                    session.kind == SessionKind::Terminal
+                        && session.agent_state.as_deref() == Some(state)
                 })
                 .count()
         };
+        let (output_frames, output_bytes) = sink::output_totals();
         PtyDiagnostics {
-            output_reads: OUTPUT_READS.load(Ordering::Relaxed),
-            output_broadcasts: OUTPUT_BROADCASTS.load(Ordering::Relaxed),
-            output_bytes: OUTPUT_BYTES.load(Ordering::Relaxed),
-            working_agents: count_state(ACTIVITY_WORKING),
-            blocked_agents: count_state(ACTIVITY_BLOCKED),
-            idle_agents: count_state(ACTIVITY_IDLE),
-            unknown_agents: count_state(ACTIVITY_UNKNOWN),
+            core_pid: self.core_pid(),
+            ptys: sessions.len(),
+            subscribers: self.streams.subscriber_count(),
+            output_frames,
+            output_bytes,
+            working_agents: agents("working"),
+            blocked_agents: agents("blocked"),
+            idle_agents: agents("idle"),
+            unknown_agents: agents("unknown"),
         }
     }
 }
 
-// Scrollback held in the headless vt100 parser. This only has to cover what
-// a reattaching xterm replays; anything the user scrolled past before the
-// pane was hidden is not worth paying for. A vt100 cell is 32 bytes, so at
-// 200 columns 3k rows is roughly 19 MB per PTY — at 10k rows it was 64 MB.
-// The parser drops to IDLE_SCROLLBACK when the last subscriber detaches, and
-// the sweeper below catches anything silent for IDLE_TRIM.
-pub const PARSER_SCROLLBACK: usize = 3_000;
-const IDLE_SCROLLBACK: usize = 1_000;
-const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
-const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
-const ACTIVITY_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
-const ACTIVITY_UNKNOWN: u8 = 0;
-const ACTIVITY_IDLE: u8 = 1;
-const ACTIVITY_WORKING: u8 = 2;
-const ACTIVITY_BLOCKED: u8 = 3;
-const ACTIVITY_STOPPED: u8 = 4;
-#[cfg(unix)]
-const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
-#[cfg(unix)]
-const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
-const SLOW_BROADCAST: Duration = Duration::from_millis(8);
-/// How many bytes one renderer may owe before the reader stops pulling from
-/// the child. The kernel PTY buffer then applies the backpressure for us.
-const MAX_UNACKED_BYTES: usize = 512 * 1024;
-/// A renderer answers within a frame, so reaching this means it stopped
-/// answering at all. Write its debt off rather than stalling the child.
-const FLOW_CONTROL_WAIT: Duration = Duration::from_secs(1);
-/// One in this many output chunks carries full timing instrumentation.
-const OBSERVED_BROADCASTS: u64 = 64;
-
-/// Browser tabs are child webviews of the same app. Every PTY event belongs
-/// to the workbench, so address it by label instead of broadcasting.
-const MAIN_WEBVIEW: &str = "main";
-
-// Process-start anchor so all `last_activity_ms` values are monotonic
-// deltas in ms — immune to wall-clock jumps (NTP, sleep/resume).
-fn epoch() -> Instant {
-    static E: OnceLock<Instant> = OnceLock::new();
-    *E.get_or_init(Instant::now)
+enum Upgrade {
+    Done,
+    /// The core goes on as it is until its chat turns end, then updates and
+    /// drops its connections, which come back to the updated core.
+    Deferred,
 }
 
-fn now_ms() -> u64 {
-    epoch().elapsed().as_millis() as u64
+/// Asks the core at `socket` to replace itself with `binary`, and waits for
+/// it to answer from the same process again. Without `old`, the core speaks
+/// another protocol and could not say which build it runs. A core that
+/// defers is waited for only when `wait_if_deferred`.
+async fn upgrade_core(
+    settings: &CoreSettings,
+    binary: PathBuf,
+    pid: u32,
+    old: Option<BuildIdentity>,
+    wait_if_deferred: bool,
+) -> Result<Upgrade, String> {
+    let socket = settings.socket.clone();
+    let upgraded = tauri::async_runtime::spawn_blocking(move || {
+        let request = FrozenRequest::Upgrade { binary };
+        match frozen_request(&socket, &request, UPGRADE_ANSWER_TIMEOUT) {
+            Ok(FrozenReply::Accepted) => {
+                await_upgrade(&socket, pid, old.as_ref(), UPGRADE_RETURN_TIMEOUT)
+                    .map(Some)
+                    .map_err(|error| error.to_string())
+            }
+            Ok(FrozenReply::Deferred { .. }) if wait_if_deferred => {
+                await_deferred_upgrade(&socket, pid, old.as_ref(), DEFERRED_RETURN_TIMEOUT)
+                    .map(Some)
+                    .map_err(|error| error.to_string())
+            }
+            Ok(FrozenReply::Deferred { .. }) => Ok(None),
+            Ok(FrozenReply::Refused { message }) => Err(message),
+            Err(error) => Err(error.to_string()),
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    let Some(upgraded) = upgraded else {
+        return Ok(Upgrade::Deferred);
+    };
+    eprintln!(
+        "Sikemux updated its terminal core (pid {pid}) to {} {}",
+        upgraded.build.version, upgraded.build.commit
+    );
+    Ok(Upgrade::Done)
 }
 
-fn pty_size(cols: u16, rows: u16) -> PtySize {
-    PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
+/// Ends a core this app cannot talk to, with everything running in it.
+fn stop_core_process(socket: &std::path::Path, pid: u32) {
+    let stopped = frozen_request(socket, &FrozenRequest::StopEverything, STOP_TIMEOUT);
+    if !matches!(stopped, Ok(FrozenReply::Accepted)) && pid > 1 {
+        // SAFETY: kill only takes integers; the pid is a single process above
+        // init, so this never signals a group or every process.
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGTERM);
+        }
     }
+}
+
+/// "Quit and Stop Everything": every terminal, agent and task in the core
+/// ends with the app.
+pub(crate) fn quit_and_stop_everything(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Some(manager) = app.try_state::<PtyManager>() {
+            manager.stop_everything();
+        }
+        app.exit(0);
+    });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::launch::PtyContext;
-    use super::PtyCapacity;
-    use portable_pty::CommandBuilder;
     use std::sync::atomic::Ordering;
-    use std::sync::{Arc, Barrier};
+    use std::sync::{Arc, Mutex};
 
-    pub(super) fn env(command: &CommandBuilder, key: &str) -> Option<String> {
-        command
-            .get_env(key)
-            .map(|value| value.to_string_lossy().into_owned())
-    }
+    use super::{core_error, PtyManager};
+    use sikemux_core::client::ClientError;
 
-    pub(super) fn local_shell_context() -> PtyContext {
-        PtyContext {
-            session_id: "session-1".into(),
-            session_name: "repo".into(),
-            session_kind: "project".into(),
-            project: Some("/repo".into()),
-            window_id: Some("window-1".into()),
-            pane_id: Some("pane-1".into()),
-            agent_id: None,
-            agent_type: None,
-            initial_prompt_submitted: false,
-            shell_integration: true,
-        }
+    fn recorded() -> (tauri::ipc::Channel<tauri::ipc::Response>, Arc<Mutex<usize>>) {
+        let messages = Arc::new(Mutex::new(0));
+        let counter = messages.clone();
+        let channel = tauri::ipc::Channel::new(move |_| {
+            *counter.lock().expect("count") += 1;
+            Ok(())
+        });
+        (channel, messages)
     }
 
     #[test]
-    fn active_pty_capacity_is_hard_under_concurrent_admission() {
-        const LIMIT: usize = 7;
-        const CONTENDERS: usize = 64;
-        let capacity = PtyCapacity::new(LIMIT);
-        let barrier = Arc::new(Barrier::new(CONTENDERS + 1));
-        let results = std::thread::scope(|scope| {
-            let handles = (0..CONTENDERS)
-                .map(|_| {
-                    let capacity = capacity.clone();
-                    let barrier = barrier.clone();
-                    scope.spawn(move || {
-                        barrier.wait();
-                        capacity.try_acquire().ok()
-                    })
-                })
-                .collect::<Vec<_>>();
-            barrier.wait();
-            handles
-                .into_iter()
-                .map(|handle| handle.join().expect("capacity contender"))
-                .collect::<Vec<_>>()
-        });
-        let mut permits = results.into_iter().flatten().collect::<Vec<_>>();
+    fn leaving_detaches_without_telling_any_pane_its_process_ended() {
+        let manager = PtyManager::default();
+        let (channel, messages) = recorded();
+        {
+            let mut guard = manager.streams.lock().expect("lock");
+            guard.begin_attach(3).expect("begin");
+            guard.finish_attach(3, channel).expect("attach");
+        }
+        manager.detach_all();
+        assert_eq!(manager.streams.subscriber_count(), 0);
+        assert_eq!(*messages.lock().expect("count"), 0);
+        assert!(!manager.closing.load(Ordering::Acquire));
 
-        assert_eq!(permits.len(), LIMIT);
-        assert_eq!(capacity.active.load(Ordering::Acquire), LIMIT);
-        assert!(capacity.try_acquire().is_err());
+        manager.release();
+        assert!(manager.closing.load(Ordering::Acquire));
+    }
 
-        permits.pop();
-        let replacement = capacity.try_acquire().expect("released slot is reusable");
-        assert_eq!(capacity.active.load(Ordering::Acquire), LIMIT);
-        drop(replacement);
-        drop(permits);
-        assert_eq!(capacity.active.load(Ordering::Acquire), 0);
+    #[test]
+    fn stopping_everything_without_a_core_still_marks_the_app_as_leaving() {
+        let manager = PtyManager::default();
+        manager.stop_everything();
+        assert!(manager.closing.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn core_errors_keep_the_categories_and_messages_the_frontend_reads() {
+        let missing = core_error(ClientError::Core("invalid argument: pty not found".into()));
+        assert_eq!(missing.category(), "bad-arg");
+        assert_eq!(missing.to_string(), "invalid argument: pty not found");
+
+        let capacity = core_error(ClientError::Core("pty: PTY capacity reached".into()));
+        assert_eq!(capacity.category(), "pty");
+        assert_eq!(capacity.to_string(), "pty: PTY capacity reached");
+
+        let gone = core_error(ClientError::Disconnected);
+        assert_eq!(gone.category(), "pty");
     }
 }

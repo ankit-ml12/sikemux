@@ -1,17 +1,16 @@
-# Sikemux v0.4.3-nightly.3
+# Sikemux v0.4.3-nightly.5
 
-The third nightly on the 0.4.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The fifth nightly on the 0.4.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.2
+## New since nightly.4
 
-- **Shortcuts.** ⌘N starts an agent, ⌘T a terminal where you are, ⌘J the nearest desk, and Option takes you back to the terminal. ⌘W no longer closes the window and quits every agent, and closing a project or a working agent asks first.
-- **Previews.** PDFs, audio, video, fonts and binaries open in a preview, and Office and iWork documents open through Quick Look.
-- **The desk's browser.** ⌘L opens the address over the middle of the page, suggests the sites you visit most and the pages you have been to, and Escape puts it away. The address bar leads with the site, and ⌘W closes the page rather than the whole desk.
-- **Agents.** Rename a chat from its header, its menu or the agent rail. The agent rail has an All agents tab, saved chats page across providers and projects, and a `sikemux://` link reopens an agent's conversation.
-- **Tabs.** Drag a pane's tab out of its split to give it a tab of its own, and grab a tab anywhere without dragging the window.
-- **Leaner agent tools.** An agent is offered only the plugin tools that work in its repository, SigNoz answers through five tools instead of twelve, and the browser's tools answer in less.
-- Panes share one dithered picture in place of the grain, and an empty workspace always offers somewhere to go.
+- **Your agents keep working when the window closes.** Terminals and chat agents now run in a background core, so quitting Sikemux leaves them running and reopening it puts every pane back where it was. A chat agent comes back mid-turn, with its permission request still waiting. Quit and Stop Everything ends them all.
+- **Updates no longer stop anything.** A newer Sikemux takes over the running core in place, panes keep their screens, and an update waits for chat agents to finish their turns.
+- **Crashed agents come back.** A terminal agent that dies returns on its conversation in the same pane, and agents' tools keep answering with the window closed.
+- **Worktrees.** Start a chat in its own git worktree. Sikemux shows the worktree's pull request and cleans it up once it is merged.
+- **Ports.** A chip in the top bar counts the ports your project's terminals, tasks and agents listen on, and agents can list them too.
+- **Remote access, first steps.** A new Devices page in Settings turns on remote access and pairs a device with a code you approve. A paired device can start a chat agent in one of your projects, and each chat and session records which device started it. There is no phone app yet; this is the groundwork for one.
+- **Faster start.** Sikemux reads your login shell while the window opens and no longer runs zoxide at launch.
+- **The chat.** Pick a new chat's project from a strip above the composer, or move a chat that has not started to another project. Attached files show as cards with their file type, and a long tool run redraws only the row that changed. The Git pane shows each pull request's CI in its list.
 
-Thanks to Sujal Rajput for renaming chats.
-
-For the complete patch history, compare [`v0.4.3-nightly.2...v0.4.3-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.4.3-nightly.2...v0.4.3-nightly.3).
+For the complete patch history, compare [`v0.4.3-nightly.4...v0.4.3-nightly.5`](https://github.com/nodelike/sikemux/compare/v0.4.3-nightly.4...v0.4.3-nightly.5).

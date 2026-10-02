@@ -1,4 +1,4 @@
-import { useContext, useRef, useState } from "react";
+import { memo, useContext, useRef, useState } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { hasPrimaryModifier } from "../lib/platform";
 import { IconAgent, IconChevron, IconCommand, IconFile, IconGlobe, IconPencil, IconPlug, IconSearch, IconWarning } from "../ui/Icons";
@@ -101,7 +101,7 @@ function ToolTerminal({ command, output, failed }: { command: string | null; out
     );
 }
 
-export function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
+export const ToolRow = memo(function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> }) {
     const [open, setOpen] = useState(false);
     const targetRef = useRef<HTMLSpanElement>(null);
     const tool = part.tool;
@@ -150,7 +150,7 @@ export function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> })
             {opens && <IconChevron size={10} className={`chat-tool-chevron${quiet ? " quiet" : ""}`} />}
         </>
     );
-    const rowProps = { className: `chat-tool status-${status}${running ? " live" : ""}`, "data-kind": rowKind, title: tool.title };
+    const rowProps = { className: `chat-tool status-${status}${running ? " live" : ""}`, "data-kind": rowKind };
     return (
         <div className="chat-tool-node">
             {/* A row whose target opens a file or a page cannot itself be a
@@ -194,4 +194,4 @@ export function ToolRow({ part }: { part: Extract<ChatPart, { kind: "tool" }> })
             )}
         </div>
     );
-}
+});

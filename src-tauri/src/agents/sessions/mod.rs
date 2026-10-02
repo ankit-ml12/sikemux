@@ -40,7 +40,7 @@ fn read_agent_sessions(
     match agent {
         AgentKind::Claude => claude_sessions(cwd, config_path),
         AgentKind::Codex => codex_sessions(cwd, config_path),
-        AgentKind::Hermes => hermes_sessions(),
+        AgentKind::Hermes => hermes_sessions(cwd),
         AgentKind::Pi => pi_sessions(cwd),
         AgentKind::Opencode => opencode_sessions(cwd),
         AgentKind::Omp => omp_sessions(cwd),
@@ -89,7 +89,7 @@ pub async fn live_agent_sessions(
             })
         })
         .ok_or_else(|| "claude is not available".to_string())?;
-    let mut command = Command::new(executable);
+    let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     command
         .args(["agents", "--json"])

@@ -11,6 +11,7 @@ import { AgentRail } from "./rail/AgentRail";
 import { RailPeek } from "./rail/RailPeek";
 import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
+import { watchTerminalAgentExits } from "./agents/tuiResume";
 import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
 import { FilePalette } from "./palettes/FilePalette";
@@ -25,6 +26,8 @@ import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./shell/HarnessBridge";
+import { RemoteChatBridge } from "./shell/RemoteChatBridge";
+import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
 import { git } from "./api/git";
@@ -41,6 +44,9 @@ import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
 import { emit } from "./state/bus";
 import * as cmd from "./state/commands";
+import { offerSavedSessions, restoreCoreSessions } from "./workspace/restoreCoreSessions";
+import { coreSessionsApi } from "./api/coreSessions";
+import { IS_MACOS } from "./lib/platform";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
     dispatchFolder,
@@ -105,7 +111,6 @@ const WhatsNewOverlay = lazy(() => import("./shell/WhatsNewOverlay").then((modul
 interface BootInfo {
     home: string;
     state: string;
-    recent: string[];
 }
 
 export interface ActiveTaskControls {
@@ -368,6 +373,11 @@ function ProjectBridge() {
  * command executed, for a list nobody was looking at. Mounting it with the
  * palette means the shell above stops subscribing to any of its inputs.
  */
+async function quitAndStopEverything(): Promise<void> {
+    if (canFlushPersist()) await flushPersist().catch(() => false);
+    await coreSessionsApi.quitAndStopEverything().catch(reportError("quit and stop everything"));
+}
+
 function ApplicationCommandPalette() {
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const customCommands = useStore((s) => s.customCommands);
@@ -625,6 +635,14 @@ function ApplicationCommandPalette() {
               ]
             : []),
         {
+            id: "app.quit-and-stop-everything",
+            title: "Quit and Stop Everything",
+            detail: "Stop every terminal, terminal agent and task, then quit. Plain Quit leaves them running.",
+            category: "Application",
+            shortcut: IS_MACOS ? "⌥⌘Q" : undefined,
+            execute: runStandalone("app.quit-and-stop-everything", () => void quitAndStopEverything()),
+        },
+        {
             id: "agents.reload-manifests",
             title: "Reload agent manifests",
             detail: "Reload agent-state detection rules from disk",
@@ -746,6 +764,7 @@ export default function App() {
                     applyEditorTextScale(st.editorTextScale);
                     cmd.setWindowBlur(st.windowBlur);
                     if (hydrationAllowsPersistence(hydrationResult)) {
+                        offerSavedSessions();
                         if (!st.onboardingComplete) cmd.openOnboarding();
                         else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
                         performanceTelemetry.endSpan(hydrateSpan, { outcome: "success" });
@@ -781,6 +800,7 @@ export default function App() {
                     unsub = subscribePersist();
                     setBootReady(true);
                     introduceNotifications();
+                    void restoreCoreSessions();
                 }
                 finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
             });
@@ -803,6 +823,8 @@ export default function App() {
     );
 
     useEffect(() => recordAgentTurns(), []);
+
+    useEffect(() => watchTerminalAgentExits(), []);
 
     useEffect(() => {
         let disposed = false;
@@ -945,6 +967,8 @@ export default function App() {
             <CliOpenBridge />
             <DeepLinkBridge />
             <HarnessBridge />
+            <RemoteWorkspaceBridge />
+            <RemoteChatBridge />
             <ProjectBridge />
             <AgentSessionSync />
             <AgentLifecycleManager />

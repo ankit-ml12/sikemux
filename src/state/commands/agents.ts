@@ -1,5 +1,7 @@
 import { agentApi, type AgentSession } from "../../api/agents";
-import { MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
+import type { AcpChat } from "../../api/acp";
+import { profileOfLauncher } from "../../remote/workspace";
+import { agentSupportsChat, isAgentType, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
 import { emit } from "../bus";
 import { reduceAgentState } from "../agentStatus";
 import { invalidate, peekResource } from "../resources";
@@ -12,9 +14,9 @@ import { agentDirectCommand, agentStartup } from "./agentLaunchCommand";
 import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
-import type { Agent, AgentEffort, AgentPermissionMode, AgentType, ProviderProfile } from "../types";
+import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, ProviderProfile } from "../types";
 import { selectSession } from "./sessions";
-import { withActiveSession } from "./shared";
+import { keepOpenedProjectInView, openProjectSession, projectSessionInBackground, withActiveSession } from "./shared";
 import { closeWindowById } from "./tabs";
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
@@ -198,6 +200,50 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
     return attached;
 }
 
+/**
+ * Shows a chat a paired device started among its project's agents, so the Mac
+ * can follow it. Leaves the screen where it is: the phone started it, not you.
+ */
+export function adoptChat(chat: AcpChat): boolean {
+    const type = chat.provider;
+    if (!isAgentType(type) || !agentSupportsChat(type)) return false;
+    let adopted = false;
+    mutate((d) => {
+        if (d.agents[chat.agentId]) return;
+        const sessionId = projectSessionInBackground(d as unknown as StoreState, chat.cwd);
+        const permissionMode = normalizePermissionMode(type, chat.permissionMode as AgentPermissionMode);
+        const profileId = profileOfLauncher(chat.launcher, d.providerProfiles, type);
+        const profile = profileId ? d.providerProfiles.find((item) => item.id === profileId) : undefined;
+        const model = chat.model ?? undefined;
+        const effort = (chat.effort ?? undefined) as AgentEffort | undefined;
+        const resumeId = chat.sessionId ?? undefined;
+        const launchOptions = profileLaunchOptions(profile, model, effort);
+        const agent: Agent = {
+            id: chat.agentId,
+            type,
+            title: type,
+            startup: agentStartup(type, resumeId, permissionMode, profile?.executablePath, launchOptions),
+            directCommand: agentDirectCommand(type, resumeId, permissionMode, profile?.executablePath, launchOptions),
+            resumeId,
+            createdAt: Date.now(),
+            permissionMode,
+            profileId,
+            executablePath: profile?.executablePath,
+            cwd: chat.cwd,
+            model,
+            effort,
+            ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
+            launchState: "live",
+        };
+        d.agents[agent.id] = agent;
+        const win = agentWindow(agent, chat.cwd);
+        d.windows[win.id] = win;
+        d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), win.id];
+        adopted = true;
+    });
+    return adopted;
+}
+
 export function reconcileAgentSessions(type: AgentType, cwd: string, configPath: string | undefined, rows: AgentSession[]): void {
     if (rows.length === 0) return;
     const unsavedNames: { sessionId: string; name: string; executablePath?: string }[] = [];
@@ -310,6 +356,46 @@ export function attachAgentSession(id: string, resumeId: string): void {
             launchOptions,
         );
         delete agent.baselineSessionIds;
+    });
+}
+
+/** Moves an agent's working directory, and with it the worktree it belongs to, or none. */
+export function setAgentWorktree(id: string, cwd: string, worktree: AgentWorktree | null): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (!agent) return;
+        agent.cwd = cwd;
+        if (worktree) agent.worktree = worktree;
+        else delete agent.worktree;
+        const winId = agentWindowId(d, id);
+        const root = winId ? d.windows[winId]?.root : undefined;
+        if (root?.type === "pane") root.cwd = cwd;
+    });
+}
+
+/** Moves a chat that has not started yet into another project, opening the project if it is not open. */
+export function moveAgentToProject(id: string, cwd: string): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        const winId = agentWindowId(d, id);
+        const fromId = winId ? ownerSessionId(d, winId) : null;
+        if (!agent || !winId || !fromId || agent.resumeId || agent.worktree) return;
+        keepOpenedProjectInView(cwd);
+        const toId = openProjectSession(d as unknown as StoreState, cwd);
+        if (toId === fromId) return;
+        const from = d.sessions[fromId];
+        const left = d.windowsBySession[fromId].filter((wid) => wid !== winId);
+        d.windowsBySession[fromId] = left;
+        if (from.activeWindowId === winId) from.activeWindowId = left[left.length - 1] ?? "";
+        d.windowsBySession[toId] = [...(d.windowsBySession[toId] ?? []), winId];
+        d.sessions[toId].activeWindowId = winId;
+        agent.cwd = cwd;
+        const root = d.windows[winId].root;
+        if (root.type === "pane") root.cwd = cwd;
+        const configPath = agent.profileId ? d.providerProfiles.find((profile) => profile.id === agent.profileId)?.configPath : undefined;
+        const known = peekResource(agentSessionsR, agent.type, cwd, configPath)?.map((row) => row.id);
+        if (known) agent.baselineSessionIds = [...new Set(known)];
+        else delete agent.baselineSessionIds;
     });
 }
 

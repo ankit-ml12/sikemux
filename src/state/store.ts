@@ -37,7 +37,6 @@ import type {
     DiffTarget,
     Session,
     SessionSwitcherView,
-    SpaceView,
     Window,
 } from "./types";
 
@@ -80,12 +79,16 @@ export interface DomainState {
     /** Plugins switched off in Settings; they are built in but act as if absent. */
     disabledPlugins: readonly string[];
     restoreAgentTabs: boolean;
-    /** The space each tagged project belongs to, by project folder, so a tag outlives closing the project. */
-    projectSpaces: Readonly<Record<string, ProjectSpace>>;
-    spaceView: SpaceView;
+    spaces: readonly ProjectSpace[];
+    /** The space id each project belongs to, by project folder, so it outlives closing the project. */
+    projectSpaces: Readonly<Record<string, string>>;
+    /** The space the rail shows, or null for every project. */
+    activeSpaceId: string | null;
     agentNotifications: boolean;
     voiceDictation: boolean;
     notificationsIntroduced: boolean;
+    /** The person was told once that terminals keep running after Sikemux quits. */
+    keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
     /** The agent rail shows every CLI's chats instead of one provider's. */
     agentRailAllAgents: boolean;
@@ -105,6 +108,8 @@ export interface DomainState {
     lastAgentType: AgentType | null;
     /** Whether each project, by root path, may start its language servers. A project absent here has not been asked. */
     languageServerTrust: Record<string, boolean>;
+    /** Whether a new chat in each project, by root path, starts with its Worktree switch on. */
+    agentWorktreeDefaults: Record<string, boolean>;
 }
 
 export type UpdateOperationState = "available" | "preparing" | "downloading" | "installing" | "restarting" | "error";
@@ -245,11 +250,13 @@ export const useStore = create<StoreState>(() => {
         pluginSettings: {},
         disabledPlugins: [],
         restoreAgentTabs: true,
+        spaces: [],
         projectSpaces: {},
-        spaceView: "all",
+        activeSpaceId: null,
         agentNotifications: true,
         voiceDictation: false,
         notificationsIntroduced: false,
+        keptRunningNoticeShown: false,
         railDensity: "comfortable",
         agentRailAllAgents: false,
         agentRailScope: "project",
@@ -265,6 +272,7 @@ export const useStore = create<StoreState>(() => {
         defaultAgentPermissionMode: "bypass",
         lastAgentType: null,
         languageServerTrust: {},
+        agentWorktreeDefaults: {},
 
         home: "",
         pluginManifests: [],

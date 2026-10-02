@@ -1,22 +1,26 @@
-import type { ProjectSpace, Session, SpaceView } from "./types";
+import type { ProjectSpace, Session } from "./types";
 
-export const PROJECT_SPACES: readonly { space: ProjectSpace; label: string }[] = [
-    { space: "work", label: "Work" },
-    { space: "personal", label: "Personal" },
-];
+export const MAX_SPACE_NAME_LENGTH = 40;
 
-export const isProjectSpace = (value: unknown): value is ProjectSpace => value === "work" || value === "personal";
-
-/** A project in no space shows in every view; a tagged one only under All and its own space. */
-export function isProjectShown(cwd: string, spaces: Readonly<Record<string, ProjectSpace>>, view: SpaceView): boolean {
-    const space = spaces[cwd];
-    return view === "all" || space === undefined || space === view;
+/** All shows every project; a space shows only the projects put in it. */
+export function isProjectShown(cwd: string, projectSpaces: Readonly<Record<string, string>>, activeSpaceId: string | null): boolean {
+    return activeSpaceId === null || projectSpaces[cwd] === activeSpaceId;
 }
 
 export function shownProjects<T extends Pick<Session, "cwd">>(
     projects: readonly T[],
-    spaces: Readonly<Record<string, ProjectSpace>>,
-    view: SpaceView,
+    projectSpaces: Readonly<Record<string, string>>,
+    activeSpaceId: string | null,
 ): T[] {
-    return projects.filter((project) => isProjectShown(project.cwd, spaces, view));
+    return projects.filter((project) => isProjectShown(project.cwd, projectSpaces, activeSpaceId));
 }
+
+/** The first character as a person sees it, so an emoji made of several code points stays whole. */
+export function firstGrapheme(text: string): string {
+    const first = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text.trim())[Symbol.iterator]().next();
+    return first.done ? "" : first.value.segment;
+}
+
+export const spaceBadge = (space: ProjectSpace): string => space.icon || firstGrapheme(space.name).toUpperCase();
+
+export const spaceName = (name: string): string => name.trim().slice(0, MAX_SPACE_NAME_LENGTH);

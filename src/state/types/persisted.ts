@@ -14,7 +14,6 @@ import type {
     AgentRailScope,
     RecentEntry,
     Session,
-    SpaceView,
     Window,
 } from "./domain";
 import type { EditorPaneView } from "./view";
@@ -38,6 +37,8 @@ export type PersistedAgent = Pick<
     | "skipPermissions"
     | "keepAlive"
     | "renamed"
+    | "worktree"
+    | "ptyId"
 >;
 
 export interface PersistedSnapshot {
@@ -81,12 +82,13 @@ export interface PersistedPrefs {
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
-    projectSpaces?: Record<string, ProjectSpace>;
-    spaceView?: SpaceView;
+    spaces?: ProjectSpace[];
+    projectSpaces?: Record<string, string>;
+    activeSpaceId?: string | null;
     agentNotifications?: boolean;
     voiceDictation?: boolean;
     notificationsIntroduced?: boolean;
-    autoResumeAgents?: boolean;
+    keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;
     agentRailAllAgents?: boolean;
     agentRailScope?: AgentRailScope;
@@ -103,4 +105,5 @@ export interface PersistedPrefs {
     defaultAgentPermissionMode?: AgentPermissionMode;
     lastAgentType?: AgentType | null;
     languageServerTrust?: Record<string, boolean>;
+    agentWorktreeDefaults?: Record<string, boolean>;
 }
