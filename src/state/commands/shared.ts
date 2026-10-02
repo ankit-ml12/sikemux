@@ -3,7 +3,7 @@ import { browserApi } from "../../api/browser";
 import { basename } from "../../lib/paths";
 import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { emit } from "../bus";
-import { getState, mutate, type StoreState } from "../store";
+import { getState, mutate, setState, type StoreState } from "../store";
 import { deskEditorId } from "../desks";
 import { notify, reportError } from "../toast";
 import { confirmDialog } from "../dialog";
@@ -116,6 +116,45 @@ export function attachSession(d: StoreState, session: Session, windows: Window[]
     d.activeSessionId = session.id;
     d.zoomedPaneId = null;
     d.pickerOpen = false;
+}
+
+/** A project's session, opened behind the one in front if the project is not open yet. Returns its id. */
+export function projectSessionInBackground(d: StoreState, cwd: string): string {
+    const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
+    if (existing) return existing.id;
+    const window = makeWindow(cwd, "Terminal", { role: "term" });
+    const session = makeSession("project", basename(cwd), cwd, window.id);
+    d.sessions[session.id] = session;
+    d.sessionOrder.push(session.id);
+    d.windows[window.id] = window;
+    d.windowsBySession[session.id] = [window.id];
+    return session.id;
+}
+
+/** Brings a project's session forward, opening one with a terminal if the project is not open yet. Returns its id. */
+/**
+ * Opening a project while a space is shown keeps it in view: a project in no
+ * space joins the shown space, and one in another space brings that space up.
+ */
+export function keepOpenedProjectInView(cwd: string): void {
+    const { activeSpaceId, projectSpaces } = getState();
+    if (activeSpaceId === null || projectSpaces[cwd] === activeSpaceId) return;
+    const placed = projectSpaces[cwd];
+    if (placed) setState({ activeSpaceId: placed });
+    else setState({ projectSpaces: { ...projectSpaces, [cwd]: activeSpaceId } });
+}
+
+export function openProjectSession(d: StoreState, cwd: string): string {
+    const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
+    if (!existing) {
+        const windows = [makeWindow(cwd, "Terminal", { role: "term" })];
+        attachSession(d, makeSession("project", basename(cwd), cwd, windows[0].id), windows);
+        return d.activeSessionId;
+    }
+    d.pickerOpen = false;
+    d.zoomedPaneId = null;
+    d.activeSessionId = existing.id;
+    return existing.id;
 }
 
 export function dirtyPathsForWindow(st: StoreState, win: Window | undefined): string[] {

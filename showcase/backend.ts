@@ -24,7 +24,12 @@ import {
   brunoDir,
 } from "./world/bruno";
 import { BROWSER_TABS, placeBrowserPage } from "./browserPage";
-import { DEMO_HOME, DEMO_PROJECTS, SIKEMUX } from "./world/projects";
+import {
+  DEMO_HOME,
+  DEMO_PROJECTS,
+  PANE_IMAGE,
+  SIKEMUX,
+} from "./world/projects";
 import { terminalReplay } from "./world/terminals";
 import { demoSnapshot } from "./world/workspace";
 
@@ -219,6 +224,9 @@ export class ShowcaseBackend implements IpcTransport {
         ? brunoDir(path as string)
         : [],
     );
+    this.on("preview_file", ({ path }) =>
+      path === PANE_IMAGE ? { mime: "image/jpeg", size: 0, modified: 0 } : null,
+    );
     this.on("read_file_versioned", async ({ path }) => ({
       content: await server<string>("read_file", { path }),
       version: "showcase",
@@ -339,6 +347,10 @@ export class ShowcaseBackend implements IpcTransport {
       "agent_usage",
       ({ agent }) => AGENT_USAGE[agent as keyof typeof AGENT_USAGE] ?? null,
     );
+    this.on("acp_attach", () => ({ status: "missing" }));
+    this.on("acp_list", () => []);
+    this.on("pty_sessions", () => []);
+    this.on("listening_ports", () => []);
     this.on("acp_start", ({ agentId, provider }) =>
       this.startAgent(agentId as string, provider as string),
     );
@@ -380,6 +392,57 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("browser_set_bounds", ({ agentId, bounds }) =>
       placeBrowserPage(agentId as string, bounds as DOMRectInit | null),
     );
+
+    const phone =
+      "4b1e8c0d27a95f36e1c4b80d9a2f6e7135c0b8d4e9f2a6c1d07e3b5f9a8c2d41";
+    const remote = {
+      enabled: true,
+      coreId:
+        "7d3f9c2ae0b54d18a6f1c39e85b27d0c4fa16e93b2d8c05a7e14f69b3c2d8a50",
+      addresses: [] as string[],
+      devices: [
+        {
+          id: phone,
+          name: "iPhone",
+          platform: "ios",
+          access: "full",
+          pairedAt: Date.now() - 9 * 86_400_000,
+          lastSeen: Date.now(),
+        },
+        {
+          id: "9a0c5e3b7d1f48a2c6e09b4d8f3a1c7e5b2d06f9a4c8e1b3d7f5a2c09e6b4d18",
+          name: "Pixel 9",
+          platform: "android",
+          access: "watch",
+          pairedAt: Date.now() - 30 * 86_400_000,
+          lastSeen: Date.now() - 2 * 3_600_000,
+        },
+      ],
+      connected: [phone],
+      pairing: null as { code: string; expiresAt: number } | null,
+      pending: [] as {
+        id: string;
+        deviceId: string;
+        name: string;
+        platform: string;
+      }[],
+    };
+    this.on("remote_status", () => ({ ...remote }));
+    this.on("remote_set_enabled", ({ enabled }) => ({
+      ...Object.assign(remote, { enabled: enabled as boolean }),
+    }));
+    this.on("remote_open_pairing", () => ({
+      ...Object.assign(remote, {
+        pairing: {
+          code: "482913",
+          expiresAt: Date.now() + 5 * 60_000,
+          link: "sikemux://pair?core=7d3f9c2ae0b54d18a6f1c39e85b27d0c4fa16e93b2d8c05a7e14f69b3c2d8a50&code=482913",
+        },
+      }),
+    }));
+    this.on("remote_close_pairing", () => ({
+      ...Object.assign(remote, { pairing: null }),
+    }));
   }
 
   private readonly liveSteps: { run: () => void; holdMs: number }[] = [];

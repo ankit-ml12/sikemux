@@ -117,7 +117,7 @@ pub(super) async fn run_model_catalog_executable_without_env(
     config_path: Option<&str>,
     removed_env: &[&str],
 ) -> Result<String, String> {
-    let mut command = Command::new(executable);
+    let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     for key in removed_env {
         command.env_remove(key);
@@ -133,6 +133,7 @@ pub(super) async fn run_model_catalog_executable_without_env(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     apply_process_config(&mut command, agent, config_path);
+    command.envs(crate::model_providers::environment(agent).await);
     let mut child = command
         .spawn()
         .map_err(|_| format!("Could not start {agent} model lookup"))?;

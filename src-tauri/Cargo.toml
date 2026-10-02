@@ -1,6 +1,6 @@
 [package]
 name = "sikemux"
-version = "0.4.3-nightly.3"
+version = "0.4.3-nightly.5"
 description = "A GUI terminal multiplexer"
 authors = ["nodelike"]
 edition = "2021"
@@ -41,6 +41,8 @@ signoz = ["dep:sikemux-plugin-signoz"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+sha2 = "0.11"
+hex = "0.4"
 
 [dependencies]
 tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable", "compression"] }
@@ -82,9 +84,11 @@ sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
 sikemux-plugin-github = { path = "plugins/github", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
+sikemux-keychain = { path = "crates/sikemux-keychain" }
 sikemux-process = { path = "crates/sikemux-process" }
 sikemux-markdown = { path = "crates/sikemux-markdown" }
-agent-client-protocol = "2.0.0"
+sikemux-pty = { path = "crates/sikemux-pty" }
+sikemux-core = { path = "crates/sikemux-core" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util", "net"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "stream", "cookies", "multipart"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

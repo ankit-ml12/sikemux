@@ -31,9 +31,11 @@ import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
 import { isPluginKind, pluginIdOf } from "../plugins/kinds";
 import { leavingRail } from "./railMotion";
+import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
-import { PROJECT_SPACES, shownProjects } from "../state/projectSpaces";
-import type { SpaceView } from "../state/types";
+import { shownProjects, spaceBadge } from "../state/projectSpaces";
+import type { ProjectSpace } from "../state/types";
+import { confirmDialog, promptDialog } from "../state/dialog";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
@@ -415,39 +417,102 @@ function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: str
     );
 }
 
-const SPACE_VIEWS: readonly { view: SpaceView; label: string }[] = [
-    { view: "all", label: "All" },
-    ...PROJECT_SPACES.map(({ space, label }) => ({ view: space, label })),
-];
+type OpenMenu = (event: ReactMouseEvent, items: CtxItem[]) => void;
 
-function SpaceSwitch({ view }: { view: SpaceView }) {
+async function askSpaceName(title: string, confirmLabel: string, initial = ""): Promise<string | null> {
+    const name = await promptDialog({ title, label: "Name", initial, placeholder: "Work, Side projects, Client A…", confirmLabel });
+    return name?.trim() ? name : null;
+}
+
+async function newSpace(then?: (id: string) => void): Promise<void> {
+    const name = await askSpaceName("Create space", "Create");
+    const id = name ? cmd.createSpace(name) : null;
+    if (id) (then ?? cmd.showSpace)(id);
+}
+
+function spaceItems(space: ProjectSpace): CtxItem[] {
+    return [
+        {
+            label: "Rename…",
+            run: () => void askSpaceName("Rename space", "Rename", space.name).then((name) => name && cmd.renameSpace(space.id, name)),
+        },
+        {
+            label: "Change Icon…",
+            run: () =>
+                void promptDialog({
+                    title: "Space icon",
+                    label: "An emoji",
+                    initial: space.icon,
+                    placeholder: "💼",
+                    confirmLabel: "Save",
+                }).then((icon) => icon !== null && cmd.setSpaceIcon(space.id, icon)),
+        },
+        ...(space.icon ? [{ label: "Use First Letter as Icon", run: () => cmd.setSpaceIcon(space.id, "") }] : []),
+        { sep: true },
+        {
+            label: "Delete Space…",
+            danger: true,
+            run: () =>
+                void confirmDialog({
+                    title: `Delete “${space.name}”?`,
+                    body: "Its projects stay open and show under All.",
+                    confirmLabel: "Delete",
+                }).then((yes) => yes && cmd.deleteSpace(space.id)),
+        },
+    ];
+}
+
+function SpaceSwitch({ spaces, activeSpaceId, onMenu }: { spaces: readonly ProjectSpace[]; activeSpaceId: string | null; onMenu: OpenMenu }) {
+    const add = (
+        <Tooltip label="Create space">
+            <button type="button" className="space-add" aria-label="Create space" onClick={() => void newSpace()}>
+                <IconPlus size={11} />
+                {spaces.length === 0 && <span>New space</span>}
+            </button>
+        </Tooltip>
+    );
+    if (spaces.length === 0) return <div className="space-switch empty">{add}</div>;
+    const option = (id: string | null, label: string, badge?: string, space?: ProjectSpace) => (
+        <button
+            key={id ?? "all"}
+            type="button"
+            role="radio"
+            aria-checked={activeSpaceId === id}
+            aria-label={label}
+            className={activeSpaceId === id ? "active" : ""}
+            onClick={() => cmd.showSpace(id)}
+            onContextMenu={space ? (event) => onMenu(event, spaceItems(space)) : undefined}
+            onDoubleClick={
+                space
+                    ? () => void askSpaceName("Rename space", "Rename", space.name).then((name) => name && cmd.renameSpace(space.id, name))
+                    : undefined
+            }>
+            {badge && <span className="space-badge">{badge}</span>}
+            <span className="space-name">{label}</span>
+        </button>
+    );
     return (
-        <div className="space-switch" role="radiogroup" aria-label="Projects shown">
-            {SPACE_VIEWS.map((option) => (
-                <button
-                    key={option.view}
-                    type="button"
-                    role="radio"
-                    aria-checked={view === option.view}
-                    className={view === option.view ? "active" : ""}
-                    onClick={() => cmd.setSpaceView(option.view)}>
-                    {option.label}
-                </button>
-            ))}
+        <div className="space-switch">
+            <div className="space-options" role="radiogroup" aria-label="Projects shown">
+                {option(null, "All")}
+                {spaces.map((space) => option(space.id, space.name, spaceBadge(space), space))}
+            </div>
+            {add}
         </div>
     );
 }
 
-function spaceMenu(session: Session, current: string | undefined): CtxItem[] {
+function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined): CtxItem[] {
     const mark = (selected: boolean) => (selected ? "✓" : undefined);
     return [
-        ...PROJECT_SPACES.map(({ space, label }) => ({
-            label,
-            hint: mark(current === space),
-            run: () => cmd.setProjectSpace(session.cwd, space),
+        ...spaces.map((space) => ({
+            label: `${spaceBadge(space)}  ${space.name}`,
+            hint: mark(current === space.id),
+            run: () => cmd.setProjectSpace(session.cwd, space.id),
         })),
+        { label: "New Space…", run: () => void newSpace((id) => cmd.setProjectSpace(session.cwd, id)) },
         { sep: true },
-        { label: "No space (always shown)", hint: mark(current === undefined), run: () => cmd.setProjectSpace(session.cwd, null) },
+        { label: "No Space", hint: mark(current === undefined), run: () => cmd.setProjectSpace(session.cwd, null) },
     ];
 }
 
@@ -545,10 +610,16 @@ export const SideRail = memo(function SideRail() {
     const disabledPlugins = useStore((s) => s.disabledPlugins);
     const inGroup = (group: RailGroup) => sessions.filter((s) => railGroupOf(s.kind, pluginManifests, disabledPlugins) === group);
     const projectSpaces = useStore((s) => s.projectSpaces);
-    const spaceView = useStore((s) => s.spaceView);
-    const [spaceMenuAt, setSpaceMenuAt] = useState<{ x: number; y: number; session: Session } | null>(null);
-    const projects = shownProjects(inGroup("project"), projectSpaces, spaceView);
-    const usesSpaces = spaceView !== "all" || Object.keys(projectSpaces).length > 0;
+    const spaces = useStore((s) => s.spaces);
+    const activeSpaceId = useStore((s) => s.activeSpaceId);
+    const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[] } | null>(null);
+    const openMenu: OpenMenu = (event, items) => {
+        event.preventDefault();
+        setMenu({ x: event.clientX, y: event.clientY, items });
+    };
+    const allProjects = inGroup("project");
+    const projects = shownProjects(allProjects, projectSpaces, activeSpaceId);
+    const activeSpace = spaces.find((space) => space.id === activeSpaceId);
     const sshs = inGroup("ssh");
     const commands = inGroup("command");
     const plugins = inGroup("plugins");
@@ -759,10 +830,7 @@ export const SideRail = memo(function SideRail() {
         projectDragClass,
         onProjectPointerDown,
         selectProject,
-        openSpaceMenu: (event, session) => {
-            event.preventDefault();
-            setSpaceMenuAt({ x: event.clientX, y: event.clientY, session });
-        },
+        openSpaceMenu: (event, session) => openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd])),
         jumpToWindow,
         jumpToAgents,
         kb,
@@ -770,7 +838,7 @@ export const SideRail = memo(function SideRail() {
 
     return (
         <RailContext.Provider value={rail}>
-            <aside ref={leavingRail} className="side-rail" onClickCapture={settingsOpen ? cmd.closeSettings : undefined}>
+            <aside ref={leavingRail} className="side-rail" {...LEAVES_SETTINGS}>
                 <RailMasthead />
                 <div className="rail-scroll">
                     <Group
@@ -779,8 +847,8 @@ export const SideRail = memo(function SideRail() {
                         add={() => cmd.openPicker("projects")}
                         addTitle={`Open project — ${kb("project.open")}`}
                         addKbd={kb("project.open")}
-                        emptyText={spaceView === "all" ? "no projects" : `no ${spaceView} projects`}
-                        toolbar={usesSpaces && <SpaceSwitch view={spaceView} />}
+                        emptyText={activeSpace ? `no projects in ${activeSpace.name}` : "no projects"}
+                        toolbar={allProjects.length > 0 && <SpaceSwitch spaces={spaces} activeSpaceId={activeSpaceId} onMenu={openMenu} />}
                     />
                     <Group
                         label="SSH"
@@ -808,14 +876,7 @@ export const SideRail = memo(function SideRail() {
                     />,
                     document.body,
                 )}
-            {spaceMenuAt && (
-                <TreeContextMenu
-                    x={spaceMenuAt.x}
-                    y={spaceMenuAt.y}
-                    items={spaceMenu(spaceMenuAt.session, projectSpaces[spaceMenuAt.session.cwd])}
-                    onClose={() => setSpaceMenuAt(null)}
-                />
-            )}
+            {menu && <TreeContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
         </RailContext.Provider>
     );
 });

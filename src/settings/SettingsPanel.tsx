@@ -25,6 +25,7 @@ import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
+import { useLeaveSettingsOnNavigation } from "./leaveSettings";
 import {
     IconActivity,
     IconAgent,
@@ -36,6 +37,7 @@ import {
     IconFolder,
     IconGlobe,
     IconPlug,
+    IconPhone,
     IconInfo,
     IconPlus,
     IconRefresh,
@@ -62,7 +64,9 @@ import {
 import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { ActivityPage } from "../shell/ActivityPage";
-import { SettingsPage, SettingsSection } from "./SettingsLayout";
+import { DevicesPage } from "./DevicesPage";
+import { ModelProvidersSection } from "./ModelProvidersSection";
+import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 import { useVoice, type VoiceState } from "../voice/dictation";
 import "../styles/settings.css";
 
@@ -75,6 +79,7 @@ const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
     agents: <IconAgent size={13} />,
     actions: <IconRun size={13} />,
     cli: <IconEditor size={13} />,
+    devices: <IconPhone size={13} />,
     cloud: <IconGlobe size={13} />,
     plugins: <IconPlug size={13} />,
 };
@@ -131,6 +136,8 @@ export function SettingsPanel() {
     );
     const results = useMemo(() => searchSettings(query, entries), [query, entries]);
     const searching = query.trim().length > 0;
+
+    useLeaveSettingsOnNavigation();
 
     useEffect(() => {
         searchRef.current?.focus();
@@ -296,6 +303,8 @@ export function SettingsPanel() {
                                 {page === "actions" && <ActionsPage />}
 
                                 {page === "cli" && <CliPage />}
+
+                                {page === "devices" && <DevicesPage />}
 
                                 {page === "cloud" && <CloudPage cloudBrowser={cloudBrowser} cloudBrowserShortcut={cloudBrowserShortcut} />}
                                 {page === "plugins" && <PluginsPage />}
@@ -526,7 +535,7 @@ function AgentsPage() {
             <SettingsSection
                 title="Provider profiles"
                 meta={`${profiles.length} configured`}
-                sub="Which local executable a launch uses. Credentials are never saved by Sikemux.">
+                sub="Which local executable a launch uses. Profiles never hold credentials.">
                 <div className="provider-profile-layout">
                     <div className="provider-profile-list">
                         {profiles.map((profile) => (
@@ -642,6 +651,8 @@ function AgentsPage() {
                     ))}
                 </SettingsRows>
             </SettingsSection>
+
+            <ModelProvidersSection />
 
             <SettingsSection title="Sessions">
                 <SettingsRows>
@@ -1652,46 +1663,6 @@ function VoiceSection() {
                 <SettingsRow label="Speech model" desc={voiceModelStatus(voice, enabled)} />
             </SettingsRows>
         </SettingsSection>
-    );
-}
-
-function SettingsRows({ children }: { children: ReactNode }) {
-    return <div className="settings-rows">{children}</div>;
-}
-
-/**
- * The shape every labelled setting takes: a name, an optional line of help, and
- * one control. Pass `asLabel` when the control is a switch or checkbox, so the
- * whole row is clickable; `wide` when the control should fill the right column.
- */
-function SettingsRow({
-    label,
-    desc,
-    wide = false,
-    stack = false,
-    asLabel = false,
-    control,
-    children,
-}: {
-    label: ReactNode;
-    desc?: ReactNode;
-    wide?: boolean;
-    stack?: boolean;
-    asLabel?: boolean;
-    control?: ReactNode;
-    children?: ReactNode;
-}) {
-    const Tag = asLabel ? "label" : "div";
-    return (
-        <Tag
-            className={`settings-row${wide ? " wide" : ""}${stack ? " stack" : ""}`}
-            data-settings-target={typeof label === "string" ? label : undefined}>
-            <span className="settings-row-copy">
-                <span className="settings-row-label">{label}</span>
-                {desc && <span className="settings-row-desc">{desc}</span>}
-            </span>
-            <span className="settings-row-control">{control ?? children}</span>
-        </Tag>
     );
 }
 

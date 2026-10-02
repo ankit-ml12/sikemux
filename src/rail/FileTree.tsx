@@ -2,7 +2,6 @@ import { renameEditorPath } from "../state/editorPaths";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { setNativeViewHoles } from "../state/nativeViews";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
@@ -56,6 +55,7 @@ const TREE_VIRTUALIZE_AFTER = 150;
 export interface CtxItem {
     label?: string;
     hint?: string;
+    icon?: ReactNode;
     danger?: boolean;
     disabled?: boolean;
     sep?: boolean;
@@ -882,16 +882,6 @@ export function TreeContextMenu({
         setPos({ left, top });
     }, [x, y, alignRight]);
 
-    /* A browser page stays where it is and only gives up the menu's own box. Its
-       layout box, not its bounding one, so the hole is whole while it animates in. */
-    useLayoutEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
-        setNativeViewHoles(ref, [{ x: pos.left, y: pos.top, width: el.offsetWidth, height: el.offsetHeight, radius }]);
-    }, [pos]);
-    useEffect(() => () => setNativeViewHoles(ref, []), []);
-
     /* A click on the page lands in the page, never on the scrim, but it takes the
        window's focus with it, so losing focus closes the menu as a click away would. */
     useEffect(() => {
@@ -960,6 +950,7 @@ export function TreeContextMenu({
                                 onClose();
                                 it.run?.();
                             }}>
+                            {it.icon && <span className="tree-ctx-icon">{it.icon}</span>}
                             <span className="tree-ctx-label" title={it.label}>
                                 {it.label}
                             </span>

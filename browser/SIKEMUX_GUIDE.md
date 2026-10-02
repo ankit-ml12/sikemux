@@ -24,7 +24,8 @@ This page is what to know before your first call. Call `guide` again with a
 
 - `workspace_inspect` comes first. It returns the open project, the tasks in
   `sikemux.json`, the runs you already started and an event cursor. Task ids
-  come from there; do not guess one.
+  come from there; do not guess one. Its `ports` lists the TCP ports the
+  project's terminals, tasks and agents listen on, preview first.
 - `task_start` takes an `idempotencyKey` you choose and either a `taskId` or a
   `command`. Reusing a key returns the original run, so pick one key per
   attempt and reuse it when a call fails or you are unsure it landed. Use
@@ -34,7 +35,8 @@ This page is what to know before your first call. Call `guide` again with a
   the last lines and `search` the matching ones.
 - `events_wait` takes an event cursor from `workspace_inspect` or the last
   wait. **Event cursors are not output cursors**; never mix them. A timeout
-  is normal: wait again with the fresh cursor.
+  is normal: wait again with the fresh cursor. Cursors stay valid after
+  Sikemux reloads or restarts.
 - Browser tools that act report what changed since your last read of the
   page (`report: "changes"`); `"outcome"` is leaner and `"full"` returns the
   whole state. The first read of a new page is always full.
@@ -55,7 +57,7 @@ This page is what to know before your first call. Call `guide` again with a
 Pass one of these as `topic`:
 
 - `config` — writing or fixing `sikemux.json`, and what `configStatus` means
-- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what a reload loses
+- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what survives a reload
 - `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
 - `ui` — `ui_open` for files, diffs, terminals and the preview
 - `browser-reading` — page state, report modes, element numbers and lines, `browser_find`, frames
@@ -143,16 +145,31 @@ person's focus. To bring the person to it, call `ui_open` with
 its process tree. A `taskId` instead stops that task's latest execution. It
 does not stop a task started from the command deck.
 
-### What does not survive
+### What survives a reload or restart
 
-Run history and idempotency keys live for the current frontend session, capped
-at 128 runs and 256 keys. Restarting the app does not resume commands, and
-reloading the Sikemux window stops every task and loses run handles;
-`task_read` then says the task was started before the reload. Closing the project stops its harness
-tasks.
+Tasks, their runs and idempotency keys live in Sikemux's background process,
+so they survive the window reloading, the app quitting and Sikemux updating.
+While the window is closed, `task_read`, `task_stop`, `events_wait` and
+`task_start` with a key you already used keep working, and `workspace_inspect`
+returns your runs and an event cursor with `window: null` and a `note`; its
+panes, `sikemux.json` tasks and ports need the window. Starting a new run,
+`ui_open` and the browser tools need the window too; with it closed they fail
+and say so. While Sikemux updates its background process a call can fail for
+a moment saying so; call it again. When Sikemux opens again the tasks'
+terminals come back. Chat agents keep running too: a turn in progress goes
+on while the window is closed, and a permission it asks for waits for the
+person. A terminal agent whose process dies, other than by the person quitting
+it or Sikemux stopping it, is started again on its saved conversation in the
+same pane. A task that ended stays readable for about ten minutes.
+Event cursors stay valid across reloads, restarts and updates, so keep the one
+you have.
 
-If you hit a capacity error on either cap, the person needs to restart Sikemux;
-you cannot clear it yourself.
+"Quit and Stop Everything" (⌥⌘Q) stops every task and the background process,
+and its runs and keys go with it; `task_read` then says the task was started
+earlier and its run is gone. Sikemux keeps 128 runs and 256 keys, forgetting
+the oldest finished ones first; only when that many are still running does a
+start fail, and stopping one with `task_stop` makes room. Closing the project
+stops its harness tasks.
 
 ## output: Reading output and waiting
 
@@ -200,8 +217,8 @@ a mistake.
 A timeout is normal: you get an empty event list and a fresh cursor. Wait
 again. Pass an `executionId` to hear only about one task.
 
-Event history holds 256 entries. If a wait comes back `truncated`, stop
-replaying and inspect the workspace again for current state.
+A wait reaches the project's newest 1024 events. If one comes back
+`truncated`, stop replaying and inspect the workspace again for current state.
 
 A wait does not schedule you a future turn. It only holds this call open.
 

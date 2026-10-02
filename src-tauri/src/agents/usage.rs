@@ -4,6 +4,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
+use sikemux_pty::user_shell::login_shell_environment;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::process::Command;
 
@@ -95,7 +96,7 @@ const CLAUDE_SUBSCRIPTION_OVERRIDE_ENV: &[&str] = &[
 fn claude_subscription_override_present() -> bool {
     CLAUDE_SUBSCRIPTION_OVERRIDE_ENV.iter().any(|key| {
         std::env::var_os(key).is_some_and(|value| !value.is_empty())
-            || crate::system::login_shell_environment()
+            || login_shell_environment()
                 .get(*key)
                 .is_some_and(|value| !value.is_empty())
     })
@@ -149,7 +150,7 @@ async fn run_codex_usage_executable(
     executable: &Path,
     config_path: Option<&str>,
 ) -> Result<AgentUsage, String> {
-    let mut command = Command::new(executable);
+    let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);
     command
         .args(["app-server", "--stdio"])

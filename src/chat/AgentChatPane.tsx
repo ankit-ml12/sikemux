@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { acpApi } from "../api/acp";
-import { effortConfig, sessionConfigs, type SessionConfig } from "./ComposerPickers";
+import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
 import { rowMeta } from "./messageMeta";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
@@ -15,7 +15,7 @@ import { FoldMemoryContext, newFoldMemory } from "./longText";
 import { lastPrompt, sentPrompts } from "./promptHistory";
 import { activeToolLabel } from "./toolLabels";
 import { formatDetail, runningSubagents } from "./transcript";
-import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort, RECONNECT_DELAYS } from "./chatStatus";
+import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
 import { ChatAgentContext } from "./chatAgent";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { ChatActivity } from "./ChatActivity";
@@ -26,9 +26,12 @@ import { useMessageArrival } from "./useMessageArrival";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
+import { useChatWorktree } from "./useChatWorktree";
 import { BOTTOM_SLACK, useStickToBottom } from "./useStickToBottom";
 
 const ChatFind = lazy(() => import("./ChatFind"));
+const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
+const ProjectStrip = lazy(() => import("./ProjectStrip").then(({ ProjectStrip }) => ({ default: ProjectStrip })));
 
 export function AgentChatPane({
     agent,
@@ -100,7 +103,7 @@ export function AgentChatPane({
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 
-    const { agentRef, sessionIdRef, reconnectAttempt, reconnect, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
+    const { agentRef, sessionIdRef, recovery, retry, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
         active,
         agent,
         profile,
@@ -138,6 +141,17 @@ export function AgentChatPane({
         commands: state.commands,
         steerable,
         dispatch,
+        onError: setComposerError,
+    });
+    const started = state.messages.length > 0 || Boolean(agent.resumeId);
+    const worktree = useChatWorktree({
+        agent,
+        cwd,
+        visible,
+        started,
+        connection: state.connection,
+        running: state.running,
+        send,
         onError: setComposerError,
     });
     const sentHistory = useMemo(
@@ -222,14 +236,15 @@ export function AgentChatPane({
     const subagents = useMemo(() => runningSubagents(displayState.messages), [displayState.messages]);
     const plan = useMemo(() => (displayState.plan === null ? null : formatDetail(displayState.plan)), [displayState.plan]);
     const connecting = connectingLabel(displayState.connection);
-    const activity = activityText(displayState, activeTool);
+    const activity = recovery === null ? activityText(displayState, activeTool) : null;
     const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
-    const reconnecting = disconnected && reconnectAttempt < RECONNECT_DELAYS.length;
+    const resuming = recovery?.phase === "resuming";
+    const failure = recovery?.phase === "failed" ? recovery : null;
     const welcoming = displayState.messages.length === 0 && displayState.connection === "ready";
     const failedPrompt =
         displayState.error && state.connection === "ready" && !state.running && queued.length === 0 ? lastPrompt(state.messages) : null;
-    const retry = () => {
-        if (failedPrompt) send(failedPrompt.text, failedPrompt.paths, false);
+    const retryPrompt = () => {
+        if (failedPrompt) send({ ...failedPrompt, context: [] }, false);
     };
     const startNewChat = () =>
         cmd.addAgent(agent.type, undefined, undefined, {
@@ -239,7 +254,20 @@ export function AgentChatPane({
             cwd,
         });
     const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
-    const composerPlaceholder = placeholderFor(state, { reconnecting, disconnected });
+    const composerPlaceholder = placeholderFor(state, { resuming, disconnected });
+    const sessionActions = (
+        <div className="chat-connection-actions">
+            <button type="button" onClick={retry}>
+                {failure ? "Retry" : "Reconnect"}
+            </button>
+            {agent.resumeId && (
+                <button type="button" onClick={startNewChat}>
+                    Start new chat
+                </button>
+            )}
+        </div>
+    );
+    const failureDetail = failure?.detail && <span className="chat-recovery-detail">{failure.detail}</span>;
 
     return (
         <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
@@ -270,28 +298,25 @@ export function AgentChatPane({
                         onKeyDown={noteGesture}
                         onScroll={onScroll}>
                         <div className="chat-scroll-content" ref={scrollContentRef}>
+                            {(worktree.step !== null || agent.worktree) && (
+                                <Suspense fallback={null}>
+                                    <WorktreeNote step={worktree.step} worktree={agent.worktree} home={home} />
+                                </Suspense>
+                            )}
                             {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
                             {displayState.messages.length === 0 && !welcoming && (
                                 <div className={`chat-connection-state ${displayState.connection}`} role="status">
-                                    {(connecting || reconnecting) && <span className="chat-activity-loader" aria-hidden="true" />}
+                                    {(connecting || resuming) && <span className="chat-activity-loader" aria-hidden="true" />}
                                     <span>
-                                        {reconnecting
-                                            ? "Reconnecting…"
-                                            : (connecting ??
-                                              (displayState.connection === "error" ? "Structured session unavailable." : "Agent session stopped."))}
+                                        {resuming
+                                            ? "Resuming…"
+                                            : failure
+                                              ? "Couldn't resume this chat"
+                                              : (connecting ??
+                                                (displayState.connection === "error" ? "Structured session unavailable." : "Agent session stopped."))}
                                     </span>
-                                    {disconnected && !reconnecting && (
-                                        <div className="chat-connection-actions">
-                                            <button type="button" onClick={reconnect}>
-                                                Reconnect
-                                            </button>
-                                            {agent.resumeId && (
-                                                <button type="button" onClick={startNewChat}>
-                                                    Start new chat
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
+                                    {failureDetail}
+                                    {disconnected && !resuming && sessionActions}
                                 </div>
                             )}
                             <FoldMemoryContext value={foldMemory}>
@@ -333,33 +358,23 @@ export function AgentChatPane({
                                     onReply={(optionId) => void replyPermission(request.requestId, optionId)}
                                 />
                             ))}
-                            {displayState.error && (
+                            {displayState.error && recovery === null && (
                                 <div className="chat-error" role="alert">
                                     <IconWarning size={14} />
                                     <span>{displayState.error}</span>
                                     {failedPrompt && (
-                                        <button type="button" onClick={retry}>
+                                        <button type="button" onClick={retryPrompt}>
                                             Retry
                                         </button>
                                     )}
                                 </div>
                             )}
-                            {displayState.messages.length > 0 && disconnected && (
+                            {displayState.messages.length > 0 && (resuming || disconnected) && (
                                 <div className="chat-reconnect" role="status">
-                                    {reconnecting ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
-                                    <span>{reconnecting ? "Reconnecting…" : "This session dropped."}</span>
-                                    {!reconnecting && (
-                                        <div className="chat-connection-actions">
-                                            <button type="button" onClick={reconnect}>
-                                                Reconnect
-                                            </button>
-                                            {agent.resumeId && (
-                                                <button type="button" onClick={startNewChat}>
-                                                    Start new chat
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
+                                    {resuming ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
+                                    <span>{resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : "This session dropped."}</span>
+                                    {failureDetail}
+                                    {!resuming && sessionActions}
                                 </div>
                             )}
                         </div>
@@ -383,6 +398,11 @@ export function AgentChatPane({
                                 />
                             </div>
                         )}
+                        {!started && !agent.worktree && worktree.step === null && (
+                            <Suspense fallback={null}>
+                                <ProjectStrip agentId={agent.id} cwd={cwd} worktree={worktree} />
+                            </Suspense>
+                        )}
                         <ChatComposer
                             agent={agent}
                             profile={profile}
@@ -401,7 +421,7 @@ export function AgentChatPane({
                             placeholder={composerPlaceholder}
                             error={composerError}
                             onError={setComposerError}
-                            onSend={send}
+                            onSend={worktree.sendMessage}
                             onSteerQueued={() => {
                                 if (queued.length > 0) void steer(queued);
                             }}
@@ -410,6 +430,7 @@ export function AgentChatPane({
                             usage={state.usage}
                             onConfig={changeConfig}
                             history={sentHistory}
+                            worktree={worktree}
                         />
                     </div>
                     <div className="chat-drop-target" aria-hidden="true">
