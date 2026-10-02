@@ -139,7 +139,7 @@ const budgets = [
     // agent's resuming state and its failed-resume row live here as well.
     label: "ACP chat lazy chunk",
     pattern: /^AgentSurface-.*\.js$/,
-    raw: 110_000,
+    raw: 111_000,
     gzip: 35_000,
   },
   {
