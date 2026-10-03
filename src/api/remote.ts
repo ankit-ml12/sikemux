@@ -42,6 +42,27 @@ export interface AccountLink {
     readonly since: number;
 }
 
+/** The accounts server no longer works with this build: remote access and the account stay off until it updates. */
+export interface UpdateRequired {
+    readonly current: string;
+    readonly minimum: string;
+}
+
+/**
+ * Whether a phone's notifications from this host reach it: `phoneOff` when they are off on the
+ * phone itself, `notReaching` when Apple or Google could not deliver the last one, `otherAccount`
+ * when the phone is not on this host's account, `signedOut` while this host is signed out.
+ */
+export type NotificationState = "off" | "on" | "phoneOff" | "notReaching" | "otherAccount" | "signedOut";
+
+/** A phone that asked this host for notifications. */
+export interface PhoneNotifications {
+    readonly deviceId: string;
+    readonly state: NotificationState;
+    /** When `state` began, in milliseconds since the epoch. */
+    readonly since: number;
+}
+
 export interface RemoteStatus {
     readonly enabled: boolean;
     readonly coreId: string;
@@ -53,6 +74,8 @@ export interface RemoteStatus {
     /** The account this host is signed in to. */
     readonly owner: string | null;
     readonly account: AccountLink | null;
+    readonly updateRequired: UpdateRequired | null;
+    readonly notifications: readonly PhoneNotifications[];
 }
 
 /** A project a paired device may start an agent in. */

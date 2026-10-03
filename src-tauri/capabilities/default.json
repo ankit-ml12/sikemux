@@ -11,6 +11,7 @@
     "dialog:default",
     "notification:default",
     "process:allow-restart",
+    "process:allow-exit",
     "core:window:allow-show",
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",
@@ -243,6 +244,8 @@
     "allow-voice-shutdown",
     "allow-sim-status",
     "allow-sim-prepare",
-    "allow-sim-call"
+    "allow-sim-call",
+    "allow-sim-watch",
+    "allow-sim-unwatch"
   ]
 }
