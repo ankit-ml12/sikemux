@@ -19,7 +19,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use iroh::endpoint::presets;
-use iroh::{Endpoint, EndpointAddr};
+use iroh::{Endpoint, EndpointAddr, RelayMode};
+use sikemux_core::accounts::network;
 use sikemux_core::client::{ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairingRequest};
 use sikemux_core::protocol::{
@@ -194,13 +195,16 @@ async fn sleepy(socket: &Path) -> Result<(), Failure> {
     let (client, mut events) = CoreClient::connect(socket).await?;
     let agent_id = "agent-sleepy".to_owned();
     client
-        .publish_chats(vec![PublishedChat {
-            agent_id: agent_id.clone(),
-            provider: "opencode".into(),
-            title: Some("Tidy the docs".into()),
-            cwd: std::env::temp_dir(),
-            asleep: true,
-        }])
+        .publish_agents(
+            vec![PublishedChat {
+                agent_id: agent_id.clone(),
+                provider: "opencode".into(),
+                title: Some("Tidy the docs".into()),
+                cwd: std::env::temp_dir(),
+                asleep: true,
+            }],
+            Default::default(),
+        )
         .await?;
     println!("{agent_id} is asleep");
     while let Some(event) = events.recv().await {
@@ -245,7 +249,10 @@ async fn endpoint(key_file: &Path) -> Result<Endpoint, Failure> {
             key
         }
     };
-    let endpoint = Endpoint::builder(presets::N0)
+    let endpoint = Endpoint::builder(presets::Minimal)
+        .relay_mode(RelayMode::Custom(network::relay_map(
+            &network::default_relays(),
+        )))
         .secret_key(key)
         .bind()
         .await?;
@@ -254,7 +261,7 @@ async fn endpoint(key_file: &Path) -> Result<Endpoint, Failure> {
 }
 
 fn core_addr(core: &str) -> Result<EndpointAddr, Failure> {
-    Ok(EndpointAddr::new(core.parse()?))
+    Ok(EndpointAddr::new(core.parse()?).with_relay_url(network::DEFAULT_RELAY.parse()?))
 }
 
 async fn pair(key_file: &Path, core: &str, code: &str) -> Result<(), Failure> {

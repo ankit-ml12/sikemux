@@ -4,12 +4,75 @@ export const schema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://api.sikemux.com/schema/v1",
   $defs: {
+    AccountDeletion: {
+      description:
+        "The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.",
+      type: "object",
+      properties: {
+        status: { $ref: "#/$defs/AccountDeletionStatus" },
+        requestedAt: { type: "string", format: "date-time" },
+      },
+      required: ["status", "requestedAt"],
+      additionalProperties: false,
+    },
+    AccountDeletionStatus: {
+      description:
+        "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",
+      type: "string",
+      enum: ["deleting", "deleted"],
+    },
+    AccountEvent: {
+      description:
+        "Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.",
+      type: "object",
+      properties: {
+        id: { $ref: "#/$defs/EventId" },
+        type: { $ref: "#/$defs/AccountEventType" },
+        at: { type: "string", format: "date-time" },
+        key: {
+          description:
+            "The device the event is about. Absent from account.deleted.",
+          $ref: "#/$defs/DeviceKey",
+        },
+        role: {
+          description: "That device's role. Absent from account.deleted.",
+          $ref: "#/$defs/DeviceRole",
+        },
+        reason: {
+          description: "Only on device.revoked.",
+          $ref: "#/$defs/RevokeReason",
+        },
+      },
+      required: ["id", "type", "at"],
+      additionalProperties: false,
+    },
+    AccountEventType: {
+      type: "string",
+      enum: [
+        "device.added",
+        "device.changed",
+        "device.revoked",
+        "account.deleted",
+      ],
+    },
     ApiError: {
       description: "The body of every response that is not a success.",
       type: "object",
       properties: { error: { $ref: "#/$defs/ErrorDetail" } },
       required: ["error"],
       additionalProperties: false,
+    },
+    ApnsEnvironment: {
+      description:
+        "Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store.",
+      type: "string",
+      enum: ["sandbox", "production"],
+    },
+    AppVersion: {
+      description: "A semantic version, such as 0.5.0 or 0.6.0-nightly.3.",
+      type: "string",
+      pattern:
+        "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
     },
     Challenge: {
       description: "A one-time value a device signs to prove it holds its key.",
@@ -26,6 +89,17 @@ export const schema = {
         "Which build a host runs. Dev, nightly and stable cores are separate hosts.",
       type: "string",
       enum: ["dev", "nightly", "stable"],
+    },
+    ChannelVersions: {
+      description:
+        "An app older than its channel's version, compared as semantic versions, must update before it connects.",
+      type: "object",
+      properties: {
+        nightly: { $ref: "#/$defs/AppVersion" },
+        stable: { $ref: "#/$defs/AppVersion" },
+      },
+      required: ["nightly", "stable"],
+      additionalProperties: false,
     },
     Device: {
       type: "object",
@@ -109,6 +183,12 @@ export const schema = {
       required: ["code", "message", "requestId"],
       additionalProperties: false,
     },
+    EventId: {
+      description:
+        "An account event's place in the log. Later events have larger ids.",
+      type: "integer",
+      minimum: 1,
+    },
     Health: {
       description:
         "Whether the API can serve requests, and which build is answering.",
@@ -125,6 +205,382 @@ export const schema = {
       additionalProperties: false,
     },
     HealthStatus: { type: "string", enum: ["ok", "unavailable"] },
+    LiveAck: {
+      description: "Every event up to and including id is handled.",
+      type: "object",
+      properties: { type: { const: "ack" }, id: { $ref: "#/$defs/EventId" } },
+      required: ["type", "id"],
+      additionalProperties: false,
+    },
+    LiveApp: {
+      description:
+        "The build that opened the connection, for the server's logs.",
+      type: "object",
+      properties: {
+        platform: { $ref: "#/$defs/Platform" },
+        version: { type: "string", maxLength: 64 },
+      },
+      required: ["platform", "version"],
+      additionalProperties: false,
+    },
+    LiveAuth: {
+      description:
+        "Web only: a fresh Clerk session token for the same user, sent before ready.authExpiresAt.",
+      type: "object",
+      properties: {
+        type: { const: "auth" },
+        token: { type: "string", minLength: 1, maxLength: 4096 },
+      },
+      required: ["type", "token"],
+      additionalProperties: false,
+    },
+    LiveBye: {
+      description:
+        "The server is restarting and closes with 1012 after it. Reconnect no sooner than reconnectAfterMs.",
+      type: "object",
+      properties: {
+        type: { const: "bye" },
+        reconnectAfterMs: { type: "integer", minimum: 0 },
+      },
+      required: ["type", "reconnectAfterMs"],
+      additionalProperties: false,
+    },
+    LiveChallenge: {
+      description:
+        "The server's first message on every connection: a one-time value the device's hello answers.",
+      type: "object",
+      properties: {
+        type: { const: "challenge" },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        expiresAt: { type: "string", format: "date-time" },
+      },
+      required: ["type", "nonce", "expiresAt"],
+      additionalProperties: false,
+    },
+    LiveDeviceMessage: {
+      description: "What a device or the web app sends on a live connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/LiveHello" },
+        { $ref: "#/$defs/LiveAck" },
+        { $ref: "#/$defs/LiveAuth" },
+        { $ref: "#/$defs/LivePong" },
+        { $ref: "#/$defs/LiveLeave" },
+        { $ref: "#/$defs/LivePush" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
+    LiveEvents: {
+      description:
+        "Events the device has not acknowledged yet, oldest first. Delivery is at least once.",
+      type: "object",
+      properties: {
+        type: { const: "events" },
+        events: {
+          type: "array",
+          items: { $ref: "#/$defs/AccountEvent" },
+          minItems: 1,
+          maxItems: 200,
+        },
+      },
+      required: ["type", "events"],
+      additionalProperties: false,
+    },
+    LiveHello: {
+      description:
+        "The device's first message, answering the challenge. Hosts send key and signature; clients send key, signature and their Clerk session token; the web app sends only its token. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-live|<nonce>|<key>`.",
+      type: "object",
+      properties: {
+        type: { const: "hello" },
+        role: { $ref: "#/$defs/LiveRole" },
+        key: { $ref: "#/$defs/DeviceKey" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+        token: { type: "string", minLength: 1, maxLength: 4096 },
+        app: { $ref: "#/$defs/LiveApp" },
+      },
+      required: ["type", "role"],
+      additionalProperties: false,
+    },
+    LiveLeave: {
+      description:
+        "Hosts and clients only: take this device off its account. The server answers with revoked (signed_out).",
+      type: "object",
+      properties: { type: { const: "leave" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    LivePing: {
+      description: "Answer with pong.",
+      type: "object",
+      properties: { type: { const: "ping" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    LivePong: {
+      description: "The answer to ping.",
+      type: "object",
+      properties: { type: { const: "pong" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    LivePush: {
+      description:
+        "Hosts only: deliver a notification to one of the account's phones. The blob is sealed on the host with a key only that phone has, and the server passes it on unread. The server answers with pushed.",
+      type: "object",
+      properties: {
+        type: { const: "push" },
+        ref: { $ref: "#/$defs/PushRef" },
+        to: {
+          description: "The phone's device key.",
+          $ref: "#/$defs/DeviceKey",
+        },
+        kind: { $ref: "#/$defs/PushKind" },
+        collapseId: {
+          description:
+            "Opaque to the server. A later push with the same collapseId replaces or clears the notification this one shows.",
+          type: "string",
+          pattern: "^[0-9a-f]{32}$",
+        },
+        blob: {
+          description: "The sealed notification, in standard base64.",
+          type: "string",
+          minLength: 4,
+          maxLength: 2900,
+          pattern: "^[A-Za-z0-9+/]+={0,2}$",
+        },
+        expiresAt: {
+          description:
+            "After this the push is worth nothing, so the server drops it rather than deliver it late.",
+          type: "string",
+          format: "date-time",
+        },
+      },
+      required: [
+        "type",
+        "ref",
+        "to",
+        "kind",
+        "collapseId",
+        "blob",
+        "expiresAt",
+      ],
+      additionalProperties: false,
+    },
+    LivePushed: {
+      description: "The answer to a host's push, carrying the push's ref.",
+      type: "object",
+      properties: {
+        type: { const: "pushed" },
+        ref: { $ref: "#/$defs/PushRef" },
+        result: { $ref: "#/$defs/PushResult" },
+      },
+      required: ["type", "ref", "result"],
+      additionalProperties: false,
+    },
+    LiveReady: {
+      description:
+        "The hello was accepted. Events after the device's cursor follow.",
+      type: "object",
+      properties: {
+        type: { const: "ready" },
+        latest: {
+          description: "The account's newest event id, or 0 when it has none.",
+          type: "integer",
+          minimum: 0,
+        },
+        heartbeatMs: {
+          description:
+            "How often the server pings. A device that hears nothing for twice as long reconnects.",
+          type: "integer",
+          minimum: 1,
+        },
+        authExpiresAt: {
+          description:
+            "Web only: send a fresh token in an auth message before this.",
+          type: "string",
+          format: "date-time",
+        },
+      },
+      required: ["type", "latest", "heartbeatMs"],
+      additionalProperties: false,
+    },
+    LiveReset: {
+      description:
+        "Some events after the device's cursor are no longer kept. Clients reread their lists; the events that follow are still every kept event after the cursor.",
+      type: "object",
+      properties: {
+        type: { const: "reset" },
+        latest: { $ref: "#/$defs/EventId" },
+      },
+      required: ["type", "latest"],
+      additionalProperties: false,
+    },
+    LiveRevoked: {
+      description:
+        "This device is no longer on the account. The server closes with 4403 after it.",
+      type: "object",
+      properties: {
+        type: { const: "revoked" },
+        reason: { $ref: "#/$defs/RevokeReason" },
+      },
+      required: ["type", "reason"],
+      additionalProperties: false,
+    },
+    LiveRole: {
+      description:
+        "Who opens a live connection. A host or a client proves its device key; the web app is not a device and shows only its sign-in.",
+      type: "string",
+      enum: ["host", "client", "web"],
+    },
+    LiveServerMessage: {
+      description: "What the server sends on a live connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/LiveChallenge" },
+        { $ref: "#/$defs/LiveReady" },
+        { $ref: "#/$defs/LiveEvents" },
+        { $ref: "#/$defs/LiveReset" },
+        { $ref: "#/$defs/LiveRevoked" },
+        { $ref: "#/$defs/LivePing" },
+        { $ref: "#/$defs/LiveBye" },
+        { $ref: "#/$defs/LivePushed" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
+    MinimumVersions: {
+      description:
+        "The oldest version of each app the server works with, by platform. Dev builds are never too old.",
+      type: "object",
+      properties: {
+        macos: { $ref: "#/$defs/ChannelVersions" },
+        ios: { $ref: "#/$defs/ChannelVersions" },
+        android: { $ref: "#/$defs/ChannelVersions" },
+      },
+      required: ["macos", "ios", "android"],
+      additionalProperties: false,
+    },
+    Network: {
+      description:
+        "How hosts and phones reach each other, and the oldest app the server still serves. Apps read it when they start, so changing either needs no app release.",
+      type: "object",
+      properties: {
+        relays: {
+          description:
+            "The relays to use, best first. A host connects to every one; a phone dials a host through the relay the host says it is on.",
+          type: "array",
+          minItems: 1,
+          items: { $ref: "#/$defs/Relay" },
+        },
+        minimumVersions: { $ref: "#/$defs/MinimumVersions" },
+      },
+      required: ["relays", "minimumVersions"],
+      additionalProperties: false,
+    },
     Platform: { type: "string", enum: ["macos", "ios", "android"] },
+    PushApp: {
+      description:
+        "Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.",
+      type: "string",
+      enum: ["production", "dev"],
+    },
+    PushKind: {
+      description:
+        "alert shows a notification. clear removes one shown before with the same collapseId, and is delivered at a lower priority.",
+      type: "string",
+      enum: ["alert", "clear"],
+    },
+    PushPlatform: {
+      description:
+        "Which service delivers to the phone: Apple's push service, or Firebase Cloud Messaging.",
+      type: "string",
+      enum: ["apns", "fcm"],
+    },
+    PushRef: {
+      description:
+        "A number the host picks for each push, so it can match the server's answer to it.",
+      type: "integer",
+      minimum: 0,
+      maximum: 2147483647,
+    },
+    PushResult: {
+      description:
+        "What became of a push. sent: the platform accepted it. no_token: the phone has notifications off. not_allowed: the target is not a phone on the sender's account. throttled: over a limit, dropped. expired: its expiresAt had passed. not_set_up: this server cannot reach the phone's platform. failed: the platform refused it or could not be reached.",
+      type: "string",
+      enum: [
+        "sent",
+        "no_token",
+        "not_allowed",
+        "throttled",
+        "expired",
+        "not_set_up",
+        "failed",
+      ],
+    },
+    PushTokenRegistration: {
+      description:
+        "Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications.",
+      type: "object",
+      properties: {
+        platform: { $ref: "#/$defs/PushPlatform" },
+        token: {
+          description:
+            "The token the platform gave the app: the native APNs or FCM token, never an Expo push token.",
+          type: "string",
+          minLength: 1,
+          maxLength: 4096,
+        },
+        app: { $ref: "#/$defs/PushApp" },
+        apnsEnvironment: {
+          description: "Required when platform is apns, and absent otherwise.",
+          $ref: "#/$defs/ApnsEnvironment",
+        },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: ["platform", "token", "app", "nonce", "signature"],
+      additionalProperties: false,
+    },
+    PushTokenState: {
+      type: "object",
+      properties: {
+        enabled: {
+          description: "Whether the server has a token for this phone.",
+          type: "boolean",
+        },
+        updatedAt: { type: "string", format: "date-time" },
+      },
+      required: ["enabled", "updatedAt"],
+      additionalProperties: false,
+    },
+    Relay: {
+      type: "object",
+      properties: {
+        url: {
+          description:
+            "The relay's HTTPS address, such as https://relay.sikemux.com/.",
+          type: "string",
+          format: "uri",
+        },
+        region: {
+          description: "Where the relay runs, for logs and settings screens.",
+          type: "string",
+        },
+        quicPort: {
+          description:
+            "The UDP port of the relay's QUIC address discovery, or null when it has none.",
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 65535,
+        },
+      },
+      required: ["url", "region", "quicPort"],
+      additionalProperties: false,
+    },
+    RevokeReason: {
+      description:
+        "Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.",
+      type: "string",
+      enum: ["removed", "signed_out", "account_deleted"],
+    },
   },
 } as const;

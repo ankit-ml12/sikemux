@@ -1,10 +1,14 @@
 //! Signing this host in to a Sikemux account, so devices on the same account
 //! find it. Sign-in happens in the person's browser (OAuth with PKCE), which
 //! hands back to a one-time listener on 127.0.0.1. The refresh token stays in
-//! the Keychain; the core keeps which account owns it.
+//! the Keychain; the core keeps which account owns it, and holds the live
+//! connection that tells it when the account lets this host go.
 
+mod profile;
+
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -15,8 +19,8 @@ use sikemux_core::accounts::protocol::{
     ApiError, Challenge, Channel, Device, DeviceRegistration, DeviceRole, Platform,
 };
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::BuildChannel;
-use tauri::State;
+use sikemux_core::protocol::{AccountLinkState, BuildChannel, RemoteStatus};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
@@ -37,6 +41,7 @@ const CLIENT_ID: &str = "IfRz79s1n2WGOt3J";
 const SCOPES: &str = "email profile offline_access";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+const PROFILE_RETRY: Duration = Duration::from_secs(15 * 60);
 
 #[cfg(not(test))]
 const KEY_SERVICE: &str = "sikemux-account";
@@ -52,15 +57,16 @@ fn key_account() -> &'static str {
     }
 }
 
-/// Dev builds talk to a server on this computer, or to `SIKEMUX_API_URL`.
 fn api(path: &str) -> String {
-    let base = if cfg!(debug_assertions) {
-        std::env::var("SIKEMUX_API_URL").unwrap_or_else(|_| "http://127.0.0.1:4000".into())
-    } else {
-        "https://api.sikemux.com".into()
-    };
-    format!("{}{path}", base.trim_end_matches('/'))
+    format!(
+        "{}{path}",
+        sikemux_core::accounts::api_base().trim_end_matches('/')
+    )
 }
+
+/// Emitted with the new [`AccountStatus`] when the account changes without
+/// the app asking, such as this host being removed from it elsewhere.
+pub const ACCOUNT_CHANGED_EVENT: &str = "account_changed";
 
 fn http() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -82,12 +88,15 @@ struct Saved {
     refresh_token: String,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountStatus {
     signed_in: bool,
     user_id: Option<String>,
     email: Option<String>,
+    name: Option<String>,
+    /// The account's picture as a `data:` URL.
+    picture: Option<String>,
 }
 
 impl AccountStatus {
@@ -96,7 +105,42 @@ impl AccountStatus {
             signed_in: false,
             user_id: None,
             email: None,
+            name: None,
+            picture: None,
         }
+    }
+}
+
+fn profile_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|error| AppError::Other(format!("account data directory unavailable: {error}")))?
+        .join("account"))
+}
+
+async fn saved_profile(dir: &std::path::Path, user_id: &str) -> Option<profile::Profile> {
+    profile::read(dir)
+        .await
+        .filter(|profile| profile.user_id == user_id)
+}
+
+async fn status_of(dir: &std::path::Path, saved: Saved) -> AccountStatus {
+    let profile = saved_profile(dir, &saved.user_id).await;
+    let picture = match &profile {
+        Some(profile) => profile::picture(dir, profile).await,
+        None => None,
+    };
+    let (name, email) = match profile {
+        Some(profile) => (profile.name, profile.email.or(saved.email)),
+        None => (None, saved.email),
+    };
+    AccountStatus {
+        signed_in: true,
+        user_id: Some(saved.user_id),
+        email,
+        name,
+        picture,
     }
 }
 
@@ -139,22 +183,142 @@ async fn delete_saved() -> AppResult<()> {
         .map_err(|error| AppError::Other(error.to_string()))
 }
 
+/// The account let this host go while the app was not looking: the core
+/// has a key but no longer this account as its owner.
+fn released(remote: &RemoteStatus, user_id: &str) -> bool {
+    !remote.core_id.is_empty() && remote.owner.as_deref() != Some(user_id)
+}
+
+/// Drops the saved sign-in, and asks the account service to drop its
+/// refresh token too, best effort.
+async fn forget(app: &AppHandle, saved: &Saved) -> AppResult<()> {
+    delete_saved().await?;
+    let _ = http()
+        .post(format!("{CLERK}/oauth/token/revoke"))
+        .form(&[
+            ("token", saved.refresh_token.as_str()),
+            ("token_type_hint", "refresh_token"),
+            ("client_id", CLIENT_ID),
+        ])
+        .send()
+        .await;
+    profile::forget(&profile_dir(app)?).await?;
+    Ok(())
+}
+
+/// What this host knows about the account without asking the network. It is
+/// signed in only while the core still has the account as its owner.
 #[tauri::command]
-pub async fn account_status() -> AppResult<AccountStatus> {
-    Ok(match read_saved().await? {
-        Some(saved) => AccountStatus {
-            signed_in: true,
-            user_id: Some(saved.user_id),
-            email: saved.email,
-        },
-        None => AccountStatus::signed_out(),
-    })
+pub async fn account_status(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+) -> AppResult<AccountStatus> {
+    let dir = profile_dir(&app)?;
+    let Some(saved) = read_saved().await? else {
+        return Ok(AccountStatus::signed_out());
+    };
+    let remote = match manager.client().await {
+        Ok(core) => core.remote_status().await.ok(),
+        Err(_) => None,
+    };
+    if remote.is_some_and(|remote| released(&remote, &saved.user_id)) {
+        forget(&app, &saved).await?;
+        return Ok(AccountStatus::signed_out());
+    }
+    Ok(status_of(&dir, saved).await)
+}
+
+/// The core reported that the account let this host go, so the sign-in
+/// saved here goes too, and the app hears it is signed out.
+pub fn notice_remote(app: &AppHandle, remote: &RemoteStatus) {
+    let removed = remote.owner.is_none()
+        && remote
+            .account
+            .as_ref()
+            .is_some_and(|link| link.state == AccountLinkState::Removed);
+    if !removed {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(Some(saved)) = read_saved().await else {
+            return;
+        };
+        match forget(&app, &saved).await {
+            Ok(()) => {
+                let _ = app.emit(ACCOUNT_CHANGED_EVENT, AccountStatus::signed_out());
+            }
+            Err(error) => eprintln!("sikemux: could not forget the account: {error}"),
+        }
+    });
+}
+
+/// Asks the account service for the name and picture again once the cached
+/// ones are a few hours old. Offline, the cached ones stay.
+#[tauri::command]
+pub async fn account_refresh_profile(app: AppHandle) -> AppResult<AccountStatus> {
+    static LAST_TRY: tokio::sync::Mutex<Option<Instant>> = tokio::sync::Mutex::const_new(None);
+    let dir = profile_dir(&app)?;
+    let mut last_try = LAST_TRY.lock().await;
+    let Some(saved) = read_saved().await? else {
+        return Ok(AccountStatus::signed_out());
+    };
+    let stale = saved_profile(&dir, &saved.user_id)
+        .await
+        .is_none_or(|profile| profile.is_stale(profile::now()));
+    let tried_lately = last_try.is_some_and(|at| at.elapsed() < PROFILE_RETRY);
+    if stale && !tried_lately {
+        *last_try = Some(Instant::now());
+        if let Ok(access_token) = refreshed_access_token(&saved).await {
+            if let Some(info) = user_info(&access_token).await {
+                let fresh = info.into_profile(saved.user_id.clone(), profile::now());
+                let _ = profile::save(&dir, &fresh).await;
+            }
+        }
+    }
+    drop(last_try);
+    let saved = read_saved().await?.unwrap_or(saved);
+    Ok(status_of(&dir, saved).await)
+}
+
+/// A new access token for the saved account. When the account service hands
+/// back a new refresh token too, it replaces the saved one.
+async fn refreshed_access_token(saved: &Saved) -> AppResult<String> {
+    let response = http()
+        .post(format!("{CLERK}/oauth/token"))
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", saved.refresh_token.as_str()),
+            ("client_id", CLIENT_ID),
+        ])
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(AppError::Other(format!(
+            "the account service did not renew the sign-in ({})",
+            response.status()
+        )));
+    }
+    let tokens: Tokens = response.json().await?;
+    if let Some(next) = tokens
+        .refresh_token
+        .filter(|next| *next != saved.refresh_token)
+    {
+        write_saved(&Saved {
+            user_id: saved.user_id.clone(),
+            email: saved.email.clone(),
+            refresh_token: next,
+        })
+        .await?;
+    }
+    Ok(tokens.access_token)
 }
 
 /// Opens sign-in in the browser, waits for it, then registers this host's
 /// core with the account and records the account as its owner.
 #[tauri::command]
 pub async fn account_sign_in(
+    app: AppHandle,
     manager: State<'_, PtyManager>,
     pending: State<'_, PendingSignIn>,
 ) -> AppResult<AccountStatus> {
@@ -171,7 +335,8 @@ pub async fn account_sign_in(
     let tokens = signed_in?;
 
     let user_id = subject(&tokens.access_token)?;
-    let email = email(&tokens.access_token).await;
+    let info = user_info(&tokens.access_token).await.unwrap_or_default();
+    let email = info.email.clone();
     let refresh_token = tokens.refresh_token.ok_or_else(|| {
         AppError::Other("the sign-in did not give this host a way to stay signed in".into())
     })?;
@@ -189,11 +354,10 @@ pub async fn account_sign_in(
         let _ = core.set_owner(None).await;
         return Err(error);
     }
-    Ok(AccountStatus {
-        signed_in: true,
-        user_id: Some(user_id),
-        email,
-    })
+    let dir = profile_dir(&app)?;
+    let _ = profile::forget(&dir).await;
+    let _ = profile::save(&dir, &info.into_profile(user_id, profile::now())).await;
+    Ok(status_of(&dir, saved).await)
 }
 
 #[tauri::command]
@@ -201,13 +365,19 @@ pub fn account_cancel_sign_in(pending: State<'_, PendingSignIn>) {
     pending.replace(None);
 }
 
-/// Forgets the account on this host. Paired devices stay: they are the host's
-/// own list, approved one by one.
+/// Takes this host off the account, then forgets the account here. The core
+/// tells the account, now or once it is back online. Paired devices stay:
+/// they are the host's own list, approved one by one.
 #[tauri::command]
-pub async fn account_sign_out(manager: State<'_, PtyManager>) -> AppResult<AccountStatus> {
-    delete_saved().await?;
+pub async fn account_sign_out(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+) -> AppResult<AccountStatus> {
     let core = manager.client().await?;
     core.set_owner(None).await.map_err(core_error)?;
+    if let Some(saved) = read_saved().await? {
+        forget(&app, &saved).await?;
+    }
     Ok(AccountStatus::signed_out())
 }
 
@@ -401,19 +571,18 @@ fn subject(access_token: &str) -> AppResult<String> {
     Ok(payload.sub)
 }
 
-/// The account's email, shown in Settings. Missing it does not stop sign-in.
-async fn email(access_token: &str) -> Option<String> {
-    #[derive(Deserialize)]
-    struct UserInfo {
-        email: Option<String>,
-    }
+/// The account's email, name and picture. Missing them does not stop sign-in.
+async fn user_info(access_token: &str) -> Option<profile::UserInfo> {
     let response = http()
         .get(format!("{CLERK}/oauth/userinfo"))
         .bearer_auth(access_token)
         .send()
         .await
         .ok()?;
-    response.json::<UserInfo>().await.ok()?.email
+    if !response.status().is_success() {
+        return None;
+    }
+    response.json().await.ok()
 }
 
 async fn api_failure(response: Response) -> AppError {
@@ -509,6 +678,21 @@ mod tests {
         );
         assert_eq!(params["state"], pkce.state);
         assert!(params["scope"].contains("offline_access"));
+    }
+
+    #[test]
+    fn the_host_is_signed_in_only_while_the_core_keeps_the_account() {
+        let remote = |owner: Option<&str>, core_id: &str| -> RemoteStatus {
+            serde_json::from_value(serde_json::json!({
+                "enabled": false, "coreId": core_id, "addresses": [], "devices": [],
+                "connected": [], "pairing": null, "pending": [], "owner": owner,
+            }))
+            .unwrap()
+        };
+        assert!(!released(&remote(Some("user_1"), "key"), "user_1"));
+        assert!(released(&remote(None, "key"), "user_1"));
+        assert!(released(&remote(Some("user_2"), "key"), "user_1"));
+        assert!(!released(&remote(None, ""), "user_1"));
     }
 
     #[test]

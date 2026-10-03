@@ -20,6 +20,7 @@
   --ink: #e7e5ef;
   --acc: #a277ff;
   --danger: #ff6767;
+  --on-danger: var(--bg);
 
   --gray-100: color-mix(in oklab, var(--ink) 4%, var(--bg));
   --gray-200: color-mix(in oklab, var(--ink) 7%, var(--bg));
@@ -252,6 +253,23 @@ h1 {
   border-color: color-mix(in oklab, var(--ink) 88%, var(--bg));
 }
 
+.button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-danger);
+  font-weight: 600;
+}
+
+.button.danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 88%, var(--bg));
+  border-color: color-mix(in oklab, var(--danger) 88%, var(--bg));
+}
+
+.button.danger[data-busy]::after {
+  border-color: color-mix(in oklab, var(--on-danger) 35%, transparent);
+  border-top-color: var(--on-danger);
+}
+
 .button.small {
   height: 32px;
   padding: 0 12px;
@@ -459,6 +477,27 @@ button:focus-visible,
   min-width: 0;
 }
 
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--gray-100);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .email {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -543,11 +582,59 @@ button:focus-visible,
   font-size: 13px;
 }
 
-.key {
+.end {
   grid-column: 3;
   grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.key {
   font: 400 12px var(--mono);
   color: var(--text-tertiary);
+}
+
+.remove {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-2),
+    color var(--dur-2);
+}
+
+.remove:hover:not(:disabled),
+.remove[aria-expanded="true"] {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.remove:disabled {
+  cursor: default;
+}
+
+.confirm {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .row.placeholder {
@@ -583,4 +670,94 @@ button:focus-visible,
   border-radius: 10px;
   color: var(--text-tertiary);
   font-size: 13px;
+}
+
+.small {
+  font-size: 13px;
+}
+
+.account-footer {
+  margin-top: 48px;
+  font-size: 12px;
+}
+
+.account-footer a,
+.deletion a,
+.intro a,
+.panel a:not(.button) {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  transition: color var(--dur-2);
+}
+
+.account-footer a {
+  color: var(--text-tertiary);
+  text-decoration: none;
+}
+
+.account-footer a:hover,
+.deletion a:hover,
+.intro a:hover,
+.panel a:not(.button):hover {
+  color: var(--text-primary);
+}
+
+a:focus-visible {
+  outline: none;
+  border-radius: 4px;
+  box-shadow: var(--focus-ring);
+}
+
+a.button {
+  text-decoration: none;
+}
+
+.deletion {
+  max-width: 520px;
+}
+
+.deletion .lede {
+  margin-bottom: 24px;
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding-left: 18px;
+}
+
+.facts li::marker {
+  color: var(--text-tertiary);
+}
+
+.confirm-delete {
+  margin-top: 32px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border);
+}
+
+.confirm-delete label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.word {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.intro {
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.intro h1 {
+  font-size: 20px;
 }
