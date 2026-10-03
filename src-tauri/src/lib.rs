@@ -1,3 +1,4 @@
+mod account;
 mod acp;
 mod activity;
 mod agents;
@@ -16,6 +17,7 @@ mod error;
 mod external;
 mod file_serving;
 mod files;
+mod frame_rate;
 mod fs;
 mod fs_watch;
 mod git;
@@ -95,6 +97,8 @@ static MAIN_PAGE_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 pub fn run() {
     install_tls_crypto();
     system::normalize_user_environment();
+    #[cfg(target_os = "linux")]
+    system::avoid_webkit_dmabuf_renderer_on_nvidia();
 
     // Raise our open-file-descriptor limit FIRST, before any subsystem
     // opens an fd. macOS launchd hands GUI apps a soft RLIMIT_NOFILE of 256;
@@ -110,6 +114,8 @@ pub fn run() {
     cli_paths::link_cli_for_children();
     sikemux_process::user_environment::provide(system::user_environment);
     std::thread::spawn(sikemux_process::user_environment::warm);
+
+    frame_rate::render_at_display_rate();
 
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
@@ -154,7 +160,7 @@ pub fn run() {
                     harness.fail_all("Sikemux's window closed before it answered");
                 }
                 if let Some(browser) = window.try_state::<BrowserManager>() {
-                    browser.drain();
+                    browser.drain("the window closed");
                 }
                 if let Some(plugins) = window.try_state::<PluginHost>() {
                     plugins.drain();
@@ -187,7 +193,7 @@ pub fn run() {
                     harness.fail_all("Sikemux's window reloaded before it answered");
                 }
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
-                    browser.drain();
+                    browser.drain(&format!("the window started loading {}", payload.url()));
                 }
                 if let Some(plugins) = webview.try_state::<PluginHost>() {
                     plugins.drain();
@@ -226,10 +232,14 @@ pub fn run() {
         })
         .manage(deep_link::DeepLinks::default())
         .manage(PtyManager::default())
+        .manage(account::PendingSignIn::default())
         .manage(harness::HarnessBroker::default())
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
         .manage(remote::PublishedWorkspace::default())
+        .manage(remote::PublishedChats::default())
+        .manage(remote::PublishedPalette::default())
+        .manage(remote::PublishedBackdrop::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
@@ -263,9 +273,16 @@ pub fn run() {
             remote::remote_set_device_access,
             remote::remote_revoke_device,
             remote::remote_open_pairing,
+            account::account_status,
+            account::account_sign_in,
+            account::account_cancel_sign_in,
+            account::account_sign_out,
             remote::remote_close_pairing,
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,
+            remote::remote_publish_chats,
+            remote::remote_publish_palette,
+            remote::remote_publish_backdrop,
             pty::commands::task_watch,
             pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,
@@ -282,6 +299,7 @@ pub fn run() {
             browser::browser_forward,
             browser::browser_reload,
             browser::browser_set_bounds,
+            browser::browser_page_still,
             system::home_dir,
             system::recent_dirs,
             system::boot_init,
@@ -476,7 +494,7 @@ pub fn run() {
                     mgr.release();
                 }
                 if let Some(browser) = app_handle.try_state::<BrowserManager>() {
-                    browser.drain();
+                    browser.drain("Sikemux is quitting");
                 }
                 if let Some(plugins) = app_handle.try_state::<PluginHost>() {
                     plugins.drain();

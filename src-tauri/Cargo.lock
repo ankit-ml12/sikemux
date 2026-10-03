@@ -3476,7 +3476,7 @@ dependencies = [
  "bitflags 2.13.2",
  "jni-sys 0.3.1",
  "log",
- "ndk-sys",
+ "ndk-sys 0.6.0+11769913",
  "num_enum",
  "raw-window-handle",
  "thiserror 1.0.69",
@@ -3487,6 +3487,15 @@ name = "ndk-context"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
+
+[[package]]
+name = "ndk-sys"
+version = "0.5.0+25.2.9519653"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c196769dd60fd4f363e11d948139556a344e79d451aeb2fa2fd040738ef7691"
+dependencies = [
+ "jni-sys 0.3.1",
+]
 
 [[package]]
 name = "ndk-sys"
@@ -4269,6 +4278,20 @@ checksum = "da2442474a9404698c42509b8967f437249dbc7b50493e83020333d3943ec0ae"
 dependencies = [
  "equivalent",
  "seize",
+]
+
+[[package]]
+name = "paranoid-android"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "101795d63d371b43e38d6e7254677657be82f17022f7f7893c268f33ac0caadc"
+dependencies = [
+ "lazy_static",
+ "ndk-sys 0.5.0+25.2.9519653",
+ "sharded-slab",
+ "smallvec",
+ "tracing-core",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5562,12 +5585,13 @@ dependencies = [
 
 [[package]]
 name = "sikemux"
-version = "0.4.3-nightly.5"
+version = "0.5.0-nightly.1"
 dependencies = [
  "base64 0.23.1",
  "block2",
  "dashmap",
  "futures",
+ "getrandom 0.3.4",
  "git2",
  "globset",
  "grep-matcher",
@@ -5628,6 +5652,7 @@ dependencies = [
  "url",
  "uuid",
  "vt100",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5652,6 +5677,7 @@ dependencies = [
  "url",
  "uuid",
  "vt100",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5659,6 +5685,7 @@ name = "sikemux-keychain"
 version = "0.1.0"
 dependencies = [
  "sikemux-process",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5668,17 +5695,28 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "workspace-hack",
 ]
 
 [[package]]
 name = "sikemux-mobile"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "hex",
  "iroh",
+ "jni 0.22.4",
+ "ndk-context",
+ "paranoid-android",
+ "rustls-platform-verifier",
+ "serde",
  "serde_json",
  "sikemux-core",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "uniffi",
 ]
 
@@ -5689,6 +5727,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5701,6 +5740,7 @@ dependencies = [
  "sikemux-plugin-api",
  "sikemux-process",
  "tokio",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5717,6 +5757,7 @@ dependencies = [
  "sikemux-plugin-api",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5732,6 +5773,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5750,6 +5792,7 @@ dependencies = [
  "sikemux-process",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5767,6 +5810,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5782,6 +5826,7 @@ dependencies = [
  "sikemux-process",
  "tokio",
  "url",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5789,6 +5834,7 @@ name = "sikemux-process"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5805,6 +5851,7 @@ dependencies = [
  "thiserror 1.0.69",
  "url",
  "vt100",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -6176,7 +6223,7 @@ dependencies = [
  "log",
  "ndk",
  "ndk-context",
- "ndk-sys",
+ "ndk-sys 0.6.0+11769913",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
@@ -8160,6 +8207,92 @@ dependencies = [
  "thiserror 2.0.21",
  "windows 0.62.2",
  "windows-core 0.62.2",
+]
+
+[[package]]
+name = "workspace-hack"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "bitflags 2.13.2",
+ "block2",
+ "cc",
+ "crc32fast",
+ "crossbeam-utils",
+ "crypto-common 0.1.7",
+ "crypto-common 0.2.2",
+ "data-encoding",
+ "deranged",
+ "derive_more",
+ "derive_more-impl",
+ "digest 0.11.3",
+ "dispatch2",
+ "errno",
+ "fastrand",
+ "foldhash",
+ "form_urlencoded",
+ "futures-channel",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
+ "futures-util",
+ "getrandom 0.3.4",
+ "getrandom 0.4.3",
+ "hashbrown 0.17.1",
+ "hyper",
+ "hyper-util",
+ "icu_properties",
+ "idna",
+ "libc",
+ "memchr",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "objc2-quartz-core",
+ "objc2-web-kit",
+ "once_cell",
+ "percent-encoding",
+ "phf_shared",
+ "proc-macro2",
+ "quote",
+ "regex-automata",
+ "reqwest",
+ "rustix",
+ "rustls",
+ "rustls-webpki",
+ "schemars 0.8.22",
+ "schemars 1.2.2",
+ "semver",
+ "serde",
+ "serde_core",
+ "serde_json",
+ "serde_with",
+ "serde_with_macros",
+ "simd-adler32",
+ "simdutf8",
+ "slab",
+ "smallvec",
+ "stable_deref_trait",
+ "subtle",
+ "syn 2.0.119",
+ "syn 3.0.6",
+ "tauri-build",
+ "tauri-utils",
+ "time",
+ "time-macros",
+ "tokio-rustls",
+ "tokio-util",
+ "toml_datetime 1.1.1+spec-1.1.0",
+ "toml_parser",
+ "tower-http",
+ "tracing",
+ "typenum",
+ "url",
+ "uuid",
+ "winnow 1.0.4",
+ "zeroize",
 ]
 
 [[package]]

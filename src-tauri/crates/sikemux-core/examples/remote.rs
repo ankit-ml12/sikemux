@@ -7,6 +7,10 @@
 //!   remote mac <socket> publish            offers the fake agent to devices
 //!   remote mac <socket> chat [prompt]      starts a chat with it
 //!   remote mac <socket> say <agent> <text>
+//!   remote mac <socket> backdrop on|off [image.jpg]  publishes the pane backdrop
+//!   remote mac <socket> palette <name=colour>…  publishes theme colours
+//!   remote mac <socket> chats              lists the chats running on the core
+//!   remote mac <socket> sleepy             lists a sleeping chat and wakes it when asked
 //! As a device, keeping its key in `<key-file>`:
 //!   remote device <key-file> pair <core-id> <code>
 //!   remote device <key-file> sessions <core-id>
@@ -16,10 +20,11 @@ use std::time::Duration;
 
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr};
-use sikemux_core::client::CoreClient;
+use sikemux_core::client::{ClientEvent, CoreClient};
 use sikemux_core::pairing::{self, PairingRequest};
 use sikemux_core::protocol::{
-    ChatLauncher, DeviceAccess, LaunchIdentity, ProjectInfo, SpawnTarget, TerminalSpawn,
+    BackdropImage, ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
+    PublishedChat, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 
@@ -34,6 +39,10 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, "publish"] => publish(Path::new(socket)).await,
         ["mac", socket, "chat", prompt @ ..] => chat(Path::new(socket), &prompt.join(" ")).await,
         ["mac", socket, "say", agent, text @ ..] => say(Path::new(socket), agent, &text.join(" ")).await,
+        ["mac", socket, "sleepy"] => sleepy(Path::new(socket)).await,
+        ["mac", socket, "chats"] => chats(Path::new(socket)).await,
+        ["mac", socket, "palette", colours @ ..] => palette(Path::new(socket), colours).await,
+        ["mac", socket, "backdrop", texture, image @ ..] => backdrop(Path::new(socket), *texture == "on", image.first().copied()).await,
         ["mac", socket, action] => mac(Path::new(socket), action).await,
         ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
@@ -120,6 +129,99 @@ async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
         client
             .acp_prompt(agent, prompt.into(), Vec::new(), Vec::new())
             .await?;
+    }
+    Ok(())
+}
+
+async fn backdrop(socket: &Path, texture: bool, image: Option<&str>) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    let picture = match image {
+        Some(path) => {
+            let bytes = std::fs::read(path)?;
+            Some(BackdropImage {
+                id: format!("{:x}", bytes.len()),
+                data_url: format!("data:image/jpeg;base64,{}", base64(&bytes)),
+            })
+        }
+        None => None,
+    };
+    client.publish_backdrop(texture, picture).await?;
+    println!("published the backdrop");
+    Ok(())
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        for (index, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+            if index <= chunk.len() {
+                out.push(char::from(TABLE[((n >> shift) & 63) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+async fn palette(socket: &Path, colours: &[&str]) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    let palette = colours
+        .iter()
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(name, colour)| (name.to_owned(), colour.to_owned()))
+        .collect();
+    client.publish_palette(palette).await?;
+    println!("published the palette");
+    Ok(())
+}
+
+async fn chats(socket: &Path) -> Result<(), Failure> {
+    let (client, _events) = CoreClient::connect(socket).await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&client.acp_list().await?)?
+    );
+    Ok(())
+}
+
+/// Stands in for the app: keeps one chat asleep until a device opens it.
+async fn sleepy(socket: &Path) -> Result<(), Failure> {
+    let (client, mut events) = CoreClient::connect(socket).await?;
+    let agent_id = "agent-sleepy".to_owned();
+    client
+        .publish_chats(vec![PublishedChat {
+            agent_id: agent_id.clone(),
+            provider: "opencode".into(),
+            title: Some("Tidy the docs".into()),
+            cwd: std::env::temp_dir(),
+            asleep: true,
+        }])
+        .await?;
+    println!("{agent_id} is asleep");
+    while let Some(event) = events.recv().await {
+        let ClientEvent::Event(Event::WakeChat { agent_id: woken }) = event else {
+            continue;
+        };
+        let launch = ChatLaunch {
+            agent_id: woken.clone(),
+            provider: "opencode".into(),
+            cwd: std::env::temp_dir(),
+            program: fake_agent()?,
+            args: vec!["acp".into()],
+            env: Default::default(),
+            mcp_servers: Vec::new(),
+            resume_id: None,
+            permission_mode: "workspace-write".into(),
+            model: None,
+            effort: None,
+        };
+        client.acp_start(launch).await?;
+        println!("woke {woken}");
     }
     Ok(())
 }

@@ -2,11 +2,14 @@
 //! and agents the app offers paired devices. The core keeps the state; these
 //! commands forward to it.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{ChatLauncher, DeviceAccess, ProjectInfo, RemoteStatus};
+use sikemux_core::protocol::{
+    BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus,
+};
 use tauri::{AppHandle, Manager, State};
 
 use crate::acp::LauncherSpec;
@@ -18,6 +21,18 @@ use crate::pty::{core_error, PtyManager};
 /// core keeps it in memory only.
 #[derive(Default)]
 pub struct PublishedWorkspace(Mutex<Option<(Vec<ProjectInfo>, Vec<ChatLauncher>)>>);
+
+/// The backdrop the app last published, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedBackdrop(Mutex<Option<(bool, Option<BackdropImage>)>>);
+
+/// The theme colours the app last published, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedPalette(Mutex<BTreeMap<String, String>>);
+
+/// The chats the app last listed, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedChats(Mutex<Vec<PublishedChat>>);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +80,49 @@ pub async fn remote_publish_workspace(
         .map_err(core_error)
 }
 
+#[tauri::command]
+pub async fn remote_publish_backdrop(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedBackdrop>,
+    texture: bool,
+    image: Option<BackdropImage>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = Some((texture, image.clone()));
+    }
+    let client = manager.client().await?;
+    client
+        .publish_backdrop(texture, image)
+        .await
+        .map_err(core_error)
+}
+
+#[tauri::command]
+pub async fn remote_publish_palette(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedPalette>,
+    palette: BTreeMap<String, String>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = palette.clone();
+    }
+    let client = manager.client().await?;
+    client.publish_palette(palette).await.map_err(core_error)
+}
+
+#[tauri::command]
+pub async fn remote_publish_chats(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedChats>,
+    chats: Vec<PublishedChat>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = chats.clone();
+    }
+    let client = manager.client().await?;
+    client.publish_chats(chats).await.map_err(core_error)
+}
+
 /// Gives a core the app just connected to what it published to the last one,
 /// and keeps the login item in step with its remote access switch.
 pub(crate) async fn connected(
@@ -78,6 +136,32 @@ pub(crate) async fn connected(
     if let Some((projects, launchers)) = last {
         if let Err(error) = client.publish_workspace(projects, launchers).await {
             eprintln!("Sikemux could not tell its core which agents devices may start: {error}");
+        }
+    }
+    let palette = app
+        .try_state::<PublishedPalette>()
+        .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
+        .filter(|palette| !palette.is_empty());
+    if let Some(palette) = palette {
+        if let Err(error) = client.publish_palette(palette).await {
+            eprintln!("Sikemux could not tell its core the theme's colours: {error}");
+        }
+    }
+    let backdrop = app
+        .try_state::<PublishedBackdrop>()
+        .and_then(|published| published.0.lock().ok().and_then(|last| last.clone()));
+    if let Some((texture, image)) = backdrop {
+        if let Err(error) = client.publish_backdrop(texture, image).await {
+            eprintln!("Sikemux could not tell its core what it draws behind panes: {error}");
+        }
+    }
+    let chats = app
+        .try_state::<PublishedChats>()
+        .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
+        .filter(|chats| !chats.is_empty());
+    if let Some(chats) = chats {
+        if let Err(error) = client.publish_chats(chats).await {
+            eprintln!("Sikemux could not tell its core which chats it has: {error}");
         }
     }
     if let Ok(status) = client.remote_status().await {

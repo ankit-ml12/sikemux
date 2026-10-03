@@ -116,7 +116,7 @@
 }
 
 .desk .tabbar.v-desk .tab-wrap.acting {
-    background-image: linear-gradient(color-mix(in srgb, var(--desk-agent) 14%, transparent), color-mix(in srgb, var(--desk-agent) 14%, transparent));
+    --tab-tint: color-mix(in srgb, var(--desk-agent) 14%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--desk-agent) 70%, transparent);
     color: var(--text-primary);
 }
@@ -309,6 +309,19 @@
     position: absolute;
     inset: 0;
     background: color-mix(in srgb, var(--pane) calc(var(--window-opacity, 1) * 100%), transparent);
+}
+
+/* Fitted the way the live page is: never scaled up, and along the top of the
+   area when a fixed viewport leaves room around it. */
+.browser-still {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: scale-down;
+    object-position: top center;
+    pointer-events: none;
+    user-select: none;
 }
 
 /* A page that is there is shaded natively; a blank one has only this. */

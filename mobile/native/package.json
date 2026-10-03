@@ -4,7 +4,7 @@
   "private": true,
   "description": "The Sikemux core client, compiled from Rust, for the phone app",
   "license": "SEE LICENSE IN ../../LICENSE",
-  "author": "nodelike <kishore.sensei@gmail.com> (https://github.com/nodelike)",
+  "author": "nodelike <contact@nodelike.com> (https://github.com/nodelike)",
   "homepage": "https://github.com/nodelike/sikemux/tree/main/mobile/native",
   "repository": {
     "type": "git",
@@ -15,10 +15,13 @@
   "types": "./src/index.tsx",
   "react-native": "./src/index.tsx",
   "scripts": {
-    "ubrn:ios": "ubrn build ios --and-generate",
-    "ubrn:android": "ubrn build android --and-generate",
-    "ubrn:clean": "rm -rf cpp/ android/CMakeLists.txt android/src/main/java android/*.cpp ios/ src/Native* src/index.*ts* src/generated/",
-    "typecheck": "tsc"
+    "ubrn:ios": "node scripts/ubrn.mjs build ios --and-generate",
+    "ubrn:ios:sim": "node scripts/ubrn.mjs build ios --and-generate --sim-only",
+    "ubrn:android": "node scripts/ubrn.mjs build android --and-generate && node scripts/shrink-android-link.mjs",
+    "ubrn:ios:release": "node scripts/ubrn.mjs build ios --and-generate --profile mobile",
+    "ubrn:android:release": "node scripts/ubrn.mjs build android --and-generate --profile mobile && node scripts/shrink-android-link.mjs",
+    "ubrn:clean": "rm -rf cpp/ ios/ android/ src/ build/ *.podspec *.xcframework",
+    "typecheck": "node ../scripts/require-bindings.mjs && tsc"
   },
   "peerDependencies": {
     "react": "*",
@@ -28,10 +31,10 @@
     "@ubjs/core": "0.31.0-6"
   },
   "devDependencies": {
-    "@types/react": "^19.2.0",
+    "@types/react": "catalog:",
     "react": "19.2.3",
     "react-native": "0.86.3",
-    "typescript": "^6.0.3",
+    "typescript": "catalog:",
     "uniffi-bindgen-react-native": "0.31.0-6"
   },
   "codegenConfig": {

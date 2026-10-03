@@ -44,18 +44,43 @@ Terminals, agents and tasks run in a separate process, the core (`sikemux core`)
 
 The phone app lives in `mobile/`, a pnpm workspace of its own, so nothing in it is installed or checked with the desktop app. `mobile/app` is the Expo app and `mobile/native` is `@sikemux/native`, a Turbo Module that `uniffi-bindgen-react-native` generates from `src-tauri/crates/sikemux-mobile`: the core's own client, pairing and iroh connection. [ADR 0008](docs/architecture/0008-mobile-app-expo-and-rust-client.md) records why.
 
-You need rustup's Rust first on your `PATH` (Homebrew's Rust has no phone targets), Xcode, and for Android the NDK and `cargo-ndk`:
+You need rustup's Rust (Homebrew's Rust ignores `rust-toolchain.toml` and has no phone targets), Xcode, and for Android the NDK and `cargo-ndk`. `rust-toolchain.toml` lists the phone targets, so rustup installs them with the toolchain:
 
 ```bash
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk     # Android only
 cd mobile
 pnpm install
-pnpm native:ios             # builds the Rust client and generates its bindings
+pnpm run doctor             # checks the toolchain, Xcode, the Android SDK and what is built
+pnpm native:ios:sim         # builds the Rust client for the simulator and generates its bindings
 pnpm ios                    # builds the development app and runs it in the simulator
 ```
 
-Rebuild with `pnpm native:ios` or `pnpm native:android` after changing `sikemux-mobile` or the protocol in `sikemux-core`. The generated bindings and native libraries are build output and are not committed. The app needs a development build; Expo Go cannot load `@sikemux/native`. To pair the simulator with your Mac, turn on Settings, Devices in a dev build of Sikemux.
+Rebuild with `pnpm native:ios:sim` after changing `sikemux-mobile` or the protocol in `sikemux-core`; it builds only the simulator slice, which is the quickest loop. `pnpm native:ios` adds the device slice, `pnpm native:android` builds for Android, and the `:release` variants build with the small `mobile` profile that release runs require. These scripts put `~/.cargo/bin` first on `PATH` themselves and stop if the toolchain or a target is missing. `pnpm clean` deletes the generated native projects and bindings. The generated bindings and native libraries are build output and are not committed. The app needs a development build; Expo Go cannot load `@sikemux/native`. To pair the simulator with your Mac, turn on Settings, Devices in a dev build of Sikemux.
+
+`pnpm check` in `mobile/` runs the phone's typecheck, lint, Prettier check and unit tests (vitest, with stand-ins for React Native and the native modules in `mobile/app/test/mocks`). Its lint also fails if Mac code the phone imports through `@mac/` reaches `@tauri-apps/*`, which Metro cannot bundle; the repo's `pnpm lint` runs that check too.
+
+#### Designing phone screens
+
+Every phone screen is drawn first in `mobile/design/screens.src.html`, with the Mac app's own icons and fonts. A design change starts there, before the app: run `pnpm design` in `mobile/` and open http://127.0.0.1:8791/mobile/design/screens.html, which rebuilds on each reload. In the PR, add a screenshot of each screen you changed or added from that page, so the design is reviewed before the code. `{{IconName}}` or `{{IconName:size}}` in the file draws one of the app's icons. The glyphs the phone draws itself live in `mobile/app/src/ui/drawnIcons.ts`, which the app and the page both read.
+
+### The accounts server
+
+`server/` holds the backend behind phone sign-in and the device list: the API at api.sikemux.com and the web app at app.sikemux.com. Like `mobile/`, it is a pnpm workspace of its own. [ADR 0009](docs/architecture/0009-accounts-and-backend.md) records the design.
+
+- `server/protocol` is the contract. Its JSON Schema in `schema/` and the routes in `routes.json` generate the TypeScript types, a bundled schema the API validates with, an OpenAPI document, and the Rust types in `src-tauri/crates/sikemux-core/src/accounts/protocol.rs`. Change the schema, then run `pnpm protocol:generate`; never edit the generated files. Every definition needs an example in `fixtures/`, which both the TypeScript and the Rust tests read.
+- `server/api` is the API (Hono on Node, Postgres through Kysely). Schema changes are numbered SQL files in `api/migrations`; a shipped one is never edited, only followed by a new one.
+- `server/app` is the web app (Vite and React).
+- `server/deploy` is what runs it on the server: the systemd unit, the Caddy sites, the one-time setup and the script that installs a release.
+
+```bash
+cd server
+pnpm install
+pnpm check                  # schema drift, Prettier, ESLint, types, tests and builds
+```
+
+The API's tests need Postgres 16 or newer installed (`brew install postgresql@17`); they start a throwaway server of their own, or use `TEST_DATABASE_URL` when it is set. To run the API and the web app locally, put `DATABASE_URL=postgresql://localhost/sikemux` (a database you created) in `server/api/.env`, run `pnpm --filter @sikemux/api migrate`, then `pnpm dev`. Development builds of the Mac app and the phone use that local API too: the Mac at 127.0.0.1:4000, the phone at port 4000 of the Mac running Metro, so start the API with `HOST=0.0.0.0` in that `.env` when testing on a phone. Either can be pointed elsewhere, the Mac with `SIKEMUX_API_URL` and the phone with `EXPO_PUBLIC_API_URL`.
+
+Merging a change under `server/` to `main` deploys it: `.github/workflows/server.yml` runs `pnpm check`, sends the release to the server over SSH, migrates the database, restarts the API, and switches back to the previous release if the new one does not report itself healthy.
 
 ## Before you open a PR
 

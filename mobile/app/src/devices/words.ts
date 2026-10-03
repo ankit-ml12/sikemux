@@ -1,4 +1,4 @@
-import type { ChatInfo } from '@/core/protocol';
+import { ChatState, type ChatInfo } from '@/core/protocol';
 
 const PROVIDER_NAMES: Record<string, string> = {
   claude: 'Claude Code',
@@ -26,7 +26,9 @@ export function chatTitle(chat: Pick<ChatInfo, 'title' | 'provider'>): string {
 /** The Mac rail's words for where a chat is (src/state/agentStatus.ts). */
 export function chatState(chat: ChatInfo): string {
   if (chat.pendingPermissions.length) return 'Needs input';
-  if (chat.state === 'starting') return 'Starting…';
+  if (chat.asleep) return 'Sleeping';
+  if (chat.state === ChatState.Stopped) return 'Stopped';
+  if (chat.state === ChatState.Starting) return 'Starting…';
   return chat.running ? 'Working' : 'Ready';
 }
 

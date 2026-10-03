@@ -1,6 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
+import { animate } from "../lib/motion";
+import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
-import { onStageFrame, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
+import { onStageFrame, stageMoving, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
 import { reportError } from "../state/toast";
 import { AgentIcon, IconChevron, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
@@ -8,6 +10,7 @@ import { FileIcon } from "../ui/FileIcon";
 import { SiteIcon } from "../ui/SiteIcon";
 import { AddressBar } from "./AddressBar";
 import { FloatingAddress } from "./FloatingAddress";
+import { forgetPageStill, usePageStill, useStillUpkeep } from "./pageStills";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";
@@ -64,10 +67,43 @@ function holesOver(placement: Placement, holes: NativeViewHole[]): BrowserHole[]
         .map((hole) => ({ ...hole, x: hole.x - placement.x, y: hole.y - placement.y }));
 }
 
-function sameBounds(a: Placement | null, b: Placement): boolean {
-    return (
-        !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height && a.clipLeft === b.clipLeft && a.clipRight === b.clipRight
-    );
+/**
+ * The live page while its picture travels in its place: masked away entirely,
+ * and already where its screen will come to rest, so the stage stopping only
+ * has to lift the mask. It stays shown the whole time, because a page shown
+ * again after being hidden can draw a blank frame before it repaints.
+ */
+function maskedWhereItLands(host: HTMLElement, placement: Placement): BrowserBounds {
+    const layer = host.closest(".window-layer")?.getBoundingClientRect();
+    const stage = host.closest(".window-area")?.getBoundingClientRect();
+    const travelled = layer && stage ? layer.left - stage.left : 0;
+    return {
+        ...placement,
+        x: Math.round(host.getBoundingClientRect().left - travelled),
+        clipLeft: placement.width,
+        clipRight: 0,
+        holes: [],
+    };
+}
+
+/** Where the page area sits in the window, less whatever pokes past its pane's or the stage's sides. */
+function measurePage(host: HTMLElement): Placement {
+    const rect = host.getBoundingClientRect();
+    const stage = host.closest(".window-area")?.getBoundingClientRect();
+    const pane = host.closest(".pane")?.getBoundingClientRect();
+    const x = Math.round(rect.left);
+    const width = Math.max(1, Math.round(rect.width));
+    const left = Math.round(Math.max(stage?.left ?? -Infinity, pane?.left ?? -Infinity));
+    const right = Math.round(Math.min(stage?.right ?? Infinity, pane?.right ?? Infinity));
+    const clipLeft = Math.min(width, Math.max(0, left - x));
+    return {
+        x,
+        y: Math.round(rect.top),
+        width,
+        height: Math.max(1, Math.round(rect.height)),
+        clipLeft,
+        clipRight: Math.min(width - clipLeft, Math.max(0, x + width - right)),
+    };
 }
 
 /**
@@ -120,6 +156,37 @@ export function DeskHost({
             painted={painted}
             onEmpty={onEmpty}
         />
+    );
+}
+
+/* While the split opens or closes around it, the desk keeps the layout it has
+   when open and its pane's edge moves over it, so nothing inside rewraps or
+   grows a scrollbar part way. It fades along, and a fade turned around mid-way
+   starts from the opacity it had reached. */
+function useDeskMotion(section: RefObject<HTMLElement | null>, paneId: string): void {
+    const fade = useRef<Animation | null>(null);
+    useLayoutEffect(
+        () =>
+            onDeskMotion(paneId, (event) => {
+                const desk = section.current;
+                const pane = desk?.closest<HTMLElement>(".pane") ?? desk;
+                if (!desk || !pane) return;
+                if (event.kind === "settled") {
+                    desk.style.width = "";
+                    return;
+                }
+                if (!desk.style.width) {
+                    const area = desk.closest(".window-area")?.getBoundingClientRect().width ?? 0;
+                    desk.style.width = `${desk.getBoundingClientRect().width + area * (event.openShare - event.currentShare)}px`;
+                }
+                const from = event.appearing ? 0 : Number(getComputedStyle(pane).opacity);
+                fade.current?.cancel();
+                fade.current = animate(pane, [{ opacity: from }, { opacity: event.heading === "open" ? 1 : 0 }], {
+                    duration: event.ms,
+                    fill: "forwards",
+                });
+            }),
+        [paneId, section],
     );
 }
 
@@ -261,8 +328,11 @@ function DeskSession({
         agentType,
     });
 
+    const sectionRef = useRef<HTMLElement>(null);
+    useDeskMotion(sectionRef, paneId);
+
     return (
-        <section className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
+        <section ref={sectionRef} className={`desk ${agentType}`} data-desk data-agent-id={agentId} aria-label={`${agentType} desk`}>
             <TabBar
                 variant="desk"
                 ariaLabel="Desk tabs"
@@ -282,6 +352,7 @@ function DeskSession({
             />
             <div className="desk-body">
                 <BrowserPage
+                    paneId={paneId}
                     agentId={agentId}
                     hidden={shown !== BROWSER_ACTIVE}
                     visible={visible}
@@ -326,6 +397,7 @@ function DeskSession({
 /* The page itself is a native view the window draws over this pane, so the
    pane's only job for it is to say where the page area is. */
 function BrowserPage({
+    paneId,
     agentId,
     hidden,
     visible,
@@ -333,6 +405,7 @@ function BrowserPage({
     snapshot,
     refresh,
 }: {
+    paneId: string;
     agentId: string;
     hidden: boolean;
     visible: boolean;
@@ -344,53 +417,76 @@ function BrowserPage({
     const forwardShortcut = useShortcutLabel("browser.forward");
     const reloadShortcut = useShortcutLabel("browser.reload");
     const viewportRef = useRef<HTMLDivElement>(null);
-    const measureRef = useRef<() => void>(() => {});
-    const [placement, setPlacement] = useState<Placement | null>(null);
+    const placeRef = useRef<() => void>(() => {});
     const occluded = useNativeViewsOccluded();
     const appHoles = useNativeViewHoles();
     const moving = useStageMoving();
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const blank = activeTab?.url === BLANK_URL;
-    /* A screen sliding on or off stage is on the window without being the screen
-       the session is on, and its page travels with it rather than waiting off
-       screen for it to land. Only a painting screen may: one parked off stage
-       still measures a rect over the window, and the stage moves for all of them
-       at once. */
-    const travelling = moving && painted && !!placement && placement.clipLeft + placement.clipRight < placement.width;
-    const shown = (visible || travelling) && !hidden && !occluded && !blank && !!activeTab;
+    const hasTab = !!activeTab;
+    const still = usePageStill(agentId, activeTab?.id);
+    const hasStill = !!still;
+    useStillUpkeep(
+        agentId,
+        activeTab?.id,
+        visible && !hidden && !occluded && !blank && !moving,
+        `${activeTab?.url}|${activeTab?.title}|${activeTab?.loading}|${activeTab?.acting}`,
+    );
 
     const pageAddress = blank ? "" : (activeTab?.url ?? "");
     const addressFloating = useStore((state) => state.deskAddressOpen === agentId) && visible && !hidden;
 
+    const inputs = { paneId, agentId, visible, painted, hidden, occluded, blank, hasTab, hasStill, appHoles, addressFloating };
+    const inputsRef = useRef(inputs);
+    inputsRef.current = inputs;
+
+    /* The page is placed straight from a measurement, never through React state:
+       while the stage slides that runs every frame, and a render plus an effect
+       in between would leave the page a frame or more behind its pane. */
     useLayoutEffect(() => {
         const host = viewportRef.current;
         if (!host) return;
         let frame = 0;
-        const measure = () => {
+        let sent = "";
+        const place = () => {
             frame = 0;
-            const rect = host.getBoundingClientRect();
-            const stage = host.closest(".window-area")?.getBoundingClientRect();
-            const x = Math.round(rect.left);
-            const width = Math.max(1, Math.round(rect.width));
-            const left = stage ? Math.round(stage.left) : -Infinity;
-            const right = stage ? Math.round(stage.right) : Infinity;
-            const clipLeft = Math.min(width, Math.max(0, left - x));
-            const next = {
-                x,
-                y: Math.round(rect.top),
-                width,
-                height: Math.max(1, Math.round(rect.height)),
-                clipLeft,
-                clipRight: Math.min(width - clipLeft, Math.max(0, x + width - right)),
-            };
-            setPlacement((previous) => (sameBounds(previous, next) ? previous : next));
+            const { paneId, visible, painted, hidden, occluded, blank, hasTab, hasStill, appHoles, addressFloating } = inputsRef.current;
+            const placement = measurePage(host);
+            if (stageMoving() && hasStill && painted && !hidden && !occluded && !blank && hasTab) {
+                send(maskedWhereItLands(host, placement));
+                return;
+            }
+            /* A screen sliding on or off stage is on the window without being the
+               screen the session is on, and its page travels with it rather than
+               waiting off screen for it to land. Only a painting screen may: one
+               parked off stage still measures a rect over the window, and the stage
+               moves for all of them at once. */
+            const travelling = stageMoving() && painted && placement.clipLeft + placement.clipRight < placement.width;
+            const shown = (visible || travelling) && !hidden && !occluded && !blank && hasTab;
+            /* A native page cannot inherit CSS opacity, so it is told its pane's. */
+            const opacity = deskAppearing(paneId) ? 0 : Math.round(Number(getComputedStyle(host.closest(".pane") ?? host).opacity) * 100) / 100;
+            const bounds: BrowserBounds | null = shown
+                ? {
+                      ...placement,
+                      holes: holesOver(placement, appHoles),
+                      ...(addressFloating ? { dim: UNDER_ADDRESS_DIM } : {}),
+                      ...(opacity < 1 ? { opacity } : {}),
+                  }
+                : null;
+            send(bounds);
+        };
+        const send = (bounds: BrowserBounds | null) => {
+            const key = JSON.stringify(bounds);
+            if (key === sent) return;
+            sent = key;
+            void browserApi.setBounds(inputsRef.current.agentId, bounds).catch(reportError("place browser page"));
         };
         /* Layout settles once per frame; a divider drag fires far more often. */
         const schedule = () => {
-            if (!frame) frame = window.requestAnimationFrame(measure);
+            if (!frame) frame = window.requestAnimationFrame(place);
         };
-        measureRef.current = measure;
-        measure();
+        placeRef.current = place;
+        place();
         const observer = new ResizeObserver(schedule);
         observer.observe(host);
         const scrollers = scrollParents(host);
@@ -406,25 +502,21 @@ function BrowserPage({
         };
     }, []);
 
+    useEffect(() => placeRef.current(), [agentId, visible, painted, hidden, occluded, blank, hasTab, hasStill, appHoles, addressFloating]);
+
     /* Nothing reports the stage sliding the way a scroll or a resize would, so
        the page area is read again on every frame of the travel, and once more
        where it lands. */
     useEffect(() => {
-        measureRef.current();
+        placeRef.current();
         if (!moving) return;
-        return onStageFrame(() => measureRef.current());
+        return onStageFrame(() => placeRef.current());
     }, [moving]);
-
-    const holesKey = JSON.stringify(placement ? holesOver(placement, appHoles) : []);
-    const holes = useMemo<BrowserHole[]>(() => JSON.parse(holesKey), [holesKey]);
-    useEffect(() => {
-        const dim = addressFloating ? { dim: UNDER_ADDRESS_DIM } : {};
-        void browserApi.setBounds(agentId, shown && placement ? { ...placement, holes, ...dim } : null).catch(reportError("place browser page"));
-    }, [agentId, placement, holes, shown, addressFloating]);
 
     useEffect(
         () => () => {
             void browserApi.setBounds(agentId, null).catch(() => {});
+            forgetPageStill(agentId);
         },
         [agentId],
     );
@@ -463,6 +555,17 @@ function BrowserPage({
                 <AddressBar tabId={activeTab?.id} pageAddress={pageAddress} onGo={go} vacant={addressFloating} />
             </div>
             <div ref={viewportRef} className="browser-viewport" tabIndex={-1}>
+                {/* Under the live page, where it shows only while the stage moves. */}
+                {still && !blank && (
+                    <img
+                        className="browser-still"
+                        src={still}
+                        srcSet={`${still} ${window.devicePixelRatio || 1}x`}
+                        alt=""
+                        decoding="async"
+                        draggable={false}
+                    />
+                )}
                 {blank && <div className="browser-blank" aria-label="Blank browser page" />}
                 {blank && addressFloating && <div className="browser-dim" style={{ opacity: UNDER_ADDRESS_DIM }} />}
             </div>

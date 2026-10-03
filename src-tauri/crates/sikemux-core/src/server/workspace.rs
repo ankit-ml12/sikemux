@@ -2,14 +2,17 @@
 //! can start one with the window closed. Held in memory only: a launcher's
 //! environment may carry the person's API keys.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde_json::Value;
 
 use crate::protocol::{
-    ChatLaunch, ChatLauncher, Event, LauncherInfo, ProjectInfo, RequestId, Response, Workspace,
+    Backdrop, BackdropImage, ChatInfo, ChatLaunch, ChatLauncher, ChatState, Event, LauncherInfo,
+    ProjectInfo, PublishedChat, RequestId, Response, Workspace,
 };
 
 use super::chat;
@@ -18,11 +21,23 @@ use super::{Core, CoreError, CoreResult};
 
 const MAX_PROJECTS: usize = 512;
 const MAX_LAUNCHERS: usize = 64;
+const MAX_CHATS: usize = 1024;
+const MAX_TITLE_CHARS: usize = 200;
+const MAX_COLOURS: usize = 64;
+/// A phone-sized JPEG is a few hundred kilobytes; this leaves room without letting one fill a frame.
+const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
+const MAX_COLOUR_CHARS: usize = 64;
+/// Long enough for an agent's adapter and CLI to come back up.
+const WAKE_WAIT: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 struct Published {
     projects: Vec<ProjectInfo>,
     launchers: Vec<ChatLauncher>,
+    chats: Vec<PublishedChat>,
+    palette: BTreeMap<String, String>,
+    texture: bool,
+    image: Option<BackdropImage>,
 }
 
 #[derive(Default)]
@@ -56,11 +71,108 @@ impl Workspaces {
         if let Some(project) = projects.iter().find(|project| !project.path.is_absolute()) {
             return Err(format!("project {} has no absolute path", project.name).into());
         }
-        *self.lock() = Published {
-            projects,
-            launchers,
-        };
+        let mut published = self.lock();
+        published.projects = projects;
+        published.launchers = launchers;
         Ok(())
+    }
+
+    pub(crate) fn publish_backdrop(
+        &self,
+        texture: bool,
+        image: Option<BackdropImage>,
+    ) -> CoreResult<()> {
+        if let Some(image) = &image {
+            if !image.data_url.starts_with("data:image/") {
+                return Err("the backdrop picture is not an image".into());
+            }
+            if image.data_url.len() > MAX_IMAGE_BYTES {
+                return Err("the backdrop picture is larger than the core keeps".into());
+            }
+        }
+        let mut published = self.lock();
+        published.texture = texture;
+        published.image = image;
+        Ok(())
+    }
+
+    pub(crate) fn backdrop_image(&self) -> Option<String> {
+        self.lock()
+            .image
+            .as_ref()
+            .map(|image| image.data_url.clone())
+    }
+
+    pub(crate) fn publish_palette(&self, palette: BTreeMap<String, String>) -> CoreResult<()> {
+        let oversized = palette
+            .iter()
+            .any(|(name, value)| name.len() > MAX_COLOUR_CHARS || value.len() > MAX_COLOUR_CHARS);
+        if palette.len() > MAX_COLOURS || oversized {
+            return Err("the app published more theme colours than the core keeps".into());
+        }
+        self.lock().palette = palette;
+        Ok(())
+    }
+
+    pub(crate) fn publish_chats(&self, chats: Vec<PublishedChat>) -> CoreResult<()> {
+        let too_long = |chat: &PublishedChat| {
+            chat.title
+                .as_ref()
+                .is_some_and(|title| title.chars().count() > MAX_TITLE_CHARS)
+        };
+        if chats.len() > MAX_CHATS || chats.iter().any(too_long) {
+            return Err("the app published more chats than the core keeps".into());
+        }
+        self.lock().chats = chats;
+        Ok(())
+    }
+
+    /// The running chats under the app's names, which include the agent's own
+    /// unless the person renamed the chat, then the app's chats that are not running.
+    pub(crate) fn listed(&self, mut running: Vec<ChatInfo>) -> Vec<ChatInfo> {
+        let published = self.lock();
+        for chat in &mut running {
+            let title = published
+                .chats
+                .iter()
+                .find(|known| known.agent_id == chat.agent_id)
+                .and_then(|known| known.title.clone());
+            if title.is_some() {
+                chat.title = title;
+            }
+        }
+        let stopped: Vec<ChatInfo> = published
+            .chats
+            .iter()
+            .filter(|chat| !running.iter().any(|live| live.agent_id == chat.agent_id))
+            .map(|chat| ChatInfo {
+                agent_id: chat.agent_id.clone(),
+                provider: chat.provider.clone(),
+                title: chat.title.clone(),
+                cwd: chat.cwd.clone(),
+                session_id: None,
+                state: ChatState::Stopped,
+                running: false,
+                pending_permissions: Vec::new(),
+                started_by: None,
+                launcher: None,
+                permission_mode: String::new(),
+                model: None,
+                effort: None,
+                asleep: chat.asleep,
+            })
+            .collect();
+        running.extend(stopped);
+        running
+    }
+
+    /// Whether the app has the chat open, and if so whether it is asleep.
+    fn published(&self, agent_id: &str) -> Option<bool> {
+        self.lock()
+            .chats
+            .iter()
+            .find(|chat| chat.agent_id == agent_id)
+            .map(|chat| chat.asleep)
     }
 
     pub(crate) fn view(&self) -> Workspace {
@@ -77,6 +189,11 @@ impl Workspaces {
                     permission_mode: launcher.permission_mode.clone(),
                 })
                 .collect(),
+            palette: published.palette.clone(),
+            backdrop: Backdrop {
+                texture: published.texture,
+                image: published.image.as_ref().map(|image| image.id.clone()),
+            },
         }
     }
 
@@ -92,13 +209,13 @@ impl Workspaces {
             .iter()
             .find(|launcher| launcher.id == choice.launcher)
             .ok_or_else(|| {
-                CoreError::from("that agent is not one Sikemux on this Mac can start; open Sikemux on the Mac once so it can say which it can")
+                CoreError::from("that agent is not one Sikemux on this host can start; open Sikemux on the host once so it can say which it can")
             })?;
         let project = published
             .projects
             .iter()
             .find(|project| project.id == choice.project)
-            .ok_or_else(|| CoreError::from("that project is not open in Sikemux on this Mac"))?;
+            .ok_or_else(|| CoreError::from("that project is not open in Sikemux on this host"))?;
         let mut env = launcher.env.clone();
         env.insert("SIKEMUX_AGENT_ID".into(), agent_id.to_owned());
         Ok(ChatLaunch {
@@ -134,6 +251,43 @@ fn tools_server(agent_id: &str, endpoint: &Path) -> Option<Value> {
 
 fn cli_endpoint(core: &Core) -> Option<PathBuf> {
     core.listening.get()?.config.cli_endpoint.clone()
+}
+
+fn running(core: &Core, agent_id: &str) -> bool {
+    core.chats
+        .list()
+        .iter()
+        .any(|chat| chat.agent_id == agent_id)
+}
+
+/// Has the app start a chat it put to sleep, and waits for it to run.
+pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<Response> {
+    if running(core, &agent_id) {
+        return Ok(Response::Done);
+    }
+    match core.workspaces.published(&agent_id) {
+        None => return Err("that chat is no longer open in Sikemux on this host".into()),
+        Some(false) => {
+            return Err(
+                "this chat stopped on the host; open it in Sikemux there to start it again".into(),
+            )
+        }
+        Some(true) => {}
+    }
+    if !core.has_local_client() {
+        return Err("open Sikemux on the host to wake this chat".into());
+    }
+    core.broadcast_local(&Event::WakeChat {
+        agent_id: agent_id.clone(),
+    });
+    let deadline = tokio::time::Instant::now() + WAKE_WAIT;
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if running(core, &agent_id) {
+            return Ok(Response::Done);
+        }
+    }
+    Err("the chat did not wake; open it in Sikemux on the host".into())
 }
 
 /// Starts the chat and answers `client` once its session is ready. The chat
