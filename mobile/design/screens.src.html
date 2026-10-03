@@ -446,8 +446,6 @@
   .faces { display: flex; }
   .faces > span { width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; background: var(--surface-overlay); box-shadow: 0 0 0 2px var(--surface-raised); margin-right: -6px; }
   .faces > span:last-child { margin-right: 0; }
-  .this-phone { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 16px 38px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-tertiary); }
-  .this-phone .m { margin-left: auto; }
   /* welcome: the rail itself, drifting past */
   .reel { position: absolute; left: 0; right: 0; top: 54px; height: 360px; overflow: hidden; padding: 0 16px;
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 24%, #000 52%, transparent 94%);
@@ -478,11 +476,17 @@
   .field .reveal { margin-left: auto; display: flex; color: var(--text-tertiary); }
   .field-label { font-size: 13px; color: var(--text-tertiary); margin-bottom: -6px; }
   .account-head { display: flex; align-items: center; gap: 12px; padding: 6px 8px 14px; }
-  .account-head .avatar { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; background: var(--surface-raised); border: 1px solid var(--border); color: var(--text-secondary); }
+  /* the account's picture; a person has no photo here, so a drawn portrait stands in for one */
+  .avatar { flex: none; width: var(--size); height: var(--size); border-radius: 999px; display: grid; place-items: center; overflow: hidden; background: var(--surface-raised); border: 1px solid var(--border); color: var(--text-secondary); font-size: calc(var(--size) * .4); font-weight: 600; letter-spacing: -0.01em; }
+  .avatar.photo { background: radial-gradient(circle at 50% 40%, #c8a58a 0 21%, transparent 22%), radial-gradient(ellipse 46% 34% at 50% 100%, #3b4656 0 98%, transparent 100%), linear-gradient(#66768a, #2b3442); }
   .account-head .t { font-size: 16px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.015em; }
   .account-head .s { font-size: 13px; color: var(--text-tertiary); }
   .sheet-note { padding: 10px 8px 12px; font-size: 13px; line-height: 1.45; color: var(--text-tertiary); }
   .sheet-version { padding-top: 14px; font-size: 12px; text-align: center; color: var(--text-tertiary); }
+  .sheet-title { padding: 12px 8px 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .choices { display: flex; flex-direction: column; gap: 8px; }
+  .ink { color: var(--text-primary); font-weight: 500; }
+  .gone { margin: 0; padding: 0 8px 0 18px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.5; }
   /* the three pairing steps share one layout so the code never moves */
   .pairing { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
   .pairing h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
@@ -750,7 +754,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span></div>
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
         <div class="title-block"><h1>Devices</h1></div>
         <div class="pad grow devices">
 
@@ -797,41 +801,129 @@
           </div>
 
         </div>
-        <div class="this-phone">
-          <span>{{IconUser:15}}</span>
-          <span>contact@nodelike.com</span>
-          <span class="chev">{{IconChevron:13}}</span>
-        </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, and pairs with the code from that host. The account is the last line; it opens the account sheet.</div></figcaption>
+      <figcaption><b>Devices</b><div class="note">Each card is a device with its own glyph and a presence dot. The busy one says the one thing that needs you, then who is working, with the rail's logos and squares. A device that is asleep keeps its place but drops to an outline. A host signed in to the same account but not paired with this phone comes last, outlined, and pairs with the code from that host. The account's picture sits at the top right, beside pairing, and opens the account sheet.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen" style="opacity:.35">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span></div>
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
         <div class="title-block"><h1>Devices</h1></div>
       </div>
       <div class="sheet">
         <div class="grabber"></div>
         <div class="account-head">
-          <span class="avatar">{{IconUser:18}}</span>
-          <div><div class="t">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
         <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
         <div class="btn danger">Sign out</div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Account</b><div class="note">Who is signed in, and this phone as the account knows it. Signing out says what it does before it does it. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
+      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Signing out says what it does before it does it. Deleting the account is a quiet link under it, leading to a screen that explains it first. The last line is the installed version, quiet like the Mac's About; when an over-the-air update is running it adds the update's short id and the day it was made, and without one it is only the version.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar photo" style="--size:28px"></span></span></div>
+        <div class="title-block"><h1>Devices</h1></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="account-head">
+          <span class="avatar photo" style="--size:44px"></span>
+          <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
+        </div>
+        <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
+        <div class="sheet-title">Can't reach Sikemux</div>
+        <div class="sheet-note" style="padding-top:4px">Signing out now leaves this phone on your account until you remove it at app.sikemux.com.</div>
+        <div class="choices"><div class="btn">Try again</div><div class="btn danger">Sign out anyway</div></div>
+        <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
+        <div class="sheet-version">Sikemux 0.1.0 · update a1b2c3d (3 Oct)</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Signing out, offline</b><div class="note">Signing out first takes this phone off the account, so every host hears of it, even one that is asleep. When the accounts server can't be reached, the sheet says what signing out now would leave behind and lets the person choose. A server that answers with a problem shows it in red above Sign out instead.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span></div>
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">This phone was removed from your account</h2>
+          <p>It was removed from another device or at app.sikemux.com, so it signed out and forgot the hosts it was paired with. Sign in again to use it.</p>
+        </div>
+        <div class="footer"><div class="btn primary">Continue</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Removed</b><div class="note">The phone stays connected to the account while the app is open, so it hears at once when it is removed, and on its next launch if it was away. It signs out, forgets its hosts, and says why before the welcome screen. When the account was deleted elsewhere the same screen reads "Your account was deleted" and "It was deleted on another device or at app.sikemux.com. This phone signed out and forgot the hosts it was paired with." A host joining, renaming or leaving the account changes the Devices list the same way, without a reload.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+        <div class="signin">
+          <h2>Delete your account</h2>
+          <p style="margin-bottom:0">This deletes <b class="ink">contact@nodelike.com</b> from Sikemux right away. It can't be undone.</p>
+          <ul class="gone">
+            <li>Hosts are signed out. The phones paired to them keep working.</li>
+            <li>Phones, this one too, are signed out and removed from every host.</li>
+            <li>Your sign-in is deleted. Device keys and the account’s history are erased within 30 days, and backups within 30 days after that.</li>
+          </ul>
+          <p style="margin:0">Your code and files never reached us, so they stay on your hosts.</p>
+          <div class="field-label" style="margin-top:8px">Type <span class="m" style="color:var(--text-primary)">delete</span> to confirm</div>
+          <div class="field on">delete<span class="caret"></span></div>
+          <div class="btn danger">Delete account</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Delete account</b><div class="note">Reached from the account sheet. It says what goes, in the words app.sikemux.com/delete-account uses, and what never reached us. The button wakes only once "delete" is typed, the same word as on the web. While it runs the button reads "Deleting…", and a failure, such as the server out of reach, shows in red above it with nothing deleted.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+        <div class="pairing">
+          <h2>Confirm it's you</h2>
+          <p>Sikemux sent a code to c*****@nodelike.com. Enter it to delete your account.</p>
+          <div class="digits"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span class="cur"></span><span></span><span></span></div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="kb num">
+          <div class="r"><span class="k">1</span><span class="k">2</span><span class="k">3</span></div>
+          <div class="r"><span class="k">4</span><span class="k">5</span><span class="k">6</span></div>
+          <div class="r"><span class="k">7</span><span class="k">8</span><span class="k">9</span></div>
+          <div class="r"><span class="k blank"></span><span class="k">0</span><span class="k blank" style="font-size:18px">⌫</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Confirm it's you</b><div class="note">Deleting needs a sign-in from the last ten minutes. When it is older, the server says so and the phone asks again: the password for an account that has one, otherwise a code to the account's email, in the same tiles as signing in. The sixth digit sends it, and the deletion carries on by itself. A wrong code edges the tiles red and says why; Back cancels and deletes nothing.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="stack" style="padding-bottom:120px">
+          <h2 style="font-size:22px">Your account is deleted</h2>
+          <p>Every device on it is signed out. Device keys and the account’s history are erased within 30 days. Your code and files never reached us, so they are still on your hosts.</p>
+        </div>
+        <div class="footer"><div class="btn primary">Continue</div></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Deleted</b><div class="note">The phone signs out and forgets its hosts, then says it is done, in the same place as Removed. Continue goes to the welcome screen.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span style="flex:1"></span><span class="icon-btn">{{IconPlus:18}}</span><span class="icon-btn"><span class="avatar" style="--size:28px">C</span></span></div>
         <div class="title-block"><h1>Devices</h1></div>
         <div class="stack" style="padding-bottom:60px">
           <h2 style="font-size:20px">No hosts yet</h2>
@@ -839,14 +931,9 @@
           <div class="btn primary" style="align-self:stretch;margin-top:14px">Scan the code on your host</div>
           <div class="text-link">Paste a pairing link</div>
         </div>
-        <div class="this-phone">
-          <span>{{IconUser:15}}</span>
-          <span>contact@nodelike.com</span>
-          <span class="chev">{{IconChevron:13}}</span>
-        </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>No hosts yet</b><div class="note">Signed in, with no host paired and none on the account. A host appears here by itself once it signs in to the same account; a code still pairs one that does not.</div></figcaption>
+      <figcaption><b>No hosts yet</b><div class="note">Signed in, with no host paired and none on the account. A host appears here by itself once it signs in to the same account; a code still pairs one that does not. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

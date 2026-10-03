@@ -3,10 +3,11 @@ import { validator, type Definitions } from "@sikemux/protocol";
 import pg from "pg";
 import { inject } from "vitest";
 
-import { createApp } from "../src/app.ts";
+import { createApp, type Services } from "../src/app.ts";
 import { openDatabase, type Database } from "../src/db.ts";
 import { RateLimiter } from "../src/limits.ts";
 import { createLogger } from "../src/log.ts";
+import { readNetwork } from "../src/network/network.ts";
 import { APP_ORIGIN, verifier } from "./tokens.ts";
 
 export { APP_ORIGIN };
@@ -49,8 +50,23 @@ export async function freshDatabase(): Promise<{
   };
 }
 
-export function testApp(database: Database, limiter = new RateLimiter()) {
-  return createApp({ database, log, appOrigin: APP_ORIGIN, verifier, limiter });
+export function testApp(
+  database: Database,
+  limiter = new RateLimiter(),
+  services: Partial<Services> = {},
+) {
+  return createApp({
+    database,
+    log,
+    appOrigin: APP_ORIGIN,
+    verifier,
+    limiter,
+    clerk: null,
+    webhookSecret: null,
+    network: readNetwork({}, []),
+    push: { app: "production", allowSandbox: false },
+    ...services,
+  });
 }
 
 /** A database whose server is not there, for checking how the API copes without one. */

@@ -3,12 +3,80 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDeletion {
+    pub status: AccountDeletionStatus,
+    pub requested_at: String,
+}
+
+/// Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AccountDeletionStatus {
+    #[serde(rename = "deleting")]
+    Deleting,
+    #[serde(rename = "deleted")]
+    Deleted,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountEvent {
+    pub id: EventId,
+    pub r#type: AccountEventType,
+    pub at: String,
+    /// The device the event is about. Absent from account.deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<DeviceKey>,
+    /// That device's role. Absent from account.deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<DeviceRole>,
+    /// Only on device.revoked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<RevokeReason>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AccountEventType {
+    #[serde(rename = "device.added")]
+    DeviceAdded,
+    #[serde(rename = "device.changed")]
+    DeviceChanged,
+    #[serde(rename = "device.revoked")]
+    DeviceRevoked,
+    #[serde(rename = "account.deleted")]
+    AccountDeleted,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 /// The body of every response that is not a success.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiError {
     pub error: ErrorDetail,
 }
+
+/// Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ApnsEnvironment {
+    #[serde(rename = "sandbox")]
+    Sandbox,
+    #[serde(rename = "production")]
+    Production,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A semantic version, such as 0.5.0 or 0.6.0-nightly.3.
+pub type AppVersion = String;
 
 /// A one-time value a device signs to prove it holds its key.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +98,14 @@ pub enum Channel {
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
+}
+
+/// An app older than its channel's version, compared as semantic versions, must update before it connects.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelVersions {
+    pub nightly: AppVersion,
+    pub stable: AppVersion,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +191,9 @@ pub struct ErrorDetail {
     pub request_id: String,
 }
 
+/// An account event's place in the log. Later events have larger ids.
+pub type EventId = i64;
+
 /// Whether the API can serve requests, and which build is answering.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,6 +215,209 @@ pub enum HealthStatus {
     Unknown,
 }
 
+/// Every event up to and including id is handled.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveAck {
+    pub id: EventId,
+}
+
+/// The build that opened the connection, for the server's logs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveApp {
+    pub platform: Platform,
+    pub version: String,
+}
+
+/// Web only: a fresh Clerk session token for the same user, sent before ready.authExpiresAt.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveAuth {
+    pub token: String,
+}
+
+/// The server is restarting and closes with 1012 after it. Reconnect no sooner than reconnectAfterMs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveBye {
+    pub reconnect_after_ms: i64,
+}
+
+/// The server's first message on every connection: a one-time value the device's hello answers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveChallenge {
+    pub nonce: String,
+    pub expires_at: String,
+}
+
+/// What a device or the web app sends on a live connection.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum LiveDeviceMessage {
+    #[serde(rename = "hello")]
+    Hello(LiveHello),
+    #[serde(rename = "ack")]
+    Ack(LiveAck),
+    #[serde(rename = "auth")]
+    Auth(LiveAuth),
+    #[serde(rename = "pong")]
+    Pong(LivePong),
+    #[serde(rename = "leave")]
+    Leave(LiveLeave),
+    #[serde(rename = "push")]
+    Push(LivePush),
+    /// A message added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Events the device has not acknowledged yet, oldest first. Delivery is at least once.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveEvents {
+    pub events: Vec<AccountEvent>,
+}
+
+/// The device's first message, answering the challenge. Hosts send key and signature; clients send key, signature and their Clerk session token; the web app sends only its token. The signature is the device key's Ed25519 signature over the UTF-8 text `sikemux-live|<nonce>|<key>`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveHello {
+    pub role: LiveRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<DeviceKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<LiveApp>,
+}
+
+/// Hosts and clients only: take this device off its account. The server answers with revoked (signed_out).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveLeave {}
+
+/// Answer with pong.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePing {}
+
+/// The answer to ping.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePong {}
+
+/// Hosts only: deliver a notification to one of the account's phones. The blob is sealed on the host with a key only that phone has, and the server passes it on unread. The server answers with pushed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePush {
+    pub r#ref: PushRef,
+    /// The phone's device key.
+    pub to: DeviceKey,
+    pub kind: PushKind,
+    /// Opaque to the server. A later push with the same collapseId replaces or clears the notification this one shows.
+    pub collapse_id: String,
+    /// The sealed notification, in standard base64.
+    pub blob: String,
+    /// After this the push is worth nothing, so the server drops it rather than deliver it late.
+    pub expires_at: String,
+}
+
+/// The answer to a host's push, carrying the push's ref.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LivePushed {
+    pub r#ref: PushRef,
+    pub result: PushResult,
+}
+
+/// The hello was accepted. Events after the device's cursor follow.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveReady {
+    /// The account's newest event id, or 0 when it has none.
+    pub latest: i64,
+    /// How often the server pings. A device that hears nothing for twice as long reconnects.
+    pub heartbeat_ms: i64,
+    /// Web only: send a fresh token in an auth message before this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_expires_at: Option<String>,
+}
+
+/// Some events after the device's cursor are no longer kept. Clients reread their lists; the events that follow are still every kept event after the cursor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveReset {
+    pub latest: EventId,
+}
+
+/// This device is no longer on the account. The server closes with 4403 after it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveRevoked {
+    pub reason: RevokeReason,
+}
+
+/// Who opens a live connection. A host or a client proves its device key; the web app is not a device and shows only its sign-in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LiveRole {
+    #[serde(rename = "host")]
+    Host,
+    #[serde(rename = "client")]
+    Client,
+    #[serde(rename = "web")]
+    Web,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// What the server sends on a live connection.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum LiveServerMessage {
+    #[serde(rename = "challenge")]
+    Challenge(LiveChallenge),
+    #[serde(rename = "ready")]
+    Ready(LiveReady),
+    #[serde(rename = "events")]
+    Events(LiveEvents),
+    #[serde(rename = "reset")]
+    Reset(LiveReset),
+    #[serde(rename = "revoked")]
+    Revoked(LiveRevoked),
+    #[serde(rename = "ping")]
+    Ping(LivePing),
+    #[serde(rename = "bye")]
+    Bye(LiveBye),
+    #[serde(rename = "pushed")]
+    Pushed(LivePushed),
+    /// A message added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// The oldest version of each app the server works with, by platform. Dev builds are never too old.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinimumVersions {
+    pub macos: ChannelVersions,
+    pub ios: ChannelVersions,
+    pub android: ChannelVersions,
+}
+
+/// How hosts and phones reach each other, and the oldest app the server still serves. Apps read it when they start, so changing either needs no app release.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Network {
+    /// The relays to use, best first. A host connects to every one; a phone dials a host through the relay the host says it is on.
+    pub relays: Vec<Relay>,
+    pub minimum_versions: MinimumVersions,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Platform {
     #[serde(rename = "macos")]
@@ -149,14 +431,130 @@ pub enum Platform {
     Unknown,
 }
 
+/// Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushApp {
+    #[serde(rename = "production")]
+    Production,
+    #[serde(rename = "dev")]
+    Dev,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// alert shows a notification. clear removes one shown before with the same collapseId, and is delivered at a lower priority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushKind {
+    #[serde(rename = "alert")]
+    Alert,
+    #[serde(rename = "clear")]
+    Clear,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Which service delivers to the phone: Apple's push service, or Firebase Cloud Messaging.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushPlatform {
+    #[serde(rename = "apns")]
+    Apns,
+    #[serde(rename = "fcm")]
+    Fcm,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A number the host picks for each push, so it can match the server's answer to it.
+pub type PushRef = i64;
+
+/// What became of a push. sent: the platform accepted it. no_token: the phone has notifications off. not_allowed: the target is not a phone on the sender's account. throttled: over a limit, dropped. expired: its expiresAt had passed. not_set_up: this server cannot reach the phone's platform. failed: the platform refused it or could not be reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PushResult {
+    #[serde(rename = "sent")]
+    Sent,
+    #[serde(rename = "no_token")]
+    NoToken,
+    #[serde(rename = "not_allowed")]
+    NotAllowed,
+    #[serde(rename = "throttled")]
+    Throttled,
+    #[serde(rename = "expired")]
+    Expired,
+    #[serde(rename = "not_set_up")]
+    NotSetUp,
+    #[serde(rename = "failed")]
+    Failed,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushTokenRegistration {
+    pub platform: PushPlatform,
+    /// The token the platform gave the app: the native APNs or FCM token, never an Expo push token.
+    pub token: String,
+    pub app: PushApp,
+    /// Required when platform is apns, and absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apns_environment: Option<ApnsEnvironment>,
+    pub nonce: String,
+    pub signature: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushTokenState {
+    /// Whether the server has a token for this phone.
+    pub enabled: bool,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Relay {
+    /// The relay's HTTPS address, such as https://relay.sikemux.com/.
+    pub url: String,
+    /// Where the relay runs, for logs and settings screens.
+    pub region: String,
+    /// The UDP port of the relay's QUIC address discovery, or null when it has none.
+    pub quic_port: Option<i64>,
+}
+
+/// Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RevokeReason {
+    #[serde(rename = "removed")]
+    Removed,
+    #[serde(rename = "signed_out")]
+    SignedOut,
+    #[serde(rename = "account_deleted")]
+    AccountDeleted,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
 /// Reads `json` as the named type and writes it back, for the contract tests.
 #[cfg(test)]
 pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
     use super::through;
     Some(match name {
+        "AccountDeletion" => through::<AccountDeletion>(json),
+        "AccountDeletionStatus" => through::<AccountDeletionStatus>(json),
+        "AccountEvent" => through::<AccountEvent>(json),
+        "AccountEventType" => through::<AccountEventType>(json),
         "ApiError" => through::<ApiError>(json),
+        "ApnsEnvironment" => through::<ApnsEnvironment>(json),
+        "AppVersion" => through::<AppVersion>(json),
         "Challenge" => through::<Challenge>(json),
         "Channel" => through::<Channel>(json),
+        "ChannelVersions" => through::<ChannelVersions>(json),
         "Device" => through::<Device>(json),
         "DeviceKey" => through::<DeviceKey>(json),
         "DeviceList" => through::<DeviceList>(json),
@@ -164,9 +562,39 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "DeviceRole" => through::<DeviceRole>(json),
         "ErrorCode" => through::<ErrorCode>(json),
         "ErrorDetail" => through::<ErrorDetail>(json),
+        "EventId" => through::<EventId>(json),
         "Health" => through::<Health>(json),
         "HealthStatus" => through::<HealthStatus>(json),
+        "LiveAck" => through::<LiveDeviceMessage>(json),
+        "LiveApp" => through::<LiveApp>(json),
+        "LiveAuth" => through::<LiveDeviceMessage>(json),
+        "LiveBye" => through::<LiveServerMessage>(json),
+        "LiveChallenge" => through::<LiveServerMessage>(json),
+        "LiveDeviceMessage" => through::<LiveDeviceMessage>(json),
+        "LiveEvents" => through::<LiveServerMessage>(json),
+        "LiveHello" => through::<LiveDeviceMessage>(json),
+        "LiveLeave" => through::<LiveDeviceMessage>(json),
+        "LivePing" => through::<LiveServerMessage>(json),
+        "LivePong" => through::<LiveDeviceMessage>(json),
+        "LivePush" => through::<LiveDeviceMessage>(json),
+        "LivePushed" => through::<LiveServerMessage>(json),
+        "LiveReady" => through::<LiveServerMessage>(json),
+        "LiveReset" => through::<LiveServerMessage>(json),
+        "LiveRevoked" => through::<LiveServerMessage>(json),
+        "LiveRole" => through::<LiveRole>(json),
+        "LiveServerMessage" => through::<LiveServerMessage>(json),
+        "MinimumVersions" => through::<MinimumVersions>(json),
+        "Network" => through::<Network>(json),
         "Platform" => through::<Platform>(json),
+        "PushApp" => through::<PushApp>(json),
+        "PushKind" => through::<PushKind>(json),
+        "PushPlatform" => through::<PushPlatform>(json),
+        "PushRef" => through::<PushRef>(json),
+        "PushResult" => through::<PushResult>(json),
+        "PushTokenRegistration" => through::<PushTokenRegistration>(json),
+        "PushTokenState" => through::<PushTokenState>(json),
+        "Relay" => through::<Relay>(json),
+        "RevokeReason" => through::<RevokeReason>(json),
         _ => return None,
     })
 }

@@ -64,6 +64,33 @@
 - Merging to `main` deploys anything under `server/` to production. Do not run
   `server/deploy` scripts against citadel yourself; ask first.
 
+## Brand assets
+
+- Every logo and icon image lives in `brand/`. Take it from there; never draw or render
+  the logo again.
+  - `brand/mark/`: the bare S mark in white, black and purple (`#a277ff`), as SVG and
+    transparent PNG at 64, 256 and 1024.
+  - `brand/icon/`: the mark on the dark app gradient, or the purple "Sikemux Dev" one,
+    with rounded or square corners, as SVG and PNG at 256 and 1024.
+  - `brand/macos/`: the real Dock icon (Liquid Glass) at 128 to 1024.
+  - `brand/social/avatar-400.png`: profile picture.
+- The source is `src-tauri/icons/sikemux.icon`. After changing it, run `pnpm brand` to
+  redraw everything; the Dock icon is taken from the installed `/Applications/Sikemux.app`
+  (or `SIKEMUX_APP`), so install the new build first.
+
+## Notch
+
+- The island over the MacBook notch is `sikemux-notch`, a SwiftUI helper in `src-tauri/notch`
+  and a client of the core: it reads the device view phones get. The app starts it; it keeps
+  running after the app quits.
+- It is designed in `src-tauri/notch/design/screens.html` before it is built, and must keep
+  matching it. Change the design in the same commit as the island; view it by serving the repo
+  root (`python3 -m http.server`) and opening `/src-tauri/notch/design/screens.html`.
+- Its icons come from `src/ui/Icons.tsx`, the agent marks and `brand/`. After changing one it
+  uses, run `node scripts/generate-notch-icons.mjs`; the release checks fail on a stale copy.
+- `swift run --package-path src-tauri/notch notch-snapshots <dir>` renders every state to PNGs,
+  for comparing with the design.
+
 ## Website
 
 - sikemux.com is a separate Astro repo, `nodelike/sikemux-front`, checked out at

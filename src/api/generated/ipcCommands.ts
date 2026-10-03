@@ -29,13 +29,16 @@ export const IPC_COMMANDS = [
     "remote_revoke_device",
     "remote_open_pairing",
     "account_status",
+    "account_refresh_profile",
     "account_sign_in",
     "account_cancel_sign_in",
     "account_sign_out",
     "remote_close_pairing",
     "remote_answer_pairing",
     "remote_publish_workspace",
-    "remote_publish_chats",
+    "remote_publish_agents",
+    "remote_publish_on_screen",
+    "notch_configure",
     "remote_publish_palette",
     "remote_publish_backdrop",
     "task_watch",
@@ -221,6 +224,9 @@ export const IPC_COMMANDS = [
     "voice_stop",
     "voice_cancel",
     "voice_shutdown",
+    "sim_status",
+    "sim_prepare",
+    "sim_call",
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];

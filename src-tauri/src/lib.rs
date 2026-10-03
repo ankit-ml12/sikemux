@@ -27,6 +27,7 @@ mod login_item;
 mod lsp;
 mod markdown;
 mod model_providers;
+mod notch;
 pub mod observability;
 mod plugins;
 mod ports;
@@ -36,6 +37,7 @@ mod release_credits;
 mod remote;
 mod search;
 mod settings;
+mod sim;
 mod ssh;
 mod state;
 mod system;
@@ -54,6 +56,7 @@ use observability::UiWatchdogState;
 use plugins::PluginHost;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
+use sim::SimManager;
 use tauri::Manager;
 use voice::VoiceManager;
 
@@ -237,11 +240,13 @@ pub fn run() {
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
         .manage(remote::PublishedWorkspace::default())
-        .manage(remote::PublishedChats::default())
+        .manage(remote::PublishedAgents::default())
+        .manage(remote::PublishedOnScreen::default())
         .manage(remote::PublishedPalette::default())
         .manage(remote::PublishedBackdrop::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
+        .manage(SimManager::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
@@ -274,13 +279,16 @@ pub fn run() {
             remote::remote_revoke_device,
             remote::remote_open_pairing,
             account::account_status,
+            account::account_refresh_profile,
             account::account_sign_in,
             account::account_cancel_sign_in,
             account::account_sign_out,
             remote::remote_close_pairing,
             remote::remote_answer_pairing,
             remote::remote_publish_workspace,
-            remote::remote_publish_chats,
+            remote::remote_publish_agents,
+            remote::remote_publish_on_screen,
+            notch::notch_configure,
             remote::remote_publish_palette,
             remote::remote_publish_backdrop,
             pty::commands::task_watch,
@@ -466,6 +474,9 @@ pub fn run() {
             voice::voice_stop,
             voice::voice_cancel,
             voice::voice_shutdown,
+            sim::sim_status,
+            sim::sim_prepare,
+            sim::sim_call,
         ])
         .build(tauri::generate_context!())
         .expect("error while building sikemux")
@@ -501,6 +512,9 @@ pub fn run() {
                 }
                 if let Some(voice) = app_handle.try_state::<VoiceManager>() {
                     voice.drain();
+                }
+                if let Some(sim) = app_handle.try_state::<SimManager>() {
+                    sim.drain();
                 }
                 lsp::drain_all();
             }

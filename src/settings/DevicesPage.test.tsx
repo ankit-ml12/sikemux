@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REMOTE_STATUS_EVENT, type RemoteStatus } from "../api/remote";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
-import { DevicesPage, seenLabel } from "./DevicesPage";
+import { useAccount } from "../account/account";
+import { accountMeta, DevicesPage, removalNote, seenLabel } from "./DevicesPage";
 
 const CORE = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
 const PHONE = "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f";
@@ -18,18 +19,24 @@ function status(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
         pairing: null,
         pending: [],
         owner: null,
+        account: null,
         ...overrides,
     };
 }
 
 let transport: MemoryIpcTransport;
 
-const SIGNED_OUT = { signedIn: false, userId: null, email: null };
+const SIGNED_OUT = { signedIn: false, userId: null, email: null, name: null, picture: null };
+const SIGNED_IN = { signedIn: true, userId: "user_2abc", email: "me@example.com", name: null, picture: null };
+let account: typeof SIGNED_OUT | typeof SIGNED_IN;
 
 beforeEach(() => {
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
-    transport.register("account_status", () => SIGNED_OUT);
+    account = SIGNED_OUT;
+    transport.register("account_status", () => account);
+    transport.register("account_refresh_profile", () => account);
+    useAccount.setState({ account: null });
 });
 
 afterEach(() => {
@@ -103,6 +110,54 @@ describe("DevicesPage", () => {
     });
 });
 
+describe("DevicesPage and the account", () => {
+    it("drops a phone the account revoked as soon as the host hears", async () => {
+        const phone = { id: PHONE, name: "Phone", platform: "ios", access: "full" as const, pairedAt: 1, lastSeen: null };
+        transport.register("remote_status", () => status({ devices: [phone] }));
+        render(<DevicesPage />);
+
+        expect(await screen.findByText("1 paired")).toBeInTheDocument();
+        transport.emit(REMOTE_STATUS_EVENT, status({ devices: [] }));
+
+        expect(await screen.findByText(/No devices yet/)).toBeInTheDocument();
+    });
+
+    it("shows when the connection to the account is down", async () => {
+        account = SIGNED_IN;
+        transport.register("remote_status", () => status({ owner: "user_2abc", account: { state: "offline", reason: null, since: 1 } }));
+        render(<DevicesPage />);
+
+        expect(await screen.findByText("offline, retrying")).toBeInTheDocument();
+        transport.emit(REMOTE_STATUS_EVENT, status({ owner: "user_2abc", account: { state: "live", reason: null, since: 2 } }));
+        expect(await screen.findByText("signed in")).toBeInTheDocument();
+        expect(screen.getByText("Signing out takes this host off your account. Devices already paired stay paired.")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Delete account…" })).toBeInTheDocument();
+    });
+
+    it("signs out and says why when the account lets this host go", async () => {
+        account = SIGNED_IN;
+        transport.register("remote_status", () => status({ owner: "user_2abc", account: { state: "live", reason: null, since: 1 } }));
+        render(<DevicesPage />);
+
+        expect(await screen.findByText("me@example.com")).toBeInTheDocument();
+        account = SIGNED_OUT;
+        transport.emit(REMOTE_STATUS_EVENT, status({ account: { state: "removed", reason: "account_deleted", since: 3 } }));
+
+        expect(await screen.findByText("Your account was deleted. Devices already paired stay paired.")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+        expect(screen.getByText("signed out")).toBeInTheDocument();
+    });
+
+    it("reads the link the way the corner shows it", () => {
+        expect(accountMeta(undefined, null)).toBe("checking");
+        expect(accountMeta(false, null)).toBe("signed out");
+        expect(accountMeta(true, null)).toBe("signed in");
+        expect(accountMeta(true, { state: "connecting", reason: null, since: 1 })).toBe("connecting");
+        expect(removalNote(null)).toBeNull();
+        expect(removalNote({ state: "removed", reason: null, since: 1 })).toMatch(/removed from your account at app.sikemux.com/);
+    });
+});
+
 describe("seenLabel", () => {
     it("says when a device was last seen in the largest whole unit", () => {
         const now = Date.UTC(2026, 9, 2, 12);
@@ -122,7 +177,7 @@ describe("seenLabel", () => {
 
         await user.click(await screen.findByRole("button", { name: "Sign in" }));
         expect(await screen.findByText("Finish signing in in your browser")).toBeInTheDocument();
-        finish({ signedIn: true, userId: "user_2abc", email: "me@example.com" });
+        finish({ signedIn: true, userId: "user_2abc", email: "me@example.com", name: null, picture: null });
 
         expect(await screen.findByText("me@example.com")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Sign out" }));

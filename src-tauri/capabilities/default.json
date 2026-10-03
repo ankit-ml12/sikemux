@@ -46,13 +46,16 @@
     "allow-remote-revoke-device",
     "allow-remote-open-pairing",
     "allow-account-status",
+    "allow-account-refresh-profile",
     "allow-account-sign-in",
     "allow-account-cancel-sign-in",
     "allow-account-sign-out",
     "allow-remote-close-pairing",
     "allow-remote-answer-pairing",
     "allow-remote-publish-workspace",
-    "allow-remote-publish-chats",
+    "allow-remote-publish-agents",
+    "allow-remote-publish-on-screen",
+    "allow-notch-configure",
     "allow-remote-publish-palette",
     "allow-remote-publish-backdrop",
     "allow-task-watch",
@@ -237,6 +240,9 @@
     "allow-voice-start",
     "allow-voice-stop",
     "allow-voice-cancel",
-    "allow-voice-shutdown"
+    "allow-voice-shutdown",
+    "allow-sim-status",
+    "allow-sim-prepare",
+    "allow-sim-call"
   ]
 }

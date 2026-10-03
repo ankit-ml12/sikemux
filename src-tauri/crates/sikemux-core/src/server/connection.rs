@@ -9,16 +9,18 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, HostRegistration,
-    LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget, PROTOCOL,
-    PROTOCOL_VERSION,
+    decode_input, encode_control, fits, read_frame, ClientMessage, Event, FrameKind,
+    HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
+    SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
 use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
-use super::{agent, chat, harness, remote, upgrade, workspace, Core, CoreError, CoreResult};
+use super::{
+    agent, chat, harness, remote, upgrade, window, workspace, Core, CoreError, CoreResult,
+};
 
 pub(crate) type ClientId = u64;
 pub(crate) type FrameReader = BufReader<Box<dyn AsyncRead + Send + Unpin>>;
@@ -37,9 +39,15 @@ pub(crate) struct ClientConn {
     closed: AtomicBool,
     kick: Notify,
     subscriptions: Mutex<HashSet<SessionId>>,
+    /// A local client that asked for the device view.
+    watches_view: AtomicBool,
 }
 
 impl ClientConn {
+    pub(crate) fn watches_view(&self) -> bool {
+        self.watches_view.load(Ordering::Acquire)
+    }
+
     pub(crate) fn send(&self, frame: Arc<[u8]>) -> bool {
         if self.closed.load(Ordering::Acquire) {
             return false;
@@ -219,6 +227,7 @@ pub(crate) async fn serve_client(
         closed: AtomicBool::new(false),
         kick: Notify::new(),
         subscriptions: Mutex::new(HashSet::new()),
+        watches_view: AtomicBool::new(false),
     });
     core.register_client(client.clone());
     if !client.peer.is_local() {
@@ -534,9 +543,12 @@ async fn run_requests(
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::List => {
-                let mut sessions: Vec<_> = core.all_sessions().iter().map(|s| s.info()).collect();
-                sessions.sort_by_key(|info| info.id);
-                client.respond(request_id, Ok(Response::Sessions { sessions }));
+                client.respond(
+                    request_id,
+                    Ok(Response::Sessions {
+                        sessions: core.session_infos(),
+                    }),
+                );
             }
             Request::AcpStart { launch } => {
                 match chat::begin(&core, *launch, Some(&client), None) {
@@ -670,9 +682,29 @@ async fn run_requests(
                 let result = core.workspaces.publish_palette(palette);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::PublishChats { chats } => {
-                let result = core.workspaces.publish_chats(chats);
+            Request::PublishAgents { chats, titles } => {
+                let result = core.workspaces.publish_agents(chats, titles);
                 client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::PublishOnScreen { agent_ids } => {
+                core.seen.on_screen(agent_ids);
+                client.respond(request_id, Ok(Response::Done));
+            }
+            Request::FocusAgent { agent_id } => {
+                let shown = core.window.tell(Event::FocusAgent { agent_id });
+                client.respond(
+                    request_id,
+                    if shown {
+                        Ok(Response::Done)
+                    } else {
+                        Err(window::not_open("show that agent").into())
+                    },
+                );
+            }
+            Request::WatchView => {
+                client.watches_view.store(true, Ordering::Release);
+                client.respond(request_id, Ok(Response::Done));
+                core.send_device_view(&client);
             }
             Request::Attentions => {
                 client.respond(
@@ -767,8 +799,10 @@ async fn run_requests(
                 });
             }
             Request::SetOwner { owner } => {
-                let result = remote::set_owner(&core, owner);
-                client.respond(request_id, result.map(|status| Response::Remote { status }));
+                tokio::spawn(async move {
+                    let result = remote::set_owner(&core, owner).await;
+                    client.respond(request_id, result.map(|status| Response::Remote { status }));
+                });
             }
             Request::RevokeDevice { id } => {
                 let result = remote::revoke(&core, &id);

@@ -1,4 +1,8 @@
+import type { Network } from "@sikemux/protocol";
 import type { Level } from "pino";
+
+import { readNetwork } from "./network/network.ts";
+import { readPush, type PushSettings } from "./push/settings.ts";
 
 export interface MigrationConfig {
   databaseUrl: string;
@@ -14,6 +18,13 @@ export interface Config extends MigrationConfig {
   clerkIssuer: string;
   /** The Mac app's Clerk OAuth client, the only one whose access tokens are accepted. */
   macClientId: string;
+  /** For Clerk's Backend API. Without it, deleting accounts and revoking removed phones' sessions wait in the database. */
+  clerkSecretKey: string | null;
+  /** Checks the signatures on Clerk's webhooks. Without it, the webhook route refuses everything. */
+  clerkWebhookSecret: string | null;
+  /** What GET /v1/network answers: the relay apps use and the oldest app versions allowed. */
+  network: Network;
+  push: PushSettings;
 }
 
 const LEVELS: readonly Level[] = [
@@ -84,6 +95,17 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     );
 
   const macClientId = read("CLERK_MAC_CLIENT_ID");
+
+  const clerkSecretKey = env.CLERK_SECRET_KEY?.trim() || null;
+  if (clerkSecretKey && !/^sk_(live|test)_\S+$/.test(clerkSecretKey))
+    problems.push("CLERK_SECRET_KEY is not a secret key like sk_live_…");
+
+  const clerkWebhookSecret = env.CLERK_WEBHOOK_SECRET?.trim() || null;
+  if (clerkWebhookSecret && !/^whsec_[A-Za-z0-9+/=]+$/.test(clerkWebhookSecret))
+    problems.push("CLERK_WEBHOOK_SECRET is not a signing secret like whsec_…");
+
+  const network = readNetwork(env, problems);
+  const push = readPush(env, problems);
   const logLevel = readLogLevel();
   const host = read("HOST", "127.0.0.1");
 
@@ -94,6 +116,10 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     appOrigin,
     clerkIssuer,
     macClientId,
+    clerkSecretKey,
+    clerkWebhookSecret,
+    network,
+    push,
     logLevel,
   });
 }
