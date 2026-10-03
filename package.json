@@ -1,7 +1,7 @@
 {
   "name": "sikemux",
   "private": true,
-  "version": "0.4.3-nightly.5",
+  "version": "0.5.0-nightly.1",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",
-    "lint": "eslint --max-warnings=0 \"src/**/*.{ts,tsx}\" vite.config.ts && node scripts/check-plugin-boundaries.mjs && node scripts/check-css-important.mjs",
+    "lint": "eslint --max-warnings=0 \"src/**/*.{ts,tsx}\" vite.config.ts && node scripts/check-plugin-boundaries.mjs && node scripts/check-css-important.mjs && node mobile/scripts/check-mac-imports.mjs",
     "test": "NODE_ENV=test vitest run",
     "test:watch": "NODE_ENV=test vitest",
     "test:coverage": "NODE_ENV=test vitest run --coverage",
@@ -42,6 +42,8 @@
     "dev-launcher:test": "node --test scripts/dev-desktop.node-test.mjs",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
     "rust:fmt:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check",
+    "rust:hakari": "cd src-tauri && cargo hakari generate && cargo hakari manage-deps --yes",
+    "rust:hakari:check": "cd src-tauri && cargo hakari generate --diff",
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets --all-features -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml --workspace --all-targets --all-features",
     "release:check": "./scripts/check-release.sh",

@@ -23,9 +23,10 @@ import {
     type SplitSide,
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
+import { promptDialog } from "../state/dialog";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
-import { PaneField } from "../ui/ShaderField";
-import { agentMenu } from "./agentMenu";
+import { PaneField, PanePaintedContext } from "../ui/ShaderField";
+import { agentMenu, renameAgentPrompt } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentIcon, IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
@@ -39,7 +40,7 @@ import { FILE_MANAGER_NAME } from "../lib/platform";
 import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { notify, reportError } from "../state/toast";
 import { copyText } from "../lib/clipboard";
-import { PAN_MS, panOffset, useWindowPan } from "./useWindowPan";
+import { PAN_MS, panTransform, useWindowPan } from "./useWindowPan";
 import { useWheelPan } from "./useWheelPan";
 import { useDocumentSlide } from "./useDocumentSlide";
 
@@ -140,7 +141,7 @@ export const Workspace = memo(function Workspace() {
                         style={
                             {
                                 "--window-pan-ms": `${isActive ? pan.ms : PAN_MS}ms`,
-                                "--pan": panOffset(isActive ? pan.at : order.indexOf(session.activeWindowId)),
+                                transform: isActive && pan.panning ? panTransform(pan.at) : undefined,
                             } as CSSProperties
                         }>
                         {order.map((wid, slot) => {
@@ -203,6 +204,16 @@ const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
     named: "Window",
     agent: "Agent",
 };
+
+async function renameTerminalTab(win: WindowT, reported: string | undefined): Promise<void> {
+    const name = await promptDialog({
+        title: "Rename tab",
+        label: "Name",
+        initial: win.customName ?? reported ?? win.name,
+        confirmLabel: "Rename",
+    });
+    if (name !== null) cmd.renameWindow(win.id, name);
+}
 
 const roleLabel = (role: WindowRole): string => (isPluginKind(role) ? (pluginSurface(role)?.title ?? role) : CORE_ROLE_LABEL[role]);
 
@@ -321,7 +332,16 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const windowMenu = (win: WindowT): CtxItem[] => {
         const siblings = refs.flatMap((ref) => (ref.doc === undefined ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
         const others = siblings.filter((t) => t.id !== win.id && !t.fixed && t.role !== "agent");
+        const naming: CtxItem[] =
+            win.role === "term"
+                ? [
+                      { label: "Rename…", run: () => void renameTerminalTab(win, termTitles.get(win.activePaneId)) },
+                      ...(win.customName ? [{ label: "Use Automatic Name", run: () => cmd.renameWindow(win.id, "") }] : []),
+                      { sep: true },
+                  ]
+                : [];
         return [
+            ...naming,
             { label: "Duplicate", run: () => cmd.duplicateWindow(win.id) },
             { label: "Close", hint: closeShortcut, disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
             { label: "Close Others", disabled: others.length === 0, run: () => others.forEach((t) => cmd.closeWindowById(t.id)) },
@@ -451,7 +471,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     },
                 ];
             }
-            const label = win.role === "term" ? termTitles.get(win.activePaneId) || win.name : roleLabel(win.role);
+            const label = win.role === "term" ? win.customName || termTitles.get(win.activePaneId) || win.name : roleLabel(win.role);
             return [
                 {
                     id: key,
@@ -484,7 +504,10 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 if (pane.id === home) {
                     return own.map((tab) => {
                         paneOfTab.set(tab.id, { windowId: win.id, paneId: pane.id });
-                        const kept = pane.id === documentsPane || pane.kind === "agent" ? {} : { ...look(pane), closable: true };
+                        const kept =
+                            pane.id === documentsPane || pane.kind === "agent"
+                                ? {}
+                                : { ...look(pane), ...(win.customName ? { label: win.customName, title: win.customName } : {}), closable: true };
                         return { ...tab, ...kept, active: !!tab.active && win.activePaneId === pane.id, group: win.id };
                     });
                 }
@@ -578,6 +601,12 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     const ref = refByKey.get(key);
                     const win = ref ? windowsById[ref.id] : undefined;
                     if (win && ref?.doc !== undefined) cmd.keepEditorTab(editorPaneOf(win, getState().editorViews), ref.doc);
+                }}
+                onRename={(key) => {
+                    const win = windowsById[refByKey.get(key)?.id ?? paneOfTab.get(key)?.windowId ?? ""];
+                    if (win?.role === "term") void renameTerminalTab(win, termTitles.get(win.activePaneId));
+                    const agent = win?.role === "agent" ? agentsById[agentPaneId(win) ?? ""] : undefined;
+                    if (agent) void renameAgentPrompt(agent);
                 }}
                 onClose={(key) => {
                     const ref = refByKey.get(key);
@@ -720,16 +749,18 @@ const WindowLayer = memo(function WindowLayer({
                             className={`pane pane-${isPluginKind(p.kind) ? "plugin" : p.kind}`}
                             data-pane-id={p.id}
                             onMouseDown={() => live && cmd.focusPane(p.id)}>
-                            {/* The pane is a surface, so it carries its own texture — and only
-                                while it is the one being read, so a screen off stage spends no
-                                WebGL context on a field nobody is looking at. The editor draws
-                                its own, on the code panel beside its file tree, and the desk, git and plugins have none. */}
-                            {p.kind !== "editor" && p.kind !== "desk" && p.kind !== "git" && !isPluginKind(p.kind) && (
-                                <PaneField enabled={paneShader && live && shown} />
-                            )}
-                            <ErrorBoundary label={`${p.kind} pane`}>
-                                {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
-                            </ErrorBoundary>
+                            <PanePaintedContext.Provider value={panePainted}>
+                                {/* The pane is a surface, so it carries its own texture — and only
+                                    while its screen is on stage, so a screen off stage spends no
+                                    WebGL context on a field nobody is looking at. The editor draws
+                                    its own, on the code panel beside its file tree, and the desk, git and plugins have none. */}
+                                {p.kind !== "editor" && p.kind !== "desk" && p.kind !== "git" && !isPluginKind(p.kind) && (
+                                    <PaneField enabled={paneShader} />
+                                )}
+                                <ErrorBoundary label={`${p.kind} pane`}>
+                                    {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
+                                </ErrorBoundary>
+                            </PanePaintedContext.Provider>
                             {live && canUnsplit && (
                                 <button
                                     type="button"

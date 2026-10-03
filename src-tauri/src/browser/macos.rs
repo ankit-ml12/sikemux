@@ -18,8 +18,9 @@ use objc2::{
 };
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAutoresizingMaskOptions,
-    NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags, NSImage,
-    NSImageCompressionFactor, NSModalResponse, NSTextField, NSView,
+    NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags,
+    NSEventPhase, NSEventType, NSImage, NSImageCompressionFactor, NSModalResponse, NSTextField,
+    NSView,
 };
 use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{
@@ -78,6 +79,12 @@ impl Drop for NativeTab {
     }
 }
 
+/// What a page is cut to: its visible part alone, or that less the holes over it.
+enum PageMask {
+    Rect(Retained<CALayer>),
+    Shape(Retained<CAShapeLayer>),
+}
+
 thread_local! {
     static TABS: RefCell<HashMap<String, NativeTab>> = RefCell::new(HashMap::new());
     static SHORTCUT_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
@@ -85,7 +92,11 @@ thread_local! {
     static OPEN_DIALOGS: RefCell<HashMap<String, OpenDialog>> = RefCell::new(HashMap::new());
     static HOLES: RefCell<HashMap<usize, Vec<NSRect>>> = RefCell::new(HashMap::new());
     static SHADES: RefCell<HashMap<usize, Retained<CALayer>>> = RefCell::new(HashMap::new());
+    static MASKS: RefCell<HashMap<usize, PageMask>> = RefCell::new(HashMap::new());
     static PAGE_HIT_TEST: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
+    static PAGE_UNUSED_GESTURE: std::cell::Cell<Option<Imp>> = const { std::cell::Cell::new(None) };
+    /// Whether the swipe under way belongs to the stage, once its first sideways move says so.
+    static SWIPE_TO_STAGE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
     /// WebKit tears a named world down once nothing holds it, and the element
     /// numbers the agent was given go with it.
     static HELPER_WORLD: RefCell<Option<Retained<WKContentWorld>>> = const { RefCell::new(None) };
@@ -165,6 +176,7 @@ pub fn adopt(
             );
         }
     }
+    let _ = hand_unused_swipes_to_the_stage(&webview);
     TABS.with(|tabs| {
         tabs.borrow_mut().insert(
             tab_id,
@@ -201,6 +213,7 @@ pub fn forget(tab_id: &str) {
         if let Some(tab) = tabs.borrow_mut().remove(tab_id) {
             HOLES.with(|holes| holes.borrow_mut().remove(&view_key(&tab.webview)));
             SHADES.with(|shades| shades.borrow_mut().remove(&view_key(&tab.webview)));
+            MASKS.with(|masks| masks.borrow_mut().remove(&view_key(&tab.webview)));
         }
     });
 }
@@ -424,35 +437,76 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
             )
         }
     };
+    let key = view_key(&webview);
     CATransaction::begin();
     CATransaction::setDisableActions(true);
-    if visible == whole && holes.is_empty() {
-        // SAFETY: main thread, and `layer` is retained for the whole function.
-        unsafe { layer.setMask(None) };
-    } else {
-        let path = CGMutablePath::new();
-        // SAFETY: a null transform means none, and `path` is a fresh path only we hold.
-        unsafe {
-            CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
-            for (hole, radius) in &holes {
-                CGMutablePath::add_rounded_rect(
-                    Some(&path),
-                    std::ptr::null(),
-                    flip(*hole),
-                    *radius,
-                    *radius,
-                );
-            }
+    MASKS.with(|masks| {
+        let mut masks = masks.borrow_mut();
+        if visible == whole && holes.is_empty() {
+            masks.remove(&key);
+            // SAFETY: main thread, and `layer` is retained for the whole function.
+            unsafe { layer.setMask(None) };
+            return;
         }
-        let mask = CAShapeLayer::new();
-        mask.setFrame(layer.bounds());
-        // SAFETY: an immutable constant string QuartzCore sets up when it loads.
-        mask.setFillRule(unsafe { kCAFillRuleEvenOdd });
-        mask.setPath(Some(&path));
-        // SAFETY: main thread, and the layer retains `mask` from here on.
-        unsafe { layer.setMask(Some(&mask)) };
-    }
+        /* A swipe clips the page on every frame it is partly off stage. The mask
+        is kept and moved rather than rebuilt, and a plain rectangle is a layer's
+        frame rather than a path that has to be drawn again. */
+        let mask: &CALayer = if holes.is_empty() {
+            if !matches!(masks.get(&key), Some(PageMask::Rect(_))) {
+                let rect = CALayer::new();
+                rect.setBackgroundColor(Some(&CGColor::new_generic_gray(0.0, 1.0)));
+                masks.insert(key, PageMask::Rect(rect));
+            }
+            let Some(PageMask::Rect(rect)) = masks.get(&key) else {
+                return;
+            };
+            rect.setFrame(flip(visible));
+            rect
+        } else {
+            let path = CGMutablePath::new();
+            // SAFETY: a null transform means none, and `path` is a fresh path only we hold.
+            unsafe {
+                CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
+                for (hole, radius) in &holes {
+                    CGMutablePath::add_rounded_rect(
+                        Some(&path),
+                        std::ptr::null(),
+                        flip(*hole),
+                        *radius,
+                        *radius,
+                    );
+                }
+            }
+            if !matches!(masks.get(&key), Some(PageMask::Shape(_))) {
+                let shape = CAShapeLayer::new();
+                // SAFETY: an immutable constant string QuartzCore sets up when it loads.
+                shape.setFillRule(unsafe { kCAFillRuleEvenOdd });
+                masks.insert(key, PageMask::Shape(shape));
+            }
+            let Some(PageMask::Shape(shape)) = masks.get(&key) else {
+                return;
+            };
+            shape.setFrame(layer.bounds());
+            shape.setPath(Some(&path));
+            shape
+        };
+        let current = layer.mask();
+        if current.as_deref().map(|layer| layer as *const CALayer) != Some(mask as *const CALayer) {
+            // SAFETY: main thread, and the layer retains `mask` from here on.
+            unsafe { layer.setMask(Some(mask)) };
+        }
+    });
     CATransaction::commit();
+}
+
+/// Fade the whole page, so it goes with the pane it sits in when that fades.
+pub fn fade(pointer: *mut c_void, opacity: f64) {
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    let view: &NSView = &webview;
+    // SAFETY: `setAlphaValue:` is an NSView method taking a CGFloat.
+    let _: () = unsafe { msg_send![view, setAlphaValue: opacity] };
 }
 
 /// Lay a black shade of `alpha` over the page, or take it off at zero, so an
@@ -534,6 +588,122 @@ fn pass_clicks_through_holes(view: &NSView) -> Option<()> {
     added
         .as_bool()
         .then(|| PAGE_HIT_TEST.with(|cell| cell.set(Some(inherited.implementation()))))
+}
+
+/* A two-finger swipe that starts over a page goes to the page, so the stage
+never hears it and cannot move. WebKit reports each scroll the page did not
+use, which is what its own back and forward swipe is built on. A sideways
+swipe the page's history cannot take is handed to the app's own view
+instead, where it moves the stage as it would anywhere else. */
+fn hand_unused_swipes_to_the_stage(view: &NSView) -> Option<()> {
+    if PAGE_UNUSED_GESTURE.with(|cell| cell.get()).is_some() {
+        return Some(());
+    }
+    let class = view.class();
+    let selector = sel!(_gestureEventWasNotHandledByWebCore:);
+    let inherited = class.instance_method(selector)?;
+    // SAFETY: `inherited` is a real method of the view's class, so its type string lives
+    // as long as the class does.
+    let types = unsafe { objc2::ffi::method_getTypeEncoding(inherited) };
+    let unused: UnusedGesture = gesture_unused_by_page;
+    // SAFETY: `gesture_unused_by_page` has the method's exact signature and reuses its
+    // type string. `class_addMethod` only adds to the class, never replaces a method.
+    let added = unsafe {
+        objc2::ffi::class_addMethod(
+            (class as *const objc2::runtime::AnyClass).cast_mut(),
+            selector,
+            std::mem::transmute::<UnusedGesture, Imp>(unused),
+            types,
+        )
+    };
+    added
+        .as_bool()
+        .then(|| PAGE_UNUSED_GESTURE.with(|cell| cell.set(Some(inherited.implementation()))))
+}
+
+type UnusedGesture = unsafe extern "C-unwind" fn(&NSView, Sel, *mut NSEvent);
+
+// SAFETY: only WebKit calls this, as `_gestureEventWasNotHandledByWebCore:` on a
+// live view on the main thread, with an event or nil.
+unsafe extern "C-unwind" fn gesture_unused_by_page(
+    view: &NSView,
+    selector: Sel,
+    event: *mut NSEvent,
+) {
+    // SAFETY: WebKit passes a live event or nil for the length of the call.
+    let stage = unsafe { event.as_ref() }.and_then(|event| stage_for_swipe(view, event));
+    if let Some(stage) = stage {
+        // SAFETY: `scrollWheel:` takes one event and returns nothing; the stage's view
+        // is live and on the main thread.
+        let _: () = unsafe { msg_send![&*stage, scrollWheel: event] };
+        return;
+    }
+    let Some(inherited) = PAGE_UNUSED_GESTURE.with(|cell| cell.get()) else {
+        return;
+    };
+    // SAFETY: `inherited` is the implementation this function stands in front of.
+    let inherited = unsafe { std::mem::transmute::<Imp, UnusedGesture>(inherited) };
+    // SAFETY: passes WebKit's own arguments straight through.
+    unsafe { inherited(view, selector, event) }
+}
+
+/// The app's own view, when this scroll is part of a sideways swipe the page
+/// had no use for and its history cannot take either.
+fn stage_for_swipe(view: &NSView, event: &NSEvent) -> Option<Retained<NSView>> {
+    if event.r#type() != NSEventType::ScrollWheel {
+        return None;
+    }
+    let tab = TABS.with(|tabs| {
+        tabs.borrow()
+            .values()
+            .find(|tab| view_key(&tab.webview) == view_key(view))
+            .map(|tab| tab.webview.clone())
+    })?;
+    let phase = event.phase();
+    if phase.intersects(NSEventPhase::MayBegin | NSEventPhase::Began) {
+        SWIPE_TO_STAGE.with(|cell| cell.set(None));
+    }
+    let to_stage = match SWIPE_TO_STAGE.with(|cell| cell.get()) {
+        Some(decided) => decided,
+        None => {
+            let (across, down) = (event.scrollingDeltaX(), event.scrollingDeltaY());
+            if across == 0.0 || across.abs() <= down.abs() {
+                return None;
+            }
+            // Fingers moving right ask for the page before; left for the one after.
+            // SAFETY: main thread, and `tab` is retained.
+            let history = unsafe {
+                if across > 0.0 {
+                    tab.canGoBack()
+                } else {
+                    tab.canGoForward()
+                }
+            };
+            SWIPE_TO_STAGE.with(|cell| cell.set(Some(!history)));
+            !history
+        }
+    };
+    let momentum = event.momentumPhase();
+    if momentum.contains(NSEventPhase::Ended)
+        || (momentum.is_empty() && phase.intersects(NSEventPhase::Ended | NSEventPhase::Cancelled))
+    {
+        SWIPE_TO_STAGE.with(|cell| cell.set(None));
+    }
+    if !to_stage {
+        return None;
+    }
+    // SAFETY: main thread, and `view` is alive for this call.
+    let parent = unsafe { view.superview() }?;
+    let pages: Vec<usize> = TABS.with(|tabs| {
+        tabs.borrow()
+            .values()
+            .map(|tab| view_key(&tab.webview))
+            .collect()
+    });
+    let web_view_class = objc2::runtime::AnyClass::get(c"WKWebView")?;
+    parent.subviews().iter().find(|sibling| {
+        !pages.contains(&view_key(sibling)) && sibling.isKindOfClass(web_view_class)
+    })
 }
 
 type HitTest = unsafe extern "C-unwind" fn(&NSView, Sel, NSPoint) -> *mut NSView;
@@ -640,6 +810,57 @@ pub fn snapshot_jpeg(
         // the thread that draws every window.
         std::thread::spawn(move || {
             done(jpeg_bytes(&pixels).ok_or_else(|| "could not encode the page image".to_string()));
+        });
+    });
+    // SAFETY: main thread; WebKit copies the block and holds `configuration` for the call.
+    unsafe {
+        webview.takeSnapshotWithConfiguration_completionHandler(Some(&configuration), &block)
+    };
+}
+
+/// The page as it stands, as a JPEG at the screen's own resolution, for the app
+/// to slide in its place while the stage moves. The image is taken off the main
+/// thread before it is compressed, so the capture costs the window no frame.
+pub fn still_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Option<Vec<u8>>) + Send>) {
+    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+        done(None);
+        return;
+    };
+    // SAFETY: main thread, as `mtm` proves.
+    let configuration = unsafe { WKSnapshotConfiguration::new(mtm) };
+    let done = std::sync::Mutex::new(Some(done));
+    let block = RcBlock::new(move |image: *mut NSImage, _error: *mut NSError| {
+        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+            return;
+        };
+        // SAFETY: WebKit passes a live image or nil; `retain` takes our own reference.
+        let Some(image) = (unsafe { Retained::retain(image) }) else {
+            done(None);
+            return;
+        };
+        // SAFETY: a null rect asks for the whole image, and no context or hints are needed.
+        let picture =
+            unsafe { image.CGImageForProposedRect_context_hints(std::ptr::null_mut(), None, None) };
+        let Some(picture) = picture else {
+            done(None);
+            return;
+        };
+        std::thread::spawn(move || {
+            // SAFETY: allocating an image rep has no thread requirement; AppKit's
+            // bindings only mark the class main-thread for its drawing methods.
+            let blank: objc2::rc::Allocated<NSBitmapImageRep> =
+                unsafe { msg_send![NSBitmapImageRep::class(), alloc] };
+            let bitmap = NSBitmapImageRep::initWithCGImage(blank, &picture);
+            let quality = NSNumber::numberWithDouble(0.8);
+            let properties: Retained<NSDictionary<NSString, AnyObject>> =
+                // SAFETY: an immutable constant string AppKit sets up when it loads.
+                NSDictionary::from_slices(&[unsafe { NSImageCompressionFactor }], &[&*quality]);
+            // SAFETY: NSBitmapImageRep works off the main thread, and `properties` maps the
+            // compression key to an NSNumber as AppKit expects.
+            let jpeg = unsafe {
+                bitmap.representationUsingType_properties(NSBitmapImageFileType::JPEG, &properties)
+            };
+            done(jpeg.map(|data| data.to_vec()));
         });
     });
     // SAFETY: main thread; WebKit copies the block and holds `configuration` for the call.

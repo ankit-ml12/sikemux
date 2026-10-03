@@ -500,7 +500,7 @@ pub(crate) struct LauncherSpec {
 }
 
 /// What [`acp_start`] would run for `spec`, for the core to start without
-/// the window. Never installs an adapter: one this Mac has not used yet is
+/// the window. Never installs an adapter: one this host has not used yet is
 /// left out until it has.
 pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<ChatLauncher, String> {
     let executable =
@@ -513,7 +513,7 @@ pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<Chat
             let adapter = installed_adapter(&adapter_root(app, adapter_spec)?, adapter_spec);
             if !adapter.is_file() {
                 return Err(format!(
-                    "{} has not been started on this Mac yet",
+                    "{} has not been started on this host yet",
                     spec.label
                 ));
             }
@@ -694,6 +694,7 @@ pub async fn acp_attach(
         .submit(
             Request::AcpAttach {
                 agent_id: agent_id.clone(),
+                since: None,
             },
             move |reply| match reply {
                 Ok(Reply::Response(Response::ChatAttached { attachment })) => {
@@ -704,6 +705,7 @@ pub async fn acp_attach(
                             running,
                             turned,
                             replay: events,
+                            ..
                         } => {
                             replay(&replaying, &replay_agent, events);
                             Attachment::Live {
@@ -714,7 +716,10 @@ pub async fn acp_attach(
                             }
                         }
                         ChatAttachment::Missing => Attachment::Missing,
-                        ChatAttachment::Restart => Attachment::Restart,
+                        // Only an attach that names a mark is resumed, and this one names none.
+                        ChatAttachment::Restart | ChatAttachment::Resumed { .. } => {
+                            Attachment::Restart
+                        }
                     })
                 }
                 Ok(_) => Err(ClientError::UnexpectedReply),

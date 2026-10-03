@@ -1,5 +1,8 @@
-import { AGENT_NAMES, CHAT_AGENT_TYPES, normalizePermissionMode } from "../agents/agentLaunch";
-import type { LauncherRequest, PublishedProject } from "../api/remote";
+import { AGENT_NAMES, CHAT_AGENT_TYPES, agentSupportsChat, normalizePermissionMode } from "../agents/agentLaunch";
+import { agentCwd } from "../agents/agentPtyContext";
+import type { LauncherRequest, PublishedChat, PublishedProject } from "../api/remote";
+import { agentWindowId, ownerSessionId } from "../state/selectors";
+import type { StoreState } from "../state/store";
 import type { AgentPermissionMode, AgentType, ProviderProfile, Session } from "../state/types";
 
 export interface RemoteWorkspace {
@@ -43,4 +46,17 @@ export function remoteWorkspace(
 export function profileOfLauncher(launcher: string | null, profiles: readonly ProviderProfile[], type: AgentType): string | undefined {
     const profileId = launcher?.startsWith(`${type}:`) ? launcher.slice(type.length + 1) : undefined;
     return profiles.some((profile) => profile.id === profileId && profile.provider === type) ? profileId : undefined;
+}
+
+/** The chat agents in the rail, sleeping ones included, as paired devices list them. */
+export function remoteChats(state: Pick<StoreState, "agents" | "windows" | "sessions" | "sessionOrder" | "windowsBySession">): PublishedChat[] {
+    return Object.values(state.agents).flatMap((agent) => {
+        if (!agentSupportsChat(agent.type)) return [];
+        const windowId = agentWindowId(state, agent.id);
+        const session = windowId ? state.sessions[ownerSessionId(state, windowId) ?? ""] : undefined;
+        const cwd = session && agentCwd(agent, session);
+        if (!cwd) return [];
+        const named = agent.title.trim() && agent.title !== agent.type;
+        return [{ agentId: agent.id, provider: agent.type, title: named ? agent.title : null, cwd, asleep: agent.launchState === "dormant" }];
+    });
 }

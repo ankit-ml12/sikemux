@@ -1,4 +1,4 @@
-.PHONY: dev showcase build e2e preflight run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test rust-audit shell-lint release-check hooks prepush check ci clean clean-dev
+.PHONY: dev dev-stop showcase build e2e preflight run icons format format-check lint test test-coverage tsc rust-fmt rust-clippy rust-test rust-audit shell-lint release-check hooks prepush check ci clean clean-dev prune
 
 # Homebrew's Rust ignores rust-toolchain.toml, so rustup's proxies must come first.
 export PATH := $(HOME)/.cargo/bin:$(PATH)
@@ -8,7 +8,13 @@ icons:
 
 dev: export BITBUCKET_OAUTH_SECRET ?= $(shell sed -n 's/^BITBUCKET_OAUTH_SECRET=//p' .env 2>/dev/null)
 dev: icons
+	@node scripts/prune-target.mjs --daily >/dev/null 2>&1 &
 	pnpm dev:desktop
+
+# Stops the dev build's core and the terminals and agents it runs.
+dev-stop:
+	@test -x src-tauri/target/debug/sikemux-editor || { echo "No dev build yet; run make dev first."; exit 1; }
+	src-tauri/target/debug/sikemux-editor core stop
 
 showcase:
 	pnpm showcase:serve --open /showcase/
@@ -80,6 +86,10 @@ ci: check
 clean:
 	cd src-tauri && cargo clean
 	rm -rf coverage dist node_modules/.vite
+
+# Drops Rust build copies no recent build has used; `make dev` runs it daily.
+prune:
+	node scripts/prune-target.mjs
 
 clean-dev:
 	cargo clean --manifest-path src-tauri/Cargo.toml --profile dev

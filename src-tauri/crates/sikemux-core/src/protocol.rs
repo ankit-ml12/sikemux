@@ -19,7 +19,7 @@ use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::cli::protocol::{CliOpenRequest, HarnessRequest};
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 /// Room for the largest attach snapshot plus its header.
 pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
@@ -268,11 +268,22 @@ pub enum Request {
         launch: Box<ChatLaunch>,
     },
     /// Takes up a chat agent the core already runs: the answer replays what
-    /// it said so far, and its events follow.
+    /// it said so far, and its events follow. A client that watched the chat
+    /// before passes where it got to, and hears only what it missed when the
+    /// core still has that.
     AcpAttach {
+        agent_id: String,
+        since: Option<ChatMark>,
+    },
+    /// Stops the chat's events reaching this client.
+    AcpDetach {
         agent_id: String,
     },
     AcpList,
+    /// Asks the app to start a chat it put to sleep. Answers once it runs.
+    AcpWake {
+        agent_id: String,
+    },
     AcpPrompt {
         agent_id: String,
         text: String,
@@ -325,6 +336,20 @@ pub enum Request {
     RevokeDevice {
         id: String,
     },
+    /// A paired device forgetting this host: removes it from the paired
+    /// devices and closes its connection once answered.
+    Unpair,
+    /// Signs the text that registers this core with an account, built by
+    /// `accounts::registration_message` from the server's challenge.
+    SignRegistration {
+        nonce: String,
+        user_id: String,
+    },
+    /// The account this host is signed in to, or none after signing out.
+    /// Kept across restarts.
+    SetOwner {
+        owner: Option<String>,
+    },
     /// Shows a new pairing code, replacing any open one. Remote access must
     /// be on.
     OpenPairing,
@@ -342,6 +367,24 @@ pub enum Request {
     PublishWorkspace {
         projects: Vec<ProjectInfo>,
         launchers: Vec<ChatLauncher>,
+    },
+    /// What the app draws behind its panes, so devices draw the same.
+    /// Replaces what it published before.
+    PublishBackdrop {
+        texture: bool,
+        image: Option<BackdropImage>,
+    },
+    /// The picture published with the backdrop, as a data URL.
+    BackdropImage,
+    /// The colours of the app's theme, by name, so devices draw in them.
+    /// Replaces what it published before.
+    PublishPalette {
+        palette: BTreeMap<String, String>,
+    },
+    /// The chats the app lists, so devices show them under the app's names,
+    /// sleeping ones included. Replaces what it published before.
+    PublishChats {
+        chats: Vec<PublishedChat>,
     },
     Workspace,
     /// What agents wait on a person for now.
@@ -375,6 +418,18 @@ pub struct ChatLaunch {
     pub permission_mode: String,
     pub model: Option<String>,
     pub effort: Option<String>,
+}
+
+/// A chat as the app lists it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishedChat {
+    pub agent_id: String,
+    pub provider: String,
+    /// Absent while the chat has no name beyond its agent's.
+    pub title: Option<String>,
+    pub cwd: PathBuf,
+    pub asleep: bool,
 }
 
 /// Something read elsewhere and handed to the agent whole, such as an issue.
@@ -415,6 +470,14 @@ pub struct ChatEvent {
     pub payload: Value,
 }
 
+/// The last of a chat's events a client heard. `feed` changes whenever the
+/// chat's agent starts again, which starts `seq` over.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatMark {
+    pub feed: String,
+    pub seq: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "status",
@@ -424,6 +487,7 @@ pub struct ChatEvent {
 pub enum ChatAttachment {
     /// `replay` holds what the agent said since its session started or
     /// loaded, in order, so a client rebuilds the chat as if it had watched.
+    /// Live events follow, numbered from `mark.seq + 1`.
     Live {
         start: Box<ChatStart>,
         permission_mode: String,
@@ -431,6 +495,13 @@ pub enum ChatAttachment {
         /// A turn has run in this session, so the provider keeps it.
         turned: bool,
         replay: Vec<ChatEvent>,
+        mark: ChatMark,
+    },
+    /// The events the client missed since the mark it attached with, except
+    /// the prompts it sent itself. Live events follow `mark`.
+    Resumed {
+        events: Vec<ChatEvent>,
+        mark: ChatMark,
     },
     Missing,
     /// The session said more than the core keeps, so the client starts it
@@ -443,6 +514,9 @@ pub enum ChatAttachment {
 pub enum ChatState {
     Starting,
     Ready,
+    /// The app has the chat open but its agent is not running: asleep, or it
+    /// failed to start.
+    Stopped,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -464,6 +538,8 @@ pub struct ChatInfo {
     pub permission_mode: String,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The app stopped its agent while idle; `AcpWake` starts it again.
+    pub asleep: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -631,6 +707,20 @@ pub enum Response {
     Attentions { attentions: Vec<Attention> },
     ChatBegun { agent_id: String, start: ChatStart },
     Host { host: HostInfo },
+    BackdropImage { data_url: Option<String> },
+    Registration { registration: HostRegistration },
+}
+
+/// What the app sends the accounts server to register this core as a host.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostRegistration {
+    /// The core's public key, the same one paired devices dial.
+    pub key: String,
+    pub name: String,
+    pub channel: BuildChannel,
+    /// The key's Ed25519 signature over the registration text, in hex.
+    pub signature: String,
 }
 
 /// A project the app has open.
@@ -670,13 +760,35 @@ pub struct LauncherInfo {
 pub struct Workspace {
     pub projects: Vec<ProjectInfo>,
     pub launchers: Vec<LauncherInfo>,
+    /// The app's theme colours by name; empty until the app publishes them.
+    pub palette: BTreeMap<String, String>,
+    pub backdrop: Backdrop,
+}
+
+/// What the app draws behind its panes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Backdrop {
+    /// The dithered grain that moves behind each pane.
+    pub texture: bool,
+    /// Names the picture shown in place of the grain; `BackdropImage` fetches it.
+    pub image: Option<String>,
+}
+
+/// A picture shown behind the panes, shrunk to suit a phone.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackdropImage {
+    /// Changes whenever the picture does, so a device fetches it only then.
+    pub id: String,
+    pub data_url: String,
 }
 
 /// What a paired device was approved to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DeviceAccess {
-    /// Everything a person at the Mac can do in a session.
+    /// Everything a person at the host can do in a session.
     Full,
     /// Read sessions and answer agents' permission requests.
     Watch,
@@ -690,6 +802,19 @@ pub struct HostInfo {
     pub name: String,
     /// The kind of computer, such as "MacBook Pro" or "Mac mini".
     pub model: String,
+    /// The Sikemux release running there, such as "0.4.3-nightly.5".
+    pub version: String,
+    pub channel: BuildChannel,
+}
+
+/// Which kind of Sikemux build a core belongs to. Each keeps its own key and
+/// paired devices, so one host can show up once per channel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BuildChannel {
+    Dev,
+    Nightly,
+    Stable,
 }
 
 /// A device approved to reach this core from another machine.
@@ -720,6 +845,8 @@ pub struct RemoteStatus {
     pub pairing: Option<PairingOffer>,
     /// Devices that entered the code and wait for the person to answer.
     pub pending: Vec<PendingDevice>,
+    /// The account this host is signed in to.
+    pub owner: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -867,29 +994,51 @@ pub enum Event {
     },
     AgentState(AgentStateEvent),
     /// Sent only to the clients that started or attached to the chat.
+    /// `seq` counts the chat's events, so a client can tell which ones the
+    /// attach answer already held.
     Chat {
         agent_id: String,
+        seq: u64,
         event: ChatEvent,
     },
-    /// Sent only to clients on this Mac.
+    /// Sent only to paired devices: what they show of this host, whole, when
+    /// they connect and whenever any of it changes.
+    DeviceView {
+        view: DeviceView,
+    },
+    /// Sent only to clients on this host.
     Remote {
         status: RemoteStatus,
     },
-    /// An agent started waiting on a person. Every client hears it, whether
-    /// or not it shows that agent.
+    /// An agent started waiting on a person. Every client on this host hears
+    /// it, whether or not it shows that agent; devices see it in their view.
     Attention {
         attention: Attention,
     },
-    /// A paired device started a chat. Sent only to clients on this Mac,
+    /// A paired device started a chat. Sent only to clients on this host,
     /// which show it beside their own.
     ChatBegun {
         chat: ChatInfo,
+    },
+    /// A device opened a sleeping chat. Sent only to clients on this host,
+    /// which start it again.
+    WakeChat {
+        agent_id: String,
     },
     /// What an agent waited on was answered or withdrawn.
     AttentionCleared {
         id: String,
         agent_id: String,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceView {
+    pub workspace: Workspace,
+    pub sessions: Vec<SessionInfo>,
+    pub chats: Vec<ChatInfo>,
+    pub attentions: Vec<Attention>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1015,9 +1164,15 @@ pub fn decode_snapshot(payload: &[u8]) -> Option<(RequestId, SessionId, AttachHe
     Some((request_id, id, header, replay))
 }
 
-fn frame_length(header: [u8; 4]) -> io::Result<usize> {
+/// Whether a frame from [`encode_frame`] is small enough for the other side
+/// to read.
+pub fn fits(frame: &[u8]) -> bool {
+    frame.len() <= MAX_FRAME_BYTES + 5
+}
+
+fn frame_length(header: [u8; 4], max_payload: usize) -> io::Result<usize> {
     let length = u32::from_be_bytes(header) as usize;
-    if length == 0 || length > MAX_FRAME_BYTES + 1 {
+    if length == 0 || length > max_payload + 1 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("frame length {length} is out of range"),
@@ -1046,7 +1201,7 @@ pub fn read_frame_sync<R: Read>(reader: &mut R) -> io::Result<Option<Frame>> {
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0u8; frame_length(header)?];
+    let mut body = vec![0u8; frame_length(header, MAX_FRAME_BYTES)?];
     reader.read_exact(&mut body)?;
     split_frame(body).map(Some)
 }
@@ -1055,6 +1210,15 @@ pub fn read_frame_sync<R: Read>(reader: &mut R) -> io::Result<Option<Frame>> {
 pub async fn read_frame<R: tokio::io::AsyncRead + Unpin>(
     reader: &mut R,
 ) -> io::Result<Option<Frame>> {
+    read_frame_within(reader, MAX_FRAME_BYTES).await
+}
+
+/// Refuses a frame longer than `max_payload` before allocating room for it.
+#[cfg(unix)]
+pub async fn read_frame_within<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    max_payload: usize,
+) -> io::Result<Option<Frame>> {
     use tokio::io::AsyncReadExt;
     let mut header = [0u8; 4];
     match reader.read_exact(&mut header).await {
@@ -1062,7 +1226,7 @@ pub async fn read_frame<R: tokio::io::AsyncRead + Unpin>(
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0u8; frame_length(header)?];
+    let mut body = vec![0u8; frame_length(header, max_payload)?];
     reader.read_exact(&mut body).await?;
     split_frame(body).map(Some)
 }
@@ -1103,6 +1267,16 @@ mod tests {
         let huge = ((MAX_FRAME_BYTES + 2) as u32).to_be_bytes();
         assert!(read_frame_sync(&mut &huge[..]).is_err());
         assert!(read_frame_sync(&mut &[][..]).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_frame_past_the_reader_s_limit_is_refused_before_it_is_read() {
+        let frame = encode_control(&"x".repeat(100)).unwrap();
+        assert!(read_frame_within(&mut &frame[..], 64).await.is_err());
+        assert!(read_frame_within(&mut &frame[..], 200)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[test]

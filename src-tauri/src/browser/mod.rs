@@ -93,6 +93,7 @@ pub struct BrowserSnapshot {
 /// how much of either side lies outside the stage and must not be drawn. The
 /// holes are app elements, like toasts, that must show through the page. The
 /// dim is how dark a shade to lay over the page while an app panel floats on it.
+/// The opacity follows the pane's own while it fades, which CSS cannot reach.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserBounds {
@@ -105,6 +106,12 @@ pub struct BrowserBounds {
     pub holes: Vec<BrowserHole>,
     #[serde(default)]
     pub dim: f64,
+    #[serde(default = "opaque")]
+    pub opacity: f64,
+}
+
+fn opaque() -> f64 {
+    1.0
 }
 
 /// A rounded rectangle in the page's own coordinates.
@@ -309,6 +316,9 @@ struct AgentBrowser {
     /// The size of the page area the last time it showed a page.
     seen: Option<(f64, f64)>,
     viewports: HashMap<String, viewport::Viewport>,
+    /// What each tab's view was last given, so a swipe moving one page every
+    /// frame does not also re-place every tab parked behind it.
+    applied: HashMap<String, (viewport::Layout, bool)>,
 }
 
 impl AgentBrowser {
@@ -776,6 +786,12 @@ impl BrowserManager {
                 })
                 .collect()
         };
+        if !views.is_empty() {
+            eprintln!(
+                "Sikemux closed {} browser tab(s) with agent {agent_id}",
+                views.len()
+            );
+        }
         for view in views {
             drop_view(view);
         }
@@ -926,14 +942,30 @@ impl BrowserManager {
     /// Show the active tab inside the pane's page area and park the rest.
     fn relayout(&self, agent_id: &str) {
         let plan: Vec<(Webview, viewport::Layout, bool)> = {
-            let agents = self.lock();
-            let Some(agent) = agents.get(agent_id) else {
+            let mut agents = self.lock();
+            let Some(agent) = agents.get_mut(agent_id) else {
                 return;
             };
-            agent
+            let wanted: Vec<(String, Webview, viewport::Layout, bool)> = agent
                 .views
                 .iter()
-                .map(|(id, view)| (view.clone(), agent.layout_of(id), agent.strip.awake(id)))
+                .map(|(id, view)| {
+                    let layout = agent.layout_of(id);
+                    (id.clone(), view.clone(), layout, agent.strip.awake(id))
+                })
+                .collect();
+            let views = &agent.views;
+            agent.applied.retain(|id, _| views.contains_key(id));
+            wanted
+                .into_iter()
+                .filter_map(|(id, view, layout, awake)| {
+                    let next = (layout.clone(), awake);
+                    if agent.applied.get(&id) == Some(&next) {
+                        return None;
+                    }
+                    agent.applied.insert(id, next);
+                    Some((view, layout, awake))
+                })
                 .collect()
         };
         for (view, layout, awake) in plan {
@@ -1014,12 +1046,15 @@ impl BrowserManager {
         }
     }
 
-    pub fn drain(&self) {
+    pub fn drain(&self, why: &str) {
         let views: Vec<Webview> = self
             .lock()
             .drain()
             .flat_map(|(_, agent)| agent.views.into_values())
             .collect();
+        if !views.is_empty() {
+            eprintln!("Sikemux closed {} browser tab(s): {why}", views.len());
+        }
         for view in views {
             drop_view(view);
         }
@@ -1197,6 +1232,7 @@ fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
                     .collect();
                 macos::clip(tab, frame.clip_left, frame.clip_right, holes);
                 macos::dim(tab, frame.dim);
+                macos::fade(tab, frame.opacity);
             }
             viewport::Layout::Parked {
                 page: (width, height),
@@ -1236,10 +1272,13 @@ fn place(view: &Webview, layout: viewport::Layout, _awake: bool) {
 }
 
 const MAX_HOLES: usize = 32;
+#[cfg(target_os = "macos")]
+const STILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
     let finite = [
         bounds.dim,
+        bounds.opacity,
         bounds.x,
         bounds.y,
         bounds.width,
@@ -1267,6 +1306,7 @@ fn validate_bounds(bounds: &BrowserBounds) -> AppResult<()> {
         || bounds.clip_right < 0.0
         || bounds.clip_left + bounds.clip_right > bounds.width
         || !(0.0..=1.0).contains(&bounds.dim)
+        || !(0.0..=1.0).contains(&bounds.opacity)
     {
         return Err(AppError::BadArg("invalid browser bounds"));
     }
@@ -1448,6 +1488,40 @@ pub async fn browser_set_bounds(
     bounds: Option<BrowserBounds>,
 ) -> AppResult<()> {
     manager.set_bounds(&agent_id, bounds)
+}
+
+/// A picture of the agent's page as it stands, which the app slides in the
+/// page's place while the stage moves: a native view cannot keep step with it.
+#[tauri::command]
+pub async fn browser_page_still(
+    manager: State<'_, BrowserManager>,
+    agent_id: String,
+) -> AppResult<tauri::ipc::Response> {
+    let (_, view) = manager.active_view(&agent_id)?;
+    #[cfg(target_os = "macos")]
+    {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        view.with_webview(move |platform| {
+            macos::still_jpeg(
+                platform.inner(),
+                Box::new(move |jpeg| {
+                    let _ = sender.send(jpeg);
+                }),
+            )
+        })
+        .map_err(window_error)?;
+        match tokio::time::timeout(STILL_TIMEOUT, receiver).await {
+            Ok(Ok(Some(jpeg))) => Ok(tauri::ipc::Response::new(jpeg)),
+            _ => Err(AppError::Window("the page could not be captured".into())),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = view;
+        Err(AppError::Window(
+            "page stills are only taken on macOS".into(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -1706,8 +1780,19 @@ mod tests {
                 radius: 13.0,
             }],
             dim: 0.0,
+            opacity: 1.0,
         };
         assert!(validate_bounds(&good).is_ok());
+        assert!(validate_bounds(&BrowserBounds {
+            opacity: 0.4,
+            ..good.clone()
+        })
+        .is_ok());
+        assert!(validate_bounds(&BrowserBounds {
+            opacity: -0.1,
+            ..good.clone()
+        })
+        .is_err());
         assert!(validate_bounds(&BrowserBounds {
             dim: 0.2,
             ..good.clone()

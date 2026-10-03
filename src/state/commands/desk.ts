@@ -17,9 +17,12 @@ import {
     type DeskItem,
 } from "../desks";
 import { reportError } from "../toast";
+import { announceDeskMotion, DESK_MOTION_MS, type DeskHeading } from "../deskMotion";
+import { holdStageMotion } from "../nativeViews";
+import { canAnimate } from "../../lib/motion";
 import { activeAgentId, shownDeskPaneId } from "../selectors";
-import { collectPanes, makePane, newId, removePane, splitPane } from "../layout";
-import type { Desk } from "../types";
+import { collectPanes, computeLayout, findSplit, makePane, newId, removePane, setSplitSizes, splitPane } from "../layout";
+import type { Desk, LayoutNode, SplitNode } from "../types";
 import { setEditorView } from "./editor";
 import { dirtyPathsForPane, dropDeskPaneState, guardDiscardDirty } from "./shared";
 
@@ -46,6 +49,7 @@ export function newBrowserTab(forAgentId?: string): boolean {
     openDesk(agentId);
     setDeskActive(agentId, BROWSER_ACTIVE);
     void browserApi.newTab(agentId).catch(reportError("open browser tab"));
+    openDeskAddress(agentId);
     return true;
 }
 
@@ -58,6 +62,10 @@ export function openUrlOnDesk(agentId: string, url: string): void {
 /** Hiding the desk keeps what is on it, so showing it again brings it back as it was. */
 export function toggleDesk(agentId: string): void {
     const openPaneId = shownDeskPaneId(getState(), agentId);
+    if (openPaneId && travels.get(openPaneId)?.heading === "closed") {
+        travelDesk(openPaneId, "open");
+        return;
+    }
     if (openPaneId) {
         closeDesk(openPaneId);
         return;
@@ -90,6 +98,8 @@ export function showDeskBrowser(agentId: string): void {
  */
 export function openDesk(agentId: string, opts: { focus?: boolean } = {}): void {
     const focus = opts.focus ?? true;
+    let created = null as { paneId: string; windowId: string } | null;
+    let reopened = null as string | null;
     mutate((d) => {
         const existing = Object.entries(d.deskPanes).find(([, owner]) => owner === agentId);
         const windowId = Object.keys(d.windows).find((id) => collectPanes(d.windows[id].root).some((pane) => pane.id === agentId));
@@ -98,6 +108,7 @@ export function openDesk(agentId: string, opts: { focus?: boolean } = {}): void 
         const win = d.windows[windowId];
         if (existing && collectPanes(win.root).some((pane) => pane.id === existing[0])) {
             if (focus) win.activePaneId = existing[0];
+            reopened = existing[0];
             return;
         }
         const agentPane = collectPanes(win.root).find((candidate) => candidate.id === agentId);
@@ -106,13 +117,169 @@ export function openDesk(agentId: string, opts: { focus?: boolean } = {}): void 
         if (focus) win.activePaneId = pane.id;
         d.deskPanes[pane.id] = agentId;
         d.zoomedPaneId = null;
+        created = { paneId: pane.id, windowId };
     });
+    if (reopened && travels.get(reopened)?.heading === "closed") travelDesk(reopened, "open");
+    if (!created || !canAnimate(document.body)) return;
+    const found = deskSplit(created.windowId, created.paneId);
+    if (!found) return;
+    const open = found.split.sizes;
+    setSizes(created.windowId, found.split.id, folded(open, found.index));
+    travelDesk(created.paneId, "open", open);
+}
+
+function splitHolding(node: LayoutNode, paneId: string): SplitNode | null {
+    if (node.type === "pane") return null;
+    if (node.children.some((child) => child.type === "pane" && child.id === paneId)) return node;
+    for (const child of node.children) {
+        const found = splitHolding(child, paneId);
+        if (found) return found;
+    }
+    return null;
+}
+
+/* Not zero: a saved layout may not hold an empty pane, and the split can be saved mid-way. */
+const SLIVER = 0.01;
+
+function deskSplit(windowId: string, paneId: string): { split: SplitNode; index: number } | null {
+    const root = getState().windows[windowId]?.root;
+    const split = root ? splitHolding(root, paneId) : null;
+    const index = split?.children.findIndex((child) => child.type === "pane" && child.id === paneId) ?? -1;
+    return split && index >= 1 ? { split, index } : null;
+}
+
+/** The desk's sizes with its share handed to the pane before it, all but a sliver. */
+function folded(sizes: number[], index: number): number[] {
+    const next = sizes.slice();
+    const sliver = Math.min(SLIVER, next[index]);
+    next[index - 1] += next[index] - sliver;
+    next[index] = sliver;
+    return next;
+}
+
+interface DeskTravel {
+    windowId: string;
+    splitId: string;
+    index: number;
+    open: number[];
+    closed: number[];
+    heading: DeskHeading;
+    from: number[];
+    last: number[];
+    begun: number;
+    ms: number;
+    frame: number;
+    release: () => void;
+}
+
+/* At most one movement per desk. Toggling mid-way turns it around from where it is. */
+const travels = new Map<string, DeskTravel>();
+
+function setSizes(windowId: string, splitId: string, sizes: number[]): void {
+    mutate((d) => {
+        d.windows[windowId].root = setSplitSizes(d.windows[windowId].root, splitId, sizes);
+    });
+}
+
+function windowHolding(paneId: string): string | undefined {
+    const { windows } = getState();
+    return Object.keys(windows).find((id) => collectPanes(windows[id].root).some((pane) => pane.id === paneId));
+}
+
+/* The desk opens and closes the way a divider drag would: the agent gives up
+   exactly the room the desk takes, so the two read as one movement. Each frame
+   is a size change like a drag's, so terminals and the browser page follow it.
+   Returns false when there was nothing to move, and the caller does it at once. */
+function travelDesk(paneId: string, heading: DeskHeading, open?: number[]): boolean {
+    let travel = travels.get(paneId);
+    if (!travel) {
+        const windowId = windowHolding(paneId);
+        const found = windowId ? deskSplit(windowId, paneId) : null;
+        if (!windowId || !found) return false;
+        const sizes = open ?? found.split.sizes;
+        travel = {
+            windowId,
+            splitId: found.split.id,
+            index: found.index,
+            open: sizes,
+            closed: folded(sizes, found.index),
+            heading,
+            from: found.split.sizes,
+            last: found.split.sizes,
+            begun: 0,
+            ms: 0,
+            frame: 0,
+            release: holdStageMotion(),
+        };
+        travels.set(paneId, travel);
+    }
+    const to = heading === "open" ? travel.open : travel.closed;
+    const { index } = travel;
+    const left = Math.abs(to[index] - travel.last[index]) / (travel.open[index] - travel.closed[index] || 1);
+    travel.heading = heading;
+    travel.from = travel.last;
+    travel.begun = performance.now();
+    travel.ms = Math.max(120, DESK_MOTION_MS * Math.min(1, left));
+    const root = getState().windows[travel.windowId].root;
+    announceDeskMotion(paneId, {
+        kind: "moving",
+        heading,
+        ms: travel.ms,
+        openShare: shareOf(setSplitSizes(root, travel.splitId, travel.open), paneId),
+        currentShare: shareOf(root, paneId),
+        appearing: false,
+    });
+    if (!travel.frame) travel.frame = requestAnimationFrame((now) => stepDesk(paneId, now));
+    return true;
+}
+
+function stepDesk(paneId: string, now: number): void {
+    const travel = travels.get(paneId);
+    if (!travel) return;
+    travel.frame = 0;
+    const current = findSplitIn(travel.windowId, travel.splitId);
+    /* A divider drag or a removed pane took the split over, so it stays where it was put. */
+    if (!current || current.sizes.length !== travel.last.length || current.sizes.some((size, i) => size !== travel.last[i])) {
+        settle(paneId, travel);
+        return;
+    }
+    const to = travel.heading === "open" ? travel.open : travel.closed;
+    const t = Math.min(1, Math.max(0, (now - travel.begun) / travel.ms));
+    const eased = 1 - (1 - t) ** 4;
+    travel.last = t === 1 ? to : to.map((size, i) => travel.from[i] + (size - travel.from[i]) * eased);
+    setSizes(travel.windowId, travel.splitId, travel.last);
+    if (t < 1) {
+        travel.frame = requestAnimationFrame((next) => stepDesk(paneId, next));
+        return;
+    }
+    settle(paneId, travel);
+}
+
+function settle(paneId: string, travel: DeskTravel): void {
+    travels.delete(paneId);
+    travel.release();
+    announceDeskMotion(paneId, { kind: "settled" });
+    if (travel.heading === "closed") removeDeskPane(paneId);
+}
+
+/** How much of the window's width the pane takes in this layout. */
+function shareOf(root: LayoutNode, paneId: string): number {
+    return computeLayout(root).panes.get(paneId)?.w ?? 0;
+}
+
+function foldDesk(paneId: string): void {
+    if (!canAnimate(document.body) || !travelDesk(paneId, "closed")) removeDeskPane(paneId);
+}
+
+function findSplitIn(windowId: string, splitId: string): SplitNode | null {
+    const root = getState().windows[windowId]?.root;
+    return root ? findSplit(root, splitId) : null;
 }
 
 /** Hides the desk. Its files are only held by the editor on screen, so unsaved ones are asked about first. */
 export function closeDesk(paneId: string): void {
     const st = getState();
-    guardDiscardDirty(dirtyPathsForPane(st, paneId), "hide desk", () => removeDeskPane(paneId));
+    guardDiscardDirty(dirtyPathsForPane(st, paneId), "hide desk", () => foldDesk(paneId));
 }
 
 /**
@@ -279,10 +446,14 @@ export function focusBrowserAddress(): boolean {
     openDesk(agentId);
     setDeskActive(agentId, BROWSER_ACTIVE);
     if (!hasPage) void browserApi.newTab(agentId).catch(reportError("open browser address"));
+    openDeskAddress(agentId);
+    return true;
+}
+
+function openDeskAddress(agentId: string): void {
     mutate((d) => {
         d.deskAddressOpen = agentId;
     });
-    return true;
 }
 
 export function closeDeskAddress(): void {

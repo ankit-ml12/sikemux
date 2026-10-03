@@ -94,6 +94,9 @@ interface Surface {
 }
 
 const surfaces = new Map<HTMLElement, Surface>();
+/* Fields turned away while the budget was spent. A swipe paints two screens at
+   once, and the one arriving must get its field once the one leaving lets go. */
+const waiting = new Map<HTMLElement, { preset: ShaderFieldPreset; image: HTMLImageElement | null }>();
 let runtimePromise: Promise<Runtime | null> | null = null;
 let webglSupported: boolean | null = null;
 /*
@@ -213,6 +216,8 @@ function advance(): void {
     const now = performance.now();
     for (const [host, surface] of surfaces) {
         if (!surface.mount || surface.speed === 0) continue;
+        // A field kept for a screen off stage holds its frame until it is back.
+        if (!onStage(host)) continue;
         try {
             surface.mount.setFrame((now - surface.origin) * surface.speed);
         } catch (error) {
@@ -447,10 +452,12 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset, i
         return;
     }
     prune();
-    if (surfaces.size >= SURFACE_BUDGET) {
+    if (surfaces.size >= SURFACE_BUDGET && !makeRoomOffStage()) {
         lastRefusal = `budget spent (${SURFACE_BUDGET} surfaces live)`;
+        waiting.set(host, { preset, image });
         return;
     }
+    waiting.delete(host);
     lastRefusal = null;
 
     startFocusWatch();
@@ -525,15 +532,47 @@ function trackHostSize(host: HTMLElement, mount: InstanceType<Shaders["ShaderMou
     return observer;
 }
 
+const onStage = (host: HTMLElement) => host.checkVisibility({ visibilityProperty: true });
+
+/* A field kept for a screen off stage gives its place to one on stage, and
+   waits to have it back once its own screen returns. */
+function makeRoomOffStage(): boolean {
+    for (const [host, surface] of surfaces) {
+        if (!surface.mount || onStage(host)) continue;
+        release(host);
+        waiting.set(host, { preset: surface.preset, image: surface.image });
+        return true;
+    }
+    return false;
+}
+
+/** Start a field that gave its place away, now that its screen is back on stage. */
+export function reviveShaderField(host: HTMLElement): void {
+    const field = waiting.get(host);
+    if (field && host.isConnected) mountShaderField(host, field.preset, field.image);
+}
+
 /** Release a surface and its WebGL context. Safe to call for a host that never got one. */
 export function unmountShaderField(host: HTMLElement): void {
+    waiting.delete(host);
+    if (!release(host)) return;
+    for (const [next, field] of [...waiting]) {
+        if (surfaces.size >= SURFACE_BUDGET) break;
+        if (!next.isConnected || !onStage(next)) continue;
+        waiting.delete(next);
+        mountShaderField(next, field.preset, field.image);
+    }
+}
+
+function release(host: HTMLElement): boolean {
     const surface = surfaces.get(host);
-    if (!surface) return;
+    if (!surface) return false;
     surfaces.delete(host);
     delete host.dataset.shaderField;
     surface.resize?.disconnect();
     surface.mount?.dispose();
     syncTicker();
+    return true;
 }
 
 /** Live surface count. Exported for tests and for reasoning about the context budget. */

@@ -1,5 +1,5 @@
 //! Who is on the other end of a connection, and what each request needs from
-//! them. The app on this Mac may do anything. A paired device does what it
+//! them. The app on this host may do anything. A paired device does what it
 //! is approved for at the moment it asks, and never touches the core itself.
 
 use crate::protocol::{DeviceAccess, Request};
@@ -22,10 +22,10 @@ pub(crate) enum Needs {
     Local,
 }
 
-pub(crate) const LOCAL_ONLY: &str = "only Sikemux on this Mac can do that";
+pub(crate) const LOCAL_ONLY: &str = "only Sikemux on this host can do that";
 pub(crate) const WATCH_ONLY: &str =
     "this device can watch and answer permission requests, not drive sessions";
-pub(crate) const UNPAIRED: &str = "this device is no longer paired with this Mac";
+pub(crate) const UNPAIRED: &str = "this device is no longer paired with this host";
 
 pub(crate) fn needs(request: &Request) -> Needs {
     match request {
@@ -36,6 +36,10 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
+        | Request::AcpDetach { .. }
+        | Request::AcpWake { .. }
+        | Request::BackdropImage
+        | Request::Unpair
         | Request::AcpPermissionReply { .. }
         | Request::Workspace
         | Request::Attentions
@@ -69,7 +73,12 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::OpenPairing
         | Request::ClosePairing
         | Request::AnswerPairing { .. }
-        | Request::PublishWorkspace { .. } => Needs::Local,
+        | Request::SignRegistration { .. }
+        | Request::SetOwner { .. }
+        | Request::PublishWorkspace { .. }
+        | Request::PublishChats { .. }
+        | Request::PublishPalette { .. }
+        | Request::PublishBackdrop { .. } => Needs::Local,
     }
 }
 
@@ -145,6 +154,13 @@ mod tests {
                 id: "request".into(),
                 allow: true,
                 access: DeviceAccess::Full,
+            },
+            Request::SignRegistration {
+                nonce: "a".repeat(64),
+                user_id: "user_attacker".into(),
+            },
+            Request::SetOwner {
+                owner: Some("user_attacker".into()),
             },
         ] {
             assert_eq!(refusal(Some(DeviceAccess::Full), &request), LOCAL_ONLY);

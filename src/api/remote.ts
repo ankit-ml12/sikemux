@@ -3,7 +3,7 @@ import { getIpcTransport } from "./transport";
 
 export type DeviceAccess = "full" | "watch";
 
-/** A phone or other machine approved to reach this Mac's terminals and agents. */
+/** A device approved to reach this host's terminals and agents. */
 export interface PairedDevice {
     /** The device's public key. */
     readonly id: string;
@@ -17,7 +17,7 @@ export interface PairedDevice {
 export interface PairingOffer {
     readonly code: string;
     readonly expiresAt: number;
-    /** The Mac's key and the code as one `sikemux://pair` link, which the QR code holds. */
+    /** The host's key and the code as one `sikemux://pair` link, which the QR code holds. */
     readonly link: string;
 }
 
@@ -38,6 +38,8 @@ export interface RemoteStatus {
     readonly connected: readonly string[];
     readonly pairing: PairingOffer | null;
     readonly pending: readonly PendingDevice[];
+    /** The account this host is signed in to. */
+    readonly owner: string | null;
 }
 
 /** A project a paired device may start an agent in. */
@@ -45,6 +47,15 @@ export interface PublishedProject {
     readonly id: string;
     readonly name: string;
     readonly path: string;
+}
+
+/** A chat as the rail lists it, so paired devices show it under the same name. */
+export interface PublishedChat {
+    readonly agentId: string;
+    readonly provider: string;
+    readonly title: string | null;
+    readonly cwd: string;
+    readonly asleep: boolean;
 }
 
 /** One chat agent the app offers paired devices; the app works out how to run it. */
@@ -70,6 +81,10 @@ export const remoteApi = {
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
     publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
         invoke<void>("remote_publish_workspace", { projects, launchers }),
+    publishChats: (chats: readonly PublishedChat[]) => invoke<void>("remote_publish_chats", { chats }),
+    publishPalette: (palette: Readonly<Record<string, string>>) => invoke<void>("remote_publish_palette", { palette }),
+    publishBackdrop: (texture: boolean, image: { readonly id: string; readonly dataUrl: string } | null) =>
+        invoke<void>("remote_publish_backdrop", { texture, image }),
     subscribe: (listener: (status: RemoteStatus) => void, signal: AbortSignal) =>
         getIpcTransport().subscribe<RemoteStatus>(REMOTE_STATUS_EVENT, (event) => listener(event.payload), { signal }),
 };

@@ -1,16 +1,20 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useUser } from '@clerk/expo';
+import type { Device } from '@protocol';
+
+import { AccountSheet } from '@/account/AccountSheet';
+import { useAccountHosts } from '@/account/session';
+import { pasteFoundLink } from '@/devices/foundLinks';
 
 import type { Snapshot } from '@/core/protocol';
 import { useLive } from '@/devices/hub';
-import { deviceKind, deviceName, shortKey, type PairedDevice } from '@/devices/paired';
-import { phoneName } from '@/devices/pairing';
-import { useDeviceId } from '@/device/identity';
+import { channelLabel, deviceKind, deviceName, type PairedDevice } from '@/devices/paired';
 import { chatTitle, ago } from '@/devices/words';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
-import { IconButton, NeedsYou, Screen, Working } from '@/ui/parts';
-import { colors, fonts, type } from '@/ui/theme';
+import { Button, IconButton, NeedsYou, Screen, useBottomGap, Working } from '@/ui/parts';
+import { fonts, type Palette, typeFor, useColors, useStyles } from '@/ui/theme';
 
 function summary(snapshot: Snapshot): string {
   const agents = snapshot.chats.length;
@@ -22,21 +26,30 @@ function summary(snapshot: Snapshot): string {
 }
 
 function DeviceCard({ device }: { device: PairedDevice }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
   const live = useLive(device.core);
   const away = live.status === 'closed';
   const snapshot = live.snapshot;
   const asking = !away && snapshot ? snapshot.attentions[0] : undefined;
   const askingChat = asking ? snapshot?.chats.find((chat) => chat.agentId === asking.agentId) : undefined;
   const working = !away && snapshot ? snapshot.chats.filter((chat) => chat.running) : [];
-  const meta = away
-    ? `Asleep or offline${device.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
-    : snapshot
-      ? summary(snapshot)
-      : 'Connecting…';
+  const channel = channelLabel(device.channel);
+  const behind = live.status === 'closed' ? live.outdated : undefined;
+  const meta = behind
+    ? behind === 'host'
+      ? 'Needs a newer Sikemux'
+      : 'Update this app to connect'
+    : away
+      ? `Asleep or offline${device.lastSeen ? ` · seen ${ago(device.lastSeen)}` : ''}`
+      : snapshot
+        ? summary(snapshot)
+        : 'Connecting…';
 
   return (
     <Pressable
       onPress={() => router.push(`/device/${device.core}`)}
+      accessibilityRole="button"
       style={({ pressed }) => [styles.card, away && styles.away, pressed && { opacity: 0.85 }]}>
       <View style={styles.head}>
         <View style={styles.glyph}>
@@ -48,7 +61,7 @@ function DeviceCard({ device }: { device: PairedDevice }) {
             {deviceName(device)}
           </Text>
           <Text style={styles.meta} numberOfLines={1}>
-            {meta}
+            {channel ? `${channel} · ${meta}` : meta}
           </Text>
         </View>
         <Icon name="IconChevron" size={14} color={colors.rest} />
@@ -82,77 +95,151 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   );
 }
 
+/** A host signed in to the same account that this phone has not paired with: it pairs with that host's code. */
+function AccountHostCard({ host }: { host: Device }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const channel = channelLabel(host.channel);
+  return (
+    <Pressable
+      onPress={() => router.push({ pathname: '/pair-code', params: { core: host.key, name: host.name } })}
+      accessibilityRole="button"
+      accessibilityHint="Pairs with this host's code"
+      style={({ pressed }) => [styles.card, styles.away, pressed && { opacity: 0.85 }]}>
+      <View style={styles.head}>
+        <View style={styles.glyph}>
+          <DeviceIcon kind="laptop" color={colors.tertiary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.name, { color: colors.tertiary }]} numberOfLines={1}>
+            {host.name}
+          </Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {channel ? `${channel} · ` : ''}On your account · not paired yet
+          </Text>
+        </View>
+        <Icon name="IconChevron" size={14} color={colors.rest} />
+      </View>
+    </Pressable>
+  );
+}
+
+function Empty() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.empty}>
+      <Text style={styles.emptyTitle}>No hosts yet</Text>
+      <Text style={styles.emptyBody}>
+        In Sikemux on your host, open Settings → Devices and sign in to this account, or pair with the code it shows.
+      </Text>
+      <Button kind="primary" title="Scan the code on your host" onPress={() => router.push('/scan')} style={styles.emptyButton} />
+      <Pressable onPress={() => pasteFoundLink()} style={styles.paste} accessibilityRole="button">
+        <Text style={styles.pasteText}>Paste a pairing link</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function DevicesList({ devices }: { devices: PairedDevice[] }) {
-  const id = useDeviceId();
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const bottom = useBottomGap();
+  const { user } = useUser();
+  const [account, setAccount] = useState(false);
+  const hosts = useAccountHosts();
+  const unpaired = hosts.filter((host) => !devices.some((device) => device.core === host.key));
   return (
     <Screen>
       <View style={styles.nav}>
         <IconButton name="IconPlus" label="Pair another device" onPress={() => router.push('/scan')} />
       </View>
       <Text style={styles.title}>Devices</Text>
-      <ScrollView contentContainerStyle={styles.list}>
-        {devices.map((device) => (
-          <DeviceCard key={device.core} device={device} />
-        ))}
-      </ScrollView>
-      <SafeAreaView edges={['bottom']} style={styles.phone}>
-        <Icon name="IconPhone" size={15} color={colors.tertiary} />
-        <Text style={styles.phoneText}>{phoneName()}</Text>
-        {id ? <Text style={[type.mono, { marginLeft: 'auto' }]}>{shortKey(id)}</Text> : null}
-      </SafeAreaView>
+      {devices.length || unpaired.length ? (
+        <ScrollView contentContainerStyle={styles.list}>
+          {devices.map((device) => (
+            <DeviceCard key={device.core} device={device} />
+          ))}
+          {unpaired.map((host) => (
+            <AccountHostCard key={host.key} host={host} />
+          ))}
+        </ScrollView>
+      ) : (
+        <Empty />
+      )}
+      <Pressable
+        onPress={() => setAccount(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Account"
+        style={[styles.phone, { paddingBottom: bottom }]}>
+        <Icon name="IconUser" size={15} color={colors.tertiary} />
+        <Text style={styles.phoneText} numberOfLines={1}>
+          {user?.primaryEmailAddress?.emailAddress ?? 'Account'}
+        </Text>
+        <Icon name="IconChevron" size={13} color={colors.rest} />
+      </Pressable>
+      <AccountSheet visible={account} onClose={() => setAccount(false)} />
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  nav: { height: 46, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8 },
-  title: { ...type.title, fontSize: 26, paddingHorizontal: 16, paddingBottom: 14 },
-  list: { paddingHorizontal: 16, gap: 10, paddingBottom: 24 },
-  card: { borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
-  away: { backgroundColor: 'transparent' },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingLeft: 16, paddingRight: 14 },
-  glyph: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  presence: { position: 'absolute', right: -1, bottom: 3, width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
-  presenceOn: { backgroundColor: colors.live, borderColor: colors.raised },
-  presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
-  name: { ...type.heading },
-  meta: { ...type.meta, marginTop: 2 },
-  ask: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.overlay,
-  },
-  askTitle: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
-  askDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
-  work: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
-  faces: { flexDirection: 'row' },
-  face: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    marginRight: -6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.overlay,
-    borderWidth: 2,
-    borderColor: colors.raised,
-  },
-  workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
-  phone: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  phoneText: { ...type.meta },
-});
+const makeStyles = (colors: Palette) => {
+  const type = typeFor(colors);
+  return StyleSheet.create({
+    nav: { height: 46, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8 },
+    title: { ...type.title, fontSize: 26, paddingHorizontal: 16, paddingBottom: 14 },
+    list: { paddingHorizontal: 16, gap: 10, paddingBottom: 24 },
+    card: { borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
+    away: { backgroundColor: 'transparent' },
+    head: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingLeft: 16, paddingRight: 14 },
+    glyph: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+    presence: { position: 'absolute', right: -1, bottom: 3, width: 10, height: 10, borderRadius: 5, borderWidth: 2.5 },
+    presenceOn: { backgroundColor: colors.live, borderColor: colors.raised },
+    presenceOff: { backgroundColor: colors.ground, borderColor: colors.rest },
+    name: { ...type.heading },
+    meta: { ...type.meta, marginTop: 2 },
+    ask: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginHorizontal: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      backgroundColor: colors.overlay,
+    },
+    askTitle: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
+    askDetail: { ...type.meta, fontSize: 12.5, marginTop: 1 },
+    work: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
+    faces: { flexDirection: 'row' },
+    face: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      marginRight: -6,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.overlay,
+      borderWidth: 2,
+      borderColor: colors.raised,
+    },
+    workText: { flex: 1, marginLeft: 6, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
+    phone: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginHorizontal: 16,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    phoneText: { ...type.meta },
+    empty: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 60 },
+    emptyTitle: { ...type.title, fontSize: 20, textAlign: 'center' },
+    emptyBody: { ...type.body, textAlign: 'center', marginTop: 8 },
+    emptyButton: { marginTop: 24 },
+    paste: { height: 44, alignItems: 'center', justifyContent: 'center' },
+    pasteText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
+  });
+};

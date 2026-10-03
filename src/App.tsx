@@ -695,11 +695,8 @@ export default function App() {
     useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
-    const zen = useStore((s) => s.zenMode);
-    const sideRailOpen = useStore((s) => s.sideRailOpen);
-    const agentRailOpen = useStore((s) => s.agentRailOpen);
-    const sideRailVisible = sideRailOpen && !zen;
-    const agentRailVisible = agentRailOpen && !zen;
+    const sideRailVisible = useStore((s) => s.sideRailOpen);
+    const agentRailVisible = useStore((s) => s.agentRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
     useRailEntrance(sideRailVisible, ".side-rail");
     useRailEntrance(agentRailVisible && activeSessionIsProject, ".agent-rail");
@@ -976,7 +973,7 @@ export default function App() {
             <div className="body">
                 {sideRailVisible && <SideRail />}
                 {sideRailVisible && <RailResizer edge="start" />}
-                {!sideRailOpen && !zen && (
+                {!sideRailVisible && (
                     <RailPeek edge="start">
                         <SideRail />
                     </RailPeek>
@@ -991,7 +988,7 @@ export default function App() {
                 </main>
                 {agentRailVisible && activeSessionIsProject && <AgentRail />}
                 {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
-                {!agentRailOpen && !zen && activeSessionIsProject && (
+                {!agentRailVisible && activeSessionIsProject && (
                     <RailPeek edge="end">
                         <AgentRail />
                     </RailPeek>
