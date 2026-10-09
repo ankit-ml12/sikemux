@@ -6,7 +6,7 @@ import { channelName, type Snapshot } from '@/core/protocol';
 import { goOffline, thisDevice } from '@/device/identity';
 import { onNetworkChange } from '@/network/connectivity';
 import { dismissHostCards, reconcileCards } from '@/notify/cards';
-import { shareKey, withdrawKey, type Shared } from '@/notify/keys';
+import { shareKey, withdrawKey } from '@/notify/keys';
 import { forgetDevice, pairedDevices, pairedListDamaged, startOver, updateDevice, type PairedDevice } from './paired';
 import { hostStatus, type HostStatus } from './status';
 
@@ -21,8 +21,6 @@ export type Outdated = 'host' | 'phone';
 
 /** One of a chat's events as the host numbered it. */
 export type ChatDelivery = { agentId: string; seq: bigint; eventJson: string };
-
-export type { HostStatus } from './status';
 
 /** A device nobody is looking at keeps its connection this long, for a quick return. */
 const LINGER_MS = 30_000;
@@ -264,7 +262,7 @@ async function connect(core: string, found: Entry) {
   found.recovering = false;
   set(core, found, { status: 'open', connection, snapshot: found.live.snapshot });
   if (AppState.currentState !== 'active') connection.setForeground(false).catch(() => {});
-  shareKey(core, connection).then((shared) => noteNotifications(core, shared));
+  shareKey(core, connection).then(() => withdrawIfForgotten(core));
   connection
     .host()
     .then((host) => updateDevice(core, { name: host.name, model: host.model, channel: channelName(host.channel), lastSeen: Date.now() }))
@@ -302,20 +300,9 @@ export function watch(core: string) {
   };
 }
 
-/** Whether each host took this phone's notification key on its last connection. */
-const notifications = new Map<string, Shared>();
-
-function noteNotifications(core: string, shared: Shared) {
-  if (forgotten.has(core)) {
-    withdrawKey(core, undefined);
-    return;
-  }
-  notifications.set(core, shared);
-  changed();
-}
-
-export function useNotificationsAt(core: string): Shared | undefined {
-  return useSyncExternalStore(subscribe, () => notifications.get(core));
+/** A host forgotten while it was taking the notification key gets it withdrawn again. */
+function withdrawIfForgotten(core: string) {
+  if (forgotten.has(core)) withdrawKey(core, undefined);
 }
 
 /** The hosts this phone holds a connection to now. */
@@ -329,7 +316,7 @@ export function openConnections(): [string, ConnectionLike][] {
 
 /** Gives every connected host the notification key again, as when notifications were just turned on. */
 export function shareKeys() {
-  openConnections().forEach(([core, connection]) => shareKey(core, connection).then((shared) => noteNotifications(core, shared)));
+  openConnections().forEach(([core, connection]) => shareKey(core, connection).then(() => withdrawIfForgotten(core)));
 }
 
 function tellForeground(foreground: boolean) {
@@ -438,39 +425,6 @@ export function useLive(core: string): Live {
   return useHost(core, () => liveOf(core));
 }
 
-function same(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  if (a instanceof Map || b instanceof Map) {
-    if (!(a instanceof Map && b instanceof Map) || a.size !== b.size) return false;
-    return [...a].every(([key, value]) => b.has(key) && same(value, b.get(key)));
-  }
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  return keys.every((key) => same((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
-}
-
-export type ChatInfo = Snapshot['chats'][number];
-
-/** The last answer for each chat, kept while new views leave it as it was so its screen does not re-render. */
-const chatInfos = new Map<string, ChatInfo | undefined>();
-
-function chatInfoOf(core: string, agentId: string): ChatInfo | undefined {
-  const key = `${core}/${agentId}`;
-  const now = liveOf(core).snapshot?.chats.find((chat) => chat.agentId === agentId);
-  const last = chatInfos.get(key);
-  if (chatInfos.has(key) && same(last, now)) return last;
-  chatInfos.set(key, now);
-  return now;
-}
-
-/** The host's latest view of one chat; re-renders only when that chat changes. */
-export function useChatInfo(core: string, agentId: string): ChatInfo | undefined {
-  useEffect(() => watch(core), [core]);
-  return useHost(core, () => chatInfoOf(core, agentId));
-}
-
 /** How a host is doing, worded as the screens show it; the device stays connected while this is mounted. */
 export function useHostStatus(core: string): HostStatus {
   const live = useLive(core);
@@ -492,8 +446,6 @@ export async function forget(core: string) {
   })().catch(() => {});
   await Promise.race([goodbye, new Promise((settle) => setTimeout(settle, UNPAIR_WAIT_MS))]);
   dismissHostCards(core);
-  notifications.delete(core);
-  [...chatInfos.keys()].filter((key) => key.startsWith(`${core}/`)).forEach((key) => chatInfos.delete(key));
   if (found) {
     release(found);
     found.live = FORGOTTEN;
