@@ -351,39 +351,6 @@ pub fn raise_fd_limit() {
 #[cfg(not(unix))]
 pub fn raise_fd_limit() {}
 
-#[tauri::command]
-pub fn home_dir() -> String {
-    user_home().to_string_lossy().into_owned()
-}
-
-/// Frecency-ranked directories from zoxide, for the sesh picker.
-#[tauri::command]
-pub async fn recent_dirs() -> Vec<String> {
-    spawn_blocking(zoxide_dirs).await.unwrap_or_default()
-}
-
-fn zoxide_dirs() -> Vec<String> {
-    for bin in [
-        "zoxide",
-        "/opt/homebrew/bin/zoxide",
-        "/usr/local/bin/zoxide",
-    ] {
-        if let Ok(out) = sikemux_process::user_environment::command(bin)
-            .args(["query", "--list"])
-            .output()
-        {
-            if out.status.success() {
-                return String::from_utf8_lossy(&out.stdout)
-                    .lines()
-                    .map(|l| l.trim().to_string())
-                    .filter(|l| !l.is_empty())
-                    .collect();
-            }
-        }
-    }
-    Vec::new()
-}
-
 #[derive(Serialize)]
 pub struct BootInfo {
     home: String,
@@ -586,14 +553,13 @@ fn parse_pmset(text: &str) -> BatteryStatus {
     }
 }
 
-/// Single round-trip the renderer uses on boot — home dir + persisted state
-/// + zoxide recents in one IPC instead of three. State validation, SQLite's
-/// bounded busy wait, recovery I/O, and the zoxide subprocess all run on the
-/// blocking pool so a locked database cannot stall unrelated Tauri commands.
+/// Home dir and persisted state in one round-trip on boot. SQLite's busy wait
+/// and recovery I/O run on the blocking pool so a locked database cannot stall
+/// unrelated Tauri commands.
 #[tauri::command]
 pub async fn boot_init() -> AppResult<BootInfo> {
     spawn_blocking(|| BootInfo {
-        home: home_dir(),
+        home: user_home().to_string_lossy().into_owned(),
         state: state_load_sync(),
     })
     .await

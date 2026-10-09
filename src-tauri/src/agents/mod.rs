@@ -51,12 +51,6 @@ pub struct AgentProfileRequest {
     config_path: Option<String>,
 }
 
-#[derive(Serialize, Debug, PartialEq, Eq)]
-pub struct AgentModelInfo {
-    id: String,
-    label: String,
-}
-
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum AgentUsageResetAt {

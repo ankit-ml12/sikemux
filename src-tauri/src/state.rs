@@ -127,8 +127,8 @@ fn quarantine_database(path: &Path) -> AppResult<PathBuf> {
 ///
 /// SQLite recovery can wait for its bounded busy timeout and can also perform
 /// migration, quarantine, and repair I/O. Keep this synchronous helper out of
-/// Tauri's command executor; [`state_load`] and the combined boot command both
-/// offload it through `spawn_blocking`.
+/// Tauri's command executor; the boot command offloads it through
+/// `spawn_blocking`.
 pub(crate) fn state_load_sync() -> String {
     let observer = global_observability();
     let timer = observer.slow_operation(
@@ -146,13 +146,6 @@ pub(crate) fn state_load_sync() -> String {
     observer.set_gauge("state.sqlite.last_loaded_bytes", loaded.len() as f64);
     timer.finish(SpanOutcome::Success);
     loaded
-}
-
-#[tauri::command]
-pub async fn state_load() -> AppResult<String> {
-    tauri::async_runtime::spawn_blocking(state_load_sync)
-        .await
-        .map_err(|error| AppError::Other(format!("state_load join: {error}")))
 }
 
 fn state_load_from_paths(database: &Path, legacy: &Path) -> String {
