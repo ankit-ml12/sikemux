@@ -585,7 +585,7 @@ fn a_host_is_answered_before_and_after_it_says_it_is_ready() {
     );
     assert_eq!(
         start["result"]["capabilities"],
-        json!({ "experimental": {}, "tools": { "listChanged": false } })
+        json!({ "experimental": {}, "tools": { "listChanged": true } })
     );
     assert_eq!(
         answered(
@@ -710,6 +710,63 @@ fn an_app_that_cannot_list_plugin_tools_is_asked_again_next_time() {
     assert_eq!(app.received()["request"]["method"], json!("plugins.tools"));
 }
 
+#[test]
+fn signing_in_to_a_plugin_mid_chat_changes_the_tools() {
+    let manifest = Manifest::load();
+    let plugins = PluginTools::default();
+    let signed_in = Mutex::new(false);
+    let asked = Mutex::new(Vec::new());
+    let app = |method: &str, params: &Value| {
+        asked.lock().unwrap().push(method.to_owned());
+        let signed_in = *signed_in.lock().unwrap();
+        match method {
+            "plugins.changed" => Ok(json!({ "version": u64::from(signed_in) })),
+            "plugins.tools" if signed_in => Ok(json!([{
+                "plugin": "sikemux.signoz",
+                "name": "signoz_trace",
+                "method": "trace",
+                "description": "One trace, span by span.",
+                "properties": {},
+                "required": [],
+            }])),
+            "plugins.tools" => Ok(json!([])),
+            _ => unreachable_app(method, params),
+        }
+    };
+
+    list(&manifest, &plugins, &app);
+    assert_eq!(
+        next_plugin_change(&manifest, &plugins, &app, None),
+        Ok((0, false))
+    );
+    asked.lock().unwrap().clear();
+    assert_eq!(
+        next_plugin_change(&manifest, &plugins, &app, Some(0)),
+        Ok((0, false))
+    );
+    assert_eq!(*asked.lock().unwrap(), ["plugins.changed"]);
+
+    *signed_in.lock().unwrap() = true;
+    assert_eq!(
+        next_plugin_change(&manifest, &plugins, &app, Some(0)),
+        Ok((1, true))
+    );
+    let names: Vec<String> = list(&manifest, &plugins, &unreachable_app)
+        .iter()
+        .map(|tool| field(tool, "name").to_owned())
+        .collect();
+    assert_eq!(names.last().map(String::as_str), Some("signoz_trace"));
+}
+
+#[test]
+fn only_a_different_offer_after_the_first_counts_as_a_change() {
+    let plugins = PluginTools::default();
+    assert!(!plugins.replace(Vec::new()));
+    assert!(plugins.replace(vec![signoz_tool()]));
+    assert!(!plugins.replace(vec![signoz_tool()]));
+    assert!(plugins.replace(Vec::new()));
+}
+
 fn filtered_tool() -> Tool {
     serde_json::from_value(json!({
         "name": "signoz_search_logs",
@@ -789,7 +846,7 @@ fn a_tool_this_server_cannot_read_does_not_hide_the_others() {
 }
 
 #[test]
-fn the_plugin_tools_first_listed_stay_fixed_and_no_others_are_reachable() {
+fn the_plugin_tools_listed_are_kept_and_no_others_are_reachable() {
     let manifest = Manifest::load();
     let plugins = PluginTools::default();
     let app = fake_sikemux(json!({ "status": "result", "value": [{

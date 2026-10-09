@@ -72,6 +72,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::RegisterWindow
         | Request::HarnessAwaitingTrust { .. }
         | Request::HarnessStopRuns { .. }
+        | Request::PluginsChanged
         | Request::Shutdown { .. }
         | Request::RemoteStatus
         | Request::SetRemoteAccess { .. }

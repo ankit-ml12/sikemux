@@ -15,7 +15,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use manifest::{Manifest, Tool};
-use sikemux_core::cli::protocol::{SIM_CANCEL_METHOD, SIM_OFFERED_METHOD};
+use sikemux_core::cli::protocol::{PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD};
 
 const LATEST_PROTOCOL_VERSION: &str = "2025-11-25";
 const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
@@ -27,6 +27,8 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
 const PARENT_CHECK_INTERVAL: Duration = Duration::from_secs(2);
 /// Asking whether to list the simulator tools must not hold up the host's handshake for long.
 const OFFER_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long to wait before asking again when Sikemux could not say whether plugins changed.
+const WATCH_RETRY: Duration = Duration::from_secs(15);
 
 pub fn run() -> i32 {
     let agent_id = match agent_id() {
@@ -85,8 +87,9 @@ fn watch_parent() {
 fn watch_parent() {}
 
 /// Only the app knows which plugins this build carries, so their tools are
-/// asked for when an agent first lists tools. A failed ask is not remembered,
-/// and the next listing tries again.
+/// asked for when an agent first lists tools, and again whenever the person
+/// changes a plugin. A failed ask is not remembered, and the next listing
+/// tries again.
 #[derive(Default)]
 struct PluginTools(Mutex<Option<Arc<Vec<Tool>>>>);
 
@@ -104,6 +107,21 @@ impl PluginTools {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::clone(&tools));
         tools
+    }
+
+    /// Keeps what the app offers now, and whether that differs from what an
+    /// agent was already given.
+    fn replace(&self, tools: Vec<Tool>) -> bool {
+        let mut held = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let declared = |tools: &[Tool]| tools.iter().map(Tool::declaration).collect::<Vec<_>>();
+        let changed = held
+            .as_ref()
+            .is_some_and(|before| declared(before) != declared(&tools));
+        *held = Some(Arc::new(tools));
+        changed
     }
 
     fn cached(&self) -> Option<Arc<Vec<Tool>>> {
@@ -158,7 +176,16 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
         let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
         let Some(id) = message.get("id").filter(|id| !id.is_null()).cloned() else {
             match method {
-                "notifications/initialized" => initialized.store(true, Ordering::Release),
+                "notifications/initialized" => {
+                    if !initialized.swap(true, Ordering::AcqRel) {
+                        let (manifest, plugins, relay) = (
+                            Arc::clone(&manifest),
+                            Arc::clone(&plugins),
+                            Arc::clone(&relay),
+                        );
+                        std::thread::spawn(move || watch_plugins(&manifest, &plugins, &*relay));
+                    }
+                }
                 "notifications/cancelled" => {
                     if let Some(name) = params.get("requestId").and_then(|id| calls.cancel(id)) {
                         if name.starts_with("sim_") {
@@ -215,6 +242,43 @@ fn serve(manifest: Arc<Manifest>, agent_id: String) {
             }
         }
     }
+}
+
+/// Tells the agent its tools changed when the person signs in to a plugin, or
+/// switches one on or off, while it runs.
+fn watch_plugins(manifest: &Manifest, plugins: &PluginTools, relay: &Relay<'_>) {
+    let mut seen: Option<u64> = None;
+    loop {
+        match next_plugin_change(manifest, plugins, relay, seen) {
+            Ok((version, changed)) => {
+                if changed {
+                    emit(
+                        &json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" }),
+                    );
+                }
+                seen = Some(version);
+            }
+            Err(_) => std::thread::sleep(WATCH_RETRY),
+        }
+    }
+}
+
+/// Waits for plugins to change after the `seen`th change, then lists their
+/// tools again. Answers with the change it got to, and whether the tools differ.
+fn next_plugin_change(
+    manifest: &Manifest,
+    plugins: &PluginTools,
+    relay: &Relay<'_>,
+    seen: Option<u64>,
+) -> Result<(u64, bool), String> {
+    let version = relay(PLUGINS_CHANGED_METHOD, &json!({ "seen": seen }))?["version"]
+        .as_u64()
+        .ok_or("Sikemux did not say how many times plugins changed")?;
+    if seen == Some(version) {
+        return Ok((version, false));
+    }
+    let answer = relay("plugins.tools", &json!({}))?;
+    Ok((version, plugins.replace(plugin_tools(manifest, answer))))
 }
 
 /// Tool calls still running, by request id. A call the host cancelled is
@@ -303,7 +367,7 @@ fn initialize(manifest: &Manifest, params: &Value) -> Value {
     };
     json!({
         "protocolVersion": version,
-        "capabilities": { "experimental": {}, "tools": { "listChanged": false } },
+        "capabilities": { "experimental": {}, "tools": { "listChanged": true } },
         "serverInfo": { "name": "sikemux-tools", "version": env!("CARGO_PKG_VERSION") },
         "instructions": manifest.instructions(),
     })

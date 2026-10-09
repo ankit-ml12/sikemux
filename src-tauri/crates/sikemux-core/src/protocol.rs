@@ -269,6 +269,9 @@ pub enum Request {
     HarnessStopRuns {
         selector: RunSelector,
     },
+    /// The person did something in a plugin, such as signing in, that may
+    /// change the tools it offers agents.
+    PluginsChanged,
     Shutdown {
         stop_all: bool,
     },

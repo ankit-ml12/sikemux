@@ -192,6 +192,9 @@ impl CliOpenRequest {
 }
 
 pub const PLUGIN_METHODS: &[&str] = &["plugins.tools", "plugins.call"];
+/// The tools server waits on this to hear that plugins may offer its agent
+/// different tools, such as after the person signs in to one.
+pub const PLUGINS_CHANGED_METHOD: &str = "plugins.changed";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -239,6 +242,7 @@ impl HarnessRequest {
             && !is_browser_method(&self.method)
             && !is_sim_method(&self.method)
             && !is_plugin_method(&self.method)
+            && self.method != PLUGINS_CHANGED_METHOD
         {
             return Err("unknown harness method".into());
         }

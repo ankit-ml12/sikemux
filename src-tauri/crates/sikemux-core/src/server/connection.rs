@@ -486,6 +486,10 @@ async fn run_requests(
                 core.harness.awaiting_trust(&execution_id);
                 client.respond(request_id, Ok(Response::Done));
             }
+            Request::PluginsChanged => {
+                core.harness.plugins_changed();
+                client.respond(request_id, Ok(Response::Done));
+            }
             Request::HarnessStopRuns { selector } => {
                 tokio::spawn(async move {
                     harness::stop_runs(&core, selector).await;

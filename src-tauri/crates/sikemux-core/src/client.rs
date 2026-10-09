@@ -535,6 +535,10 @@ impl CoreClient {
             .await
     }
 
+    pub async fn plugins_changed(&self) -> Result<(), ClientError> {
+        self.request_done(Request::PluginsChanged).await
+    }
+
     /// Kills every session. The core keeps running.
     pub async fn stop_all(&self) -> Result<(), ClientError> {
         self.request_done(Request::StopAll).await
