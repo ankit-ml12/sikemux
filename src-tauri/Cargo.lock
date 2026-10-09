@@ -5770,7 +5770,6 @@ dependencies = [
  "objc2-quick-look-ui",
  "objc2-web-kit",
  "open",
- "portable-pty",
  "rayon",
  "regex",
  "reqwest",
@@ -5810,7 +5809,6 @@ dependencies = [
  "trash",
  "url",
  "uuid",
- "vt100",
  "workspace-hack",
 ]
 
