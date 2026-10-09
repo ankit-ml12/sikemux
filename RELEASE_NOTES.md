@@ -1,18 +1,16 @@
-# Sikemux v0.5.1-nightly.2
+# Sikemux v0.5.1-nightly.3
 
-The second nightly on the 0.5.1 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The third nightly on the 0.5.1 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.1
+## New since nightly.2
 
-- **The iOS Simulator on the desk.** An agent's desk can hold a live iOS Simulator you use directly, with its bezel, side buttons and rotation. Agents drive it too, through `sim_` tools: tap, type, swipe, read the log and take screenshots. Sikemux downloads the simulator helper the first time you need it, and Settings has a section for it.
-- **Claude and Codex, driven directly.** Sikemux now speaks each agent's own protocol instead of going through ACP adapters. Edit a sent message and ask again, and a loaded Claude chat shows what its subagents did.
-- **Chats load faster and whole,** resume already at the bottom, hold their place while you scroll, and tool rows draw an icon for what each call does.
-- **Agents say whether they are ready.** Every agent reports whether it is missing, broken, signed out or ready, the welcome screen and agent palette tell you before you start, and a chat refused for sign-in marks its agent at once.
-- **Files.** The file tree docks beside the stage and files open as tabs, with Material file icons. Gitignored files are dimmed.
-- **The rail.** Agents show under the open project's row, and the Term row is gone.
-- **Phones on your account** are let in when you sign in, after Sikemux asks you once.
-- Right-clicking a desk tab copies its path or link.
+- **Databases.** A new Database plugin connects to SQLite, PostgreSQL, MySQL and MariaDB, with passwords in the Keychain. Browse every connection's schemas and tables in one explorer, write SQL in tabs where ⌘↵ runs the statement under the cursor, see results in a grid, copy them as CSV, search the history of every query, and send results to an agent. Agents query through `db_` tools on a connection of their own, read-only unless you allow them to change data.
+- **GitLab.** GitLab, on gitlab.com or your company's server, joins the Git pane as a code host: merge requests with their changes, commits, comments and approvals, issues, releases, your To-Do list, and pipelines you can follow, retry, cancel or start. Agents get GitLab tools too.
+- **Jira boards.** A board view with its sprint and columns, where cards move between columns, plus lists for what you reported, watch or viewed. Tick the tasks in an issue's description, and open an issue in the browser or copy its link.
+- **Rundeck tells you when a deploy ends.** Sikemux follows a run you started and notifies you whether it succeeded or failed, with a switch in the connection menu.
+- **The file tree** opens and closes with ⌘E, colours every folder above a changed file, and a closed rail stays closed when Sikemux starts.
+- **Claude chats** show the model and effort their settings choose, and changing the model no longer leaves a chat stuck working.
 
-Thanks to Ankit Patidar for the simulator tab and its helper, agent sign-in status, dimmed gitignored files and desk tab menus, and to Sujal Rajput for the agents' simulator tools and its Settings section.
+Thanks to Ankit Patidar for the Database and GitLab plugins, Jira boards and tasks, Rundeck run notices and the changed-folder colours.
 
-For the complete patch history, compare [`v0.5.1-nightly.1...v0.5.1-nightly.2`](https://github.com/nodelike/sikemux/compare/v0.5.1-nightly.1...v0.5.1-nightly.2).
+For the complete patch history, compare [`v0.5.1-nightly.2...v0.5.1-nightly.3`](https://github.com/nodelike/sikemux/compare/v0.5.1-nightly.2...v0.5.1-nightly.3).
