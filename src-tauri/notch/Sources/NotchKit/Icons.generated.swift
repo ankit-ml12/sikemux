@@ -5,15 +5,6 @@ enum Icons {
     static let plus = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
         IconShape(d: "M8 3v10M3 8h10", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
     ])
-    static let mic = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
-        IconShape(d: "M8 1.9h0a2.2 2.2 0 0 1 2.2 2.2v3a2.2 2.2 0 0 1 -2.2 2.2h0a2.2 2.2 0 0 1 -2.2 -2.2v-3a2.2 2.2 0 0 1 2.2 -2.2z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
-        IconShape(d: "M3.4 7.6a4.6 4.6 0 0 0 9.2 0M8 12.2v2", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
-    ])
-    static let image = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
-        IconShape(d: "M3.6 3h8.8a1.6 1.6 0 0 1 1.6 1.6v6.8a1.6 1.6 0 0 1 -1.6 1.6h-8.8a1.6 1.6 0 0 1 -1.6 -1.6v-6.8a1.6 1.6 0 0 1 1.6 -1.6z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
-        IconShape(d: "M4.7 6.4a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0 -2.2 0z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
-        IconShape(d: "m2.4 11.6 3.4-3.2 2.6 2.4 1.9-1.7 3.3 2.9", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
-    ])
     static let phone = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
         IconShape(d: "M6.2 1.8h3.6a1.6 1.6 0 0 1 1.6 1.6v9.2a1.6 1.6 0 0 1 -1.6 1.6h-3.6a1.6 1.6 0 0 1 -1.6 -1.6v-9.2a1.6 1.6 0 0 1 1.6 -1.6z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
         IconShape(d: "M7.2 11.8h1.6", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
@@ -40,10 +31,6 @@ enum Icons {
     ])
     static let arrowUp = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
         IconShape(d: "M8 12.6V3.4M4.2 7.2 8 3.4l3.8 3.8", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
-    ])
-    static let external = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
-        IconShape(d: "M9 2.5h4.5V7M13.5 2.5 7.5 8.5", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
-        IconShape(d: "M11.5 9.5v3.5h-9v-9H6", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
     ])
     static let agent = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
         IconShape(d: "M8 1.8c.5 3.3 2.9 5.7 6.2 6.2-3.3.5-5.7 2.9-6.2 6.2-.5-3.3-2.9-5.7-6.2-6.2C5.1 7.5 7.5 5.1 8 1.8Z", style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),
