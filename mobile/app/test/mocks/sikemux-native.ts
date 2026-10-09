@@ -74,7 +74,6 @@ function tagged<Inner>(tag: string) {
 export const CoreEvent = {
   Chat: tagged<{ agentId: string; seq: bigint; eventJson: string }>('Chat'),
   View: tagged<{ view: unknown }>('View'),
-  Exited: tagged<{ session: bigint; code?: number; signal?: string; killed: boolean }>('Exited'),
 };
 
 export const ChatAttachment = {

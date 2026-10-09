@@ -26,7 +26,6 @@ files.set(
 );
 
 type Listener = {
-  output(session: bigint, bytes: ArrayBuffer): void;
   events(events: unknown[]): void;
   closed(): void;
 };
@@ -142,12 +141,6 @@ class Connection {
   async resumeChat() {
     return CHATS[0].agentId;
   }
-  async attach() {
-    return { replay: new ArrayBuffer(0), alternateScreen: false, exited: false };
-  }
-  async write() {}
-  async resize() {}
-  ack() {}
   async unpair() {}
   async saveBackdrop() {
     return undefined;

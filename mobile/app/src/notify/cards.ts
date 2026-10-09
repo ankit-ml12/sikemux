@@ -41,7 +41,6 @@ export function dismissHostCards(host: string) {
 export type CardAnswer = { tag: string; host: string; agent: string; request: string; option: string; allow: boolean };
 
 const quiet: CoreListener = {
-  output() {},
   events() {},
   closed() {},
 };

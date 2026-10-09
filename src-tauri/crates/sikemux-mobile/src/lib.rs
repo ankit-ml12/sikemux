@@ -565,9 +565,6 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for ListenerError {
 /// or throws is dropped: the connection carries on.
 #[uniffi::export(with_foreign)]
 pub trait CoreListener: Send + Sync {
-    /// Terminal bytes for a session the phone attached to. Pass their length
-    /// back to [`Connection::ack`] once shown.
-    fn output(&self, session: u64, bytes: Vec<u8>) -> Result<(), ListenerError>;
     /// The core's events in the order it sent them, several at once when
     /// they arrived faster than the app took them.
     fn events(&self, events: Vec<CoreEvent>) -> Result<(), ListenerError>;
@@ -575,8 +572,7 @@ pub trait CoreListener: Send + Sync {
 }
 
 enum Delivery {
-    Output(SessionId, Vec<u8>),
-    Event(CoreEvent),
+    Event(Box<CoreEvent>),
     Closed,
 }
 
@@ -585,13 +581,11 @@ enum Delivery {
 struct ListenerSink(mpsc::UnboundedSender<Delivery>);
 
 impl EventSink for ListenerSink {
-    fn output(&self, id: SessionId, bytes: &[u8]) {
-        let _ = self.0.send(Delivery::Output(id, bytes.to_vec()));
-    }
+    fn output(&self, _id: SessionId, _bytes: &[u8]) {}
 
     fn event(&self, event: Event) {
         if let Some(event) = CoreEvent::from_core(event) {
-            let _ = self.0.send(Delivery::Event(event));
+            let _ = self.0.send(Delivery::Event(Box::new(event)));
         }
     }
 
@@ -621,11 +615,7 @@ fn deliver(
                         return;
                     }
                     match delivery {
-                        Delivery::Event(event) => events.push(event),
-                        Delivery::Output(session, bytes) => {
-                            flush(listener.as_ref(), &mut events);
-                            let _ = listener.output(session, bytes);
-                        }
+                        Delivery::Event(event) => events.push(*event),
                         Delivery::Closed => {
                             flush(listener.as_ref(), &mut events);
                             let _ = listener.closed();
@@ -649,14 +639,6 @@ fn flush(listener: &dyn CoreListener, events: &mut Vec<CoreEvent>) {
     if !events.is_empty() {
         let _ = listener.events(std::mem::take(events));
     }
-}
-
-#[derive(uniffi::Record)]
-pub struct AttachedScreen {
-    /// Bytes that redraw the terminal as it is now; live output follows.
-    pub replay: Vec<u8>,
-    pub alternate_screen: bool,
-    pub exited: bool,
 }
 
 /// An open session with one host's core.
@@ -1013,38 +995,6 @@ impl Connection {
         self.done(Request::Unpair).await
     }
 
-    pub async fn attach(&self, session: u64) -> Result<AttachedScreen, MobileError> {
-        match self.reply(Request::Attach { id: session }).await? {
-            Reply::Attached(attached) => Ok(AttachedScreen {
-                replay: attached.replay,
-                alternate_screen: attached.alternate_screen,
-                exited: attached.exited,
-            }),
-            Reply::Response(_) => Err(unexpected()),
-        }
-    }
-
-    pub async fn write(&self, session: u64, bytes: Vec<u8>) -> Result<(), MobileError> {
-        let client = self.client()?;
-        Ok(on_runtime(async move { client.write(session, &bytes).await }).await??)
-    }
-
-    pub async fn resize(&self, session: u64, cols: u16, rows: u16) -> Result<(), MobileError> {
-        self.done(Request::Resize {
-            id: session,
-            cols,
-            rows,
-        })
-        .await
-    }
-
-    /// Says the phone has shown this many of a session's output bytes, so the
-    /// core sends more.
-    pub fn ack(&self, session: u64, bytes: u64) -> Result<(), MobileError> {
-        self.client()?.ack(session, bytes as usize);
-        Ok(())
-    }
-
     pub fn is_open(&self) -> bool {
         self.client().is_ok_and(|client| client.is_connected())
     }
@@ -1311,14 +1261,6 @@ mod tests {
     }
 
     impl CoreListener for Recorder {
-        fn output(&self, session: u64, bytes: Vec<u8>) -> Result<(), ListenerError> {
-            self.calls
-                .lock()
-                .unwrap()
-                .push(format!("output {session} {}", bytes.len()));
-            Ok(())
-        }
-
         fn events(&self, events: Vec<CoreEvent>) -> Result<(), ListenerError> {
             self.calls
                 .lock()
@@ -1365,7 +1307,7 @@ mod tests {
     }
 
     #[test]
-    fn events_that_queue_up_reach_the_app_together_and_in_order_with_output() {
+    fn events_that_queue_up_reach_the_app_together_and_in_order() {
         let recorder = Arc::new(Recorder::default());
         let (deliveries, queue) = mpsc::unbounded_channel();
         let sink = ListenerSink(deliveries);
@@ -1375,10 +1317,7 @@ mod tests {
         sink.event(chat_event(3));
         sink.closed();
         deliver(recorder.clone(), queue, Arc::new(AtomicBool::new(true)));
-        assert_eq!(
-            delivered(&recorder),
-            ["events 2", "output 7 2", "events 1", "closed"]
-        );
+        assert_eq!(delivered(&recorder), ["events 3", "closed"]);
     }
 
     #[test]
@@ -1390,13 +1329,9 @@ mod tests {
         let (deliveries, queue) = mpsc::unbounded_channel();
         let sink = ListenerSink(deliveries);
         sink.event(chat_event(1));
-        sink.output(1, b"x");
         sink.event(chat_event(2));
         sink.closed();
         deliver(recorder.clone(), queue, Arc::new(AtomicBool::new(true)));
-        assert_eq!(
-            delivered(&recorder),
-            ["events 1", "output 1 1", "events 1", "closed"]
-        );
+        assert_eq!(delivered(&recorder), ["events 2", "closed"]);
     }
 }

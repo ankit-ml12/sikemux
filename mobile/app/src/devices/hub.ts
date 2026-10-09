@@ -37,8 +37,6 @@ const UNPAIR_WAIT_MS = 3000;
 const AWAY_MS = 10_000;
 /** After the phone changes network, a connection that cannot answer in this time is replaced. */
 const CHECK_MS = 5000;
-/** Terminal output that arrives within this long is handed over together. */
-const OUTPUT_FRAME_MS = 16;
 
 const UNPAIRED = 'This host no longer knows this phone. Forget it, then connect again.';
 const DAMAGED = "The list of paired hosts couldn't be read, so it was started again. Connect your hosts again.";
@@ -59,9 +57,6 @@ type Entry = {
   retrying?: ReturnType<typeof setTimeout>;
   lingering?: ReturnType<typeof setTimeout>;
   chats: Set<(deliveries: ChatDelivery[]) => void>;
-  output: Set<(session: bigint, bytes: ArrayBuffer) => void>;
-  pendingOutput: Map<bigint, Uint8Array[]>;
-  flushing?: ReturnType<typeof setTimeout>;
 };
 
 const CONNECTING: Live = { status: 'connecting' };
@@ -112,8 +107,6 @@ function entry(core: string): Entry {
       watchers: 0,
       attempt: 0,
       chats: new Set(),
-      output: new Set(),
-      pendingOutput: new Map(),
     };
     if (!forgotten.has(core)) entries.set(core, found);
   }
@@ -168,12 +161,6 @@ function stopTimers(found: Entry) {
   clearTimeout(found.lingering);
 }
 
-function stopOutput(found: Entry) {
-  clearTimeout(found.flushing);
-  found.flushing = undefined;
-  found.pendingOutput.clear();
-}
-
 function scheduleRetry(core: string, found: Entry) {
   if (found.watchers === 0 || away) return;
   const wait = RETRY_MS[Math.min(found.attempt, RETRY_MS.length - 1)];
@@ -184,7 +171,6 @@ function scheduleRetry(core: string, found: Entry) {
 
 function release(found: Entry) {
   stopTimers(found);
-  stopOutput(found);
   found.current = undefined;
   if (found.live.status === 'open') found.live.connection.close();
   if (found.openedAt !== undefined && Date.now() - found.openedAt >= STEADY_MS) found.attempt = 0;
@@ -209,30 +195,9 @@ function drop(core: string, reason: string, error?: unknown) {
   if (!settled(found)) scheduleRetry(core, found);
 }
 
-function flushOutput(found: Entry) {
-  found.flushing = undefined;
-  const pending = [...found.pendingOutput];
-  found.pendingOutput.clear();
-  for (const [session, chunks] of pending) {
-    const bytes = new Uint8Array(chunks.reduce((length, chunk) => length + chunk.byteLength, 0));
-    chunks.reduce((at, chunk) => {
-      bytes.set(chunk, at);
-      return at + chunk.byteLength;
-    }, 0);
-    found.output.forEach((listen) => listen(session, bytes.buffer));
-  }
-}
-
 function listener(core: string, found: Entry, attempt: object): CoreListener {
   const current = () => found.current === attempt && entries.get(core) === found;
   return {
-    output(session, bytes) {
-      if (!current() || !found.output.size) return;
-      const chunks = found.pendingOutput.get(session);
-      if (chunks) chunks.push(new Uint8Array(bytes));
-      else found.pendingOutput.set(session, [new Uint8Array(bytes)]);
-      found.flushing ??= setTimeout(() => flushOutput(found), OUTPUT_FRAME_MS);
-    },
     events(events) {
       if (!current()) return;
       const chats: ChatDelivery[] = [];
@@ -562,14 +527,5 @@ export function onChatEvents(core: string, listen: (deliveries: ChatDelivery[]) 
   found.chats.add(listen);
   return () => {
     found.chats.delete(listen);
-  };
-}
-
-/** A terminal's output from this host, gathered into one call per session for each short frame. */
-export function onOutput(core: string, listen: (session: bigint, bytes: ArrayBuffer) => void) {
-  const found = entry(core);
-  found.output.add(listen);
-  return () => {
-    found.output.delete(listen);
   };
 }

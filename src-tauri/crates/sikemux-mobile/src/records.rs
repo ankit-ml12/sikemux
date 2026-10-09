@@ -419,12 +419,6 @@ pub enum CoreEvent {
     View {
         view: DeviceView,
     },
-    Exited {
-        session: u64,
-        code: Option<u32>,
-        signal: Option<String>,
-        killed: bool,
-    },
 }
 
 impl CoreEvent {
@@ -440,17 +434,6 @@ impl CoreEvent {
                 event_json: json(&event),
             },
             core::Event::DeviceView { view } => Self::View { view: view.into() },
-            core::Event::Exited {
-                id,
-                code,
-                signal,
-                killed,
-            } => Self::Exited {
-                session: id,
-                code,
-                signal,
-                killed,
-            },
             _ => return None,
         })
     }

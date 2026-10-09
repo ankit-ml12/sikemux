@@ -313,22 +313,6 @@ describe('the hub', () => {
     expect(hub.liveOf('host').snapshot).toBe(last);
   });
 
-  it("gathers a session's terminal output into one hand-over a frame", async () => {
-    await opened();
-    const heard: [bigint, number[]][] = [];
-    hub.onOutput('host', (session, bytes) => heard.push([session, [...new Uint8Array(bytes)]]));
-    const listener = fake.calls[0].listener;
-    listener.output(1n, new Uint8Array([1, 2]).buffer);
-    listener.output(1n, new Uint8Array([3]).buffer);
-    listener.output(2n, new Uint8Array([9]).buffer);
-    expect(heard).toEqual([]);
-    await vi.advanceTimersByTimeAsync(20);
-    expect(heard).toEqual([
-      [1n, [1, 2, 3]],
-      [2n, [9]],
-    ]);
-  });
-
   it('keeps showing a host that forgot this phone as such, until it is tried on purpose', async () => {
     hub.watch('host');
     await vi.waitFor(() => expect(fake.calls).toHaveLength(1));

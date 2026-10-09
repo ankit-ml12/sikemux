@@ -147,10 +147,6 @@ impl Views {
 }
 
 impl CoreListener for Views {
-    fn output(&self, _session: u64, _bytes: Vec<u8>) -> Result<(), ListenerError> {
-        Ok(())
-    }
-
     fn events(&self, events: Vec<CoreEvent>) -> Result<(), ListenerError> {
         for event in events {
             if let CoreEvent::View { view } = event {
