@@ -10,6 +10,8 @@ The third nightly on the 0.5.1 line. Nightlies are signed and delivered exactly 
 - **Rundeck tells you when a deploy ends.** Sikemux follows a run you started and notifies you whether it succeeded or failed, with a switch in the connection menu.
 - **The file tree** opens and closes with ⌘E, colours every folder above a changed file, and a closed rail stays closed when Sikemux starts.
 - **Claude chats** show the model and effort their settings choose, and changing the model no longer leaves a chat stuck working.
+- A running chat picks up the tools of a plugin you sign in to, without starting over.
+- An SSH terminal reconnects when you focus it again after its connection dropped back to the local shell.
 
 Thanks to Ankit Patidar for the Database and GitLab plugins, Jira boards and tasks, Rundeck run notices and the changed-folder colours.
 
