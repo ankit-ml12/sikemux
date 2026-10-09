@@ -7,7 +7,7 @@ pub(crate) mod status;
 pub(crate) mod usage;
 pub(crate) mod watch;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -165,25 +165,4 @@ fn home_path() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-}
-
-fn allowed_agent_path(_agent: &str, _path: &Path) -> bool {
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::allowed_agent_path;
-    use std::path::Path;
-
-    #[test]
-    fn opencode_installer_directory_is_a_valid_agent_location() {
-        let home = Path::new("/home/tester");
-        for name in ["opencode", "opencode.exe", "opencode.cmd"] {
-            assert!(allowed_agent_path(
-                "opencode",
-                &home.join(".opencode").join("bin").join(name)
-            ));
-        }
-    }
 }

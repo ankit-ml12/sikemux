@@ -10,7 +10,7 @@ use tokio::process::Command;
 use super::config::{agent_config_root, configured_default_effort, configured_default_model};
 use super::models::model_catalog_error_detail;
 use super::status::{signed_in_status, AgentStatus};
-use super::{allowed_agent_path, AgentDef, AgentInfo, AgentKind, AgentProfileRequest, AGENT_DEFS};
+use super::{AgentDef, AgentInfo, AgentKind, AgentProfileRequest, AGENT_DEFS};
 
 /* Two seconds is what a person waits for an agent binary to name its version
 before the probe gives up. A test spawns the same real process while hundreds
@@ -73,9 +73,7 @@ fn push_agent_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
 }
 
 fn automatic_agent_candidates(def: &AgentDef) -> Vec<PathBuf> {
-    let mut candidates = crate::system::find_executables_matching(def.command, |candidate| {
-        allowed_agent_path(def.kind, candidate)
-    });
+    let mut candidates = crate::system::find_executables(def.command);
     let home = crate::system::user_home();
     for candidate in [
         home.join(".local/bin").join(def.command),
@@ -113,7 +111,7 @@ fn explicit_agent_candidates(value: &str) -> Vec<PathBuf> {
     if value.contains('/') || value.contains('\\') || value.starts_with('~') {
         return vec![expand_user_path(value)];
     }
-    crate::system::find_executables_matching(value, |_| true)
+    crate::system::find_executables(value)
 }
 
 /// Arguments that answer "does this CLI run?" without side effects. `--version`
