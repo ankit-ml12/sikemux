@@ -226,3 +226,35 @@ opt-level = "s"
 opt-level = "s"
 [profile.release.package.regex-syntax]
 opt-level = "s"
+# The phone link carries terminal text and chat, and the database drivers wait
+# on the network; neither is bound by CPU.
+[profile.release.package.iroh]
+opt-level = "s"
+[profile.release.package.iroh-base]
+opt-level = "s"
+[profile.release.package.iroh-dns]
+opt-level = "s"
+[profile.release.package.iroh-relay]
+opt-level = "s"
+[profile.release.package.n0-dns-resolver]
+opt-level = "s"
+[profile.release.package.netwatch]
+opt-level = "s"
+[profile.release.package.netdev]
+opt-level = "s"
+[profile.release.package.noq]
+opt-level = "s"
+[profile.release.package.noq-proto]
+opt-level = "s"
+[profile.release.package.simple-dns]
+opt-level = "s"
+[profile.release.package.mysql_async]
+opt-level = "s"
+[profile.release.package.mysql_common]
+opt-level = "s"
+[profile.release.package.tokio-postgres]
+opt-level = "s"
+[profile.release.package.postgres-protocol]
+opt-level = "s"
+[profile.release.package.postgres-types]
+opt-level = "s"
