@@ -68,8 +68,8 @@ never loads WebKit. [ADR 0006](./0006-background-core.md) records why.
   the same pane (`src/agents/tuiRecovery.ts`); a chat agent does the same
   (`src/chat/sessionRecovery.ts`).
 - **Paired devices.** With remote access on (Settings, Devices), the core also listens on
-  an iroh endpoint, and phones that paired with a code reach it from anywhere
-  (`server/remote.rs`, `server/pairing.rs`, `src/pairing.rs`). Each request is checked
+  an iroh endpoint, and phones signed in to the same account join it from anywhere
+  (`server/remote.rs`, `server/join.rs`, `src/join.rs`). Each request is checked
   against what the device may do (`server/access.rs`). The app publishes its projects and
   how it starts each agent (`server/workspace.rs`, `src/shell/RemoteWorkspaceBridge.tsx`),
   so a device can start a chat with the window closed. [ADR 0007](./0007-remote-access-over-iroh.md)
@@ -97,7 +97,7 @@ go through the harness, described under [Agents](#agents).
 | `terminal/`                          | xterm.js panes and the PTY client (`usePty.ts`)                                                  |
 | `editor/`                            | The CodeMirror editor pane and its find bar, insights and image viewer                           |
 | `git/`                               | The Git pane, diffs, commit review and the graph                                                 |
-| `chat/`                              | The chat view for agents on ACP                                                                  |
+| `chat/`                              | The chat view for agents, native and on ACP                                                      |
 | `agents/`                            | Agent launching, the agent picker, lifecycle and saved-session sync                              |
 | `harness/`                           | The window half of the agent harness: inspecting, launching tasks and `ui.open`                  |
 | `rail/`                              | Side rail, file tree and agent rail                                                              |
