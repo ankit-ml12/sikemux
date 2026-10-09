@@ -4,7 +4,7 @@ import { router, useIsFocused } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 
 import { useFarewell } from '@/account/farewell';
-import { reloadDevices, useDevices } from '@/devices/hub';
+import { readDevicesAgain, useDevices } from '@/devices/hub';
 import { DevicesList } from '@/screens/DevicesList';
 import { Farewell } from '@/screens/Farewell';
 import { Welcome } from '@/screens/Welcome';
@@ -22,7 +22,7 @@ function Unreadable({ problem }: { problem: string }) {
         <Text style={styles.body}>{problem}</Text>
       </View>
       <View style={[styles.footer, { paddingBottom: bottom }]}>
-        <Button kind="primary" title="Try again" onPress={() => reloadDevices().catch(() => {})} />
+        <Button kind="primary" title="Try again" onPress={() => readDevicesAgain().catch(() => {})} />
       </View>
     </Screen>
   );

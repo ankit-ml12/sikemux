@@ -7,7 +7,7 @@ import { goOffline, thisDevice } from '@/device/identity';
 import { onNetworkChange } from '@/network/connectivity';
 import { dismissHostCards, reconcileCards } from '@/notify/cards';
 import { shareKey, withdrawKey } from '@/notify/keys';
-import { forgetDevice, pairedDevices, pairedListDamaged, startOver, updateDevice, type PairedDevice } from './paired';
+import { forgetDevice, pairedDevices, pairedListDamaged, readAgain, updateDevice, type PairedDevice } from './paired';
 import { hostStatus, type HostStatus } from './status';
 
 export type Live =
@@ -148,9 +148,9 @@ export async function reloadDevices() {
   changed();
 }
 
-/** Clears a damaged list of paired hosts, and the problem it showed. */
-export async function startDevicesOver() {
-  await startOver();
+/** Reads the list of paired hosts from disk again, clearing the problem it showed if it now reads cleanly. */
+export async function readDevicesAgain() {
+  await readAgain();
   await reloadDevices();
 }
 

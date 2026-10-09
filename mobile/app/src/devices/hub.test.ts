@@ -354,11 +354,13 @@ describe('the hub', () => {
     expect(native.notifier.removeKey).toHaveBeenCalledWith('asleep');
   });
 
-  it('reports a damaged list of paired hosts, and can start over', async () => {
+  it('reports a damaged list of paired hosts until it is read again', async () => {
+    const paired = await import('./paired');
     new File('file:///document/paired-devices.json').write('not json');
     await hub.reloadDevices();
-    expect(new File('file:///document/paired-devices.json.damaged').exists).toBe(true);
-    await hub.startDevicesOver();
-    expect(new File('file:///document/paired-devices.json.damaged').exists).toBe(false);
+    await hub.reloadDevices();
+    expect(paired.pairedListDamaged()).toBe(true);
+    await hub.readDevicesAgain();
+    expect(paired.pairedListDamaged()).toBe(false);
   });
 });
