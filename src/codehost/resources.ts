@@ -5,7 +5,6 @@ import {
     type RunTiming,
     type WorkflowFile,
     type ChangedFile,
-    type Comment,
     type Issue,
     type IssuePage,
     type Notification,
@@ -20,7 +19,6 @@ import {
     type JobLog,
     type RepoListing,
     type RepoRef,
-    type Resolved,
     type RunDetail,
     type RunPage,
     type RunQuery,
@@ -51,12 +49,6 @@ export const accountForR = resource({
     kind: "host.accountFor",
     fetch: (repo: RepoRef): Promise<string | null> => hostApi(repo.provider).accountFor(repo),
     staleAfterMs: 10 * 60_000,
-});
-
-export const hostRemoteR = resource({
-    kind: "host.remote",
-    fetch: (provider: string, url: string): Promise<Resolved> => hostApi(provider).resolveRemote(url),
-    staleAfterMs: 5 * 60_000,
 });
 
 export const myReposR = resource({
@@ -183,12 +175,6 @@ export const issuesR = resource({
 export const issueR = resource({
     kind: "host.issue",
     fetch: (repo: RepoRef, number: number): Promise<Issue> => hostApi(repo.provider).issue(repo, number),
-    staleAfterMs: 30_000,
-});
-
-export const commentsR = resource({
-    kind: "host.comments",
-    fetch: (repo: RepoRef, number: number, of: ThreadOf): Promise<Comment[]> => hostApi(repo.provider).comments(repo, number, of),
     staleAfterMs: 30_000,
 });
 

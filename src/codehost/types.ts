@@ -249,8 +249,6 @@ export interface Comment {
     url: string | null;
 }
 
-export type PullState = "open" | "closed" | "merged";
-
 export interface Pull {
     number: number;
     title: string;

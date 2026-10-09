@@ -338,7 +338,7 @@ export function CommentThread({
     const [busy, setBusy] = useState<ReviewEvent | "comment" | null>(null);
     const blocks = blocksOf(timeline.data ?? []).filter((block) => !withoutCommits || block.kind !== "commits");
     const written = draft.trim().length > 0;
-    const refreshThread = (also?: string) => invalidate((kind) => kind === "host.timeline" || kind === "host.comments" || kind === also);
+    const refreshThread = (also?: string) => invalidate((kind) => kind === "host.timeline" || kind === also);
 
     const comment = async () => {
         setBusy("comment");

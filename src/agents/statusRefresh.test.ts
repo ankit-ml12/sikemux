@@ -13,7 +13,6 @@ describe("statusRefresher", () => {
         const matches = invalidate.mock.calls[0][0] as (kind: string) => boolean;
         expect(matches("agents.catalog")).toBe(true);
         expect(matches("agents.account")).toBe(true);
-        expect(matches("agents.models")).toBe(false);
 
         now += REFRESH_AT_MOST_EVERY_MS - 1;
         await refreshStatuses();

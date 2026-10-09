@@ -3,7 +3,7 @@ import { simApi } from "../api/sim";
 import { playScreen, turnTransform } from "./screenStream";
 
 vi.mock("../api/sim", () => ({
-    simApi: { watch: vi.fn(), unwatch: vi.fn(), stopStream: vi.fn() },
+    simApi: { watch: vi.fn(), unwatch: vi.fn() },
 }));
 
 const canvas = { getContext: () => null } as unknown as HTMLCanvasElement;
@@ -68,7 +68,6 @@ describe("playing a device's screen", () => {
         player.stop();
         await settle();
         expect(simApi.unwatch).toHaveBeenCalledWith(7);
-        expect(simApi.stopStream).not.toHaveBeenCalled();
     });
 
     it("says when the stream stops on its own, and not once it was stopped", async () => {

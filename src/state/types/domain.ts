@@ -244,10 +244,6 @@ export interface ProjectRoot {
     selfIndex?: boolean;
 }
 
-export interface PinnedProject {
-    path: string;
-}
-
 export interface Rect {
     x: number;
     y: number;

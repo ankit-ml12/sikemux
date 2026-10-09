@@ -110,7 +110,6 @@ export const simApi = {
     /** The screen's outline, upright and at full resolution, as a PNG data URL; null for a square screen. */
     mask: (udid: string) => call<{ mask: string | null }>({ type: "mask", udid }).then((answer) => answer.mask),
     chrome: (udid: string) => call<{ chrome: SimChrome | null }>({ type: "chrome", udid }).then((answer) => answer.chrome),
-    stopStream: (udid: string, format?: SimStreamFormat) => call<void>({ type: "stopStream", udid, format }),
     touch: (udid: string, phase: SimTouchPhase, x: number, y: number) => call<void>({ type: "touch", udid, phase, x, y }),
     text: (udid: string, text: string) => call<void>({ type: "text", udid, text }),
     key: (udid: string, key: string) => call<void>({ type: "key", udid, key }),

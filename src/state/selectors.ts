@@ -4,7 +4,6 @@ import type { StoreState } from "./store";
 import { collectPanes, openSides } from "./layout";
 
 export const selectSessionIds = (state: StoreState): readonly string[] => state.sessionOrder;
-export const selectActiveSessionId = (state: StoreState): string => state.activeSessionId;
 export const selectActiveSession = (state: StoreState): Session | undefined => state.sessions[state.activeSessionId];
 export const selectFocusMode = (state: Pick<StoreState, "sideRailOpen" | "agentRailOpen">): boolean => !state.sideRailOpen && !state.agentRailOpen;
 
@@ -12,10 +11,6 @@ export const selectSession =
     (sessionId: string) =>
     (state: StoreState): Session | undefined =>
         state.sessions[sessionId];
-export const selectWindow =
-    (windowId: string) =>
-    (state: StoreState): Window | undefined =>
-        state.windows[windowId];
 export const selectAgent = (agentId: string) => (state: StoreState) => state.agents[agentId];
 
 export const selectWindowIds =
