@@ -74,6 +74,12 @@ jobs:
       - name: Check the generated agent tool list matches its source
         run: pnpm agent-tools:check
 
+      - name: Check the file icons match the installed icon theme
+        run: pnpm file-icons:check
+
+      - name: Test the dev launcher
+        run: pnpm dev-launcher:test
+
       - name: Run frontend tests with all-source coverage
         run: pnpm test:coverage
 
