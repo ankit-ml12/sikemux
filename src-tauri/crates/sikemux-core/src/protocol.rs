@@ -246,6 +246,10 @@ pub enum Request {
         id: SessionId,
         query: OutputQuery,
     },
+    /// Whether the session's shell is at its prompt, running nothing.
+    ShellAtPrompt {
+        id: SessionId,
+    },
     /// Where the person's own agent detection rules live. Loads them at once.
     Configure {
         manifest_dir: Option<PathBuf>,
@@ -860,6 +864,9 @@ pub enum Response {
     },
     TaskOutput {
         page: OutputPage,
+    },
+    ShellAtPrompt {
+        at_prompt: bool,
     },
     Manifests {
         report: ManifestReloadReport,

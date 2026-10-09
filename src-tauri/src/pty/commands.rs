@@ -365,6 +365,12 @@ pub async fn pty_reset_modes(manager: State<'_, PtyManager>, id: SessionId) -> A
 }
 
 #[tauri::command]
+pub async fn pty_shell_at_prompt(manager: State<'_, PtyManager>, id: SessionId) -> AppResult<bool> {
+    let client = manager.client().await?;
+    client.shell_at_prompt(id).await.map_err(core_error)
+}
+
+#[tauri::command]
 pub async fn pty_kill(manager: State<'_, PtyManager>, id: SessionId) -> AppResult<()> {
     // Panes render "[process exited]" before the unmount tears them down.
     manager.streams.channels(id).send(&[]);

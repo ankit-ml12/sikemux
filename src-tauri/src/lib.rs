@@ -295,6 +295,7 @@ pub fn run() {
             pty::commands::pty_write,
             pty::commands::pty_resize,
             pty::commands::pty_reset_modes,
+            pty::commands::pty_shell_at_prompt,
             pty::commands::pty_kill,
             ports::listening_ports,
             pty::commands::pty_sessions,

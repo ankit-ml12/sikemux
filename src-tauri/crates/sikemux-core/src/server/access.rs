@@ -52,6 +52,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::Resize { .. }
         | Request::Kill { .. }
         | Request::ResetModes { .. }
+        | Request::ShellAtPrompt { .. }
         | Request::AcpStart { .. }
         | Request::AcpPrompt { .. }
         | Request::AcpEdit { .. }

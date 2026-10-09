@@ -453,6 +453,13 @@ impl CoreClient {
         self.request_done(Request::ResetModes { id }).await
     }
 
+    pub async fn shell_at_prompt(&self, id: SessionId) -> Result<bool, ClientError> {
+        match self.request(Request::ShellAtPrompt { id }).await? {
+            Response::ShellAtPrompt { at_prompt } => Ok(at_prompt),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
     /// Reports output bytes this client has finished with. Never answered.
     pub fn ack(&self, id: SessionId, bytes: usize) {
         self.send(&ClientMessage::Ack { id, bytes });

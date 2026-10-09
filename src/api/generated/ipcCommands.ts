@@ -21,6 +21,7 @@ export const IPC_COMMANDS = [
     "pty_write",
     "pty_resize",
     "pty_reset_modes",
+    "pty_shell_at_prompt",
     "pty_kill",
     "listening_ports",
     "pty_sessions",

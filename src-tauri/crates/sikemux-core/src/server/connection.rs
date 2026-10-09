@@ -573,6 +573,16 @@ async fn run_requests(
                 };
                 client.respond(request_id, result.map(|()| Response::Done));
             }
+            Request::ShellAtPrompt { id } => {
+                let result = match session_or_missing(&core, id) {
+                    Ok(target) => blocking(move || Ok(target.shell_at_prompt())).await,
+                    Err(error) => Err(error),
+                };
+                client.respond(
+                    request_id,
+                    result.map(|at_prompt| Response::ShellAtPrompt { at_prompt }),
+                );
+            }
             Request::Detach { id } => {
                 if let Some(target) = core.session(id) {
                     let client_id = client.id;

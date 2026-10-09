@@ -218,6 +218,13 @@ impl Session {
         !self.exited.load(Ordering::Acquire)
     }
 
+    pub(crate) fn shell_at_prompt(&self) -> bool {
+        self.is_running()
+            && self
+                .pid
+                .is_some_and(|pid| sikemux_pty::process::shell_at_prompt(self.fd(), pid))
+    }
+
     pub(crate) fn has_subscribers(&self) -> Option<bool> {
         self.subscribers.lock().ok().map(|subs| !subs.is_empty())
     }
