@@ -1,19 +1,8 @@
 import { BuildChannel as NativeChannel, type DeviceView } from '@sikemux/native';
 
 /** The core's protocol as the Rust client hands it over: typed records built from the core's own types. */
-export type {
-  Attention,
-  Backdrop,
-  ChatAttachment,
-  ChatInfo,
-  ChatMark,
-  LauncherInfo,
-  ProjectInfo,
-  RecentInfo,
-  SessionInfo,
-  Workspace,
-} from '@sikemux/native';
-export { ChatState, SessionKind } from '@sikemux/native';
+export type { Attention, ChatInfo, LauncherInfo, ProjectInfo, RecentInfo, SessionInfo } from '@sikemux/native';
+export { ChatState } from '@sikemux/native';
 
 /** Everything the phone shows of one host, as it last sent it. */
 export type Snapshot = DeviceView;
