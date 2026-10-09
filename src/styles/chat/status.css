@@ -156,10 +156,13 @@
 }
 
 /* Painted through background-clip like the gradient it replaces, which draws
-   glyphs lighter than plain coloured text does. */
+   glyphs lighter than plain coloured text does. A third of the band comes out
+   a fraction of a pixel under the label's width in WebKit, which ellipsizes a
+   label that fits, so the copy gets a pixel of slack and its slide back loses
+   the two that adds. */
 .chat-shimmer-copy {
     display: block;
-    width: calc(100% / 3);
+    width: calc(100% / 3 + 1px);
     height: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -199,7 +202,7 @@
 
 @keyframes chat-shimmer-copy {
     from {
-        transform: translateX(200%);
+        transform: translateX(calc(200% - 2px));
     }
     to {
         transform: none;
