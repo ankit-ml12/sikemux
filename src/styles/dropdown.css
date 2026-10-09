@@ -64,11 +64,6 @@
     color: var(--ink-faint);
     transform: rotate(90deg);
 }
-.dd-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-}
 .dd-menu {
     position: absolute;
     top: calc(100% + 5px);
