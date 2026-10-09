@@ -184,7 +184,7 @@ fi
 BACKUP="$(mktemp -d)"
 FILES=(package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock latest.json)
 for file in "${FILES[@]}"; do
-  [[ -e "$file" ]] && { mkdir -p "$BACKUP/$(dirname "$file")"; cp "$file" "$BACKUP/$file"; }
+  if [[ -e "$file" ]]; then mkdir -p "$BACKUP/$(dirname "$file")"; cp "$file" "$BACKUP/$file"; fi
 done
 SUCCESS=0
 EXPECTED=""
@@ -219,7 +219,7 @@ snapshot_expected() {
   [[ -n "$EXPECTED" ]] && rm -rf "$EXPECTED"
   EXPECTED="$(mktemp -d)"
   for file in "${FILES[@]}"; do
-    [[ -e "$file" ]] && { mkdir -p "$EXPECTED/$(dirname "$file")"; cp "$file" "$EXPECTED/$file"; }
+    if [[ -e "$file" ]]; then mkdir -p "$EXPECTED/$(dirname "$file")"; cp "$file" "$EXPECTED/$file"; fi
   done
 }
 trap restore_on_failure EXIT INT TERM
