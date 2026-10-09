@@ -68,8 +68,6 @@ final class FrameStream: NSObject, DataConsumer, DataConsumerAsync, @unchecked S
         }
     }
 
-    var ended: Bool { queue.sync { stopped } }
-
     /// Whether nobody has watched for at least `grace` seconds.
     func unwatched(for grace: TimeInterval) -> Bool {
         queue.sync { stopped || (viewers.isEmpty && Date().timeIntervalSince(quietSince) >= grace) }
