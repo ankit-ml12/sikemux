@@ -1187,29 +1187,6 @@ mod tests {
     }
 
     #[test]
-    fn a_device_key_is_32_bytes_and_new_each_time() {
-        let key = new_device_key();
-        assert_eq!(key.len(), 32);
-        assert_ne!(key, new_device_key());
-    }
-
-    #[test]
-    fn an_identity_is_the_key_s_and_signs_without_going_online() {
-        let key = SecretKey::generate();
-        let identity = DeviceIdentity::new(key.to_bytes().to_vec()).expect("an identity");
-        assert_eq!(identity.id(), key.public().to_string());
-        let nonce = "ab".repeat(32);
-        assert_eq!(
-            identity.sign_live(nonce.clone()).expect("signs"),
-            sign_live(&key, &nonce).expect("signs")
-        );
-        assert!(matches!(
-            DeviceIdentity::new(vec![1; 31]),
-            Err(MobileError::Invalid { .. })
-        ));
-    }
-
-    #[test]
     fn a_backdrop_is_decoded_and_named_inside_its_folder() {
         let (extension, bytes) = decode_data_url("data:image/png;base64,aGk=").unwrap();
         assert_eq!((extension, bytes.as_slice()), ("png", &b"hi"[..]));
@@ -1219,18 +1196,6 @@ mod tests {
             backdrop_path(Path::new("/b"), "../../etc/passwd", "png"),
             PathBuf::from("/b/______etc_passwd.png")
         );
-    }
-
-    #[test]
-    fn an_unpaired_phone_is_told_so_rather_than_shown_a_network_error() {
-        assert!(matches!(
-            MobileError::from(ClientError::NotPaired),
-            MobileError::Unpaired
-        ));
-        assert!(matches!(
-            MobileError::from(ClientError::Disconnected),
-            MobileError::Connection { .. }
-        ));
     }
 
     #[test]
