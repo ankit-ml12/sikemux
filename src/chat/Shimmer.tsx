@@ -5,9 +5,8 @@ export const SHIMMER_COPY = ".chat-shimmer-band";
 
 /*
  * The sweep across a live label, for a host with the `chat-shimmer` class. A
- * dim and a bright copy of the text sit behind opposite masks that slide on
- * the compositor, so a running agent repaints nothing per frame. The host's
- * own text only holds the layout and the selection.
+ * dim and a bright copy of the text sit behind opposite masks that slide over
+ * them. The host's own text only holds the layout and the selection.
  */
 export function Shimmer({ children }: { children: ReactNode }) {
     return (

@@ -122,11 +122,9 @@
     }
 }
 
-/* A live label's sweep (see Shimmer.tsx). Each band is three labels wide and
-   slides one label's width per pass while its copy slides back the same
-   distance, so the text holds still and only the masks move. The two masks
-   add up to one, and plus-lighter sums the copies into the gradient a single
-   label would take. */
+/* A live label's sweep (see Shimmer.tsx). Two copies of the text sit still
+   under opposite masks that slide across them. The masks add up to one, and
+   plus-lighter sums the copies into a single gradient. */
 .chat-shimmer {
     position: relative;
     isolation: isolate;
@@ -135,13 +133,14 @@
 
 .chat-shimmer-band {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 300%;
+    inset: 0;
     pointer-events: none;
     user-select: none;
-    animation: chat-shimmer-band 2.2s linear infinite;
+    -webkit-mask-size: 300% 100%;
+    mask-size: 300% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    animation: chat-shimmer-sweep 2.2s linear infinite;
 }
 
 .chat-shimmer-band.dim {
@@ -155,21 +154,16 @@
     mix-blend-mode: plus-lighter;
 }
 
-/* Painted through background-clip like the gradient it replaces, which draws
-   glyphs lighter than plain coloured text does. A third of the band comes out
-   a fraction of a pixel under the label's width in WebKit, which ellipsizes a
-   label that fits, so the copy gets a pixel of slack and its slide back loses
-   the two that adds. */
+/* Painted through background-clip, which draws glyphs lighter than plain
+   coloured text does. */
 .chat-shimmer-copy {
     display: block;
-    width: calc(100% / 3 + 1px);
     height: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     -webkit-background-clip: text;
     background-clip: text;
-    animation: chat-shimmer-copy 2.2s linear infinite;
 }
 
 .chat-shimmer-band.dim > .chat-shimmer-copy {
@@ -191,21 +185,14 @@
     visibility: hidden;
 }
 
-@keyframes chat-shimmer-band {
+@keyframes chat-shimmer-sweep {
     from {
-        transform: translateX(calc(-200% / 3));
+        -webkit-mask-position: 100% 0;
+        mask-position: 100% 0;
     }
     to {
-        transform: none;
-    }
-}
-
-@keyframes chat-shimmer-copy {
-    from {
-        transform: translateX(calc(200% - 2px));
-    }
-    to {
-        transform: none;
+        -webkit-mask-position: 0 0;
+        mask-position: 0 0;
     }
 }
 
