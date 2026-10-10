@@ -15,15 +15,15 @@ use std::time::Duration;
 use base64::Engine;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, RelayMode, RelayUrl, SecretKey};
-use sikemux_core::accounts::network;
-use sikemux_core::accounts::protocol::{JoinTicket, Relay};
-use sikemux_core::client::{ClientError, CoreClient, EventSink, Reply};
-use sikemux_core::join::{JoinHello, JoinReply};
-use sikemux_core::protocol::{
+use sikemux_client::accounts::network;
+use sikemux_client::client::{ClientError, CoreClient, EventSink, Reply};
+use sikemux_client::join::{JoinHello, JoinReply};
+use sikemux_client::remote;
+use sikemux_wire::accounts::protocol::{JoinTicket, Relay};
+use sikemux_wire::protocol::{
     CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, MAX_ATTACHMENT_BYTES,
     OLDEST_PROTOCOL_VERSION, WAKE_WAIT,
 };
-use sikemux_core::remote;
 use tokio::sync::mpsc;
 
 mod records;
@@ -195,21 +195,21 @@ async fn bind(key: SecretKey, relays: &[Relay]) -> Result<Endpoint, MobileError>
 }
 
 fn sign_registration(key: &SecretKey, nonce: &str, user_id: &str) -> Result<String, MobileError> {
-    sikemux_core::accounts::check_registration(nonce, user_id).map_err(invalid)?;
+    sikemux_client::accounts::check_registration(nonce, user_id).map_err(invalid)?;
     let message =
-        sikemux_core::accounts::registration_message(nonce, user_id, &key.public().to_string());
+        sikemux_client::accounts::registration_message(nonce, user_id, &key.public().to_string());
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
 }
 
 fn sign_live(key: &SecretKey, nonce: &str) -> Result<String, MobileError> {
-    sikemux_core::accounts::check_live(nonce).map_err(invalid)?;
-    let message = sikemux_core::accounts::live_message(nonce, &key.public().to_string());
+    sikemux_client::accounts::check_live(nonce).map_err(invalid)?;
+    let message = sikemux_client::accounts::live_message(nonce, &key.public().to_string());
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
 }
 
 fn sign_push(key: &SecretKey, nonce: &str, token_sha256: &str) -> Result<String, MobileError> {
-    sikemux_core::accounts::check_live(nonce).map_err(invalid)?;
-    sikemux_core::accounts::check_live(token_sha256)
+    sikemux_client::accounts::check_live(nonce).map_err(invalid)?;
+    sikemux_client::accounts::check_live(token_sha256)
         .map_err(|_| invalid("the token's hash is 64 lowercase hex characters"))?;
     let message = format!("sikemux-push|{nonce}|{}|{token_sha256}", key.public());
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
@@ -367,7 +367,7 @@ pub enum JoinAnswer {
     },
 }
 
-fn access_name(access: sikemux_core::protocol::DeviceAccess) -> Result<String, MobileError> {
+fn access_name(access: sikemux_wire::protocol::DeviceAccess) -> Result<String, MobileError> {
     serde_json::to_value(access)
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))
@@ -379,11 +379,12 @@ async fn join_with(
     addr: EndpointAddr,
     hello: JoinHello,
 ) -> Result<JoinAnswer, MobileError> {
-    let reply = on_runtime(async move { sikemux_core::join::join(&endpoint, addr, &hello).await })
-        .await?
-        .map_err(|error| MobileError::Connection {
-            message: error.to_string(),
-        })?;
+    let reply =
+        on_runtime(async move { sikemux_client::join::join(&endpoint, addr, &hello).await })
+            .await?
+            .map_err(|error| MobileError::Connection {
+                message: error.to_string(),
+            })?;
     Ok(match reply {
         JoinReply::Allowed { access } => JoinAnswer::Allowed {
             access: access_name(access)?,
@@ -1124,7 +1125,7 @@ mod tests {
         )
         .expect("reads");
         assert!(prefs.needs_you && !prefs.finished && prefs.problems);
-        assert_eq!(prefs.when, sikemux_core::protocol::NotifyWhen::Away);
+        assert_eq!(prefs.when, sikemux_wire::protocol::NotifyWhen::Away);
         assert_eq!(prefs.muted[0].agent_id, "chat-7f3a");
         assert!(notify_prefs(r#"{"when":"sometimes"}"#).is_err());
     }
@@ -1249,8 +1250,8 @@ mod tests {
         Event::Chat {
             agent_id: "agent".into(),
             seq,
-            event: sikemux_core::protocol::ChatEvent {
-                kind: sikemux_core::protocol::ChatEventKind::TurnStarted,
+            event: sikemux_wire::protocol::ChatEvent {
+                kind: sikemux_wire::protocol::ChatEventKind::TurnStarted,
                 payload: serde_json::json!({}),
             },
         }

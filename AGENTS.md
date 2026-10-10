@@ -54,9 +54,15 @@
 - The phone app is in `mobile/` (Expo, `mobile/app`) with the core's Rust client bridged
   in `mobile/native` from `src-tauri/crates/sikemux-mobile`. `mobile/` is its own pnpm
   workspace: never add it to the root install, scripts or checks.
-- The phone and the core share `sikemux-core`'s protocol. A protocol change must keep
+- The phone and the core share `sikemux-wire`'s protocol. A protocol change must keep
   `sikemux-mobile` building, and bumps `PROTOCOL_VERSION` once anything already released
   speaks the old shape.
+- The phone links only `sikemux-wire` and `sikemux-client`, so their code, not the
+  core's, decides when a phone needs a store build rather than an over-the-air update.
+  Keep them to data and transport: never make either depend on `sikemux-core`,
+  `sikemux-pty` or `workspace-hack`. Feature logic the phone needs goes in TypeScript it
+  shares with the Mac, and a new field rides inside JSON the bridge already passes through
+  rather than on a typed UniFFI record. ADR 0010 records why.
 - Phone builds need rustup's Rust first on `PATH`; Homebrew's Rust ignores
   `rust-toolchain.toml` and has no phone targets.
 - The bindings `uniffi-bindgen-react-native` generates are build output; do not commit or
