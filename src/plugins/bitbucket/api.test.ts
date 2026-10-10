@@ -83,10 +83,37 @@ describe("failures", () => {
 
 describe("what Bitbucket has no counterpart for", () => {
     it("refuses changes it cannot make without asking Bitbucket", async () => {
-        await expect(bitbucketHostApi.issues(repo, "open", 1)).rejects.toThrow("Bitbucket cannot show issues here; they live in Jira");
         await expect(bitbucketHostApi.deleteRun(repo, "1")).rejects.toThrow("Bitbucket cannot delete a pipeline");
-        await expect(bitbucketHostApi.inbox(null, false)).rejects.toThrow("Bitbucket cannot show notifications");
+        await expect(bitbucketHostApi.downloadAsset(repo, 1, "a.zip")).rejects.toThrow("Bitbucket cannot download release files");
         expect(fake.call).not.toHaveBeenCalled();
+    });
+
+    it("says whether a thread is an issue's, since Bitbucket numbers issues apart from pull requests", async () => {
+        fake.call.mockResolvedValue([]);
+        await bitbucketHostApi.timeline(repo, 4, "issue");
+        await bitbucketHostApi.addComment(repo, 4, "seen", "issue");
+        await bitbucketHostApi.comments(repo, 4);
+        expect(fake.call.mock.calls).toEqual([
+            ["timeline", { ...repo, number: 4, of: "issue" }],
+            ["addComment", { ...repo, number: 4, body: "seen", of: "issue" }],
+            ["comments", { ...repo, number: 4, of: "pull" }],
+        ]);
+    });
+
+    it("asks for issues, releases and the inbox", async () => {
+        fake.call.mockResolvedValue([]);
+        await bitbucketHostApi.issues(repo, "closed", 2);
+        await bitbucketHostApi.setIssueState(repo, 4, "closed");
+        await bitbucketHostApi.releases(repo);
+        await bitbucketHostApi.inbox("ada-id", true);
+        await bitbucketHostApi.markRead("ada-id", "team/app#7");
+        expect(fake.call.mock.calls).toEqual([
+            ["issues", { ...repo, state: "closed", page: 2 }],
+            ["setIssueState", { ...repo, number: 4, state: "closed" }],
+            ["releases", repo],
+            ["inbox", { account: "ada-id", all: true }],
+            ["markRead", { account: "ada-id", id: "team/app#7" }],
+        ]);
     });
 
     it("reads as empty where the Git pane only shows extras", async () => {
