@@ -283,8 +283,8 @@ fn write_cache(fetched_at_ms: i64, document: Value) {
     }
 }
 
-async fn fetch() -> Option<Value> {
-    reqwest::Client::builder()
+async fn fetch() -> Option<Vec<u8>> {
+    let response = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .build()
         .ok()?
@@ -293,68 +293,81 @@ async fn fetch() -> Option<Value> {
         .await
         .ok()?
         .error_for_status()
-        .ok()?
-        .json()
-        .await
-        .ok()
+        .ok()?;
+    Some(response.bytes().await.ok()?.to_vec())
 }
 
-fn snapshot(guard: &Option<Loaded>) -> Option<(i64, Arc<RateTable>)> {
-    guard
+fn snapshot() -> Option<(i64, Arc<RateTable>)> {
+    loaded()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
         .as_ref()
         .map(|loaded| (loaded.fetched_at_ms, loaded.table.clone()))
 }
 
-/// The rate table, fetched at most once a day. A failed fetch falls back to the
-/// last copy on disk, so the page keeps its prices offline.
+/// Downloads the table and keeps it, in memory and on disk. Parsing a few
+/// megabytes of JSON stays off the async threads.
+async fn refresh(now_ms: i64) -> Option<(i64, Arc<RateTable>)> {
+    static LAST_ATTEMPT_MS: AtomicI64 = AtomicI64::new(i64::MIN / 2);
+    let last = LAST_ATTEMPT_MS.load(Ordering::Relaxed);
+    if now_ms - last < RETRY_AFTER_MS
+        || LAST_ATTEMPT_MS
+            .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        return None;
+    }
+    let bytes = fetch().await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let document: Value = serde_json::from_slice(&bytes).ok()?;
+        let table = Arc::new(parse_rate_table(&document));
+        if table.is_empty() {
+            return None;
+        }
+        *loaded().lock().unwrap_or_else(|p| p.into_inner()) = Some(Loaded {
+            fetched_at_ms: now_ms,
+            table: table.clone(),
+        });
+        write_cache(now_ms, document);
+        Some((now_ms, table))
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// The rate table, refreshed at most once a day. A stale copy answers at once
+/// and is refreshed in the background; only a first run with no copy waits.
 pub async fn rate_table(now_ms: i64) -> (Arc<RateTable>, PricingInfo) {
-    let mut held = snapshot(&loaded().lock().unwrap_or_else(|p| p.into_inner()));
+    let mut held = snapshot();
     if held.is_none() {
         if let Ok(Some(cached)) = tauri::async_runtime::spawn_blocking(read_cache).await {
             let mut guard = loaded().lock().unwrap_or_else(|p| p.into_inner());
-            *guard = Some(cached);
-            held = snapshot(&guard);
+            if guard.is_none() {
+                *guard = Some(cached);
+            }
+            drop(guard);
+            held = snapshot();
         }
     }
-    if let Some((fetched_at_ms, table)) = &held {
-        if now_ms - fetched_at_ms < RATES_TTL_MS {
-            return (
-                table.clone(),
-                PricingInfo {
-                    status: PricingStatus::Fresh,
-                    fetched_at_ms: Some(*fetched_at_ms),
-                },
-            );
+    let held = match held {
+        Some(held) => {
+            if now_ms - held.0 >= RATES_TTL_MS {
+                tauri::async_runtime::spawn(refresh(now_ms));
+            }
+            Some(held)
         }
-    }
-    static LAST_ATTEMPT_MS: AtomicI64 = AtomicI64::new(i64::MIN / 2);
-    let tried_recently = now_ms - LAST_ATTEMPT_MS.load(Ordering::Relaxed) < RETRY_AFTER_MS;
-    if !tried_recently {
-        LAST_ATTEMPT_MS.store(now_ms, Ordering::Relaxed);
-    }
-    if let Some(document) = if tried_recently { None } else { fetch().await } {
-        let table = Arc::new(parse_rate_table(&document));
-        if !table.is_empty() {
-            *loaded().lock().unwrap_or_else(|p| p.into_inner()) = Some(Loaded {
-                fetched_at_ms: now_ms,
-                table: table.clone(),
-            });
-            let _ =
-                tauri::async_runtime::spawn_blocking(move || write_cache(now_ms, document)).await;
-            return (
-                table,
-                PricingInfo {
-                    status: PricingStatus::Fresh,
-                    fetched_at_ms: Some(now_ms),
-                },
-            );
-        }
-    }
+        None => refresh(now_ms).await,
+    };
     match held {
         Some((fetched_at_ms, table)) => (
             table,
             PricingInfo {
-                status: PricingStatus::Cached,
+                status: if now_ms - fetched_at_ms < RATES_TTL_MS {
+                    PricingStatus::Fresh
+                } else {
+                    PricingStatus::Cached
+                },
                 fetched_at_ms: Some(fetched_at_ms),
             },
         ),

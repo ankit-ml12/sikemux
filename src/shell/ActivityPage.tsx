@@ -457,7 +457,7 @@ function PricingNote({ pricing, unpricedTokens }: { pricing: ActivityPricing; un
     const source =
         pricing.fetchedAtMs === null
             ? "Published prices could not be loaded"
-            : `Prices from LiteLLM, ${PRICE_DATE.format(new Date(pricing.fetchedAtMs))}${pricing.status === "cached" ? " (offline copy)" : ""}`;
+            : `Prices from LiteLLM, ${PRICE_DATE.format(new Date(pricing.fetchedAtMs))}`;
     return (
         <div className="activity-pricing-note">
             <span>What these tokens would cost at API prices. Subscription plans bill separately.</span>
