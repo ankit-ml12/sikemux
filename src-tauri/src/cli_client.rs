@@ -617,7 +617,7 @@ fn execute_tool(args: &[String]) -> Result<i32, String> {
         method: args[0].clone(),
         params,
     };
-    request.validate()?;
+    sikemux_core::cli::protocol::validate_harness(&request)?;
     let descriptor = read_endpoint(&endpoint_path()?)?;
     let mut reader = session(&descriptor)?;
     reader

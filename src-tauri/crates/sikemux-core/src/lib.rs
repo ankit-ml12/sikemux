@@ -10,7 +10,7 @@ pub mod client;
 pub mod harness;
 #[cfg(unix)]
 pub mod join;
-pub mod protocol;
+pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;
 #[cfg(unix)]

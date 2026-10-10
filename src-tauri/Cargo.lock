@@ -5830,6 +5830,7 @@ dependencies = [
  "sha2 0.11.0",
  "sikemux-process",
  "sikemux-pty",
+ "sikemux-wire",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -6072,11 +6073,21 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-process",
+ "sikemux-wire",
  "tempfile",
  "thiserror 1.0.69",
  "url",
  "vt100",
  "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-wire"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

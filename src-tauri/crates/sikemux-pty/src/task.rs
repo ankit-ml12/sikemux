@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+pub use sikemux_wire::pty::task::{TaskSource, TaskSpawnRequest};
+
 use crate::error::{PtyError, PtyResult};
 use crate::validate_pty_dimensions;
 
@@ -19,43 +21,6 @@ const MAX_TASK_ENV_TOTAL_BYTES: usize = 64 * 1024;
 const MAX_TASK_SIGNAL_BYTES: usize = 128;
 const TASK_EXIT_RETENTION: Duration = Duration::from_secs(10 * 60);
 pub const MAX_RETAINED_EXITED_TASK_PTYS: usize = 128;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TaskSource {
-    BuiltIn,
-    Project,
-    Recent,
-}
-
-impl TaskSource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::BuiltIn => "built-in",
-            Self::Project => "project",
-            Self::Recent => "recent",
-        }
-    }
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TaskSpawnRequest {
-    pub execution_id: String,
-    pub terminal_key: String,
-    pub task_id: String,
-    pub label: String,
-    pub project: String,
-    pub source: TaskSource,
-    pub command: String,
-    pub cwd: String,
-    pub env: HashMap<String, String>,
-    pub cols: u16,
-    pub rows: u16,
-    /// The agent whose desk shows the task.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_id: Option<String>,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

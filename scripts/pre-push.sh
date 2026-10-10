@@ -95,7 +95,7 @@ else
   touches '^(src/|public/|index\.html|package\.json|pnpm-lock\.yaml|vite\.config\.ts|eslint\.config\.js|tsconfig\.json)' && FRONTEND=1
   touches '^scripts/.*\.sh$' && SHELL_SCRIPTS=1
   touches '^(scripts/|package\.json|latest\.json|src-tauri/tauri.*\.conf\.json)' && RELEASE=1
-  touches '^(server/|src-tauri/crates/sikemux-core/src/accounts/)' && SERVER=1
+  touches '^(server/|src-tauri/crates/sikemux-(core|wire)/src/accounts/)' && SERVER=1
 fi
 
 printf '%sChecking %s commits against the CI gates%s\n' "$BOLD" "$(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ')" "$RESET"
