@@ -115,6 +115,7 @@
     "allow-read-dir",
     "allow-read-dirs",
     "allow-path-kinds",
+    "allow-keep-dropped-paths",
     "allow-read-file",
     "allow-read-file-versioned",
     "allow-read-text-file-limited",

@@ -97,6 +97,7 @@ export const IPC_COMMANDS = [
     "read_dir",
     "read_dirs",
     "path_kinds",
+    "keep_dropped_paths",
     "read_file",
     "read_file_versioned",
     "read_text_file_limited",

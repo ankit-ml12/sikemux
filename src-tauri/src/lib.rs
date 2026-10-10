@@ -372,6 +372,7 @@ pub fn run() {
             fs::read_dir,
             fs::read_dirs,
             fs::path_kinds,
+            fs::keep_dropped_paths,
             fs::read_file,
             fs::read_file_versioned,
             fs::read_text_file_limited,
