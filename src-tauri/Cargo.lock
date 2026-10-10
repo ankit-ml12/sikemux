@@ -5757,6 +5757,7 @@ dependencies = [
  "ignore",
  "libc",
  "linked-hash-map",
+ "mac-notification-sys",
  "notify",
  "objc2",
  "objc2-app-kit",

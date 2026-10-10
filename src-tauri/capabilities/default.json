@@ -216,6 +216,7 @@
     "allow-expand-path",
     "allow-is-directory",
     "allow-wallpaper-image",
+    "allow-notify-agent",
     "allow-project-search",
     "allow-project-search-cancel",
     "allow-project-search-replace",
