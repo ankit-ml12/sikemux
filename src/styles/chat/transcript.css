@@ -452,6 +452,49 @@
     font-style: italic;
 }
 
+.chat-work {
+    width: min(100%, 800px);
+    margin: 8px auto 4px;
+    padding: 0 22px;
+    font-size: calc(12.5px * var(--chat-text-em, 1));
+}
+
+.chat-work::after {
+    content: "";
+    display: block;
+    height: 1px;
+    margin-top: 4px;
+    background: var(--line);
+}
+
+.chat-work-sum {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 24px;
+    margin-left: -6px;
+    padding: 0 6px;
+    color: var(--ink-dim);
+}
+
+.chat-work-sum:hover {
+    background: color-mix(in oklab, var(--ink) 6%, transparent);
+    color: var(--ink);
+}
+
+.chat-work-calls {
+    color: var(--ink-faint);
+}
+
+.chat-work-chevron {
+    opacity: 0.7;
+    transition: transform 120ms;
+}
+
+.chat-work-sum[aria-expanded="true"] .chat-work-chevron {
+    transform: rotate(90deg);
+}
+
 .chat-plan {
     margin: 8px 0;
     color: var(--ink-dim);
