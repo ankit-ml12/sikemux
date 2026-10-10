@@ -308,7 +308,9 @@ mod tests {
     use super::shell_wants_login_flag;
     #[cfg(unix)]
     use super::startup_bootstrap;
-    use super::{configure_shell_integration, configure_task_command, detect_shell_kind, ShellKind};
+    use super::{
+        configure_shell_integration, configure_task_command, detect_shell_kind, ShellKind,
+    };
     use crate::tests::env;
     use portable_pty::CommandBuilder;
 
