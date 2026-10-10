@@ -20,6 +20,21 @@
 - Do not leave random markdown files in the codebase that are meant to be some way to deliver information to me. If you want to write a markdown file write it in a temporary file, and give me the path and chat and I can read it
 - Never write code that is explicitly backwards compatible. Systems should handle backwards compatibility (like migrations), not logic. If there is some logic that needs to be written otherwise it would appear it would break older users, you MUST make the assumption that no users have ran that code yet and its unreleased, so it would not make sense to consider the side effects that code would produce. This is a safe assumption because the maintainers of this codebase always ensure code that gets shipped is compatbile with the systems that allow for us to not have to explicitly hardcode backwards compatibility
 
+## Tests
+
+- Do not write unit or integration tests on your own initiative. A test an agent writes
+  is only its own reading of the task, the same reading the code came from, so it
+  catches nothing the code would get wrong. Write one only when asked, or to reproduce
+  a bug that actually happened.
+- Never write a test that restates the implementation: same branches, same constants,
+  mocks of everything it calls.
+- Keep the checks that hold things we decided: the stale-output checks in `pnpm check`
+  (`ipc:check`, `grammars:check`, `file-icons:check`, `release:check`, the notch icons,
+  the server protocol), contract tests such as `mobile/app/test/updatePaths.test.ts`,
+  and the end-to-end runs. Do not weaken or delete them to get a change through.
+- When a change breaks an existing test, decide whether the behaviour it pins was meant
+  to change. Update the test only if so; otherwise fix the code.
+
 ## Releasing
 
 - Follow `docs/releasing.md`. Releases publish only from the Release workflow, started by
