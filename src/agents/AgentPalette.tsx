@@ -222,7 +222,7 @@ export function AgentPalette() {
                         ref={inputRef}
                         className="picker-input"
                         aria-label="Search agent sessions"
-                        placeholder={agents.length ? `search agent sessions — ${agents.map((agent) => agent.label).join(" · ")}...` : emptyMessage}
+                        placeholder={agents.length ? "search agents" : emptyMessage}
                         value={query}
                         onChange={(event) => {
                             setQuery(event.target.value);
@@ -290,8 +290,8 @@ export function AgentPalette() {
                                               ? "Normal mode only"
                                               : item.kind === "new"
                                                 ? provider?.status?.state === "signedOut"
-                                                    ? "signed out · start to sign in"
-                                                    : "start agent"
+                                                    ? "signed out"
+                                                    : ""
                                                 : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
                                     </span>
                                 </button>

@@ -217,7 +217,7 @@ describe("AgentPalette", () => {
         invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
         render(<AgentPalette />);
 
-        expect(await screen.findByText("signed out · start to sign in")).toBeInTheDocument();
+        expect(await screen.findByText("signed out")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "+ new Codex in Normal mode" })).toBeEnabled();
     });
 
