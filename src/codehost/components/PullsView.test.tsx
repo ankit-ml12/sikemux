@@ -401,7 +401,7 @@ describe("an open pull request", () => {
     it("tells what stands between it and merged", async () => {
         const cases: [Partial<Pull>, string, string | null][] = [
             [{ mergeState: "dirty" }, "Conflicts with main", "Resolve the conflicts before merging."],
-            [{ mergeState: "blocked" }, "Merging is blocked", "GitHub is waiting on the required reviews and checks."],
+            [{ mergeState: "blocked" }, "Merging is blocked", "Test host is waiting on the required reviews and checks."],
             [{ mergeState: "behind", base: null }, "Behind the base branch", "Bring the branch up to date before merging."],
             [{ mergeState: "unstable" }, "Ready to merge", null],
             [{ mergeState: null }, "Checking whether it can merge", null],

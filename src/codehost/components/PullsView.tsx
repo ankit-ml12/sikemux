@@ -158,12 +158,12 @@ const MERGE_METHODS: { value: MergeMethod; label: string }[] = [
     { value: "rebase", label: "Rebase" },
 ];
 
-function mergeability(mergeState: string | null, base: string): { outcome: Outcome; title: string; detail: string | null } {
+function mergeability(mergeState: string | null, base: string, hostName: string): { outcome: Outcome; title: string; detail: string | null } {
     switch (mergeState) {
         case "dirty":
             return { outcome: "failure", title: `Conflicts with ${base}`, detail: "Resolve the conflicts before merging." };
         case "blocked":
-            return { outcome: "blocked", title: "Merging is blocked", detail: "GitHub is waiting on the required reviews and checks." };
+            return { outcome: "blocked", title: "Merging is blocked", detail: `${hostName} is waiting on the required reviews and checks.` };
         case "behind":
             return { outcome: "blocked", title: `Behind ${base}`, detail: "Bring the branch up to date before merging." };
         case "clean":
@@ -310,7 +310,7 @@ function MergeBox({
             : verdict === "Changes requested"
               ? { outcome: "failure" as const, title: "Changes requested" }
               : { outcome: "queued" as const, title: reviewed ? "No approving review yet" : "No reviews yet" };
-    const merging = pulls.mergeability ? mergeability(pull.mergeState, base) : null;
+    const merging = pulls.mergeability ? mergeability(pull.mergeState, base, host.name) : null;
     return (
         <div className="gha-merge-box">
             <MergePart outcome={verdictPart.outcome} title={verdictPart.title} />
