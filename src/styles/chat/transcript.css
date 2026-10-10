@@ -482,6 +482,11 @@
     color: var(--ink);
 }
 
+.chat-work-sum > .chat-work-dot {
+    margin-inline: -2px;
+}
+
+.chat-work-dot,
 .chat-work-calls {
     color: var(--ink-faint);
 }
