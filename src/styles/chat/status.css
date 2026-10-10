@@ -124,11 +124,9 @@
 
 /* A live label's sweep (see Shimmer.tsx). Each band is three labels wide and
    slides one label's width per pass while its copy, just as wide, slides back
-   the same distance, so the text holds still and only the masks move. Both
-   moves are plain percentages: WebKit runs those on the compositor, and a
-   mixed one like calc(200% - 2px) on the main thread, which lags behind its
-   band and slides the text in. The masks add up to one, and plus-lighter sums
-   the copies into the gradient a single label would take. */
+   the same distance, so the text holds still and only the masks move. The
+   masks add up to one, and plus-lighter sums the copies into the gradient a
+   single label would take. */
 .chat-shimmer {
     position: relative;
     isolation: isolate;
