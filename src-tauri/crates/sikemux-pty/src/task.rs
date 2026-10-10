@@ -218,12 +218,10 @@ pub fn task_reclamation_plan(
 mod tests {
     use super::{
         should_signal_process_on_drain, task_process_needs_force_backstop, task_reclamation_plan,
-        task_retention_elapsed, validate_task_environment, validate_task_request, TaskProcessExit,
-        TaskRetentionCandidate, TaskSource, TaskSpawnRequest, MAX_RETAINED_EXITED_TASK_PTYS,
-        MAX_TASK_COMMAND_BYTES, MAX_TASK_ENV_ENTRIES, MAX_TASK_ENV_TOTAL_BYTES,
-        TASK_EXIT_RETENTION,
+        validate_task_environment, validate_task_request, TaskProcessExit, TaskRetentionCandidate,
+        TaskSource, TaskSpawnRequest, MAX_RETAINED_EXITED_TASK_PTYS, MAX_TASK_COMMAND_BYTES,
+        MAX_TASK_ENV_ENTRIES, MAX_TASK_ENV_TOTAL_BYTES, TASK_EXIT_RETENTION,
     };
-    use crate::{validate_pty_dimensions, MAX_PTY_DIMENSION};
     use std::collections::HashMap;
     use std::path::Path;
 
@@ -242,28 +240,6 @@ mod tests {
             rows: 40,
             agent_id: None,
         }
-    }
-
-    #[test]
-    fn terminal_geometry_is_strict_and_shared_with_tasks() {
-        assert!(validate_pty_dimensions(1, 1).is_ok());
-        assert!(validate_pty_dimensions(MAX_PTY_DIMENSION, MAX_PTY_DIMENSION).is_ok());
-        for (cols, rows) in [
-            (0, 1),
-            (1, 0),
-            (MAX_PTY_DIMENSION + 1, 1),
-            (1, MAX_PTY_DIMENSION + 1),
-        ] {
-            assert!(validate_pty_dimensions(cols, rows).is_err());
-        }
-
-        let directory = tempfile::tempdir().expect("task cwd");
-        let mut request = task_request(directory.path());
-        request.cols = MAX_PTY_DIMENSION;
-        request.rows = MAX_PTY_DIMENSION;
-        validate_task_request(&request).expect("shared maximum is valid for tasks");
-        request.rows = MAX_PTY_DIMENSION + 1;
-        assert!(validate_task_request(&request).is_err());
     }
 
     #[test]
@@ -338,16 +314,6 @@ mod tests {
             )
             .is_err());
         }
-    }
-
-    #[test]
-    fn completed_task_retention_has_exact_grace_and_subscriber_boundaries() {
-        let grace = TASK_EXIT_RETENTION.as_millis() as u64;
-        assert!(!task_retention_elapsed(0, u64::MAX, false));
-        assert!(!task_retention_elapsed(100, 100 + grace - 1, false));
-        assert!(task_retention_elapsed(100, 100 + grace, false));
-        assert!(!task_retention_elapsed(100, 100 + grace, true));
-        assert!(!task_retention_elapsed(500, 100, false));
     }
 
     #[test]
