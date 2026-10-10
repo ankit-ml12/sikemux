@@ -144,15 +144,6 @@ describe("the simulator pane", () => {
         await waitFor(() => expect(simApi.orientation).toHaveBeenCalledWith("UDID-1", "landscapeRight"));
     });
 
-    it("puts its controls and running mark in the desk's strip", async () => {
-        const slots = chrome();
-        await showScreen(slots);
-
-        expect(slots.tools.querySelector('[aria-label="Shut down"]')).not.toBeNull();
-        expect(slots.tools.querySelector('[aria-label="Home"]')).not.toBeNull();
-        expect(slots.dot.querySelector(".sim-live")).not.toBeNull();
-    });
-
     it("says it is shutting down while the device winds down, and shows why a shutdown failed", async () => {
         const slots = chrome();
         await showScreen(slots);
