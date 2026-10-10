@@ -92,11 +92,10 @@ make check            # every gate, regardless of what changed
 pnpm build            # production frontend build
 ```
 
-`make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests with coverage, the performance budget, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. It also checks that generated files (IPC contracts, agent tools, grammars) match their sources. These are the same quality gates enforced by CI.
+`make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests, the performance budget, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. It also checks that generated files (IPC contracts, agent tools, grammars) match their sources. These are the same quality gates enforced by CI.
 
 Some gates are floors that only move one way. Raise them when you beat them; never lower them to get a change through:
 
-- **Test coverage:** the thresholds in `vite.config.ts` under `test.coverage.thresholds`. When a change lifts coverage, set each threshold to the new measured value, rounded down.
 - **`!important` in CSS:** the budget in `scripts/check-css-important.mjs`, checked by `pnpm lint`. Remove one and lower the budget to match.
 - **Bundle size:** the ceilings checked by `pnpm perf:budget` (see below).
 

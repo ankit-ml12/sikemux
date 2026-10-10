@@ -357,7 +357,6 @@ pre-push hook.
 
 | Check              | Where                                                                                | How to move it                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Test coverage      | `test.coverage.thresholds` in `vite.config.ts`                                       | Raise the numbers after `pnpm test:coverage` shows coverage went up. Never lower them.                                |
 | `!important` count | `BUDGET` in `scripts/check-css-important.mjs`                                        | Lower it when you remove one. Only goes down.                                                                         |
 | Bundle size        | `scripts/check-performance-budget.mjs`, run by `pnpm perf:budget` after `pnpm build` | Every ceiling needs 10% headroom. Prefer lazy imports; raise a ceiling only with measured output and a stated reason. |
 | Plugin boundaries  | `scripts/check-plugin-boundaries.mjs`                                                | Not a number: add what a plugin needs to `src/plugin-api`.                                                            |
