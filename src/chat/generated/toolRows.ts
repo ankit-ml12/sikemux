@@ -95,6 +95,7 @@ export const TOOL_ROWS = {
         plugin: "sikemux.bitbucket",
     },
     bitbucket_comments: { verb: "read", kind: "read", icon: "pull-request", target: ["comments on {name}#{number}"], plugin: "sikemux.bitbucket" },
+    bitbucket_issues: { verb: "list", kind: "read", icon: "issue", target: ["{name} issues"], detail: ["{state}"], plugin: "sikemux.bitbucket" },
     bitbucket_pipelines: {
         verb: "list",
         kind: "read",

@@ -36,13 +36,27 @@
       "name": "bitbucket_comments",
       "row": {"verb": "read", "kind": "read", "icon": "pull-request", "target": ["comments on {name}#{number}"]},
       "method": "comments",
-      "description": "What people wrote on a pull request, oldest first.",
+      "description": "What people wrote on a pull request or an issue, oldest first. Issues are numbered apart from pull requests, so say which.",
       "properties": {
         "owner": { "type": "string", "description": "The workspace." },
         "name": { "type": "string", "description": "The repository slug." },
-        "number": { "type": "integer", "description": "The pull request's id." }
+        "number": { "type": "integer", "description": "The pull request's or issue's id." },
+        "of": { "type": "string", "enum": ["pull", "issue"], "description": "Default pull." }
       },
       "required": ["owner", "name", "number"]
+    },
+    {
+      "name": "bitbucket_issues",
+      "row": {"verb": "list", "kind": "read", "icon": "issue", "target": ["{name} issues"], "detail": ["{state}"]},
+      "method": "issues",
+      "description": "Issues in the repository's Bitbucket tracker, recently updated first, 30 a page. A repository whose issues live in Jira has none here.",
+      "properties": {
+        "owner": { "type": "string", "description": "The workspace." },
+        "name": { "type": "string", "description": "The repository slug." },
+        "state": { "type": "string", "enum": ["open", "closed", "all"], "description": "Default open." },
+        "page": { "type": "integer", "description": "From 1." }
+      },
+      "required": ["owner", "name"]
     },
     {
       "name": "bitbucket_pipelines",
