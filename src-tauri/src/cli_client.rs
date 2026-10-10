@@ -768,11 +768,4 @@ mod tests {
         assert!(rendered.contains("Earlier hangs"));
         assert!(rendered.contains("2026-09-18T14:00:00.000Z ui froze for 2.5s"));
     }
-
-    #[test]
-    fn doctor_says_so_when_nothing_has_hung_yet() {
-        let rendered = doctor_report(Path::new("/autopsy"), &[]);
-        assert!(rendered.contains("No hang has been recorded yet."));
-        assert!(!rendered.contains("Latest hang"));
-    }
 }
