@@ -9,11 +9,11 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr};
 use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
-use sikemux_core::pairing::{self, PairError, PairingRequest};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
     ChatLaunch, ChatLauncher, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity,
-    ProjectInfo, PublishedChat, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn,
+    ProjectInfo, PublishedChat, PublishedRecent, RemoteStatus, SessionId, SpawnTarget,
+    TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -86,14 +86,22 @@ impl Drop for TestCore {
     }
 }
 
-/// A core whose remote access is already on, trusting `devices`.
+/// A core signed in to an account, its remote access already on, trusting
+/// `devices`.
 fn start_core(core_key: &SecretKey, devices: &[&Device]) -> TestCore {
+    start_core_with(core_key, devices, false)
+}
+
+/// With `keeps_data`, the core has a data directory, where chats keep their
+/// history for phones to page through.
+fn start_core_with(core_key: &SecretKey, devices: &[&Device], keeps_data: bool) -> TestCore {
     init_env();
     let dir = tempfile::tempdir().expect("temp dir");
     let socket = dir.path().join("core.sock");
     let stored = json!({
         "secretKey": hex::encode(core_key.to_bytes()),
         "enabled": true,
+        "owner": "user_2test",
         "devices": devices.iter().map(|device| json!({
             "id": device.id(),
             "name": device.name,
@@ -115,6 +123,8 @@ fn start_core(core_key: &SecretKey, devices: &[&Device]) -> TestCore {
             ..BuildIdentity::default()
         },
         remote_direct_only: true,
+        data_dir: keeps_data.then(|| dir.path().join("data")),
+        attachment_dir: Some(dir.path().join("pasted")),
         ..ServerConfig::new(socket.clone())
     };
     let thread = std::thread::spawn(move || server::run(config));
@@ -367,161 +377,6 @@ async fn revoking_or_narrowing_a_device_takes_effect_on_its_open_connection() {
     assert_eq!(stored["devices"].as_array().map(Vec::len), Some(1));
 }
 
-async fn pair(
-    device: &Device,
-    endpoint: &Endpoint,
-    status: &RemoteStatus,
-    code: &str,
-) -> Result<DeviceAccess, PairError> {
-    pairing::pair(
-        endpoint,
-        core_addr(status),
-        PairingRequest {
-            code,
-            name: device.name,
-            platform: "ios",
-        },
-    )
-    .await
-}
-
-fn other_code(code: &str) -> String {
-    let last = code
-        .chars()
-        .last()
-        .and_then(|digit| digit.to_digit(10))
-        .unwrap_or(0);
-    format!("{}{}", &code[..code.len() - 1], (last + 1) % 10)
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_device_pairs_with_the_code_once_the_person_allows_it() {
-    let core_key = SecretKey::generate();
-    let phone = Device::new("Kishore's phone\u{7}", DeviceAccess::Full);
-    let core = start_core(&core_key, &[]);
-    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
-    listening(&app).await;
-    let status = app.open_pairing().await.expect("open pairing");
-    let code = status.pairing.clone().expect("a code").code;
-    assert_eq!(code.len(), pairing::CODE_DIGITS);
-
-    let endpoint = phone.endpoint().await;
-    let spaced = format!("{} {}", &code[..3], &code[3..]);
-    let pairing_status = status.clone();
-    let paired = tokio::spawn(async move {
-        let result = pair(&phone, &endpoint, &pairing_status, &spaced).await;
-        (result, endpoint, phone)
-    });
-    let waiting = until_status(&mut app_events, |status| !status.pending.is_empty()).await;
-    assert!(waiting.pairing.is_none(), "a used code stayed open");
-    let request = &waiting.pending[0];
-    assert_eq!(request.name, "Kishore's phone");
-    let answered = app
-        .answer_pairing(request.id.clone(), true, DeviceAccess::Watch)
-        .await
-        .expect("allow");
-    assert_eq!(
-        answered.devices.len(),
-        1,
-        "the answer did not list the new device"
-    );
-    assert!(answered.pending.is_empty());
-
-    let (result, endpoint, phone) = paired.await.expect("pairing task");
-    assert_eq!(result.expect("paired"), DeviceAccess::Watch);
-    let status = app.remote_status().await.expect("status");
-    assert!(status.pending.is_empty());
-    assert_eq!(status.devices.len(), 1);
-    assert_eq!(status.devices[0].id, phone.id());
-    assert_eq!(status.devices[0].access, DeviceAccess::Watch);
-
-    let (client, _events) = remote::connect(&endpoint, core_addr(&status))
-        .await
-        .expect("the paired phone connects");
-    client
-        .list()
-        .await
-        .expect("the paired phone lists sessions");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_device_the_person_declines_is_not_paired() {
-    let core_key = SecretKey::generate();
-    let phone = Device::new("Phone", DeviceAccess::Full);
-    let core = start_core(&core_key, &[]);
-    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
-    listening(&app).await;
-    let status = app.open_pairing().await.expect("open pairing");
-    let code = status.pairing.clone().expect("a code").code;
-
-    let endpoint = phone.endpoint().await;
-    let pairing_status = status.clone();
-    let paired = tokio::spawn(async move {
-        let result = pair(&phone, &endpoint, &pairing_status, &code).await;
-        (result, endpoint)
-    });
-    let waiting = until_status(&mut app_events, |status| !status.pending.is_empty()).await;
-    app.answer_pairing(waiting.pending[0].id.clone(), false, DeviceAccess::Full)
-        .await
-        .expect("decline");
-
-    let (result, endpoint) = paired.await.expect("pairing task");
-    assert!(matches!(result, Err(PairError::Refused(_))), "{result:?}");
-    let status = app.remote_status().await.expect("status");
-    assert!(status.devices.is_empty());
-    assert!(remote::connect(&endpoint, core_addr(&status))
-        .await
-        .is_err());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn wrong_codes_use_up_the_code_and_never_reach_the_person() {
-    let core_key = SecretKey::generate();
-    let guesser = Device::new("Guesser", DeviceAccess::Full);
-    let core = start_core(&core_key, &[]);
-    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
-    listening(&app).await;
-    let status = app.open_pairing().await.expect("open pairing");
-    let code = status.pairing.clone().expect("a code").code;
-    let endpoint = guesser.endpoint().await;
-
-    for _ in 0..5 {
-        let result = pair(&guesser, &endpoint, &status, &other_code(&code)).await;
-        assert!(matches!(result, Err(PairError::WrongCode)), "{result:?}");
-        assert!(app
-            .remote_status()
-            .await
-            .expect("status")
-            .pending
-            .is_empty());
-    }
-    assert!(app.remote_status().await.expect("status").pairing.is_none());
-    let result = pair(&guesser, &endpoint, &status, &code).await;
-    assert!(matches!(result, Err(PairError::Refused(_))), "{result:?}");
-    assert!(app
-        .remote_status()
-        .await
-        .expect("status")
-        .devices
-        .is_empty());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn pairing_needs_an_open_code_and_remote_access_on() {
-    let core_key = SecretKey::generate();
-    let phone = Device::new("Phone", DeviceAccess::Full);
-    let core = start_core(&core_key, &[]);
-    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
-    let status = listening(&app).await;
-    let endpoint = phone.endpoint().await;
-    let result = pair(&phone, &endpoint, &status, "123456").await;
-    assert!(matches!(result, Err(PairError::Refused(_))), "{result:?}");
-
-    app.set_remote_access(false).await.expect("turn off");
-    let refused = app.open_pairing().await;
-    assert!(refusal(refused).contains("turn on remote access"));
-}
-
 const FAKE_AGENT: &str = env!("CARGO_BIN_EXE_sikemux-fake-acp-agent");
 
 async fn publish_fake_agent(app: &CoreClient) {
@@ -537,6 +392,9 @@ async fn publish_fake_agent_asking(app: &CoreClient, permission_mode: &str) {
         args: vec!["acp".into()],
         env: [("SECRET_TOKEN".to_owned(), "do-not-share".to_owned())].into(),
         permission_mode: permission_mode.into(),
+        account: None,
+        fallbacks: Vec::new(),
+        status: None,
     };
     let project = ProjectInfo {
         id: "sess-tmp".into(),
@@ -571,6 +429,7 @@ async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_repl
     client
         .acp_prompt(
             agent_id.clone(),
+            None,
             "from the phone".into(),
             Vec::new(),
             Vec::new(),
@@ -609,6 +468,101 @@ async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_repl
         .iter()
         .any(|event| event.kind == ChatEventKind::Prompt
             && event.payload["text"] == "from the phone"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_is_sent_a_long_chat_s_last_turns_and_pages_back_to_its_start() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Watch);
+    let core = start_core_with(&core_key, &[&phone], true);
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let start = app
+        .acp_start(fake_launch("agent-long"))
+        .await
+        .expect("the app starts a chat");
+    assert!(!start.session_id.is_empty());
+    for n in 0..55 {
+        app.acp_prompt(
+            "agent-long".into(),
+            None,
+            format!("turn {n}"),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+        loop {
+            let event = tokio::time::timeout(WAIT, app_events.recv())
+                .await
+                .expect("the turn never ended")
+                .expect("the app's connection closed");
+            if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+                if event.kind == ChatEventKind::TurnCompleted {
+                    break;
+                }
+            }
+        }
+    }
+    let prompts = |events: &[sikemux_core::protocol::ChatEvent]| -> Vec<String> {
+        events
+            .iter()
+            .filter(|event| event.kind == ChatEventKind::Prompt)
+            .map(|event| {
+                event.payload["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect()
+    };
+    let turns = |range: std::ops::Range<usize>| -> Vec<String> {
+        range.map(|n| format!("turn {n}")).collect()
+    };
+
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, _events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let ChatAttachment::Live {
+        replay,
+        mark,
+        older_before: Some(before),
+        ..
+    } = client
+        .acp_attach("agent-long".into())
+        .await
+        .expect("attach")
+    else {
+        panic!("the phone is sent the chat's end, with more before it");
+    };
+    assert_eq!(prompts(&replay), turns(5..55));
+    assert_eq!(replay[0].kind, ChatEventKind::Prompt);
+
+    let (events, older) = client
+        .acp_history("agent-long".into(), mark.feed.clone(), before, 3)
+        .await
+        .expect("a watching phone reads the history");
+    assert_eq!(prompts(&events), turns(2..5));
+    let older = older.expect("there is more");
+    let (events, older) = client
+        .acp_history("agent-long".into(), mark.feed, older, 3)
+        .await
+        .expect("history");
+    assert_eq!(prompts(&events), turns(0..2));
+    assert_eq!(older, None);
+
+    let ChatAttachment::Live {
+        replay,
+        older_before,
+        ..
+    } = app.acp_attach("agent-long".into()).await.expect("attach")
+    else {
+        panic!("the app takes the chat up");
+    };
+    assert_eq!(prompts(&replay), turns(0..55));
+    assert_eq!(older_before, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -690,6 +644,15 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         .find(|chat| chat.agent_id == "agent-sleepy")
         .expect("listed");
     assert!(!sleepy.asleep);
+    assert_eq!(
+        sleepy.state,
+        ChatState::Ready,
+        "a wake is answered once the chat is ready"
+    );
+    assert!(matches!(
+        client.acp_attach("agent-sleepy".into()).await,
+        Ok(ChatAttachment::Live { .. })
+    ));
 
     app.publish_palette([("ground".to_owned(), "#0f0f13".to_owned())].into())
         .await
@@ -747,6 +710,8 @@ fn fake_launch(agent_id: &str) -> ChatLaunch {
         permission_mode: "bypass".into(),
         model: None,
         effort: None,
+        account: None,
+        fallbacks: Vec::new(),
     }
 }
 
@@ -809,6 +774,7 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
     client
         .acp_prompt(
             agent_id.clone(),
+            None,
             "hello from the phone".into(),
             Vec::new(),
             Vec::new(),
@@ -853,6 +819,172 @@ async fn a_watching_device_cannot_start_a_chat() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_sends_a_file_for_a_chat_and_the_agent_is_given_its_path() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let watcher = Device::new("Watcher", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone, &watcher]);
+    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let (agent_id, _) = client
+        .start_chat("opencode".into(), "sess-tmp".into(), None)
+        .await
+        .expect("the phone starts a chat");
+    app.acp_attach(agent_id.clone())
+        .await
+        .expect("the app watches");
+
+    let picture = vec![0xffu8, 0xd8, 0xff, 0xe0, 1, 2, 3];
+    let path = client
+        .attach_file(
+            agent_id.clone(),
+            "../../IMG_0042".into(),
+            "image/jpeg".into(),
+            &picture,
+        )
+        .await
+        .expect("the phone sends a picture");
+    assert!(path.ends_with("pasted/IMG_0042.jpg"), "{}", path.display());
+    assert_eq!(std::fs::read(&path).expect("the host keeps it"), picture);
+    let again = client
+        .attach_file(
+            agent_id.clone(),
+            "IMG_0042.jpg".into(),
+            "image/jpeg".into(),
+            b"x",
+        )
+        .await
+        .expect("the same name again");
+    assert!(
+        again.ends_with("pasted/IMG_0042 (1).jpg"),
+        "{}",
+        again.display()
+    );
+    let largest = vec![7u8; MAX_ATTACHMENT_BYTES];
+    let kept = client
+        .attach_file(agent_id.clone(), "big.bin".into(), String::new(), &largest)
+        .await
+        .expect("a file at the limit");
+    assert_eq!(
+        std::fs::metadata(kept).expect("kept").len(),
+        largest.len() as u64
+    );
+    assert!(refusal(
+        client
+            .attach_file(
+                agent_id.clone(),
+                "bigger.bin".into(),
+                String::new(),
+                &[largest, vec![7]].concat()
+            )
+            .await
+    )
+    .contains("10 MB"));
+
+    assert!(refusal(
+        client
+            .attach_file(
+                "no-such-chat".into(),
+                "a.txt".into(),
+                "text/plain".into(),
+                b"a"
+            )
+            .await
+    )
+    .contains("not running"));
+    let watch_endpoint = watcher.endpoint().await;
+    let (watching, _watch_events) = remote::connect(&watch_endpoint, core_addr(&status))
+        .await
+        .expect("the watcher connects");
+    assert!(refusal(
+        watching
+            .attach_file(agent_id.clone(), "a.txt".into(), "text/plain".into(), b"a")
+            .await
+    )
+    .contains("watch"));
+
+    let sent = path.to_string_lossy().into_owned();
+    client
+        .acp_prompt(
+            agent_id.clone(),
+            None,
+            "look at this".into(),
+            vec![sent.clone()],
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let prompt = loop {
+        let event = tokio::time::timeout(WAIT, app_events.recv())
+            .await
+            .expect("the app never heard the prompt")
+            .expect("the app's connection closed");
+        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
+            if event.kind == ChatEventKind::Prompt {
+                break event;
+            }
+        }
+    };
+    assert_eq!(prompt.payload["paths"], json!([sent]));
+    until_said(&mut events, &agent_id, "look at this").await;
+}
+
+fn recent_chat(session_id: &str) -> PublishedRecent {
+    PublishedRecent {
+        launcher: "opencode".into(),
+        provider: "opencode".into(),
+        session_id: session_id.into(),
+        title: "Fix the login flake".into(),
+        cwd: std::env::temp_dir(),
+        active_at: 1_700_000_000_000,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_resumes_a_recent_chat_the_app_published() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let watcher = Device::new("Watcher", DeviceAccess::Watch);
+    let core = start_core(&core_key, &[&phone, &watcher]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    app.publish_recent(vec![recent_chat("saved-1")])
+        .await
+        .expect("publish recent");
+    let status = listening(&app).await;
+
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let view = until_view(&mut events, |view| !view.recent.is_empty()).await;
+    let recent = &view.recent[0];
+    assert_eq!(recent.title, "Fix the login flake");
+    assert_eq!(recent.project, "sess-tmp");
+
+    let watch_endpoint = watcher.endpoint().await;
+    let (watching, _watch_events) = remote::connect(&watch_endpoint, core_addr(&status))
+        .await
+        .expect("the watcher connects");
+    assert!(refusal(watching.resume_chat(recent.id.clone()).await).contains("watch"));
+    assert!(refusal(client.resume_chat("opencode:unknown".into()).await).contains("recent"));
+
+    let (agent_id, start) = client
+        .resume_chat(recent.id.clone())
+        .await
+        .expect("the phone resumes the chat");
+    assert_eq!(start.session_id, "saved-1");
+    let view = until_view(&mut events, |view| view.recent.is_empty()).await;
+    assert!(view.chats.iter().any(|chat| chat.agent_id == agent_id));
+    assert!(refusal(client.resume_chat(recent.id.clone()).await).contains("already open"));
+}
+
 /// The next view the core sends that `wanted` accepts.
 async fn until_view(
     events: &mut UnboundedReceiver<ClientEvent>,
@@ -894,7 +1026,7 @@ async fn a_watching_device_sees_a_permission_request_it_never_attached_to_and_an
         .await
         .expect("start");
     driver
-        .acp_prompt(agent_id.clone(), "ask".into(), Vec::new(), Vec::new())
+        .acp_prompt(agent_id.clone(), None, "ask".into(), Vec::new(), Vec::new())
         .await
         .expect("prompt");
 
@@ -1007,7 +1139,13 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
         panic!("the chat is running");
     };
     first
-        .acp_prompt(agent_id.clone(), "say one".into(), Vec::new(), Vec::new())
+        .acp_prompt(
+            agent_id.clone(),
+            None,
+            "say one".into(),
+            Vec::new(),
+            Vec::new(),
+        )
         .await
         .expect("prompt");
     let heard = numbered_until(&mut first_events, "one").await;
@@ -1027,7 +1165,13 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
         seq: *seqs.last().unwrap(),
     };
     first
-        .acp_prompt(agent_id.clone(), "say four".into(), Vec::new(), Vec::new())
+        .acp_prompt(
+            agent_id.clone(),
+            None,
+            "say four".into(),
+            Vec::new(),
+            Vec::new(),
+        )
         .await
         .expect("prompt");
     numbered_until(&mut first_events, "four").await;
@@ -1035,9 +1179,15 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
     drop(first_events);
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    app.acp_prompt(agent_id.clone(), "say two".into(), Vec::new(), Vec::new())
-        .await
-        .expect("the app prompts while the phone is away");
+    app.acp_prompt(
+        agent_id.clone(),
+        None,
+        "say two".into(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .await
+    .expect("the app prompts while the phone is away");
     let (second, mut second_events) = remote::connect(&endpoint, core_addr(&status))
         .await
         .expect("the phone reconnects");
@@ -1077,9 +1227,15 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
 
     second.acp_detach(agent_id.clone()).await.expect("detach");
     while second_events.try_recv().is_ok() {}
-    app.acp_prompt(agent_id.clone(), "say three".into(), Vec::new(), Vec::new())
-        .await
-        .expect("prompt");
+    app.acp_prompt(
+        agent_id.clone(),
+        None,
+        "say three".into(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .await
+    .expect("prompt");
     tokio::time::sleep(Duration::from_secs(1)).await;
     while let Ok(event) = second_events.try_recv() {
         assert!(
@@ -1087,4 +1243,59 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
             "a detached device hears nothing of the chat"
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_holding_a_mark_from_before_the_chat_restarted_is_sent_the_new_run_whole() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    app.acp_start(fake_launch("agent-again"))
+        .await
+        .expect("the app starts a chat");
+    let ChatAttachment::Live { mark: before, .. } = client
+        .acp_attach("agent-again".into())
+        .await
+        .expect("attach")
+    else {
+        panic!("the chat is running");
+    };
+    client
+        .acp_prompt(
+            "agent-again".into(),
+            None,
+            "first run".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let heard = numbered_until(&mut events, "first run").await;
+    let seen = sikemux_core::protocol::ChatMark {
+        feed: before.feed.clone(),
+        seq: heard.last().map_or(before.seq, |(seq, _)| *seq),
+    };
+
+    app.acp_stop("agent-again".into()).await.expect("stop");
+    app.acp_start(fake_launch("agent-again"))
+        .await
+        .expect("the app starts it again");
+    let ChatAttachment::Live { mark, replay, .. } = client
+        .acp_attach_since("agent-again".into(), Some(seen))
+        .await
+        .expect("attach")
+    else {
+        panic!("a mark from the run before is answered with the whole new run");
+    };
+    assert_ne!(mark.feed, before.feed);
+    assert!(!replay
+        .iter()
+        .any(|event| event.payload.to_string().contains("first run")));
 }

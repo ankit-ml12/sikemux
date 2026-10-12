@@ -3,10 +3,10 @@
  * showcase: one Mac is already paired and answers from the demo world instead
  * of the network.
  */
-import { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind } from '../app/test/mocks/sikemux-native';
-import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
+import { ChatAttachment, CoreEvent, MobileError } from '../app/test/mocks/sikemux-native';
+import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, RECENT, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
 
-export { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind };
+export { ChatAttachment, CoreEvent, MobileError };
 
 const files = ((globalThis as { sikemuxTestFiles?: Map<string, string> }).sikemuxTestFiles ??= new Map());
 files.set(
@@ -26,7 +26,6 @@ files.set(
 );
 
 type Listener = {
-  output(session: bigint, bytes: ArrayBuffer): void;
   events(events: unknown[]): void;
   closed(): void;
 };
@@ -38,12 +37,12 @@ function view() {
     workspace: {
       projects: PROJECTS,
       launchers: LAUNCHERS,
-      palette: new Map<string, string>(),
+      palette: {},
       backdrop: { texture: true, image: 'pane' },
     },
     sessions: SESSIONS.map((session) => ({
       id: session.id,
-      kind: session.task ? SessionKind.Task : SessionKind.Terminal,
+      kind: session.task ? 'task' : 'terminal',
       running: true,
       cols: 120,
       rows: 34,
@@ -56,7 +55,7 @@ function view() {
       provider: chat.provider,
       title: chat.title,
       cwd: projectPath(chat.project),
-      state: ChatState.Ready,
+      state: 'ready',
       running: chat.running,
       pendingPermissions: chat.asking ? [`ask-${chat.agentId}`] : [],
       launcher: chat.provider,
@@ -72,12 +71,20 @@ function view() {
               agentId: chat.agentId,
               provider: chat.provider,
               cwd: projectPath(chat.project),
-              requestJson: JSON.stringify(request),
-              at: BigInt(Date.now() - 90_000),
+              request,
+              at: Date.now() - 90_000,
             },
           ]
         : [];
     }),
+    recent: RECENT.map((chat) => ({
+      id: chat.id,
+      provider: chat.provider,
+      title: chat.title,
+      project: chat.project,
+      cwd: projectPath(chat.project),
+      activeAt: Date.now() - chat.hours * 3_600_000,
+    })),
   };
 }
 
@@ -85,7 +92,7 @@ class Connection {
   private open = true;
 
   constructor(listener: Listener) {
-    setTimeout(() => listener.events([CoreEvent.View.new({ view: view() })]), 0);
+    setTimeout(() => listener.events([CoreEvent.View.new({ viewJson: JSON.stringify(view()) })]), 0);
   }
 
   isOpen() {
@@ -97,7 +104,7 @@ class Connection {
   }
 
   async host() {
-    return { ...HOST, version: '0.4.2', channel: BuildChannel.Stable };
+    return JSON.stringify({ ...HOST, version: '0.4.2', channel: 'stable' });
   }
 
   async wakeChat() {}
@@ -120,6 +127,9 @@ class Connection {
 
   async detachChat() {}
   async prompt() {}
+  async attachFile(_agentId: string, name: string) {
+    return `/Users/demo/Library/Caches/com.nodelike.sikemux/pasted/${name}`;
+  }
   async cancel() {}
   async answerPermission() {}
   async setChatConfig(_agentId: string, _configId: string, value: string) {
@@ -128,15 +138,38 @@ class Connection {
   async startChat() {
     return CHATS[0].agentId;
   }
-  async attach() {
-    return { replay: new ArrayBuffer(0), alternateScreen: false, exited: false };
+  async resumeChat() {
+    return CHATS[0].agentId;
   }
-  async write() {}
-  async resize() {}
-  ack() {}
   async unpair() {}
   async saveBackdrop() {
     return undefined;
+  }
+  async call(method: string): Promise<string> {
+    throw new Error(`the showcase host does not know ${method}`);
+  }
+  async callToFile(method: string): Promise<string> {
+    throw new Error(`the showcase host does not know ${method}`);
+  }
+}
+
+const PHONE_ID = 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+
+export class DeviceIdentity {
+  id() {
+    return PHONE_ID;
+  }
+
+  signLive() {
+    return '';
+  }
+
+  signRegistration() {
+    return '';
+  }
+
+  signPush() {
+    return '';
   }
 }
 
@@ -146,20 +179,14 @@ export class Device {
   }
 
   id() {
-    return 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+    return PHONE_ID;
   }
 
   async connect(_core: string, listener: Listener) {
     return new Connection(listener);
   }
 
-  async pair() {
-    return CORE;
-  }
-
   async close() {}
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
-
-export const parsePairingLink = (): undefined => undefined;

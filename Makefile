@@ -7,6 +7,7 @@ icons:
 	./scripts/icons.sh
 
 dev: export BITBUCKET_OAUTH_SECRET ?= $(shell sed -n 's/^BITBUCKET_OAUTH_SECRET=//p' .env 2>/dev/null)
+dev: export JIRA_OAUTH_SECRET ?= $(shell sed -n 's/^JIRA_OAUTH_SECRET=//p' .env 2>/dev/null)
 dev: icons
 	@node scripts/prune-target.mjs --daily >/dev/null 2>&1 &
 	pnpm dev:desktop
@@ -79,10 +80,10 @@ hooks:
 prepush:
 	pnpm prepush
 
-check: format-check shell-lint lint tsc test-coverage rust-audit rust-clippy rust-test release-check
+check:
+	pnpm check
 
 ci: check
-	pnpm build
 
 clean:
 	cd src-tauri && cargo clean

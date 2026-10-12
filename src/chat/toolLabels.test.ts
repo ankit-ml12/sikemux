@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeToolLabel, activityLabel, toolKind, toolLabel, toolPath, toolRunning, toolTarget, toolUrl } from "./toolLabels";
+import { activeToolLabel, activityLabel, toolDetail, toolKind, toolLabel, toolPath, toolRowArguments, toolTarget, toolUrl } from "./toolLabels";
 import type { AcpToolCall, ChatMessage, ChatPart } from "./types";
 
 const call = (title: string, extra: Partial<AcpToolCall> = {}): AcpToolCall => ({ toolCallId: "t1", title, ...extra });
@@ -17,13 +17,8 @@ describe("toolLabel", () => {
 });
 
 describe("activityLabel", () => {
-    it("says what a known kind is doing", () => {
-        expect(activityLabel(call("rm -rf node_modules && pnpm i", { kind: "execute" }))).toBe("Running a command…");
-        expect(activityLabel(call("x", { kind: "switch_mode" }))).toBe("Switching mode…");
-    });
-
     it("uses the first line of a short title for an unknown kind", () => {
-        expect(activityLabel(call("mcp__github__list_pulls\nmore"))).toBe("list_pulls");
+        expect(activityLabel(call("mcp__github__list_pulls\nmore"))).toBe("list pulls");
     });
 
     it("falls back when the title is empty or too long", () => {
@@ -34,11 +29,6 @@ describe("activityLabel", () => {
 });
 
 describe("toolKind", () => {
-    it("uses the word for a known kind", () => {
-        expect(toolKind(call("cargo test", { kind: "execute" }))).toBe("run");
-        expect(toolKind(call("x", { kind: "switch_mode" }))).toBe("mode");
-    });
-
     it("names an MCP call for its server", () => {
         expect(toolKind(call("mcp__github__list_pulls", { kind: "fetch_custom" }))).toBe("github");
     });
@@ -66,6 +56,78 @@ describe("toolTarget", () => {
 
     it("keeps a path that has no name after its last slash", () => {
         expect(toolTarget(call("/"))).toBe("/");
+    });
+});
+
+describe("our own tools", () => {
+    const navigate = (rawInput: unknown, title = "mcp__sikemux-tools__browser_navigate") => call(title, { kind: "other", rawInput });
+
+    it("say what they did to what, in place of the server and function name", () => {
+        const tool = navigate({ url: "https://github.com/nodelike/sikemux" });
+        expect(toolKind(tool)).toBe("open");
+        expect(toolTarget(tool)).toBe("https://github.com/nodelike/sikemux");
+        expect(toolDetail(tool)).toBeNull();
+    });
+
+    it("take the first template the call has every argument for", () => {
+        expect(toolTarget(navigate({ go: "back" }))).toBe("back");
+        const click = (rawInput: unknown) => call("mcp__sikemux-tools__browser_click", { rawInput });
+        expect(toolTarget(click({ text: "Sign in", role: "button" }))).toBe("“Sign in”");
+        expect(toolDetail(click({ text: "Sign in", role: "button" }))).toBe("button");
+        expect(toolTarget(click({ index: 0 }))).toBe("element 0");
+        expect(toolTarget(click({}))).toBe("");
+    });
+
+    it("are found however the agent writes the server into the title", () => {
+        for (const title of ["sikemux-tools.browser_navigate", "sikemux-tools/browser_navigate", "browser_navigate"]) {
+            expect(toolKind(navigate({ url: "https://a.dev" }, title))).toBe("open");
+        }
+        expect(toolTarget(navigate({ server: "sikemux-tools", tool: "browser_navigate", arguments: { url: "https://a.dev" } }))).toBe(
+            "https://a.dev",
+        );
+    });
+
+    it("never treat their title as a file", () => {
+        expect(toolPath(navigate({ url: "https://a.dev" }, "sikemux-tools/browser_navigate"))).toBeNull();
+    });
+
+    it("show a path by its name, a list joined and a list of steps by its count", () => {
+        expect(toolTarget(call("mcp__sikemux-tools__browser_upload", { rawInput: { paths: ["/tmp/a.png", "/tmp/b.pdf"] } }))).toBe("a.png, b.pdf");
+        expect(toolTarget(call("mcp__sikemux-tools__browser_act", { rawInput: { steps: [{ action: "click" }, { action: "press" }] } }))).toBe(
+            "2-step sequence",
+        );
+    });
+
+    it("say what they are doing while they run", () => {
+        expect(activityLabel(navigate({ url: "https://a.dev" }))).toBe("open https://a.dev");
+        expect(activityLabel(navigate({ url: `https://a.dev/${"x".repeat(40)}` }))).toBe("open");
+    });
+
+    it("draw the same row from the arguments a finished call keeps", () => {
+        const live = call("mcp__sikemux-tools__browser_upload", { rawInput: { paths: ["/tmp/a.png"], index: 3, report: "full" } });
+        const kept = call(live.title, { rawInput: toolRowArguments(live) });
+        expect([toolTarget(kept), toolDetail(kept)]).toEqual([toolTarget(live), toolDetail(live)]);
+        const act = call("mcp__sikemux-tools__browser_act", { rawInput: { steps: [{ action: "click" }, { action: "press" }] } });
+        expect(toolTarget(call(act.title, { rawInput: toolRowArguments(act) }))).toBe("2-step sequence");
+    });
+
+    it("say nothing rather than fill in a default, and give waits as durations", () => {
+        expect(toolTarget(call("mcp__sikemux-tools__browser_screenshot", { rawInput: {} }))).toBe("");
+        expect(toolTarget(call("mcp__sikemux-tools__browser_wait", { rawInput: { ms: 4000 } }))).toBe("4s");
+    });
+
+    it("are drawn for plugin tools too", () => {
+        const logs = call("mcp__sikemux-tools__signoz_logs", { rawInput: { service: "api", text: "timeout" } });
+        expect([toolKind(logs), toolTarget(logs), toolDetail(logs)]).toEqual(["logs", "api", "“timeout”"]);
+    });
+});
+
+describe("another server's tools", () => {
+    it("read their name as words and show the first short argument", () => {
+        const tool = call("mcp__linear__create_issue", { rawInput: { title: "Rows use underscores", body: "a\nb" } });
+        expect(toolKind(tool)).toBe("linear");
+        expect(toolTarget(tool)).toBe("create issue");
+        expect(toolDetail(tool)).toBe("Rows use underscores");
     });
 });
 
@@ -106,14 +168,6 @@ describe("toolPath", () => {
         expect(toolPath(call("cat src/app.tsx"))).toBeNull();
         expect(toolPath(call("https://example.com/x"))).toBeNull();
         expect(toolPath(call("Read"))).toBeNull();
-    });
-});
-
-describe("toolRunning", () => {
-    it("counts a call as running until it has an ending status", () => {
-        expect(toolRunning(call("x"))).toBe(true);
-        expect(toolRunning(call("x", { status: "in_progress" }))).toBe(true);
-        for (const status of ["completed", "failed", "cancelled"]) expect(toolRunning(call("x", { status }))).toBe(false);
     });
 });
 

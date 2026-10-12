@@ -1,14 +1,15 @@
 mod access;
 mod agent;
-mod bonjour;
+mod attachments;
+mod calls;
 mod chat;
 mod connection;
 mod entry;
 mod handover;
 mod harness;
 mod host;
+mod join;
 mod notify;
-mod pairing;
 mod prepare;
 mod remote;
 mod seen;
@@ -20,7 +21,7 @@ mod workspace;
 
 pub use entry::main;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -64,6 +65,9 @@ pub struct ServerConfig {
     /// The app's data directory, for the harness journal and tool tally.
     /// Without it they are kept in memory, or not at all.
     pub data_dir: Option<PathBuf>,
+    /// Where files devices send for a chat are kept. Without it devices
+    /// cannot send files.
+    pub attachment_dir: Option<PathBuf>,
     /// Remote access listens on loopback only, with no relay and without
     /// publishing the core's address. For tests.
     pub remote_direct_only: bool,
@@ -80,6 +84,7 @@ impl ServerConfig {
             build: BuildIdentity::default(),
             cli_endpoint: None,
             data_dir: None,
+            attachment_dir: None,
             remote_direct_only: false,
             accounts_api: None,
         }
@@ -312,7 +317,7 @@ impl Core {
             launching: Gauge::default(),
             listening: OnceLock::new(),
             tools: Mutex::new(None),
-            chats: chat::Chats::default(),
+            chats: chat::Chats::new(data_dir.map(|dir| dir.join("chat-history"))),
             remote: remote::Remote::default(),
             workspaces: workspace::Workspaces::default(),
             seen: seen::Seen::default(),
@@ -386,6 +391,31 @@ impl Core {
             }
         }
         Ok(report)
+    }
+
+    /// The agents a phone shows: the chats and terminals it has open while its app is in front.
+    fn on_phones(&self) -> HashSet<String> {
+        let phones: Vec<_> = self
+            .clients()
+            .into_iter()
+            .filter(|client| !client.peer.is_local() && client.in_front())
+            .collect();
+        if phones.is_empty() {
+            return HashSet::new();
+        }
+        let mut shown = HashSet::new();
+        for phone in &phones {
+            shown.extend(self.chats.followed_by(phone.id));
+        }
+        for session in self.all_sessions() {
+            let Some(agent) = session.agent.as_ref() else {
+                continue;
+            };
+            if phones.iter().any(|phone| phone.is_subscribed(session.id)) {
+                shown.insert(agent.agent_id().to_owned());
+            }
+        }
+        shown
     }
 
     pub(crate) fn agent_session(&self, agent_id: &str) -> Option<Arc<Session>> {
@@ -510,19 +540,22 @@ impl Core {
             if let Some(agent_id) = &info.agent_id {
                 info.title = self.workspaces.title(agent_id);
                 info.unread = self.seen.unread(agent_id);
+                info.active_at = self.seen.active_at(agent_id);
             }
         }
         sessions
     }
 
-    /// The chats under the app's names, with whether the person has seen what
-    /// each last did.
+    /// The chats under the app's names, most recently active first, with
+    /// whether the person has seen what each last did.
     pub(crate) fn chat_infos(&self) -> Vec<crate::protocol::ChatInfo> {
         let mut chats = self.workspaces.listed(self.chats.list());
         for chat in &mut chats {
             chat.pending_permissions.sort();
             chat.unread = self.seen.unread(&chat.agent_id);
+            chat.active_at = self.seen.active_at(&chat.agent_id);
         }
+        chats.sort_by_key(|chat| std::cmp::Reverse(chat.active_at));
         chats
     }
 
@@ -531,11 +564,13 @@ impl Core {
         let chats = self.chat_infos();
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
+        let recent = self.workspaces.recent(&chats);
         let view = DeviceView {
             workspace: self.workspaces.view(),
             sessions,
             chats,
             attentions,
+            recent,
         };
         encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },
@@ -765,11 +800,7 @@ async fn poll_sessions(core: Arc<Core>) {
                     .and_then(|shell| shell.take_due_event(now))
             });
             if let Some(update) = update {
-                core.broadcast_event(&Event::ShellMetadata(
-                    sikemux_pty::shell_protocol::PtyShellMetadataEvent::from_update(
-                        session.id, update,
-                    ),
-                ));
+                core.broadcast_event(&Event::ShellMetadata(update.into_event(session.id)));
             }
         }
     }
@@ -780,6 +811,11 @@ async fn device_views(core: Arc<Core>) {
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
+        let seen = core.seen.on_phones(core.on_phones());
+        if !seen.is_empty() {
+            let event = Event::AgentsSeen { agent_ids: seen };
+            core.broadcast_to(&event, |client| client.peer.is_local());
+        }
         core.publish_device_view();
     }
 }

@@ -4,6 +4,7 @@ import type {
 } from "../../src/state/types/persisted";
 import type { LayoutNode, Window } from "../../src/state/types";
 import { VERSION } from "../../src/state/persist";
+import { DEFAULT_PROVIDER_PROFILES } from "../../src/state/types/domain";
 import { DEMO_HOME, DEMO_PROJECTS, FRONT, MOODBOARD, SIKEMUX } from "./projects";
 
 const pane = (
@@ -52,9 +53,9 @@ export const AGENTS = {
   hero: {
     id: "agent-hero",
     type: "claude",
-    title: "Fix the download button on phones",
+    title: "Fix the cover buttons",
     resumeId: "91d2e7b4-hero",
-    cwd: FRONT,
+    cwd: MOODBOARD,
   },
   palette: {
     id: "agent-palette",
@@ -69,6 +70,41 @@ export const AGENTS = {
     title: "Write up the colour results",
     resumeId: "hermes-notes-3310",
     cwd: MOODBOARD,
+  },
+  flow: {
+    id: "agent-flow",
+    type: "claude",
+    title: "Map the checkout flow",
+    resumeId: "c41f2b90-flow",
+    cwd: `${DEMO_HOME}/work/billing-service`,
+  },
+  latency: {
+    id: "agent-latency",
+    type: "codex",
+    title: "Check checkout latency after the fix",
+    resumeId: "codex-latency-5521",
+    cwd: `${DEMO_HOME}/work/billing-service`,
+  },
+  empty: {
+    id: "agent-empty",
+    type: "claude",
+    title: "Empty state options",
+    resumeId: "91d2e7b4-empty",
+    cwd: FRONT,
+  },
+  phone: {
+    id: "agent-phone",
+    type: "claude",
+    title: "Check the permission card on iPhone",
+    resumeId: "5f0c8a1e-phone",
+    cwd: SIKEMUX,
+  },
+  incident: {
+    id: "agent-incident",
+    type: "claude",
+    title: "Fix the checkout 500s",
+    resumeId: "c41f2b90-incident",
+    cwd: `${DEMO_HOME}/work/billing-service`,
   },
 } satisfies Record<string, PersistedAgent>;
 
@@ -112,6 +148,30 @@ export function demoSnapshot(): PersistedSnapshot {
         activeWindowId: "w-mood-term",
       },
       {
+        id: "s-billing",
+        name: "billing-service",
+        kind: "project",
+        cwd: `${DEMO_HOME}/work/billing-service`,
+        pinned: false,
+        activeWindowId: "w-billing-service",
+      },
+      {
+        id: "s-portal",
+        name: "client-portal",
+        kind: "project",
+        cwd: `${DEMO_HOME}/work/client-portal`,
+        pinned: false,
+        activeWindowId: "w-client-portal",
+      },
+      {
+        id: "s-infra",
+        name: "infra",
+        kind: "project",
+        cwd: `${DEMO_HOME}/work/infra`,
+        pinned: false,
+        activeWindowId: "w-infra",
+      },
+      {
         id: "s-gpu",
         name: "gpu-box",
         kind: "ssh",
@@ -126,6 +186,30 @@ export function demoSnapshot(): PersistedSnapshot {
         cwd: "",
         pinned: false,
         activeWindowId: "w-bastion",
+      },
+      {
+        id: "s-runner",
+        name: "build-runner",
+        kind: "ssh",
+        cwd: "",
+        pinned: false,
+        activeWindowId: "w-runner",
+      },
+      {
+        id: "s-replica",
+        name: "db-replica",
+        kind: "ssh",
+        cwd: "",
+        pinned: false,
+        activeWindowId: "w-replica",
+      },
+      {
+        id: "s-pihole",
+        name: "pi-hole",
+        kind: "ssh",
+        cwd: "",
+        pinned: false,
+        activeWindowId: "w-pihole",
       },
       {
         id: "s-shell",
@@ -151,6 +235,14 @@ export function demoSnapshot(): PersistedSnapshot {
         pinned: false,
         activeWindowId: "w-signoz",
       },
+      {
+        id: "s-database",
+        name: "Database",
+        kind: "sikemux.database:browser",
+        cwd: "",
+        pinned: false,
+        activeWindowId: "w-database",
+      },
     ],
     windowsBySession: {
       "s-sikemux": [
@@ -168,10 +260,10 @@ export function demoSnapshot(): PersistedSnapshot {
                   pane("t-test", SIKEMUX, "terminal", "test"),
                   pane("t-git", SIKEMUX, "terminal", "git"),
                 ],
-                [0.55, 0.45],
+                [0.5, 0.5],
               ),
             ],
-            [0.52, 0.48],
+            [0.5, 0.5],
           ),
           "t-dev",
         ),
@@ -190,6 +282,7 @@ export function demoSnapshot(): PersistedSnapshot {
           activePaneId: "p-git",
         },
         agentWindow(AGENTS.rail),
+        agentWindow(AGENTS.phone),
         agentWindow(AGENTS.replay),
       ],
       "s-front": [
@@ -198,7 +291,7 @@ export function demoSnapshot(): PersistedSnapshot {
           pane("t-front", FRONT, "terminal", "dev"),
           "t-front",
         ),
-        agentWindow(AGENTS.hero),
+        agentWindow(AGENTS.empty),
       ],
       "s-mood": [
         terminalWindow(
@@ -206,8 +299,33 @@ export function demoSnapshot(): PersistedSnapshot {
           pane("t-mood", MOODBOARD, "terminal", "bench"),
           "t-mood",
         ),
+        agentWindow(AGENTS.hero),
         agentWindow(AGENTS.palette),
         agentWindow(AGENTS.notes),
+      ],
+      "s-billing": [
+        terminalWindow(
+          "w-billing-service",
+          pane("t-billing-service", `${DEMO_HOME}/work/billing-service`, "terminal", "zsh"),
+          "t-billing-service",
+        ),
+        agentWindow(AGENTS.incident),
+        agentWindow(AGENTS.flow),
+        agentWindow(AGENTS.latency),
+      ],
+      "s-portal": [
+        terminalWindow(
+          "w-client-portal",
+          pane("t-client-portal", `${DEMO_HOME}/work/client-portal`, "terminal", "zsh"),
+          "t-client-portal",
+        ),
+      ],
+      "s-infra": [
+        terminalWindow(
+          "w-infra",
+          pane("t-infra", `${DEMO_HOME}/work/infra`, "terminal", "zsh"),
+          "t-infra",
+        ),
       ],
       "s-gpu": [
         terminalWindow(
@@ -237,6 +355,48 @@ export function demoSnapshot(): PersistedSnapshot {
           "t-bastion",
         ),
       ],
+      "s-runner": [
+        terminalWindow(
+          "w-runner",
+          {
+            type: "pane",
+            id: "t-build-runner",
+            cwd: "",
+            kind: "terminal",
+            title: "build-runner",
+            startup: "ssh build-runner",
+          },
+          "t-build-runner",
+        ),
+      ],
+      "s-replica": [
+        terminalWindow(
+          "w-replica",
+          {
+            type: "pane",
+            id: "t-db-replica",
+            cwd: "",
+            kind: "terminal",
+            title: "db-replica",
+            startup: "ssh db-replica",
+          },
+          "t-db-replica",
+        ),
+      ],
+      "s-pihole": [
+        terminalWindow(
+          "w-pihole",
+          {
+            type: "pane",
+            id: "t-pi-hole",
+            cwd: "",
+            kind: "terminal",
+            title: "pi-hole",
+            startup: "ssh pi-hole",
+          },
+          "t-pi-hole",
+        ),
+      ],
       "s-shell": [
         terminalWindow(
           "w-shell",
@@ -258,6 +418,22 @@ export function demoSnapshot(): PersistedSnapshot {
             title: "Rundeck",
           },
           activePaneId: "p-rundeck",
+        },
+      ],
+      "s-database": [
+        {
+          id: "w-database",
+          name: "Database",
+          role: "sikemux.database:browser",
+          fixed: true,
+          root: {
+            type: "pane",
+            id: "p-database",
+            cwd: "",
+            kind: "sikemux.database:browser",
+            title: "Database",
+          },
+          activePaneId: "p-database",
         },
       ],
       "s-signoz": [
@@ -282,11 +458,15 @@ export function demoSnapshot(): PersistedSnapshot {
       "s-sikemux",
       "s-front",
       "s-mood",
+      "s-billing",
+      "s-portal",
+      "s-infra",
       "s-gpu",
       "s-bastion",
       "s-shell",
       "s-rundeck",
       "s-signoz",
+      "s-database",
     ],
     activeSessionId: "s-sikemux",
     recent: [],
@@ -309,7 +489,42 @@ export function demoSnapshot(): PersistedSnapshot {
       notificationsIntroduced: true,
       agentNotifications: false,
       lastReleaseNotes: null,
-      lastSeenVersion: "0.4.2",
+      lastSeenVersion: "0.5.0",
+      spaces: [
+        { id: "space-acme", name: "Acme", icon: "building" },
+        { id: "space-personal", name: "Personal", icon: "leaf" },
+      ],
+      projectSpaces: {
+        [SIKEMUX]: "space-personal",
+        [FRONT]: "space-personal",
+        [MOODBOARD]: "space-personal",
+        [`${DEMO_HOME}/work/billing-service`]: "space-acme",
+        [`${DEMO_HOME}/work/client-portal`]: "space-acme",
+        [`${DEMO_HOME}/work/infra`]: "space-acme",
+      },
+      activeSpaceId: null,
+      providerProfiles: DEFAULT_PROVIDER_PROFILES.flatMap((profile) =>
+        profile.id === "builtin-claude"
+          ? [
+              { ...profile, name: "Work" },
+              {
+                id: "claude-personal",
+                name: "Personal",
+                provider: "claude" as const,
+                accent: "#a277ff",
+                configPath: `${DEMO_HOME}/.claude-personal`,
+              },
+              {
+                id: "claude-client",
+                name: "Client",
+                provider: "claude" as const,
+                accent: "#3fb98a",
+                configPath: `${DEMO_HOME}/.claude-client`,
+              },
+            ]
+          : [{ ...profile }],
+      ),
+      selectedProviderProfileIds: { claude: "builtin-claude" },
       pluginSettings: {
         "sikemux.rundeck": { activeProject: "platform", activeGroup: null },
         "sikemux.signoz": { minutes: 60, environment: "production" },

@@ -4,6 +4,7 @@ import { profileOfLauncher } from "../../remote/workspace";
 import { agentSupportsChat, isAgentType, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
 import { emit } from "../bus";
 import { reduceAgentState } from "../agentStatus";
+import { confirmDialog } from "../dialog";
 import { invalidate, peekResource } from "../resources";
 import { agentSessionsR } from "../resources.defs";
 import { getState, mutate, type StoreState } from "../store";
@@ -79,6 +80,21 @@ export function setAgentModelPreferences(id: string, model: string | undefined, 
         const profile = d.providerProfiles.find((item) => item.id === agent.profileId && item.provider === agent.type);
         const options = profileLaunchOptions(profile, model, effort);
         const executable = profile?.executablePath || agent.executablePath;
+        const mode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
+        agent.startup = agentStartup(agent.type, agent.resumeId, mode, executable, options);
+        agent.directCommand = agentDirectCommand(agent.type, agent.resumeId, mode, executable, options);
+    });
+}
+
+/** Puts the agent on another of the person's accounts, keeping its session: the chat moved there and carries on. */
+export function setAgentAccount(id: string, profileId: string): void {
+    mutate((d) => {
+        const agent = d.agents[id];
+        const profile = d.providerProfiles.find((item) => item.id === profileId && item.provider === agent?.type);
+        if (!agent || !profile || agent.profileId === profile.id) return;
+        agent.profileId = profile.id;
+        const options = profileLaunchOptions(profile, agent.model, agent.effort);
+        const executable = profile.executablePath || agent.executablePath;
         const mode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
         agent.startup = agentStartup(agent.type, agent.resumeId, mode, executable, options);
         agent.directCommand = agentDirectCommand(agent.type, agent.resumeId, mode, executable, options);
@@ -479,6 +495,25 @@ export function renameAgent(id: string, title: string): void {
 export function renameAgentSession(session: SavedSession, title: string): void {
     const name = sessionName(title);
     if (name) void saveSessionName(session, name).catch(reportError("rename chat"));
+}
+
+/** Deletes a chat that is not open from the provider's own session storage, once the person confirms. */
+export async function deleteAgentSession(session: SavedSession, title: string): Promise<boolean> {
+    const confirmed = await confirmDialog({
+        title: "Delete this chat?",
+        body: `“${title}” will be removed from disk for good and can no longer be resumed.`,
+        confirmLabel: "Delete",
+        destructive: true,
+    });
+    if (!confirmed) return false;
+    try {
+        await agentApi.deleteSession(session.type, session.cwd, session.sessionId, session.executablePath, session.configPath);
+    } catch (error) {
+        reportError("delete chat")(error);
+        return false;
+    }
+    invalidate((kind) => kind === "agents.sessions");
+    return true;
 }
 
 /* Stands in until the provider titles the conversation, which Claude only does

@@ -7,6 +7,7 @@
   "tools": [
     {
       "name": "bitbucket_pulls",
+      "row": {"verb": "list", "kind": "read", "icon": "pull-request", "target": ["{name} pull requests"], "detail": ["{state}"]},
       "method": "pulls",
       "description": "Pull requests, most recently updated first, with state, branches and reviewers. owner and name come from the git remote.",
       "properties": {
@@ -18,6 +19,7 @@
     },
     {
       "name": "bitbucket_pull_files",
+      "row": {"verb": "diff", "kind": "read", "icon": "pull-request", "target": ["{name}#{number}"], "detail": ["{paths}"]},
       "method": "pullFiles",
       "description": "The files a pull request changes, with status, line counts and any old path. Name paths for their diffs; a long diff comes in parts, with a note on the rest.",
       "properties": {
@@ -32,17 +34,33 @@
     },
     {
       "name": "bitbucket_comments",
+      "row": {"verb": "read", "kind": "read", "icon": "pull-request", "target": ["comments on {name}#{number}"]},
       "method": "comments",
-      "description": "What people wrote on a pull request, oldest first.",
+      "description": "What people wrote on a pull request or an issue, oldest first. Issues are numbered apart from pull requests, so say which.",
       "properties": {
         "owner": { "type": "string", "description": "The workspace." },
         "name": { "type": "string", "description": "The repository slug." },
-        "number": { "type": "integer", "description": "The pull request's id." }
+        "number": { "type": "integer", "description": "The pull request's or issue's id." },
+        "of": { "type": "string", "enum": ["pull", "issue"], "description": "Default pull." }
       },
       "required": ["owner", "name", "number"]
     },
     {
+      "name": "bitbucket_issues",
+      "row": {"verb": "list", "kind": "read", "icon": "issue", "target": ["{name} issues"], "detail": ["{state}"]},
+      "method": "issues",
+      "description": "Issues in the repository's Bitbucket tracker, recently updated first, 30 a page. A repository whose issues live in Jira has none here.",
+      "properties": {
+        "owner": { "type": "string", "description": "The workspace." },
+        "name": { "type": "string", "description": "The repository slug." },
+        "state": { "type": "string", "enum": ["open", "closed", "all"], "description": "Default open." },
+        "page": { "type": "integer", "description": "From 1." }
+      },
+      "required": ["owner", "name"]
+    },
+    {
       "name": "bitbucket_pipelines",
+      "row": {"verb": "list", "kind": "read", "icon": "workflow", "target": ["{name} pipelines"], "detail": ["{branch}", "{status}"]},
       "method": "runs",
       "description": "Recent Pipelines runs, newest first, with status and conclusion.",
       "properties": {
@@ -58,6 +76,7 @@
     },
     {
       "name": "bitbucket_pipeline",
+      "row": {"verb": "read", "kind": "read", "icon": "workflow", "target": ["pipeline {runId}"], "detail": ["{name}"]},
       "method": "run",
       "description": "One pipeline with its steps and their status, to see which step failed.",
       "properties": {
@@ -69,6 +88,7 @@
     },
     {
       "name": "bitbucket_step_log",
+      "row": {"verb": "logs", "kind": "read", "icon": "log-lines", "target": ["step {jobId}"], "detail": ["“{grep}”"]},
       "method": "jobLogExcerpt",
       "description": "The end of one pipeline step's log. Start with the default tail or grep for the error. truncated means earlier lines were left out.",
       "properties": {

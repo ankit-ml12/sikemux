@@ -1,6 +1,15 @@
 import { invokeCommand as invoke } from "./invoke";
+import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import type { AgentEffort, AgentType } from "../state/types";
+
+/** Whether an agent can be used right now; `unknown` when its CLI has no way to say if it is signed in. */
+export type AgentStatus =
+    | { state: "missing" }
+    | { state: "broken"; reason: string }
+    | { state: "signedOut" }
+    | { state: "ready"; account: string | null }
+    | { state: "unknown" };
 
 export interface AgentInfo {
     type: AgentType;
@@ -15,12 +24,7 @@ export interface AgentInfo {
     defaultModel: string | null;
     /** Effective reasoning effort inherited from the CLI's own user configuration. */
     defaultEffort: AgentEffort | null;
-}
-
-export interface AgentModelInfo {
-    /** Full identifier accepted by the CLI's --model flag. */
-    id: string;
-    label: string;
+    status?: AgentStatus;
 }
 
 export interface AgentSession {
@@ -72,12 +76,7 @@ export interface AgentUsage {
     unavailableReason?: string | null;
 }
 
-/** A provider-scoped history result. Errors intentionally stay opaque to UI code. */
-export type AgentSessionProviderResult =
-    { provider: AgentInfo; status: "success"; sessions: AgentSession[] } | { provider: AgentInfo; status: "error"; sessions: [] };
-
 const inflight = new Map<string, Promise<AgentSession[]>>();
-const HISTORY_TIMEOUT_MS = 8_000;
 
 function key(agent: string, cwd: string, configPath?: string) {
     return `${agent}\0${cwd}\0${configPath ?? ""}`;
@@ -98,30 +97,32 @@ async function fetchSessions(agent: string, cwd: string, configPath?: string): P
     return p;
 }
 
-async function fetchSessionResults(providers: readonly AgentInfo[], cwd: string): Promise<AgentSessionProviderResult[]> {
-    return Promise.all(
-        providers.map(async (provider): Promise<AgentSessionProviderResult> => {
-            try {
-                let timer: ReturnType<typeof setTimeout> | undefined;
-                const timeout = new Promise<never>((_resolve, reject) => {
-                    timer = setTimeout(() => reject(new Error("agent history timed out")), HISTORY_TIMEOUT_MS);
-                });
-                const sessions = await Promise.race([fetchSessions(provider.type, cwd, provider.configPath ?? undefined), timeout]).finally(() => {
-                    if (timer) clearTimeout(timer);
-                });
-                return { provider, status: "success", sessions };
-            } catch {
-                return { provider, status: "error", sessions: [] };
-            }
-        }),
-    );
-}
-
 /** One session Claude Code is running now, as it reports itself. */
 export interface LiveAgentSession {
     sessionId: string;
     /** `busy`, `waiting`, `shell`, or `idle` — anything but `idle` still has something going. */
     status: string;
+}
+
+/** Who one account is signed in as, in the agent's own words. */
+export interface AgentAccountStatus {
+    signedIn: boolean;
+    /** The person's own name on the account, where the agent keeps one. */
+    name: string | null;
+    email: string | null;
+    plan: string | null;
+    organization: string | null;
+    /** `subscription`, `apiKey`, or whatever else the CLI signs in with. */
+    method: string | null;
+    /** Where the account keeps its chats: accounts that share it can take over each other's chats. */
+    sessions: string | null;
+}
+
+/** The page a running sign-in opened, for when the browser did not. */
+export interface AgentSignInPage {
+    agent: AgentType;
+    configPath: string | null;
+    url: string;
 }
 
 /** How full a saved session's context window was. Claude does not record the window's size. */
@@ -132,17 +133,31 @@ export interface SavedSessionContext {
 
 export const agentApi = {
     available: fetchAvailable,
-    models: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentModelInfo[]> =>
-        invoke<AgentModelInfo[]>("agent_models", { agent, executablePath, configPath }),
+    /** Forgets every agent's status, so the next look asks each one again. */
+    refreshStatuses: (): Promise<void> => invoke<void>("refresh_agent_statuses"),
+    markSignedOut: (agent: AgentType, configPath?: string): Promise<void> => invoke<void>("mark_agent_signed_out", { agent, configPath }),
     usage: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> =>
         invoke<AgentUsage>("agent_usage", { agent, executablePath, configPath }),
+    account: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentAccountStatus> =>
+        invoke<AgentAccountStatus>("agent_account_status", { agent, executablePath, configPath }),
+    addAccount: (agent: AgentType, name: string): Promise<string> => invoke<string>("agent_account_add", { agent, name }),
+    signIn: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
+        invoke<void>("agent_account_sign_in", { agent, executablePath, configPath }),
+    signInCode: (agent: AgentType, configPath: string | undefined, code: string): Promise<void> =>
+        invoke<void>("agent_account_sign_in_code", { agent, configPath, code }),
+    cancelSignIn: (agent: AgentType, configPath?: string): Promise<void> => invoke<void>("agent_account_sign_in_cancel", { agent, configPath }),
+    signOut: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
+        invoke<void>("agent_account_sign_out", { agent, executablePath, configPath }),
+    onSignInPage: (listener: (page: AgentSignInPage) => void, signal?: AbortSignal): Promise<IpcUnsubscribe> =>
+        getIpcTransport().subscribe<AgentSignInPage>("agent_account_sign_in", (event) => listener(event.payload), { signal }),
     sessions: fetchSessions,
     recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => invoke<RecentChatsPage>("agent_recent_sessions", { request }),
     sessionContext: (agent: AgentType, cwd: string, sessionId: string, configPath?: string): Promise<SavedSessionContext | null> =>
         invoke<SavedSessionContext | null>("agent_session_context", { agent, cwd, sessionId, configPath }),
     renameSession: (agent: AgentType, cwd: string, sessionId: string, title: string, executablePath?: string, configPath?: string): Promise<void> =>
         invoke<void>("agent_session_rename", { agent, cwd, sessionId, title, executablePath, configPath }),
-    sessionResults: fetchSessionResults,
+    deleteSession: (agent: AgentType, cwd: string, sessionId: string, executablePath?: string, configPath?: string): Promise<void> =>
+        invoke<void>("agent_session_delete", { agent, cwd, sessionId, executablePath, configPath }),
     watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
         invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),
     watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),

@@ -1,6 +1,6 @@
-//! Remote access and pairing for the Devices settings page, and the projects
-//! and agents the app offers paired devices. The core keeps the state; these
-//! commands forward to it.
+//! Remote access and the phones allowed in, for the Devices settings page,
+//! and the projects and agents the app offers paired devices. The core keeps
+//! the state; these commands forward to it.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{
-    BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat, RemoteStatus,
+    AllowedDevice, BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat,
+    PublishedRecent, RemoteStatus,
 };
 use tauri::{AppHandle, Manager, State};
 
@@ -37,6 +38,10 @@ type AgentList = (Vec<PublishedChat>, BTreeMap<String, String>);
 #[derive(Default)]
 pub struct PublishedAgents(Mutex<Option<AgentList>>);
 
+/// The recent chats the app last listed, sent again like the workspace.
+#[derive(Default)]
+pub struct PublishedRecentChats(Mutex<Option<Vec<PublishedRecent>>>);
+
 /// The agents the app last showed, sent again like the workspace.
 #[derive(Default)]
 pub struct PublishedOnScreen(Mutex<Vec<String>>);
@@ -52,11 +57,12 @@ pub struct LauncherRequest {
     #[serde(default)]
     environment_keys: Vec<String>,
     permission_mode: String,
+    #[serde(default)]
+    status: Option<String>,
 }
 
 #[tauri::command]
 pub async fn remote_publish_workspace(
-    app: AppHandle,
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedWorkspace>,
     projects: Vec<ProjectInfo>,
@@ -72,8 +78,9 @@ pub async fn remote_publish_workspace(
             executable_path: request.executable_path,
             environment_keys: request.environment_keys,
             permission_mode: request.permission_mode,
+            status: request.status,
         };
-        if let Ok(launcher) = crate::acp::launcher(&app, spec).await {
+        if let Ok(launcher) = crate::acp::launcher(spec).await {
             ready.push(launcher);
         }
     }
@@ -135,6 +142,19 @@ pub async fn remote_publish_agents(
 }
 
 #[tauri::command]
+pub async fn remote_publish_recent(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedRecentChats>,
+    chats: Vec<PublishedRecent>,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = Some(chats.clone());
+    }
+    let client = manager.client().await?;
+    client.publish_recent(chats).await.map_err(core_error)
+}
+
+#[tauri::command]
 pub async fn remote_publish_on_screen(
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedOnScreen>,
@@ -190,6 +210,14 @@ pub(crate) async fn connected(
             eprintln!("Sikemux could not tell its core which agents it has: {error}");
         }
     }
+    let recent = app
+        .try_state::<PublishedRecentChats>()
+        .and_then(|published| published.0.lock().ok().and_then(|last| last.clone()));
+    if let Some(chats) = recent {
+        if let Err(error) = client.publish_recent(chats).await {
+            eprintln!("Sikemux could not tell its core which chats are recent: {error}");
+        }
+    }
     let on_screen = app
         .try_state::<PublishedOnScreen>()
         .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
@@ -210,23 +238,25 @@ pub async fn remote_status(manager: State<'_, PtyManager>) -> AppResult<RemoteSt
     client.remote_status().await.map_err(core_error)
 }
 
+/// Keeps the login item in step with remote access, which the switch turns
+/// on and off, and so do signing in and out.
+pub(crate) fn follow_remote_access(app: &AppHandle, enabled: bool) {
+    let identifier = app.config().identifier.clone();
+    let launch = app
+        .try_state::<PtyManager>()
+        .and_then(|manager| manager.core_launch());
+    tauri::async_runtime::spawn_blocking(move || {
+        login_item::sync(&identifier, launch.as_ref(), enabled);
+    });
+}
+
 #[tauri::command]
 pub async fn remote_set_enabled(
-    app: AppHandle,
     manager: State<'_, PtyManager>,
     enabled: bool,
 ) -> AppResult<RemoteStatus> {
     let client = manager.client().await?;
-    let status = client
-        .set_remote_access(enabled)
-        .await
-        .map_err(core_error)?;
-    login_item::sync(
-        &app.config().identifier,
-        manager.core_launch().as_ref(),
-        status.enabled,
-    );
-    Ok(status)
+    client.set_remote_access(enabled).await.map_err(core_error)
 }
 
 #[tauri::command]
@@ -252,18 +282,6 @@ pub async fn remote_revoke_device(
 }
 
 #[tauri::command]
-pub async fn remote_open_pairing(manager: State<'_, PtyManager>) -> AppResult<RemoteStatus> {
-    let client = manager.client().await?;
-    client.open_pairing().await.map_err(core_error)
-}
-
-#[tauri::command]
-pub async fn remote_close_pairing(manager: State<'_, PtyManager>) -> AppResult<RemoteStatus> {
-    let client = manager.client().await?;
-    client.close_pairing().await.map_err(core_error)
-}
-
-#[tauri::command]
 pub async fn remote_answer_pairing(
     manager: State<'_, PtyManager>,
     id: String,
@@ -275,4 +293,13 @@ pub async fn remote_answer_pairing(
         .answer_pairing(id, allow, access)
         .await
         .map_err(core_error)
+}
+
+#[tauri::command]
+pub async fn remote_allow_devices(
+    manager: State<'_, PtyManager>,
+    devices: Vec<AllowedDevice>,
+) -> AppResult<RemoteStatus> {
+    let client = manager.client().await?;
+    client.allow_devices(devices).await.map_err(core_error)
 }

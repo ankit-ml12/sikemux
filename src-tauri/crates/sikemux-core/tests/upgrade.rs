@@ -661,6 +661,8 @@ fn chat_launch(core: &CoreProcess, agent_id: &str) -> ChatLaunch {
         permission_mode: "workspace-write".into(),
         model: None,
         effort: None,
+        account: None,
+        fallbacks: Vec::new(),
     }
 }
 
@@ -713,6 +715,7 @@ async fn an_upgrade_waits_for_a_chat_turn_and_resumes_the_chat_after() {
     client
         .acp_prompt(
             "talker".into(),
+            None,
             "hello first".into(),
             Vec::new(),
             Vec::new(),
@@ -724,7 +727,13 @@ async fn an_upgrade_waits_for_a_chat_turn_and_resumes_the_chat_after() {
     })
     .await;
     client
-        .acp_prompt("talker".into(), "hold 4000".into(), Vec::new(), Vec::new())
+        .acp_prompt(
+            "talker".into(),
+            None,
+            "hold 4000".into(),
+            Vec::new(),
+            Vec::new(),
+        )
         .await
         .expect("prompt");
     until_chat(&mut events, |event| {
@@ -795,6 +804,7 @@ async fn an_upgrade_waits_for_a_chat_turn_and_resumes_the_chat_after() {
     client
         .acp_prompt(
             "talker".into(),
+            None,
             "after update".into(),
             Vec::new(),
             Vec::new(),

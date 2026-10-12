@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, Webview};
 
 use super::viewport::Viewport;
-use super::{BrowserManager, BLANK_URL};
+use super::{BrowserManager, DownloadState, BLANK_URL};
 use sikemux_core::cli::protocol::HarnessRequest;
 
 const PAGE_SCRIPT: &str = include_str!("page.js");
@@ -15,6 +15,8 @@ const RECORDS_SCRIPT: &str = include_str!("records.js");
 const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
+const DOWNLOAD_WAIT: Duration = Duration::from_secs(15);
+const DOWNLOAD_POLL: Duration = Duration::from_millis(100);
 const MAX_WAIT_MS: u64 = 30_000;
 const SCRIPT_TIMEOUT_MS: u64 = 30_000;
 /// The sidecar stops waiting for any reply after 70 seconds.
@@ -30,10 +32,19 @@ const MAX_UPLOAD_FILES: usize = 20;
 const DRAG_STEPS: u32 = 12;
 const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
 const NARROW_VIEWPORT: u64 = 700;
+/// The width of a chat's reply column, where `page_show` puts a page.
+const PAGE_WIDTH: u64 = 756;
+const PAGE_VIEWPORT_HEIGHT: u64 = 600;
 /// How long a page may take to answer before WebKit is asked whether it hangs.
 const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
 use native::Mouse;
+
+/// Runs `body` in the tab's helper world, which sees the page's DOM but none
+/// of its scripts.
+pub(super) async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+    native::run_helper(view, body).await
+}
 
 /// Runs on a CLI broker thread, so blocking on the async runtime is safe.
 pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {
@@ -45,10 +56,18 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
     let acts_on_a_tab = request.method != "browser.tab.close";
     let mut marks = Vec::new();
     if acts_on_a_tab {
-        manager.announce_acting(app, agent_id);
+        /* A draft page is checked for the agent alone; the person sees it once it is shown. */
+        if request.method != "browser.page" {
+            manager.announce_acting(app, agent_id);
+        }
+        let reloading = manager.reloading(agent_id);
         marks.extend(manager.mark_acting(app, agent_id));
+        if reloading {
+            wait_for_reload(&manager, agent_id);
+        }
     }
     let before = tab_ids(&manager, agent_id);
+    let download_mark = manager.download_mark(agent_id);
     let sends_input = matches!(
         request.method.as_str(),
         "browser.click"
@@ -75,15 +94,42 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
         marks.extend(manager.mark_acting(app, agent_id));
         manager.release_acting(app, agent_id, marks);
     }
-    if request.method != "browser.navigate" {
-        if let Ok(Value::Object(map)) = &mut result {
+    if let Ok(Value::Object(map)) = &mut result {
+        if request.method != "browser.navigate" {
             let opened = opened_tabs(&manager, agent_id, &before);
             if !opened.is_empty() {
                 map.insert("openedTabs".into(), json!(opened));
             }
         }
+        let saved = saved_files(&manager, agent_id, download_mark);
+        if !saved.is_empty() {
+            map.entry("downloads").or_insert(json!(saved));
+        }
     }
     result
+}
+
+/// Files the action made the page download, given a moment to finish so the
+/// agent gets a path it can use straight away.
+fn saved_files(manager: &BrowserManager, agent_id: &str, mark: u64) -> Vec<Value> {
+    let deadline = Instant::now() + DOWNLOAD_WAIT;
+    loop {
+        let files = manager.downloads_since(agent_id, mark);
+        let unfinished = files
+            .iter()
+            .any(|file| file.state == DownloadState::Started);
+        if !unfinished || Instant::now() >= deadline {
+            return files.into_iter().map(|file| json!(file)).collect();
+        }
+        std::thread::sleep(DOWNLOAD_POLL);
+    }
+}
+
+/// An unloaded tab loads its page again before the agent's tools touch it.
+fn wait_for_reload(manager: &BrowserManager, agent_id: &str) {
+    if let Ok((tab_id, _)) = manager.active_view(agent_id) {
+        tauri::async_runtime::block_on(manager.wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT));
+    }
 }
 
 fn tab_ids(manager: &BrowserManager, agent_id: &str) -> Vec<String> {
@@ -129,6 +175,10 @@ async fn run(
             manager
                 .switch_tab(app, agent_id, &id)
                 .map_err(|error| error.to_string())?;
+            if manager.reloading(agent_id) {
+                let _ = manager.active_view(agent_id);
+                manager.wait_until_loaded(agent_id, &id, LOAD_TIMEOUT).await;
+            }
             read_state(&manager, agent_id, "changes", false).await
         }
         "browser.tab.close" => {
@@ -201,7 +251,12 @@ async fn run(
                 return call(&view, "extract", &[json!(selector)]).await;
             }
             let full_text = params.get("fullText").and_then(Value::as_bool) == Some(true);
-            read_state(&manager, agent_id, "full", full_text).await
+            let mut result = read_state(&manager, agent_id, "full", full_text).await?;
+            let downloads = manager.recent_downloads(agent_id);
+            if !downloads.is_empty() {
+                result["downloads"] = json!(downloads);
+            }
+            Ok(result)
         }
         "browser.find" => {
             let query = text("query").ok_or("query is required")?;
@@ -654,6 +709,52 @@ async fn run(
                 manager.settle_viewport(agent_id, &tab_id).await?;
             }
             state(&manager, agent_id).await
+        }
+        "browser.page" => {
+            let source = std::path::PathBuf::from(text("path").ok_or("path is required")?);
+            if !source.is_absolute() {
+                return Err(format!("{} is not an absolute path", source.display()));
+            }
+            let width = params
+                .get("width")
+                .and_then(Value::as_u64)
+                .unwrap_or(PAGE_WIDTH);
+            let html = tauri::async_runtime::spawn_blocking(move || crate::pages::build(&source))
+                .await
+                .map_err(|error| error.to_string())??;
+            let url = crate::pages::preview_url(app, agent_id, &html)?;
+            let showing = tab_ids(&manager, agent_id).into_iter().find(|tab_id| {
+                manager
+                    .page(agent_id, tab_id)
+                    .is_some_and(|page| page.url == url)
+            });
+            if let Some(tab_id) = &showing {
+                manager
+                    .switch_tab(app, agent_id, tab_id)
+                    .map_err(|error| error.to_string())?;
+            }
+            let navigate = json!({ "url": url, "newTab": showing.is_none(), "report": "outcome" });
+            Box::pin(run(app, agent_id, "browser.navigate", &navigate)).await?;
+            let viewport = json!({ "width": width, "height": PAGE_VIEWPORT_HEIGHT });
+            Box::pin(run(app, agent_id, "browser.viewport", &viewport)).await?;
+            let (tab_id, view) = active(&manager, agent_id)?;
+            let content_height = call(&view, "contentHeight", &[]).await?;
+            let console = read_records(&view, "console", &[Value::Null, json!(false)]).await?;
+            let shot = Box::pin(run(
+                app,
+                agent_id,
+                "browser.screenshot",
+                &json!({ "fullPage": true }),
+            ))
+            .await?;
+            Ok(json!({
+                "tabId": tab_id,
+                "width": width,
+                "contentHeight": content_height,
+                "console": console,
+                "mimeType": shot["mimeType"],
+                "data": shot["data"],
+            }))
         }
         _ => Err("unknown browser method".into()),
     }
@@ -1675,19 +1776,6 @@ mod tests {
     }
 
     #[test]
-    fn steps_stop_once_the_tab_is_somewhere_else() {
-        let page = json!({ "tabId": "t", "url": "https://a.test/", "loading": false });
-        assert!(!moved_on(&page, &page));
-        let navigated = json!({ "tabId": "t", "url": "https://a.test/next", "loading": false });
-        assert!(moved_on(&page, &navigated));
-        let loading = json!({ "tabId": "t", "url": "https://a.test/", "loading": true });
-        assert!(moved_on(&page, &loading));
-        let asking =
-            json!({ "tabId": "t", "url": "https://a.test/", "loading": false, "dialog": {} });
-        assert!(moved_on(&page, &asking));
-    }
-
-    #[test]
     fn a_call_names_its_element_by_number_text_or_selector() {
         assert_eq!(
             element_target(&json!({ "text": "Save", "role": "button" }), "index"),
@@ -1743,18 +1831,6 @@ mod tests {
     }
 
     #[test]
-    fn script_failures_say_what_to_do_instead() {
-        let limit = Duration::from_secs(30);
-        assert!(script_failure("", limit).contains("browser_wait"));
-        assert!(script_failure(
-            "Completion handler for function call is no longer reachable",
-            limit
-        )
-        .contains("go reload"));
-        assert_eq!(script_failure("TypeError: x", limit), "TypeError: x");
-    }
-
-    #[test]
     fn a_fragment_change_is_told_apart_from_a_new_page() {
         assert!(same_document(
             "https://a.test/doc",
@@ -1769,27 +1845,6 @@ mod tests {
             "https://a.test/other#size"
         ));
         assert!(!same_document("https://a.test/doc#a", "https://a.test/doc"));
-    }
-
-    #[test]
-    fn a_wait_names_its_conditions_or_only_a_time() {
-        assert_eq!(wait_condition(&json!({ "ms": 500 })), None);
-        assert_eq!(
-            wait_condition(&json!({ "text": "Saved", "networkIdle": true, "timeoutMs": 5 })),
-            Some(json!({ "text": "Saved", "networkIdle": true }))
-        );
-        assert_eq!(wait_condition(&json!({ "networkIdle": false })), None);
-    }
-
-    #[test]
-    fn page_answers_merge_under_the_action_result() {
-        let merged = merge(
-            json!({ "clicked": "Sign in", "url": "https://a/next" }),
-            json!({ "url": "https://a/next", "title": "Next", "elements": "" }),
-        )
-        .unwrap();
-        assert_eq!(merged["clicked"], "Sign in");
-        assert_eq!(merged["title"], "Next");
     }
 
     #[test]

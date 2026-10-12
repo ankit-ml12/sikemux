@@ -1,15 +1,19 @@
-import { useContext, useMemo, type ReactNode } from "react";
+import { Children, useContext, useMemo, type ReactNode } from "react";
+import { isPluginEnabled } from "../plugins/enabled";
+import { linkPlugin } from "../plugins/registry";
+import { useStore } from "../state/store";
 import { CopyButton } from "../ui/CopyButton";
 import { FileIcon } from "../ui/FileIcon";
 import { hasPrimaryModifier } from "../lib/platform";
 import { Markdown, type MarkdownComponents } from "../markdown/Markdown";
+import { warmMarkdown } from "../markdown/useMarkdownBlocks";
 import type { MarkdownOptions } from "../markdown/types";
 import { fencedDiff } from "./diff";
 import { CodeTokens, fenceLanguage, useCodeTokens, useDiffTokens } from "./codeHighlight";
 import { localImagePath, useImagePreview } from "./imagePreview";
 import { ChatFileRef, useFileRef } from "./FileRef";
 import { pathComponents, type PathGuess } from "./markdownPaths";
-import { useLongTextFold } from "./longText";
+import { cutLongText, useLongTextFold } from "./longText";
 import { ChatAgentContext, openLink } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { DiffText } from "./DiffView";
@@ -21,11 +25,30 @@ import { decodedFenceName } from "./transcript";
    A name the message only mentioned in passing arrives here too, marked as a
    guess. It is a file when the project has one by that name, and the words the
    agent wrote when it has not. */
+/* A link to a service a plugin speaks for leads with that service's mark. The
+   mark is held to the first letter so a line never ends on it alone. */
+function MarkedText({ mark, children }: { mark: ReactNode; children?: ReactNode }) {
+    const [first, ...rest] = Children.toArray(children);
+    const letter = typeof first === "string" ? [...first][0] : undefined;
+    return (
+        <>
+            <span className="chat-link-lead">
+                <span className="chat-link-mark">{mark}</span>
+                {letter ?? first}
+            </span>
+            {letter !== undefined && (first as string).slice(letter.length)}
+            {rest}
+        </>
+    );
+}
+
 function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; children?: ReactNode }) {
     const imagePath = localImagePath(href);
     const preview = useImagePreview(guess ? null : imagePath);
     const file = useFileRef(href);
     const agentId = useContext(ChatAgentContext).id;
+    const service = linkPlugin(href);
+    const serviceOn = useStore((s) => service !== undefined && isPluginEnabled(service.id, s.disabledPlugins));
     if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
     if (file)
         return (
@@ -38,6 +61,7 @@ function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; 
         );
     if (guess === "code") return <code>{children}</code>;
     if (guess === "text") return <>{children}</>;
+    const mark = serviceOn ? service?.mark?.(13) : undefined;
     return (
         <a
             href={href}
@@ -45,7 +69,7 @@ function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; 
                 event.preventDefault();
                 if (href) openLink(href, agentId, hasPrimaryModifier(event));
             }}>
-            {children}
+            {mark ? <MarkedText mark={mark}>{children}</MarkedText> : children}
         </a>
     );
 }
@@ -92,7 +116,7 @@ function CodeTitle({ info, text }: { info?: string; text: string }) {
             ) : (
                 name && (
                     <span className="chat-code-name">
-                        <FileIcon name={name} size={16} />
+                        <FileIcon name={name} size={14} />
                         {name}
                     </span>
                 )
@@ -114,6 +138,13 @@ const markdownComponents: MarkdownComponents = { link: ChatLink, fence: ChatFenc
 const AGENT_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: false, fileLinks: true };
 /* What a person typed shows its markup as the characters they typed. */
 const TYPED_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: true, fileLinks: true };
+
+/** Reads finished texts ahead of the transcript drawing them, in the folded form it first shows, in the order given. */
+export function warmChatMarkdown(texts: readonly { text: string; typed: boolean }[]): Promise<void> {
+    return warmMarkdown(
+        texts.map(({ text, typed }) => ({ text: cutLongText(text)?.head ?? text, options: typed ? TYPED_MARKDOWN : AGENT_MARKDOWN })),
+    );
+}
 
 function LiveMarkdown({ text, live, typed = false }: { text: string; live: boolean; typed?: boolean }) {
     return <Markdown text={text} options={typed ? TYPED_MARKDOWN : AGENT_MARKDOWN} live={live} components={markdownComponents} />;

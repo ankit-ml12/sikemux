@@ -12,6 +12,10 @@ final class NotchStore {
     /// When each agent entered the state it is in, for the times beside it.
     private(set) var since: [String: Date] = [:]
     private(set) var error: String?
+    /// Devices waiting to be let in, oldest first.
+    private(set) var devices: [PendingDevice] = []
+    /// When each waiting device's request reached the island, for the time left to answer it.
+    private(set) var deviceAsked: [String: Date] = [:]
 
     @ObservationIgnored let options: Options
     @ObservationIgnored private var link: CoreLink?
@@ -26,6 +30,7 @@ final class NotchStore {
     enum Peek {
         case ask(String)
         case done(String)
+        case connect(String)
     }
 
     init(options: Options) {
@@ -46,6 +51,9 @@ final class NotchStore {
         let link = CoreLink(socket: options.socket, protocolVersion: options.protocolVersion)
         link.onReady = { [weak self, weak link] in
             link?.request(["op": "watchView"])
+            link?.request(["op": "remoteStatus"]) { result in
+                if case .success(let response) = result { self?.receiveRemote(response["status"]) }
+            }
             self?.error = nil
         }
         link.onEvent = { [weak self] event in self?.receive(event) }
@@ -68,6 +76,10 @@ final class NotchStore {
     }
 
     private func receive(_ event: [String: Any]) {
+        if event["kind"] as? String == "remote" {
+            receiveRemote(event["status"])
+            return
+        }
         guard event["kind"] as? String == "deviceView", let raw = event["view"],
               let data = try? JSONSerialization.data(withJSONObject: raw),
               let view = try? JSONDecoder().decode(DeviceView.self, from: data)
@@ -105,12 +117,29 @@ final class NotchStore {
         }
     }
 
+    private func receiveRemote(_ raw: Any?) {
+        guard let raw, let data = try? JSONSerialization.data(withJSONObject: raw),
+              let status = try? JSONDecoder().decode(RemoteStatus.self, from: data)
+        else { return }
+        apply(status.pending)
+    }
+
+    /// Unlike an agent's request, a device already waiting when the notch connects still opens the island.
+    func apply(_ pending: [PendingDevice], now: Date = Date()) {
+        let fresh = pending.filter { deviceAsked[$0.id] == nil }
+        deviceAsked = Dictionary(pending.map { ($0.id, deviceAsked[$0.id] ?? now) }, uniquingKeysWith: { first, _ in first })
+        if pending != devices { devices = pending }
+        if !fresh.isEmpty, let oldest = pending.first { onPeek?(.connect(oldest.id)) }
+    }
+
     /// Empties the island while the core is away. The first view after it comes
     /// back only catches up, so what was already asked or finished does not peek again.
     private func disconnected() {
         heard = false
         view = .empty
         withAnimation(Motion.open) { agents = [] }
+        devices = []
+        deviceAsked = [:]
     }
 
     /// Shows what went wrong for a few seconds.
@@ -135,9 +164,27 @@ final class NotchStore {
         }
     }
 
+    /// Lets a waiting device in with `access`, or turns it away when that is nil.
+    func answer(_ device: PendingDevice, access: DeviceAccess?) {
+        let request: [String: Any] = [
+            "op": "answerPairing",
+            "id": device.id,
+            "allow": access != nil,
+            "access": (access ?? .watch).rawValue,
+        ]
+        guard let link else { return fail(CoreLinkError.closed.message) }
+        link.request(request) { [weak self] result in
+            switch result {
+            case .success(let response): self?.receiveRemote(response["status"])
+            case .failure(let error): self?.fail(error.message)
+            }
+        }
+    }
+
     /// Shows the agent in Sikemux, opening the app first when its window is closed.
     func focus(_ agentId: String) {
         guard let link else { return }
+        bringAppForward()
         link.request(["op": "focusAgent", "agentId": agentId]) { [weak self] result in
             guard case .failure = result, let self else { return }
             self.openApp()
@@ -152,6 +199,19 @@ final class NotchStore {
                 if case .failure = result { self?.retryFocus(agentId, attempts: attempts - 1) }
             }
         }
+    }
+
+    /// macOS refuses to bring forward an app the person did not click, so the
+    /// helper, which took the click, takes the front and hands it to Sikemux.
+    private func bringAppForward() {
+        guard let app = options.app else { return }
+        let url = URL(fileURLWithPath: app).standardizedFileURL
+        guard let running = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleURL?.standardizedFileURL == url || $0.executableURL?.standardizedFileURL == url
+        }) else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.yieldActivation(to: running)
+        running.activate()
     }
 
     func openApp() {
@@ -239,11 +299,17 @@ final class NotchStore {
         return projects.max { (counts[$0.name] ?? 0) < (counts[$1.name] ?? 0) } ?? projects.first
     }
 
-    var rollup: (state: AgentState, count: Int)? {
-        for state in [AgentState.blocked, .working, .done] {
-            let count = agents.filter { $0.state == state }.count
-            if count > 0 { return (state, count) }
+    /// How many agents need you, work, left shells running and are done, most pressing first, leaving out
+    /// what no agent is doing. Shells left running sit beside working: the agent is still at something.
+    var rollups: [(mark: Rollup, count: Int)] {
+        [Rollup.state(.blocked), .state(.working), .stillRunning, .state(.done)].compactMap { mark in
+            let count = agents.filter { agent in
+                switch mark {
+                case .state(let state): agent.state == state
+                case .stillRunning: agent.state == .idle && agent.background
+                }
+            }.count
+            return count > 0 ? (mark, count) : nil
         }
-        return nil
     }
 }

@@ -17,8 +17,6 @@ export const AI_MODELS: Record<GitAiProvider, string[]> = {
 };
 
 export const DEFAULT_AI_PROVIDER: GitAiProvider = "hermes";
-export const AI_PROVIDER_STORAGE = "sikemux.git.ai.provider";
-export const AI_MODEL_STORAGE = "sikemux.git.ai.model";
 
 /** Height of the Git pane's built-in terminal, as a percent of the right column. */
 
@@ -31,7 +29,7 @@ export const GIT_HELP: GitCheatsheetSection[] = [
         title: "Global",
         rows: helpRows(
             ["1 2", "Changes, Branches"],
-            ["h", "open or close History under Changes"],
+            ["h", "go to History under Changes, or close it"],
             ["?", "open this cheatsheet"],
             ["@", "toggle command log"],
             ["/", "filter the list"],

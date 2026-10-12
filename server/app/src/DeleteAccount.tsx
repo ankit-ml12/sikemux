@@ -49,11 +49,7 @@ export function DeleteAccount({
     try {
       return await api.deleteAccount(token);
     } catch (error) {
-      if (
-        error instanceof ApiProblem &&
-        error.status === 403 &&
-        error.message === "reverify"
-      )
+      if (error instanceof ApiProblem && error.code === "reverify_required")
         return NEEDS_REVERIFICATION;
       throw error;
     }
@@ -91,7 +87,7 @@ export function DeleteAccount({
       <h1>Delete your account</h1>
       <p className="lede">
         This deletes {email ? <span className="ink">{email}</span> : "it"} from
-        Sikemux right away. It can't be undone.
+        Sikemux. Changed your mind? Sign in again within 30 days to restore it.
       </p>
 
       <ul className="facts">
@@ -106,8 +102,8 @@ export function DeleteAccount({
           from every host.
         </li>
         <li>
-          Your sign-in is deleted. Device keys and the account&rsquo;s history
-          are erased within 30 days, and backups within 30 days after that.
+          After 30 days your sign-in, device keys and the account&rsquo;s
+          history are erased, and backups within 30 days after that.
         </li>
       </ul>
       {devices && devices.length > 0 ? (
@@ -174,8 +170,9 @@ export function AccountDeleted() {
     <section className="panel">
       <h1>Your account is deleted</h1>
       <p>
-        Every device on it is signed out. Device keys and the account&rsquo;s
-        history are erased within 30 days.
+        Every device on it is signed out. Changed your mind? Sign in again
+        within 30 days to restore it. After that, your sign-in, device keys and
+        the account&rsquo;s history are erased.
       </p>
       <p className="quiet small">
         Questions? Email <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.

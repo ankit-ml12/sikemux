@@ -87,10 +87,13 @@ export interface PersistedPrefs {
     agentNotifications?: boolean;
     notch?: unknown;
     voiceDictation?: boolean;
+    iosSimulator?: boolean;
+    simulatorFrame?: boolean;
     notificationsIntroduced?: boolean;
     keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;
     agentRailAllAgents?: boolean;
+    accountAutoSwitch?: Partial<Record<"claude" | "codex", boolean>>;
     agentRailScope?: AgentRailScope;
     onboardingComplete?: boolean;
     lastSeenVersion?: string;

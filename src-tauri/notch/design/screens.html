@@ -103,7 +103,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .wings { display: flex; align-items: center; }
 .wing { display: flex; align-items: center; height: 100%; }
 .wing.l { justify-content: flex-start; padding-left: 14px; }
-.wing.r { justify-content: flex-end; padding-right: 14px; gap: 6px; }
+.wing.r { justify-content: flex-end; padding-right: 14px; gap: 10px; }
+.wing.r .group { display: inline-flex; align-items: center; gap: 6px; }
 .gap { height: 100%; flex: 0 0 auto; }
 .stack { display: flex; }
 .tile { width: 20px; height: 20px; display: grid; place-items: center; }
@@ -120,6 +121,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .st.working { color: var(--live); }
 .st.blocked { color: var(--warn); }
 .st.done { color: var(--acc); }
+.st.still { color: var(--warn); }
 .st .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .st .ping { position: absolute; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; opacity: 0; }
 .st.blocked.fresh .ping { animation: ping 520ms cubic-bezier(0.2, 0.6, 0.3, 1) both; }
@@ -158,6 +160,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .row .title, .ask-head .title { flex: 1 1 auto; min-width: 0; }
 .proj { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 150px; font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .proj svg { flex: 0 0 auto; color: var(--ink-faint); }
+.subagents { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.subagents svg { fill: currentColor; stroke: none; color: color-mix(in srgb, var(--live) 75%, transparent); }
 .time { min-width: 44px; text-align: right; }
 .row:hover { background: rgba(255, 255, 255, 0.07); }
 .mark { width: 20px; height: 20px; flex: 0 0 auto; }
@@ -175,6 +179,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
     background: rgba(255, 255, 255, 0.06); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ask .cmd { background: rgba(0, 0, 0, 0.45); }
+.ask.connect { padding: 14px; border-radius: 16px; margin-bottom: 0; }
+.ask.connect .ask-head { gap: 12px; }
+.ask.connect .title { font-size: 14px; }
+.ask.connect .sub { font-size: 12px; }
+.ask.connect .actions { margin-top: 12px; }
+.device-tile { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 10px; background: rgba(255, 255, 255, 0.08); display: grid; place-items: center; }
+.device-tile svg { display: block; }
+.countdown { font-variant-numeric: tabular-nums; }
 .cmd .sign { color: var(--ink-faint); margin-right: 8px; }
 .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .btn {
@@ -381,6 +393,7 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             <button data-act="start">An agent starts</button>
             <button data-act="block">Claude asks for permission</button>
             <button data-act="finish">Codex finishes</button>
+            <button data-act="connect">A phone asks to connect</button>
             <button data-act="drag">A file is dragged in</button>
             <button data-act="clear">No agents</button>
             <button data-act="reset">Reset</button>
@@ -406,15 +419,15 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
         <tr><td>Shape</td><td>Top corners curve outward into the menu bar, bottom corners inward. Radii (top / bottom): closed 6 / 14, peek 14 / 22, open 19 / 24.
             Both radii animate with the size.</td></tr>
         <tr><td>Closed wings</td><td>Each wing is as wide as what it holds: the right one holds only the count while every agent is idle, and grows
-            to fit the state mark when one works or needs you. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
-        <tr><td>Open</td><td>680 wide, height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state.</td></tr>
+            to fit a mark for each state some agent is in: needs you, then working, then done, each with its count above one, 10 pt apart. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
+        <tr><td>Open</td><td>680 wide, 560 on a display without a notch, where the header is 38 tall so its controls clear the screen edge; height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
             Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
         <tr><td>Content</td><td>One shape: the band beside the camera swaps the wings for a header in place, out of and into a 20 pt blur; the body
             below enters with scale 0.8 → 1 anchored at the top and opacity 0 → 1 over 0.35 s (<code>.smooth</code>). Agent marks fly from the wings
             to their rows (<code>matchedGeometryEffect</code>). The width is set per state (open 680, permission 460), so width, height and both radii
             spring together.</td></tr>
-        <tr><td>Timing</td><td>Hover 0.3 s before opening a closed island or a finished peek; a permission peek keeps its size under the pointer so its buttons stay put. Leave closes after 0.1 s, a peek too, unless the prompt holds the keyboard with a draft or files in it; clicking another app closes it and keeps the draft. A permission peek ends as soon as the request is answered anywhere, and a finished peek never replaces it. The keyboard is taken only when the prompt is clicked or New agent is chosen, never on hover. Permission peek 6 s, finished peek 3 s.</td></tr>
+        <tr><td>Timing</td><td>Hover 0.3 s before opening a closed island or a finished peek; a permission peek keeps its size under the pointer so its buttons stay put. Leave closes after 0.1 s, a peek too, unless the prompt holds the keyboard with a draft or files in it; clicking another app closes it and keeps the draft. A permission peek ends as soon as the request is answered anywhere, and a finished peek never replaces it. The keyboard is taken only when the prompt is clicked or New agent is chosen, never on hover. Permission peek 6 s, finished peek 3 s. A device asking to connect opens the island at 560 wide with the open radii, ignores the pointer leaving, and closes only once answered, lapsed or swiped away.</td></tr>
         <tr><td>Hover</td><td>Shadow on (black 70%, radius 6); the size stays. A trackpad tick (<code>.alignment</code>) when the pointer reaches a closed island.</td></tr>
         <tr><td>Swipe</td><td>Two fingers down over a closed island open it, up over an open one or a peek close it, once they travel 140 pt along the finger direction
             (twice the other axis; a mouse wheel's lines count 8 pt). While pulling, the island scales from the top, 1% per twentieth of the way, never
@@ -480,6 +493,7 @@ async function loadIcons() {
         mic: icon("IconMic"),
         clip: icon("IconImage"),
         phone: icon("IconPhone", 13),
+        phoneTile: icon("IconPhone", 20),
         file: icon("IconFile", 13),
         folder: icon("IconFolder", 13),
         folderSmall: icon("IconFolder", 11),
@@ -491,6 +505,8 @@ async function loadIcons() {
         arrowUp: icon("IconArrowUp", 15),
         check: icon("IconCheck", 14),
         chevron: icon("IconChevron", 10),
+        agent: icon("IconAgent", 10),
+        command: icon("IconCommand", 11),
     };
 }
 const MARK = `<img src="../../../brand/mark/mark-white.svg" alt="">`;
@@ -506,10 +522,19 @@ function freshAgents() {
     return [
         { id: "a1", type: "claude", title: "Fix the login flake", project: "sikemux", state: "blocked", time: "2:14",
           ask: { tool: "Bash", cmd: "pnpm test --filter core -- --runInBand" } },
-        { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12" },
+        { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12", subagents: 3 },
         { id: "a3", type: "opencode", title: "Draft the notch spec", project: "sikemux", state: "working", time: "0:48" },
         { id: "a4", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", state: "done", unread: true, time: "1m ago" },
+        { id: "a5", type: "codex", title: "Read the release notes", project: "sikemux", state: "idle", background: true },
     ];
+}
+
+/** The core turns a device away when nobody answers it within two minutes. */
+const ANSWER_WINDOW = 120;
+
+function timeLeft(device) {
+    const left = Math.max(0, ANSWER_WINDOW - Math.floor((Date.now() - device.at) / 1000));
+    return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 }
 
 function stateMark(state, fresh) {
@@ -519,15 +544,21 @@ function stateMark(state, fresh) {
     }
     if (state === "blocked") return `<span class="st blocked${fresh ? " fresh" : ""}"><span class="ping"></span><span class="ping"></span><span class="dot"></span></span>`;
     if (state === "done") return `<span class="st done"><span class="dot"></span></span>`;
+    if (state === "still") return `<span class="st still">${GLYPH.command}</span>`;
     return "";
 }
 
-function rollup(agents) {
-    for (const s of ["blocked", "working", "done"]) {
-        const hits = agents.filter((a) => a.state === s && (s !== "done" || a.unread));
-        if (hits.length) return { state: s, count: hits.length };
-    }
-    return null;
+/** How many agents need you, work and are done, most pressing first, leaving out the states no agent is in. */
+function rollups(agents) {
+    const counts = {
+        blocked: (a) => a.state === "blocked",
+        working: (a) => a.state === "working",
+        still: (a) => a.state === "idle" && a.background,
+        done: (a) => a.state === "done" && a.unread,
+    };
+    return Object.entries(counts)
+        .map(([state, has]) => ({ state, count: agents.filter(has).length }))
+        .filter((group) => group.count > 0);
 }
 
 function notchPath(w, h, t, b) {
@@ -544,6 +575,7 @@ class Island {
         this.mode = opts.mode || "closed";
         this.tab = opts.tab || "agents";
         this.peekAgent = opts.peekAgent || null;
+        this.device = opts.device || null;
         this.hover = !!opts.hover;
         this.freshPing = !!opts.fresh;
         this.selectedType = "claude";
@@ -557,6 +589,27 @@ class Island {
         this.vel = [0, 0, 0, 0, 0];
         this.build();
         this.render(true);
+        if (this.live) setInterval(() => this.tickDevice(), 1000);
+    }
+
+    tickDevice() {
+        if (this.mode !== "peek-connect" || !this.device) return;
+        if (timeLeft(this.device) === "0:00") return this.answerDevice();
+        const el = this.el.querySelector(".countdown");
+        if (el) el.textContent = timeLeft(this.device);
+    }
+
+    /** A device asks to connect: the island opens on the oldest request and stays until it is answered. */
+    askToConnect(device) {
+        if (this.mode === "peek-connect") {
+            (this.queue ||= []).push(device);
+            return;
+        }
+        if (this.mode === "drop") return;
+        clearTimeout(this.peekTimer);
+        this.device = device;
+        this.mode = "peek-connect";
+        this.render();
     }
 
     build() {
@@ -595,26 +648,28 @@ class Island {
         if (!open) return { left: 0, right: 0 };
         let left = 14 + 20 + (Math.min(open, 3) - 1) * 17 + 10;
         if (open > 3) left += 9 + 6.5 * (String(open - 3).length + 1);
-        const top = rollup(this.agents);
+        const groups = rollups(this.agents);
         const digits = (n) => String(n).length * 7.5;
-        const held = top ? (top.count > 1 ? digits(top.count) + 6 : 0) + 16 : digits(open);
+        const held = groups.length
+            ? groups.reduce((sum, g) => sum + (g.count > 1 ? digits(g.count) + 6 : 0) + 16, 0) + (groups.length - 1) * 10
+            : digits(open);
         return { left, right: 10 + held + 14 };
     }
 
     target() {
         const d = this.d;
         const plain = d.notchW === 0;
-        const running = this.agents.filter((a) => a.state !== "idle");
         if (this.mode === "open" || this.mode === "drop") {
             const h = Math.min(400, this.layers.open.offsetHeight);
-            return { w: 680, h, r: RADII.open };
+            return { w: plain ? 560 : 680, h, r: RADII.open };
         }
         if (this.mode === "peek-ask") return { w: 460, h: this.layers.peek.offsetHeight, r: RADII.peek };
+        if (this.mode === "peek-connect") return { w: 560, h: this.layers.peek.offsetHeight, r: RADII.open };
         if (this.mode === "peek-done") {
             const w = plain ? 300 : d.notchW + 2 * 150;
             return { w, h: d.notchH, r: RADII.closed };
         }
-        if (!running.length) {
+        if (!this.agents.length) {
             if (plain) return { w: 0, h: 0, r: RADII.closed };
             return { w: d.notchW, h: d.notchH, r: RADII.closed, nudge: true };
         }
@@ -626,9 +681,8 @@ class Island {
     renderContent() {
         const d = this.d;
         const plain = d.notchW === 0;
-        const t = this.mode === "open" || this.mode === "drop" ? RADII.open[0] : RADII.peek[0];
-        const running = this.agents.filter((a) => a.state !== "idle");
-        const top = rollup(this.agents);
+        const t = this.mode === "open" || this.mode === "drop" || this.mode === "peek-connect" ? RADII.open[0] : RADII.peek[0];
+        const groups = rollups(this.agents);
         const wings = this.wings();
 
         if (this.mode === "peek-done") {
@@ -641,20 +695,22 @@ class Island {
                 <div class="wing r" style="width:${half}px;height:${d.notchH}px">
                     <span class="inline-text dim">${a.title}</span>${stateMark("done")}</div>`;
         } else {
-            const shown = running.slice(0, 3);
-            const extra = running.length - shown.length;
+            const shown = this.agents.slice(0, 3);
+            const extra = this.agents.length - shown.length;
             this.layers.wings.innerHTML = `
                 <div class="wing l" style="width:${wings.left + (plain ? 4 : 0)}px;height:${d.notchH}px">
                     <span class="stack">${shown.map((a) => `<span class="tile">${ICON[a.type]}</span>`).join("")}${
                         extra > 0 ? `<span class="tile count" style="font-size:10px">+${extra}</span>` : ""}</span></div>
                 ${plain ? "" : `<div class="gap" style="width:${d.notchW}px"></div>`}
                 <div class="wing r" style="width:${wings.right + (plain ? 4 : 0)}px;height:${d.notchH}px">
-                    ${top ? `${top.count > 1 ? `<span class="count">${top.count}</span>` : ""}${stateMark(top.state, this.freshPing)}` : `<span class="count">${running.length}</span>`}</div>`;
+                    ${groups.length
+                        ? groups.map((g) => `<span class="group">${g.count > 1 ? `<span class="count">${g.count}</span>` : ""}${stateMark(g.state, this.freshPing)}</span>`).join("")
+                        : `<span class="count">${this.agents.length}</span>`}</div>`;
             if (plain) this.layers.wings.firstElementChild.nextElementSibling.style.paddingRight = "10px";
         }
 
         const head = (left, right, width) => `
-            <div class="head" style="height:${d.notchH}px;width:${width}px">
+            <div class="head" style="height:${plain ? Math.max(d.notchH, 38) : d.notchH}px;width:${width}px">
                 <div class="side">${left}</div>
                 ${plain ? "" : `<div class="gap" style="width:${d.notchW + 8}px"></div>`}
                 <div class="side r">${right}</div>
@@ -678,9 +734,30 @@ class Island {
                 </div>`;
         }
 
-        const inner = 680 - 2 * RADII.open[0] - 24;
+        if (this.mode === "peek-connect") {
+            const inner = 560 - 2 * t - 24;
+            this.layers.peek.style.width = `${inner}px`;
+            this.layers.peek.innerHTML = `
+                ${head("", "", inner)}
+                <div style="padding:8px 0 14px">
+                    <div class="ask connect">
+                        <div class="ask-head">
+                            <span class="device-tile">${GLYPH.phoneTile}</span>
+                            <div class="text"><span class="title">${this.device.name || "A device"} wants to connect</span>
+                                <span class="sub">From your Sikemux account<span class="dotsep">·</span><span class="countdown">${timeLeft(this.device)}</span></span></div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn" data-connect="decline">Decline</button>
+                            <button class="btn" data-connect="watch">Watch only</button>
+                            <button class="btn primary" data-connect="full">Allow</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        const inner = (plain ? 560 : 680) - 2 * RADII.open[0] - 24;
         this.layers.open.style.width = `${inner}px`;
-        const count = running.length;
+        const count = this.agents.length;
         const tabs = `
             <button class="chip" data-tab="agents" aria-selected="${this.tab === "agents"}">Agents <span class="n">${count}</span></button>
             <button class="chip" data-tab="new" aria-selected="${this.tab === "new"}">${GLYPH.plus.replace("<svg", '<svg width="12" height="12"')} New agent</button>`;
@@ -705,6 +782,7 @@ class Island {
                     ["Needs you", this.agents.filter((a) => a.state === "blocked")],
                     ["Working", this.agents.filter((a) => a.state === "working")],
                     ["Done", this.agents.filter((a) => a.state === "done")],
+                    ["Idle", this.agents.filter((a) => a.state === "idle")],
                 ];
                 body = groups.filter(([, list]) => list.length).map(([label, list]) => `
                     <div class="group-label">${label}</div>
@@ -724,8 +802,8 @@ class Island {
                         </div>` : `
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
-                            <span class="title">${a.title}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>
-                            <span class="time">${a.time}</span>${stateMark(a.state)}
+                            <span class="title">${a.title}</span>${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
+                            ${a.state === "idle" ? stateMark(a.background ? "still" : "idle") : `<span class="time">${a.time}</span>${stateMark(a.state)}`}
                         </div>`).join("")}`).join("");
             }
         } else {
@@ -784,8 +862,9 @@ class Island {
     render(snap) {
         this.renderContent();
         const isBig = this.mode === "open" || this.mode === "drop";
-        this.layers.wings.classList.toggle("off", isBig || this.mode === "peek-ask");
-        this.layers.peek.classList.toggle("off", this.mode !== "peek-ask");
+        const isAsk = this.mode === "peek-ask" || this.mode === "peek-connect";
+        this.layers.wings.classList.toggle("off", isBig || isAsk);
+        this.layers.peek.classList.toggle("off", !isAsk);
         this.layers.open.classList.toggle("off", !isBig);
         const target = this.target();
         const nudge = [0, 0];
@@ -884,6 +963,10 @@ class Island {
                 this.render();
                 return;
             }
+            if (e.target.closest("[data-connect]")) {
+                this.answerDevice();
+                return;
+            }
             const answer = e.target.closest("[data-answer]");
             if (answer) {
                 const a = this.agents.find((x) => x.id === answer.dataset.id);
@@ -905,6 +988,13 @@ class Island {
             const drop = e.target.closest("[data-drop]");
             if (drop) this.finishDrop(drop.dataset.drop);
         });
+    }
+
+    /** Answered, or no longer waiting: the next device asks, or the island folds back. */
+    answerDevice() {
+        this.device = this.queue?.shift() || null;
+        if (!this.device) this.mode = this.hover ? "open" : "closed";
+        this.render();
     }
 
     finishDrop(target) {
@@ -949,14 +1039,18 @@ const SECTIONS = [
               shows: "Left: the marks of the open agents, the busiest first. Right: how many are working, and the green twinkle grid. With every agent idle, the right wing shows how many are open.",
               opts: { agents: () => only(["a2", "a3"]) } },
             { id: "C3", name: "Needs you", when: "Any agent is waiting for a permission or an answer.",
-              shows: "An amber dot replaces the grid. It sends out two rings when it arrives, then goes still. Beats working and done.",
+              shows: "An amber dot, first in the right wing, ahead of working and done. It sends out two rings when it arrives, then goes still.",
               opts: { agents: () => freshAgents(), fresh: true } },
             { id: "C4", name: "Done, unseen", when: "An agent finished and you have not looked at it yet.",
               shows: "A purple dot, until you open the island or the agent.", opts: { agents: () => only(["a4"]) } },
+            { id: "C4b", name: "Working and done", when: "Some agents work while others finished unseen.",
+              shows: "The working grid stays, with the done dot to its right: each state keeps its own mark and count.", opts: { agents: () => only(["a2", "a3", "a4"]) } },
             { id: "C5", name: "More than three", when: "Four or more agents are running.",
               shows: "Three marks, then +N.", opts: { agents: () => [...allWorking(), { id: "a5", type: "pi", title: "x", project: "x", state: "working" }] } },
             { id: "C6", name: "Pointer resting", when: "The pointer is on the island, for the 0.3 s before it opens.",
               shows: "The shadow comes on and the trackpad ticks once. The island keeps its size until it opens.", opts: { agents: () => only(["a2", "a3"]), hover: true } },
+            { id: "C7", name: "Shells still running", when: "An agent is idle but left shells or monitors running.",
+              shows: "The amber terminal glyph the Mac's tabs use, beside working since the agent is still at something, with a count past one.", opts: { agents: () => only(["a3", "a5"]) } },
         ],
     },
     {
@@ -969,6 +1063,10 @@ const SECTIONS = [
             { id: "P2", name: "Finished", when: "An agent finishes.",
               shows: "One line either side of the camera: the agent's mark and Finished, then the task and a purple dot.",
               leaves: "Shrinks to C4 after 3 s.", opts: { agents: () => only(["a2", "a4"]), mode: "peek-done", peekAgent: "a4" } },
+            { id: "P3", name: "A device asks to connect", when: "A phone signed in to the same Sikemux account asks to connect to this computer, whether or not Sikemux's window is open.",
+              shows: "The island drops open on one card: the phone, its name, and the time left before the request lapses, with Decline, Watch only and Allow. Several waiting: the oldest first.",
+              leaves: "Answering folds it back, or moves on to the next device. It stays open until then, or until the request lapses after 2 minutes; swiping up puts it away and leaves the answer to Sikemux.",
+              opts: { agents: () => only(["a2", "a3"]), mode: "peek-connect", device: { name: "Pixel 8", at: Date.now() - 8000 } } },
         ],
     },
     {
@@ -987,6 +1085,9 @@ const SECTIONS = [
               leaves: "Picking a model or pressing Esc closes it. Picking another agent swaps the list.",
               opts: { agents: () => freshAgents(), mode: "open", tab: "new", menu: "model", draft: "Turn the notch mockup into a SwiftUI spec" } },
             { id: "O4", name: "Empty", when: "Opened with nothing running.", shows: "One New agent button.", opts: { agents: [], mode: "open" } },
+            { id: "O5", name: "With an idle agent", when: "Opened while an agent is idle but left shells or monitors running.",
+              shows: "Idle agents come last, with no time. One with shells or monitors still going ends in the amber terminal glyph the Mac's tabs use, so it does not read as the dot that waits on you.",
+              opts: { agents: () => only(["a2", "a5"]), mode: "open" } },
         ],
     },
     {
@@ -1014,7 +1115,7 @@ const OPTIONS = [
       why: "A display without a notch gets a pill at its menu bar's height. Switch Preview on to External display to see it." },
     { name: "Open with", choices: ["Resting the pointer", "Clicking"], def: 0, why: "Resting waits 0.3 s, so passing the pointer across the menu bar does not open it." },
     { name: "In full-screen apps", choices: ["Hide unless an agent needs you", "Always show", "Always hide"], def: 0 },
-    { name: "Peek when", choices: ["An agent needs you or finishes", "An agent needs you", "Never"], def: 0, why: "Turns P1 and P2 on or off." },
+    { name: "Peek when", choices: ["An agent needs you or finishes", "An agent needs you", "Never"], def: 0, why: "Turns P1 and P2 on or off. A device asking to connect counts as needing you (P3)." },
     { name: "Answer permissions", choices: ["In the notch", "Only in Sikemux"], def: 0, why: "With the second choice, P1 and O1 show Open in Sikemux instead of Deny and Allow." },
     { name: "While Sikemux Dev runs", choices: ["Dev takes the notch", "Prod keeps it", "One island with both builds' agents"], def: 0,
       why: "Prod's helper watches for Dev's helper starting and quitting, and hides while it runs." },
@@ -1023,14 +1124,15 @@ const OPTIONS = [
 ];
 
 const FLOW = [
-    [["state", "C1–C6", "Closed", "closed"], ["arrow", "rest 0.3 s"], ["state", "O1–O4", "Open", "open"], ["arrow", "leave 0.1 s"], ["state", "C1–C6", "Closed", "closed"]],
+    [["state", "C1–C7", "Closed", "closed"], ["arrow", "rest 0.3 s"], ["state", "O1–O5", "Open", "open"], ["arrow", "leave 0.1 s"], ["state", "C1–C7", "Closed", "closed"]],
     [["event", "", "Agent asks"], ["arrow", ""], ["state", "P1", "Permission", "P1"], ["arrow", "6 s"], ["state", "C3", "Needs you", "C3"]],
+    [["event", "", "Device asks to connect"], ["arrow", ""], ["state", "P3", "Connect", "P3"], ["arrow", "answer"], ["state", "C1–C7", "Closed", "closed"]],
     [["event", "", "Agent finishes"], ["arrow", ""], ["state", "P2", "Finished", "P2"], ["arrow", "3 s"], ["state", "C4", "Done, unseen", "C4"]],
     [["event", "", "File dragged"], ["arrow", ""], ["state", "D1", "Drop targets", "D1"], ["arrow", "drop"], ["state", "C2", "Working", "C2"]],
 ];
 
 const only = (ids) => freshAgents().filter((a) => ids.includes(a.id));
-const allWorking = () => freshAgents().map((a) => ({ ...a, state: "working", ask: undefined, unread: false }));
+const allWorking = () => freshAgents().filter((a) => a.state !== "idle").map((a) => ({ ...a, state: "working", ask: undefined, unread: false }));
 
 let display = "notch";
 let channel = "prod";
@@ -1179,6 +1281,8 @@ document.getElementById("controls").addEventListener("click", (e) => {
         a.unread = true;
         a.time = "just now";
         live.peek("peek-done", a.id, 3000);
+    } else if (act === "connect") {
+        live.askToConnect({ name: "Pixel 8", at: Date.now() });
     } else if (act === "drag") {
         live.mode = live.mode === "drop" ? "closed" : "drop";
         live.render();

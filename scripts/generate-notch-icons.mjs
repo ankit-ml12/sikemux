@@ -17,8 +17,6 @@ const check = process.argv.includes("--check");
 
 const LINE_ICONS = {
   plus: "IconPlus",
-  mic: "IconMic",
-  image: "IconImage",
   phone: "IconPhone",
   folder: "IconFolder",
   file: "IconFile",
@@ -27,8 +25,12 @@ const LINE_ICONS = {
   chevron: "IconChevron",
   check: "IconCheck",
   arrowUp: "IconArrowUp",
-  external: "IconExternal",
+  agent: "IconAgent",
+  command: "IconCommand",
 };
+
+// Line icons the app fills from its stylesheet rather than from the icon itself.
+const FILLED_ICONS = new Set(["agent"]);
 
 const MARK_FUNCTIONS = {
   claude: "IconClaude",
@@ -39,12 +41,7 @@ const MARK_FUNCTIONS = {
 };
 
 const MARK_FILES = { codex: "codex.svg", omp: "omp.svg" };
-// The same mark as brand/mark/mark-white.svg, read from the server app's copy
-// until brand/ is in the repository.
-const BRAND_MARK = [
-  resolve(root, "brand/mark/mark-white.svg"),
-  resolve(root, "server/app/src/mark-white.svg"),
-];
+const BRAND_MARK = resolve(root, "brand/mark/mark-white.svg");
 
 /** The colour each mark takes where the app paints it with its brand colour. */
 const BRAND = {
@@ -246,7 +243,10 @@ for (const [key, name] of Object.entries(LINE_ICONS)) {
   if (!match) throw new Error(`src/ui/Icons.tsx has no ${name}`);
   const options = match[2] ?? "";
   const box = options.match(/viewBox:\s*"([^"]+)"/)?.[1];
-  const style = options.includes('fill: "currentColor"') ? "fill" : "stroke";
+  const style =
+    FILLED_ICONS.has(key) || options.includes('fill: "currentColor"')
+      ? "fill"
+      : "stroke";
   const body = shapes(match[1]).map(
     (shape) => `        ${shapeLiteral(shape, style, null, {})},`,
   );
@@ -283,9 +283,7 @@ for (const [key, file] of Object.entries(MARK_FILES)) {
   );
 }
 
-const brand = await readFile(BRAND_MARK[0], "utf8").catch(() =>
-  readFile(BRAND_MARK[1], "utf8"),
-);
+const brand = await readFile(BRAND_MARK, "utf8");
 const brandBody = shapes(brand).map(
   (shape) =>
     `        IconShape(d: ${swiftString(shape.d)}, style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),`,

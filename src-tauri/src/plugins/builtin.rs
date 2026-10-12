@@ -14,12 +14,16 @@ pub fn plugins() -> Vec<Arc<dyn Plugin>> {
         sikemux_plugin_database::plugin(),
         #[cfg(feature = "github")]
         sikemux_plugin_github::plugin(),
+        #[cfg(feature = "gitlab")]
+        sikemux_plugin_gitlab::plugin(),
         #[cfg(feature = "jira")]
         sikemux_plugin_jira::plugin(),
         #[cfg(feature = "rundeck")]
         sikemux_plugin_rundeck::plugin(),
         #[cfg(feature = "signoz")]
         sikemux_plugin_signoz::plugin(),
+        #[cfg(feature = "slack")]
+        sikemux_plugin_slack::plugin(),
     ];
     compiled_in
         .into_iter()

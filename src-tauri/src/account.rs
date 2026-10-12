@@ -16,10 +16,10 @@ use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sikemux_core::accounts::protocol::{
-    ApiError, Challenge, Channel, Device, DeviceRegistration, DeviceRole, Platform,
+    ApiError, Challenge, Channel, Device, DeviceList, DeviceRegistration, DeviceRole, Platform,
 };
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{AccountLinkState, BuildChannel, RemoteStatus};
+use sikemux_core::protocol::{AccountLinkState, BuildChannel, DeviceInfo, RemoteStatus};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -165,11 +165,21 @@ async fn read_saved() -> AppResult<Option<Saved>> {
         .await
         .map_err(|error| AppError::Other(error.to_string()))?
         .map_err(|error| AppError::Other(error.to_string()))?;
-    Ok(text.and_then(|text| serde_json::from_str(&text).ok()))
+    Ok(text.and_then(|text| decode_saved(&text)))
+}
+
+/// The keychain takes only token-like text, so the saved sign-in goes in as base64 JSON.
+fn encode_saved(saved: &Saved) -> AppResult<String> {
+    Ok(URL_SAFE_NO_PAD.encode(serde_json::to_vec(saved)?))
+}
+
+fn decode_saved(text: &str) -> Option<Saved> {
+    let bytes = URL_SAFE_NO_PAD.decode(text.trim()).ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 async fn write_saved(saved: &Saved) -> AppResult<()> {
-    let text = serde_json::to_string(saved)?;
+    let text = encode_saved(saved)?;
     tokio::task::spawn_blocking(move || sikemux_keychain::write(KEY_SERVICE, key_account(), &text))
         .await
         .map_err(|error| AppError::Other(error.to_string()))?
@@ -315,7 +325,8 @@ async fn refreshed_access_token(saved: &Saved) -> AppResult<String> {
 }
 
 /// Opens sign-in in the browser, waits for it, then registers this host's
-/// core with the account and records the account as its owner.
+/// core with the account and records the account as its owner, which turns
+/// remote access on.
 #[tauri::command]
 pub async fn account_sign_in(
     app: AppHandle,
@@ -360,14 +371,51 @@ pub async fn account_sign_in(
     Ok(status_of(&dir, saved).await)
 }
 
+/// The phones on the account this host has not paired, newest first, so the
+/// person can let them in right after signing in.
+#[tauri::command]
+pub async fn account_phones(manager: State<'_, PtyManager>) -> AppResult<Vec<Device>> {
+    let Some(saved) = read_saved().await? else {
+        return Ok(Vec::new());
+    };
+    let access_token = refreshed_access_token(&saved).await?;
+    let response = http()
+        .get(api("/v1/devices"))
+        .query(&[("role", "client")])
+        .bearer_auth(access_token)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(api_failure(response).await);
+    }
+    let list: DeviceList = response.json().await?;
+    let paired = manager
+        .client()
+        .await?
+        .remote_status()
+        .await
+        .map_err(core_error)?
+        .devices;
+    Ok(unpaired_phones(list.devices, &paired))
+}
+
+fn unpaired_phones(devices: Vec<Device>, paired: &[DeviceInfo]) -> Vec<Device> {
+    devices
+        .into_iter()
+        .filter(|device| device.role == DeviceRole::Client)
+        .filter(|device| !paired.iter().any(|known| known.id == device.key))
+        .collect()
+}
+
 #[tauri::command]
 pub fn account_cancel_sign_in(pending: State<'_, PendingSignIn>) {
     pending.replace(None);
 }
 
-/// Takes this host off the account, then forgets the account here. The core
-/// tells the account, now or once it is back online. Paired devices stay:
-/// they are the host's own list, approved one by one.
+/// Takes this host off the account and turns remote access off, then forgets
+/// the account here. The core tells the account, now or once it is back
+/// online. Paired devices stay: they are the host's own list, approved one by
+/// one.
 #[tauri::command]
 pub async fn account_sign_out(
     app: AppHandle,
@@ -644,6 +692,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_saved_sign_in_reaches_the_keychain_as_token_like_text_and_comes_back() {
+        let saved = Saved {
+            user_id: "user_1".into(),
+            email: Some("someone@example.com".into()),
+            refresh_token: "rt.abc-def_ghi".into(),
+        };
+        let text = encode_saved(&saved).expect("encode");
+        assert!(text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')));
+        let back = decode_saved(&text).expect("decode");
+        assert_eq!(back.user_id, "user_1");
+        assert_eq!(back.email.as_deref(), Some("someone@example.com"));
+        assert_eq!(back.refresh_token, "rt.abc-def_ghi");
+    }
+
+    #[test]
     fn the_callback_must_carry_this_sign_in_state() {
         assert_eq!(
             callback("/callback?code=abc&state=s1", "s1"),
@@ -685,7 +750,7 @@ mod tests {
         let remote = |owner: Option<&str>, core_id: &str| -> RemoteStatus {
             serde_json::from_value(serde_json::json!({
                 "enabled": false, "coreId": core_id, "addresses": [], "devices": [],
-                "connected": [], "pairing": null, "pending": [], "owner": owner,
+                "connected": [], "pending": [], "owner": owner,
             }))
             .unwrap()
         };
@@ -693,6 +758,37 @@ mod tests {
         assert!(released(&remote(None, "key"), "user_1"));
         assert!(released(&remote(Some("user_2"), "key"), "user_1"));
         assert!(!released(&remote(None, ""), "user_1"));
+    }
+
+    #[test]
+    fn only_phones_this_host_has_not_paired_are_offered() {
+        let device = |key: &str, role: DeviceRole| Device {
+            key: key.into(),
+            role,
+            name: key.into(),
+            platform: Platform::Ios,
+            channel: None,
+            created_at: "2026-10-08T00:00:00Z".into(),
+            last_seen_at: None,
+        };
+        let paired = DeviceInfo {
+            id: "paired".into(),
+            name: "Paired".into(),
+            platform: "ios".into(),
+            access: sikemux_core::protocol::DeviceAccess::Full,
+            paired_at: 0,
+            last_seen: None,
+        };
+        let offered = unpaired_phones(
+            vec![
+                device("new", DeviceRole::Client),
+                device("paired", DeviceRole::Client),
+                device("host", DeviceRole::Host),
+            ],
+            &[paired],
+        );
+        let keys: Vec<_> = offered.iter().map(|device| device.key.as_str()).collect();
+        assert_eq!(keys, ["new"]);
     }
 
     #[test]

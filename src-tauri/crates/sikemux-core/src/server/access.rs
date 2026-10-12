@@ -29,6 +29,7 @@ pub(crate) const UNPAIRED: &str = "this device is no longer paired with this hos
 
 pub(crate) fn needs(request: &Request) -> Needs {
     match request {
+        Request::Call { method, .. } => super::calls::needs(method),
         Request::List
         | Request::Attach { .. }
         | Request::Detach { .. }
@@ -36,6 +37,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
+        | Request::AcpHistory { .. }
         | Request::AcpDetach { .. }
         | Request::AcpWake { .. }
         | Request::BackdropImage
@@ -51,15 +53,19 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::Resize { .. }
         | Request::Kill { .. }
         | Request::ResetModes { .. }
+        | Request::ShellAtPrompt { .. }
         | Request::AcpStart { .. }
         | Request::AcpPrompt { .. }
+        | Request::AcpEdit { .. }
         | Request::AcpSteer { .. }
+        | Request::AttachFile { .. }
         | Request::AcpCancel { .. }
         | Request::AcpStopTask { .. }
         | Request::AcpStop { .. }
         | Request::AcpSetPermissionMode { .. }
         | Request::AcpSetConfig { .. }
-        | Request::StartChat { .. } => Needs::Full,
+        | Request::StartChat { .. }
+        | Request::ResumeChat { .. } => Needs::Full,
         Request::Configure { .. }
         | Request::ListManifests
         | Request::ReloadManifests
@@ -68,23 +74,25 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::RegisterWindow
         | Request::HarnessAwaitingTrust { .. }
         | Request::HarnessStopRuns { .. }
+        | Request::PluginsChanged
         | Request::Shutdown { .. }
         | Request::RemoteStatus
         | Request::SetRemoteAccess { .. }
         | Request::SetDeviceAccess { .. }
         | Request::RevokeDevice { .. }
-        | Request::OpenPairing
-        | Request::ClosePairing
         | Request::AnswerPairing { .. }
+        | Request::AllowDevices { .. }
         | Request::SignRegistration { .. }
         | Request::SetOwner { .. }
         | Request::PublishWorkspace { .. }
         | Request::PublishAgents { .. }
+        | Request::PublishRecent { .. }
         | Request::PublishOnScreen { .. }
         | Request::WatchView
         | Request::FocusAgent { .. }
         | Request::PublishPalette { .. }
-        | Request::PublishBackdrop { .. } => Needs::Local,
+        | Request::PublishBackdrop { .. }
+        | Request::AcpSwitchAccount { .. } => Needs::Local,
     }
 }
 
@@ -121,7 +129,7 @@ pub(crate) fn permit(peer: &Peer, access: Option<DeviceAccess>, needs: Needs) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::SessionId;
+    use crate::protocol::{AllowedDevice, SessionId};
 
     const SESSION: SessionId = 1;
 
@@ -155,11 +163,18 @@ mod tests {
             Request::Configure { manifest_dir: None },
             Request::SetRemoteAccess { enabled: false },
             Request::RevokeDevice { id: "other".into() },
-            Request::OpenPairing,
             Request::AnswerPairing {
                 id: "request".into(),
                 allow: true,
                 access: DeviceAccess::Full,
+            },
+            Request::AllowDevices {
+                devices: vec![AllowedDevice {
+                    id: "f".repeat(64),
+                    name: "Attacker".into(),
+                    platform: "ios".into(),
+                    access: DeviceAccess::Full,
+                }],
             },
             Request::SignRegistration {
                 nonce: "a".repeat(64),
@@ -168,6 +183,7 @@ mod tests {
             Request::SetOwner {
                 owner: Some("user_attacker".into()),
             },
+            Request::PublishRecent { chats: Vec::new() },
         ] {
             assert_eq!(refusal(Some(DeviceAccess::Full), &request), LOCAL_ONLY);
         }
@@ -192,6 +208,18 @@ mod tests {
             },
             Request::AcpCancel {
                 agent_id: "a".into(),
+            },
+            Request::AttachFile {
+                agent_id: "a".into(),
+                name: "shot.jpg".into(),
+                mime: "image/jpeg".into(),
+                data: String::new(),
+            },
+            Request::ResumeChat {
+                recent: "claude:s1".into(),
+                permission_mode: None,
+                model: None,
+                effort: None,
             },
         ] {
             assert_eq!(refusal(watch, &request), WATCH_ONLY);

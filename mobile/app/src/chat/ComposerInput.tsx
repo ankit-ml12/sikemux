@@ -1,7 +1,7 @@
 import { useState, type Ref } from 'react';
 import { Platform, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
-import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
+import { fonts, isLight, type Palette, useColors, useStyles } from '@/ui/theme';
 
 type Props = Omit<TextInputProps, 'style' | 'placeholder'> & { placeholder: string; ref?: Ref<TextInput> };
 
@@ -32,7 +32,7 @@ export function ComposerInput({ placeholder, value, ref, ...props }: Props) {
         placeholderTextColor={colors.inkFaint}
         multiline
         selectionColor={colors.accent}
-        keyboardAppearance="dark"
+        keyboardAppearance={isLight(colors) ? 'light' : 'dark'}
         style={[styles.input, empty && { minHeight: Math.max(MIN_HEIGHT, placeholderHeight) }]}
         {...props}
       />
@@ -51,10 +51,10 @@ const makeStyles = (colors: Palette) => {
       paddingTop: 9,
       paddingBottom: 4,
       fontFamily: fonts.ui,
-      fontSize: 15,
+      fontSize: 14.5,
       color: colors.ink,
       // Android pads a field by the font's full height and adds line height above each line, so the cursor misses the text.
-      ...Platform.select({ ios: { lineHeight: 21 }, android: { includeFontPadding: false, textAlignVertical: 'top' } }),
+      ...Platform.select({ ios: { lineHeight: 20 }, android: { includeFontPadding: false, textAlignVertical: 'top' } }),
     },
     measure: { position: 'absolute', left: 0, right: 0, opacity: 0 },
   });

@@ -1,4 +1,4 @@
-import { ChatState, type ChatInfo } from '@/core/protocol';
+import type { ChatInfo } from '@/core/protocol';
 
 const PROVIDER_NAMES: Record<string, string> = {
   claude: 'Claude Code',
@@ -27,16 +27,22 @@ export function chatTitle(chat: Pick<ChatInfo, 'title' | 'provider'>): string {
 export function chatState(chat: ChatInfo): string {
   if (chat.pendingPermissions.length) return 'Needs input';
   if (chat.asleep) return 'Sleeping';
-  if (chat.state === ChatState.Stopped) return 'Stopped';
-  if (chat.state === ChatState.Starting) return 'Starting…';
+  if (chat.state === 'stopped') return 'Stopped';
+  if (chat.state === 'starting') return 'Starting…';
   return chat.running ? 'Working' : 'Ready';
 }
 
-export function ago(at: number, now = Date.now()): string {
+/** How long ago, as briefly as the Mac's rail puts it: `now`, `5m`, `3h`, `1d`. */
+export function age(at: number, now = Date.now()): string {
   const minutes = Math.round((now - at) / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+export function ago(at: number, now = Date.now()): string {
+  const short = age(at, now);
+  return short === 'now' ? 'just now' : `${short} ago`;
 }

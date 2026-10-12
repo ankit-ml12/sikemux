@@ -22,6 +22,23 @@ export type DeskItem =
     | { key: string; kind: "terminal"; terminal: DeskTerminal }
     | { key: string; kind: "simulator"; simulator: DeskSimulator };
 
+export type DeskKind = DeskItem["kind"];
+
+/** The kind of item `shownDeskItem` picked; the desk shows the tabs of one kind at a time. */
+export function shownKind(shown: string | null): DeskKind | null {
+    if (shown === null) return null;
+    if (shown === BROWSER_ACTIVE) return "browser";
+    if (shown.startsWith("file:")) return "file";
+    return shown.startsWith("simulator:") ? "simulator" : "terminal";
+}
+
+/** The item to bring back when the person switches to a kind: the one it last showed, or its first. */
+export function itemOfKind(items: readonly DeskItem[], kind: DeskKind, strip: BrowserSnapshot, last?: string): DeskItem | undefined {
+    const ofKind = items.filter((item) => item.kind === kind);
+    if (kind === "browser") return ofKind.find((item) => item.kind === "browser" && item.tab.id === strip.activeTabId) ?? ofKind[0];
+    return ofKind.find((item) => item.key === last) ?? ofKind[0];
+}
+
 /** Everything on a desk, in the order it arrived. */
 export function deskItems(desk: Desk, strip: BrowserSnapshot, files: readonly string[]): DeskItem[] {
     const items = new Map<string, DeskItem>();
@@ -72,9 +89,16 @@ export function deskView(paneId: string): DeskView | null {
     const strip = state.browserStrips[agentId] ?? EMPTY_STRIP;
     const saved = strip.tabs.filter((tab) => tab.url && tab.url !== BLANK_URL).slice(0, DESK_PERSISTENCE_LIMITS.maxTabs);
     const tabs = pending ? pending.tabs : saved.map((tab) => ({ url: tab.url, title: tab.title.slice(0, DESK_PERSISTENCE_LIMITS.maxTitleLength) }));
-    if (tabs.length === 0 && files.length === 0) return null;
+    const simulator = state.desks[agentId]?.simulators[0];
+    if (tabs.length === 0 && files.length === 0 && !simulator) return null;
     const active = pending ? pending.activeIndex : saved.findIndex((tab) => tab.id === strip.activeTabId);
-    return { agentId, tabs, activeIndex: active < 0 ? 0 : active, files: [...files] };
+    return {
+        agentId,
+        tabs,
+        activeIndex: active < 0 ? 0 : active,
+        files: [...files],
+        ...(simulator ? { simulator: { udid: simulator.udid, name: simulator.deviceName } } : {}),
+    };
 }
 
 /**

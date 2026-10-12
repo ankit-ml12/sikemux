@@ -9,6 +9,7 @@ import {
   vi,
 } from "vitest";
 
+import type { AppleSignIn } from "../src/account/apple.ts";
 import { clerkBackend } from "../src/account/clerk.ts";
 import { sweepClerk } from "../src/account/clerk-sweeper.ts";
 import { purgeAccounts, pruneHistory } from "../src/account/purge.ts";
@@ -32,6 +33,7 @@ import { macToken, sessionToken } from "./tokens.ts";
 let database: Database;
 let drop: () => Promise<void>;
 let clerk: FakeClerk;
+let apple: FakeApple;
 let app: ReturnType<typeof testApp>;
 let call: ReturnType<typeof caller>;
 let api: Running | undefined;
@@ -43,7 +45,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   await emptyTables(database);
   clerk = new FakeClerk();
-  app = testApp(database, new RateLimiter(), { clerk });
+  apple = new FakeApple(clerk);
+  app = testApp(database, new RateLimiter(), { clerk, appleSignIn: apple });
   call = caller(app);
 });
 
@@ -55,15 +58,58 @@ afterEach(async () => {
 
 afterAll(() => drop());
 
+/** Apple's token endpoints, recording what was revoked and whether Clerk had deleted the user yet. */
+class FakeApple implements AppleSignIn {
+  readonly revoked: {
+    code?: string;
+    token?: string;
+    clientId: string;
+    clerkDeleted: boolean;
+  }[] = [];
+  failing = false;
+
+  private readonly clerk: FakeClerk;
+
+  constructor(clerk: FakeClerk) {
+    this.clerk = clerk;
+  }
+
+  async revokeCode(code: string, clientId: string) {
+    if (this.failing) throw new Error("Apple answered 400 to /auth/token");
+    this.revoked.push({
+      code,
+      clientId,
+      clerkDeleted: this.clerk.deleted.length > 0,
+    });
+  }
+
+  async revokeAccessToken(token: string, clientId: string) {
+    if (this.failing) throw new Error("Apple answered 400 to /auth/revoke");
+    this.revoked.push({
+      token,
+      clientId,
+      clerkDeleted: this.clerk.deleted.length > 0,
+    });
+  }
+}
+
 /** A session token that verified its first factor `minutes` ago. */
 function verified(userId: string, minutes = 1, claims = {}) {
   return sessionToken(userId, { claims: { fva: [minutes, -1], ...claims } });
 }
 
-async function deleteAccount(userId: string, token?: string) {
+async function deleteAccount(userId: string, token?: string, json?: unknown) {
   return call("/v1/account", token ?? (await verified(userId)), {
     method: "DELETE",
+    json,
   });
+}
+
+async function accountActions() {
+  const { rows } = await database.pool.query<{ action: string }>(
+    "select action from audit where action like 'account.%' order by id",
+  );
+  return rows.map((row) => row.action);
 }
 
 async function accountWithDevices(userId: string) {
@@ -74,19 +120,33 @@ async function accountWithDevices(userId: string) {
   return { mac, iphone };
 }
 
+/** Moves past the days a deletion can be restored in, and lets the sweeper delete in Clerk. */
+async function restoreWindowEnds() {
+  await database.pool.query(
+    "update users set clerk_retry_at = now() where deleted_at is not null",
+  );
+  await sweepClerk(database.db, clerk, log);
+}
+
 async function count(sql: string, params: unknown[] = []) {
   const { rows } = await database.pool.query<{ n: number }>(sql, params);
   return rows[0]?.n;
 }
 
 describe("deleting an account", () => {
-  it("revokes every device, tells the account, and deletes the user in Clerk", async () => {
+  it("revokes every device, tells the account, and deletes the user in Clerk after 30 days", async () => {
     const { mac, iphone } = await accountWithDevices("user_a");
     const response = await deleteAccount("user_a");
     expect(response.status).toBe(202);
-    expect(await body(response, "AccountDeletion")).toMatchObject({
-      status: "deleted",
-    });
+    const deletion = await body(response, "AccountDeletion");
+    expect(deletion.status).toBe("deleting");
+    const days =
+      (Date.parse(deletion.deletesAt) - Date.parse(deletion.requestedAt)) /
+      86_400_000;
+    expect(days).toBe(30);
+    await sweepClerk(database.db, clerk, log);
+    expect(clerk.deleted).toEqual([]);
+    await restoreWindowEnds();
     expect(clerk.deleted).toEqual(["user_a"]);
 
     expect(await count("select count(*)::int as n from devices")).toBe(0);
@@ -98,19 +158,17 @@ describe("deleting an account", () => {
         .sort()
         .map((key) => ({ key, reason: "account_deleted" })),
     );
-    const log = await events(database);
-    expect(log.slice(-3)).toMatchObject([
+    const told = await events(database);
+    expect(told.slice(-3)).toMatchObject([
       { type: "device.revoked", reason: "account_deleted" },
       { type: "device.revoked", reason: "account_deleted" },
       { type: "account.deleted", subject: null },
     ]);
-    const actions = await database.pool.query(
-      "select action from audit where action like 'account.%' order by id",
-    );
-    expect(actions.rows.map((row) => row.action)).toEqual([
+    expect(await accountActions()).toEqual([
       "account.deletion_requested",
       "account.deleted_in_clerk",
     ]);
+    expect(apple.revoked).toEqual([]);
   });
 
   it("refuses every token of the account afterwards, and never recreates it", async () => {
@@ -188,11 +246,12 @@ describe("deleting an account", () => {
     ).toBe(1);
   });
 
-  it("answers deleting when Clerk fails, and the sweeper finishes it", async () => {
+  it("retries when Clerk fails, and the sweeper finishes it", async () => {
     await accountWithDevices("user_a");
     clerk.failing = true;
     const response = await deleteAccount("user_a");
     expect((await body(response, "AccountDeletion")).status).toBe("deleting");
+    await restoreWindowEnds();
     const { rows } = await database.pool.query(
       "select clerk_attempts, clerk_retry_at > now() as later from users where id = 'user_a'",
     );
@@ -220,7 +279,7 @@ describe("deleting an account", () => {
     clerk.failing = true;
     await deleteAccount("user_a");
     const error = vi.spyOn(log, "error");
-    for (let attempt = 2; attempt <= 6; attempt++) {
+    for (let attempt = 1; attempt <= 6; attempt++) {
       await database.pool.query("update users set clerk_retry_at = now()");
       await sweepClerk(database.db, clerk, log);
     }
@@ -251,7 +310,9 @@ describe("deleting an account", () => {
     ]) {
       const response = await deleteAccount("user_a", token);
       expect(response.status).toBe(403);
-      expect((await body(response, "ApiError")).error.message).toBe("reverify");
+      const { error } = await body(response, "ApiError");
+      expect(error.code).toBe("reverify_required");
+      expect(error.message).toBe("reverify");
     }
     expect(await count("select count(*)::int as n from devices")).toBe(2);
   });
@@ -269,6 +330,113 @@ describe("deleting an account", () => {
     expect(
       (await call("/v1/devices", await sessionToken("user_new"))).status,
     ).toBe(401);
+  });
+});
+
+describe("revoking Sign in with Apple when an account is deleted", () => {
+  it("revokes the token the phone's code trades for, as the phone app", async () => {
+    const response = await deleteAccount("user_a", undefined, {
+      appleAuthorizationCode: "c0de",
+    });
+    expect(response.status).toBe(202);
+    expect(apple.revoked).toEqual([
+      {
+        code: "c0de",
+        clientId: "com.nodelike.sikemux.mobile",
+        clerkDeleted: false,
+      },
+    ]);
+    expect(clerk.deleted).toEqual([]);
+    expect(await accountActions()).toEqual([
+      "account.deletion_requested",
+      "account.apple_revoked",
+    ]);
+  });
+
+  it("revokes the token Clerk holds from a web sign-in before Clerk deletes the user", async () => {
+    clerk.appleTokens.set("user_a", ["at_1"]);
+    await deleteAccount("user_a");
+    expect(apple.revoked).toEqual([
+      {
+        token: "at_1",
+        clientId: "com.nodelike.sikemux.signin",
+        clerkDeleted: false,
+      },
+    ]);
+  });
+
+  it("uses the dev app's bundle id on a dev API, which has no web sign-in with Apple", async () => {
+    app = testApp(database, new RateLimiter(), {
+      clerk,
+      appleSignIn: apple,
+      push: { app: "dev", allowSandbox: true },
+    });
+    call = caller(app);
+    clerk.appleTokens.set("user_a", ["at_1"]);
+    clerk.appleTokens.set("user_b", ["at_2"]);
+    await deleteAccount("user_a", undefined, {
+      appleAuthorizationCode: "c0de",
+    });
+    await deleteAccount("user_b");
+    expect(apple.revoked).toEqual([
+      {
+        code: "c0de",
+        clientId: "com.nodelike.sikemux.mobile.dev",
+        clerkDeleted: false,
+      },
+    ]);
+  });
+
+  it("deletes the account even when Apple refuses", async () => {
+    await accountWithDevices("user_a");
+    apple.failing = true;
+    const response = await deleteAccount("user_a", undefined, {
+      appleAuthorizationCode: "c0de",
+    });
+    expect(response.status).toBe(202);
+    expect(await count("select count(*)::int as n from devices")).toBe(0);
+    expect(await accountActions()).toEqual([
+      "account.deletion_requested",
+      "account.apple_revoke_failed",
+    ]);
+  });
+
+  it("deletes the account when the API cannot revoke Sign in with Apple", async () => {
+    app = testApp(database, new RateLimiter(), { clerk, appleSignIn: null });
+    call = caller(app);
+    const response = await deleteAccount("user_a", undefined, {
+      appleAuthorizationCode: "c0de",
+    });
+    expect(response.status).toBe(202);
+    await restoreWindowEnds();
+    expect(clerk.deleted).toEqual(["user_a"]);
+  });
+
+  it("refuses a body that is not a deletion request, and deletes nothing", async () => {
+    await accountWithDevices("user_a");
+    for (const json of [
+      { appleAuthorizationCode: "c".repeat(513) },
+      { appleAuthorizationCode: "" },
+      { other: true },
+    ]) {
+      const response = await deleteAccount("user_a", undefined, json);
+      expect(response.status).toBe(400);
+      expect((await body(response, "ApiError")).error.code).toBe("bad_request");
+    }
+    expect(await count("select count(*)::int as n from devices")).toBe(2);
+    expect(apple.revoked).toEqual([]);
+  });
+
+  it("asks for reverification before it reads the body", async () => {
+    const response = await deleteAccount(
+      "user_a",
+      await verified("user_a", 11),
+      { appleAuthorizationCode: "c".repeat(513) },
+    );
+    expect(response.status).toBe(403);
+    expect((await body(response, "ApiError")).error.code).toBe(
+      "reverify_required",
+    );
   });
 });
 
@@ -326,6 +494,7 @@ describe("purging", () => {
     await deleteAccount("user_a");
 
     expect(await purgeAccounts(database.db, log)).toBe(0);
+    await restoreWindowEnds();
     await database.pool.query(
       "update users set purge_after = now() - interval '1 second' where id = 'user_a'",
     );
@@ -401,7 +570,7 @@ describe("purging", () => {
 });
 
 describe("the Clerk Backend API client", () => {
-  function stub(status: number) {
+  function stub(status: number, answer: unknown = {}) {
     const requests: { url: string; method: string; auth: string | null }[] = [];
     const fetcher = async (
       input: string | URL | Request,
@@ -412,7 +581,7 @@ describe("the Clerk Backend API client", () => {
         method: init?.method ?? "GET",
         auth: new Headers(init?.headers).get("authorization"),
       });
-      return new Response("{}", { status });
+      return new Response(JSON.stringify(answer), { status });
     };
     return { requests, fetcher };
   }
@@ -445,6 +614,28 @@ describe("the Clerk Backend API client", () => {
   it("fails on anything else, so the sweeper retries", async () => {
     const client = clerkBackend("sk_test_abc", stub(500).fetcher);
     await expect(client.deleteUser("user_a")).rejects.toThrow("500");
+  });
+
+  it("reads the Apple access tokens Clerk holds, and none for a user it no longer has", async () => {
+    const { requests, fetcher } = stub(200, [
+      { object: "oauth_access_token", provider: "oauth_apple", token: "at_1" },
+      { object: "oauth_access_token", provider: "oauth_apple", token: "" },
+    ]);
+    expect(
+      await clerkBackend("sk_test_abc", fetcher).appleAccessTokens("user_a"),
+    ).toEqual(["at_1"]);
+    expect(requests).toEqual([
+      {
+        url: "https://api.clerk.com/v1/users/user_a/oauth_access_tokens/oauth_apple",
+        method: "GET",
+        auth: "Bearer sk_test_abc",
+      },
+    ]);
+    expect(
+      await clerkBackend("sk_test_abc", stub(404).fetcher).appleAccessTokens(
+        "user_a",
+      ),
+    ).toEqual([]);
   });
 
   it("never puts an id that is not Clerk's into the URL", async () => {

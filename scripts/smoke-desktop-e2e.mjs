@@ -21,13 +21,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE_PROTOCOL_VERSION = Number(
   (
     await readFile(
-      join(root, "src-tauri/crates/sikemux-core/src/protocol.rs"),
+      join(root, "src-tauri/crates/sikemux-wire/src/protocol.rs"),
       "utf8",
     )
   ).match(/pub const PROTOCOL_VERSION: u32 = (\d+);/)?.[1],
 );
 if (!Number.isInteger(CORE_PROTOCOL_VERSION))
-  throw new Error("could not read PROTOCOL_VERSION from sikemux-core");
+  throw new Error("could not read PROTOCOL_VERSION from sikemux-wire");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 const appExecutable = resolve(
   process.env.SIKEMUX_E2E_APP ??
@@ -1361,6 +1361,7 @@ const isolatedEnvironment = {
   SIKEMUX_CLI_ENDPOINT_PUBLISH: endpoint,
   SIKEMUX_SIDECAR_PATH: cliExecutable,
   SIKEMUX_CORE_SOCKET: coreSocket,
+  SIKEMUX_RUN_WHEN_COVERED: "1",
 };
 delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
 // Run from a Sikemux agent terminal, this names an agent the test app has never seen.

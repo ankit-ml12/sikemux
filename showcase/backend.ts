@@ -1,3 +1,5 @@
+import { DATABASE } from "./world/database";
+import { SIKEMUX as SIKEMUX_PATH } from "./world/projects";
 import type {
   IpcEventListener,
   IpcTransport,
@@ -86,6 +88,37 @@ function recentPage(request: RecentRequest) {
   };
 }
 
+const SIM_DEVICE = {
+  udid: "5C1A0E77-8D2F-4B1E-9F63-2A7D41C0B9E8",
+  name: "iPhone 18 Pro",
+  state: "booted",
+  runtime: "iOS 27.0",
+  model: "iPhone 18 Pro",
+};
+const SIM_ATTACHED = {
+  agentId: "agent-phone",
+  udid: SIM_DEVICE.udid,
+  name: SIM_DEVICE.name,
+  project: SIKEMUX_PATH,
+};
+
+const OTHER_ACCOUNTS: Record<string, { email: string; used: number }> = {
+  ".claude-personal": { email: "edon@hey.com", used: 82 },
+  ".claude-client": { email: "edon@northwind.io", used: 9 },
+};
+
+/* A real chat's history says when each part of it happened, which is how a
+   finished turn knows how long it worked. The demo's arrive nine seconds apart. */
+function recorded(
+  history: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const start = Date.now() - history.length * 9_000;
+  return history.map((update, index) => ({
+    ...update,
+    _meta: { sikemux: { at: start + index * 9_000 } },
+  }));
+}
+
 export class ShowcaseBackend implements IpcTransport {
   readonly unhandled = new Map<string, number>();
   private readonly listeners = new Map<
@@ -147,6 +180,7 @@ export class ShowcaseBackend implements IpcTransport {
           ["aws", "AWS"],
           ["bruno", "Bruno"],
           ["github", "GitHub"],
+          ["database", "Database"],
         ].map(([id, name]) => ({
           id: `sikemux.${id}`,
           name,
@@ -166,6 +200,36 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("agent_sessions_watch_start", constant(1));
     this.on("lsp_locations", constant([]));
     this.on("lsp_document_symbols", constant([]));
+    this.on("simulator_attachments", constant([SIM_ATTACHED]));
+    this.on(
+      "sim_status",
+      constant({ supported: true, installed: true, reason: null }),
+    );
+    this.on("simulator_orientation", constant("portrait"));
+    this.on("sim_call", async ({ request }) => {
+      const { type } = request as { type: string };
+      if (type === "devices") return { devices: [SIM_DEVICE] };
+      if (type === "screen")
+        return { width: 402, height: 874, scale: 3, orientation: "portrait" };
+      if (type === "chrome" || type === "mask") {
+        const art = (await (
+          await fetch("/__showcase/simulator/chrome")
+        ).json()) as Record<string, unknown>;
+        return { [type]: art[type] ?? null };
+      }
+      return null;
+    });
+    this.on("sim_watch", async ({ format, onFrame }) => {
+      if (format !== "mjpeg")
+        throw { category: "unavailable", message: "streamUnavailable" };
+      const frame = await (
+        await fetch("/__showcase/simulator/frame")
+      ).arrayBuffer();
+      const channel = onFrame as { onmessage: (frame: ArrayBuffer) => void };
+      for (const delay of [50, 400, 1200])
+        setTimeout(() => channel.onmessage(frame.slice(0)), delay);
+      return 1;
+    });
     this.on("activity_summary", demoActivity);
     for (const quiet of [
       "observability_ui_heartbeat",
@@ -189,6 +253,10 @@ export class ShowcaseBackend implements IpcTransport {
       "pty_write",
       "pty_ack",
       "pty_unsubscribe",
+      "sim_watch_read",
+      "sim_unwatch",
+      "sim_prepare",
+      "simulator_set_enabled",
     ]) {
       this.on(quiet, constant(null));
     }
@@ -203,6 +271,8 @@ export class ShowcaseBackend implements IpcTransport {
         },
         { alias: "gpu-box", hostname: "gpu.lan", user: "edon", port: 22 },
         { alias: "pi-hole", hostname: "192.168.1.2", user: "pi", port: 22 },
+        { alias: "build-runner", hostname: "10.20.0.12", user: "ci", port: 22 },
+        { alias: "db-replica", hostname: "10.20.0.31", user: "edon", port: 22 },
       ]),
     );
     this.on(
@@ -343,10 +413,31 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("agent_recent_sessions", ({ request }) =>
       recentPage(request as RecentRequest),
     );
-    this.on(
-      "agent_usage",
-      ({ agent }) => AGENT_USAGE[agent as keyof typeof AGENT_USAGE] ?? null,
-    );
+    this.on("agent_usage", ({ agent, configPath }) => {
+      const usage = AGENT_USAGE[agent as keyof typeof AGENT_USAGE] ?? null;
+      const peak =
+        OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""]?.used;
+      if (!usage || peak === undefined) return usage;
+      return {
+        ...usage,
+        windows: usage.windows.map((window, index) => ({
+          ...window,
+          usedPercent: index === 0 ? peak : Math.round(peak / 2),
+        })),
+      };
+    });
+    this.on("model_providers", () => []);
+    this.on("agent_account_status", ({ agent, configPath }) => ({
+      signedIn: true,
+      name: null,
+      email:
+        OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""]?.email ??
+        "edon@acme.dev",
+      plan: null,
+      organization: null,
+      method: "subscription",
+      sessions: `/demo/${String(agent)}/sessions`,
+    }));
     this.on("acp_attach", () => ({ status: "missing" }));
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);
@@ -361,6 +452,7 @@ export class ShowcaseBackend implements IpcTransport {
       "sikemux.aws": AWS,
       "sikemux.bruno": { send: () => CHECKOUT_RESPONSE },
       "sikemux.github": GITHUB,
+      "sikemux.database": DATABASE,
     };
     this.on("plugin_call", ({ plugin, method, params }) => {
       const answer = plugins[plugin as string]?.[method as string];
@@ -419,7 +511,6 @@ export class ShowcaseBackend implements IpcTransport {
         },
       ],
       connected: [phone],
-      pairing: null as { code: string; expiresAt: number } | null,
       pending: [] as {
         id: string;
         deviceId: string;
@@ -430,18 +521,6 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("remote_status", () => ({ ...remote }));
     this.on("remote_set_enabled", ({ enabled }) => ({
       ...Object.assign(remote, { enabled: enabled as boolean }),
-    }));
-    this.on("remote_open_pairing", () => ({
-      ...Object.assign(remote, {
-        pairing: {
-          code: "482913",
-          expiresAt: Date.now() + 5 * 60_000,
-          link: "sikemux://pair?core=7d3f9c2ae0b54d18a6f1c39e85b27d0c4fa16e93b2d8c05a7e14f69b3c2d8a50&code=482913",
-        },
-      }),
-    }));
-    this.on("remote_close_pairing", () => ({
-      ...Object.assign(remote, { pairing: null }),
     }));
   }
 
@@ -514,7 +593,7 @@ export class ShowcaseBackend implements IpcTransport {
         agentId,
         kind: "session_update",
         payload: batch([
-          ...script.history,
+          ...recorded(script.history),
           { sessionUpdate: "usage_update", ...script.usage },
         ]),
       });

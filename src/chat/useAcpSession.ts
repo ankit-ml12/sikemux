@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
 import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
 import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
+import { getState } from "../state/store";
+import { acpAccount, fallbackAccounts } from "../agents/accounts";
+import { noteSignedOut } from "../agents/statusRefresh";
+import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
-import { eventMessage, permissionRequest, promptAction, recordOf, statusFromEvent } from "./acpEvents";
+import { eventMessage, failureOf, permissionRequest, promptAction, recordOf, statusFromEvent } from "./acpEvents";
 import { permissionModeOf } from "./chatStatus";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
 import { claimChat } from "./chatClaims";
@@ -39,6 +43,8 @@ export function useAcpSession({
     const updateTimerRef = useRef<number | null>(null);
     const agentRef = useRef(agent);
     agentRef.current = agent;
+    const profileRef = useRef(profile);
+    profileRef.current = profile;
     const sessionIdRef = useRef<string | null>(null);
     const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
     /* Set when the core came back still running this chat: the session is
@@ -46,6 +52,9 @@ export function useAcpSession({
     const reattachingRef = useRef(false);
     const [changingPermissions, setChangingPermissions] = useState(false);
     const [appliedPermissionMode, setAppliedPermissionMode] = useState<string | null>(null);
+    /* True while a resumed or reattached session is sending its history back,
+       which ends when starting or attaching it answers. */
+    const [replaying, setReplaying] = useState(false);
     const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
     const permissionMode = permissionModeOf(agent);
 
@@ -72,6 +81,7 @@ export function useAcpSession({
         reattachingRef.current = false;
         const hold = Boolean(agentRef.current.resumeId) || reattaching;
         dispatch({ type: "reset", hold });
+        setReplaying(hold);
         if (!hold) {
             foldMemory.streamed.clear();
             foldMemory.expanded.clear();
@@ -124,6 +134,15 @@ export function useAcpSession({
             }
         };
 
+        /* The chat already runs on the new account, so the agent is taken up
+           where it is rather than started again on it. */
+        const noteAccount = (profileId: string) => {
+            const known = getState().providerProfiles.some((item) => item.id === profileId && item.provider === agentRef.current.type);
+            if (!known || agentRef.current.profileId === profileId) return;
+            reattachingRef.current = true;
+            cmd.setAgentAccount(agent.id, profileId);
+        };
+
         const handleEvent = (event: AcpEvent) => {
             if (!mounted || event.agentId !== agent.id) return;
             if (event.kind !== "session_update") flushUpdates();
@@ -131,6 +150,9 @@ export function useAcpSession({
                 dispatch({ type: "status", state: statusFromEvent(event) });
                 noteEnd(event);
             } else if (event.kind === "ready") {
+                /* The core starts the agent again under a running chat after a
+                   sign-in or on another account, sometimes on a new session. */
+                if (typeof event.payload.sessionId === "string" && sessionIdRef.current) sessionIdRef.current = event.payload.sessionId;
                 dispatch({
                     type: "ready",
                     capabilities: recordOf(event.payload.capabilities) ?? {},
@@ -143,6 +165,7 @@ export function useAcpSession({
                     if (!row) continue;
                     const update = recordOf(row.update);
                     const sessionId = typeof row.sessionId === "string" ? row.sessionId : null;
+                    if (update?.sessionUpdate === "account_switched" && typeof update.account === "string") noteAccount(update.account);
                     if (update && sessionId) queueUpdate(sessionId, update);
                 }
             } else if (event.kind === "prompt") {
@@ -152,17 +175,22 @@ export function useAcpSession({
                 if (sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current) {
                     cmd.attachAgentSession(agent.id, sessionIdRef.current);
                 }
-                dispatch({ type: "turn_started" });
+                dispatch({ type: "turn_started", at: typeof event.payload.at === "number" ? event.payload.at : undefined });
             } else if (event.kind === "turn_completed") {
                 dispatch({
                     type: "turn_completed",
                     stopReason: typeof event.payload.stopReason === "string" ? event.payload.stopReason : undefined,
+                    at: typeof event.payload.at === "number" ? event.payload.at : undefined,
                 });
             } else if (event.kind === "permission_request") {
                 const request = permissionRequest(event.payload);
                 if (request) dispatch({ type: "permission_requested", request });
-            } else if (event.kind === "error") dispatch({ type: "error", message: eventMessage(event) });
-            else if (event.kind === "reattach") {
+            } else if (event.kind === "error") {
+                const failure = failureOf(event);
+                dispatch({ type: "error", message: eventMessage(event), failure });
+                if (failure?.kind === "signIn")
+                    void noteSignedOut(agentRef.current.type, profile?.configPath).catch(swallow("mark agent signed out"));
+            } else if (event.kind === "reattach") {
                 reattachingRef.current = true;
                 setRestartKey((value) => value + 1);
             }
@@ -191,6 +219,8 @@ export function useAcpSession({
                     if (attached.status === "restart") await acpApi.stop(current.id);
                     if (!mounted) return;
                     appliedMode = permissionModeOf(current);
+                    const { providerProfiles, accountAutoSwitch } = getState();
+                    const account = profileRef.current;
                     response = await acpApi.start({
                         agentId: current.id,
                         provider: current.type,
@@ -202,16 +232,21 @@ export function useAcpSession({
                         model: current.model,
                         effort: current.effort,
                         environmentKeys: JSON.parse(environmentKeys) as string[],
+                        account: account ? acpAccount(account) : undefined,
+                        fallbacks: fallbackAccounts(account, providerProfiles, accountAutoSwitch),
                     });
                 }
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
                 flushUpdates();
                 dispatch({ type: "ready", capabilities: response.capabilities, setup: response.setup });
+                setReplaying(false);
                 setAppliedPermissionMode(appliedMode);
             })
             .catch((error: unknown) => {
                 if (!controller.signal.aborted && mounted) {
+                    flushUpdates();
+                    setReplaying(false);
                     const message = error instanceof Error ? error.message : String(error);
                     dispatch({ type: "error", message });
                     if (recoveryRef.current?.phase === "resuming") updateRecovery({ phase: "failed", detail: message });
@@ -221,6 +256,7 @@ export function useAcpSession({
         lifecycleRef.current = lifecycle;
         return () => {
             mounted = false;
+            setReplaying(false);
             sessionIdRef.current = null;
             if (updateFrameRef.current !== null) window.cancelAnimationFrame(updateFrameRef.current);
             updateFrameRef.current = null;
@@ -273,5 +309,5 @@ export function useAcpSession({
             });
     }, [agent.id, connection, permissionMode, appliedPermissionMode, changingPermissions, onError]);
 
-    return { agentRef, sessionIdRef, recovery, retry, changingPermissions, appliedPermissionMode, permissionMode };
+    return { agentRef, sessionIdRef, recovery, retry, replaying, changingPermissions, appliedPermissionMode, permissionMode };
 }
