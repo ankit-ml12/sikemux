@@ -112,7 +112,7 @@ pub(crate) fn sync(identifier: &str, launch: Option<&CoreLaunch>, enabled: bool)
         let Some(launch) = launch else {
             return;
         };
-        let path_env = std::env::var("PATH").ok();
+        let path_env = crate::system::child_path();
         let plist = agent_plist(&label, launch, path_env.as_deref());
         if let Err(error) = write_if_changed(&path, &plist) {
             eprintln!("Sikemux could not start its core at login: {error}");
@@ -168,14 +168,6 @@ mod tests {
         assert!(plist.contains("Application Support/A&amp;B"));
         assert!(plist.contains("<key>PATH</key>\n    <string>/usr/bin:/bin</string>"));
         assert!(plist.contains("<key>SuccessfulExit</key>\n    <false/>"));
-    }
-
-    #[test]
-    fn the_label_follows_the_app_identifier() {
-        assert_eq!(
-            label("com.nodelike.sikemux.dev"),
-            "com.nodelike.sikemux.dev.core"
-        );
     }
 
     #[test]

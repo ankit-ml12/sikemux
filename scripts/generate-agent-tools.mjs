@@ -2,8 +2,9 @@
 // method still has a handler. Agent tools span the Rust backend and the TypeScript
 // harness; without this check a method can exist on one side and be unreachable
 // from the other.
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { format, resolveConfig } from "prettier";
 
 const root = resolve(import.meta.dirname, "..");
 const manifestPath = resolve(root, "browser/tools.json");
@@ -12,7 +13,11 @@ const rustOutputPath = resolve(
   "src-tauri/crates/sikemux-core/src/cli/methods.rs",
 );
 const browserHandlersPath = resolve(root, "src-tauri/src/browser/tools.rs");
+const simulatorHandlersPath = resolve(root, "src-tauri/src/simulator/tools.rs");
 const windowHandlersPath = resolve(root, "src/harness/service.ts");
+const pluginsPath = resolve(root, "src-tauri/plugins");
+const rowsOutputPath = resolve(root, "src/chat/generated/toolRows.ts");
+const rowIconsPath = resolve(root, "src/chat/toolRows.ts");
 const coreHandlersPath = resolve(
   root,
   "src-tauri/crates/sikemux-core/src/server/harness.rs",
@@ -33,8 +38,9 @@ if (new Set(names).size !== names.length)
 const browserMethods = methods.filter((method) =>
   method.startsWith("browser."),
 );
+const simulatorMethods = methods.filter((method) => method.startsWith("sim."));
 const harnessMethods = methods.filter(
-  (method) => !method.startsWith("browser."),
+  (method) => !method.startsWith("browser.") && !method.startsWith("sim."),
 );
 
 // A Rust arm may list several methods ("browser.back" | "browser.forward" => ...),
@@ -42,7 +48,7 @@ const harnessMethods = methods.filter(
 function handlersIn(source, pattern, prefix) {
   const handled = new Set();
   for (const match of source.matchAll(pattern)) {
-    for (const [, method] of match[1].matchAll(/"([a-z.]+)"/gu)) {
+    for (const [, method] of match[1].matchAll(/"([a-zA-Z0-9.]+)"/gu)) {
       if (method.startsWith(prefix)) handled.add(method);
     }
   }
@@ -71,6 +77,15 @@ compare(
   ),
   "src-tauri/src/browser/tools.rs",
 );
+compare(
+  simulatorMethods,
+  handlersIn(
+    await readFile(simulatorHandlersPath, "utf8"),
+    /((?:"[a-zA-Z0-9.]+"\s*\|\s*)*"[a-zA-Z0-9.]+")\s*=>/gu,
+    "sim.",
+  ),
+  "src-tauri/src/simulator/tools.rs",
+);
 // The core answers some harness methods itself and hands the rest to the
 // window, so a method counts as handled by either side's dispatch.
 const coreSource = await readFile(coreHandlersPath, "utf8");
@@ -98,25 +113,124 @@ pub const BROWSER_METHODS: &[&str] = &[
 ${list(browserMethods)}
 ];
 
+pub const SIM_METHODS: &[&str] = &[
+${list(simulatorMethods)}
+];
+
 pub const HARNESS_METHODS: &[&str] = &[
 ${list(harnessMethods)}
 ];
 `;
 
-let actual = null;
-try {
-  actual = await readFile(rustOutputPath, "utf8");
-} catch (error) {
-  if (error?.code !== "ENOENT") throw error;
-}
-if (actual !== rustOutput) {
-  if (check)
-    throw new Error(
-      `Generated agent tool contract is stale: ${rustOutputPath}`,
-    );
-  await writeFile(rustOutputPath, rustOutput);
+async function emit(path, contents) {
+  let actual = null;
+  try {
+    actual = await readFile(path, "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (actual === contents) return;
+  if (check) throw new Error(`Generated agent tool contract is stale: ${path}`);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, contents);
 }
 
+await emit(rustOutputPath, rustOutput);
+
+// Every tool says how the chat pane draws a call to it, so a new tool or plugin
+// never shows up there as a bare server and function name.
+const plugins = [];
+for (const entry of await readdir(pluginsPath, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const path = resolve(pluginsPath, entry.name, "manifest.json");
+  const plugin = JSON.parse(await readFile(path, "utf8"));
+  plugins.push({
+    where: `src-tauri/plugins/${entry.name}/manifest.json`,
+    plugin: plugin.id,
+    tools: plugin.tools ?? [],
+  });
+}
+const rowTypes = await readFile(rowIconsPath, "utf8");
+const unionOf = (type) =>
+  new Set(
+    [
+      ...new RegExp(`export type ${type} =([^;]+);`, "u")
+        .exec(rowTypes)[1]
+        .matchAll(/"([a-z-]+)"/gu),
+    ].map(([, value]) => value),
+  );
+const icons = unionOf("ToolRowIcon");
+const kinds = unionOf("ToolRowKind");
+const described = [
+  {
+    where: "browser/tools.json",
+    tools: [
+      {
+        ...manifest.guide,
+        properties: { topic: {} },
+      },
+      ...manifest.tools,
+    ],
+  },
+  ...plugins,
+];
+const rows = {};
+for (const { where, plugin, tools } of described) {
+  for (const tool of tools) {
+    const fail = (problem) => {
+      throw new Error(`${where}: ${tool.name} ${problem}`);
+    };
+    const { row } = tool;
+    if (!row) fail('has no "row" saying how the chat pane draws it');
+    const extra = Object.keys(row).filter(
+      (key) => !["verb", "kind", "icon", "target", "detail"].includes(key),
+    );
+    if (extra.length > 0) fail(`row has unknown keys: ${extra.join(", ")}`);
+    if (!/^[a-z]{2,8}$/u.test(row.verb ?? ""))
+      fail("row verb must be one lowercase word of 2 to 8 letters");
+    if (!kinds.has(row.kind))
+      fail(
+        `row kind "${row.kind}" is not one of ${[...kinds].join(", ")} (src/chat/toolRows.ts)`,
+      );
+    if (!icons.has(row.icon))
+      fail(
+        `row icon "${row.icon}" is not one of ${[...icons].join(", ")} (src/chat/toolRows.ts)`,
+      );
+    for (const key of ["target", "detail"]) {
+      const templates = row[key];
+      if (templates === undefined && key === "detail") continue;
+      if (
+        !Array.isArray(templates) ||
+        templates.length === 0 ||
+        !templates.every((template) => typeof template === "string")
+      )
+        fail(`row ${key} must be a list of templates`);
+      for (const template of templates) {
+        for (const [, argument] of template.matchAll(/\{(\w+)\}/gu)) {
+          if (!Object.hasOwn(tool.properties ?? {}, argument))
+            fail(
+              `row ${key} "${template}" names {${argument}}, which the tool does not take`,
+            );
+        }
+      }
+    }
+    if (Object.hasOwn(rows, tool.name)) fail("is declared twice");
+    rows[tool.name] = plugin ? { ...row, plugin } : row;
+  }
+}
+const rowsSource = `// Generated by scripts/generate-agent-tools.mjs from browser/tools.json and the plugin manifests. Do not edit by hand.
+import type { ToolRowSpec } from "../toolRows";
+
+export const TOOL_ROWS = ${JSON.stringify(rows)} satisfies Record<string, ToolRowSpec>;
+`;
+await emit(
+  rowsOutputPath,
+  await format(rowsSource, {
+    ...(await resolveConfig(rowsOutputPath)),
+    filepath: rowsOutputPath,
+  }),
+);
+
 console.log(
-  `✓ ${methods.length} agent tools: ${browserMethods.length} browser, ${harnessMethods.length} harness`,
+  `✓ ${methods.length} agent tools: ${browserMethods.length} browser, ${simulatorMethods.length} simulator, ${harnessMethods.length} harness; ${Object.keys(rows).length} chat rows`,
 );

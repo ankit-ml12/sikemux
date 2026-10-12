@@ -21,19 +21,29 @@ struct SikemuxSim {
             }
         }
         for await line in lines {
-            guard let data = line.data(using: .utf8), let request = try? JSONDecoder().decode(Request.self, from: data) else {
-                Output.failure(nil, "protocol", "Could not read the request: \(line.prefix(200))")
-                continue
+            switch Request.read(line) {
+            case let .success(request) where Self.input.contains(request.type):
+                lanes.run(on: request.udid) { await respond(to: request, with: simulators) }
+            case let .success(request):
+                Task { await respond(to: request, with: simulators) }
+            case let .failure(unreadable):
+                Output.failure(unreadable.id, "protocol", unreadable.message)
             }
-            Task {
-                do {
-                    Output.result(request.id, try await handle(request, with: simulators))
-                } catch let failure as Failure {
-                    Output.failure(request.id, failure.reason, failure.message)
-                } catch {
-                    Output.failure(request.id, "simulator", "\(error)")
-                }
-            }
+        }
+    }
+
+    /// What a finger or a key does on a device, kept in the order it arrived, one at a time per device.
+    /// A live `touch` stays out: it joins a gesture that is already holding the device's input.
+    static let input: Set<String> = ["tap", "swipe", "touchPath", "touch2Path", "key", "text", "button"]
+    static let lanes = InputLanes()
+
+    static func respond(to request: Request, with simulators: Simulators) async {
+        do {
+            Output.result(request.id, try await handle(request, with: simulators))
+        } catch let failure as Failure {
+            Output.failure(request.id, failure.reason, failure.message)
+        } catch {
+            Output.failure(request.id, "simulator", Failure.describe(error))
         }
     }
 
@@ -49,46 +59,50 @@ struct SikemuxSim {
         case "shutdown":
             try await simulators.shutdown(udid)
         case "screenshot":
-            let png = try await simulators.screenshot(udid)
+            let jpeg = request.format == "jpeg"
+            let shot = try await simulators.screenshot(udid, jpeg: jpeg, pointSize: request.pointSize ?? false)
             if let given = request.path {
-                let path = (given as NSString).expandingTildeInPath
-                try png.write(to: URL(fileURLWithPath: path))
-                return ["path": path, "bytes": png.count]
+                let path = try writeScreenshot(shot.data, to: given)
+                return ["path": path, "bytes": shot.data.count, "width": shot.width, "height": shot.height]
             }
-            return ["png": png.base64EncodedString()]
+            return [jpeg ? "jpeg" : "png": shot.data.base64EncodedString(), "width": shot.width, "height": shot.height]
         case "tree":
             return ["elements": try await simulators.tree(udid)]
         case "tap":
-            let point = try require(request.x, request.y)
+            let point = try await simulators.touchPoint(try require(request.x, request.y), on: udid)
             try await simulators.send(.tapAt(x: point.x, y: point.y, duration: request.duration ?? 0.05), to: udid)
         case "tapLabel":
             let frame = try await simulators.frame(of: try require(request.label, "label"), on: udid, wait: min(max(request.wait ?? 2, 0), 30))
-            try await simulators.send(.tapAt(x: frame.midX, y: frame.midY, duration: 0.05), to: udid)
+            try await lanes.run(on: udid) {
+                let center = try await simulators.touchPoint(CGPoint(x: frame.midX, y: frame.midY), on: udid)
+                try await simulators.send(.tapAt(x: center.x, y: center.y, duration: 0.05), to: udid)
+            }.value
             return ["frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]]
         case "swipe":
             let from = try require(request.x, request.y), to = try require(request.toX, request.toY)
+            let edge = try await simulators.edge(at: from, on: udid)
+            let start = try await simulators.touchPoint(from, on: udid), end = try await simulators.touchPoint(to, on: udid)
             try await simulators.send(
-                .swipe(from.x, yStart: from.y, xEnd: to.x, yEnd: to.y, delta: 0, duration: request.duration ?? 0.3), to: udid)
+                .swipe(start.x, yStart: start.y, xEnd: end.x, yEnd: end.y, delta: 0, duration: request.duration ?? 0.3, edge: edge), to: udid)
         case "touch":
-            let point = try require(request.x, request.y)
-            let direction: SimulatorHIDDirection
-            switch try require(request.phase, "phase") {
-            case "down", "move": direction = .down
-            case "up": direction = .up
-            default: throw Failure(reason: "badRequest", message: "A touch's phase is down, move or up")
-            }
-            try await simulators.send(.touch(direction: direction, x: point.x, y: point.y), to: udid)
+            try await simulators.touch(try require(request.phase, "phase"), at: try require(request.x, request.y), on: udid)
         case "key":
             let code = try Keyboard.named(try require(request.key, "key"))
             try await simulators.send(.composite([.keyboard(direction: .down, keyCode: code), .keyboard(direction: .up, keyCode: code)]), to: udid)
         case "screen":
             return try await simulators.screen(udid)
+        case "mask":
+            return ["mask": try await simulators.mask(udid) ?? NSNull()]
         case "orientation":
-            try await simulators.orient(udid, to: try require(request.orientation, "orientation"))
+            if let name = request.orientation {
+                try await simulators.orient(udid, to: name)
+                return ["orientation": name]
+            }
+            return ["orientation": try await simulators.orientation(udid)]
         case "touchPath":
-            try await simulators.send(try touchPath(try require(request.points, "points")), to: udid)
+            try await simulators.send(try touchPath(try await simulators.touchPoints(try require(request.points, "points"), on: udid)), to: udid)
         case "touch2Path":
-            try await simulators.send(try twoFingerPath(try require(request.points, "points")), to: udid)
+            try await simulators.send(try twoFingerPath(try await simulators.touchPoints(try require(request.points, "points"), on: udid)), to: udid)
         case "text":
             var events: [SimulatorHIDEvent] = []
             for key in try Keyboard.keys(for: try require(request.text, "text")) {
@@ -100,15 +114,22 @@ struct SikemuxSim {
             }
             try await simulators.send(.composite(events), to: udid)
         case "button":
-            try await simulators.send(.shortButtonPress(try button(try require(request.button, "button"))), to: udid)
+            let pressed = try button(try require(request.button, "button"))
+            switch request.phase {
+            case nil: try await simulators.send(.shortButtonPress(pressed), to: udid)
+            case "down": try await simulators.send(.button(direction: .down, button: pressed), to: udid)
+            case "up": try await simulators.send(.button(direction: .up, button: pressed), to: udid)
+            default: throw Failure(reason: "badRequest", message: "A button's phase is down or up, or none for a press")
+            }
+        case "chrome":
+            return ["chrome": try await simulators.chrome(udid) ?? NSNull()]
         case "logs":
             return try await simulators.logs(
-                on: udid, process: request.process, after: request.after ?? 0, limit: min(max(request.limit ?? 200, 1), LogTail.capacity))
+                on: udid, process: request.process, after: request.after ?? 0, generation: request.generation, limit: min(max(request.limit ?? 200, 1), LogTail.capacity))
         case "stopLogs":
             try await simulators.stopLogs(on: udid, process: request.process)
         case "stream":
-            return try await simulators.stream(
-                on: udid, format: request.format ?? "h264", fps: min(max(request.fps ?? 60, 1), 60), scale: request.scale)
+            return try await simulators.stream(on: udid, format: request.format ?? "h264", scale: request.scale)
         case "stopStream":
             try await simulators.stopStream(on: udid, format: request.format)
         case "install":
@@ -128,6 +149,23 @@ struct SikemuxSim {
             throw Failure(reason: "protocol", message: "Unknown request \(request.type)")
         }
         return [:]
+    }
+
+    /// Writes to `given`, `~` meaning the home folder, into a folder that must already exist.
+    static func writeScreenshot(_ data: Data, to given: String) throws -> String {
+        let path = (given as NSString).expandingTildeInPath
+        guard path.hasPrefix("/") else { throw Failure(reason: "badRequest", message: "A screenshot path must be absolute: \(given)") }
+        var isFolder: ObjCBool = false
+        let folder = (path as NSString).deletingLastPathComponent
+        guard FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue else {
+            throw Failure(reason: "badRequest", message: "There is no folder \(folder) to save the screenshot in")
+        }
+        do {
+            try data.write(to: URL(fileURLWithPath: path))
+        } catch {
+            throw Failure(reason: "badRequest", message: "Could not save the screenshot to \(path): \(Failure.describe(error))")
+        }
+        return path
     }
 
     private static func require<T>(_ value: T?, _ name: String) throws -> T {
@@ -173,6 +211,7 @@ struct SikemuxSim {
     private static func button(_ name: String) throws -> SimulatorHIDButton {
         let buttons: [String: SimulatorHIDButton] = [
             "home": .homeButton, "lock": .lock, "side": .sideButton, "siri": .siri, "volumeUp": .volumeUp, "volumeDown": .volumeDown,
+            "action": .action,
         ]
         guard let button = buttons[name] else {
             throw Failure(reason: "badRequest", message: "Unknown button \(name). Use one of: \(buttons.keys.sorted().joined(separator: ", "))")
@@ -189,7 +228,7 @@ struct SikemuxSim {
                 print(String(format: "ok    %-12@ %6.0f ms  %@", name as NSString, Date().timeIntervalSince(started) * 1000, detail as NSString))
                 return true
             } catch {
-                print("fail  \(name)  \((error as? Failure)?.message ?? "\(error)")")
+                print("fail  \(name)  \(Failure.describe(error))")
                 return false
             }
         }
@@ -203,9 +242,31 @@ struct SikemuxSim {
         }
         guard passed, let udid else { exit(1) }
         var ok = await step("boot") { try await simulators.boot(udid); return udid }
-        ok = await step("screenshot") { "\(try await simulators.screenshot(udid).count) bytes" } && ok
+        ok = await step("screenshot") { "\(try await simulators.screenshot(udid).data.count) bytes" } && ok
         ok = await step("tree") { "\(String(describing: try await simulators.tree(udid)).count) characters" } && ok
         ok = await step("tap") { try await simulators.send(.tapAt(x: 1, y: 1), to: udid); return "at 1,1" } && ok
         exit(ok ? 0 : 1)
+    }
+}
+
+/// One queue per device for input, so a person's touches and an agent's taps or typing never
+/// interleave on the same screen. Different devices, and everything that is not input, run at once.
+final class InputLanes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: [String: Task<Void, Never>] = [:]
+
+    /// Starts `work` once everything queued before it on the device has finished.
+    @discardableResult
+    func run<T: Sendable>(on udid: String?, _ work: @escaping @Sendable () async throws -> T) -> Task<T, Error> {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = udid ?? ""
+        let previous = last[key]
+        let task = Task<T, Error> {
+            await previous?.value
+            return try await work()
+        }
+        last[key] = Task { _ = try? await task.value }
+        return task
     }
 }

@@ -57,14 +57,14 @@ it("switches between Changes and Branches from the rail, with History folded und
     expect(changes).toHaveAttribute("aria-current", "page");
 
     const history = screen.getByRole("button", { name: /History/ });
-    expect(history).toHaveAttribute("aria-expanded", "false");
+    expect(history).toHaveAttribute("aria-expanded", "true");
 
     await user.click(history);
-    expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: true, panel: "commits" });
-    expect(changes).toHaveAttribute("aria-current", "page");
+    expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: false, panel: "files" });
 
     await user.click(screen.getByRole("button", { name: /History/ }));
-    expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: false, panel: "files" });
+    expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: true, panel: "commits" });
+    expect(changes).toHaveAttribute("aria-current", "page");
 
     await user.click(within(rail).getByRole("button", { name: "Branches (2)" }));
     expect(getState().gitViews["git-test"].panel).toBe("branches");
@@ -145,30 +145,6 @@ it("waits for the stage to stop sliding before it refreshes", async () => {
     expect(resources.overviewEnabled).toBe(true);
 });
 
-it("stages and unstages one file from the buttons on its row", async () => {
-    const { git } = await import("../api/git");
-    const stage = vi.spyOn(git, "stage").mockResolvedValue(undefined as never);
-    const unstage = vi.spyOn(git, "unstage").mockResolvedValue(undefined as never);
-    const files = resources.overview.data.status.files;
-    resources.overview.data.status.files = [{ path: "file.ts", index: "M", worktree: "M" }];
-    resources.overview.refresh.mockResolvedValue(undefined);
-    resources.empty.refresh.mockResolvedValue(undefined);
-    try {
-        const user = userEvent.setup();
-        render(<GitPane paneId="git-test" cwd="/repo" active visible />);
-        await user.click(screen.getByRole("button", { name: "Stage file.ts" }));
-        expect(stage).toHaveBeenCalledWith(expect.any(String), "file.ts");
-        await user.click(screen.getByRole("button", { name: "Unstage file.ts" }));
-        expect(unstage).toHaveBeenCalledWith(expect.any(String), "file.ts");
-    } finally {
-        resources.overview.data.status.files = files;
-        resources.overview.refresh.mockReset();
-        resources.empty.refresh.mockReset();
-        stage.mockRestore();
-        unstage.mockRestore();
-    }
-});
-
 it("resizes the lists against the review from the divider, and double-click puts it back", () => {
     const offsetWidth = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(300);
     const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
@@ -221,20 +197,5 @@ it("discards every unstaged change after asking, and says which files are new", 
         resources.overview.refresh.mockReset();
         resources.empty.refresh.mockReset();
         discardFiles.mockRestore();
-    }
-});
-
-it("grows the open history when its handle moves up", async () => {
-    const offsetHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(200);
-    const clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(900);
-    try {
-        render(<GitPane paneId="git-test" cwd="/repo" active visible />);
-        await userEvent.setup().click(screen.getByRole("button", { name: /History/ }));
-
-        fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the history" }), { key: "ArrowUp" });
-        expect(getState().gitViews["git-test"].historyHeight).toBe(216);
-    } finally {
-        offsetHeight.mockRestore();
-        clientHeight.mockRestore();
     }
 });

@@ -4,20 +4,57 @@ export const schema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://api.sikemux.com/schema/v1",
   $defs: {
+    Account: {
+      description:
+        "Whether the signed-in account is in use or waiting to be deleted.",
+      type: "object",
+      properties: {
+        status: { $ref: "#/$defs/AccountStatus" },
+        deletesAt: {
+          description:
+            "Only while deleting: when the account is deleted for good unless restored first.",
+          type: "string",
+          format: "date-time",
+        },
+      },
+      required: ["status"],
+      additionalProperties: false,
+    },
     AccountDeletion: {
       description:
-        "The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.",
+        "Every device is revoked and every token refused from the moment this is answered, except to read or restore the account. Signing in again before deletesAt can restore it.",
       type: "object",
       properties: {
         status: { $ref: "#/$defs/AccountDeletionStatus" },
         requestedAt: { type: "string", format: "date-time" },
+        deletesAt: {
+          description:
+            "When the sign-in is deleted for good and the account can no longer be restored.",
+          type: "string",
+          format: "date-time",
+        },
       },
-      required: ["status", "requestedAt"],
+      required: ["status", "requestedAt", "deletesAt"],
+      additionalProperties: false,
+    },
+    AccountDeletionRequest: {
+      description:
+        "What the phone may send when it deletes an account. The body can be left out.",
+      type: "object",
+      properties: {
+        appleAuthorizationCode: {
+          description:
+            "A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux.",
+          type: "string",
+          minLength: 1,
+          maxLength: 512,
+        },
+      },
       additionalProperties: false,
     },
     AccountDeletionStatus: {
       description:
-        "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",
+        "Deleting while the account can still be restored, until the server deletes the sign-in in Clerk at deletesAt; deleted once Clerk has.",
       type: "string",
       enum: ["deleting", "deleted"],
     },
@@ -54,6 +91,12 @@ export const schema = {
         "device.revoked",
         "account.deleted",
       ],
+    },
+    AccountStatus: {
+      description:
+        "Active, or deleting: deleted on request and still restorable until deletesAt.",
+      type: "string",
+      enum: ["active", "deleting"],
     },
     ApiError: {
       description: "The body of every response that is not a success.",
@@ -163,6 +206,7 @@ export const schema = {
         "rate_limited",
         "internal",
         "unavailable",
+        "reverify_required",
       ],
     },
     ErrorDetail: {
@@ -205,6 +249,65 @@ export const schema = {
       additionalProperties: false,
     },
     HealthStatus: { type: "string", enum: ["ok", "unavailable"] },
+    JoinRequest: {
+      description: "Which host on the account the phone wants to join.",
+      type: "object",
+      properties: { host: { $ref: "#/$defs/DeviceKey" } },
+      required: ["host"],
+      additionalProperties: false,
+    },
+    JoinTicket: {
+      description:
+        "The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal.",
+      type: "object",
+      properties: {
+        v: {
+          description: "The ticket's format. Only 1 exists.",
+          type: "integer",
+          minimum: 1,
+          maximum: 1,
+        },
+        keyId: {
+          description:
+            "Which of the server's signing keys signed it: prod-1 in production, dev-1 for a local API.",
+          type: "string",
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
+          maxLength: 32,
+        },
+        account: {
+          description:
+            "The Clerk user id of the account the phone and the host are on.",
+          type: "string",
+          pattern: "^user_[A-Za-z0-9]+$",
+          maxLength: 64,
+        },
+        host: { $ref: "#/$defs/DeviceKey" },
+        phone: { $ref: "#/$defs/DeviceKey" },
+        issuedAt: {
+          description: "When the server signed it, in unix seconds.",
+          type: "integer",
+          minimum: 0,
+        },
+        expiresAt: {
+          description:
+            "When it stops being good, in unix seconds: ten minutes after issuedAt.",
+          type: "integer",
+          minimum: 0,
+        },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: [
+        "v",
+        "keyId",
+        "account",
+        "host",
+        "phone",
+        "issuedAt",
+        "expiresAt",
+        "signature",
+      ],
+      additionalProperties: false,
+    },
     LiveAck: {
       description: "Every event up to and including id is handled.",
       type: "object",

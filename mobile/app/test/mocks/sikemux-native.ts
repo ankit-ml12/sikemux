@@ -1,4 +1,4 @@
-const TAGS = ['Refused', 'WrongCode', 'Connection', 'Invalid', 'Outdated', 'Unpaired'] as const;
+const TAGS = ['Refused', 'Connection', 'Invalid', 'Outdated', 'Unpaired'] as const;
 type Tag = (typeof TAGS)[number];
 
 class FakeMobileError extends Error {
@@ -26,7 +26,6 @@ function notMocked(name: string): never {
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
-export const parsePairingLink = (_text: string): undefined => undefined;
 
 export class Device {
   constructor() {
@@ -34,21 +33,10 @@ export class Device {
   }
 }
 
-export enum ChatState {
-  Starting,
-  Ready,
-  Stopped,
-}
-
-export enum SessionKind {
-  Terminal,
-  Task,
-}
-
-export enum BuildChannel {
-  Dev,
-  Nightly,
-  Stable,
+export class DeviceIdentity {
+  constructor() {
+    notMocked('DeviceIdentity');
+  }
 }
 
 /** A tagged value shaped like the generated enums': `inner` holds the fields, `instanceOf` checks the tag. */
@@ -68,8 +56,7 @@ function tagged<Inner>(tag: string) {
 
 export const CoreEvent = {
   Chat: tagged<{ agentId: string; seq: bigint; eventJson: string }>('Chat'),
-  View: tagged<{ view: unknown }>('View'),
-  Exited: tagged<{ session: bigint; code?: number; signal?: string; killed: boolean }>('Exited'),
+  View: tagged<{ viewJson: string }>('View'),
 };
 
 export const ChatAttachment = {
@@ -77,4 +64,10 @@ export const ChatAttachment = {
   Resumed: tagged<{ eventsJson: string; mark: { feed: string; seq: bigint } }>('Resumed'),
   Missing: tagged<Record<string, never>>('Missing'),
   Restart: tagged<Record<string, never>>('Restart'),
+};
+
+export const JoinAnswer = {
+  Allowed: tagged<{ access: string }>('Allowed'),
+  Denied: tagged<Record<string, never>>('Denied'),
+  Refused: tagged<{ reason: string }>('Refused'),
 };

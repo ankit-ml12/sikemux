@@ -80,6 +80,7 @@ struct SessionInfo: Decodable, Equatable {
     let agentState: String?
     let title: String?
     let unread: Bool
+    let activeAt: Double?
 }
 
 struct ChatInfo: Decodable, Equatable {
@@ -90,9 +91,12 @@ struct ChatInfo: Decodable, Equatable {
     let state: String
     let running: Bool
     let pendingPermissions: [String]
+    let subagents: Int
+    let tasks: Int
     let permissionMode: String
     let asleep: Bool
     let unread: Bool
+    let activeAt: Double?
 }
 
 struct Attention: Decodable, Equatable {
@@ -113,6 +117,12 @@ enum AgentState: Int, Comparable {
     static func < (lhs: AgentState, rhs: AgentState) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
+/// One group on the closed island's right wing.
+enum Rollup: Hashable {
+    case state(AgentState)
+    case stillRunning
+}
+
 /// A permission an agent waits on, with the person's choices.
 struct Ask: Equatable {
     let attentionId: String
@@ -131,6 +141,9 @@ struct AgentItem: Identifiable, Equatable {
     let title: String
     let project: String
     let state: AgentState
+    let subagents: Int
+    /// Shells, monitors or subagents still going once its turn is over.
+    let background: Bool
     /// A chat agent can be answered from the notch; a terminal agent only in Sikemux.
     let isChat: Bool
     let ask: Ask?
@@ -159,26 +172,29 @@ extension DeviceView {
         return URL(fileURLWithPath: value).lastPathComponent
     }
 
-    /// Every agent open in the app, most in need of the person first.
+    /// Every agent open in the app, most in need of the person first, then
+    /// the most recently active.
     var agents: [AgentItem] {
-        var items: [AgentItem] = []
+        var items: [(agent: AgentItem, activeAt: Double)] = []
         // A sleeping chat is still open in the app; it starts again when opened there.
         for chat in chats {
             let ask = attentions.first { $0.agentId == chat.agentId }.map(Self.ask)
             let state: AgentState =
                 !chat.pendingPermissions.isEmpty ? .blocked : chat.running ? .working : chat.unread ? .done : .idle
-            items.append(AgentItem(
+            items.append((AgentItem(
                 id: chat.agentId,
                 provider: chat.provider,
                 title: chat.title ?? "New \(agentName(chat.provider)) chat",
                 project: projectName(chat.cwd),
                 state: state,
+                subagents: chat.subagents,
+                background: chat.tasks > 0 || chat.subagents > 0,
                 isChat: true,
                 ask: ask
-            ))
+            ), chat.activeAt ?? 0))
         }
         for session in sessions where session.kind == "terminal" && session.running {
-            guard let agentId = session.agentId, !items.contains(where: { $0.id == agentId }) else { continue }
+            guard let agentId = session.agentId, !items.contains(where: { $0.agent.id == agentId }) else { continue }
             let provider = session.agentType ?? "agent"
             let state: AgentState
             switch session.agentState {
@@ -187,19 +203,25 @@ extension DeviceView {
             case "idle" where session.unread: state = .done
             default: state = .idle
             }
-            items.append(AgentItem(
+            items.append((AgentItem(
                 id: agentId,
                 provider: provider,
                 title: session.title ?? agentName(provider),
                 project: projectName(session.project),
                 state: state,
+                subagents: 0,
+                background: false,
                 isChat: false,
                 ask: nil
-            ))
+            ), session.activeAt ?? 0))
         }
         return items.enumerated()
-            .sorted { $0.element.state != $1.element.state ? $0.element.state > $1.element.state : $0.offset < $1.offset }
-            .map(\.element)
+            .sorted { a, b in
+                if a.element.agent.state != b.element.agent.state { return a.element.agent.state > b.element.agent.state }
+                if a.element.activeAt != b.element.activeAt { return a.element.activeAt > b.element.activeAt }
+                return a.offset < b.offset
+            }
+            .map(\.element.agent)
     }
 
     private static func ask(_ attention: Attention) -> Ask {

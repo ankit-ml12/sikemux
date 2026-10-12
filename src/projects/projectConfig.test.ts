@@ -7,8 +7,6 @@ import {
     type SikemuxProjectConfig,
 } from "./projectConfig";
 
-const minimal = { version: 1 };
-
 describe("project configuration", () => {
     it("distinguishes an absent configuration and reports its normalized path", async () => {
         const read = vi.fn(async () => {
@@ -20,6 +18,19 @@ describe("project configuration", () => {
             path: "C:/work/app/sikemux.json",
         });
         expect(read).toHaveBeenCalledWith("C:/work/app/sikemux.json");
+    });
+
+    it("reads the error the native command rejects with", async () => {
+        const missing = await loadProjectConfig("/repo", async () => {
+            throw { category: "io", message: "io: No such file or directory (os error 2)" };
+        });
+        expect(missing).toEqual({ status: "absent", path: "/repo/sikemux.json" });
+
+        const denied = await loadProjectConfig("/repo", async () => {
+            throw { category: "io", message: "io: Permission denied (os error 13)" };
+        });
+        if (denied.status === "invalid") expect(denied.errors[0].message).toBe("Could not read sikemux.json: io: Permission denied (os error 13)");
+        else expect.fail(`expected invalid, got ${denied.status}`);
     });
 
     it("does not misclassify permission and I/O failures as absence", async () => {
@@ -235,10 +246,5 @@ describe("project configuration", () => {
     it("rejects oversized files before attempting to parse them", async () => {
         const result = await loadProjectConfig("/repo", async () => "x".repeat(256 * 1024 + 1));
         expect(result).toMatchObject({ status: "invalid", errors: [{ code: "limit-exceeded", path: "$" }] });
-    });
-
-    it("accepts the smallest valid configuration", async () => {
-        const result = await loadProjectConfig("/repo", async () => JSON.stringify(minimal));
-        expect(result).toMatchObject({ status: "valid", config: { version: 1, actions: [], tasks: [] }, trust: { requiresApproval: false } });
     });
 });

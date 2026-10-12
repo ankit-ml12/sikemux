@@ -1,13 +1,13 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@clerk/expo';
 
-import { Button } from '@/ui/parts';
+import { Button } from '@/ui/controls';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 import { choose, closeOffer, useOffered } from './setting';
 import { notificationsSupported, turnOn } from './switch';
 
-/** Asked once, after the first pairing on a signed-in phone, since notifications reach it through the account. */
+/** Asked once, after the first host lets a signed-in phone in, since notifications reach it through the account. */
 export function NotificationsOffer() {
   const styles = useStyles(makeStyles);
   const { isSignedIn, getToken } = useAuth();
@@ -25,7 +25,7 @@ export function NotificationsOffer() {
   };
 
   return (
-    <Sheet visible={visible} onClose={notNow}>
+    <Sheet visible={visible} onClose={closeOffer}>
       <Text style={styles.title}>Turn on notifications?</Text>
       <Text style={styles.note}>
         Get told when an agent stops to ask, finishes, or runs into a problem. What it&apos;s doing is encrypted on your computer; only this

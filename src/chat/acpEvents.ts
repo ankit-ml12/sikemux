@@ -1,5 +1,5 @@
 import type { AcpEvent } from "../api/acp";
-import type { AcpPermissionRequest, ChatAction } from "./types";
+import type { AcpPermissionRequest, ChatAction, ChatFailure } from "./types";
 
 export function recordOf(value: unknown): Record<string, unknown> | null {
     return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -28,16 +28,28 @@ export function permissionRequest(payload: Record<string, unknown>): AcpPermissi
     };
 }
 
-export function statusFromEvent(event: AcpEvent): "connecting" | "installing" | "starting" | "initializing" | "ready" | "stopped" | "error" {
+export function statusFromEvent(event: AcpEvent): "connecting" | "starting" | "initializing" | "ready" | "stopped" | "error" {
     const value = event.payload.state;
-    return value === "installing" || value === "starting" || value === "initializing" || value === "ready" || value === "stopped" || value === "error"
-        ? value
-        : "connecting";
+    return value === "starting" || value === "initializing" || value === "ready" || value === "stopped" || value === "error" ? value : "connecting";
 }
 
 /** A prompt sent from another device, shown as if it had been typed here. */
 export function promptAction(payload: Record<string, unknown>): ChatAction | null {
     if (typeof payload.text !== "string") return null;
     const paths = Array.isArray(payload.paths) ? payload.paths.filter((path): path is string => typeof path === "string") : [];
-    return { type: "local_prompt", text: payload.text, paths };
+    return {
+        type: "local_prompt",
+        text: payload.text,
+        paths,
+        ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {}),
+        ...(typeof payload.at === "number" ? { at: payload.at } : {}),
+    };
+}
+
+/** Why a turn failed, when the core says it was the account's doing. */
+export function failureOf(event: AcpEvent): ChatFailure | undefined {
+    const failure = recordOf(event.payload.failure);
+    const kind = failure?.kind;
+    if (kind !== "signIn" && kind !== "limit" && kind !== "other") return undefined;
+    return { kind, account: typeof failure?.account === "string" ? failure.account : null };
 }

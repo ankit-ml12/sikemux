@@ -110,6 +110,11 @@ pub async fn pty_spawn(
     ) {
         env.extend(crate::model_providers::environment(agent_type).await);
     }
+    if let Some(path) = crate::system::child_path() {
+        if !env.iter().any(|(key, _)| key == "PATH") {
+            env.push(("PATH".into(), path));
+        }
+    }
     let client = manager.client().await?;
     let id = client
         .spawn(
@@ -151,9 +156,12 @@ pub struct TaskSpawnResult {
 pub async fn task_spawn(
     app: AppHandle,
     manager: State<'_, PtyManager>,
-    request: TaskSpawnRequest,
+    mut request: TaskSpawnRequest,
     on_exit: Channel<TaskProcessExit>,
 ) -> AppResult<TaskSpawnResult> {
+    if let Some(path) = crate::system::child_path() {
+        request.env.entry("PATH".into()).or_insert(path);
+    }
     let operation = global_observability().slow_operation(
         "pty.task_spawn",
         Duration::from_millis(50),
@@ -273,46 +281,6 @@ pub async fn pty_attach(
     finish(outcome, operation).map(Response::new)
 }
 
-/// Live output only, for a pane that already holds the screen.
-#[tauri::command]
-pub async fn pty_subscribe(
-    manager: State<'_, PtyManager>,
-    id: SessionId,
-    on_event: Channel<Response>,
-) -> AppResult<u32> {
-    let client = manager.client().await?;
-    let streams = manager.streams.clone();
-    let replied = {
-        let mut guard = manager.streams.lock()?;
-        if guard.is_core_subscribed(id) {
-            return guard.add_channel(id, on_event);
-        }
-        guard.begin_attach(id)?;
-        let submitted = client.submit(Request::Subscribe { id }, move |reply| {
-            let mut guard = streams.lock()?;
-            match reply {
-                Ok(Reply::Response(CoreResponse::Done)) => {
-                    guard.cancel_attach(id);
-                    guard.add_channel(id, on_event)
-                }
-                Ok(_) => {
-                    guard.cancel_attach(id);
-                    Err(core_error(ClientError::UnexpectedReply))
-                }
-                Err(error) => {
-                    guard.cancel_attach(id);
-                    Err(core_error(error))
-                }
-            }
-        });
-        if submitted.is_err() {
-            guard.cancel_attach(id);
-        }
-        submitted.map_err(core_error)?
-    };
-    replied.await.map_err(core_error)?
-}
-
 #[tauri::command]
 pub async fn pty_unsubscribe(
     manager: State<'_, PtyManager>,
@@ -394,6 +362,12 @@ pub async fn pty_resize(
 pub async fn pty_reset_modes(manager: State<'_, PtyManager>, id: SessionId) -> AppResult<()> {
     let client = manager.client().await?;
     client.reset_modes(id).await.map_err(core_error)
+}
+
+#[tauri::command]
+pub async fn pty_shell_at_prompt(manager: State<'_, PtyManager>, id: SessionId) -> AppResult<bool> {
+    let client = manager.client().await?;
+    client.shell_at_prompt(id).await.map_err(core_error)
 }
 
 #[tauri::command]

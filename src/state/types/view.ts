@@ -14,12 +14,18 @@ export interface DeskBrowserTab {
     title: string;
 }
 
-/** What a desk needs to come back: whose desk it is, and the pages and files that were on it. */
+/** What a desk needs to come back: whose desk it is, and the pages, files and simulator that were on it. */
 export interface DeskView {
     agentId: string;
     tabs: DeskBrowserTab[];
     activeIndex: number;
     files: string[];
+    simulator?: DeskSavedSimulator;
+}
+
+export interface DeskSavedSimulator {
+    udid: string | null;
+    name: string | null;
 }
 
 /** A task terminal an agent started, shown on its desk and bound to the task's process by `id`. */
@@ -122,7 +128,7 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     selected: { files: 0, commits: 0, branches: 0 },
     openRemote: "origin",
     leftWidth: null,
-    historyOpen: false,
+    historyOpen: true,
     historyHeight: null,
     repo: null,
 };

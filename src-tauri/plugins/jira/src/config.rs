@@ -1,6 +1,6 @@
-// The Jira Cloud sites signed in here. Each site's API token lives in the
-// Keychain; the file beside it only lists the sites, who is signed in to each,
-// and which one to use when none is named.
+// The Jira Cloud sites signed in here. A site's API token, or the Atlassian
+// sign-in it came from, lives in the Keychain; the file beside it only lists the
+// sites, who is signed in to each, and which one to use when none is named.
 
 use std::path::{Path, PathBuf};
 
@@ -19,19 +19,35 @@ const TOKEN_SERVICE: &str = "sikemux-jira-token-test";
 pub struct Site {
     /// The site's host, e.g. `acme.atlassian.net`, which also names it to tools.
     pub host: String,
-    pub email: String,
     pub account_id: String,
     #[serde(default)]
     pub display_name: Option<String>,
+    pub sign_in: SignIn,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(tag = "method", rename_all = "camelCase")]
+pub enum SignIn {
+    /// An email and the API token made for it, sent to the site itself.
+    #[serde(rename_all = "camelCase")]
+    Token { email: String },
+    /// Signed in through the browser. Every site one Atlassian account reaches
+    /// shares its sign-in, and requests go through Atlassian's API by the site's id.
+    #[serde(rename_all = "camelCase")]
+    Atlassian { cloud_id: String },
 }
 
 impl Site {
-    pub fn url(&self) -> String {
-        format!("https://{}", self.host)
+    /// Several sites from one browser sign-in share one Keychain entry.
+    fn keychain_account(&self) -> String {
+        match &self.sign_in {
+            SignIn::Token { email } => format!("{}:{email}", self.host),
+            SignIn::Atlassian { .. } => format!("atlassian:{}", self.account_id),
+        }
     }
 
-    fn keychain_account(&self) -> String {
-        format!("{}:{}", self.host, self.email)
+    pub fn shares_sign_in_with(&self, other: &Site) -> bool {
+        self.keychain_account() == other.keychain_account()
     }
 }
 
@@ -91,15 +107,27 @@ impl JiraConfig {
 /// `https://Acme.atlassian.net/jira/…` and `acme.atlassian.net` name the same site.
 pub fn normalise_host(given: &str) -> String {
     let trimmed = given.trim();
-    let without_scheme = trimmed
-        .strip_prefix("https://")
-        .or_else(|| trimmed.strip_prefix("http://"))
-        .unwrap_or(trimmed);
-    without_scheme
-        .split('/')
-        .next()
+    let with_scheme = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{trimmed}")
+    };
+    url::Url::parse(&with_scheme)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
         .unwrap_or_default()
-        .to_ascii_lowercase()
+}
+
+/// The token is only ever sent to a Jira Cloud site, whatever was pasted as its address.
+pub fn cloud_host(given: &str) -> JiraResult<String> {
+    let host = normalise_host(given);
+    if host.ends_with(".atlassian.net") || host.ends_with(".jira.com") {
+        Ok(host)
+    } else {
+        Err(JiraError::BadArg(
+            "the site looks like acme.atlassian.net".into(),
+        ))
+    }
 }
 
 fn config_path(data_dir: &Path) -> PathBuf {
@@ -160,9 +188,11 @@ mod tests {
     fn site(host: &str) -> Site {
         Site {
             host: host.into(),
-            email: "me@example.com".into(),
             account_id: "1".into(),
             display_name: None,
+            sign_in: SignIn::Token {
+                email: "me@example.com".into(),
+            },
         }
     }
 
@@ -173,6 +203,41 @@ mod tests {
             "acme.atlassian.net"
         );
         assert_eq!(normalise_host(" acme.atlassian.net "), "acme.atlassian.net");
+    }
+
+    #[test]
+    fn only_jira_cloud_sites_are_accepted() {
+        assert_eq!(
+            cloud_host("https://acme.atlassian.net:8443/jira").ok(),
+            Some("acme.atlassian.net".into())
+        );
+        for given in [
+            "acme.atlassian.net@evil.com",
+            "evil.com/acme.atlassian.net",
+            "evil.com#.atlassian.net",
+            "evilatlassian.net",
+            "localhost:9000",
+            "10.0.0.5",
+            "",
+        ] {
+            assert!(cloud_host(given).is_err(), "{given}");
+        }
+    }
+
+    #[test]
+    fn sites_from_one_browser_sign_in_share_it_and_token_sites_keep_their_own() {
+        let atlassian = |host: &str, account: &str| Site {
+            host: host.into(),
+            account_id: account.into(),
+            display_name: None,
+            sign_in: SignIn::Atlassian {
+                cloud_id: format!("{host}-id"),
+            },
+        };
+        let acme = atlassian("acme.atlassian.net", "me");
+        assert!(acme.shares_sign_in_with(&atlassian("acme-dev.atlassian.net", "me")));
+        assert!(!acme.shares_sign_in_with(&atlassian("other.atlassian.net", "someone-else")));
+        assert!(!site("a.atlassian.net").shares_sign_in_with(&site("b.atlassian.net")));
     }
 
     #[test]

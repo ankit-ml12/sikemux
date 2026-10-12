@@ -11,15 +11,17 @@ use tokio::sync::{mpsc, Notify};
 use crate::protocol::{
     decode_input, encode_control, fits, read_frame, ClientMessage, Event, FrameKind,
     HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
-    SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
+    SpawnTarget, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
+use super::calls;
 use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
 use super::{
-    agent, chat, harness, remote, upgrade, window, workspace, Core, CoreError, CoreResult,
+    agent, attachments, chat, harness, remote, upgrade, window, workspace, Core, CoreError,
+    CoreResult,
 };
 
 pub(crate) type ClientId = u64;
@@ -173,6 +175,19 @@ async fn write_direct(writer: &mut FrameWriter, message: &ServerMessage) {
     }
 }
 
+/// The newest version both sides speak. The app and its own core ship
+/// together and must match, so a local client that differs is told to
+/// replace the core.
+fn agreed_version(peer: &Peer, oldest: u32, newest: u32) -> Option<u32> {
+    let core_oldest = if peer.is_local() {
+        PROTOCOL_VERSION
+    } else {
+        OLDEST_PROTOCOL_VERSION
+    };
+    let agreed = newest.min(PROTOCOL_VERSION);
+    (agreed >= oldest.max(core_oldest)).then_some(agreed)
+}
+
 async fn handshake(
     core: &Arc<Core>,
     peer: &Peer,
@@ -194,35 +209,33 @@ async fn handshake(
     }
     let pid = std::process::id();
     match serde_json::from_slice::<ClientMessage>(&frame.payload) {
-        Ok(ClientMessage::Hello { protocol, version })
-            if protocol == PROTOCOL && version == PROTOCOL_VERSION =>
-        {
-            write_direct(
-                writer,
-                &ServerMessage::HelloAck {
+        Ok(ClientMessage::Hello {
+            protocol,
+            version,
+            newest,
+        }) => {
+            let newest = newest.unwrap_or(version);
+            let agreed = (protocol == PROTOCOL)
+                .then(|| agreed_version(peer, version, newest))
+                .flatten();
+            let reply = match agreed {
+                Some(agreed) => ServerMessage::HelloAck {
                     protocol: PROTOCOL.into(),
-                    version: PROTOCOL_VERSION,
+                    version: agreed,
                     pid,
                     build: core.build.clone(),
                 },
-            )
-            .await;
-            true
-        }
-        Ok(ClientMessage::Hello { protocol, version }) => {
-            write_direct(
-                writer,
-                &ServerMessage::HelloRejected {
+                None => ServerMessage::HelloRejected {
                     protocol: PROTOCOL.into(),
                     version: PROTOCOL_VERSION,
                     pid,
                     message: format!(
-                        "this core speaks {PROTOCOL} version {PROTOCOL_VERSION}, the client asked for {protocol} version {version}"
+                        "this core speaks {PROTOCOL} version {PROTOCOL_VERSION}, the client asked for {protocol} versions {version} to {newest}"
                     ),
                 },
-            )
-            .await;
-            false
+            };
+            write_direct(writer, &reply).await;
+            agreed.is_some()
         }
         _ => {
             write_direct(
@@ -474,6 +487,10 @@ async fn run_requests(
                 core.harness.awaiting_trust(&execution_id);
                 client.respond(request_id, Ok(Response::Done));
             }
+            Request::PluginsChanged => {
+                core.harness.plugins_changed();
+                client.respond(request_id, Ok(Response::Done));
+            }
             Request::HarnessStopRuns { selector } => {
                 tokio::spawn(async move {
                     harness::stop_runs(&core, selector).await;
@@ -557,6 +574,16 @@ async fn run_requests(
                 };
                 client.respond(request_id, result.map(|()| Response::Done));
             }
+            Request::ShellAtPrompt { id } => {
+                let result = match session_or_missing(&core, id) {
+                    Ok(target) => blocking(move || Ok(target.shell_at_prompt())).await,
+                    Err(error) => Err(error),
+                };
+                client.respond(
+                    request_id,
+                    result.map(|at_prompt| Response::ShellAtPrompt { at_prompt }),
+                );
+            }
             Request::Detach { id } => {
                 if let Some(target) = core.session(id) {
                     let client_id = client.id;
@@ -606,6 +633,17 @@ async fn run_requests(
                     chat::attach(&core, &client, request_id, &agent_id, since).await;
                 });
             }
+            Request::AcpHistory {
+                agent_id,
+                feed,
+                before,
+                turns,
+            } => {
+                client.respond(
+                    request_id,
+                    chat::history(&core, &agent_id, &feed, before, turns),
+                );
+            }
             Request::AcpDetach { agent_id } => {
                 chat::detach(&core, client.id, &agent_id);
                 client.respond(request_id, Ok(Response::Done));
@@ -630,12 +668,38 @@ async fn run_requests(
             }
             Request::AcpPrompt {
                 agent_id,
+                message_id,
                 text,
                 paths,
                 context,
             } => {
-                let result = chat::prompt(&core, client.id, &agent_id, text, paths, context);
+                let result = chat::prompt(
+                    &core, client.id, &agent_id, message_id, text, paths, context,
+                );
                 client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::AcpEdit {
+                agent_id,
+                message_id,
+                text,
+                paths,
+                context,
+                restore_files,
+            } => {
+                tokio::spawn(async move {
+                    let result = chat::edit(
+                        &core,
+                        client.id,
+                        &agent_id,
+                        message_id,
+                        text,
+                        paths,
+                        context,
+                        restore_files,
+                    )
+                    .await;
+                    client.respond(request_id, result.map(|()| Response::Done));
+                });
             }
             Request::AcpSteer {
                 agent_id,
@@ -650,6 +714,38 @@ async fn run_requests(
                         request_id,
                         result.map(|outcome| Response::Steered { outcome }),
                     );
+                });
+            }
+            Request::AttachFile {
+                agent_id,
+                name,
+                mime,
+                data,
+            } => {
+                let dir = core
+                    .listening
+                    .get()
+                    .and_then(|listening| listening.config.attachment_dir.clone())
+                    .ok_or_else(|| CoreError::from("this host has nowhere to keep files"));
+                match core.chats.running(&agent_id).and(dir) {
+                    Ok(dir) => {
+                        tokio::spawn(async move {
+                            let result =
+                                blocking(move || attachments::save(&dir, &name, &mime, &data))
+                                    .await;
+                            client.respond(
+                                request_id,
+                                result.map(|path| Response::Attached { path }),
+                            );
+                        });
+                    }
+                    Err(error) => client.respond(request_id, Err(error)),
+                }
+            }
+            Request::Call { method, params } => {
+                tokio::spawn(async move {
+                    let result = calls::call(core, &method, params).await;
+                    client.respond(request_id, result.map(|result| Response::Called { result }));
                 });
             }
             Request::AcpCancel { agent_id } => {
@@ -733,6 +829,10 @@ async fn run_requests(
                 let result = core.workspaces.publish_agents(chats, titles);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
+            Request::PublishRecent { chats } => {
+                let result = core.workspaces.publish_recent(chats);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
             Request::PublishOnScreen { agent_ids } => {
                 core.seen.on_screen(client.id, agent_ids);
                 client.respond(request_id, Ok(Response::Done));
@@ -812,11 +912,29 @@ async fn run_requests(
                     permission_mode,
                     model,
                     effort,
+                    resume_id: None,
                 };
                 workspace::start_chat(&core, &client, request_id, choice);
             }
-            Request::OpenPairing => {
-                let result = core.remote.open_offer().map(|()| remote::announce(&core));
+            Request::ResumeChat {
+                recent,
+                permission_mode,
+                model,
+                effort,
+            } => {
+                let choice = workspace::ResumeChoice {
+                    recent,
+                    permission_mode,
+                    model,
+                    effort,
+                };
+                workspace::resume_chat(&core, &client, request_id, choice);
+            }
+            Request::AnswerPairing { id, allow, access } => {
+                let result = core
+                    .remote
+                    .answer(&id, allow.then_some(access))
+                    .map(|()| remote::announce(&core));
                 client.respond(
                     request_id,
                     result.map(|status| Response::Remote {
@@ -824,21 +942,8 @@ async fn run_requests(
                     }),
                 );
             }
-            Request::ClosePairing => {
-                core.remote.close_offer();
-                let status = remote::announce(&core);
-                client.respond(
-                    request_id,
-                    Ok(Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
-            }
-            Request::AnswerPairing { id, allow, access } => {
-                let result = core
-                    .remote
-                    .answer(&id, allow.then_some(access))
-                    .map(|()| remote::announce(&core));
+            Request::AllowDevices { devices } => {
+                let result = core.remote.allow(devices).map(|()| remote::announce(&core));
                 client.respond(
                     request_id,
                     result.map(|status| Response::Remote {
@@ -917,6 +1022,10 @@ async fn run_requests(
                     );
                 });
             }
+            Request::AcpSwitchAccount { agent_id, account } => {
+                let result = chat::switch_account(&core, &agent_id, account);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
         }
     }
 }
@@ -979,5 +1088,33 @@ mod tests {
         assert_eq!(super::unreadable_request_id(later), Some(12));
         assert_eq!(super::unreadable_request_id(br#"{"type":"ack"}"#), None);
         assert_eq!(super::unreadable_request_id(b"not json"), None);
+    }
+
+    #[test]
+    fn a_device_is_served_in_the_newest_version_both_sides_speak() {
+        use super::{agreed_version, Peer, OLDEST_PROTOCOL_VERSION, PROTOCOL_VERSION};
+        let phone = Peer::Device { id: "phone".into() };
+        let (oldest, newest) = (OLDEST_PROTOCOL_VERSION, PROTOCOL_VERSION);
+        assert_eq!(agreed_version(&phone, oldest, oldest), Some(oldest));
+        assert_eq!(agreed_version(&phone, oldest, newest + 3), Some(newest));
+        assert_eq!(agreed_version(&phone, newest + 1, newest + 3), None);
+        assert_eq!(agreed_version(&phone, oldest - 2, oldest - 1), None);
+        assert_eq!(agreed_version(&Peer::Local, newest, newest), Some(newest));
+        assert_eq!(agreed_version(&Peer::Local, newest - 1, newest - 1), None);
+    }
+
+    #[test]
+    fn a_hello_from_before_versions_were_agreed_still_reads() {
+        let hello: crate::protocol::ClientMessage =
+            serde_json::from_str(r#"{"type":"hello","protocol":"sikemux-core","version":9}"#)
+                .expect("reads");
+        assert!(matches!(
+            hello,
+            crate::protocol::ClientMessage::Hello {
+                version: 9,
+                newest: None,
+                ..
+            }
+        ));
     }
 }

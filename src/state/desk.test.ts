@@ -1,7 +1,10 @@
+import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { browserApi } from "../api/browser";
+import { simApi, type SimAttached } from "../api/sim";
 import {
     closeDeskItem,
+    cycleDeskTab,
     openDesk,
     openDeskSimulator,
     openDeskTerminal,
@@ -16,11 +19,26 @@ import { deskEditorId, deskItemsOf, shownDeskItem } from "./desks";
 import { taskPtyBindings } from "../tasks/nativeRuntime";
 import { collectPanes } from "./layout";
 import { agentIdsOf, agentPaneId, shownDeskPaneId } from "./selectors";
+import { useSimulatorReveal } from "./simulatorReveal";
 import { getState, setState } from "./store";
 
 vi.mock("../api/browser", async () => {
     const actual = await vi.importActual<typeof import("../api/browser")>("../api/browser");
     return { ...actual, browserApi: { ...actual.browserApi, snapshot: vi.fn(), newTab: vi.fn(), closeTab: vi.fn(), closeAgent: vi.fn() } };
+});
+
+vi.mock("../api/sim", async () => {
+    const actual = await vi.importActual<typeof import("../api/sim")>("../api/sim");
+    return {
+        ...actual,
+        simApi: {
+            ...actual.simApi,
+            subscribeAttached: vi.fn(),
+            subscribeDetached: vi.fn(async () => () => {}),
+            subscribeActing: vi.fn(async () => () => {}),
+            attachments: vi.fn(async () => []),
+        },
+    };
 });
 
 const initial = getState();
@@ -155,6 +173,17 @@ describe("the desk", () => {
         expect(browserApi.closeAgent).not.toHaveBeenCalled();
     });
 
+    it("opens the address over the new page when the desk had none, and shuts it with the desk", async () => {
+        toggleDesk("agent-1");
+        await vi.waitFor(() => expect(browserApi.newTab).toHaveBeenCalledWith("agent-1"));
+
+        expect(getState().deskAddressOpen).toBe("agent-1");
+
+        toggleDesk("agent-1");
+
+        expect(getState().deskAddressOpen).toBeNull();
+    });
+
     it("shows the tabs it already has instead of opening another", async () => {
         const tab = {
             id: "tab-1",
@@ -174,6 +203,7 @@ describe("the desk", () => {
 
         expect(collectPanes(getState().windows.window.root).map((pane) => pane.kind)).toEqual(["agent", "desk"]);
         expect(browserApi.newTab).not.toHaveBeenCalled();
+        expect(getState().deskAddressOpen).toBeNull();
     });
 
     it("comes on screen for an agent that puts something on it, without taking focus from the agent", () => {
@@ -238,6 +268,30 @@ describe("the desk", () => {
         expect(shownDeskItem(getState().desks["agent-1"], items)).toBe("file:/code/a.ts");
     });
 
+    it("shows the next terminal when a terminal closes, even with a file between them", () => {
+        const first = openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
+        openFileOnDesk("agent-1", "/code/a.ts");
+        setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
+        openDeskTerminal("agent-1", { terminalKey: "task-api", label: "API", cwd: "/code" });
+        const api = deskItemsOf(getState(), "agent-1").find((item) => item.kind === "terminal" && item.terminal.label === "API")!;
+
+        closeDeskItem("agent-1", api);
+
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${first}`);
+    });
+
+    it("steps through the tabs of the kind on show and skips the others", () => {
+        const web = openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
+        openFileOnDesk("agent-1", "/code/a.ts");
+        setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
+        const api = openDeskTerminal("agent-1", { terminalKey: "task-api", label: "API", cwd: "/code" });
+
+        cycleDeskTab("agent-1", 1);
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${web}`);
+        cycleDeskTab("agent-1", 1);
+        expect(getState().desks["agent-1"].active).toBe(`terminal:${api}`);
+    });
+
     it("puts one iOS Simulator on the desk, which every open brings back", () => {
         const first = openDeskSimulator("agent-1");
         const second = openDeskSimulator("agent-1");
@@ -248,10 +302,62 @@ describe("the desk", () => {
         expect(collectPanes(getState().windows.window.root).map((pane) => pane.kind)).toEqual(["agent", "desk"]);
     });
 
+    it("shows the device an agent attaches on that agent's desk", async () => {
+        let attach: (attached: SimAttached) => void = () => {};
+        vi.mocked(simApi.subscribeAttached).mockImplementation(async (listener) => {
+            attach = listener;
+            return () => {};
+        });
+        renderHook(() => useSimulatorReveal());
+        await vi.waitFor(() => expect(simApi.subscribeAttached).toHaveBeenCalled());
+
+        act(() => attach({ agentId: "agent-1", udid: "UDID-1", name: "iPhone 17" }));
+
+        expect(getState().desks["agent-1"].simulators).toEqual([expect.objectContaining({ udid: "UDID-1", deviceName: "iPhone 17" })]);
+    });
+
+    it("leaves what the person is looking at in front when an agent attaches a device", async () => {
+        let attach: (attached: SimAttached) => void = () => {};
+        vi.mocked(simApi.subscribeAttached).mockImplementation(async (listener) => {
+            attach = listener;
+            return () => {};
+        });
+        renderHook(() => useSimulatorReveal());
+        await vi.waitFor(() => expect(simApi.subscribeAttached).toHaveBeenCalled());
+        openFileOnDesk("agent-1", "/code/a.ts");
+        setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
+
+        act(() => attach({ agentId: "agent-1", udid: "UDID-1", name: "iPhone 17" }));
+        expect(getState().desks["agent-1"].active).toBe("file:/code/a.ts");
+
+        closeDeskItem(
+            "agent-1",
+            deskItemsOf(getState(), "agent-1").find((item) => item.kind === "simulator")!,
+        );
+        act(() => attach({ agentId: "agent-1", udid: "UDID-1", name: "iPhone 17" }));
+
+        expect(getState().desks["agent-1"].simulators).toEqual([expect.objectContaining({ udid: "UDID-1" })]);
+        expect(getState().desks["agent-1"].active).toBe("file:/code/a.ts");
+    });
+
+    it("comes to the front of a desk that shows nothing else", () => {
+        openDeskSimulator("agent-1", { focus: false, device: { udid: "UDID-1", name: "iPhone 17" } });
+
+        expect(getState().desks["agent-1"].active).toMatch(/^simulator:/);
+        expect(getState().windows.window.activePaneId).toBe("agent-1");
+    });
+
+    it("makes no desk for an agent that has no pane", () => {
+        setState({ agents: { ...getState().agents, "agent-2": { id: "agent-2", type: "codex", title: "codex" } } } as never);
+
+        expect(openDeskSimulator("agent-2", { focus: false, device: { udid: "UDID-1", name: "iPhone 17" } })).toBeNull();
+        expect(getState().desks["agent-2"]).toBeUndefined();
+    });
+
     it("remembers the device a simulator tab shows, and lets the tab go with its neighbour shown", () => {
         openFileOnDesk("agent-1", "/code/a.ts");
         setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
-        const id = openDeskSimulator("agent-1");
+        const id = openDeskSimulator("agent-1")!;
         setDeskSimulatorDevice("agent-1", id, { udid: "UDID-1", name: "iPhone 17" });
         expect(getState().desks["agent-1"].simulators[0]).toMatchObject({ udid: "UDID-1", deviceName: "iPhone 17" });
 
@@ -272,5 +378,46 @@ describe("the desk", () => {
 
         expect(getState().desks["agent-1"].active).toBe("file:/code/b.ts");
         expect(getState().editorViews[deskEditorId("agent-1")].activePath).toBe("/code/b.ts");
+    });
+});
+
+describe("the desk sliding", () => {
+    it("moves its panes on the page every frame and tells the store only where it lands", () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+        vi.stubGlobal("cancelAnimationFrame", () => {});
+        document.body.animate = vi.fn();
+        const layer = document.createElement("div");
+        layer.className = "window-layer";
+        layer.dataset.windowId = "window";
+        document.body.append(layer);
+        try {
+            openDesk("agent-1");
+            const deskId = collectPanes(getState().windows.window.root)[1].id;
+            for (const id of ["agent-1", deskId]) {
+                const cell = document.createElement("div");
+                cell.dataset.paneCell = id;
+                layer.append(cell);
+            }
+            const deskCell = layer.querySelector<HTMLElement>(`[data-pane-cell="${deskId}"]`)!;
+            const sizes = () => (getState().windows.window.root as { sizes: number[] }).sizes;
+            const folded = sizes();
+            expect(folded[1]).toBeLessThan(0.05);
+
+            const step = (at: number) => frames.splice(0).forEach((frame) => frame(at));
+            step(performance.now() + 100);
+            expect(sizes()).toEqual(folded);
+            const midway = parseFloat(deskCell.style.width);
+            expect(midway).toBeGreaterThan(5);
+            expect(midway).toBeLessThan(50);
+
+            step(performance.now() + 1000);
+            expect(sizes()).toEqual([0.5, 0.5]);
+            expect(deskCell.style.width).toBe("50%");
+        } finally {
+            layer.remove();
+            delete (document.body as Partial<HTMLElement>).animate;
+            vi.unstubAllGlobals();
+        }
     });
 });

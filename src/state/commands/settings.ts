@@ -12,12 +12,16 @@ export const setAgentNotifications = (value: boolean): void => setState({ agentN
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
 export const setNotch = (patch: Partial<import("../../notch/notchSettings").NotchSettings>): void =>
     setState({ notch: { ...getState().notch, ...patch } });
+export const setIosSimulator = (value: boolean): void => setState({ iosSimulator: value });
+export const setSimulatorFrame = (value: boolean): void => setState({ simulatorFrame: value });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
 export const setAgentRailAllAgents = (value: boolean): void => setState({ agentRailAllAgents: value });
+export const setAccountAutoSwitch = (provider: "claude" | "codex", on: boolean): void =>
+    setState((s) => ({ accountAutoSwitch: { ...s.accountAutoSwitch, [provider]: on } }));
 export const setAgentRailScope = (value: import("../types").AgentRailScope): void => setState({ agentRailScope: value });
 export const setDefaultAgentPermissionMode = (value: import("../types").AgentPermissionMode): void =>
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });

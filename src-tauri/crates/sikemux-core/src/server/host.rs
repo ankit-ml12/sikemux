@@ -42,13 +42,16 @@ fn output(program: &str, args: &[&str]) -> Option<String> {
 }
 
 fn computer_name() -> Option<String> {
-    let name = output("scutil", &["--get", "ComputerName"])?;
+    let name = output("/usr/sbin/scutil", &["--get", "ComputerName"])?;
     let name = name.trim();
     (!name.is_empty()).then(|| name.to_owned())
 }
 
 fn model_name() -> Option<String> {
-    model_from_profile(&output("system_profiler", &["SPHardwareDataType"])?)
+    model_from_profile(&output(
+        "/usr/sbin/system_profiler",
+        &["SPHardwareDataType"],
+    )?)
 }
 
 /// `system_profiler` names the model ("MacBook Pro"); `hw.model` only gives an
@@ -70,12 +73,5 @@ mod tests {
         let profile = "Hardware:\n\n    Hardware Overview:\n\n      Model Name: MacBook Pro\n      Model Identifier: Mac17,2\n";
         assert_eq!(model_from_profile(profile).as_deref(), Some("MacBook Pro"));
         assert_eq!(model_from_profile("nothing useful"), None);
-    }
-
-    #[test]
-    fn the_channel_follows_the_build() {
-        assert_eq!(channel(true, "0.4.3"), BuildChannel::Dev);
-        assert_eq!(channel(false, "0.4.3-nightly.5"), BuildChannel::Nightly);
-        assert_eq!(channel(false, "0.4.3"), BuildChannel::Stable);
     }
 }

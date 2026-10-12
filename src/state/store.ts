@@ -87,12 +87,18 @@ export interface DomainState {
     agentNotifications: boolean;
     notch: import("../notch/notchSettings").NotchSettings;
     voiceDictation: boolean;
+    /** Agents get the iOS Simulator tools on a Mac that can run it. */
+    iosSimulator: boolean;
+    /** The simulator tab draws the device's frame and side buttons around its screen. */
+    simulatorFrame: boolean;
     notificationsIntroduced: boolean;
     /** The person was told once that terminals keep running after Sikemux quits. */
     keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
     /** The agent rail shows every CLI's chats instead of one provider's. */
     agentRailAllAgents: boolean;
+    /** Providers whose chats move to the next signed-in account when one runs out of usage. */
+    accountAutoSwitch: Partial<Record<"claude" | "codex", boolean>>;
     agentRailScope: AgentRailScope;
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -258,10 +264,13 @@ export const useStore = create<StoreState>(() => {
         agentNotifications: true,
         notch: DEFAULT_NOTCH_SETTINGS,
         voiceDictation: false,
+        iosSimulator: true,
+        simulatorFrame: true,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
         railDensity: "comfortable",
         agentRailAllAgents: false,
+        accountAutoSwitch: {},
         agentRailScope: "project",
         onboardingComplete: false,
         lastSeenVersion: "",

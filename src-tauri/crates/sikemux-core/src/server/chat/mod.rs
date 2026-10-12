@@ -4,24 +4,24 @@
 
 mod connection;
 pub(crate) mod feed;
+mod history;
+mod native;
+mod rebind;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use agent_client_protocol::schema::v1::{
-    RequestPermissionOutcome, RequestPermissionResponse, SelectedPermissionOutcome,
-};
-use agent_client_protocol::Responder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::acp::{adapter_effort_id, bounded_text, current_choice, native};
+use crate::acp::{bounded_text, current_choice, native as acp_native};
 use crate::protocol::{
-    Attention, AttentionKind, ChatAttachment, ChatContext, ChatEventKind, ChatInfo, ChatLaunch,
-    ChatMark, ChatStart, ChatState, Event, RequestId, Response,
+    Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatEventKind, ChatInfo,
+    ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId, Response,
 };
 
 use super::connection::{ClientConn, ClientId};
@@ -41,6 +41,8 @@ const STOP_SETTLE: Duration = Duration::from_secs(2);
 pub(crate) enum ChatCommand {
     Prompt {
         from: ClientId,
+        /// Names the message for a later edit of it.
+        message_id: Option<String>,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
@@ -64,6 +66,21 @@ pub(crate) enum ChatCommand {
     StopTask {
         task_id: String,
     },
+    SwitchAccount {
+        account: ChatAccount,
+    },
+    /// Takes the conversation back to before the person's message
+    /// `message_id` and sends `text` in its place.
+    Edit {
+        from: ClientId,
+        message_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+        /// Puts the files back as they were before that message too.
+        restore_files: bool,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     Cancel,
 }
 
@@ -76,7 +93,8 @@ enum Readiness {
 
 struct PendingPermission {
     option_ids: Vec<String>,
-    responder: Responder<RequestPermissionResponse>,
+    /// Takes the option chosen, or none when the request was cancelled.
+    answer: oneshot::Sender<Option<String>>,
     request: Value,
     at: u64,
 }
@@ -90,7 +108,10 @@ pub(crate) struct Origin {
 }
 
 pub(crate) struct Chat {
+    /// How the chat was first started. Its agent, provider and folder never
+    /// change; the rest can, and [`Chat::current_launch`] has it as it is now.
     pub launch: ChatLaunch,
+    current: Mutex<ChatLaunch>,
     pub origin: Origin,
     core: Weak<Core>,
     generation: u64,
@@ -104,6 +125,8 @@ pub(crate) struct Chat {
     /// The agent is working on a turn nobody here prompted.
     pub unprompted: AtomicBool,
     turned: AtomicBool,
+    /// A turn of this chat was answered, so its provider has it saved.
+    pub answered: AtomicBool,
     approving: AtomicBool,
 }
 
@@ -114,6 +137,21 @@ impl Chat {
 
     pub(crate) fn provider(&self) -> &str {
         &self.launch.provider
+    }
+
+    /// The launch the agent runs with now, which moves to another account or
+    /// session when the agent is started again under the chat.
+    pub(crate) fn current_launch(&self) -> ChatLaunch {
+        self.current
+            .lock()
+            .map(|launch| launch.clone())
+            .unwrap_or_else(|_| self.launch.clone())
+    }
+
+    fn set_current(&self, launch: ChatLaunch) {
+        if let Ok(mut current) = self.current.lock() {
+            *current = launch;
+        }
     }
 
     pub(crate) fn emit(&self, kind: ChatEventKind, payload: Value) {
@@ -208,18 +246,16 @@ impl Chat {
         &self,
         request_id: String,
         option_ids: Vec<String>,
-        responder: Responder<RequestPermissionResponse>,
+        answer: oneshot::Sender<Option<String>>,
         request: Value,
     ) -> bool {
         let Ok(mut permissions) = self.permissions.lock() else {
-            let _ = responder.respond(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Cancelled,
-            ));
+            let _ = answer.send(None);
             return false;
         };
         let pending = PendingPermission {
             option_ids,
-            responder,
+            answer,
             request,
             at: unix_ms(),
         };
@@ -278,9 +314,7 @@ impl Chat {
         for (request_id, request) in pending {
             self.feed.forget_permission(&request_id);
             self.cleared(&request_id);
-            let _ = request.responder.respond(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Cancelled,
-            ));
+            let _ = request.answer.send(None);
         }
     }
 
@@ -314,16 +348,10 @@ impl Chat {
         };
         self.feed.forget_permission(request_id);
         self.cleared(request_id);
-        let outcome = match option_id {
-            Some(option_id) => {
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
-            }
-            None => RequestPermissionOutcome::Cancelled,
-        };
         request
-            .responder
-            .respond(RequestPermissionResponse::new(outcome))
-            .map_err(|error| CoreError::from(error.to_string()))
+            .answer
+            .send(option_id)
+            .map_err(|_| CoreError::from(STOPPED))
     }
 
     fn send(&self, command: ChatCommand) -> CoreResult<()> {
@@ -345,6 +373,8 @@ impl Chat {
             },
             running: self.turn_running(),
             pending_permissions: self.pending_permissions(),
+            subagents: self.feed.running_subagents(),
+            tasks: self.feed.running_tasks(),
             started_by: self.origin.started_by.clone(),
             launcher: self.origin.launcher.clone(),
             permission_mode: self.feed.permission_mode(),
@@ -352,31 +382,44 @@ impl Chat {
             effort: self.launch.effort.clone(),
             asleep: false,
             unread: false,
+            active_at: None,
         }
     }
 
-    /// How to start this chat again on its provider session, once a turn has
-    /// made the provider keep it.
-    fn resumable(&self) -> Option<ChatRecord> {
+    /// Whether the provider has a saved session to load: one a turn answered,
+    /// or one the chat was resumed from.
+    pub(crate) fn has_answered(&self) -> bool {
+        self.answered.load(Ordering::Acquire) || self.launch.resume_id.is_some()
+    }
+
+    fn kept_by_provider(&self) -> bool {
+        self.turned.load(Ordering::Acquire) || self.launch.resume_id.is_some()
+    }
+
+    /// `launch` brought up to where the chat is: its session, once a turn has
+    /// made the provider keep it, and the mode, model and effort chosen since.
+    fn relaunch(&self, launch: &ChatLaunch) -> Option<ChatLaunch> {
         let start = self.feed.start()?;
-        if !self.turned.load(Ordering::Acquire) && self.launch.resume_id.is_none() {
-            return None;
-        }
         let setup = &start.setup;
-        let effort_id = if native::arguments(self.provider()).is_some() {
-            native::effort_config_id(setup).map(str::to_owned)
-        } else {
-            Some(adapter_effort_id(self.provider()).to_owned())
-        };
-        let mut launch = self.launch.clone();
-        launch.resume_id = Some(start.session_id.clone());
+        let effort_id = acp_native::effort_config_id(setup).map(str::to_owned);
+        let mut launch = launch.clone();
+        launch.resume_id = self.kept_by_provider().then(|| start.session_id.clone());
         launch.permission_mode = self.feed.permission_mode();
         launch.model = current_choice(setup, "model").or(launch.model);
         launch.effort = effort_id
             .and_then(|id| current_choice(setup, &id))
             .or(launch.effort);
+        Some(launch)
+    }
+
+    /// How to start this chat again on its provider session, once a turn has
+    /// made the provider keep it.
+    fn resumable(&self) -> Option<ChatRecord> {
+        if !self.kept_by_provider() {
+            return None;
+        }
         Some(ChatRecord {
-            launch,
+            launch: self.relaunch(&self.current_launch())?,
             origin: self.origin.clone(),
         })
     }
@@ -396,11 +439,32 @@ pub(crate) struct ChatRecord {
 pub(crate) struct Chats {
     chats: Mutex<HashMap<String, Arc<Chat>>>,
     next_generation: AtomicU64,
+    /// Where each chat keeps everything it said, for phones to page back.
+    history: Option<PathBuf>,
 }
 
 impl Chats {
+    pub(crate) fn new(history: Option<PathBuf>) -> Self {
+        if let Some(dir) = history.as_deref() {
+            history::clear(dir);
+        }
+        Self {
+            history,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn get(&self, agent_id: &str) -> Option<Arc<Chat>> {
         self.chats.lock().ok()?.get(agent_id).cloned()
+    }
+
+    /// The chats a client has taken up and hears the events of.
+    pub(crate) fn followed_by(&self, client: ClientId) -> Vec<String> {
+        self.all()
+            .into_iter()
+            .filter(|chat| chat.feed.has_subscriber(client))
+            .map(|chat| chat.agent_id().to_owned())
+            .collect()
     }
 
     fn all(&self) -> Vec<Arc<Chat>> {
@@ -410,7 +474,7 @@ impl Chats {
             .unwrap_or_default()
     }
 
-    fn running(&self, agent_id: &str) -> CoreResult<Arc<Chat>> {
+    pub(crate) fn running(&self, agent_id: &str) -> CoreResult<Arc<Chat>> {
         self.get(agent_id).ok_or_else(|| NOT_RUNNING.into())
     }
 
@@ -519,13 +583,19 @@ impl Chats {
             generation: self.next_generation.fetch_add(1, Ordering::Relaxed),
             commands,
             task: Mutex::new(None),
-            feed: Feed::new(launch.agent_id.clone(), launch.permission_mode.clone()),
+            feed: Feed::new(
+                launch.agent_id.clone(),
+                launch.permission_mode.clone(),
+                self.history.as_deref(),
+            ),
             permissions: Mutex::new(HashMap::new()),
             readiness: watch::channel(Readiness::Starting).0,
             running: AtomicBool::new(false),
             unprompted: AtomicBool::new(false),
             turned: AtomicBool::new(false),
+            answered: AtomicBool::new(false),
             approving: AtomicBool::new(crate::acp::approves_for_user(&launch.permission_mode)),
+            current: Mutex::new(launch.clone()),
             launch,
             origin,
             core: Arc::downgrade(core),
@@ -550,12 +620,26 @@ pub(crate) fn idle(core: &Arc<Core>, agent_id: &str, provider: &str, cwd: &str) 
         permission_mode: "default".into(),
         model: None,
         effort: None,
+        account: None,
+        fallbacks: Vec::new(),
     };
     let (chat, _) = core
         .chats
         .insert(core, launch, Origin::default())
         .unwrap_or_else(|error| panic!("{error}"));
     chat
+}
+
+fn validate_account(account: &ChatAccount) -> CoreResult<()> {
+    bounded_text("account id", &account.id, 256)?;
+    bounded_text("account name", &account.label, 256)?;
+    for (key, value) in &account.env {
+        bounded_text("account variable", key, 128)?;
+        if value.len() > 4_096 || value.contains('\0') {
+            return Err("account variables must be bounded text".into());
+        }
+    }
+    Ok(())
 }
 
 fn validate(launch: &ChatLaunch) -> CoreResult<()> {
@@ -571,16 +655,38 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
     if launch.program.as_os_str().is_empty() {
         return Err("ACP agent program is missing".into());
     }
+    for account in launch.account.iter().chain(&launch.fallbacks) {
+        validate_account(account)?;
+    }
     Ok(())
 }
 
 /// Starts the chat's connection. The task ends the chat however the
 /// connection ends.
-fn launch(core: &Arc<Core>, chat: &Arc<Chat>, queue: mpsc::UnboundedReceiver<ChatCommand>) {
+fn launch(core: &Arc<Core>, chat: &Arc<Chat>, mut queue: mpsc::UnboundedReceiver<ChatCommand>) {
     let ending = chat.clone();
     let owner = core.clone();
     let task = tokio::spawn(async move {
-        let result = connection::run(ending.clone(), queue).await;
+        // The agent can be started again under the chat, on another account
+        // or after a sign-in, and the chat carries on through it.
+        let mut rebind = None;
+        let result = loop {
+            let launch = ending.current_launch();
+            let ran = match native::Kind::of(ending.provider()) {
+                Some(kind) => {
+                    native::run(kind, ending.clone(), launch, &mut queue, rebind.take()).await
+                }
+                None => connection::run(ending.clone(), launch, &mut queue, rebind.take()).await,
+            };
+            match ran {
+                Ok(rebind::Outcome::Rebind(next)) => {
+                    ending.set_current(next.launch.clone());
+                    rebind = Some(next);
+                }
+                Ok(rebind::Outcome::Ended(end)) => break Ok(end),
+                Err(error) => break Err(error),
+            }
+        };
         ending.feed.close();
         let started = ending.is_ready();
         ending.emit(
@@ -617,6 +723,7 @@ pub(crate) fn begin(
         launcher,
     };
     let (chat, queue) = core.chats.insert(core, launch_spec, origin)?;
+    core.seen.opened(chat.agent_id());
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -650,6 +757,12 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
             eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}")
         }
     }
+}
+
+/// Answers once the running chat is ready, or says why it never got there.
+pub(crate) async fn until_ready(core: &Core, agent_id: &str) -> CoreResult<()> {
+    let chat = core.chats.running(agent_id)?;
+    chat.until_ready().await.map(drop).map_err(CoreError::from)
 }
 
 pub(crate) async fn attach(
@@ -689,6 +802,24 @@ pub(crate) async fn attach(
     );
 }
 
+pub(crate) fn history(
+    core: &Core,
+    agent_id: &str,
+    feed: &str,
+    before: u64,
+    turns: u32,
+) -> CoreResult<Response> {
+    let page = core
+        .chats
+        .running(agent_id)?
+        .feed
+        .history(feed, before, turns as usize)?;
+    Ok(Response::ChatHistory {
+        events: page.events,
+        older_before: page.older_before,
+    })
+}
+
 pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
     if let Some(chat) = core.chats.get(agent_id) {
         chat.feed.unsubscribe(client);
@@ -699,16 +830,49 @@ pub(crate) fn prompt(
     core: &Core,
     from: ClientId,
     agent_id: &str,
+    message_id: Option<String>,
     text: String,
     paths: Vec<String>,
     context: Vec<ChatContext>,
 ) -> CoreResult<()> {
+    if let Some(message_id) = message_id.as_deref() {
+        bounded_text("message id", message_id, 256)?;
+    }
     core.chats.running(agent_id)?.send(ChatCommand::Prompt {
         from,
+        message_id,
         text,
         paths,
         context,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn edit(
+    core: &Core,
+    from: ClientId,
+    agent_id: &str,
+    message_id: String,
+    text: String,
+    paths: Vec<String>,
+    context: Vec<ChatContext>,
+    restore_files: bool,
+) -> CoreResult<()> {
+    bounded_text("message id", &message_id, 256)?;
+    let (reply, answer) = oneshot::channel();
+    core.chats.running(agent_id)?.send(ChatCommand::Edit {
+        from,
+        message_id,
+        text,
+        paths,
+        context,
+        restore_files,
+        reply,
+    })?;
+    answer
+        .await
+        .map_err(|_| CoreError::from(STOPPED))?
+        .map_err(CoreError::from)
 }
 
 pub(crate) async fn steer(
@@ -731,6 +895,13 @@ pub(crate) async fn steer(
         .await
         .map_err(|_| CoreError::from(STOPPED))?
         .map_err(CoreError::from)
+}
+
+pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) -> CoreResult<()> {
+    validate_account(&account)?;
+    core.chats
+        .running(agent_id)?
+        .send(ChatCommand::SwitchAccount { account })
 }
 
 pub(crate) fn cancel(core: &Core, agent_id: &str) -> CoreResult<()> {

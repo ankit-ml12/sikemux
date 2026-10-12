@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { reloadDevices, useDevices, useLive } from './hub';
@@ -6,18 +6,31 @@ import { updateDevice, type PairedDevice } from './paired';
 
 export type DeviceBackdrop = { texture: boolean; image?: string };
 
+/** A host hands over whichever picture it has now, so each host has one fetch at a time. */
 const fetching = new Set<string>();
-/** Pictures the host could not hand over; asking again on every change of its view would not help. */
+/** Pictures the host said it does not have; asking again on every change of its view would not help. */
 const missing = new Set<string>();
+/** When fetching each picture last failed; it is asked for again once this long has passed. */
+const failedAt = new Map<string, number>();
+const RETRY_FAILED_MS = 60_000;
+/** The picture each host's view names now, to tell a fetch that finished after its host moved on. */
+const latest = new Map<string, string>();
 
 function folder(core: string): Directory {
   return new Directory(Paths.document, 'backdrops', core.slice(0, 16));
 }
 
+/* iOS moves an app's documents on every update, so a saved picture is looked for by its name in the
+   host's folder first, and by the path it was saved at only when it is not there. */
+function savedPicture(core: string, image: { uri: string }): File {
+  const here = new File(folder(core), image.uri.slice(image.uri.lastIndexOf('/') + 1));
+  return here.exists ? here : new File(image.uri);
+}
+
 /** Deletes the picture saved for a host's backdrop. */
-export function forgetBackdrop(saved: PairedDevice['backdrop']) {
+export function forgetBackdrop(core: string, saved: PairedDevice['backdrop']) {
   if (!saved?.image) return;
-  const file = new File(saved.image.uri);
+  const file = savedPicture(core, saved.image);
   if (file.exists) file.delete();
 }
 
@@ -31,11 +44,15 @@ export function useDeviceBackdrop(core: string): DeviceBackdrop {
   const wanted = published ? (published.image ?? null) : undefined;
   const connection = live.status === 'open' ? live.connection : undefined;
 
+  const [fetches, setFetches] = useState(0);
+
   useEffect(() => {
     if (texture === undefined || wanted === undefined) return;
     if (wanted && wanted !== remembered?.image?.id) {
       const key = `${core}/${wanted}`;
+      latest.set(core, wanted);
       if (!connection || fetching.has(core) || missing.has(key)) return;
+      if (Date.now() - (failedAt.get(key) ?? -Infinity) < RETRY_FAILED_MS) return;
       fetching.add(core);
       // The Rust client decodes and writes the picture, so megabytes of it never pass through JavaScript.
       const dir = decodeURIComponent(folder(core).uri.replace(/^file:\/\//, ''));
@@ -46,23 +63,31 @@ export function useDeviceBackdrop(core: string): DeviceBackdrop {
             missing.add(key);
             return;
           }
-          forgetBackdrop(remembered);
-          return updateDevice(core, { backdrop: { texture, image: { id: wanted, uri: new File(`file://${path}`).uri } } }).then(
-            reloadDevices,
-          );
+          const saved = new File(`file://${path}`);
+          // Saved under the name asked for, but it is whatever the host shows now, which may already be another.
+          if (latest.get(core) !== wanted) {
+            if (saved.exists) saved.delete();
+            return;
+          }
+          failedAt.delete(key);
+          forgetBackdrop(core, remembered);
+          return updateDevice(core, { backdrop: { texture, image: { id: wanted, uri: saved.uri } } }).then(reloadDevices);
         })
-        .catch(() => missing.add(key))
-        .finally(() => fetching.delete(core));
+        .catch(() => failedAt.set(key, Date.now()))
+        .finally(() => {
+          fetching.delete(core);
+          setFetches((count) => count + 1);
+        });
       return;
     }
-    if (!wanted && remembered?.image) forgetBackdrop(remembered);
+    if (!wanted && remembered?.image) forgetBackdrop(core, remembered);
     if (texture !== remembered?.texture || (!wanted && remembered?.image)) {
       updateDevice(core, { backdrop: { texture, image: wanted ? remembered?.image : undefined } }).then(reloadDevices, () => {});
     }
-  }, [core, connection, texture, wanted, remembered]);
+  }, [core, connection, texture, wanted, remembered, fetches]);
 
   const shown = texture ?? remembered?.texture ?? false;
   const current = wanted === undefined ? remembered?.image?.id : wanted;
-  const image = current && remembered?.image?.id === current ? remembered.image.uri : undefined;
+  const image = current && remembered?.image?.id === current ? savedPicture(core, remembered.image).uri : undefined;
   return { texture: shown, image };
 }
