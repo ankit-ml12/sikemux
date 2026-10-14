@@ -54,6 +54,48 @@ pub struct BoardView {
     pub columns: Vec<Column>,
     /// More issues matched than the board shows.
     pub truncated: bool,
+    /// The quick filters the board's owners set up in Jira.
+    pub quick_filters: Vec<QuickFilter>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickFilter {
+    pub id: String,
+    pub name: String,
+    pub jql: String,
+}
+
+pub fn quick_filters_of(body: &Value) -> Vec<QuickFilter> {
+    body.get("values")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|filter| {
+                    Some(QuickFilter {
+                        id: filter.get("id").and_then(|id| {
+                            id.as_u64()
+                                .map(|id| id.to_string())
+                                .or_else(|| text(Some(id)))
+                        })?,
+                        name: text(filter.get("name"))?,
+                        jql: text(filter.get("jql")).unwrap_or_default(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The quick filters picked, as one clause each must match, as Jira's board applies them.
+pub fn quick_clause(filters: &[QuickFilter], picked: &[String]) -> Option<String> {
+    let clauses: Vec<String> = filters
+        .iter()
+        .filter(|filter| picked.contains(&filter.id) && !filter.jql.trim().is_empty())
+        .map(|filter| format!("({})", filter.jql))
+        .collect();
+    (!clauses.is_empty()).then(|| clauses.join(" AND "))
 }
 
 #[derive(Deserialize)]
@@ -114,6 +156,9 @@ pub struct BoardRequest {
     pub mine: bool,
     #[serde(default)]
     pub unassigned: bool,
+    /// The ids of the board's quick filters to apply.
+    #[serde(default)]
+    pub quick_filters: Vec<String>,
 }
 
 /// The JQL that keeps only the cards of the people picked on a board, or nothing when nobody is.
@@ -231,12 +276,19 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let base = format!("/rest/agile/1.0/board/{}", request.id);
     let configuration_path = format!("{base}/configuration");
-    let (about, configuration, sprint_field) = tokio::join!(
+    let quick_path = format!("{base}/quickfilter");
+    let quick_page = [("maxResults", "50".to_string())];
+    let (about, configuration, sprint_field, quick) = tokio::join!(
         client::send(&credentials, Method::GET, &base, &[], None),
         client::send(&credentials, Method::GET, &configuration_path, &[], None),
         sprint_field(&site, &credentials),
+        client::send(&credentials, Method::GET, &quick_path, &quick_page, None),
     );
     let (about, configuration) = (about?, configuration?);
+    // A board's quick filters are a nicety; one that cannot be read leaves the board as it is.
+    let quick_filters = quick
+        .map(|body| quick_filters_of(&body))
+        .unwrap_or_default();
     let kind = text(about.get("type")).unwrap_or_else(|| "kanban".into());
     let sprint = if kind == "scrum" {
         let sprints = client::send(
@@ -255,7 +307,13 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
         Some(field) => format!("{SUMMARY_FIELDS},{field}"),
         None => SUMMARY_FIELDS.into(),
     };
-    let people = people_clause(&request);
+    let people = [
+        people_clause(&request),
+        quick_clause(&quick_filters, &request.quick_filters),
+    ]
+    .into_iter()
+    .flatten()
+    .reduce(|people, quick| format!("{people} AND {quick}"));
     let (issues, truncated) = match &sprint {
         Some(sprint) => {
             issues_from(
@@ -282,6 +340,7 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
         columns: arrange(&configuration, &issues, &site.host, sprint_field.as_deref()),
         sprint,
         truncated,
+        quick_filters,
     })
 }
 
@@ -342,6 +401,23 @@ pub async fn move_issue(data_dir: &Path, request: MoveRequest) -> JiraResult<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quick_filters_read_from_the_board_and_apply_as_clauses() {
+        let filters = quick_filters_of(&json!({ "values": [
+            { "id": 1, "name": "Only bugs", "jql": "type = Bug" },
+            { "id": "2", "name": "Recently updated", "jql": "updated >= -1d" },
+            { "id": 3, "name": "Broken" },
+            { "name": "No id" },
+        ] }));
+        assert_eq!(filters.len(), 3);
+        assert_eq!(filters[0].id, "1");
+        assert_eq!(quick_clause(&filters, &[]), None);
+        assert_eq!(
+            quick_clause(&filters, &["1".into(), "2".into(), "3".into()]).as_deref(),
+            Some("(type = Bug) AND (updated >= -1d)")
+        );
+    }
 
     #[test]
     fn people_clause_keeps_the_whole_board_when_nobody_is_picked() {
