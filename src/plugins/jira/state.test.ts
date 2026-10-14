@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { jqlOf, mentions, searchJql, updateJiraView, useJiraView } from "./state";
+import { jiraSettings, jqlOf, mentions, searchJql, updateJiraView, useJiraView } from "./state";
 
 describe("the Jira pane's lists", () => {
     it("lists a project's open and unassigned issues, keeping only what a project key can hold", () => {
@@ -41,5 +41,18 @@ describe("the search box", () => {
         expect(jqlOf({ kind: "jql", jql: "login bug" })).toBe('text ~ "login bug" ORDER BY updated DESC');
         expect(searchJql("bug in login is slow")).toBe('text ~ "bug in login is slow" ORDER BY updated DESC');
         expect(searchJql("assignee is empty")).toBe("assignee is empty");
+    });
+});
+
+describe("what the Jira pane remembers", () => {
+    it("keeps only a list it knows and each board's picks, whatever was saved", () => {
+        jiraSettings.update(() => ({ lastList: null, boardPicks: {} }));
+        expect(jiraSettings.get()).toEqual({ lastList: null, boardPicks: {} });
+        jiraSettings.update(() => ({ lastList: { kind: "board", id: 3, name: "Team" }, boardPicks: { "3": ["me", "k1"] } }));
+        expect(jiraSettings.get().lastList).toEqual({ kind: "board", id: 3, name: "Team" });
+        expect(jiraSettings.get().boardPicks["3"]).toEqual(["me", "k1"]);
+        jiraSettings.update(() => ({ lastList: { kind: "nonsense" } as never, boardPicks: { "4": ["me", 5] } as never }));
+        expect(jiraSettings.get().lastList).toBeNull();
+        expect(jiraSettings.get().boardPicks["4"]).toEqual(["me"]);
     });
 });

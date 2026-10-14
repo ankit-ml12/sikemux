@@ -1,6 +1,7 @@
 import { activeSurfacePane, openSurface } from "../../plugin-api/host";
 import { definePaneViews } from "../../plugin-api/paneViews";
-import { JIRA_ISSUES } from "./kinds";
+import { definePluginSettings } from "../../plugin-api/settings";
+import { JIRA_ISSUES, JIRA_PLUGIN_ID } from "./kinds";
 
 export type JiraList =
     | { kind: "mine" }
@@ -72,7 +73,42 @@ export interface JiraView {
     site: string;
 }
 
-const views = definePaneViews<JiraView>({ list: { kind: "mine" }, issue: null, site: "" });
+export interface JiraSettings {
+    /** The list or board a new Jira pane opens on: the one last looked at. */
+    lastList: JiraList | null;
+    /** Who each board was last narrowed to, by board id: account ids, "me" and "none". */
+    boardPicks: Record<string, string[]>;
+}
+
+const LIST_KINDS = new Set(["mine", "reported", "watching", "recent", "sprint", "project", "unassigned", "board", "filter", "jql"]);
+
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+
+function decodeSettings(saved: unknown): JiraSettings {
+    const raw = isRecord(saved) ? saved : {};
+    const list = isRecord(raw.lastList) && LIST_KINDS.has(String(raw.lastList.kind)) ? (raw.lastList as JiraList) : null;
+    const boardPicks: Record<string, string[]> = {};
+    for (const [board, picks] of Object.entries(isRecord(raw.boardPicks) ? raw.boardPicks : {})) {
+        if (Array.isArray(picks)) boardPicks[board] = picks.filter((pick): pick is string => typeof pick === "string");
+    }
+    return { lastList: list, boardPicks };
+}
+
+export const jiraSettings = definePluginSettings(JIRA_PLUGIN_ID, decodeSettings);
+
+/** Shows a list in a pane, and remembers it for the next pane opened. */
+export function showJiraList(paneId: string, list: JiraList): void {
+    views.update(paneId, { list });
+    jiraSettings.update((settings) => ({ ...settings, lastList: list }));
+}
+
+export const boardPicks = (boardId: number): string[] => jiraSettings.get().boardPicks[String(boardId)] ?? [];
+
+export function saveBoardPicks(boardId: number, picks: Iterable<string>): void {
+    jiraSettings.update((settings) => ({ ...settings, boardPicks: { ...settings.boardPicks, [String(boardId)]: [...picks].sort() } }));
+}
+
+const views = definePaneViews<JiraView>(() => ({ list: jiraSettings.get().lastList ?? { kind: "mine" }, issue: null, site: "" }));
 
 export const useJiraView = views.use;
 export const updateJiraView = views.update;

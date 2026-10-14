@@ -5,6 +5,7 @@ import { ContextMenu, EmptyState, IconRefresh, SkeletonRows, type ContextMenuIte
 import { failureMessage, jiraApi, type JiraBoardView, type JiraColumn, type JiraIssueSummary } from "../api";
 import { boardPeople, matchingCards, pickKey, unassignedCount } from "../boardFilter";
 import { jiraBoardR } from "../resources";
+import { boardPicks, saveBoardPicks } from "../state";
 
 /** Where each card sits after the moves still on their way to Jira, by issue key and column index. */
 export function withMoves(board: JiraBoardView, moves: Record<string, number>): JiraColumn[] {
@@ -44,7 +45,13 @@ export function JiraBoard({
     selected: string | null;
     onSelect: (key: string) => void;
 }) {
-    const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+    const [picked, setPickedOnly] = useState<ReadonlySet<string>>(() => new Set(boardPicks(boardId)));
+    const setPicked = (next: ReadonlySet<string> | ((now: ReadonlySet<string>) => ReadonlySet<string>)) =>
+        setPickedOnly((now) => {
+            const picks = typeof next === "function" ? next(now) : next;
+            saveBoardPicks(boardId, picks);
+            return picks;
+        });
     const [words, setWords] = useState("");
     const whole = useResourceEnabled(active, jiraBoardR, boardId, site, "");
     const found = useResourceEnabled(active, jiraBoardR, boardId, site, pickKey(picked));

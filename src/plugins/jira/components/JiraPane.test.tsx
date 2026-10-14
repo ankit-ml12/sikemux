@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: api }));
 
 import { JiraPane } from "./JiraPane";
+import { jiraSettings } from "../state";
 import { invalidate } from "../../../plugin-api/resources";
 
 const signedIn: JiraStatus = {
@@ -61,6 +62,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+    jiraSettings.update(() => ({ lastList: null, boardPicks: {} }));
     Object.values(api).forEach((mock) => mock.mockReset());
     api.status.mockResolvedValue(signedIn);
     api.search.mockResolvedValue({ issues: [summary], next: null });
@@ -196,6 +198,19 @@ describe("JiraPane", () => {
         expect(api.moveIssue).toHaveBeenCalledWith("ABC-12", expect.objectContaining({ name: "Done" }), "acme.atlassian.net");
         expect(document.querySelector(".jira-card-lifted")).toBeNull();
         Reflect.deleteProperty(document, "elementFromPoint");
+    });
+
+    it("opens a new pane on the board last looked at, narrowed as it was left", async () => {
+        const first = render(<JiraPane paneId="jira-remember-1" active />);
+        fireEvent.click(await screen.findByRole("button", { name: "ABC board" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Only my issues" }));
+        expect(jiraSettings.get().lastList).toEqual({ kind: "board", id: 7, name: "ABC board" });
+        expect(jiraSettings.get().boardPicks).toEqual({ "7": ["me"] });
+        first.unmount();
+
+        render(<JiraPane paneId="jira-remember-2" active />);
+        expect(await screen.findByRole("button", { name: "Only my issues" })).toHaveAttribute("aria-pressed", "true");
+        await waitFor(() => expect(api.board).toHaveBeenLastCalledWith(7, "acme.atlassian.net", ["me"]));
     });
 
     it("puts a card back and says why when Jira will not move it", async () => {

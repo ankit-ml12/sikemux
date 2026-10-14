@@ -15,7 +15,7 @@ import {
 import { failureMessage, jiraApi, refreshJira, type JiraIssue, type JiraIssueSummary, type JiraPerson } from "../api";
 import { jiraBoardsR, jiraFiltersR, jiraIssueR, jiraProjectsR, jiraSearchR, jiraStatusR } from "../resources";
 import { copyIssue, issueMenu, openIssue } from "../issueLinks";
-import { jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
+import { jqlOf, mentions, showJiraList, updateJiraView, useJiraView, type JiraList } from "../state";
 import { statusCounts, withStatuses } from "../statusFilter";
 import { JiraBoard } from "./JiraBoard";
 import { JiraSignIn } from "./JiraSignIn";
@@ -59,7 +59,7 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
     const listProject = view.list.kind === "project" || view.list.kind === "unassigned" ? view.list : null;
     const [picked, setPicked] = useState<{ key: string; name: string } | null>(null);
     const project = listProject ?? picked ?? projects.data?.[0] ?? null;
-    const show = (list: JiraList) => updateJiraView(paneId, { list });
+    const show = (list: JiraList) => showJiraList(paneId, list);
     const words = boardFilter.trim().toLowerCase();
     const shownBoards = (boards.data ?? []).filter(
         (board) => !words || board.name.toLowerCase().includes(words) || (board.project ?? "").toLowerCase().includes(words),
