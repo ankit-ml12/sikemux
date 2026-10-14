@@ -259,6 +259,23 @@ describe("JiraPane", () => {
         expect(jiraSettings.get().boardGroups).toEqual({ "7": "assignee" });
     });
 
+    it("opens a board's issue in a window over the board, closed by Escape or the backdrop", async () => {
+        const { container } = render(<JiraPane paneId="jira-board-overlay" active />);
+        fireEvent.click(await screen.findByRole("button", { name: "ABC board" }));
+        fireEvent.click(await screen.findByRole("listitem"));
+        expect(await screen.findByRole("article", { name: "ABC-12 Fix the login race" })).toBeInTheDocument();
+        expect(container.querySelector(".jira-issue-overlay")).not.toBeNull();
+        expect(screen.getByText("Reporter")).toBeInTheDocument();
+
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(screen.queryByRole("article")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("listitem"));
+        await screen.findByRole("article");
+        fireEvent.pointerDown(container.querySelector(".jira-issue-overlay") as Element);
+        expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    });
+
     it("puts a card back and says why when Jira will not move it", async () => {
         api.moveIssue.mockRejectedValue({ category: "bad-params", message: "ABC-12's workflow has no way into Done from where it is now" });
         render(<JiraPane paneId="jira-board-refused" active />);

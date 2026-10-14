@@ -316,12 +316,35 @@
     grid-template-columns: 200px minmax(0, 1fr);
 }
 
-.jira-pane.board.with-issue {
-    grid-template-columns: 200px minmax(0, 1fr) minmax(480px, 1.125fr);
+.jira-pane.board {
+    position: relative;
 }
 
-.jira-pane.board .jira-detail {
-    border-left: 1px solid var(--border);
+/* An issue opened from a board floats over it, wide enough for Jira's two columns. */
+.jira-issue-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px;
+    background: rgb(0 0 0 / 0.45);
+}
+
+.jira-issue-window {
+    display: flex;
+    width: min(1180px, 100%);
+    max-height: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: var(--surface);
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+    overflow: hidden;
+}
+
+.jira-issue-window > .jira-detail {
+    flex: 1;
 }
 
 .jira-board-filter {
@@ -860,4 +883,150 @@
 
 .jira-menu-button > svg {
     transform: rotate(90deg);
+}
+
+/* An open issue laid out as Jira's: what it is on the left, its details on the right. */
+.jira-issue {
+    container-type: inline-size;
+}
+
+.jira-issue-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+    gap: 24px;
+    align-items: start;
+}
+
+@container (max-width: 720px) {
+    .jira-issue-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.jira-issue-main,
+.jira-issue-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.jira-issue-title {
+    margin: 0;
+    font-size: var(--text-xl, 20px);
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-primary);
+}
+
+.jira-detail-key {
+    gap: 6px;
+}
+
+.jira-fold.boxed {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+}
+
+.jira-fold-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 0;
+    border: 0;
+    background: none;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.jira-fold.boxed > .jira-fold-head {
+    padding: 10px 12px;
+}
+
+.jira-fold-head[aria-expanded="true"] > svg:first-child {
+    transform: rotate(90deg);
+}
+
+.jira-fold-title {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.jira-fold.boxed > .jira-fold-body {
+    padding: 0 12px 12px;
+}
+
+.jira-details {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 12px 10px;
+    margin: 0;
+    font-size: var(--text-sm);
+}
+
+.jira-details dt {
+    color: var(--text-tertiary);
+}
+
+.jira-details dd {
+    margin: 0;
+    min-width: 0;
+    color: var(--text-primary);
+}
+
+.jira-details .jira-assign {
+    grid-column: 1 / -1;
+}
+
+.jira-detail-value {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.jira-detail-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.jira-link-button {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: var(--text-xs);
+    color: var(--acc);
+    cursor: pointer;
+}
+
+.jira-link-button:disabled {
+    color: var(--text-tertiary);
+    cursor: default;
+}
+
+.jira-labels {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.jira-label {
+    padding: 0 6px;
+    border: 1px solid var(--border-selected);
+    border-radius: var(--radius-1);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+
+.jira-issue-dates {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0 4px;
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
 }

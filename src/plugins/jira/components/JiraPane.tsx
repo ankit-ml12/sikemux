@@ -1,10 +1,11 @@
-import { useCallback, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { gitOverviewR, notify, reportError, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import {
     ContextMenu,
     Dropdown,
     EmptyState,
+    IconChevron,
     IconClose,
     IconCopy,
     IconExternal,
@@ -20,6 +21,8 @@ import { statusCounts, withStatuses } from "../statusFilter";
 import { JiraBoard } from "./JiraBoard";
 import { JiraSignIn } from "./JiraSignIn";
 import { StatusChip } from "./StatusChip";
+import { PriorityMark, TypeMark } from "./JiraGlyphs";
+import { dueLabel, parentColour } from "../boardFilter";
 import { TaskBox, TaskToggleContext, type ToggleTask } from "./TaskBox";
 import "../jira.css";
 
@@ -76,7 +79,7 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
     );
 
     return (
-        <div className={`jira-pane${view.list.kind === "board" ? ` board${view.issue ? " with-issue" : ""}` : ""}`}>
+        <div className={`jira-pane${view.list.kind === "board" ? " board" : ""}`}>
             <nav className="jira-sidebar" aria-label="Jira lists">
                 {sites.length > 1 && (
                     <Dropdown
@@ -191,7 +194,13 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     onSelect={(key) => updateJiraView(paneId, { issue: key })}
                 />
             )}
-            {view.list.kind === "board" && !view.issue ? null : view.issue ? (
+            {view.list.kind === "board" ? (
+                view.issue && (
+                    <IssueOverlay onClose={() => updateJiraView(paneId, { issue: null })}>
+                        <IssueDetail active={active} issueKey={view.issue} site={site} onClose={() => updateJiraView(paneId, { issue: null })} />
+                    </IssueOverlay>
+                )
+            ) : view.issue ? (
                 <IssueDetail active={active} issueKey={view.issue} site={site} onClose={() => updateJiraView(paneId, { issue: null })} />
             ) : (
                 <div className="jira-detail">
@@ -362,13 +371,49 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
         }
     };
 
+    const assignee = (
+        <span className="jira-detail-value">
+            {issue.assignee ? <Person name={issue.assignee.name} /> : <span className="jira-meta">Unassigned</span>}
+            <span className="jira-detail-actions">
+                <button
+                    type="button"
+                    className="jira-link-button"
+                    disabled={busy}
+                    onClick={() => void run("Assign", () => jiraApi.assign(issue.key, { me: true }, site || undefined))}>
+                    Assign to me
+                </button>
+                <button
+                    type="button"
+                    className="jira-link-button"
+                    disabled={busy || !issue.assignee}
+                    onClick={() => void run("Unassign", () => jiraApi.assign(issue.key, { accountId: null }, site || undefined))}>
+                    Unassign
+                </button>
+                <button type="button" className="jira-link-button" disabled={busy} onClick={() => setAssigning((open) => !open)}>
+                    Assign…
+                </button>
+            </span>
+        </span>
+    );
+
     return (
-        <article className="jira-detail" aria-label={`${issue.key} ${issue.summary}`}>
+        <article className="jira-detail jira-issue" aria-label={`${issue.key} ${issue.summary}`}>
             <header className="jira-detail-head" onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
                 <span className="jira-detail-key">
+                    {issue.parent && (
+                        <>
+                            <TypeMark type={issue.parent.issueType} size={13} />
+                            <span className="jira-key" title={issue.parent.summary}>
+                                {issue.parent.key}
+                            </span>
+                            <span className="jira-meta">/</span>
+                        </>
+                    )}
+                    <TypeMark type={issue.issueType} size={13} />
                     <button type="button" className="jira-key link" title="Open in browser" onClick={() => openIssue(issue)}>
                         {issue.key}
                     </button>
+                    <span className="jira-grow" />
                     <button
                         type="button"
                         className="jira-icon-button"
@@ -385,121 +430,254 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                         onClick={() => openIssue(issue)}>
                         <IconExternal size={12} />
                     </button>
-                    <span className="jira-grow" />
                     <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
                         <IconClose size={12} />
                     </button>
                 </span>
-                <h2>{issue.summary}</h2>
                 {menu}
             </header>
-            <div className="jira-facts">
-                <Dropdown
-                    label="Status"
-                    value=""
-                    title="Move this issue along its workflow"
-                    options={issue.transitions.map((transition) => ({ value: transition.id, label: transition.name, detail: `→ ${transition.to}` }))}
-                    onChange={(id) => void run("Move issue", () => jiraApi.transition(issue.key, id, site || undefined))}
-                    disabled={busy || issue.transitions.length === 0}
-                    trailing={<StatusChip status={issue.status} category={issue.statusCategory} />}
-                />
-                <span className="jira-fact">
-                    <span className="jira-heading">Assignee</span>
-                    <span>{issue.assignee?.name ?? "Unassigned"}</span>
-                    <button
-                        type="button"
-                        className="jira-chip"
-                        disabled={busy}
-                        onClick={() => void run("Assign", () => jiraApi.assign(issue.key, { me: true }, site || undefined))}>
-                        Assign to me
-                    </button>
-                    <button
-                        type="button"
-                        className="jira-chip"
-                        disabled={busy || !issue.assignee}
-                        onClick={() => void run("Unassign", () => jiraApi.assign(issue.key, { accountId: null }, site || undefined))}>
-                        Unassign
-                    </button>
-                    <button type="button" className="jira-chip" disabled={busy} onClick={() => setAssigning((open) => !open)}>
-                        Assign…
-                    </button>
-                </span>
-                {assigning && (
-                    <div className="jira-assign">
-                        <input
-                            autoFocus
-                            placeholder="Find a person"
-                            onChange={(event) =>
-                                void jiraApi
-                                    .assignable(issue.key, event.target.value, site || undefined)
-                                    .then(setPeople)
-                                    .catch(swallow("find people"))
-                            }
-                        />
-                        {people.map((person) => (
-                            <button
-                                key={person.accountId}
-                                type="button"
-                                className="jira-chip"
-                                onClick={() => {
-                                    setAssigning(false);
-                                    void run("Assign", () => jiraApi.assign(issue.key, { accountId: person.accountId }, site || undefined));
-                                }}>
-                                {person.name}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                <span className="jira-meta">
-                    {[
-                        issue.issueType,
-                        issue.priority,
-                        issue.sprint,
-                        issue.labels.join(", ") || null,
-                        issue.reporter && `reported by ${issue.reporter.name}`,
-                    ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                </span>
-            </div>
-            <section className="jira-description">
-                {issue.description ? (
-                    <TaskToggleContext.Provider value={toggleTask}>
-                        <Markdown taskBox={TaskBox}>{issue.description}</Markdown>
-                    </TaskToggleContext.Provider>
-                ) : (
-                    <p className="jira-meta">No description.</p>
-                )}
-            </section>
-            <ProjectCommits issueKey={issue.key} />
-            <section className="jira-comments" aria-label="Comments">
-                <div className="jira-heading">
-                    Comments{issue.commentCount > issue.comments.length ? ` (latest ${issue.comments.length} of ${issue.commentCount})` : ""}
-                </div>
-                {issue.comments.map((entry) => (
-                    <div key={entry.id} className="jira-comment">
-                        <div className="jira-meta">
-                            {entry.author} · {new Date(entry.created).toLocaleString()}
+            <h2 className="jira-issue-title">{issue.summary}</h2>
+            <div className="jira-issue-grid">
+                <div className="jira-issue-main">
+                    <Fold title="Description">
+                        <section className="jira-description">
+                            {issue.description ? (
+                                <TaskToggleContext.Provider value={toggleTask}>
+                                    <Markdown taskBox={TaskBox}>{issue.description}</Markdown>
+                                </TaskToggleContext.Provider>
+                            ) : (
+                                <p className="jira-meta">No description.</p>
+                            )}
+                        </section>
+                    </Fold>
+                    <section className="jira-comments" aria-label="Comments">
+                        <div className="jira-heading">
+                            Comments{issue.commentCount > issue.comments.length ? ` (latest ${issue.comments.length} of ${issue.commentCount})` : ""}
                         </div>
-                        <Markdown>{entry.body}</Markdown>
+                        {issue.comments.map((entry) => (
+                            <div key={entry.id} className="jira-comment">
+                                <div className="jira-meta">
+                                    {entry.author} · {new Date(entry.created).toLocaleString()}
+                                </div>
+                                <Markdown>{entry.body}</Markdown>
+                            </div>
+                        ))}
+                        <textarea
+                            value={comment}
+                            onChange={(event) => setComment(event.target.value)}
+                            placeholder="Add a comment in markdown"
+                            rows={3}
+                        />
+                        <button
+                            type="button"
+                            className="jira-chip primary"
+                            disabled={busy || !comment.trim()}
+                            onClick={() =>
+                                void run("Comment", async () => {
+                                    await jiraApi.comment(issue.key, comment, site || undefined);
+                                    setComment("");
+                                })
+                            }>
+                            Comment
+                        </button>
+                    </section>
+                </div>
+                <aside className="jira-issue-side">
+                    <div className="jira-facts">
+                        <Dropdown
+                            label="Status"
+                            value=""
+                            title="Move this issue along its workflow"
+                            options={issue.transitions.map((transition) => ({
+                                value: transition.id,
+                                label: transition.name,
+                                detail: `→ ${transition.to}`,
+                            }))}
+                            onChange={(id) => void run("Move issue", () => jiraApi.transition(issue.key, id, site || undefined))}
+                            disabled={busy || issue.transitions.length === 0}
+                            trailing={<StatusChip status={issue.status} category={issue.statusCategory} />}
+                        />
                     </div>
-                ))}
-                <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment in markdown" rows={3} />
-                <button
-                    type="button"
-                    className="jira-chip primary"
-                    disabled={busy || !comment.trim()}
-                    onClick={() =>
-                        void run("Comment", async () => {
-                            await jiraApi.comment(issue.key, comment, site || undefined);
-                            setComment("");
-                        })
-                    }>
-                    Comment
-                </button>
-            </section>
+                    <Fold title="Details" boxed>
+                        <dl className="jira-details">
+                            <Detail label="Assignee">{assignee}</Detail>
+                            {assigning && (
+                                <div className="jira-assign">
+                                    <input
+                                        autoFocus
+                                        placeholder="Find a person"
+                                        onChange={(event) =>
+                                            void jiraApi
+                                                .assignable(issue.key, event.target.value, site || undefined)
+                                                .then(setPeople)
+                                                .catch(swallow("find people"))
+                                        }
+                                    />
+                                    {people.map((person) => (
+                                        <button
+                                            key={person.accountId}
+                                            type="button"
+                                            className="jira-chip"
+                                            onClick={() => {
+                                                setAssigning(false);
+                                                void run("Assign", () =>
+                                                    jiraApi.assign(issue.key, { accountId: person.accountId }, site || undefined),
+                                                );
+                                            }}>
+                                            {person.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            <Detail label="Reporter">{issue.reporter ? <Person name={issue.reporter.name} /> : null}</Detail>
+                            <Detail label="Labels">
+                                {issue.labels.length > 0 ? (
+                                    <span className="jira-labels">
+                                        {issue.labels.map((label) => (
+                                            <span key={label} className="jira-label">
+                                                {label}
+                                            </span>
+                                        ))}
+                                    </span>
+                                ) : null}
+                            </Detail>
+                            <Detail label="Due date">{issue.due ? dueLabel(issue.due) : null}</Detail>
+                            <Detail label="Start date">{issue.start ? dueLabel(issue.start) : null}</Detail>
+                            <Detail label="Priority">
+                                {issue.priority ? (
+                                    <span className="jira-detail-value">
+                                        <PriorityMark priority={issue.priority} />
+                                        {issue.priority}
+                                    </span>
+                                ) : null}
+                            </Detail>
+                            <Detail label="Parent">
+                                {issue.parent ? (
+                                    <span className="jira-lozenge" title={issue.parent.summary}>
+                                        <span className="jira-swatch" style={{ background: parentColour(issue.parent.key) }} />
+                                        <span className="jira-lozenge-text">
+                                            {issue.parent.key} {issue.parent.summary}
+                                        </span>
+                                    </span>
+                                ) : null}
+                            </Detail>
+                            <Detail label="Sprint">{issue.sprint}</Detail>
+                            <Detail label="Fix versions">{issue.versions.length > 0 ? issue.versions.join(", ") : null}</Detail>
+                        </dl>
+                    </Fold>
+                    <Fold title="Development" boxed closed>
+                        <ProjectCommits issueKey={issue.key} />
+                    </Fold>
+                    <Fold title="More fields" boxed closed hint="Original estimate, Time tracking, Components">
+                        <dl className="jira-details">
+                            <Detail label="Original estimate">{issue.originalEstimate}</Detail>
+                            <Detail label="Time spent">{issue.timeSpent}</Detail>
+                            <Detail label="Components">{issue.components.length > 0 ? issue.components.join(", ") : null}</Detail>
+                            <Detail label="Issue type">{issue.issueType}</Detail>
+                            <Detail label="Project">{issue.project}</Detail>
+                        </dl>
+                    </Fold>
+                    <div className="jira-issue-dates">
+                        {issue.created && <span>Created {ago(issue.created)}</span>}
+                        {issue.updated && <span>Updated {ago(issue.updated)}</span>}
+                        {issue.resolved && <span>Resolved {ago(issue.resolved)}</span>}
+                    </div>
+                </aside>
+            </div>
         </article>
     );
+}
+
+/** An issue opened from a board, in a window over the board as Jira opens it. */
+function IssueOverlay({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+    useEffect(() => {
+        const escape = (event: KeyboardEvent) => {
+            if (event.key === "Escape" && !event.defaultPrevented) onClose();
+        };
+        window.addEventListener("keydown", escape);
+        return () => window.removeEventListener("keydown", escape);
+    }, [onClose]);
+    return (
+        <div
+            className="jira-issue-overlay"
+            onPointerDown={(event) => {
+                if (event.target === event.currentTarget) onClose();
+            }}>
+            <div className="jira-issue-window">{children}</div>
+        </div>
+    );
+}
+
+/** A part of the issue that opens and closes under its title, as Jira's do. */
+function Fold({
+    title,
+    hint,
+    boxed = false,
+    closed = false,
+    children,
+}: {
+    title: string;
+    hint?: string;
+    boxed?: boolean;
+    closed?: boolean;
+    children: ReactNode;
+}) {
+    const [open, setOpen] = useState(!closed);
+    return (
+        <section className={`jira-fold${boxed ? " boxed" : ""}`}>
+            <button type="button" className="jira-fold-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+                <IconChevron size={10} />
+                <span className="jira-fold-title">{title}</span>
+                {!open && hint && <span className="jira-meta">{hint}</span>}
+            </button>
+            {open && <div className="jira-fold-body">{children}</div>}
+        </section>
+    );
+}
+
+function Detail({ label, children }: { label: string; children: ReactNode }) {
+    return (
+        <>
+            <dt>{label}</dt>
+            <dd>{children ?? <span className="jira-meta">None</span>}</dd>
+        </>
+    );
+}
+
+function Person({ name }: { name: string }) {
+    const letters = name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("");
+    return (
+        <span className="jira-detail-value">
+            <span className="jira-avatar" aria-hidden>
+                {letters}
+            </span>
+            {name}
+        </span>
+    );
+}
+
+/** A time as Jira's issue footer says it, such as 5 days ago. */
+function ago(at: string, now = Date.now()): string {
+    const then = Date.parse(at);
+    if (Number.isNaN(then)) return at;
+    const seconds = Math.round((then - now) / 1000);
+    const words = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+    const steps: [Intl.RelativeTimeFormatUnit, number][] = [
+        ["year", 31_536_000],
+        ["month", 2_592_000],
+        ["day", 86_400],
+        ["hour", 3_600],
+        ["minute", 60],
+    ];
+    for (const [unit, size] of steps) {
+        if (Math.abs(seconds) >= size) return words.format(Math.round(seconds / size), unit);
+    }
+    return "just now";
 }
 
 /** The open project's recent commits that name the issue in their message. */
