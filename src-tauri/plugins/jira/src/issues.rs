@@ -20,7 +20,8 @@ const DEFAULT_LIMIT: u64 = 20;
 const MAX_LIMIT: u64 = 100;
 const MAX_COMMENTS: usize = 50;
 const COMMENTS_PER_HIT: usize = 5;
-pub(crate) const SUMMARY_FIELDS: &str = "summary,status,priority,assignee,issuetype,updated";
+pub(crate) const SUMMARY_FIELDS: &str =
+    "summary,status,priority,assignee,issuetype,updated,parent,duedate,labels,fixVersions";
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +44,21 @@ pub struct IssueSummary {
     pub sprint: Option<String>,
     pub updated: Option<String>,
     pub url: String,
+    /// The issue this one sits under, such as its epic.
+    pub parent: Option<IssueParent>,
+    /// The due date, as `YYYY-MM-DD`.
+    pub due: Option<String>,
+    pub labels: Vec<String>,
+    /// The fix versions it is planned for.
+    pub versions: Vec<String>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueParent {
+    pub key: String,
+    pub summary: String,
+    pub issue_type: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -70,8 +86,14 @@ pub struct IssueDetail {
     pub summary: IssueSummary,
     pub project: Option<String>,
     pub reporter: Option<Person>,
-    pub labels: Vec<String>,
     pub created: Option<String>,
+    pub resolved: Option<String>,
+    /// The start date, as `YYYY-MM-DD`, on sites that have the field.
+    pub start: Option<String>,
+    pub components: Vec<String>,
+    /// Time tracking as Jira words it, such as `2d 4h`.
+    pub original_estimate: Option<String>,
+    pub time_spent: Option<String>,
     /// The description as markdown.
     pub description: String,
     pub comments: Vec<Comment>,
@@ -103,10 +125,38 @@ fn sprint(value: Option<&Value>) -> Option<String> {
 }
 
 /// An issue as Jira's REST API returns it, reduced to what a list shows.
+/// The names in a list of named things, such as labels or versions.
+fn names(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.as_str()
+                        .map(str::to_string)
+                        .or_else(|| text(item.get("name")))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub fn summarise(issue: &Value, site: &str, sprint_field: Option<&str>) -> IssueSummary {
     let fields = issue.get("fields").unwrap_or(&Value::Null);
     let key = text(issue.get("key")).unwrap_or_default();
+    let parent = fields.get("parent").filter(|parent| !parent.is_null());
     IssueSummary {
+        parent: parent.and_then(|parent| {
+            Some(IssueParent {
+                key: text(parent.get("key"))?,
+                summary: text(parent.pointer("/fields/summary")).unwrap_or_default(),
+                issue_type: text(parent.pointer("/fields/issuetype/name")),
+            })
+        }),
+        due: text(fields.get("duedate")),
+        labels: names(fields.get("labels")),
+        versions: names(fields.get("fixVersions")),
         url: format!("https://{site}/browse/{key}"),
         key,
         summary: text(fields.get("summary")).unwrap_or_default(),
@@ -215,35 +265,52 @@ pub fn keys_in(text: &str) -> Vec<String> {
 }
 
 /// The custom field that holds sprints, which differs from site to site. Asked once per site.
-pub(crate) async fn sprint_field(site: &Site, credentials: &Credentials) -> Option<String> {
-    static FIELDS: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+/// The site's fields, read once per site.
+async fn field_catalog(site: &Site, credentials: &Credentials) -> Option<Vec<Value>> {
+    static FIELDS: Mutex<Option<HashMap<String, Vec<Value>>>> = Mutex::new(None);
     if let Some(known) = FIELDS.lock().ok().and_then(|fields| {
         fields
             .as_ref()
             .and_then(|fields| fields.get(&site.host).cloned())
     }) {
-        return known;
+        return Some(known);
     }
     let found = client::send(credentials, Method::GET, "/rest/api/3/field", &[], None)
         .await
-        .ok()
-        .and_then(|fields| {
-            fields.as_array().and_then(|fields| {
-                fields
-                    .iter()
-                    .find(|field| {
-                        field.pointer("/schema/custom").and_then(Value::as_str)
-                            == Some("com.pyxis.greenhopper.jira:gh-sprint")
-                    })
-                    .and_then(|field| text(field.get("id")))
-            })
-        });
+        .ok()?
+        .as_array()?
+        .clone();
     if let Ok(mut fields) = FIELDS.lock() {
         fields
             .get_or_insert_with(HashMap::new)
             .insert(site.host.clone(), found.clone());
     }
-    found
+    Some(found)
+}
+
+/// The id of the first field `matches` picks out, such as a site's sprint field.
+fn field_id(catalog: &[Value], matches: impl Fn(&Value) -> bool) -> Option<String> {
+    catalog
+        .iter()
+        .find(|field| matches(field))
+        .and_then(|field| text(field.get("id")))
+}
+
+pub(crate) async fn sprint_field(site: &Site, credentials: &Credentials) -> Option<String> {
+    let catalog = field_catalog(site, credentials).await?;
+    field_id(&catalog, |field| {
+        field.pointer("/schema/custom").and_then(Value::as_str)
+            == Some("com.pyxis.greenhopper.jira:gh-sprint")
+    })
+}
+
+/// The site's "Start date" field, which Jira adds as a custom date field.
+async fn start_field(site: &Site, credentials: &Credentials) -> Option<String> {
+    let catalog = field_catalog(site, credentials).await?;
+    field_id(&catalog, |field| {
+        field.pointer("/schema/type").and_then(Value::as_str) == Some("date")
+            && text(field.get("name")).is_some_and(|name| name.eq_ignore_ascii_case("start date"))
+    })
 }
 
 pub(crate) fn issue_path(key: &str) -> JiraResult<String> {
@@ -362,8 +429,11 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let path = issue_path(&request.key)?;
     let sprint_field = sprint_field(&site, &credentials).await;
-    let mut fields = format!("{SUMMARY_FIELDS},project,reporter,labels,created,description");
-    if let Some(field) = &sprint_field {
+    let start_field = start_field(&site, &credentials).await;
+    let mut fields = format!(
+        "{SUMMARY_FIELDS},project,reporter,created,resolutiondate,components,timetracking,description"
+    );
+    for field in [&sprint_field, &start_field].into_iter().flatten() {
         fields.push(',');
         fields.push_str(field);
     }
@@ -401,18 +471,14 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
         summary: summarise(&found, &site.host, sprint_field.as_deref()),
         project: text(all.pointer("/project/key")),
         reporter: person(all.get("reporter")),
-        labels: all
-            .get("labels")
-            .and_then(Value::as_array)
-            .map(|labels| {
-                labels
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect()
-            })
-            .unwrap_or_default(),
         created: text(all.get("created")),
+        resolved: text(all.get("resolutiondate")),
+        start: start_field
+            .as_deref()
+            .and_then(|field| text(all.get(field))),
+        components: names(all.get("components")),
+        original_estimate: text(all.pointer("/timetracking/originalEstimate")),
+        time_spent: text(all.pointer("/timetracking/timeSpent")),
         description: adf::to_markdown(all.get("description").unwrap_or(&Value::Null)),
         comment_count: comment_page
             .get("total")
@@ -1142,6 +1208,10 @@ mod tests {
             "assignee": { "accountId": "a1", "displayName": "Ana" },
             "issuetype": { "name": "Bug" },
             "updated": "2026-10-04T09:00:00.000+0000",
+            "parent": { "key": "ABC-1", "fields": { "summary": "Login revamp", "issuetype": { "name": "Epic" } } },
+            "duedate": "2026-10-15",
+            "labels": ["auth", "web"],
+            "fixVersions": [{ "id": "10", "name": "1.4" }],
             "customfield_10020": [ { "name": "Sprint 4", "state": "closed" }, { "name": "Sprint 5", "state": "active" } ]
         } })
     }
@@ -1164,6 +1234,14 @@ mod tests {
                 sprint: Some("Sprint 5".into()),
                 updated: Some("2026-10-04T09:00:00.000+0000".into()),
                 url: "https://acme.atlassian.net/browse/ABC-12".into(),
+                parent: Some(IssueParent {
+                    key: "ABC-1".into(),
+                    summary: "Login revamp".into(),
+                    issue_type: Some("Epic".into()),
+                }),
+                due: Some("2026-10-15".into()),
+                labels: vec!["auth".into(), "web".into()],
+                versions: vec!["1.4".into()],
             }
         );
         let unassigned = json!({ "key": "ABC-1", "fields": { "assignee": null } });
