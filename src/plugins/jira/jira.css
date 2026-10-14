@@ -449,13 +449,66 @@
     background: var(--surface-selected);
 }
 
+/* The card's place while it is in hand: an outline of where it came from. */
 .jira-card.dragging {
-    opacity: 0.5;
+    border-style: dashed;
+    background: transparent;
     cursor: grabbing;
+}
+
+.jira-card.dragging > * {
+    visibility: hidden;
+}
+
+/* The card in hand, following the pointer above everything. */
+.jira-card-lifted {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    border-color: var(--border-selected);
+    background: var(--surface-raised);
+    box-shadow: 0 14px 32px rgb(0 0 0 / 0.35);
+    pointer-events: none;
+    cursor: grabbing;
+}
+
+/* Where the card lands in the column under the pointer. */
+.jira-drop-slot {
+    flex: none;
+    border: 1px dashed var(--border-selected);
+    border-radius: var(--radius-2);
+    background: color-mix(in srgb, var(--acc) 10%, transparent);
 }
 
 .jira-card.moving {
     opacity: 0.7;
+}
+
+/* A card just dropped settles into its new column. */
+.jira-card.landed {
+    animation: jira-card-land 320ms ease-out;
+}
+
+@keyframes jira-card-land {
+    from {
+        transform: scale(1.04);
+        box-shadow: 0 10px 24px rgb(0 0 0 / 0.3);
+    }
+    to {
+        transform: none;
+        box-shadow: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .jira-card.landed {
+        animation: none;
+    }
+
+    .jira-card-lifted {
+        box-shadow: none;
+    }
 }
 
 .jira-card-summary {

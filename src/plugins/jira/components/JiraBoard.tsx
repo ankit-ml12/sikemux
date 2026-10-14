@@ -49,9 +49,21 @@ export function JiraBoard({
     const whole = useResourceEnabled(active, jiraBoardR, boardId, site, "");
     const found = useResourceEnabled(active, jiraBoardR, boardId, site, pickKey(picked));
     const [moves, setMoves] = useState<Record<string, number>>({});
-    const [dragging, setDragging] = useState<{ key: string; over: number | null } | null>(null);
+    /* The card in hand: which one, the column it left and the one under the
+       pointer, and its size, so its place and the drop slot keep that shape. */
+    const [dragging, setDragging] = useState<{
+        issue: JiraIssueSummary;
+        from: number;
+        over: number | null;
+        width: number;
+        height: number;
+        /* Where it was first drawn, until the pointer moves it on. */
+        at: { x: number; y: number };
+    } | null>(null);
+    const [landed, setLanded] = useState<string | null>(null);
     const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
     const justDragged = useRef(false);
+    const lifted = useRef<HTMLDivElement | null>(null);
 
     if (whole.status === "error") return <EmptyState message={whole.error ?? "Jira could not open this board."} tone="error" />;
     if (!whole.data) return <SkeletonRows rows={6} label="Loading the board" />;
@@ -72,6 +84,7 @@ export function JiraBoard({
         const target = board.columns[to];
         if (from === to || !target) return;
         setMoves((now) => ({ ...now, [issue.key]: to }));
+        setLanded(issue.key);
         try {
             await jiraApi.moveIssue(issue.key, target, site || undefined);
             refresh();
@@ -93,27 +106,62 @@ export function JiraBoard({
         return element ? Number(element.dataset.column) : null;
     };
 
-    const startDrag = (event: ReactPointerEvent, issue: JiraIssueSummary) => {
+    const startDrag = (event: ReactPointerEvent<HTMLElement>, issue: JiraIssueSummary, from: number) => {
         if (event.button !== 0) return;
         const start = { x: event.clientX, y: event.clientY };
+        const card = event.currentTarget.getBoundingClientRect();
+        const grip = { x: start.x - card.left, y: start.y - card.top };
         let moved = false;
-        const onMove = (next: PointerEvent) => {
-            if (!moved && Math.hypot(next.clientX - start.x, next.clientY - start.y) < DRAG_START_PX) return;
-            moved = true;
-            setDragging({ key: issue.key, over: columnAt(next.clientX, next.clientY) });
+        let over: number | null = from;
+        // The lifted card follows the pointer straight from here, so a long
+        // board is not drawn again for every move.
+        const follow = (x: number, y: number) => {
+            if (lifted.current) lifted.current.style.transform = `translate(${x - grip.x}px, ${y - grip.y}px) rotate(2deg)`;
         };
-        const onUp = (next: PointerEvent) => {
+        const stop = () => {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("keydown", onKey);
             setDragging(null);
+        };
+        const onMove = (next: PointerEvent) => {
+            if (!moved && Math.hypot(next.clientX - start.x, next.clientY - start.y) < DRAG_START_PX) return;
+            if (!moved) {
+                moved = true;
+                over = columnAt(next.clientX, next.clientY);
+                setDragging({
+                    issue,
+                    from,
+                    over,
+                    width: card.width,
+                    height: card.height,
+                    at: { x: next.clientX - grip.x, y: next.clientY - grip.y },
+                });
+            }
+            follow(next.clientX, next.clientY);
+            const now = columnAt(next.clientX, next.clientY);
+            if (now !== over) {
+                over = now;
+                setDragging((held) => held && { ...held, over: now });
+            }
+        };
+        const onUp = (next: PointerEvent) => {
+            stop();
             if (!moved) return;
             justDragged.current = true;
             setTimeout(() => (justDragged.current = false), 0);
             const to = columnAt(next.clientX, next.clientY);
             if (to !== null) void move(issue, to);
         };
+        const onKey = (next: KeyboardEvent) => {
+            if (next.key !== "Escape") return;
+            next.preventDefault();
+            moved = false;
+            stop();
+        };
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
+        window.addEventListener("keydown", onKey);
     };
 
     const left = sprintLeft(board.sprint?.end ?? null);
@@ -194,7 +242,7 @@ export function JiraBoard({
                     {columns.map((column, index) => (
                         <div
                             key={column.name}
-                            className={`jira-column${dragging?.over === index ? " drop" : ""}`}
+                            className={`jira-column${dragging?.over === index && dragging.from !== index ? " drop" : ""}`}
                             data-column={index}
                             role="list"
                             aria-label={column.name}>
@@ -202,13 +250,19 @@ export function JiraBoard({
                                 <span>{column.name}</span>
                                 <span className="jira-count">{column.issues.length}</span>
                             </div>
+                            {dragging?.over === index && dragging.from !== index && (
+                                <div className="jira-drop-slot" style={{ height: dragging.height }} aria-hidden />
+                            )}
                             {column.issues.map((issue) => (
                                 <button
                                     key={issue.key}
                                     type="button"
                                     role="listitem"
-                                    className={`jira-card${issue.key === selected ? " active" : ""}${dragging?.key === issue.key ? " dragging" : ""}${issue.key in moves ? " moving" : ""}`}
-                                    onPointerDown={(event) => startDrag(event, issue)}
+                                    className={`jira-card${issue.key === selected ? " active" : ""}${dragging?.issue.key === issue.key ? " dragging" : ""}${issue.key in moves ? " moving" : ""}${issue.key === landed ? " landed" : ""}`}
+                                    onPointerDown={(event) => startDrag(event, issue, index)}
+                                    onAnimationEnd={() => {
+                                        if (issue.key === landed) setLanded(null);
+                                    }}
                                     onClick={() => {
                                         if (!justDragged.current) onSelect(issue.key);
                                     }}
@@ -224,26 +278,43 @@ export function JiraBoard({
                                             })),
                                         });
                                     }}>
-                                    <span className="jira-card-summary">{issue.summary}</span>
-                                    <span className="jira-card-foot">
-                                        <span className="jira-key">{issue.key}</span>
-                                        {issue.issueType && <span className="jira-meta">{issue.issueType}</span>}
-                                        {issue.priority && <span className="jira-meta">{issue.priority}</span>}
-                                        <span className="jira-grow" />
-                                        {issue.assignee && (
-                                            <span className="jira-avatar" title={issue.assignee.name}>
-                                                {initials(issue.assignee.name)}
-                                            </span>
-                                        )}
-                                    </span>
+                                    <CardBody issue={issue} />
                                 </button>
                             ))}
                         </div>
                     ))}
                 </div>
             )}
+            {dragging && (
+                <div
+                    ref={lifted}
+                    className="jira-card jira-card-lifted"
+                    style={{ width: dragging.width, transform: `translate(${dragging.at.x}px, ${dragging.at.y}px) rotate(2deg)` }}
+                    aria-hidden>
+                    <CardBody issue={dragging.issue} />
+                </div>
+            )}
             {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
         </section>
+    );
+}
+
+function CardBody({ issue }: { issue: JiraIssueSummary }) {
+    return (
+        <>
+            <span className="jira-card-summary">{issue.summary}</span>
+            <span className="jira-card-foot">
+                <span className="jira-key">{issue.key}</span>
+                {issue.issueType && <span className="jira-meta">{issue.issueType}</span>}
+                {issue.priority && <span className="jira-meta">{issue.priority}</span>}
+                <span className="jira-grow" />
+                {issue.assignee && (
+                    <span className="jira-avatar" title={issue.assignee.name}>
+                        {initials(issue.assignee.name)}
+                    </span>
+                )}
+            </span>
+        </>
     );
 }
 

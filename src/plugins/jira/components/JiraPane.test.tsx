@@ -172,6 +172,32 @@ describe("JiraPane", () => {
         expect(screen.getByRole("list", { name: "In Progress" })).toHaveTextContent("Fix the login race");
     });
 
+    it("lifts a dragged card, shows where it will land, and lets Escape put it back", async () => {
+        render(<JiraPane paneId="jira-board-drag" active />);
+        fireEvent.click(await screen.findByRole("button", { name: "ABC board" }));
+        const card = await screen.findByRole("listitem");
+        const done = screen.getByRole("list", { name: "Done" });
+        Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => done });
+
+        fireEvent.pointerDown(card, { button: 0, clientX: 10, clientY: 10 });
+        fireEvent.pointerMove(window, { clientX: 60, clientY: 40 });
+        expect(document.querySelector(".jira-card-lifted")).toHaveTextContent("Fix the login race");
+        expect(card).toHaveClass("dragging");
+        expect(done.querySelector(".jira-drop-slot")).not.toBeNull();
+
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(document.querySelector(".jira-card-lifted")).toBeNull();
+        fireEvent.pointerUp(window, { clientX: 60, clientY: 40 });
+        expect(api.moveIssue).not.toHaveBeenCalled();
+
+        fireEvent.pointerDown(card, { button: 0, clientX: 10, clientY: 10 });
+        fireEvent.pointerMove(window, { clientX: 60, clientY: 40 });
+        await act(async () => fireEvent.pointerUp(window, { clientX: 60, clientY: 40 }));
+        expect(api.moveIssue).toHaveBeenCalledWith("ABC-12", expect.objectContaining({ name: "Done" }), "acme.atlassian.net");
+        expect(document.querySelector(".jira-card-lifted")).toBeNull();
+        Reflect.deleteProperty(document, "elementFromPoint");
+    });
+
     it("puts a card back and says why when Jira will not move it", async () => {
         api.moveIssue.mockRejectedValue({ category: "bad-params", message: "ABC-12's workflow has no way into Done from where it is now" });
         render(<JiraPane paneId="jira-board-refused" active />);
