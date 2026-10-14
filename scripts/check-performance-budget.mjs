@@ -182,13 +182,14 @@ const budgets = [
     // Main reached the edge of this budget; Escape keeping a draft tipped it over.
     // Sharing a chat and Muse Code added a little more.
     // The Skills section in Settings and its toast added a little more.
+    // The Jira board as Jira lays it out, with its filters, swimlanes and issue window.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_750_000,
-    gzip: 1_220_000,
+    raw: 3_800_000,
+    gzip: 1_240_000,
   },
   {
     label: "opt-in shader renderer",
