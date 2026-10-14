@@ -39,6 +39,19 @@ export interface JiraIssueSummary {
     sprint: string | null;
     updated: string | null;
     url: string;
+    /** The issue it sits under, such as its epic. */
+    parent: JiraParent | null;
+    /** `YYYY-MM-DD`. */
+    due: string | null;
+    labels: string[];
+    /** Fix versions. */
+    versions: string[];
+}
+
+export interface JiraParent {
+    key: string;
+    summary: string;
+    issueType: string | null;
 }
 
 export interface JiraComment {
@@ -58,8 +71,13 @@ export interface JiraTransition {
 export interface JiraIssue extends JiraIssueSummary {
     project: string | null;
     reporter: JiraPerson | null;
-    labels: string[];
     created: string | null;
+    resolved: string | null;
+    /** `YYYY-MM-DD`, on sites with a start date field. */
+    start: string | null;
+    components: string[];
+    originalEstimate: string | null;
+    timeSpent: string | null;
     /** Markdown. */
     description: string;
     comments: JiraComment[];
@@ -105,6 +123,15 @@ export interface JiraColumn {
     issues: JiraIssueSummary[];
 }
 
+/** How a board's quick filter travels among the picks sent for it. */
+export const QUICK = "q:";
+
+export interface JiraQuickFilter {
+    id: string;
+    name: string;
+    jql: string;
+}
+
 export interface JiraBoardView {
     id: number;
     name: string;
@@ -112,6 +139,7 @@ export interface JiraBoardView {
     sprint: JiraSprint | null;
     columns: JiraColumn[];
     truncated: boolean;
+    quickFilters: JiraQuickFilter[];
 }
 
 export const jiraApi = {
@@ -138,9 +166,10 @@ export const jiraApi = {
         backend.call<JiraBoardView>("board", {
             id,
             site,
-            people: picked.filter((each) => each !== "me" && each !== "none"),
+            people: picked.filter((each) => each !== "me" && each !== "none" && !each.startsWith(QUICK)),
             mine: picked.includes("me"),
             unassigned: picked.includes("none"),
+            quickFilters: picked.filter((each) => each.startsWith(QUICK)).map((each) => each.slice(QUICK.length)),
         }),
     /** Moves an issue into a board column through whichever transition leads to one of its statuses. */
     moveIssue: (key: string, column: JiraColumn, site?: string) =>

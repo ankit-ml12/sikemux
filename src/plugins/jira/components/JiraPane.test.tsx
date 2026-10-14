@@ -31,7 +31,7 @@ const signedIn: JiraStatus = {
     browserSignIn: false,
 };
 
-const summary = {
+const summary: JiraIssueSummary = {
     key: "ABC-12",
     summary: "Fix the login race",
     status: "In Progress",
@@ -42,14 +42,22 @@ const summary = {
     sprint: "Sprint 5",
     updated: null,
     url: "https://acme.atlassian.net/browse/ABC-12",
+    parent: null,
+    due: null,
+    labels: ["auth"],
+    versions: [],
 };
 
 const detail: JiraIssue = {
     ...summary,
     project: "ABC",
     reporter: { accountId: "r1", name: "Raj" },
-    labels: ["auth"],
     created: null,
+    resolved: null,
+    start: null,
+    components: [],
+    originalEstimate: null,
+    timeSpent: null,
     description: "Steps: **open** the app",
     comments: [{ id: "1", author: "Raj", created: "2026-10-04T09:00:00.000+0000", body: "Seen on staging" }],
     commentCount: 1,
@@ -85,6 +93,7 @@ beforeEach(() => {
             { name: "Done", statusIds: ["4"], issues: [] },
         ],
         truncated: false,
+        quickFilters: [],
     });
     api.moveIssue.mockResolvedValue(undefined);
 });
@@ -143,6 +152,7 @@ describe("JiraPane", () => {
             sprint: null,
             columns: columns(picked.includes("k1") ? [kiran] : [summary, kiran, loose]),
             truncated: false,
+            quickFilters: [],
         }));
         render(<JiraPane paneId="jira-board-people" active />);
         fireEvent.click(await screen.findByRole("button", { name: "ABC board" }));

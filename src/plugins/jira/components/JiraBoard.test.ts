@@ -13,6 +13,10 @@ const card = (key: string): JiraIssueSummary => ({
     sprint: null,
     updated: null,
     url: "",
+    parent: null,
+    due: null,
+    labels: [],
+    versions: [],
 });
 
 const board: JiraBoardView = {
@@ -21,6 +25,7 @@ const board: JiraBoardView = {
     kind: "kanban",
     sprint: null,
     truncated: false,
+    quickFilters: [],
     columns: [
         { name: "To Do", statusIds: ["1"], issues: [card("A-1"), card("A-2")] },
         { name: "Done", statusIds: ["2"], issues: [card("A-3")] },
