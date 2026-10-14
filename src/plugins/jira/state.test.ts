@@ -46,13 +46,23 @@ describe("the search box", () => {
 
 describe("what the Jira pane remembers", () => {
     it("keeps only a list it knows and each board's picks, whatever was saved", () => {
-        jiraSettings.update(() => ({ lastList: null, boardPicks: {} }));
-        expect(jiraSettings.get()).toEqual({ lastList: null, boardPicks: {} });
-        jiraSettings.update(() => ({ lastList: { kind: "board", id: 3, name: "Team" }, boardPicks: { "3": ["me", "k1"] } }));
+        jiraSettings.update(() => ({ lastList: null, boardPicks: {}, boardGroups: {} }));
+        expect(jiraSettings.get()).toEqual({ lastList: null, boardPicks: {}, boardGroups: {} });
+        jiraSettings.update(() => ({
+            lastList: { kind: "board", id: 3, name: "Team" },
+            boardPicks: { "3": ["me", "k1"] },
+            boardGroups: { "3": "assignee" },
+        }));
         expect(jiraSettings.get().lastList).toEqual({ kind: "board", id: 3, name: "Team" });
         expect(jiraSettings.get().boardPicks["3"]).toEqual(["me", "k1"]);
-        jiraSettings.update(() => ({ lastList: { kind: "nonsense" } as never, boardPicks: { "4": ["me", 5] } as never }));
+        expect(jiraSettings.get().boardGroups["3"]).toBe("assignee");
+        jiraSettings.update(() => ({
+            lastList: { kind: "nonsense" } as never,
+            boardPicks: { "4": ["me", 5] } as never,
+            boardGroups: { "4": "colour" } as never,
+        }));
         expect(jiraSettings.get().lastList).toBeNull();
         expect(jiraSettings.get().boardPicks["4"]).toEqual(["me"]);
+        expect(jiraSettings.get().boardGroups["4"]).toBeUndefined();
     });
 });

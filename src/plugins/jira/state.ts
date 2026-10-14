@@ -1,6 +1,7 @@
 import { activeSurfacePane, openSurface } from "../../plugin-api/host";
 import { definePaneViews } from "../../plugin-api/paneViews";
 import { definePluginSettings } from "../../plugin-api/settings";
+import { GROUPINGS, type Grouping } from "./boardFilter";
 import { JIRA_ISSUES, JIRA_PLUGIN_ID } from "./kinds";
 
 export type JiraList =
@@ -78,6 +79,8 @@ export interface JiraSettings {
     lastList: JiraList | null;
     /** Who each board was last narrowed to, by board id: account ids, "me" and "none". */
     boardPicks: Record<string, string[]>;
+    /** How each board was last grouped into swimlanes, by board id. */
+    boardGroups: Record<string, Grouping>;
 }
 
 const LIST_KINDS = new Set(["mine", "reported", "watching", "recent", "sprint", "project", "unassigned", "board", "filter", "jql"]);
@@ -91,7 +94,11 @@ function decodeSettings(saved: unknown): JiraSettings {
     for (const [board, picks] of Object.entries(isRecord(raw.boardPicks) ? raw.boardPicks : {})) {
         if (Array.isArray(picks)) boardPicks[board] = picks.filter((pick): pick is string => typeof pick === "string");
     }
-    return { lastList: list, boardPicks };
+    const boardGroups: Record<string, Grouping> = {};
+    for (const [board, group] of Object.entries(isRecord(raw.boardGroups) ? raw.boardGroups : {})) {
+        if (GROUPINGS.some((each) => each.value === group)) boardGroups[board] = group as Grouping;
+    }
+    return { lastList: list, boardPicks, boardGroups };
 }
 
 export const jiraSettings = definePluginSettings(JIRA_PLUGIN_ID, decodeSettings);
@@ -103,6 +110,12 @@ export function showJiraList(paneId: string, list: JiraList): void {
 }
 
 export const boardPicks = (boardId: number): string[] => jiraSettings.get().boardPicks[String(boardId)] ?? [];
+
+export const boardGrouping = (boardId: number): Grouping => jiraSettings.get().boardGroups[String(boardId)] ?? "none";
+
+export function saveBoardGrouping(boardId: number, grouping: Grouping): void {
+    jiraSettings.update((settings) => ({ ...settings, boardGroups: { ...settings.boardGroups, [String(boardId)]: grouping } }));
+}
 
 export function saveBoardPicks(boardId: number, picks: Iterable<string>): void {
     jiraSettings.update((settings) => ({ ...settings, boardPicks: { ...settings.boardPicks, [String(boardId)]: [...picks].sort() } }));

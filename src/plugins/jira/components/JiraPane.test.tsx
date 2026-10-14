@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-    jiraSettings.update(() => ({ lastList: null, boardPicks: {} }));
+    jiraSettings.update(() => ({ lastList: null, boardPicks: {}, boardGroups: {} }));
     Object.values(api).forEach((mock) => mock.mockReset());
     api.status.mockResolvedValue(signedIn);
     api.search.mockResolvedValue({ issues: [summary], next: null });
@@ -221,6 +221,42 @@ describe("JiraPane", () => {
         render(<JiraPane paneId="jira-remember-2" active />);
         expect(await screen.findByRole("button", { name: "Only my issues" })).toHaveAttribute("aria-pressed", "true");
         await waitFor(() => expect(api.board).toHaveBeenLastCalledWith(7, "acme.atlassian.net", ["me"]));
+    });
+
+    it("filters by type, asks Jira for a quick filter, and splits into swimlanes", async () => {
+        const task = { ...summary, key: "ABC-30", summary: "Write the docs", issueType: "Task", assignee: { accountId: "k1", name: "Kiran Rao" } };
+        api.board.mockImplementation(async (_id: number, _site: string | undefined, picked: string[] = []) => ({
+            id: 7,
+            name: "ABC board",
+            kind: "kanban",
+            sprint: null,
+            truncated: false,
+            quickFilters: [{ id: "5", name: "Only bugs", jql: "type = Bug" }],
+            columns: [{ name: "In Progress", statusIds: ["3"], issues: picked.includes("q:5") ? [summary] : [summary, task] }],
+        }));
+        render(<JiraPane paneId="jira-board-toolbar" active />);
+        fireEvent.click(await screen.findByRole("button", { name: "ABC board" }));
+        expect(await screen.findAllByRole("listitem")).toHaveLength(2);
+
+        fireEvent.click(screen.getByRole("button", { name: /^Type/ }));
+        fireEvent.click(screen.getByRole("option", { name: /Task/ }));
+        expect(screen.getAllByRole("listitem").map((card) => card.textContent)).toEqual([expect.stringContaining("Write the docs")]);
+        fireEvent.click(screen.getByRole("button", { name: "Clear type" }));
+        expect(screen.getAllByRole("listitem")).toHaveLength(2);
+
+        fireEvent.click(screen.getByRole("button", { name: /^Quick filters/ }));
+        fireEvent.click(screen.getByRole("option", { name: "Only bugs" }));
+        await waitFor(() => expect(api.board).toHaveBeenLastCalledWith(7, "acme.atlassian.net", ["q:5"]));
+        await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(1));
+        fireEvent.click(screen.getByRole("option", { name: "Only bugs" }));
+        await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
+
+        fireEvent.click(screen.getByRole("button", { name: /^Group:/ }));
+        fireEvent.click(screen.getByRole("option", { name: "Assignee" }));
+        expect(screen.getByRole("button", { name: "Ana, 1 work item" })).toHaveAttribute("aria-expanded", "true");
+        fireEvent.click(screen.getByRole("button", { name: "Kiran Rao, 1 work item" }));
+        expect(screen.getAllByRole("listitem")).toHaveLength(1);
+        expect(jiraSettings.get().boardGroups).toEqual({ "7": "assignee" });
     });
 
     it("puts a card back and says why when Jira will not move it", async () => {
