@@ -8,8 +8,52 @@ as approximate.
 
 Updated 2026-10-15. Since this was written, the core started running a host on its own, the model
 layer's first four items, the ranked inbox, per-line agent attribution with `git_commit`, and Auto's PR
-review loop were built on `main`. None of it is in a release yet: v0.5.3-nightly.2 failed and its rerun
-was cancelled, so v0.5.3-nightly.1 is the latest desktop build. Section 13 audits agent-to-agent as built.
+review loop were built on `main`. Section 13 audits agent-to-agent as built.
+
+Updated 2026-10-16. v0.5.3-nightly.2 shipped on 2026-10-15 with all of the above, plus hosts that link
+and run workers for each other (ADR 0013), collision warnings and resume at a usage-limit reset. Section 0
+records where Sikemux is now headed; where it disagrees with later sections, section 0 wins.
+
+---
+
+## 0. Direction, 2026-10-16: server-driven development
+
+Sikemux is headed to development driven from servers, not laptops. Agents run unattended on servers and
+act on events: a webhook, red CI, a new ticket, an alert, a schedule. Nobody has to be watching.
+
+- **Every core is a node.** A host is any server running the core: a Linux box, a Mac mini, a cloud
+  machine. Hosts and clients are the same kind of thing on one account, linked as ADR 0013 already does.
+- **The person is one participant, joining through any client.** The web (app.sikemux.com), the phone,
+  the Mac app and the notch are equal ways in. None of them is where the work happens.
+- **Each piece of work gets its own sandbox.** Perplexity's SPACE (Apache-2.0, Rust, Firecracker
+  microVMs) is the candidate: it suspends a sandbox with its memory while an agent waits and wakes it on
+  an event, branches a running sandbox cheaply, and keeps credentials outside the sandbox so an agent can
+  use a service without ever holding its token. It needs KVM: bare metal, or SPACE managed by CoreWeave,
+  Akamai or Crusoe. The local worktree stays as the other backend.
+- **Events start work, the board holds it, Auto carries it.** Signal → card → sandbox → agent → evidence
+  → blind review → PR → merge → checks after landing → inbox and digest on whichever client the person
+  has open.
+
+What this changes below:
+- Focus 1 (Host) and section 6's routines and webhooks become the core of the product, not catch-up.
+- Agents in their own sandboxes share work at commits through the stale-base check and replay that
+  `git_commit` already does. Per-line attribution stays for provenance; collision warnings and leases in
+  one shared checkout drop in priority.
+- Unattended agents on servers Sikemux or a provider runs use API keys and coding plans; a person's own
+  subscription only on a machine they control. The model layer (focus 2) is how they get paid for.
+- Still no fleet of our own (section 7): the customer's machines, or managed SPACE.
+
+Order:
+1. A core-only Linux package and one-line installer, with agent sign-in on the host.
+2. A sandbox backend in the core: worktree or SPACE, starting with SPACE's direct mode on one KVM box.
+3. Auto runs cards in sandboxes: suspend while waiting on CI or a question, wake on the event; the blind
+   reviewer in a sandbox branched from the card's.
+4. Events in: a webhook endpoint on the host, schedules, CI, Jira, Linear, Slack, alerts.
+5. Credentials added outside the sandbox for plugin services, never in the agent's environment.
+6. A web client on app.sikemux.com, and the Mac app as a client of any host.
+7. Hosted for teams on managed SPACE, as the Team tier.
+
+Run Sikemux's own development this way first, to measure suspend and wake times before promising them.
 
 ---
 
@@ -127,8 +171,8 @@ provider key vault, iroh, the shared checkout, the phone and notch.
 ## 5. What to focus on, ranked
 
 ### 0. Get the built work to users
-v0.5.3-nightly.2 failed, so the core-held workspace, inbox, attribution, model layer and agent-to-agent
-fixes are not out. Fix the Release run before anything else; nothing below counts until it ships.
+Done for v0.5.3-nightly.2 (2026-10-15). Keep shipping: what landed since, such as signed agent footers
+and changes made outside the edit tools being recorded, goes out in the next nightly.
 
 ### 1. Sikemux Host — the shed, without the setup
 Run the core headless on Linux or a spare Mac mini, install with one command, join it to the account with
