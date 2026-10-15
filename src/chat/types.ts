@@ -116,9 +116,11 @@ export interface AccountMove {
     reason: "limit" | "chosen";
 }
 
-/** Why the last turn failed, when it was the account's doing. */
+/** Why the last turn failed, when it was the account's or the network's doing. */
 export interface ChatFailure {
-    kind: "signIn" | "limit" | "other";
+    kind: "signIn" | "limit" | "network" | "other";
+    /** What the agent itself said, behind the plain words. */
+    details?: string;
     /** The profile id of the account it failed on. */
     account: string | null;
     /** When the core sends the stopped prompt again, once a usage limit resets, in Unix milliseconds. */
@@ -212,7 +214,8 @@ export type ChatAction =
     | { type: "turn_completed"; stopReason?: string; at?: number }
     | { type: "permission_requested"; request: AcpPermissionRequest }
     | { type: "permission_cleared"; requestId: string }
-    | { type: "error"; message: string; failure?: ChatFailure };
+    | { type: "error"; message: string; failure?: ChatFailure }
+    | { type: "dismiss_error" };
 
 /* One run of a code fence that reads as one colour, and the lines they make up.
    A run with nothing set is plain text, which keeps the colour the stylesheet

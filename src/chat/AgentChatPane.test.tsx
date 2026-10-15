@@ -11,6 +11,8 @@ import { forgetPathState } from "./pathExistence";
 const mocks = vi.hoisted(() => ({
     eventListener: null as ((event: AcpEvent) => void) | null,
     prompt: vi.fn(async () => {}),
+    retryFailed: vi.fn(async () => {}),
+    discardFailed: vi.fn(async () => {}),
     edit: vi.fn(async () => {}),
     steer: vi.fn(async () => "injected"),
     setPermissionMode: vi.fn(async () => {}),
@@ -30,7 +32,9 @@ const mocks = vi.hoisted(() => ({
     sessionContext: vi.fn(async (): Promise<{ used: number; size: number | null } | null> => null),
 }));
 
-vi.mock("../api/agents", () => ({ agentApi: { sessionContext: mocks.sessionContext, available: async () => [] } }));
+vi.mock("../api/agents", () => ({
+    agentApi: { sessionContext: mocks.sessionContext, available: async () => [], retryFailed: mocks.retryFailed, discardFailed: mocks.discardFailed },
+}));
 
 vi.mock("../api/fs", () => ({
     fsapi: {
@@ -435,6 +439,36 @@ describe("AgentChatPane", () => {
         expect(await screen.findByText("Mode unavailable")).toBeInTheDocument();
         expect(mocks.setAgentPermissionMode).toHaveBeenCalledWith(agent.id, "workspace-write");
         expect(mocks.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("says plainly when the network cut a turn short, keeps what was queued, and retries or lets go", async () => {
+        render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
+        const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+        await waitFor(() => expect(editor).toBeEnabled());
+        fireEvent.change(editor, { target: { value: "Check the build" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledTimes(1));
+        fireEvent.change(editor, { target: { value: "and then the docs" } });
+        fireEvent.keyDown(editor, { key: "Enter" });
+
+        emit("turn_completed", { stopReason: "end_turn" });
+        emit("error", {
+            message: "Lost the connection to the model provider",
+            failure: { kind: "network", title: "Lost the connection to the model provider", details: "API Error: Connection error.", account: null },
+        });
+        expect(await screen.findByText(/Lost connection to OpenAI/)).toBeInTheDocument();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        expect(mocks.prompt).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByRole("button", { name: "Details" }));
+        expect(screen.getByText("API Error: Connection error.")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Retry now" }));
+        expect(mocks.retryFailed).toHaveBeenCalledWith(agent.id);
+
+        await act(async () => fireEvent.click(screen.getByRole("button", { name: "Discard" })));
+        expect(mocks.discardFailed).toHaveBeenCalledWith(agent.id);
+        expect(screen.queryByText(/Lost connection to OpenAI/)).not.toBeInTheDocument();
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledTimes(2));
     });
 
     it("stops the running turn on Escape only once the box is empty", async () => {

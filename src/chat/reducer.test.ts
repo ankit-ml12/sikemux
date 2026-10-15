@@ -36,6 +36,18 @@ function withoutTimes(value: unknown): unknown {
 }
 
 describe("chat reducer", () => {
+    it("keeps a network failure with what the agent said, and lets the person dismiss it", () => {
+        const failed = chatReducer(initialChatState, {
+            type: "error",
+            message: "Lost the connection to the model provider",
+            failure: { kind: "network", account: null, details: "API Error: Connection error." },
+        });
+        expect(failed.failure?.kind).toBe("network");
+        const dismissed = chatReducer(failed, { type: "dismiss_error" });
+        expect(dismissed.error).toBeNull();
+        expect(dismissed.failure).toBeNull();
+    });
+
     it("holds the agent's retries until it streams again or the turn ends", () => {
         const retry = (failure: Record<string, unknown>) => ({
             sessionUpdate: "session_info_update",

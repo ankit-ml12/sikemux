@@ -7,6 +7,7 @@ import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { Agent, ProviderProfile } from "../state/types";
 import type { ChatFailure } from "./types";
+import { useState } from "react";
 
 /** What the person can do about a turn that failed because of its account. */
 export function ChatFailureActions({ agent, profile, failure }: { agent: Agent; profile: ProviderProfile; failure: ChatFailure }) {
@@ -59,5 +60,28 @@ function ContinueOn({ agent, account, sessions }: { agent: Agent; account: Provi
         <button type="button" onClick={() => moveChat(agent, account)}>
             Continue on {account.name}
         </button>
+    );
+}
+
+/** What the person can do about a turn the network cut short: send it now, let it go, or read what the agent said. */
+export function NetworkFailureActions({ agent, failure, onDismiss }: { agent: Agent; failure: ChatFailure; onDismiss: () => void }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <span className="chat-error-actions">
+                <button type="button" onClick={() => void agentApi.retryFailed(agent.id).catch(reportError("Retry"))}>
+                    Retry now
+                </button>
+                <button type="button" onClick={() => void agentApi.discardFailed(agent.id).then(onDismiss).catch(reportError("Discard"))}>
+                    Discard
+                </button>
+                {failure.details && (
+                    <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+                        Details
+                    </button>
+                )}
+            </span>
+            {open && failure.details && <pre className="chat-error-details">{failure.details}</pre>}
+        </>
     );
 }
