@@ -1,7 +1,18 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { openUrl, swallow } from "../../plugin-api/host";
 import { useResourceEnabled } from "../../plugin-api/resources";
-import { Dropdown, EmptyState, IconCommit, IconGit, IconPullRequest, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../plugin-api/ui";
+import {
+    Dropdown,
+    EmptyState,
+    IconCommit,
+    IconGit,
+    IconPullRequest,
+    IconRefresh,
+    IconRun,
+    SkeletonRows,
+    StaleNotice,
+    Tooltip,
+} from "../../plugin-api/ui";
 import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
 import { useHost } from "../registry";
 import { pullsR, runsR, workflowsR } from "../resources";
@@ -209,7 +220,8 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                 </div>
             </div>
             {loading && <SkeletonRows rows={8} label="Loading runs" />}
-            {!loading && page.error && (
+            <StaleNotice handle={page} />
+            {!loading && page.error && !page.data && (
                 <EmptyState
                     title="Could not read runs"
                     message={failureMessage(page.error)}
