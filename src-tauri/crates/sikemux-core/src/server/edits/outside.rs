@@ -60,6 +60,9 @@ struct Seen {
     committed: Option<u64>,
     /// When more files changed than could wait to be looked at.
     overflowed: Option<u64>,
+    /// When a shell command began, so the changes seen up to then are looked
+    /// at without waiting out their grace, before the command's own join them.
+    command_began: Option<u64>,
     /// What git ignores: whole folders, or single files.
     ignored: Vec<PathBuf>,
 }
@@ -114,18 +117,32 @@ enum Writer {
 }
 
 impl Outside {
-    /// `agent_id` is at work: its checkout is watched from now, if it was not.
-    pub(super) fn working(&self, core: &Arc<Core>, store: &Store, agent_id: &str) {
+    /// `agent_id` is at work since `began`, running a shell command from then
+    /// when `command`. Its checkout is watched, if it was not, and what
+    /// changed in it since `began` is the work's, as the agent may have
+    /// changed files before the watch could start.
+    pub(super) fn working(
+        &self,
+        core: &Arc<Core>,
+        store: &Store,
+        agent_id: &str,
+        began: u64,
+        command: bool,
+    ) {
         let Some(top) = self.top_of(core, agent_id) else {
             return;
         };
         let now = unix_ms();
         if let Some(checkout) = lock(&self.checkouts).get_mut(&top) {
             checkout.worked_at = now;
+            if command {
+                let mut seen = lock(&checkout.seen);
+                seen.command_began = seen.command_began.max(Some(began));
+            }
             return;
         }
         let seen = Arc::new(Mutex::new(Seen::default()));
-        let since = SystemTime::now();
+        let since = UNIX_EPOCH + Duration::from_millis(began.min(now));
         let Some(watcher) = watch(&top, seen.clone(), Arc::downgrade(core)) else {
             return;
         };
@@ -223,9 +240,14 @@ impl Outside {
             let (due, committed, overflowed) = {
                 let mut seen = lock(&seen);
                 let mut due = Vec::new();
-                let ripe = seen.changed.values().any(|at| *at + GRACE_MS <= now);
+                let before_command = seen.command_began.take();
+                let before_command = |at: u64| before_command.is_some_and(|began| at <= began);
+                let ripe = seen
+                    .changed
+                    .values()
+                    .any(|at| *at + GRACE_MS <= now || before_command(*at));
                 seen.changed.retain(|path, at| {
-                    let ready = ripe && *at + GRACE_MS <= now + TOGETHER_MS;
+                    let ready = before_command(*at) || ripe && *at + GRACE_MS <= now + TOGETHER_MS;
                     if ready {
                         due.push((path.clone(), *at));
                     } else {
@@ -297,7 +319,7 @@ impl Outside {
         };
         let committed = committed_copies(&top, &[inside.as_str()]);
         let edit = store.priors(&project, |priors| {
-            told(priors, &path, committed.get(&inside).map(Option::as_deref))
+            told(priors, &path, committed.get(&inside).map(Option::as_deref)).map(|(edit, _)| edit)
         });
         if let Some(edit) = edit {
             record(
@@ -520,12 +542,12 @@ fn look_at(
         ignored_files.map(|(inside, ..)| inside.as_str()),
         true,
     );
-    let changes: Vec<(Edit, u64)> = store.priors(project, |priors| {
+    let changes: Vec<(Edit, [u64; 2])> = store.priors(project, |priors| {
         due.iter()
             .filter(|(inside, ..)| !ignored(inside))
             .filter_map(|(inside, path, at)| {
                 let committed = committed.get(inside).map(Option::as_deref);
-                told(priors, path, committed).map(|edit| (edit, *at))
+                told(priors, path, committed).map(|(edit, last)| (edit, [*at, last.max(*at)]))
             })
             .collect()
     });
@@ -535,10 +557,16 @@ fn look_at(
     let listed = agents.get_or_insert_with(|| listed(core));
     let changes = changes
         .into_iter()
-        .map(|(edit, at)| {
+        .map(|(edit, [first, last])| {
             let place = Path::new(&edit.path);
-            let (shells, terminals) = core.collisions.at_work(core, listed, project, place, at);
-            let mut at_work: Vec<String> = shells.into_iter().chain(terminals).collect();
+            let mut at_work: Vec<String> = BTreeSet::from([first, last])
+                .into_iter()
+                .flat_map(|at| {
+                    let (shells, terminals) =
+                        core.collisions.at_work(core, listed, project, place, at);
+                    shells.into_iter().chain(terminals)
+                })
+                .collect();
             at_work.sort_unstable();
             at_work.dedup();
             let writer = match at_work.len() {
@@ -580,12 +608,13 @@ fn untracked(top: &Path, new: &HashSet<&str>) -> HashSet<String> {
 }
 
 /// The lines `path` changed since what was kept of it, as an edit no one is
-/// named on yet, keeping the file as it is now. None when there is nothing
+/// named on yet, with when the file last changed, keeping the file as it is
+/// now. None when there is nothing
 /// to tell: it did not change, it is as its last commit has it, or what it
 /// held before is not known. `committed` is its last commit's copy, none
 /// when that commit lacks it, and missing when git was not asked, as it is
 /// not of a file kept already.
-fn told(priors: &mut Priors, path: &Path, committed: Option<Option<&str>>) -> Option<Edit> {
+fn told(priors: &mut Priors, path: &Path, committed: Option<Option<&str>>) -> Option<(Edit, u64)> {
     let key = path.to_string_lossy();
     let Some((text, meta)) = text_of(path) else {
         if path.exists() {
@@ -609,7 +638,8 @@ fn told(priors: &mut Priors, path: &Path, committed: Option<Option<&str>>) -> Op
         }
     };
     priors.keep(&key, Some((&text, &meta)));
-    (before != text).then(|| Edit {
+    let last = meta.modified().map_or(0, unix_ms_of);
+    let edit = (before != text).then(|| Edit {
         at: unix_ms(),
         agent_id: String::new(),
         shared: Vec::new(),
@@ -622,7 +652,8 @@ fn told(priors: &mut Priors, path: &Path, committed: Option<Option<&str>>) -> Op
         path: key.into_owned(),
         lines: changed(&before, &text, 1),
         total: Some(line_count(&text)),
-    })
+    });
+    edit.map(|edit| (edit, last))
 }
 
 /// Writes down changes no edit tool reported, each with who made it. The

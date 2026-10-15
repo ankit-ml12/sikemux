@@ -203,8 +203,13 @@ struct Store {
 
 enum Job {
     Done(Done),
-    /// An agent is at work.
-    Working(String),
+    /// An agent is at work since `at`, running a shell command from then
+    /// when `command`.
+    Working {
+        agent_id: String,
+        at: u64,
+        command: bool,
+    },
     /// The person saved a file in Sikemux's editor.
     Saved(PathBuf),
     /// A file changed in a watched checkout.
@@ -252,7 +257,21 @@ impl Edits {
 
     /// `agent_id` is at work, so changes in its checkout are watched.
     pub(crate) fn working(&self, agent_id: &str) {
-        let _ = self.jobs.send(Job::Working(agent_id.to_owned()));
+        self.send_working(agent_id, false);
+    }
+
+    /// `agent_id` begins a shell command, so the changes in its checkout
+    /// before it are told apart from the command's.
+    pub(crate) fn command_began(&self, agent_id: &str) {
+        self.send_working(agent_id, true);
+    }
+
+    fn send_working(&self, agent_id: &str, command: bool) {
+        let _ = self.jobs.send(Job::Working {
+            agent_id: agent_id.to_owned(),
+            at: unix_ms(),
+            command,
+        });
     }
 
     /// The top folder of the checkout `agent_id` works in, none outside one.
@@ -415,7 +434,11 @@ impl Store {
             for job in first.into_iter().chain(queue.try_iter()) {
                 match job {
                     Job::Done(finished) => done.push(finished),
-                    Job::Working(agent_id) => self.outside.working(&core, self, &agent_id),
+                    Job::Working {
+                        agent_id,
+                        at,
+                        command,
+                    } => self.outside.working(&core, self, &agent_id, at, command),
                     Job::Saved(path) => self.outside.saved(&core, self, &path),
                     Job::Changed => {}
                 }

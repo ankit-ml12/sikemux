@@ -280,16 +280,16 @@ impl Collisions {
 
     /// Notes what a chat's tool call says it reads, runs or is about to
     /// change: a read keeps the copy the agent now has, and a file about to
-    /// change is kept as it stands first.
-    pub(crate) fn saw(&self, agent_id: &str, cwd: &Path, update: &Value) {
+    /// change is kept as it stands first. Whether a shell command began.
+    pub(crate) fn saw(&self, agent_id: &str, cwd: &Path, update: &Value) -> bool {
         if !matches!(
             update.get("sessionUpdate").and_then(Value::as_str),
             Some("tool_call" | "tool_call_update")
         ) {
-            return;
+            return false;
         }
         let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
-            return;
+            return false;
         };
         let named = update
             .get("locations")
@@ -309,7 +309,7 @@ impl Collisions {
         let status = update.get("status").and_then(Value::as_str);
         let ended = matches!(status, Some("completed" | "failed"));
         let key = (agent_id.to_owned(), id.to_owned());
-        let call = {
+        let (call, began) = {
             let mut state = self.lock();
             if !state.calls.contains_key(&key) && state.calls.len() >= MAX_CALLS {
                 let oldest = state
@@ -325,6 +325,7 @@ impl Collisions {
                 at: unix_ms(),
                 ..Call::default()
             });
+            let was_command = call.kind == "execute";
             if let Some(kind) = update.get("kind").and_then(Value::as_str) {
                 kind.clone_into(&mut call.kind);
             }
@@ -334,6 +335,7 @@ impl Collisions {
                 }
             }
             let call = call.clone();
+            let began = !was_command && !ended && call.kind == "execute";
             if ended {
                 state.calls.remove(&key);
                 if call.kind == "execute" {
@@ -344,12 +346,12 @@ impl Collisions {
                     runs.push_back((call.at, unix_ms()));
                 }
             }
-            call
+            (call, began)
         };
         let reading = call.kind == "read" && status == Some("completed");
         let changing = matches!(call.kind.as_str(), "edit" | "delete" | "move") && !ended;
         if !reading && !changing {
-            return;
+            return began;
         }
         let agent_id = agent_id.to_owned();
         let core = self.core.clone();
@@ -365,6 +367,7 @@ impl Collisions {
             }
             core.collisions.watch_files();
         });
+        began
     }
 
     /// Keeps `text` as the copy of `path` the agent last saw.

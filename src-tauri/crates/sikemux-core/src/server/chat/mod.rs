@@ -452,8 +452,12 @@ impl Chat {
         let Some(core) = self.core.upgrade() else {
             return;
         };
-        core.collisions
-            .saw(self.agent_id(), &self.launch.cwd, update);
+        if core
+            .collisions
+            .saw(self.agent_id(), &self.launch.cwd, update)
+        {
+            core.edits.command_began(self.agent_id());
+        }
         if let Some((tool_call_id, changes)) = self.edits.note(update) {
             core.edits.record(self, tool_call_id, changes);
         }
