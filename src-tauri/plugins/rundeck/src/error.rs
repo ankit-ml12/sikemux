@@ -10,6 +10,7 @@ pub enum RundeckError {
     Auth(String),
     Forbidden(String),
     Transport(String),
+    Unreachable(sikemux_plugin_api::Unreachable, String),
     Http { status: u16, message: String },
     BadArg(&'static str),
     Unclear(String),
@@ -25,6 +26,7 @@ impl fmt::Display for RundeckError {
             Self::Auth(message) => write!(formatter, "rundeck: auth failed: {message}"),
             Self::Forbidden(message) => write!(formatter, "rundeck: not allowed: {message}"),
             Self::Transport(message) => write!(formatter, "rundeck: {message}"),
+            Self::Unreachable(_, message) => formatter.write_str(message),
             Self::Http { status, message } => {
                 write!(formatter, "rundeck: http {status}: {message}")
             }
@@ -50,21 +52,22 @@ impl From<serde_json::Error> for RundeckError {
 
 impl From<reqwest::Error> for RundeckError {
     fn from(error: reqwest::Error) -> Self {
-        if !(error.is_connect() || error.is_timeout()) {
+        let Some(kind) = sikemux_plugin_api::unreachable(&error) else {
             return Self::Transport(error.to_string());
-        }
+        };
+        eprintln!("rundeck: {error}");
         let host = error
             .url()
             .and_then(|url| url.host_str())
             .unwrap_or("its address");
-        let how = if error.is_timeout() {
-            "it did not answer in time"
-        } else {
-            "the connection failed"
+        let how = match kind {
+            sikemux_plugin_api::Unreachable::Timeout => "it did not answer in time",
+            sikemux_plugin_api::Unreachable::Offline => "the connection failed",
         };
-        Self::Transport(format!(
-            "can't reach Rundeck at {host} ({how}); check the network or VPN"
-        ))
+        Self::Unreachable(
+            kind,
+            format!("Can't reach Rundeck at {host} ({how}). Check the network or VPN."),
+        )
     }
 }
 
@@ -74,6 +77,9 @@ impl From<RundeckError> for PluginError {
         match error {
             RundeckError::Api(_) | RundeckError::Transport(_) => {
                 PluginError::new("rundeck", message)
+            }
+            RundeckError::Unreachable(kind, _) => {
+                PluginError::new(sikemux_plugin_api::network::category(kind), message)
             }
             RundeckError::Unconfigured => PluginError::new("unconfigured", message),
             RundeckError::Auth(_) => PluginError::new("auth", message),
