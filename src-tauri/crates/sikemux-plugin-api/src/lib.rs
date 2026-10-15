@@ -4,6 +4,7 @@
 
 mod error;
 mod manifest;
+pub mod network;
 pub mod watch;
 
 use std::collections::BTreeMap;
@@ -16,6 +17,7 @@ use serde_json::Value;
 
 pub use error::{PluginError, PluginResult};
 pub use manifest::{is_valid_id, AgentTool, Manifest};
+pub use network::{unreachable, Unreachable};
 
 pub type PluginFuture<'a, T> = Pin<Box<dyn Future<Output = PluginResult<T>> + Send + 'a>>;
 
