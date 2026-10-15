@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { AgentInfo, RecentChat } from "../api/agents";
-import { selectedProviderProfile } from "../agents/agentProfiles";
 import { canDeleteChats } from "../agents/catalog";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import * as cmd from "../state/commands";
@@ -12,7 +11,7 @@ import { TreeContextMenu } from "./FileTree";
 import { chatKey, type RecentChats } from "./useRecentChats";
 import { formatAge } from "../lib/format";
 import { basename } from "../lib/paths";
-import { AgentRowTree } from "./AgentRowTree";
+import { AgentRowProject } from "./AgentRowTree";
 
 /** Saved chats, each resumed in the project it ran in. */
 export function RecentChatList({ recent, providers }: { recent: RecentChats; providers: AgentInfo[] }) {
@@ -20,8 +19,6 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
     const sessionOrder = useStore((s) => s.sessionOrder);
     const activeSessionId = useStore((s) => s.activeSessionId);
     const allProjects = useStore((s) => s.agentRailScope === "all");
-    const profiles = useStore((s) => s.providerProfiles);
-    const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const [renaming, setRenaming] = useState<string | null>(null);
     const [menu, setMenu] = useState<{ chat: RecentChat; x: number; y: number } | null>(null);
 
@@ -33,15 +30,7 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
         return id ? sessions[id] : undefined;
     };
 
-    const open = (chat: RecentChat) => {
-        const project = projectOf(chat);
-        cmd.addAgent(chat.agent, chat.id, chat.title, {
-            sessionId: project?.id,
-            profileId: selectedProviderProfile(chat.agent, profiles, profileSelections)?.id,
-            detectedExecutablePath: providerOf(chat)?.command,
-        });
-        if (project && project.id !== activeSessionId) cmd.selectSession(project.id);
-    };
+    const open = (chat: RecentChat) => cmd.openSavedChat(chat, { detectedExecutablePath: providerOf(chat)?.command });
 
     const rename = (chat: RecentChat, title: string) => {
         const provider = providerOf(chat);
@@ -98,7 +87,7 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
                 ) : (
                     <div key={key} className="agent-recent">
                         <button
-                            className="agent-row recent"
+                            className={`agent-row recent${allProjects ? " two-line" : ""}`}
                             title={elsewhere}
                             onClick={() => open(chat)}
                             onContextMenu={(event) => {
@@ -106,10 +95,12 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
                                 setMenu({ chat, x: event.clientX, y: event.clientY });
                             }}>
                             {glyph}
-                            <span className="agent-title">{chat.title}</span>
+                            <span className="agent-row-text">
+                                <span className="agent-title">{chat.title}</span>
+                                {allProjects && <AgentRowProject name={project?.name ?? basename(chat.project)} />}
+                            </span>
                             <span className="agent-ago">{formatAge(chat.mtime * 1000)}</span>
                         </button>
-                        {allProjects && <AgentRowTree project={{ name: project?.name ?? basename(chat.project), sessionId: project?.id }} />}
                     </div>
                 );
             })}

@@ -10,9 +10,12 @@ use std::ffi::OsString;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::OnceLock;
 
 use serde_json::{json, Value};
+
+use super::footer;
 
 /// The git the shim runs, as the core found it on the person's PATH.
 const REAL_GIT: &str = "SIKEMUX_REAL_GIT";
@@ -21,13 +24,16 @@ const REAL_GIT: &str = "SIKEMUX_REAL_GIT";
 const HOOK: &str = "sikemux-git-hook";
 
 static FOLDER: OnceLock<PathBuf> = OnceLock::new();
+static HOOKS_FOLDER: OnceLock<PathBuf> = OnceLock::new();
+static ENDPOINT: OnceLock<PathBuf> = OnceLock::new();
 static GROK_PLUGIN: OnceLock<PathBuf> = OnceLock::new();
 static HOOK_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Links this binary as `git` in a folder of `data_dir`, for agents started
-/// from now on to find first, and as the hook, with the plugin Grok chats
-/// load it from.
-pub(crate) fn install(data_dir: &Path) {
+/// from now on to find first, as the hook, with the plugin Grok chats load it
+/// from, and as what puts the footer on their commits, which asks the core at
+/// `endpoint`.
+pub(crate) fn install(data_dir: &Path, endpoint: Option<&Path>) {
     let folder = data_dir.join("agent-bin");
     if folder.to_string_lossy().contains(':') {
         return;
@@ -44,6 +50,16 @@ pub(crate) fn install(data_dir: &Path) {
             let _ = HOOK_DATA_DIR.set(data_dir.to_path_buf());
         }
         Err(error) => eprintln!("sikemux core: Grok's and Hermes's git go unchecked: {error}"),
+    }
+    let hooks = footer::folder(data_dir);
+    match link(&hooks, footer::LINK) {
+        Ok(()) => {
+            let _ = HOOKS_FOLDER.set(hooks);
+            if let Some(endpoint) = endpoint {
+                let _ = ENDPOINT.set(endpoint.to_path_buf());
+            }
+        }
+        Err(error) => eprintln!("sikemux core: agents' commits go without a footer: {error}"),
     }
 }
 
@@ -124,7 +140,35 @@ pub(crate) fn environment(path: Option<&str>) -> Vec<(String, String)> {
     if let Some(git) = sikemux_process::user_environment::git_program() {
         env.push((REAL_GIT.to_owned(), git.to_string_lossy().into_owned()));
     }
+    if let Some(hooks) = HOOKS_FOLDER.get() {
+        env.push((
+            footer::HOOKS.to_owned(),
+            hooks.to_string_lossy().into_owned(),
+        ));
+    }
+    if let Some(endpoint) = ENDPOINT.get() {
+        env.push((
+            "SIKEMUX_CLI_ENDPOINT".to_owned(),
+            endpoint.to_string_lossy().into_owned(),
+        ));
+    }
     env
+}
+
+/// Has `command`, a `git commit` the core runs in `dir`, put the footer on
+/// through the hooks an agent's own commit runs. Nothing before [`install`].
+pub(crate) fn sign_commit(command: &mut Command, dir: &Path) {
+    let (Some(hooks), Some(git)) = (
+        HOOKS_FOLDER.get(),
+        sikemux_process::user_environment::git_program(),
+    ) else {
+        return;
+    };
+    let options = ["-C".to_owned(), dir.to_string_lossy().into_owned()];
+    footer::prepare(command, hooks, &git, &options, &[]);
+    if let Some(endpoint) = ENDPOINT.get() {
+        command.env("SIKEMUX_CLI_ENDPOINT", endpoint);
+    }
 }
 
 /// The shim's folder, for a shell to put first on PATH again after its
@@ -151,6 +195,7 @@ pub fn run_if_git() -> Option<i32> {
     match Path::new(&name).file_name()?.to_str()? {
         "git" => Some(run(args.collect())),
         HOOK => Some(run_hook()),
+        footer::LINK => Some(footer::run(args.collect())),
         _ => None,
     }
 }
@@ -201,9 +246,24 @@ fn run(args: Vec<OsString>) -> i32 {
         eprintln!("{refusal}");
         return 1;
     }
-    let error = sikemux_process::user_environment::command(&git)
-        .args(&args)
-        .exec();
+    let mut command = sikemux_process::user_environment::command(&git);
+    let subcommand = super::git_args(&words);
+    if subcommand
+        .first()
+        .is_some_and(|sub| sub == "commit" || sub == "merge")
+    {
+        if let Some(folder) = std::env::var_os(footer::HOOKS) {
+            let options = &words[..words.len() - subcommand.len()];
+            footer::prepare(
+                &mut command,
+                Path::new(&folder),
+                &git,
+                options,
+                &subcommand[1..],
+            );
+        }
+    }
+    let error = command.args(&args).exec();
     eprintln!("git: {}: {error}", git.display());
     126
 }

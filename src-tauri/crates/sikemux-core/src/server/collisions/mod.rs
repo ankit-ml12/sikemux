@@ -12,7 +12,7 @@ mod fragile;
 mod merge;
 mod watch;
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
@@ -34,6 +34,9 @@ const MAX_FILES: usize = 256;
 const MAX_VERSIONS: usize = 4;
 /// Tool calls kept open across all agents before the oldest is let go of.
 const MAX_CALLS: usize = 256;
+/// Shell commands kept per agent, to tell whether it was running one when a
+/// file changed.
+const MAX_SHELL_RUNS: usize = 8;
 /// How long a change on disk waits for an agent's edit tool to say it made it.
 const GRACE_MS: u64 = 1500;
 /// A burst of edits to the same lines makes one note, once it has been quiet
@@ -98,6 +101,9 @@ struct Call {
 /// burst of edits before the note goes out.
 struct Overlap {
     project: String,
+    /// The agents at work when no one agent could have made the change, each
+    /// by its title and name.
+    working: Vec<String>,
     lines: Vec<(u64, u64)>,
     first: u64,
     last: u64,
@@ -142,8 +148,8 @@ pub(super) struct State {
     /// What the file held just before each agent's latest recorded write.
     priors: HashMap<(String, PathBuf), Arc<str>>,
     calls: HashMap<(String, String), Call>,
-    /// When each agent last finished a shell command.
-    shell_ended: HashMap<String, u64>,
+    /// When each agent's latest shell commands started and finished.
+    shell_runs: HashMap<String, VecDeque<(u64, u64)>>,
     overlaps: HashMap<(PathBuf, String, String), Overlap>,
     hits: VecDeque<Hit>,
     marks: HashMap<String, Mark>,
@@ -331,7 +337,11 @@ impl Collisions {
             if ended {
                 state.calls.remove(&key);
                 if call.kind == "execute" {
-                    state.shell_ended.insert(agent_id.to_owned(), unix_ms());
+                    let runs = state.shell_runs.entry(agent_id.to_owned()).or_default();
+                    if runs.len() >= MAX_SHELL_RUNS {
+                        runs.pop_front();
+                    }
+                    runs.push_back((call.at, unix_ms()));
                 }
             }
             call
@@ -434,21 +444,34 @@ impl Collisions {
         for (path, change) in changes.iter_mut() {
             let path = real(&cwd.join(&*path));
             let Some(now) = read(&path) else { continue };
-            let (prior, base) = {
+            let (prior, base, until) = {
                 let state = self.lock();
+                let file = state.files.get(&path);
                 (
-                    state.files.get(&path).and_then(|file| file.before(&now)),
+                    file.and_then(|file| file.before(&now)),
                     state
                         .seen
                         .get(&(agent_id.to_owned(), path.clone()))
                         .cloned(),
+                    file.and_then(|file| {
+                        file.versions
+                            .iter()
+                            .rev()
+                            .take_while(|version| *version.text == *now)
+                            .last()
+                            .map(|version| version.at)
+                    })
+                    .unwrap_or(u64::MAX),
                 )
             };
             self.observe(&path, now.clone(), Some(agent_id));
             let mut lines = None;
             let prior_text = prior.as_ref().map(|prior| prior.text.clone());
             if let (Some(base), Some(prior)) = (&base, &prior) {
-                if base.text != prior.text && prior.text != now {
+                if base.text != prior.text
+                    && prior.text != now
+                    && self.changed_by_others(core, agent_id, &path, base, until)
+                {
                     if let Some(result) = self.mend(core, agent_id, &path, base, &prior.text, &now)
                     {
                         lines = Some(changed(&prior.text, &result, 1));
@@ -496,8 +519,11 @@ impl Collisions {
             return None;
         }
         let result: Arc<str> = merged.text.as_str().into();
+        if read(path).as_deref() != Some(ours) {
+            return None;
+        }
         self.observe(path, result.clone(), Some(agent_id));
-        if read(path).as_deref() != Some(ours) || std::fs::write(path, &*result).is_err() {
+        if std::fs::write(path, &*result).is_err() {
             return None;
         }
         let mut state = self.lock();
@@ -570,7 +596,7 @@ impl Collisions {
                 if touched.is_empty() || core.names.get(owner).is_none() {
                     continue;
                 }
-                self.overlapped(project, &path, &edit.agent_id, owner, &touched);
+                self.overlapped(project, &path, &edit.agent_id, &[], owner, &touched);
             }
         }
     }
@@ -582,6 +608,7 @@ impl Collisions {
         project: &str,
         path: &Path,
         writer: &str,
+        working: &[String],
         owner: &str,
         lines: &[(u64, u64)],
     ) {
@@ -592,10 +619,16 @@ impl Collisions {
             .entry((path.to_path_buf(), writer.to_owned(), owner.to_owned()))
             .or_insert_with(|| Overlap {
                 project: project.to_owned(),
+                working: Vec::new(),
                 lines: Vec::new(),
                 first: now,
                 last: now,
             });
+        for label in working {
+            if !overlap.working.contains(label) {
+                overlap.working.push(label.clone());
+            }
+        }
         overlap.lines.extend_from_slice(lines);
         overlap.last = now;
         drop(state);
@@ -724,7 +757,10 @@ impl Collisions {
             }
         }
         if Path::new(&project).starts_with(top) {
-            let mut agents = crate::trailers::agent_ids(message);
+            let mut agents: Vec<String> = crate::trailers::agents(message)
+                .into_iter()
+                .map(|agent| agent.chat)
+                .collect();
             if agents.is_empty() {
                 agents.push(agent_id.to_owned());
             }
@@ -997,7 +1033,7 @@ pub(crate) fn settle(core: &Arc<Core>) {
         });
         state.bytes = state.bytes.saturating_sub(freed);
         state.calls.retain(|(caller, _), _| *caller != agent);
-        state.shell_ended.remove(&agent);
+        state.shell_runs.remove(&agent);
     }
     let due: Vec<(PathBuf, String, String)> = state
         .overlaps
@@ -1089,10 +1125,15 @@ fn warn(
     let lines = spoken(&overlap.lines);
     let owner_name = name(owner);
     if writer.is_empty() {
+        let by = match overlap.working.as_slice() {
+            [] => "by the person or a command no agent ran".to_owned(),
+            [only] => format!("while {only} was at work"),
+            [rest @ .., last] => format!("while {} and {last} were at work", rest.join(", ")),
+        };
         tell(
             state,
             owner,
-            format!("{lines} of {file}, which you have uncommitted, were just changed outside the agents' edit tools: by the person, a command or an agent in a terminal. Read the file again before you edit it."),
+            format!("{lines} of {file}, which you have uncommitted, were just changed outside the agents' edit tools, {by}. Read the file again before you edit it."),
         );
         mark(state, owner, Vec::new(), file, false);
         return;
@@ -1139,30 +1180,33 @@ impl Collisions {
             at,
         } = change;
         let project = project_of(&path, &core.workspaces.project_paths());
-        let writer = self.likely_writer(core, &project, at);
+        let (writer, working) = self.likely_writer(core, &project, at);
         let shell_writer = writer
             .as_ref()
             .filter(|(_, chat)| *chat)
             .map(|(agent, _)| agent.clone());
         if let Some(agent) = &shell_writer {
-            let base = self
-                .lock()
-                .seen
-                .get(&(agent.clone(), path.clone()))
-                .cloned();
-            if let Some(base) = base.filter(|base| base.text != prior) {
-                self.mend(core, agent, &path, &base, &prior, &now);
+            let key = (agent.clone(), path.clone());
+            let base = self.lock().seen.get(&key).cloned();
+            if let Some(base) = base.filter(|base| base.at < at && base.text != prior) {
+                if self.changed_by_others(core, agent, &path, &base, at) {
+                    self.mend(core, agent, &path, &base, &prior, &now);
+                }
             }
             let mut state = self.lock();
-            state.seen.insert(
-                (agent.clone(), path.clone()),
-                Copy {
-                    text: now.clone(),
-                    at: unix_ms(),
-                },
-            );
-            state.bytes += now.len();
-            fit(&mut state);
+            let older = state.seen.get(&key).map(|copy| (copy.at, copy.text.len()));
+            if older.is_none_or(|(seen_at, _)| seen_at < at) {
+                let freed = older.map_or(0, |(_, len)| len);
+                state.bytes = state.bytes.saturating_sub(freed) + now.len();
+                state.seen.insert(
+                    key,
+                    Copy {
+                        text: now.clone(),
+                        at,
+                    },
+                );
+                fit(&mut state);
+            }
         }
         let all = core.edits.of_file(&project, &path.to_string_lossy(), None);
         let (lines, total) = authors(&all);
@@ -1207,21 +1251,111 @@ impl Collisions {
                 .map(|(_, start, end)| (*start, *end))
                 .collect();
             if !touched.is_empty() && core.names.get(owner).is_some() {
-                self.overlapped(&project, &path, &writer_id, owner, &touched);
+                let labels: Vec<String> = working
+                    .iter()
+                    .filter(|(agent, _)| *agent != owner)
+                    .map(|(_, label)| label.clone())
+                    .collect();
+                self.overlapped(&project, &path, &writer_id, &labels, owner, &touched);
             }
         }
     }
 
+    /// Whether anyone but `agent_id` changed `path` after it saw `seen` and
+    /// before `until`: another agent's edit tool, or a change no edit tool
+    /// claimed that `agent_id` was not at work to have made.
+    fn changed_by_others(
+        &self,
+        core: &Core,
+        agent_id: &str,
+        path: &Path,
+        seen: &Copy,
+        until: u64,
+    ) -> bool {
+        let unclaimed: Vec<u64> = {
+            let state = self.lock();
+            let mut unclaimed = Vec::new();
+            for version in state
+                .files
+                .get(path)
+                .into_iter()
+                .flat_map(|file| &file.versions)
+                .filter(|version| {
+                    version.at > seen.at && version.at < until && version.text != seen.text
+                })
+            {
+                match &version.by {
+                    Some(by) if by == agent_id => {}
+                    Some(_) => return true,
+                    None => unclaimed.push(version.at),
+                }
+            }
+            unclaimed
+        };
+        if unclaimed.is_empty() {
+            return false;
+        }
+        let project = project_of(path, &core.workspaces.project_paths());
+        let listed = super::messages::listed(core);
+        unclaimed.into_iter().any(|at| {
+            let (shells, terminals) = self.at_work(core, &listed, &project, at);
+            !shells.contains(agent_id) && !terminals.contains(agent_id)
+        })
+    }
+
     /// The agent that most likely changed a file in `project` at `at` with
-    /// no edit tool: the one chat agent then running a command, else the one
-    /// terminal agent then working. Whether it is a chat comes with it.
-    fn likely_writer(&self, core: &Core, project: &str, at: u64) -> Option<(String, bool)> {
+    /// no edit tool, and whether it is a chat: the one chat agent then running
+    /// a command, a subagent or a background task, else the one terminal agent
+    /// then working. With it, every agent then at work, each by its title and
+    /// name.
+    fn likely_writer(
+        &self,
+        core: &Core,
+        project: &str,
+        at: u64,
+    ) -> (Option<(String, bool)>, BTreeMap<String, String>) {
+        let listed = super::messages::listed(core);
+        let (shells, terminals) = self.at_work(core, &listed, project, at);
+        let label = |id: &String| {
+            let agent = listed.iter().find(|agent| agent.agent_id == *id);
+            let name = agent
+                .and_then(|agent| agent.name.clone())
+                .or_else(|| core.names.name(id))
+                .unwrap_or_else(|| id.clone());
+            match agent.and_then(|agent| agent.title.as_deref()) {
+                Some(title) => format!("{title} ({name})"),
+                None => name,
+            }
+        };
+        let working = shells
+            .iter()
+            .chain(&terminals)
+            .map(|id| (id.clone(), label(id)))
+            .collect();
+        let likely = match (shells.len(), terminals.len()) {
+            (1, _) => shells.into_iter().next().map(|agent| (agent, true)),
+            (0, 1) => terminals.into_iter().next().map(|agent| (agent, false)),
+            _ => None,
+        };
+        (likely, working)
+    }
+
+    /// The agents in `project` that could have changed a file at `at` with no
+    /// edit tool: the chat agents then running a command, a subagent or a
+    /// background task, and the terminal agents then working.
+    fn at_work(
+        &self,
+        core: &Core,
+        listed: &[super::messages::Listed],
+        project: &str,
+        at: u64,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
         let in_project = |agent: &str| {
             core.names
                 .get(agent)
                 .is_some_and(|named| named.project == project)
         };
-        let shells: HashSet<String> = {
+        let shells: BTreeSet<String> = {
             let state = self.lock();
             state
                 .calls
@@ -1230,35 +1364,33 @@ impl Collisions {
                 .map(|((agent, _), _)| agent.clone())
                 .chain(
                     state
-                        .shell_ended
+                        .shell_runs
                         .iter()
-                        .filter(|(_, ended)| at.saturating_sub(GRACE_MS) <= **ended)
+                        .filter(|(_, runs)| {
+                            runs.iter()
+                                .any(|(started, ended)| *started <= at && at <= ended + GRACE_MS)
+                        })
                         .map(|(agent, _)| agent.clone()),
                 )
+                .chain(
+                    core.chats
+                        .list()
+                        .into_iter()
+                        .filter(|chat| chat.subagents > 0 || chat.tasks > 0)
+                        .map(|chat| chat.agent_id),
+                )
+                .filter(|agent| in_project(agent))
                 .collect()
         };
-        let shells: Vec<String> = shells
-            .into_iter()
-            .filter(|agent| in_project(agent))
-            .collect();
-        if let [agent] = shells.as_slice() {
-            return Some((agent.clone(), true));
-        }
-        if !shells.is_empty() {
-            return None;
-        }
-        let terminals: Vec<String> = super::messages::listed(core)
-            .into_iter()
+        let terminals: BTreeSet<String> = listed
+            .iter()
             .filter(|agent| {
                 agent.reach == super::messages::Reach::Terminal
                     && agent.project == project
                     && agent.status == crate::protocol::AgentStatus::Working
             })
-            .map(|agent| agent.agent_id)
+            .map(|agent| agent.agent_id.clone())
             .collect();
-        match terminals.as_slice() {
-            [agent] => Some((agent.clone(), false)),
-            _ => None,
-        }
+        (shells, terminals)
     }
 }

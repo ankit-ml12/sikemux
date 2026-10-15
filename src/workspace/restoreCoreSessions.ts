@@ -72,10 +72,9 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     } catch {
         return;
     }
-    const chats = await deps.chats.list().catch((): AcpChat[] => []);
-    if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
-    const boards = getState().agentBoards;
-    for (const chat of chats) if (chat.startedBy !== null || runOfAgent(boards, chat.agentId)) cmd.adoptChat(chat);
+    const listed = await deps.chats.list().catch(() => null);
+    const chats = listed ?? [];
+    const adopted = await adoptChats(chats, deps);
     const plan = agentSessionPlan(getState(), sessions);
     cmd.applyAgentSessionPlan(plan);
     for (const id of plan.resume) {
@@ -95,10 +94,27 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     }
 
     const candidates = unclaimedTerminals(earlier, claimed);
-    if (candidates.length === 0 && chats.length === 0) return;
+    if (candidates.length === 0 && listed?.length === 0) return;
     deps.schedule(() => {
         const stillClaimed = claimedSessionIds(getState());
         for (const id of candidates) if (!stillClaimed.has(id)) void deps.kill(id).catch(() => {});
-        for (const chat of chats) if (chat.startedBy === null && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
+        const stopUnclaimed = (kept: AcpChat[], taken: ReadonlySet<string>) => {
+            for (const chat of kept) if (!taken.has(chat.agentId) && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
+        };
+        if (listed) stopUnclaimed(listed, adopted);
+        else
+            void deps.chats
+                .list()
+                .then(async (kept) => stopUnclaimed(kept, await adoptChats(kept, deps)))
+                .catch(() => {});
     }, UNCLAIMED_GRACE_MS);
+}
+
+/** Shows the chats other devices or agents started, or a board runs, and answers which they are. */
+async function adoptChats(chats: AcpChat[], deps: CoreSessionRestoreDeps): Promise<Set<string>> {
+    if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
+    const boards = getState().agentBoards;
+    const adopted = chats.filter((chat) => chat.startedBy !== null || runOfAgent(boards, chat.agentId));
+    for (const chat of adopted) cmd.adoptChat(chat);
+    return new Set(adopted.map((chat) => chat.agentId));
 }

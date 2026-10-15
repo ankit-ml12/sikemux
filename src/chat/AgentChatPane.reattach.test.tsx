@@ -66,6 +66,8 @@ const live: AcpAttachment = {
     permissionMode: "workspace-write",
     running: true,
     turned: true,
+    feed: "feed-1",
+    olderBefore: null,
 };
 
 function emit(kind: AcpEvent["kind"], payload: Record<string, unknown> = {}) {
@@ -163,14 +165,6 @@ describe("AgentChatPane with a chat the core kept", () => {
         renderPane();
         await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id, resumeId: "session-old" })));
         expect(mocks.stop).not.toHaveBeenCalled();
-    });
-
-    it("starts again from the provider's history when the core kept too much to replay", async () => {
-        mocks.attach.mockResolvedValue({ status: "restart" });
-        renderPane();
-        await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ resumeId: "session-old" })));
-        expect(mocks.stop).toHaveBeenCalledWith(agent.id);
-        expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(mocks.start.mock.invocationCallOrder[0]);
     });
 
     it("takes the chat up again when the core comes back with it, without stopping it", async () => {

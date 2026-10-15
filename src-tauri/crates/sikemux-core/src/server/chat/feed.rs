@@ -105,6 +105,18 @@ pub(crate) struct Replay {
     /// subagents still going.
     standing: Vec<(Holds, u64, ChatEvent)>,
     work: Work,
+    /// Every subagent's start, so a slice of the chat that speaks of one
+    /// started before it can carry the start too.
+    spawns: Vec<Spawn>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Spawn {
+    subagent: String,
+    /// The session that started it.
+    parent: String,
+    index: u64,
+    event: ChatEvent,
 }
 
 /// One thing said or done in a chat, as another agent reads it.
@@ -411,6 +423,21 @@ fn asks(event: &ChatEvent, request_id: &str) -> bool {
         && event.payload.get("requestId").and_then(Value::as_str) == Some(request_id)
 }
 
+/// Whether `event` is where the person's message `message_id` starts.
+fn names_message(event: &ChatEvent, message_id: &str) -> bool {
+    match event.kind {
+        ChatEventKind::Prompt => event.payload.get("messageId"),
+        ChatEventKind::SessionUpdate
+            if session_update_kind(&event.payload) == Some("user_message_chunk") =>
+        {
+            event.payload.pointer("/update/messageId")
+        }
+        _ => None,
+    }
+    .and_then(Value::as_str)
+        == Some(message_id)
+}
+
 fn session_update_kind(payload: &Value) -> Option<&str> {
     payload.pointer("/update/sessionUpdate")?.as_str()
 }
@@ -431,6 +458,7 @@ impl Replay {
             since_point: 0,
             standing: Vec::new(),
             work: Work::default(),
+            spawns: Vec::new(),
         }
     }
 
@@ -532,6 +560,7 @@ impl Replay {
             payload: payload.clone(),
         };
         self.note_standing(kind, index, &event);
+        self.note_spawn(kind, index, &event);
         if kind == ChatEventKind::SessionUpdate {
             self.work.note(payload);
             self.note_retry(payload);
@@ -560,6 +589,66 @@ impl Replay {
         self.bytes += bytes;
         self.trim();
         bytes
+    }
+
+    fn note_spawn(&mut self, kind: ChatEventKind, index: u64, event: &ChatEvent) {
+        if kind != ChatEventKind::SessionUpdate
+            || session_update_kind(&event.payload) != Some("subagent_spawned")
+        {
+            return;
+        }
+        let text = |pointer: &str| event.payload.pointer(pointer).and_then(Value::as_str);
+        let (Some(subagent), Some(parent)) =
+            (text("/update/subagentSessionId"), text("/sessionId"))
+        else {
+            return;
+        };
+        if self.spawns.iter().any(|spawn| spawn.subagent == subagent) {
+            return;
+        }
+        self.spawns.push(Spawn {
+            subagent: subagent.to_owned(),
+            parent: parent.to_owned(),
+            index,
+            event: event.clone(),
+        });
+    }
+
+    /// The starts of the subagents `events` speak of, and of the subagents
+    /// that started those, from before `first`. Without them a client would
+    /// take a subagent's work for the chat's own and never see it end.
+    fn spawns_before<'a>(
+        &self,
+        events: impl Iterator<Item = &'a ChatEvent>,
+        first: u64,
+    ) -> Vec<(u64, &ChatEvent)> {
+        let mut named: HashSet<&str> = HashSet::new();
+        for event in events.filter(|event| event.kind == ChatEventKind::SessionUpdate) {
+            let payload = &event.payload;
+            named.extend(payload.get("sessionId").and_then(Value::as_str));
+            named.extend(
+                payload
+                    .pointer("/update/subagentSessionId")
+                    .and_then(Value::as_str),
+            );
+        }
+        let mut named: Vec<&str> = named.into_iter().collect();
+        let mut chosen: Vec<&Spawn> = Vec::new();
+        while let Some(subagent) = named.pop() {
+            let Some(spawn) = self.spawns.iter().find(|spawn| spawn.subagent == subagent) else {
+                continue;
+            };
+            if spawn.index >= first || chosen.iter().any(|kept| kept.subagent == spawn.subagent) {
+                continue;
+            }
+            chosen.push(spawn);
+            named.push(&spawn.parent);
+        }
+        chosen.sort_by_key(|spawn| spawn.index);
+        chosen
+            .into_iter()
+            .map(|spawn| (spawn.index, &spawn.event))
+            .collect()
     }
 
     fn hold(&mut self, holds: Holds, index: u64, event: &ChatEvent) {
@@ -760,6 +849,12 @@ impl Replay {
             .filter(|(_, index, _)| *index < first)
             .map(|(_, index, event)| (*index, event))
             .collect();
+        let named = self.entries.range(start..).map(|entry| &entry.event);
+        for (index, event) in self.spawns_before(named, first) {
+            if !standing.iter().any(|(held, _)| *held == index) {
+                standing.push((index, event));
+            }
+        }
         standing.sort_by_key(|(index, _)| *index);
         Tail {
             events: standing
@@ -771,33 +866,28 @@ impl Replay {
         }
     }
 
-    /// Forgets the person's message `message_id` and everything after it.
-    /// A message too old to still be kept here takes the whole replay with it.
+    /// Forgets the person's message `message_id` and everything after it,
+    /// looking for it on disk when it is older than the replay. When neither
+    /// holds it, it is gone only if the replay dropped events it never wrote
+    /// down, and then everything kept came after it.
     pub(crate) fn rewind(&mut self, message_id: &str) {
-        let names = |entry: &Entry| {
-            match entry.event.kind {
-                ChatEventKind::Prompt => entry.event.payload.get("messageId"),
-                ChatEventKind::SessionUpdate
-                    if session_update_kind(&entry.event.payload) == Some("user_message_chunk") =>
-                {
-                    entry.event.payload.pointer("/update/messageId")
-                }
-                _ => None,
-            }
-            .and_then(Value::as_str)
-                == Some(message_id)
-        };
-        let found = self.entries.iter().position(names);
-        let position = found.unwrap_or(0);
-        let index = match found {
-            Some(position) => self.entries[position].index,
-            None => self
+        let names = |event: &ChatEvent| names_message(event, message_id);
+        let index = match self.entries.iter().find(|entry| names(&entry.event)) {
+            Some(entry) => entry.index,
+            None => match self
                 .history
                 .as_ref()
-                .and_then(History::first)
-                .or_else(|| self.entries.front().map(|entry| entry.index))
-                .unwrap_or(self.next_index),
+                .and_then(|history| history.find(names))
+            {
+                Some(index) => index,
+                None if self.trimmed && !self.keeps_history() => self
+                    .entries
+                    .front()
+                    .map_or(self.next_index, |entry| entry.index),
+                None => return,
+            },
         };
+        let position = self.entries.partition_point(|entry| entry.index < index);
         let dropped: usize = self
             .entries
             .drain(position..)
@@ -808,6 +898,7 @@ impl Replay {
             history.truncate(index);
         }
         self.standing.retain(|(_, held, _)| *held < index);
+        self.spawns.retain(|spawn| spawn.index < index);
         self.in_turn = false;
         self.reconnecting = None;
         self.last_from_user = false;
@@ -839,9 +930,16 @@ impl Replay {
         let Some(history) = self.history.as_ref() else {
             return Ok(Page::default());
         };
-        history
+        let mut page = history
             .page(before, turns.clamp(1, MAX_PAGE_TURNS), PAGE_BYTES)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        let spawns: Vec<ChatEvent> = self
+            .spawns_before(page.events.iter(), page.first)
+            .into_iter()
+            .map(|(_, event)| event.clone())
+            .collect();
+        page.events.splice(0..0, spawns);
+        Ok(page)
     }
 
     /// An answered request is not asked again when the chat is replayed.
@@ -1266,9 +1364,10 @@ impl Feed {
         }
     }
 
-    /// A phone is sent the chat's last turns and pages back through the rest.
-    /// The host's own app reloads a chat longer than the replay from the
-    /// provider instead.
+    /// A phone, or the host's own app once the chat outgrew the replay, is sent
+    /// the chat's last turns and pages back through the rest. A chat that
+    /// outgrew the replay with nowhere to keep the rest starts with a note
+    /// that its earlier turns are gone.
     fn attachment(
         &self,
         inner: &Inner,
@@ -1279,21 +1378,34 @@ impl Feed {
         let missed = since
             .filter(|since| since.feed == self.id && since.seq <= inner.seq)
             .and_then(|since| inner.recent.since(since.seq, peer));
-        let phone = !peer.is_local() && inner.replay.keeps_history();
+        let trimmed = inner.replay.is_trimmed();
+        let lost = trimmed && !inner.replay.keeps_history();
+        let paged = lost || (inner.replay.keeps_history() && (!peer.is_local() || trimmed));
         match (inner.start.clone(), missed) {
             _ if inner.closed => ChatAttachment::Missing,
             (Some(_), Some(events)) => ChatAttachment::Resumed {
                 events,
                 mark: self.mark(inner),
             },
-            (Some(_), None) if inner.replay.is_trimmed() && !phone => ChatAttachment::Restart,
             (Some(start), None) => {
-                let (replay, older_before) = if phone {
+                let (mut replay, older_before) = if paged {
                     let tail = inner.replay.tail();
                     (tail.events, tail.older_before)
                 } else {
                     (inner.replay.events(), None)
                 };
+                if lost {
+                    replay.insert(
+                        0,
+                        ChatEvent {
+                            kind: ChatEventKind::SessionUpdate,
+                            payload: json!({
+                                "sessionId": start.session_id,
+                                "update": { "sessionUpdate": "earlier_turns_lost" },
+                            }),
+                        },
+                    );
+                }
                 ChatAttachment::Live {
                     start: Box::new(start),
                     permission_mode: inner.permission_mode.clone(),
@@ -1488,7 +1600,39 @@ mod tests {
         replay.rewind("u2");
         assert_eq!(replay.events().len(), 2);
         replay.rewind("missing");
-        assert!(replay.events().is_empty());
+        assert_eq!(replay.events().len(), 2);
+    }
+
+    #[test]
+    fn a_rewind_past_the_replay_keeps_the_history_before_the_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, 8, Some(history));
+        let prompted = |replay: &Replay| {
+            let page = replay.page(u64::MAX, 100).unwrap();
+            let mut ids: Vec<String> = page
+                .events
+                .iter()
+                .chain(replay.entries.iter().map(|entry| &entry.event))
+                .filter_map(|event| event.payload["messageId"].as_str().map(str::to_owned))
+                .collect();
+            ids.sort();
+            ids.dedup();
+            ids
+        };
+        for n in 0..6 {
+            let id = format!("p{n}");
+            replay.push(
+                ChatEventKind::Prompt,
+                &json!({ "text": id, "paths": [], "messageId": id }),
+            );
+            replay.push(ChatEventKind::TurnStarted, &json!({}));
+            replay.push(ChatEventKind::TurnCompleted, &json!({}));
+        }
+        replay.rewind("missing");
+        assert_eq!(prompted(&replay), ["p0", "p1", "p2", "p3", "p4", "p5"]);
+        replay.rewind("p2");
+        assert_eq!(prompted(&replay), ["p0", "p1"]);
     }
 
     #[test]
@@ -1953,6 +2097,52 @@ mod tests {
         assert_eq!(held(&replay), ["b"]);
     }
 
+    #[test]
+    fn a_tail_carries_the_start_of_every_subagent_it_speaks_of() {
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        let spawned = |session: &str, id: &str| {
+            update(
+                session,
+                json!({ "sessionUpdate": "subagent_spawned", "subagentSessionId": id }),
+            )
+        };
+        let ended = |id: &str| {
+            update(
+                "s",
+                json!({ "sessionUpdate": "subagent_state_update", "subagentSessionId": id, "state": "completed" }),
+            )
+        };
+        replay.push(ChatEventKind::SessionUpdate, &spawned("s", "corpus"));
+        replay.push(ChatEventKind::SessionUpdate, &spawned("corpus", "fixtures"));
+        replay.push(ChatEventKind::SessionUpdate, &spawned("s", "forgotten"));
+        replay.push(ChatEventKind::SessionUpdate, &ended("forgotten"));
+        for n in 0..TAIL_TURNS {
+            turn(&mut replay, n);
+        }
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &update(
+                "fixtures",
+                json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "Recorded" } }),
+            ),
+        );
+        replay.push(ChatEventKind::SessionUpdate, &ended("corpus"));
+
+        let starts: Vec<String> = replay
+            .tail()
+            .events
+            .iter()
+            .filter(|event| session_update_kind(&event.payload) == Some("subagent_spawned"))
+            .map(|event| {
+                event.payload["update"]["subagentSessionId"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(starts, ["corpus", "fixtures"]);
+    }
+
     #[tokio::test]
     async fn subagents_outlive_their_turn_but_not_the_agent() {
         let feed = Feed::new("agent".into(), "default".into(), None);
@@ -1989,7 +2179,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_phone_is_sent_the_last_turns_and_the_host_app_everything() {
+    async fn the_last_turns_go_to_a_phone_and_to_the_app_once_the_replay_is_trimmed() {
         let dir = tempfile::tempdir().unwrap();
         let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
         feed.set_start(ChatStart {
@@ -2040,15 +2230,38 @@ mod tests {
         for n in 0..60 {
             turn(&mut inner.replay, n);
         }
-        assert!(matches!(
-            feed.attachment(&inner, &Peer::Local, standing(), None),
-            ChatAttachment::Restart
-        ));
+        let ChatAttachment::Live { older_before, .. } =
+            feed.attachment(&inner, &Peer::Local, standing(), None)
+        else {
+            panic!("the app takes up a chat longer than the replay without restarting it");
+        };
+        assert_eq!(older_before, Some(58 * 5));
         let ChatAttachment::Live { older_before, .. } =
             feed.attachment(&inner, &phone, standing(), None)
         else {
             panic!("a phone takes up a chat longer than the replay");
         };
         assert_eq!(older_before, Some(58 * 5));
+
+        inner.replay = Replay::new(MAX_REPLAY_BYTES, 12, None);
+        for n in 0..60 {
+            turn(&mut inner.replay, n);
+        }
+        for peer in [&Peer::Local, &phone] {
+            let ChatAttachment::Live {
+                replay,
+                older_before,
+                ..
+            } = feed.attachment(&inner, peer, standing(), None)
+            else {
+                panic!("a chat longer than the replay is taken up without its history");
+            };
+            assert_eq!(
+                session_update_kind(&replay[0].payload),
+                Some("earlier_turns_lost")
+            );
+            assert_eq!(asked(&replay), asks(58..60));
+            assert_eq!(older_before, None);
+        }
     }
 }

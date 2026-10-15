@@ -9,12 +9,19 @@ import { noteSignedOut } from "../agents/statusRefresh";
 import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
 import { chatActions } from "./acpEvents";
+import { earlierMessages, PAGE_TURNS, reachesSubagent } from "./earlier";
 import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
 import { claimChat } from "./chatClaims";
 import type { ChatAction, ChatState } from "./types";
 
 const UPDATE_FLUSH_FALLBACK_MS = 250;
+
+/* Where paging back through a chat the core sent only the end of goes next,
+   and what subagents said since, which an earlier page's subagents play on into. */
+type History = { cursor: { feed: string; before: number } | null; pages: number; held: ChatAction[] };
+
+export type EarlierTurns = "none" | "idle" | "loading" | "failed";
 
 export function useAcpSession({
     active,
@@ -56,6 +63,8 @@ export function useAcpSession({
     /* True while a resumed or reattached session is sending its history back,
        which ends when starting or attaching it answers. */
     const [replaying, setReplaying] = useState(false);
+    const historyRef = useRef<History | null>(null);
+    const [earlier, setEarlier] = useState<EarlierTurns>("none");
     const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
     const permissionMode = permissionModeOf(agent);
 
@@ -90,6 +99,8 @@ export function useAcpSession({
         setAppliedPermissionMode(null);
         setChangingPermissions(false);
         sessionIdRef.current = null;
+        historyRef.current = { cursor: null, pages: 0, held: [] };
+        setEarlier("none");
 
         const flushUpdates = () => {
             if (updateFrameRef.current !== null) {
@@ -158,7 +169,10 @@ export function useAcpSession({
                 sessionIdRef.current = event.payload.sessionId;
             if (event.kind === "turn_started" && sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current)
                 cmd.attachAgentSession(agent.id, sessionIdRef.current);
-            for (const action of chatActions(event)) {
+            const actions = chatActions(event);
+            const history = historyRef.current;
+            if (history) for (const action of actions) if (reachesSubagent(action, sessionIdRef.current)) history.held.push(action);
+            for (const action of actions) {
                 if (action.type === "session_update") {
                     const { update } = action;
                     if (update.sessionUpdate === "account_switched" && typeof update.account === "string") noteAccount(update.account);
@@ -193,13 +207,17 @@ export function useAcpSession({
                 if (!mounted) return;
                 let response: AcpStartResponse;
                 let appliedMode: AgentPermissionMode;
+                const history = historyRef.current;
+                if (attached.status === "live" && attached.olderBefore !== null && history) {
+                    history.cursor = { feed: attached.feed, before: attached.olderBefore };
+                    history.held = history.held.filter((action) => reachesSubagent(action, attached.start.sessionId));
+                    setEarlier("idle");
+                } else historyRef.current = null;
                 if (attached.status === "live") {
                     response = attached.start;
                     appliedMode = attached.permissionMode;
                     if (attached.turned && current.resumeId !== response.sessionId) cmd.attachAgentSession(current.id, response.sessionId);
                 } else {
-                    if (attached.status === "restart") await acpApi.stop(current.id);
-                    if (!mounted) return;
                     appliedMode = permissionModeOf(current);
                     const account = profileRef.current;
                     response = await acpApi.start({
@@ -237,6 +255,7 @@ export function useAcpSession({
         lifecycleRef.current = lifecycle;
         return () => {
             mounted = false;
+            historyRef.current = null;
             setReplaying(false);
             sessionIdRef.current = null;
             if (updateFrameRef.current !== null) window.cancelAnimationFrame(updateFrameRef.current);
@@ -291,5 +310,42 @@ export function useAcpSession({
             });
     }, [agent.id, connection, permissionMode, appliedPermissionMode, changingPermissions, onError]);
 
-    return { agentRef, sessionIdRef, recovery, retry, replaying, changingPermissions, appliedPermissionMode, permissionMode };
+    const loadEarlier = useCallback(() => {
+        const history = historyRef.current;
+        const cursor = history?.cursor;
+        if (!history || !cursor || earlier === "loading") return;
+        setEarlier("loading");
+        acpApi.history(agent.id, cursor.feed, cursor.before, PAGE_TURNS).then(
+            (page) => {
+                if (historyRef.current !== history) return;
+                history.pages += 1;
+                const actions = page.events.flatMap(chatActions);
+                dispatch({ type: "earlier", messages: earlierMessages({ number: history.pages, actions }, history.held) });
+                if (page.olderBefore === null) {
+                    historyRef.current = null;
+                    setEarlier("none");
+                    return;
+                }
+                history.cursor = { feed: cursor.feed, before: page.olderBefore };
+                history.held.unshift(...actions.filter((action) => reachesSubagent(action, sessionIdRef.current)));
+                setEarlier("idle");
+            },
+            () => {
+                if (historyRef.current === history) setEarlier("failed");
+            },
+        );
+    }, [agent.id, dispatch, earlier]);
+
+    return {
+        agentRef,
+        sessionIdRef,
+        recovery,
+        retry,
+        replaying,
+        changingPermissions,
+        appliedPermissionMode,
+        permissionMode,
+        earlier,
+        loadEarlier,
+    };
 }

@@ -31,6 +31,23 @@ pub async fn git_change_owners(
     .await
 }
 
+/// The agents each of `commits` has a footer for that checks out, as the core
+/// knows them now.
+#[tauri::command]
+pub async fn git_commit_owners(
+    manager: State<'_, PtyManager>,
+    repo: String,
+    commits: Vec<String>,
+) -> AppResult<Value> {
+    let client = manager.client().await?;
+    call(
+        &client,
+        "commitOwners".to_owned(),
+        json!({ "dir": repo, "commits": commits }),
+    )
+    .await
+}
+
 /// The core's name for the watched state `generation`. Change numbers start
 /// again with the app, and the core outlives it.
 fn named(generation: u64) -> String {
@@ -57,16 +74,3 @@ fn moved(key: &str, staged: bool, generation: u64) -> Option<Value> {
 }
 
 const REMEMBERED_CHECKOUTS: usize = 32;
-
-/// The trailer lines naming the agents whose work is staged in `repo`; none
-/// when the core cannot be asked.
-pub(super) async fn commit_trailers(manager: &PtyManager, repo: &str) -> Vec<String> {
-    let Ok(client) = manager.client().await else {
-        return Vec::new();
-    };
-    call(&client, "commitTrailers".to_owned(), json!({ "dir": repo }))
-        .await
-        .ok()
-        .and_then(|lines| serde_json::from_value(lines).ok())
-        .unwrap_or_default()
-}

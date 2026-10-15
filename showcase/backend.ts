@@ -5,7 +5,7 @@ import type {
   IpcTransport,
   IpcUnsubscribe,
 } from "../src/api/transport";
-import type { GitCommit, GitOverview } from "../src/api/git";
+import type { CommitOwner, GitCommit, GitOverview } from "../src/api/git";
 import {
   AGENT_SCRIPTS,
   AGENT_USAGE,
@@ -34,6 +34,7 @@ import {
   SIKEMUX,
 } from "./world/projects";
 import { terminalReplay } from "./world/terminals";
+import { PtyOutput, type PtyChannel } from "./ptyOutput";
 import { AGENTS, demoSnapshot } from "./world/workspace";
 import { DEMO_BOARD, DEMO_MESSAGES } from "./world/board";
 import type { BoardCard } from "../src/agents/agentBoard";
@@ -165,6 +166,57 @@ function recorded(
   }));
 }
 
+/** Commits agents made, by their place in the history, with the agents their signed footers name. */
+const AGENT_COMMITS: Record<number, CommitOwner[]> = {
+  0: [
+    {
+      name: AGENTS.rail.name,
+      cli: AGENTS.rail.type,
+      model: "opus",
+      chat: AGENTS.rail.id,
+      title: AGENTS.rail.title,
+      open: AGENTS.rail.id,
+      sessionId: AGENTS.rail.resumeId,
+    },
+  ],
+  2: [
+    {
+      name: AGENTS.replay.name,
+      cli: AGENTS.replay.type,
+      chat: AGENTS.replay.id,
+      title: AGENTS.replay.title,
+      open: AGENTS.replay.id,
+      sessionId: AGENTS.replay.resumeId,
+    },
+    {
+      name: "Sable",
+      cli: "claude",
+      chat: "agent-sable",
+      title: "Release notes for v0.4.1",
+      sessionId: "s-c3",
+    },
+  ],
+  5: [
+    {
+      name: "Juniper",
+      cli: "claude",
+      chat: "agent-juniper",
+      title: "Split the Rundeck matrix into its own pane",
+      sessionId: "s-c1",
+    },
+  ],
+};
+const commitOwners = new Map<string, CommitOwner[]>();
+
+function signedByAgents(log: GitCommit[]): GitCommit[] {
+  return log.map((commit, index) => {
+    const owners = AGENT_COMMITS[index];
+    if (!owners) return commit;
+    commitOwners.set(commit.full_hash, owners);
+    return { ...commit, footer: true };
+  });
+}
+
 export class ShowcaseBackend implements IpcTransport {
   readonly unhandled = new Map<string, number>();
   private readonly listeners = new Map<
@@ -172,6 +224,7 @@ export class ShowcaseBackend implements IpcTransport {
     Set<IpcEventListener<unknown>>
   >();
   private readonly handlers = new Map<string, Handler>();
+  private readonly outputs = new Map<string, PtyOutput>();
   private sequence = 0;
 
   constructor() {
@@ -204,6 +257,10 @@ export class ShowcaseBackend implements IpcTransport {
 
   on(command: string, handler: Handler): void {
     this.handlers.set(command, handler);
+  }
+
+  terminalOutput(paneId: string): PtyOutput | undefined {
+    return this.outputs.get(paneId);
   }
 
   private registerAll(): void {
@@ -297,7 +354,6 @@ export class ShowcaseBackend implements IpcTransport {
       "lsp_stop",
       "pty_resize",
       "pty_write",
-      "pty_ack",
       "pty_unsubscribe",
       "sim_watch_read",
       "sim_unwatch",
@@ -373,10 +429,23 @@ export class ShowcaseBackend implements IpcTransport {
           current: name === status.branch,
           upstream: name === status.branch ? status.upstream : null,
         })),
-        log: await server("git_log", { project: project.name, count: 80 }),
+        log: signedByAgents(
+          await server<GitCommit[]>("git_log", {
+            project: project.name,
+            count: 80,
+          }),
+        ),
       };
       return overview;
     });
+    this.on("git_commit_owners", ({ commits }) =>
+      Object.fromEntries(
+        (commits as string[]).flatMap((hash) => {
+          const owners = commitOwners.get(hash);
+          return owners ? [[hash, owners]] : [];
+        }),
+      ),
+    );
     this.on("git_status", ({ repo }) => GIT_STATUS[repo as string]);
     this.on(
       "git_remotes",
@@ -436,8 +505,10 @@ export class ShowcaseBackend implements IpcTransport {
       });
       return id;
     });
-    this.on("pty_attach", ({ id }) => {
+    this.on("pty_attach", ({ id, onEvent }) => {
       const pane = ptyPanes.get(id as number);
+      if (pane?.paneId)
+        this.outputs.set(pane.paneId, new PtyOutput(onEvent as PtyChannel));
       const replay = new TextEncoder().encode(
         terminalReplay(pane?.paneId, pane?.cwd ?? null),
       );
@@ -449,6 +520,10 @@ export class ShowcaseBackend implements IpcTransport {
       out.set(header, 4);
       out.set(replay, 4 + header.length);
       return out.buffer;
+    });
+    this.on("pty_ack", ({ id, bytes }) => {
+      const paneId = ptyPanes.get(id as number)?.paneId;
+      if (paneId) this.outputs.get(paneId)?.ack(bytes as number);
     });
 
     this.on("available_agents", constant(AVAILABLE_AGENTS));
@@ -521,6 +596,7 @@ export class ShowcaseBackend implements IpcTransport {
         working: 0,
         away: false,
         agentMessages: {},
+        collisions: {},
         remoteAgents: [],
       };
     });

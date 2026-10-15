@@ -190,6 +190,8 @@ export interface ChatState {
     nextId: number;
     revision: number;
     awaitingReplay: boolean;
+    /* The host no longer keeps the turns before the first one shown. */
+    earlierLost: boolean;
     /* A turn has begun and its first message has not arrived yet. */
     turnOpening: { at: number | null } | null;
     /* The agent is retrying a request the network or its service failed. */
@@ -203,6 +205,7 @@ export type ChatAction =
     | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }
     | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[]; messageId?: string; at?: number }
     | { type: "rewind"; messageId: string }
+    | { type: "earlier"; messages: ChatMessage[] }
     | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
     | { type: "saved_usage"; usage: ContextUsage }
     | { type: "turn_started"; at?: number }

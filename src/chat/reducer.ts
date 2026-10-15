@@ -42,6 +42,7 @@ export const initialChatState: ChatState = {
     nextId: 1,
     revision: 0,
     awaitingReplay: false,
+    earlierLost: false,
     turnOpening: null,
     retrying: null,
 };
@@ -344,25 +345,9 @@ function settleMessages(messages: ChatMessage[], at: number, endSubagents: boole
     return changed ? settled : null;
 }
 
-function settleState(state: ChatState, endSubagents: boolean): ChatState {
-    const messages = settleMessages(state.messages, Date.now(), endSubagents);
+function settleState(state: ChatState): ChatState {
+    const messages = settleMessages(state.messages, Date.now(), false);
     return messages ? { ...state, messages, revision: state.revision + 1 } : state;
-}
-
-function stopSubagents(state: ChatState): ChatState {
-    let changed = false;
-    const at = Date.now();
-    const messages = state.messages.map((message) => {
-        if (!message.parts.some((part) => part.kind === "subagent" && part.subagent.state === "running")) return message;
-        changed = true;
-        const parts = message.parts.map((part) => {
-            if (part.kind !== "subagent" || part.subagent.state !== "running") return part;
-            const settled = settleMessages(part.subagent.messages, at, true);
-            return { ...part, subagent: { ...part.subagent, state: "cancelled" as const, ...(settled ? { messages: settled } : {}) } };
-        });
-        return { ...message, parts };
-    });
-    return changed ? { ...state, messages, revision: state.revision + 1 } : state;
 }
 
 /* A subagent can spawn subagents of its own, so its card holds theirs. */
@@ -579,7 +564,7 @@ function retryOf(update: Record<string, unknown>): ChatState["retrying"] {
 /* A cancelled turn stops only the subagents it was waiting on, and the agent
    says which. Background ones run on and report their own end. */
 function endTurn(state: ChatState, stopReason: string | null, at = Date.now()): ChatState {
-    const settled = settleState(state, false);
+    const settled = settleState(state);
     const last = settled.messages.at(-1);
     // Only a turn this side watched run has a finish worth stamping.
     const messages = state.running && last?.role === "assistant" ? [...settled.messages.slice(0, -1), { ...last, endedAt: at }] : settled.messages;
@@ -695,6 +680,8 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
                 revision: state.revision + 1,
             };
         }
+        case "earlier_turns_lost":
+            return { ...state, earlierLost: true, revision: state.revision + 1 };
         case "message_rewound": {
             const messageId = textOf(update.messageId);
             return messageId ? rewind(state, messageId) : state;
@@ -704,8 +691,56 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
     }
 }
 
+/* Turns from before what the transcript holds go above it. A subagent drawn
+   where it started takes the place of any card for it shown further down. */
+function withEarlier(state: ChatState, messages: ChatMessage[]): ChatState {
+    if (!messages.length) return state;
+    const placed = new Set<string>();
+    collectSubagents(messages, placed);
+    return { ...state, messages: [...messages, ...withoutSubagents(state.messages, placed)], revision: state.revision + 1 };
+}
+
+function collectSubagents(messages: ChatMessage[], into: Set<string>) {
+    for (const message of messages)
+        for (const part of message.parts) {
+            if (part.kind !== "subagent") continue;
+            into.add(part.subagent.sessionId);
+            collectSubagents(part.subagent.messages, into);
+        }
+}
+
+function withoutSubagents(messages: ChatMessage[], placed: ReadonlySet<string>): ChatMessage[] {
+    if (!placed.size) return messages;
+    let changed = false;
+    const kept = messages.flatMap((message): ChatMessage[] => {
+        const parts = withoutSubagentParts(message.parts, placed);
+        if (parts === message.parts) return [message];
+        changed = true;
+        return parts.length ? [{ ...message, parts }] : [];
+    });
+    return changed ? kept : messages;
+}
+
+function withoutSubagentParts(parts: ChatPart[], placed: ReadonlySet<string>): ChatPart[] {
+    let changed = false;
+    const kept = parts.flatMap((part): ChatPart[] => {
+        if (part.kind !== "subagent") return [part];
+        if (placed.has(part.subagent.sessionId)) {
+            changed = true;
+            return [];
+        }
+        const messages = withoutSubagents(part.subagent.messages, placed);
+        if (messages === part.subagent.messages) return [part];
+        changed = true;
+        return [{ ...part, subagent: { ...part.subagent, messages } }];
+    });
+    return changed ? kept : parts;
+}
+
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     switch (action.type) {
+        case "earlier":
+            return withEarlier(state, action.messages);
         case "config":
             return { ...state, setup: { ...state.setup, configOptions: action.options }, revision: state.revision + 1 };
         case "saved_usage":
@@ -719,13 +754,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 : initialChatState;
         case "status":
             return {
-                /* Starting again, as when the chat moves to another account, is a
-                   new agent that knows nothing of the old one's subagents. */
-                ...(action.state === "stopped" || action.state === "error"
-                    ? settleState(state, true)
-                    : action.state === "starting"
-                      ? stopSubagents(state)
-                      : state),
+                /* The host ends the subagents itself, with an update every client
+                   keeps, so a status never does. */
+                ...(action.state === "stopped" || action.state === "error" ? settleState(state) : state),
                 connection: action.state,
                 running: action.state === "stopped" || action.state === "error" ? false : state.running,
                 permissions: action.state === "stopped" || action.state === "error" ? [] : state.permissions,

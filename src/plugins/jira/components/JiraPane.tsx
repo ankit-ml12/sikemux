@@ -1,10 +1,11 @@
-import { useCallback, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import { gitOverviewR, notify, reportError, sendToBoard, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import {
     ContextMenu,
     Dropdown,
     EmptyState,
+    IconAgent,
     IconBoard,
     IconChevron,
     IconClock,
@@ -20,7 +21,9 @@ import {
     IconStar,
     IconTimer,
     IconUser,
+    IconUserMinus,
     Markdown,
+    ResizeHandle,
     SkeletonRows,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
@@ -36,9 +39,10 @@ import {
 } from "../api";
 import { jiraBoardsR, jiraFiltersR, jiraIssueR, jiraProjectsR, jiraSearchR, jiraStatusR } from "../resources";
 import { copyIssue, issueMenu, openIssue } from "../issueLinks";
-import { jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
+import { jiraSettings, jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { statusCounts, withStatuses } from "../statusFilter";
 import { JiraBoard } from "./JiraBoard";
+import { JiraActivity } from "./JiraActivity";
 import { Avatar, ProjectAvatar } from "./JiraFace";
 import { DueChip, EpicChip, IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
 import { JiraMark } from "./JiraMark";
@@ -109,6 +113,20 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                         <span>{site.replace(/\.atlassian\.net$/, "")}</span>
                     </div>
                 )}
+                <label className="jira-jql">
+                    <IconSearch size={13} className="jira-jql-mark" />
+                    <input
+                        value={jql}
+                        onChange={(event) => setJql(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" && jql.trim()) show({ kind: "jql", jql: jql.trim() });
+                        }}
+                        placeholder="Search"
+                        title="Words to find, or JQL such as project = ABC"
+                        aria-label="Search issues by words or JQL"
+                        spellCheck={false}
+                    />
+                </label>
                 <div className="jira-lists">
                     <div className="jira-heading">Your work</div>
                     {MY_WORK.map(([list, label, Mark]) => listButton(list, label, Mark))}
@@ -127,19 +145,6 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                         {filters.data?.map((filter) => listButton({ kind: "filter", ...filter }, filter.name, IconStar, filter.jql, filter.id))}
                     </div>
                 )}
-                <label className="jira-jql">
-                    <span className="jira-heading">Search</span>
-                    <IconSearch size={13} className="jira-jql-mark" />
-                    <input
-                        value={jql}
-                        onChange={(event) => setJql(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter" && jql.trim()) show({ kind: "jql", jql: jql.trim() });
-                        }}
-                        placeholder="Words, or JQL like project = ABC"
-                        spellCheck={false}
-                    />
-                </label>
                 <button
                     type="button"
                     className="jira-signout"
@@ -169,13 +174,46 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     onSelect={(key) => updateJiraView(paneId, { issue: key })}
                 />
             )}
-            {view.list.kind === "board" && !view.issue ? null : view.issue ? (
-                <IssueDetail active={active} issueKey={view.issue} site={site} onClose={() => updateJiraView(paneId, { issue: null })} />
-            ) : (
-                <div className="jira-detail">
-                    <EmptyState message="Pick an issue to read it, comment, move it along or assign it." />
-                </div>
+            {view.list.kind === "board" && !view.issue ? null : (
+                <DetailSlot>
+                    {view.issue ? (
+                        <IssueDetail active={active} issueKey={view.issue} site={site} onClose={() => updateJiraView(paneId, { issue: null })} />
+                    ) : (
+                        <div className="jira-detail">
+                            <EmptyState message="Pick an issue to read it, comment, move it along or assign it." />
+                        </div>
+                    )}
+                </DetailSlot>
             )}
+        </div>
+    );
+}
+
+const DETAIL_MIN = 360;
+const LIST_MIN = 260;
+
+function DetailSlot({ children }: { children: ReactNode }) {
+    const slot = useRef<HTMLDivElement>(null);
+    const width = jiraSettings.useSelect((settings) => settings.detailWidth);
+    const room = () => {
+        const pane = slot.current?.parentElement;
+        const sidebar = pane?.querySelector<HTMLElement>(":scope > .jira-sidebar");
+        return (pane?.clientWidth ?? 0) - (sidebar?.offsetWidth ?? 0) - LIST_MIN - 16;
+    };
+    return (
+        <div className="jira-detail-slot" ref={slot} style={width ? { width } : undefined}>
+            <ResizeHandle
+                targetRef={slot}
+                axis="x"
+                grows={-1}
+                min={DETAIL_MIN}
+                max={room}
+                size={width}
+                label="Resize the list and the issue"
+                className="jira-split"
+                onResize={(detailWidth) => jiraSettings.update((settings) => ({ ...settings, detailWidth }))}
+            />
+            {children}
         </div>
     );
 }
@@ -452,7 +490,6 @@ function IssueDetail({ active, issueKey, site, onClose }: { active: boolean; iss
 
 function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: string; refresh: () => void; onClose: () => void }) {
     const [menu, setMenu] = useMenu();
-    const [comment, setComment] = useState("");
     const [busy, setBusy] = useState(false);
     const [assigning, setAssigning] = useState(false);
     const [people, setPeople] = useState<JiraPerson[]>([]);
@@ -477,8 +514,10 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
         try {
             await work();
             changed();
+            return true;
         } catch (error) {
             notify("error", `${label}: ${failureMessage(error)}`);
+            return false;
         } finally {
             setBusy(false);
         }
@@ -486,95 +525,99 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
 
     return (
         <article className="jira-detail" aria-label={`${issue.key} ${issue.summary}`}>
-            <header className="jira-detail-head" onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
-                <span className="jira-detail-key">
-                    <IssueTypeIcon type={issue.issueType} />
-                    <button type="button" className="jira-key link" title="Open in browser" onClick={() => openIssue(issue)}>
-                        {issue.key}
-                    </button>
-                    <button
-                        type="button"
-                        className="jira-icon-button"
-                        title="Copy link"
-                        aria-label="Copy link"
-                        onClick={() => copyIssue(issue.url, "link")}>
-                        <IconCopy size={12} />
-                    </button>
-                    <button
-                        type="button"
-                        className="jira-icon-button"
-                        title="Open in browser"
-                        aria-label="Open in browser"
-                        onClick={() => openIssue(issue)}>
-                        <IconExternal size={12} />
-                    </button>
-                    <span className="jira-grow" />
-                    <button
-                        type="button"
-                        className="jira-chip"
-                        title="Put this issue on the open project's board as a card for agents"
-                        onClick={() =>
-                            void sendToBoard({
-                                title: issue.summary,
-                                details: issue.description,
-                                ticket: ticketOf(issue),
-                                subtasks: issue.subtasks
-                                    .filter((sub) => sub.statusCategory !== "done")
-                                    .map((sub) => ({ title: sub.summary, details: "", ticket: ticketOf(sub) })),
-                                blockedBy: issue.blockedBy,
-                                blocks: issue.blocks,
-                            })
-                        }>
-                        Send to board
-                    </button>
-                    <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
-                        <IconClose size={12} />
-                    </button>
-                </span>
-                <h2>{issue.summary}</h2>
-                {menu}
-            </header>
             <div className="jira-detail-body">
+                <header className="jira-detail-head" onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
+                    <span className="jira-detail-key">
+                        <IssueTypeIcon type={issue.issueType} />
+                        <button type="button" className="jira-key link" title="Open in browser" onClick={() => openIssue(issue)}>
+                            {issue.key}
+                        </button>
+                        <button
+                            type="button"
+                            className="jira-icon-button"
+                            title="Copy link"
+                            aria-label="Copy link"
+                            onClick={() => copyIssue(issue.url, "link")}>
+                            <IconCopy size={12} />
+                        </button>
+                        <button
+                            type="button"
+                            className="jira-icon-button"
+                            title="Open in browser"
+                            aria-label="Open in browser"
+                            onClick={() => openIssue(issue)}>
+                            <IconExternal size={12} />
+                        </button>
+                        <span className="jira-grow" />
+                        <button
+                            type="button"
+                            className="jira-chip jira-send"
+                            title="Put this issue on the open project's board as a card for agents"
+                            onClick={() =>
+                                void sendToBoard({
+                                    title: issue.summary,
+                                    details: issue.description,
+                                    ticket: ticketOf(issue),
+                                    subtasks: issue.subtasks
+                                        .filter((sub) => sub.statusCategory !== "done")
+                                        .map((sub) => ({ title: sub.summary, details: "", ticket: ticketOf(sub) })),
+                                    blockedBy: issue.blockedBy,
+                                    blocks: issue.blocks,
+                                })
+                            }>
+                            <IconAgent size={12} />
+                            Send to board
+                        </button>
+                        <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
+                            <IconClose size={12} />
+                        </button>
+                    </span>
+                    <h2>{issue.summary}</h2>
+                    {menu}
+                </header>
                 <aside className="jira-detail-side">
-                    <Dropdown
-                        label={`Status: ${issue.status}`}
-                        value={issue.status}
-                        title="Move this issue along its workflow"
-                        className={`jira-status-button jira-status-${issue.statusCategory || "new"}`}
-                        options={issue.transitions.map((transition) => ({
-                            value: transition.id,
-                            label: transition.to,
-                            meta: transition.name.toLowerCase() === transition.to.toLowerCase() ? undefined : transition.name,
-                            className: `jira-status jira-status-${transition.toCategory || "new"}`,
-                        }))}
-                        onChange={(id) => void run("Move issue", () => jiraApi.transition(issue.key, id, site || undefined))}
-                        disabled={busy || issue.transitions.length === 0}
-                    />
+                    <div className="jira-status-row">
+                        <Dropdown
+                            label={`Status: ${issue.status}`}
+                            value={issue.status}
+                            title="Move this issue along its workflow"
+                            className={`jira-status-button jira-status-${issue.statusCategory || "new"}`}
+                            options={issue.transitions.map((transition) => ({
+                                value: transition.id,
+                                label: transition.to,
+                                meta: transition.name.toLowerCase() === transition.to.toLowerCase() ? undefined : transition.name,
+                                className: `jira-status jira-status-${transition.toCategory || "new"}`,
+                            }))}
+                            onChange={(id) => void run("Move issue", () => jiraApi.transition(issue.key, id, site || undefined))}
+                            disabled={busy || issue.transitions.length === 0}
+                        />
+                        <button
+                            type="button"
+                            className="jira-chip"
+                            disabled={busy}
+                            onClick={() => void run("Assign", () => jiraApi.assign(issue.key, { me: true }, site || undefined))}>
+                            <IconUser size={12} />
+                            Assign to me
+                        </button>
+                        <button
+                            type="button"
+                            className="jira-chip"
+                            disabled={busy || !issue.assignee}
+                            onClick={() => void run("Unassign", () => jiraApi.assign(issue.key, { accountId: null }, site || undefined))}>
+                            <IconUserMinus size={12} />
+                            Unassign
+                        </button>
+                        <button type="button" className="jira-chip" disabled={busy} onClick={() => setAssigning((open) => !open)}>
+                            <IconSearch size={12} />
+                            Assign…
+                        </button>
+                    </div>
                     <section className="jira-fields" aria-label="Details">
                         <div className="jira-fields-title">Details</div>
                         <Field label="Assignee">
                             <span className="jira-person">
                                 <Avatar person={issue.assignee} large />
                                 {issue.assignee?.name ?? "Unassigned"}
-                            </span>
-                            <span className="jira-chips">
-                                <button
-                                    type="button"
-                                    className="jira-chip"
-                                    disabled={busy}
-                                    onClick={() => void run("Assign", () => jiraApi.assign(issue.key, { me: true }, site || undefined))}>
-                                    Assign to me
-                                </button>
-                                <button
-                                    type="button"
-                                    className="jira-chip"
-                                    disabled={busy || !issue.assignee}
-                                    onClick={() => void run("Unassign", () => jiraApi.assign(issue.key, { accountId: null }, site || undefined))}>
-                                    Unassign
-                                </button>
-                                <button type="button" className="jira-chip" disabled={busy} onClick={() => setAssigning((open) => !open)}>
-                                    Assign…
-                                </button>
                             </span>
                             {assigning && (
                                 <div className="jira-assign">
@@ -667,48 +710,11 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                         )}
                     </section>
                     <ProjectCommits issueKey={issue.key} />
-                    <section className="jira-comments" aria-label="Comments">
-                        <div className="jira-section-title">
-                            Comments
-                            {issue.commentCount > issue.comments.length && (
-                                <span className="jira-meta">
-                                    latest {issue.comments.length} of {issue.commentCount}
-                                </span>
-                            )}
-                        </div>
-                        {issue.comments.map((entry) => (
-                            <div key={entry.id} className="jira-comment">
-                                <Avatar person={{ name: entry.author, avatarUrl: null }} large />
-                                <div className="jira-comment-body">
-                                    <div className="jira-comment-head">
-                                        <b>{entry.author}</b>
-                                        <span className="jira-meta">{whenOf(entry.created)}</span>
-                                    </div>
-                                    <Markdown>{entry.body}</Markdown>
-                                </div>
-                            </div>
-                        ))}
-                        <div className="jira-compose">
-                            <textarea
-                                value={comment}
-                                onChange={(event) => setComment(event.target.value)}
-                                placeholder="Add a comment in markdown"
-                                rows={3}
-                            />
-                            <button
-                                type="button"
-                                className="jira-chip primary"
-                                disabled={busy || !comment.trim()}
-                                onClick={() =>
-                                    void run("Comment", async () => {
-                                        await jiraApi.comment(issue.key, comment, site || undefined);
-                                        setComment("");
-                                    })
-                                }>
-                                Comment
-                            </button>
-                        </div>
-                    </section>
+                    <JiraActivity
+                        issue={issue}
+                        busy={busy}
+                        onComment={(body) => run("Comment", () => jiraApi.comment(issue.key, body, site || undefined))}
+                    />
                 </div>
             </div>
         </article>
@@ -723,8 +729,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
         </div>
     );
 }
-
-const whenOf = (stamp: string) => new Date(stamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 /** The open project's recent commits that name the issue in their message. */
 function ProjectCommits({ issueKey }: { issueKey: string }) {

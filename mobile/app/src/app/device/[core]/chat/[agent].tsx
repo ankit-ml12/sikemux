@@ -1,18 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AccessibilityInfo,
-  type TextInput,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type NativeScrollEvent,
-  type LayoutChangeEvent,
-  type NativeSyntheticEvent,
-} from 'react-native';
+import { AccessibilityInfo, type TextInput, KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -27,13 +14,14 @@ import type { ChatMessage } from '@mac/chat/types';
 import { ChatMenu } from '@/chat/ChatMenu';
 import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext } from '@/chat/folds';
+import { useTranscriptScroll } from '@/chat/transcriptScroll';
 import { HostContext } from '@/chat/hostFiles';
 import { LiveSheet, LiveStrip } from '@/chat/Live';
 import { AnsweredQuestion, AssumedQuestion, OpenQuestion } from '@/chat/Question';
 import { useQuestions } from '@/chat/questions';
 import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
 import { stripMeta, stripOwner } from '@/chat/messageMeta';
-import { Activity, Earlier, Message, ProviderContext, Queued, WorkSummary } from '@/chat/Transcript';
+import { Activity, Earlier, EarlierLost, Message, ProviderContext, Queued, WorkSummary } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hub';
 import { dismissCardsFor } from '@/notify/cards';
@@ -48,9 +36,6 @@ import { goBack } from '@/ui/navigate';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
-
-/** How near the end, as a share of the transcript's height, still counts as reading the latest. */
-const FOLLOW = 0.1;
 
 function capitalised(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1) + (text.endsWith('.') ? '' : '.');
@@ -210,42 +195,12 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     asks: request ? `${name} asks: ${askTitle(request)}` : '',
   });
   const list = useRef<FlashListRef<ChatMessage>>(null);
-  const [away, setAway] = useState(false);
-  const awayRef = useRef(false);
   const bottom = useBottomGap();
-  // A finished turn folds and shrinks the chat with no scroll, which can bring a reader to the end.
-  // Only a reader already away is checked: anyone at the end is kept there by the list.
-  const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
-  const measureAway = () => {
-    const { offset, content, viewport } = metrics.current;
-    const now = content - offset - viewport > viewport * FOLLOW;
-    awayRef.current = now;
-    setAway(now);
-  };
-  const onScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
-    metrics.current = {
-      offset: nativeEvent.contentOffset.y,
-      content: nativeEvent.contentSize.height,
-      viewport: nativeEvent.layoutMeasurement.height,
-    };
-    measureAway();
-  };
-  const onContentSizeChange = (_width: number, height: number) => {
-    metrics.current.content = height;
-    if (awayRef.current) measureAway();
-  };
-  const onListLayout = ({ nativeEvent }: LayoutChangeEvent) => {
-    metrics.current.viewport = nativeEvent.layout.height;
-    if (awayRef.current) measureAway();
-  };
-  useEffect(() => {
-    // The keyboard takes the bottom of the screen; someone reading the latest keeps reading it.
-    const shown = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
-      if (!awayRef.current) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
-    });
-    return () => shown.remove();
-  }, []);
-  const toEnd = () => requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+  const scroll = useTranscriptScroll(list, {
+    has: chat.hasEarlier,
+    idle: chat.earlier === 'idle',
+    load: session.loadEarlier,
+  });
   const activity = activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state.messages));
   const title = state.title ?? (info ? chatTitle(info) : agentLabel(provider));
   const watchOnly = access === 'watch';
@@ -375,9 +330,12 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                         );
                       }}
                       ListHeaderComponent={
-                        chat.hasEarlier ? <Earlier failed={chat.earlier === 'failed'} onRetry={session.loadEarlier} /> : null
+                        chat.hasEarlier ? (
+                          <Earlier failed={chat.earlier === 'failed'} loading={chat.earlier === 'loading'} onRetry={session.loadEarlier} />
+                        ) : state.earlierLost ? (
+                          <EarlierLost />
+                        ) : null
                       }
-                      onStartReached={chat.hasEarlier && chat.earlier === 'idle' ? session.loadEarlier : undefined}
                       ListFooterComponent={
                         <>
                           {chat.queued.length ? <Queued held={chat.queued} sentFiles={chat.sentFiles} /> : null}
@@ -424,24 +382,13 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                         </>
                       }
                       contentContainerStyle={styles.content}
-                      maintainVisibleContentPosition={{
-                        startRenderingFromBottom: true,
-                        autoscrollToBottomThreshold: FOLLOW,
-                        animateAutoScrollToBottom: false,
-                      }}
-                      onScroll={onScroll}
-                      // Throttled scroll events can miss where a drag or fling stops, leaving the arrow up at the end.
-                      onScrollEndDrag={onScroll}
-                      onMomentumScrollEnd={onScroll}
-                      onContentSizeChange={onContentSizeChange}
-                      onLayout={onListLayout}
-                      scrollEventThrottle={100}
+                      {...scroll.listProps}
                       keyboardDismissMode="interactive"
                     />
                   </MaskedView>
-                  {away ? (
+                  {scroll.away ? (
                     <Pressable
-                      onPress={toEnd}
+                      onPress={scroll.toEnd}
                       style={styles.jump}
                       hitSlop={8}
                       accessibilityRole="button"
@@ -483,7 +430,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
               watchOnly={watchOnly}
               offline={live.status !== 'open'}
               hostName={hostName}
-              onSent={toEnd}
+              onSent={scroll.toEnd}
               attachments={chat.attachments}
               strip={strip}
               onRecent={recalls ? openRecent : undefined}
@@ -514,7 +461,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
         onStopTask={session.stopTask}
         onSteer={(ids) => {
           session.steer(ids);
-          toEnd();
+          scroll.toEnd();
         }}
         onDrop={session.dropQueued}
       />

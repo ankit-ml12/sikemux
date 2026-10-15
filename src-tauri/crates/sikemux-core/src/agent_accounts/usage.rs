@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -99,13 +99,41 @@ fn rfc3339_ms(text: &str) -> Option<u64> {
     (ms >= 0.0).then_some(ms as u64)
 }
 
-/// Every lookup boots the provider's CLI, so a rail that polls gets the answer
-/// the last boot gave until it is old enough to be worth another.
+/// Every lookup boots the provider's CLI and asks the provider's usage
+/// endpoint, which refuses callers that ask often. So an answer is kept for a
+/// while, a failed one too, and a refusal for longer.
 const USAGE_TTL: Duration = Duration::from_secs(120);
+const FAILED_TTL: Duration = Duration::from_secs(60);
+const REFUSED_TTL: Duration = Duration::from_secs(600);
 
-fn usage_cache() -> &'static Mutex<HashMap<String, (Instant, Usage)>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Usage)>>> = OnceLock::new();
+type Lookup = Result<Usage, String>;
+/// When a lookup was kept, for how long, and what it answered.
+type Kept = (Instant, Duration, Lookup);
+
+fn usage_cache() -> &'static Mutex<HashMap<String, Kept>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Kept>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// One lookup at a time per account, so callers that ask together share it.
+fn in_flight(key: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks.entry(key.to_owned()).or_default().clone()
+}
+
+fn remembered(key: &str) -> Option<Lookup> {
+    let mut cache = usage_cache().lock().ok()?;
+    cache.retain(|_, (stored, ttl, _)| stored.elapsed() < *ttl);
+    cache.get(key).map(|(_, _, lookup)| lookup.clone())
+}
+
+fn refused(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("429") || error.contains("rate limit") || error.contains("rate_limit")
 }
 
 /// The plan usage of one account, as its CLI last reported it.
@@ -115,22 +143,28 @@ pub async fn usage(
     config_path: Option<&str>,
 ) -> Result<Usage, String> {
     let key = key(provider, config_path);
-    let cached = usage_cache().lock().ok().and_then(|mut cache| {
-        cache.retain(|_, (stored, _)| stored.elapsed() < USAGE_TTL);
-        cache.get(&key).map(|(_, usage)| usage.clone())
-    });
-    if let Some(usage) = cached {
-        return Ok(usage);
+    if let Some(lookup) = remembered(&key) {
+        return lookup;
     }
-    let usage = match provider {
+    let lock = in_flight(&key);
+    let _turn = lock.lock().await;
+    if let Some(lookup) = remembered(&key) {
+        return lookup;
+    }
+    let lookup = match provider {
         "claude" => claude_usage(program, config_path).await,
         "codex" => codex_usage(program, config_path).await,
         _ => Err(format!("{provider} does not expose structured plan usage")),
-    }?;
+    };
+    let ttl = match &lookup {
+        Ok(_) => USAGE_TTL,
+        Err(error) if refused(error) => REFUSED_TTL,
+        Err(_) => FAILED_TTL,
+    };
     if let Ok(mut cache) = usage_cache().lock() {
-        cache.insert(key, (Instant::now(), usage.clone()));
+        cache.insert(key, (Instant::now(), ttl, lookup.clone()));
     }
-    Ok(usage)
+    lookup
 }
 
 /// Drops the usage remembered for one account, whose sign-in just changed.
@@ -179,6 +213,9 @@ const CLAUDE_STREAM_ARGS: &[&str] = &[
     "",
     "--tools",
     "",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
     "--input-format",
     "stream-json",
 ];
@@ -189,7 +226,7 @@ async fn read_claude_usage(
     removed_env: &[&str],
 ) -> Result<Usage, String> {
     let request = format!(
-        "{{\"type\":\"control_request\",\"request_id\":\"{CLAUDE_USAGE_REQUEST_ID}\",\"request\":{{\"subtype\":\"get_usage\"}}}}\n"
+        "{{\"type\":\"control_request\",\"request_id\":\"{CLAUDE_USAGE_REQUEST_ID}\",\"request\":{{\"subtype\":\"get_usage\",\"skip_behaviors\":true}}}}\n"
     );
     let text = run(
         "claude",
@@ -234,10 +271,8 @@ async fn run(
         .write_all(input.as_bytes())
         .await
         .map_err(|_| format!("Could not write the {provider} usage lookup input"))?;
-    stdin
-        .shutdown()
-        .await
-        .map_err(|_| format!("Could not finish the {provider} usage lookup input"))?;
+    // A CLI reading stream-json input answers and exits only once its input ends.
+    drop(stdin);
     let output = tokio::time::timeout(USAGE_LOOKUP_TIMEOUT, child.wait_with_output())
         .await
         .map_err(|_| format!("The {provider} usage lookup timed out"))?
@@ -423,18 +458,23 @@ fn parse_claude_usage(text: &str, request_id: &str) -> Option<Usage> {
         response.get("response").cloned()
     })?;
 
-    if !payload
-        .get("rate_limits")
-        .is_some_and(|value| value.is_object())
+    if !payload.get("rate_limits").is_some_and(Value::is_object)
         && payload
             .get("rate_limits_available")
             .and_then(Value::as_bool)
-            != Some(false)
+            .is_none()
     {
         return None;
     }
-    let unavailable_reason = (payload.get("rate_limits_available").and_then(Value::as_bool) == Some(false))
-        .then(|| "Plan limits are unavailable for this login. API keys and third-party providers do not report subscription limits; OAuth access also requires profile permission.".to_string());
+    let available = payload
+        .get("rate_limits_available")
+        .and_then(Value::as_bool);
+    let reported = payload.get("rate_limits").is_some_and(Value::is_object);
+    let unavailable_reason = match available {
+        Some(false) => Some("Plan limits are unavailable for this login. API keys and third-party providers do not report subscription limits; OAuth access also requires profile permission.".to_string()),
+        Some(true) if !reported => Some("Claude did not report plan limits this time. Refresh to ask again.".to_string()),
+        _ => None,
+    };
     let plan = payload
         .get("subscription_type")
         .and_then(Value::as_str)
@@ -611,6 +651,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_lookup_ends_its_input_so_a_cli_reading_to_the_end_answers() {
+        let started = std::time::Instant::now();
+        let answer = run(
+            "test-agent",
+            Path::new("/bin/sh"),
+            &["-c", "cat >/dev/null; printf done"],
+            "request\n",
+            None,
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(answer, "done");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[tokio::test]
     async fn a_failed_lookup_says_why_in_bounded_words() {
         let long_detail = "x".repeat(ERROR_DETAIL_LIMIT + 20);
         let script = format!("printf 'first\\nsecond {long_detail}' >&2; exit 7");
@@ -667,6 +724,20 @@ mod tests {
             r#"{"type":"control_response","response":{"subtype":"success","request_id":"usage","response":{}}}"#,
             "usage",
         ).is_none());
+    }
+
+    #[test]
+    fn claude_usage_says_so_when_limits_apply_but_none_came_back() {
+        let usage = parse_claude_usage(
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"usage","response":{"subscription_type":"max","rate_limits_available":true,"rate_limits":null}}}"#,
+            "usage",
+        ).unwrap();
+        assert_eq!(usage.plan.as_deref(), Some("max"));
+        assert!(usage.windows.is_empty());
+        assert!(usage
+            .unavailable_reason
+            .unwrap()
+            .contains("did not report plan limits this time"));
     }
 
     #[test]

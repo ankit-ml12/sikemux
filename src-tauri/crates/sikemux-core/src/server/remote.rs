@@ -60,8 +60,8 @@ struct Stored {
     #[serde(default)]
     removed: Option<Removal>,
     /// The last network the accounts server described, for when it is out of
-    /// reach.
-    #[serde(default)]
+    /// reach. A copy this build cannot read is dropped and fetched again.
+    #[serde(default, deserialize_with = "readable_or_none")]
     network: Option<Network>,
     /// Each phone's key for its notifications and what it wants to hear
     /// about, by device id.
@@ -82,6 +82,15 @@ struct Stored {
     /// and reach agents here and the other way round.
     #[serde(default)]
     links: Vec<LinkedHost>,
+}
+
+fn readable_or_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 /// Another host this one is linked with.
@@ -504,6 +513,27 @@ impl Remote {
             stored.shares = shares;
             Ok(())
         })
+    }
+
+    /// The key this host signs with, once it has loaded.
+    pub(crate) fn host_key(&self) -> Option<SecretKey> {
+        self.lock().secret.clone()
+    }
+
+    /// The keys of this host and the hosts linked with it.
+    pub(crate) fn host_keys(&self) -> Vec<iroh::PublicKey> {
+        let inner = self.lock();
+        let linked = inner
+            .stored
+            .links
+            .iter()
+            .filter_map(|link| link.id.parse().ok());
+        inner
+            .secret
+            .iter()
+            .map(SecretKey::public)
+            .chain(linked)
+            .collect()
     }
 
     pub(super) fn core_id(&self) -> Option<String> {

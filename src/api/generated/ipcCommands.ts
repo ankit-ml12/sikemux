@@ -2,6 +2,7 @@
 export const IPC_COMMANDS = [
     "acp_start",
     "acp_attach",
+    "acp_history",
     "acp_list",
     "acp_prompt",
     "acp_edit",
@@ -163,6 +164,7 @@ export const IPC_COMMANDS = [
     "git_blame",
     "git_commit",
     "git_change_owners",
+    "git_commit_owners",
     "git_push",
     "git_pull",
     "git_ai_commit",

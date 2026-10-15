@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { messageLetters } from '@mac/chat/agentLetters';
+import { EARLIER_LOST } from '@mac/chat/earlier';
 import { durationLabel } from '@mac/chat/durationLabel';
 import { basename } from '@mac/lib/paths';
 import { rateLabel, sentLabel, type RowMeta } from '@mac/chat/messageMeta';
@@ -20,6 +21,7 @@ import { useAnimating } from '@/ui/motion';
 import { Shimmer } from '@/ui/Shimmer';
 import { FoldsContext, useFold } from './folds';
 import { Markdown } from './Markdown';
+import { useRevealed } from './reveal';
 import { SentAttachments } from './Attachments';
 import type { Attachment, Held, Unsent } from './session';
 import { ToolGroup } from './Tools';
@@ -38,11 +40,12 @@ function LongText({ id, text, live, style }: { id: string; text: string; live: b
   const styles = useStyles(makeStyles);
   const folds = useContext(FoldsContext);
   const [whole, setWhole] = useFold(`whole/${id}`, false);
+  const shown = useRevealed(id, text, live);
   if (live) folds.streamed.add(id);
   const cut = whole || folds.streamed.has(id) ? null : cutLongText(text);
   return (
     <>
-      <Markdown text={cut ? cut.head : text} style={style} />
+      <Markdown text={cut ? cut.head : shown} style={style} />
       {cut ? (
         <Pressable onPress={() => setWhole(true)} hitSlop={6} style={styles.showRest} accessibilityRole="button">
           <Text style={styles.showRestText}>{showRestLabel(cut.hidden)}</Text>
@@ -494,7 +497,7 @@ export function Queued({ held, sentFiles }: { held: readonly Held[]; sentFiles: 
 }
 
 /** Above the first message while the host has turns from before it, which arrive as it comes into view. */
-export function Earlier({ failed, onRetry }: { failed: boolean; onRetry: () => void }) {
+export function Earlier({ failed, loading, onRetry }: { failed: boolean; loading: boolean; onRetry: () => void }) {
   const styles = useStyles(makeStyles);
   if (failed) {
     return (
@@ -509,10 +512,21 @@ export function Earlier({ failed, onRetry }: { failed: boolean; onRetry: () => v
       </Pressable>
     );
   }
+  // The row waits above a long chat's first message; an idle spinner there would redraw the screen every frame.
   return (
     <View style={styles.earlier}>
-      <Working />
+      {loading ? <Working /> : <View style={styles.earlierIdle} />}
       <Text style={styles.earlierText}>Loading earlier messages…</Text>
+    </View>
+  );
+}
+
+/** Stands above a chat whose host no longer keeps its first turns. */
+export function EarlierLost() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.earlier}>
+      <Text style={styles.earlierText}>{EARLIER_LOST}</Text>
     </View>
   );
 }
@@ -666,6 +680,7 @@ const makeStyles = (colors: Palette) => {
     noticeState: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint },
     noticeSummary: { fontFamily: fonts.ui, fontSize: 12, lineHeight: 17, color: colors.inkFaint },
     earlier: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 10, paddingBottom: 6 },
+    earlierIdle: { width: 13, height: 13 },
     earlierText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary },
     activity: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, marginBottom: 6 },
     activityText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkFaint },

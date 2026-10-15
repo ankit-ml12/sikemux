@@ -8,9 +8,9 @@
     display: grid;
     place-items: center;
     flex: none;
-    width: 22px;
+    width: 24px;
     height: 24px;
-    margin-right: -4px;
+    margin-right: -6px;
     padding: 0;
     border: 1px solid transparent;
     background: transparent;
@@ -30,8 +30,8 @@
     display: inline-flex;
     gap: 3px;
     width: auto;
-    min-width: 22px;
-    padding: 0 4px;
+    min-width: 24px;
+    padding: 0 6px;
     color: var(--live);
     font-family: var(--ui);
     font-size: 10.5px;
@@ -123,32 +123,6 @@
     color: var(--ink-faint);
     font-family: var(--ui);
     font-size: calc(10.5px * var(--chat-text-em, 1));
-}
-
-.shared-chat-earlier {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    min-height: 1px;
-    padding: var(--space-1) 0 var(--space-3);
-    color: var(--text-tertiary);
-    font-family: var(--ui);
-    font-size: var(--text-xs);
-}
-
-.shared-chat-earlier button {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--text-secondary);
-    font: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.shared-chat-earlier button:hover {
-    color: var(--text-primary);
 }
 
 .shared-chat-foot {
