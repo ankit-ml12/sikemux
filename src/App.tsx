@@ -19,6 +19,7 @@ import { syncAgentAccounts } from "./agents/accountBook";
 import { agentApi, type AgentAccountBook } from "./api/agents";
 import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
+import { AgentInstallHost } from "./agents/AgentInstall";
 import { FilePalette } from "./palettes/FilePalette";
 import { NewTabPalette } from "./palettes/NewTabPalette";
 import { SeshPicker } from "./palettes/SeshPicker";
@@ -1070,6 +1071,7 @@ export default function App() {
                 {diagnosticsOpen && <DiagnosticsOverlay />}
                 {whatsNewOpen && <WhatsNewOverlay />}
             </Suspense>
+            <AgentInstallHost />
             <DialogHost />
             <ShareHost />
             <ImageViewer />
