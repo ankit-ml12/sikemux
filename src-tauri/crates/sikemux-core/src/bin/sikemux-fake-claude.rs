@@ -208,6 +208,28 @@ impl Claude {
                 self.send(assistant);
                 self.finish(uuid, None);
             }
+            // Fails the first time for want of the network, and answers when sent again.
+            "offline" => {
+                static FAILED_ONCE: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !FAILED_ONCE.swap(true, Ordering::AcqRel) {
+                    self.send(json!({
+                        "type": "system", "subtype": "api_retry", "attempt": 1, "max_retries": 10,
+                        "retry_delay_ms": 500, "error_status": null, "error": "unknown",
+                    }));
+                    self.finish(uuid, Some("API Error: Connection error."));
+                    return;
+                }
+                let assistant = json!({
+                    "type": "assistant",
+                    "uuid": uuid::Uuid::new_v4().to_string(),
+                    "parent_tool_use_id": null,
+                    "message": { "id": message_id, "model": "fake", "role": "assistant", "content": [{ "type": "text", "text": "back online" }] },
+                });
+                self.record(assistant.clone());
+                self.send(assistant);
+                self.finish(uuid, None);
+            }
             "retry" => {
                 let count: u64 = words.next().and_then(|n| n.parse().ok()).unwrap_or(1);
                 for attempt in 1..=count {

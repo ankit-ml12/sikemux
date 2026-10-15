@@ -101,6 +101,28 @@ fn codex_sign_in(auth: &Value) -> Option<SignIn> {
     })
 }
 
+pub const LOST_CONNECTION: &str = "Lost the connection to the model provider";
+
+/// Words an agent's error uses when the network, not the request, was at fault.
+const CONNECTION_WORDS: [&str; 10] = [
+    "connection error",
+    "connection refused",
+    "connection reset",
+    "econnreset",
+    "econnrefused",
+    "enotfound",
+    "etimedout",
+    "fetch failed",
+    "socket hang up",
+    "network is unreachable",
+];
+
+/// Whether an agent's error reads as the network failing it.
+pub fn sounds_offline(said: &str) -> bool {
+    let said = said.to_lowercase();
+    CONNECTION_WORDS.iter().any(|words| said.contains(words))
+}
+
 /// What a failed turn needs from the person, or from the chat on their behalf.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +131,9 @@ pub enum FailureKind {
     SignIn,
     /// The account ran out of usage, for now or until its plan resets.
     Limit,
+    /// The network or the model provider could not be reached; the same
+    /// prompt can go again once it is back.
+    Network,
     Other,
 }
 
@@ -132,10 +157,26 @@ impl Failure {
         }
     }
 
+    /// A turn the network cut short, worded for the person, with what the
+    /// agent said kept for whoever opens the details.
+    pub fn lost_connection(said: impl Into<String>) -> Self {
+        Self {
+            kind: FailureKind::Network,
+            title: LOST_CONNECTION.into(),
+            details: Some(said.into()).filter(|said: &String| !said.trim().is_empty()),
+            resets_at: None,
+        }
+    }
+
     /// The chat's `error` event for it, naming the account it happened on.
+    /// A lost connection says so plainly; the agent's own words stay in `details`.
     pub fn payload(&self, account: Option<&str>) -> Value {
         let message = match &self.details {
-            Some(details) if !details.is_empty() && details != &self.title => {
+            Some(details)
+                if !details.is_empty()
+                    && details != &self.title
+                    && self.kind != FailureKind::Network =>
+            {
                 format!("{}\n{}", self.title, details)
             }
             _ => self.title.clone(),
@@ -192,6 +233,7 @@ pub fn failure(meta: &Value) -> Option<Failure> {
         // A context or budget limit belongs to the session, not the account,
         // and its way out is a new session rather than another account.
         Some("limit") if !offers("new_session") => FailureKind::Limit,
+        Some("connection") => FailureKind::Network,
         _ => FailureKind::Other,
     };
     let title = failure
@@ -204,6 +246,9 @@ pub fn failure(meta: &Value) -> Option<Failure> {
         .get("details")
         .and_then(Value::as_str)
         .map(str::to_owned);
+    if kind == FailureKind::Network {
+        return Some(Failure::lost_connection(details.unwrap_or(title)));
+    }
     Some(Failure {
         kind,
         title,
@@ -215,6 +260,34 @@ pub fn failure(meta: &Value) -> Option<Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_connection_failure_is_the_networks_and_reads_plainly() {
+        let lost = failure(&air(json!({
+            "id": "t:error", "revision": 1, "category": "connection", "severity": "error",
+            "title": "stream disconnected before completion", "actions": ["retry", "new_session"],
+        })))
+        .unwrap();
+        assert_eq!(lost.kind, FailureKind::Network);
+        assert_eq!(lost.title, LOST_CONNECTION);
+        assert_eq!(
+            lost.details.as_deref(),
+            Some("stream disconnected before completion")
+        );
+        let payload = lost.payload(None);
+        assert_eq!(payload["message"], LOST_CONNECTION);
+        assert_eq!(payload["failure"]["kind"], "network");
+    }
+
+    #[test]
+    fn an_agents_words_say_when_the_network_failed_it() {
+        assert!(sounds_offline("API Error: Connection error."));
+        assert!(sounds_offline(
+            "request to https://api.anthropic.com failed: getaddrinfo ENOTFOUND"
+        ));
+        assert!(sounds_offline("TypeError: fetch failed"));
+        assert!(!sounds_offline("Invalid request: prompt is too long"));
+    }
 
     #[test]
     fn a_retry_is_a_warning_that_no_failure_is_read_from() {

@@ -104,6 +104,10 @@ pub(crate) enum ChatCommand {
     Resume {
         prompt: rebind::Replay,
     },
+    /// Sends the prompt the last failed turn stopped again, if one is kept.
+    RetryFailed,
+    /// Lets go of the prompt the last failed turn stopped.
+    DiscardFailed,
     /// Lets go of the agent, still running, for a core that replaces this one.
     HandOver {
         reply: oneshot::Sender<Result<native::Handed, String>>,
@@ -196,6 +200,9 @@ pub(crate) struct Chat {
     unreported: AtomicBool,
     /// Why the turn in progress failed, said before the turn or the chat ends.
     failure: Mutex<Option<String>>,
+    /// The last turn failed for want of the network, and its prompt goes
+    /// again once the network is back.
+    pub(crate) offline_failed: AtomicBool,
     edits: super::edits::Open,
     /// The version of the agent's CLI, once the agent has said it.
     cli_version: Mutex<Option<String>>,
@@ -676,6 +683,17 @@ impl Chat {
         self.commands.send(command).map_err(|_| STOPPED.into())
     }
 
+    /// Sends the prompt a failed turn stopped again, as the person asked.
+    pub(crate) fn retry_failed(&self) -> CoreResult<()> {
+        self.offline_failed.store(false, Ordering::Release);
+        self.send(ChatCommand::RetryFailed)
+    }
+
+    pub(crate) fn discard_failed(&self) -> CoreResult<()> {
+        self.offline_failed.store(false, Ordering::Release);
+        self.send(ChatCommand::DiscardFailed)
+    }
+
     pub(crate) fn info(&self) -> ChatInfo {
         let start = self.feed.start();
         ChatInfo {
@@ -980,6 +998,16 @@ impl Chats {
         history::clear(dir, &keep);
     }
 
+    /// Every chat whose last turn the network cut short tries it once more,
+    /// now that the network is back.
+    pub(crate) fn retry_offline_failures(&self) {
+        for chat in self.all() {
+            if chat.offline_failed.swap(false, Ordering::AcqRel) {
+                let _ = chat.send(ChatCommand::RetryFailed);
+            }
+        }
+    }
+
     pub(crate) fn get(&self, agent_id: &str) -> Option<Arc<Chat>> {
         self.chats.lock().ok()?.get(agent_id).cloned()
     }
@@ -1174,6 +1202,7 @@ impl Chats {
             releasing: AtomicBool::new(false),
             unreported: AtomicBool::new(flags.running || flags.unprompted || flags.held),
             failure: Mutex::new(None),
+            offline_failed: AtomicBool::new(false),
             edits: Default::default(),
             cli_version: Mutex::new(None),
             current: Mutex::new(launch.clone()),
