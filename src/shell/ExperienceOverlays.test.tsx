@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,6 +20,8 @@ vi.mock("../state/resources", () => ({
     }),
 }));
 vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
+const { installAgent } = vi.hoisted(() => ({ installAgent: vi.fn() }));
+vi.mock("../agents/AgentInstall", () => ({ installAgent }));
 
 import { keybindingLabel } from "../commands/keybindings";
 import { flushPersist, resetPersistenceForTests } from "../state/persist";
@@ -55,6 +57,22 @@ afterEach(() => {
 });
 
 describe("Onboarding", () => {
+    it("offers to install every agent that is not on this Mac", async () => {
+        openOnboarding();
+        const hermes = (await screen.findByText("Hermes")).closest("li")!;
+        expect(hermes).toHaveTextContent("Not installed");
+        fireEvent.click(within(hermes).getByRole("button", { name: "Install" }));
+        expect(installAgent).toHaveBeenCalledWith("hermes");
+
+        const codex = screen.getByText("Codex").closest("li")!;
+        fireEvent.click(within(codex).getByRole("button", { name: "Install" }));
+        expect(installAgent).toHaveBeenLastCalledWith("codex");
+
+        const claude = screen.getByText("Claude").closest("li")!;
+        expect(within(claude).queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
+        expect(screen.queryByText("Muse")).toBeNull();
+    });
+
     it("focuses the first move and shows custom shortcuts", async () => {
         openOnboarding({ "project.open": "Ctrl+Shift+KeyO" });
 
@@ -76,7 +94,9 @@ describe("Onboarding", () => {
         expect(screen.getByRole("button", { name: /Connect to a host/ })).toHaveFocus();
 
         await user.tab();
-        expect(screen.getByRole("button", { name: "Close welcome" })).toHaveFocus();
+        expect(screen.getAllByRole("button", { name: "Install" })[0]).toHaveFocus();
+        await user.tab({ shift: true });
+        expect(screen.getByRole("button", { name: /Connect to a host/ })).toHaveFocus();
     });
 
     it("runs a first move, closes, and persists completion", async () => {
