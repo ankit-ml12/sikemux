@@ -25,6 +25,7 @@ import {
     Markdown,
     ResizeHandle,
     SkeletonRows,
+    StaleNotice,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
 import {
@@ -367,7 +368,7 @@ function IssueList({
 }) {
     const found = useResourceEnabled(active, jiraSearchR, jql, site);
     const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
-    if (found.status === "error")
+    if (found.status === "error" && !found.data)
         return (
             <div className="jira-list-pane">
                 <EmptyState message={found.error ?? "Jira could not run that search."} tone="error" />
@@ -394,6 +395,7 @@ function IssueList({
     };
     return (
         <div className="jira-list-pane">
+            <StaleNotice handle={found} />
             {counts.length > 1 && (
                 <div className="jira-status-filter" role="group" aria-label="Filter by status">
                     <button type="button" className="jira-status-pick" aria-pressed={shown.size === 0} onClick={() => setPicked(new Set())}>
@@ -473,7 +475,7 @@ function useMenu(): [ReactNode, (event: MouseEvent, items: ContextMenuItem[]) =>
 
 function IssueDetail({ active, issueKey, site, onClose }: { active: boolean; issueKey: string; site: string; onClose: () => void }) {
     const found = useResourceEnabled(active, jiraIssueR, issueKey, site);
-    if (found.status === "error")
+    if (found.status === "error" && !found.data)
         return (
             <div className="jira-detail">
                 <EmptyState message={found.error ?? `Jira could not open ${issueKey}.`} tone="error" />
@@ -485,10 +487,31 @@ function IssueDetail({ active, issueKey, site, onClose }: { active: boolean; iss
                 <SkeletonRows rows={6} label={`Loading ${issueKey}`} />
             </div>
         );
-    return <IssueBody key={found.data.key} issue={found.data} site={site} refresh={() => void found.refresh()} onClose={onClose} />;
+    return (
+        <IssueBody
+            key={found.data.key}
+            issue={found.data}
+            site={site}
+            refresh={() => void found.refresh()}
+            onClose={onClose}
+            notice={<StaleNotice handle={found} />}
+        />
+    );
 }
 
-function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: string; refresh: () => void; onClose: () => void }) {
+function IssueBody({
+    issue,
+    site,
+    refresh,
+    onClose,
+    notice,
+}: {
+    issue: JiraIssue;
+    site: string;
+    refresh: () => void;
+    onClose: () => void;
+    notice: ReactNode;
+}) {
     const [menu, setMenu] = useMenu();
     const [busy, setBusy] = useState(false);
     const [assigning, setAssigning] = useState(false);
@@ -525,6 +548,7 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
 
     return (
         <article className="jira-detail" aria-label={`${issue.key} ${issue.summary}`}>
+            {notice}
             <div className="jira-detail-body">
                 <header className="jira-detail-head" onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
                     <span className="jira-detail-key">

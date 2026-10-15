@@ -41,6 +41,33 @@ describe("resources", () => {
         fine.unmount();
     });
 
+    it("keeps what last loaded, and when, after a refresh fails offline", async () => {
+        let online = true;
+        const issues = resource({
+            kind: "kept-offline",
+            fetch: vi.fn(async () => {
+                if (!online) throw { category: "offline", message: "Can't reach Jira. Check your connection." };
+                return "issues";
+            }),
+        });
+        const shown = renderHook(() => useResource(issues));
+        await waitFor(() => expect(shown.result.current.data).toBe("issues"));
+        const loadedAt = shown.result.current.loadedAt;
+        expect(loadedAt).toBeTypeOf("number");
+        expect(shown.result.current.failure).toBeUndefined();
+
+        online = false;
+        await act(() => shown.result.current.refresh().catch(() => {}));
+        expect(shown.result.current).toMatchObject({
+            status: "error",
+            data: "issues",
+            failure: "offline",
+            loadedAt,
+            error: "Can't reach Jira. Check your connection.",
+        });
+        shown.unmount();
+    });
+
     it("coalesces a subscribed invalidation storm into one follow-up fetch", async () => {
         const stale = deferred<string>();
         const fetch = vi
