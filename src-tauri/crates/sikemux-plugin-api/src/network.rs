@@ -14,10 +14,11 @@ pub enum Unreachable {
 }
 
 /// Words in an error's causes that mean the network, not the service, failed.
-const UNREACHABLE_CAUSES: [&str; 6] = [
+const UNREACHABLE_CAUSES: [&str; 7] = [
     "dns error",
     "failed to lookup address",
     "network is unreachable",
+    "network is down",
     "no route to host",
     "connection refused",
     "not connected to the internet",
