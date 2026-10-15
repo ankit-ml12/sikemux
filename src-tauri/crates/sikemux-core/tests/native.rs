@@ -281,9 +281,8 @@ async fn a_turn_the_network_cut_short_says_so_plainly_and_goes_again_on_retry() 
         )
         .await
         .expect("retry");
-    chat.until_kind(ChatEventKind::TurnStarted).await;
-    chat.until_kind(ChatEventKind::TurnCompleted).await;
-    assert!(chat.text().contains("back online"));
+    chat.until(|event| said(std::slice::from_ref(event)).contains("back online"))
+        .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
