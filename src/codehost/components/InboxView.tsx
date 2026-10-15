@@ -2,7 +2,7 @@ import { useState } from "react";
 import { GitColumns } from "../../git/GitColumns";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { Checkbox, EmptyState, IconCheck, SkeletonRows } from "../../plugin-api/ui";
+import { Checkbox, EmptyState, IconCheck, SkeletonRows, StaleNotice } from "../../plugin-api/ui";
 import { failureMessage, type Notification, type RepoRef } from "../api";
 import { inboxR } from "../resources";
 import { useAccount, useHost } from "../registry";
@@ -126,7 +126,7 @@ export function InboxView({ paneId, login, active }: Props) {
     const left =
         inbox.status === "loading" && !inbox.data ? (
             <SkeletonRows rows={8} label="Loading notifications" />
-        ) : inbox.error ? (
+        ) : inbox.error && !inbox.data ? (
             <EmptyState
                 title="Could not read notifications"
                 message={failureMessage(inbox.error)}
@@ -135,6 +135,7 @@ export function InboxView({ paneId, login, active }: Props) {
             />
         ) : (
             <div className="gha-list pr-list">
+                <StaleNotice handle={inbox} />
                 <div className="gha-list-head">
                     <Checkbox checked={all} onChange={setAll}>
                         Include read
