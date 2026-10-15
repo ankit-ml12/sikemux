@@ -127,6 +127,19 @@ pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreR
             super::chat::reset::cancel_by_person(core, &resuming.agent_id);
             answer(())
         }
+        "retryFailed" | "discardFailed" => {
+            let failed: Resuming = parse(params)?;
+            let chat = core
+                .chats
+                .get(&failed.agent_id)
+                .ok_or_else(|| format!("no chat {} is running", failed.agent_id))?;
+            if method == "retryFailed" {
+                chat.retry_failed().map_err(|error| error.to_string())?;
+            } else {
+                chat.discard_failed().map_err(|error| error.to_string())?;
+            }
+            answer(())
+        }
         _ => Err(format!("this host does not know {method}").into()),
     }
 }

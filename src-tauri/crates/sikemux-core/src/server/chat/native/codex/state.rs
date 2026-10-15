@@ -757,6 +757,30 @@ mod tests {
     }
 
     #[test]
+    fn a_turn_the_stream_dropped_ends_as_the_networks_failure() {
+        let mut session = session();
+        session.titled = true;
+        session.begin(2, None, None);
+        session.started(2, "turn-n");
+        let error = json!({ "message": "stream disconnected before completion", "codexErrorInfo": { "responseStreamDisconnected": {} } });
+        let effects = notify(
+            &mut session,
+            "turn/completed",
+            turn("turn-n", "failed", error),
+        );
+        match ended(&effects) {
+            Some((2, TurnEnd::Failed { failure, .. })) => {
+                assert_eq!(failure.kind, FailureKind::Network);
+                assert_eq!(
+                    failure.details.as_deref(),
+                    Some("stream disconnected before completion")
+                );
+            }
+            _ => panic!("the turn should have failed for want of the network"),
+        }
+    }
+
+    #[test]
     fn each_retry_codex_makes_is_a_warning_with_its_attempt() {
         let mut session = Session::new("thread".into());
         let retry = json!({
@@ -897,7 +921,7 @@ mod tests {
         assert_eq!(kind(json!("other")), FailureKind::Other);
         assert_eq!(
             kind(json!({ "responseStreamDisconnected": { "httpStatusCode": null } })),
-            FailureKind::Other
+            FailureKind::Network
         );
         assert_eq!(kind(Value::Null), FailureKind::Other);
     }
