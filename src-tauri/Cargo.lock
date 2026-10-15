@@ -5939,6 +5939,8 @@ dependencies = [
 name = "sikemux-plugin-api"
 version = "0.1.0"
 dependencies = [
+ "reqwest",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
