@@ -71,3 +71,10 @@ export function composerPlaceholder(
               ? "Ask about this project, or type / for commands"
               : "Ask about this project";
 }
+
+const PROVIDERS: Record<string, string> = { claude: "Anthropic", codex: "OpenAI" };
+
+/** What the chat says when the network cut a turn short, naming whose servers it lost. */
+export function lostConnectionText(agentType: string): string {
+    return `Lost connection to ${PROVIDERS[agentType] ?? "the model provider"}. Sikemux sends it again when you're back online.`;
+}

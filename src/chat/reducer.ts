@@ -823,6 +823,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 permissions: state.permissions.filter((request) => request.requestId !== action.requestId),
                 revision: state.revision + 1,
             };
+        case "dismiss_error":
+            return { ...state, error: null, failure: null, revision: state.revision + 1 };
         case "error":
             return {
                 ...state,
