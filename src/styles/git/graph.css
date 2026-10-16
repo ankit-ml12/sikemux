@@ -30,15 +30,14 @@
     background: var(--surface-hover);
 }
 .gg-row.sel {
-    background: var(--surface-selected);
-    box-shadow: inset 0 0 0 1px var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .gg-row:focus-visible {
     outline: none;
 }
 .gg-row.ranged {
-    background: rgba(124, 197, 255, 0.08);
+    background: var(--surface-hover);
 }
 .gg-row .git-agents {
     flex: 0 8 auto;
@@ -81,6 +80,13 @@
     font-size: 8px;
     font-weight: var(--weight-semibold);
     letter-spacing: 0.02em;
+}
+/* The list reads as messages and ages; who wrote a commit and its hash are in its detail, and the hash shows on the row in hand. */
+.git-history .gg-row > .gg-avatar {
+    display: none;
+}
+.git-history .gg-row:not(:hover, .sel) > .gg-hash {
+    display: none;
 }
 .git-detail-meta .gg-avatar {
     width: 20px;
