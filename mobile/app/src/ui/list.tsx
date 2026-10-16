@@ -37,7 +37,7 @@ export function Row({
   under,
 }: {
   mark?: ReactNode;
-  /** The agent's name, set before its title as the Mac's rail does. */
+  /** The agent's name, small and dim at the end of its title as the Mac's rail sets it. */
   name?: string;
   /** The linked host the agent runs on, set after its name. */
   host?: string;
@@ -54,6 +54,8 @@ export function Row({
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
+  const where = host ? `on ${host}` : undefined;
+  const after = title && name ? [name, where].filter(Boolean).join(' ') : where;
   return (
     <Pressable
       onPress={onPress}
@@ -61,22 +63,16 @@ export function Row({
       style={({ pressed }) => [styles.row, pressed && onPress && styles.rowPressed]}>
       {mark ? <View style={styles.mark}>{mark}</View> : null}
       <View style={styles.rowBody}>
-        <Text style={[styles.rowTitle, { color: dim ? colors.tertiary : colors.ink }]} numberOfLines={1}>
-          {name ? (
-            <>
-              {name}
-              {host ? <Text style={styles.rowAfterName}> on {host}</Text> : null}
-              {title ? (
-                <>
-                  <Text style={styles.rowDot}> · </Text>
-                  <Text style={styles.rowAfterName}>{title}</Text>
-                </>
-              ) : null}
-            </>
-          ) : (
-            title
-          )}
-        </Text>
+        <View style={styles.rowLabel}>
+          <Text style={[styles.rowTitle, { color: dim ? colors.tertiary : colors.ink }]} numberOfLines={1}>
+            {title ?? name}
+          </Text>
+          {after ? (
+            <Text style={styles.rowName} numberOfLines={1}>
+              {after}
+            </Text>
+          ) : null}
+        </View>
         {place ? (
           <View style={styles.rowPlace}>
             <Icon name="IconFolder" size={11} color={colors.live} />
@@ -125,9 +121,9 @@ const makeStyles = (colors: Palette) => {
     rowPressed: { backgroundColor: colors.active },
     mark: { width: MARK, height: MARK, alignItems: 'center', justifyContent: 'center' },
     rowBody: { flex: 1, minWidth: 0 },
-    rowTitle: { ...type.row, fontSize: 14.5 },
-    rowDot: { color: colors.inkFaint },
-    rowAfterName: { fontFamily: fonts.ui, color: colors.tertiary },
+    rowLabel: { flexDirection: 'row', alignItems: 'baseline' },
+    rowTitle: { ...type.row, fontSize: 14.5, flexShrink: 1 },
+    rowName: { marginLeft: 'auto', paddingLeft: 8, fontFamily: fonts.ui, fontSize: 11.5, color: colors.tertiary },
     rowDetail: { ...type.meta, fontSize: 12, marginTop: 1 },
     rowPlace: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
     rowPlaceText: { flexShrink: 1, marginTop: 0 },

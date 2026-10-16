@@ -159,8 +159,8 @@
   .loader i:nth-child(8) { animation-duration: 1.5s; animation-delay: -.7s; } .loader i:nth-child(9) { animation-duration: 1.15s; animation-delay: -.4s; }
   @keyframes twinkle { 0%, 100% { opacity: .2; } 50% { opacity: 1; } }
   .dot { width: 8px; height: 8px; border-radius: 999px; position: relative; flex: none; }
-  .dot.warn { background: var(--ink); }
-  .dot.warn::after { content: ""; position: absolute; inset: -4px; border-radius: 999px; border: 1.5px solid var(--ink); animation: ping 2s ease-out infinite; }
+  .dot.warn { background: var(--warn); }
+  .dot.warn::after { content: ""; position: absolute; inset: -4px; border-radius: 999px; border: 1.5px solid var(--warn); animation: ping 0.52s cubic-bezier(0.2, 0.6, 0.3, 1) 2 forwards; opacity: 0; }
   @keyframes ping { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.8); opacity: 0; } }
   .dot.acc { background: var(--acc); }
   .dot.live { background: var(--live); }
@@ -508,8 +508,14 @@
   .rows .row .t b, .nav .mid .named b { font-weight: inherit; color: var(--text-primary); }
   .rows .row .t i, .nav .mid .named i { font-style: normal; color: var(--ink-faint); margin: 0 5px; }
   .rows .row .t em, .nav .mid .named em { font-style: normal; color: var(--text-tertiary); }
+  /* Title first, then the agent's name small and dim at the end, as the Mac's rail and header read. */
+  .rows .row .t:has(> i), .nav .mid .named:has(> i) { display: flex; align-items: baseline; }
+  .rows .row .t:has(> i) > i, .nav .mid .named:has(> i) > i { display: none; }
+  .rows .row .t:has(> i) > em, .nav .mid .named:has(> i) > em { order: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+  .rows .row .t:has(> i) > b, .nav .mid .named:has(> i) > b { order: 2; flex: none; padding-left: 8px; font-size: 11.5px; font-weight: 400; color: var(--text-tertiary); }
+  .rows .row .t:has(> i) > b { margin-left: auto; }
   .rows .row.worker { margin-left: 30px; }
-  .rows .row.worker.gone .t b { color: var(--text-tertiary); }
+  .rows .row.worker.unreachable .t b { color: var(--text-tertiary); }
   .ibelow .ask { font-size: 12.5px; line-height: 1.4; color: var(--text-tertiary); }
   .rows .row.more { min-height: 40px; padding-left: 38px; }
   .rows .row.more .t { font-size: 13px; font-weight: 400; color: var(--text-tertiary); }
@@ -1334,7 +1340,7 @@
           <div class="rows">
             <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Move the ledger to cents</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
             <div class="row worker"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t"><b>Otter</b><em> on studio</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Working</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
-            <div class="row worker gone"><span class="mark codex" style="opacity:.5">{{IconCodex:16}}</span><div class="body"><div class="t"><b>Fern</b><em> on build-box</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Out of reach</div></div><span class="status-slot"><span class="dot off"></span></span></div>
+            <div class="row worker unreachable"><span class="mark codex" style="opacity:.5">{{IconCodex:16}}</span><div class="body"><div class="t"><b>Fern</b><em> on build-box</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Out of reach</div></div><span class="status-slot"><span class="dot off"></span></span></div>
             <div class="row"><span class="mark codex">{{IconCodex:16}}</span><div class="body"><div class="t"><b>Wren</b><em> on studio</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Needs input</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
           </div>
         </div>
@@ -1600,7 +1606,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>All projects</b><div class="note">Unscoped, each project with cards is one row counting its cards by group, with the white dot when one needs you. Tapping it scopes the device to that project, as the picker does.</div></figcaption>
+      <figcaption><b>All projects</b><div class="note">Unscoped, each project with cards is one row counting its cards by group, with the amber dot when one needs you. Tapping it scopes the device to that project, as the picker does.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1678,7 +1684,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device. The provider filter heads it, as the provider tiles head the Mac's rail: All, then a tile for each provider with an agent in view, shown on the Agents tab when there is more than one. Picking a provider keeps the sheet open; picking a project closes it, and so does dragging the sheet down or tapping the dimmed screen, as with every sheet. A sheet taller than the screen scrolls, and one with a search field rises above the keyboard. Below, titled with the host, All projects heads the project list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the white dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
+      <figcaption><b>Picking a project</b><div class="note">A short sheet over the device. The provider filter heads it, as the provider tiles head the Mac's rail: All, then a tile for each provider with an agent in view, shown on the Agents tab when there is more than one. Picking a provider keeps the sheet open; picking a project closes it, and so does dragging the sheet down or tapping the dimmed screen, as with every sheet. A sheet taller than the screen scrolls, and one with a search field rises above the keyboard. Below, titled with the host, All projects heads the project list. Folders are the Mac rail's green; each project shows the logos of the agents in it, the amber dot if one is waiting on you, and a terminal count when that is all it has.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
