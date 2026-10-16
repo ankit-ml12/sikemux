@@ -242,7 +242,12 @@
   .tool:last-child::before { display: none; }
   .tool .kind { font-weight: 400; }
   .tool .target { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tool .end { font-size: 10.5px; color: var(--ink-dim); display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+  .tool .end { font-size: 10.5px; color: var(--ink-dim); display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .tool .end .chev { display: grid; opacity: .55; }
+  .tool .end .chev.open { opacity: 1; transform: rotate(90deg); }
+  .tool .target .link { color: var(--acc); }
+  .fref .g { display: inline-grid; vertical-align: -1.5px; margin-right: 4px; color: var(--ink-dim); }
+  .fref.link { color: var(--acc); }
   .k-run { color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim)); }
   .k-read { color: color-mix(in oklab, var(--git-renamed) 76%, var(--ink-dim)); }
   .k-edit { color: color-mix(in oklab, var(--git-modified) 76%, var(--ink-dim)); }
@@ -392,6 +397,20 @@
   .tool-detail .a { color: var(--git-added); }
   .tool-detail .d { color: var(--git-deleted); }
   .tool-detail .gap { color: var(--ink-faint); }
+  .diff-box { margin: 4px 0 6px 24px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken); overflow: hidden; font-family: var(--mono); font-size: 11px; line-height: 17px; color: var(--ink); }
+  .diff-box .head { display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 9px; border-bottom: 1px solid var(--border); font-size: 10.5px; color: var(--ink-faint); }
+  .diff-box .head .path { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink-dim); }
+  .diff-box .rows { padding: 3px 0; white-space: pre; overflow: hidden; }
+  .diff-box .ln { display: grid; grid-template-columns: 30px 12px minmax(0, 1fr); }
+  .diff-box .ln i { padding-right: 7px; font-style: normal; font-size: 10px; text-align: right; color: color-mix(in oklab, var(--ink-faint) 58%, transparent); }
+  .diff-box .ln b, .md-diff .ln b { font-weight: 400; color: color-mix(in oklab, var(--ink-faint) 70%, transparent); }
+  .diff-box .ln.a, .md-diff .ln.a { background: color-mix(in oklab, var(--git-added) 9%, transparent); }
+  .diff-box .ln.d, .md-diff .ln.d { background: color-mix(in oklab, var(--git-deleted) 9%, transparent); }
+  .diff-box .ln.a b, .md-diff .ln.a b { color: var(--git-added); }
+  .diff-box .ln.d b, .md-diff .ln.d b { color: var(--git-deleted); }
+  .diff-box mark, .md-diff mark { color: inherit; border-radius: 3px; background: color-mix(in oklab, var(--git-added) 26%, transparent); }
+  .diff-box .ln.d mark, .md-diff .ln.d mark { background: color-mix(in oklab, var(--git-deleted) 26%, transparent); }
+  .diff-box .gap { height: 20px; display: flex; align-items: center; padding-left: 42px; font-size: 10.5px; color: var(--ink-faint); }
   .tool-detail.failure { color: var(--danger); white-space: pre-wrap; }
 
   /* model and effort sheet */
@@ -1791,9 +1810,9 @@
           <div class="tools">
             <span class="tools-sum open">3 tool calls <span class="time">7s</span>{{IconChevron:11}}</span>
             <div class="tools-body">
-              <div class="tool"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s</span></div>
-              <div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target">ptyController.ts</span><span class="end"><span class="add">+14</span><span class="del">−3</span></span></div>
-              <div class="tool running"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">git commit -m "fix(pty): drop channel bytes…"</span><span class="end">1s</span></div>
+              <div class="tool"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s<span class="chev">{{IconChevron:10}}</span></span></div>
+              <div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target"><span class="fref"><span class="g">{{IconFile:11}}</span>ptyController.ts</span></span><span class="end"><span class="add">+14</span><span class="del">−3</span><span class="chev">{{IconChevron:10}}</span></span></div>
+              <div class="tool running"><span class="tick"></span><span class="k-run">{{IconCommand:12}}</span><span class="kind k-run">run</span><span class="target">git commit -m "fix(pty): drop channel bytes…"</span><span class="end">1s<span class="chev">{{IconChevron:10}}</span></span></div>
             </div>
           </div>
           <div class="activity"><span class="glyph codex">{{IconCodex:20}}</span><span class="lbl">Running a command…</span><span class="el">9s</span></div>
@@ -2232,14 +2251,12 @@
           <div class="tools">
             <span class="tools-sum open">2 tool calls <span class="time">7s</span>{{IconChevron:11}}</span>
             <div class="tools-body">
-              <div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target">ptyController.ts</span><span class="end"><span class="add">+2</span><span class="del">−1</span></span></div>
-              <div class="tool-detail"><span class="gap">⋯ 41 unchanged lines</span>
-  if (this.snapshotPending) {
-<span class="d">-   this.write(bytes);</span>
-<span class="a">+   this.held.push(bytes);</span>
-<span class="a">+   return;</span>
-  }</div>
-              <div class="tool"><span class="tick"></span><span style="color:var(--danger)">{{IconWarning:12}}</span><span class="kind" style="color:var(--danger)">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s</span></div>
+              <div class="tool"><span class="tick"></span><span class="k-edit">{{IconPencil:12}}</span><span class="kind k-edit">edit</span><span class="target"><span class="fref"><span class="g">{{IconFile:11}}</span>ptyController.ts</span></span><span class="end"><span class="add">+2</span><span class="del">−1</span><span class="chev open">{{IconChevron:10}}</span></span></div>
+              <div class="diff-box">
+                <div class="head">{{IconFile:11}}<span class="path">…/sikemux/src/terminal/ptyController.ts</span><span class="add">+2</span><span class="del">−1</span></div>
+                <div class="rows"><div class="gap">41 unchanged lines</div><div class="ln"><i>42</i><b> </b><span>  onData(bytes: Uint8Array) {</span></div><div class="ln"><i>43</i><b> </b><span>    if (this.snapshotPending) {</span></div><div class="ln d"><i>44</i><b>-</b><span>      this.<mark>write</mark>(bytes);</span></div><div class="ln a"><i>44</i><b>+</b><span>      this.<mark>held.push</mark>(bytes);</span></div><div class="ln a"><i>45</i><b>+</b><span>      return;</span></div><div class="ln"><i>46</i><b> </b><span>    }</span></div><div class="ln"><i>47</i><b> </b><span>    this.emit(bytes);</span></div><div class="ln"><i>48</i><b> </b><span>  }</span></div><div class="gap">12 unchanged lines</div></div>
+              </div>
+              <div class="tool"><span class="tick"></span><span style="color:var(--danger)">{{IconWarning:12}}</span><span class="kind" style="color:var(--danger)">run</span><span class="target">pnpm vitest run src/terminal</span><span class="end">6s<span class="chev open">{{IconChevron:10}}</span></span></div>
               <div class="tool-detail failure">FAIL usePty.test.tsx &gt; replays the snapshot once
 expected 1 write, got 2</div>
             </div>
@@ -2262,7 +2279,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Opening a tool call</b><div class="note">A row that changed a file, printed something or failed opens on a tap: the change with a few lines around it, what it printed, or why it failed, scrolling inside its own box. A command opens as a terminal: <code>$</code> and the command, then what it printed folded to 12 lines with "Show all", the exit code when it failed, and a copy button on each. Groups and rows stay as they were left while the list scrolls. Something the phone asked for that did not happen, like a stop or a setting, shows over the composer until it is dismissed. Stop also hands a queued message back to the composer instead of sending it.</div></figcaption>
+      <figcaption><b>Opening a tool call</b><div class="note">A row that opens carries the Mac's chevron at its end, turned down while open. A row that changed a file, printed something or failed opens on a tap, and so does a command while it runs. A change opens as the Mac's diff: the file and its counts on top, numbered lines tinted by sign with the changed words marked, three lines around each change, and "N unchanged lines" that unfold the rest on a tap; past 120 rows the rest waits behind "Show N more lines". A file the call touched reads as the Mac's file ref, a picture among them opening over the whole screen, a web address as a link, and a picture the call returned opens over the whole screen too. Calls from Sikemux's AWS and Rundeck plugins wear the plugin's mark. A command opens as a terminal: <code>$</code> and the command, then what it printed folded to 12 lines with "Show all", the exit code when it failed, and a copy button on each. Groups and rows stay as they were left while the list scrolls. Something the phone asked for that did not happen, like a stop or a setting, shows over the composer until it is dismissed. Stop also hands a queued message back to the composer instead of sending it.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
