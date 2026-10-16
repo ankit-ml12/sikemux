@@ -1,24 +1,19 @@
-import starlight from "@astrojs/starlight";
+import { unified } from "@astrojs/markdown-remark";
+import mdx from "@astrojs/mdx";
+import react from "@astrojs/react";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
+import { rehypeCode, remarkHeading, remarkStructure } from "fumadocs-core/mdx-plugins";
 
 export default defineConfig({
   site: "https://docs.sikemux.com",
-  integrations: [
-    starlight({
-      title: "Sikemux",
-      description: "Projects, terminals and coding agents in one keyboard-first window.",
-      logo: { src: "./src/assets/mark.svg" },
-      favicon: "/favicon.png",
-      social: [{ icon: "github", label: "GitHub", href: "https://github.com/nodelike/sikemux" }],
-      editLink: { baseUrl: "https://github.com/nodelike/sikemux/edit/main/docs-site/" },
-      customCss: ["./src/styles/theme.css"],
-      sidebar: [
-        { label: "Getting started", items: [{ autogenerate: { directory: "getting-started" } }] },
-        { label: "Agents", items: [{ autogenerate: { directory: "agents" } }] },
-        { label: "Each agent", items: [{ autogenerate: { directory: "each-agent" } }] },
-        { label: "Browser", items: [{ autogenerate: { directory: "browser" } }] },
-        { label: "Reference", items: [{ autogenerate: { directory: "reference" } }] },
-      ],
+  markdown: {
+    processor: unified({
+      syntaxHighlight: false,
+      remarkPlugins: [remarkHeading, [remarkStructure, { exportAs: "structuredData" }]],
+      rehypePlugins: [[rehypeCode, { themes: { light: "github-dark", dark: "github-dark" } }]],
     }),
-  ],
+  },
+  integrations: [react(), mdx({ extendMarkdownConfig: true, syntaxHighlight: false })],
+  vite: { plugins: [tailwindcss()] },
 });
