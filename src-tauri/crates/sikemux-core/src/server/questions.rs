@@ -86,6 +86,9 @@ struct Question {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     header: Option<String>,
     choices: Vec<Choice>,
+    /// The person may pick more than one of `choices`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    multi: bool,
     blocked: bool,
     assumption: Option<String>,
     /// The answer is a secret, such as a password, so the question goes
@@ -122,6 +125,7 @@ impl Question {
             "text": self.text,
             "header": self.header,
             "choices": self.choices,
+            "multi": self.multi,
             "blocked": self.blocked,
             "assumption": self.assumption,
             "secret": self.secret,
@@ -201,6 +205,7 @@ struct Asked {
     text: String,
     header: Option<String>,
     choices: Vec<Choice>,
+    multi: bool,
     blocked: bool,
     assumption: Option<String>,
     secret: bool,
@@ -556,6 +561,7 @@ fn open(
             asked: asked.text.clone(),
             text: asked.text,
             header: asked.header,
+            multi: asked.multi && !asked.choices.is_empty(),
             choices: asked.choices,
             blocked: asked.blocked,
             assumption: asked.assumption,
@@ -692,6 +698,14 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
         }
         _ => {}
     }
+    let multi = match params.get("multi") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(multi)) => *multi,
+        Some(_) => return Err("multi must be a boolean".into()),
+    };
+    if multi && choices.is_empty() {
+        return Err("multi lets the person pick several choices, so it needs choices".into());
+    }
     let secret = match params.get("secret") {
         None | Some(Value::Null) => false,
         Some(Value::Bool(secret)) => *secret,
@@ -708,6 +722,7 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
             text,
             header,
             choices,
+            multi,
             blocked,
             assumption,
             secret,
@@ -835,6 +850,7 @@ pub(crate) fn ask_from_cli(core: &Arc<Core>, agent_id: &str, input: &Value) -> S
             Some(Asked {
                 text: text.to_owned(),
                 header,
+                multi: question["multiSelect"].as_bool().unwrap_or(false),
                 choices: choices(options.map(Value::Array).as_ref()).unwrap_or_default(),
                 blocked: true,
                 assumption: None,
@@ -899,6 +915,9 @@ pub(crate) struct AnswerParams {
     answer: Option<String>,
     #[serde(default)]
     choice: Option<usize>,
+    /// The choices picked on a question that takes several.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    choices: Option<Vec<usize>>,
     /// The assumption the agent went on is right.
     #[serde(default)]
     fine: bool,
@@ -1064,6 +1083,25 @@ fn answer_text(question: &Question, params: &AnswerParams) -> Result<Option<Stri
             Some(_) => Ok(None),
             None => Err("Only an assumption can be agreed with; answer the question".into()),
         };
+    }
+    if let Some(picked) = &params.choices {
+        if !question.multi {
+            return Err("That question takes one choice".into());
+        }
+        if picked.is_empty() {
+            return Err("Pick at least one choice".into());
+        }
+        let labels = picked
+            .iter()
+            .map(|&choice| {
+                question
+                    .choices
+                    .get(choice)
+                    .map(|choice| choice.label.as_str())
+                    .ok_or("That choice is not one of the question's")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(Some(labels.join(", ")));
     }
     if let Some(choice) = params.choice {
         return question

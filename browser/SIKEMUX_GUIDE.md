@@ -1050,8 +1050,9 @@ themselves, send it what it needs with `agent_send` when you are done.
 When you cannot go on without an answer, call `ask` with `question`, written
 so it stands on its own, a `header` of two or three words naming it, such as
 `Photo access`, and `choices` when the answer is one of a few: each a short
-`label`, with a `detail` of one sentence saying what it means. The person can
-always answer something else. Ask every question you have at once rather than
+`label`, with a `detail` of one sentence saying what it means, and `multi: true`
+when the person may pick several of them. The person can always answer
+something else. Ask every question you have at once rather than
 one per turn: the person answers them together, and you get the answers in one
 message. Put the question only in `ask`; do not write it out in your reply too.
 
