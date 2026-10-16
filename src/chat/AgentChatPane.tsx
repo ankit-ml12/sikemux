@@ -438,8 +438,9 @@ export function AgentChatPane({
                                                         onDismiss={() => dispatch({ type: "dismiss_error" })}
                                                     />
                                                 ) : (
-                                                    displayState.failure &&
-                                                    profile && <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
+                                                    displayState.failure && (
+                                                        <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
+                                                    )
                                                 )}
                                             </div>
                                         )}
