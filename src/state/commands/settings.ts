@@ -20,8 +20,6 @@ export const setBuddies = (value: boolean): void => setState({ buddies: value })
 export const setBuddyStyle = (pack: string, shape: string): void => setState({ buddyPack: pack, buddyShape: shape });
 export const setBuddyMotion = (value: boolean): void => setState({ buddyMotion: value });
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
-export const setPaneDither = (patch: Partial<import("../../lib/paneDither").PaneDither>): void =>
-    setState({ paneDither: { ...getState().paneDither, ...patch } });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });

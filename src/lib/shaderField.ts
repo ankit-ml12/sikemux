@@ -29,8 +29,6 @@ import type { ShaderMountUniforms } from "@paper-design/shaders";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Theme } from "../themes";
 import { onBatteryPower } from "../state/battery";
-import { getState, useStore } from "../state/store";
-import type { PaneDither } from "./paneDither";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { prefersReducedMotion } from "./motion";
 
@@ -341,7 +339,7 @@ function releaseSkyShader(shader: string): string {
     ]);
 }
 
-const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme, image: HTMLImageElement | null, dither: PaneDither) => Recipe> = {
+const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme, image: HTMLImageElement | null) => Recipe> = {
     /*
      * The screen's surface: a Bayer grid over simplex noise, so the card being
      * read carries grain instead of a flat fill.
@@ -355,7 +353,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme, image:
      * show and the muted ink is too loud, so they are the hairline nudged a
      * tenth of the way toward that ink.
      */
-    ambient: (runtime, theme, _image, dither) => ({
+    ambient: (runtime, theme) => ({
         /*
          * Moves, but never restarts.
          *
@@ -369,19 +367,19 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme, image:
         fragmentShader: runtime.ditheringFragmentShader,
         // Over one card rather than the whole window the drift covers less ground,
         // so it has to move quicker to read as weather instead of as a still.
-        speed: dither.grainSpeed,
+        speed: 0.5,
         continuous: true,
         uniforms: {
             u_colorBack: TRANSPARENT,
             u_colorFront: theme.dark ? runtime.getShaderColorFromString(theme.chrome.bgRaised) : lightDotColor(runtime, theme),
-            u_shape: runtime.DitheringShapes[dither.grainShape],
-            u_type: runtime.DitheringTypes[dither.grainPattern],
+            u_shape: runtime.DitheringShapes.simplex,
+            u_type: runtime.DitheringTypes["8x8"],
             // The dots are the texture, and their size is free: the shader
             // quantizes each fragment against this whether it is 2 or 8, and
             // the noise behind it is evaluated once per fragment either way.
             // 2 washed into haze, 4 read as blocks; this sits between them.
-            u_pxSize: dither.grainSize,
-            ...sizing(runtime, "none", dither.grainScale),
+            u_pxSize: 3,
+            ...sizing(runtime, "none", 2.4),
         },
     }),
 
@@ -408,7 +406,7 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme, image:
      * A picture the reader chose, dithered in its own colours. The runtime has
      * no moving version of this, so it is a still.
      */
-    image: (runtime, theme, image, dither) => {
+    image: (runtime, theme, image) => {
         if (!image) throw new Error("no image to dither");
         return {
             fragmentShader: runtime.imageDitheringFragmentShader,
@@ -418,11 +416,11 @@ const PRESETS: Record<ShaderFieldPreset, (runtime: Runtime, theme: Theme, image:
                 u_colorBack: TRANSPARENT,
                 u_colorFront: runtime.getShaderColorFromString(theme.chrome.ink),
                 u_colorHighlight: runtime.getShaderColorFromString(theme.chrome.ink),
-                u_originalColors: dither.imageOriginalColors,
+                u_originalColors: true,
                 u_inverted: false,
-                u_type: runtime.DitheringTypes[dither.imagePattern],
-                u_pxSize: dither.imageSize,
-                u_colorSteps: dither.imageSteps,
+                u_type: runtime.DitheringTypes["8x8"],
+                u_pxSize: 2,
+                u_colorSteps: 4,
                 ...sizing(runtime, "cover", 1),
             },
         };
@@ -472,7 +470,7 @@ export function mountShaderField(host: HTMLElement, preset: ShaderFieldPreset, i
             return;
         }
         try {
-            const recipe = PRESETS[preset](runtime, currentTheme(), image, getState().paneDither);
+            const recipe = PRESETS[preset](runtime, currentTheme(), image);
             // Unmounted while the runtime was loading.
             if (!surfaces.has(host) || !host.isConnected) {
                 surfaces.delete(host);
@@ -599,34 +597,18 @@ export function shaderFieldDiagnostics(): Record<string, unknown> {
 }
 
 /*
- * Re-tint in place on a theme change, or retune on a dither change. Remounting
- * would drop and reacquire a context for what is only a handful of uniforms,
- * and the theme bus already fires for the editor and terminal at the same moment.
+ * Re-tint in place on a theme change. Remounting would drop and reacquire a
+ * context for what is only a handful of uniforms, and the theme bus already
+ * fires for the editor and terminal at the same moment.
  */
-function retune(theme: Theme, dither: PaneDither): void {
+subscribeTheme((theme) => {
     for (const [host, surface] of surfaces) {
         if (!surface.mount || !surface.runtime) continue;
         try {
-            const recipe = PRESETS[surface.preset](surface.runtime, theme, surface.image, dither);
-            surface.mount.setUniforms(recipe.uniforms);
-            if (shouldAnimate()) surface.speed = recipe.speed;
+            surface.mount.setUniforms(PRESETS[surface.preset](surface.runtime, theme, surface.image).uniforms);
         } catch (error) {
-            console.warn(`Paper Shaders: ${surface.preset} retune skipped —`, error instanceof Error ? error.message : error);
+            console.warn(`Paper Shaders: ${surface.preset} re-tint skipped —`, error instanceof Error ? error.message : error);
             unmountShaderField(host);
         }
     }
-    syncTicker();
-}
-
-function applyPaneStrength(dither: PaneDither): void {
-    document.documentElement.style.setProperty("--pane-dither-strength", String(dither.strength));
-}
-
-subscribeTheme((theme) => retune(theme, getState().paneDither));
-
-applyPaneStrength(getState().paneDither);
-useStore.subscribe((state, previous) => {
-    if (state.paneDither === previous.paneDither) return;
-    applyPaneStrength(state.paneDither);
-    retune(currentTheme(), state.paneDither);
 });

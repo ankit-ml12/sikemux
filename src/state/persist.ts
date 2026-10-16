@@ -1,5 +1,4 @@
 import { normaliseNotchSettings } from "../notch/notchSettings";
-import { normalisePaneDither } from "../lib/paneDither";
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
@@ -106,7 +105,6 @@ const PERSISTED_KEYS = [
     "buddyShape",
     "buddyMotion",
     "paneImage",
-    "paneDither",
     "terminalFontSize",
     "chatTextScale",
     "editorTextScale",
@@ -174,7 +172,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         buddyShape: s.buddyShape,
         buddyMotion: s.buddyMotion,
         paneImage: s.paneImage,
-        paneDither: s.paneDither,
         terminalFontSize: s.terminalFontSize,
         chatTextScale: s.chatTextScale,
         editorTextScale: s.editorTextScale,
@@ -1184,7 +1181,6 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         buddyShape: boundedOptionalString(prefs.buddyShape, 40) ?? cur.buddyShape,
         buddyMotion: typeof prefs.buddyMotion === "boolean" ? prefs.buddyMotion : cur.buddyMotion,
         paneImage: typeof prefs.paneImage === "string" || prefs.paneImage === null ? prefs.paneImage : cur.paneImage,
-        paneDither: normalisePaneDither(prefs.paneDither),
         terminalFontSize: typeof prefs.terminalFontSize === "number" ? clampTerminalFontSize(prefs.terminalFontSize) : cur.terminalFontSize,
         chatTextScale: typeof prefs.chatTextScale === "number" ? clampChatTextScale(prefs.chatTextScale) : cur.chatTextScale,
         editorTextScale: typeof prefs.editorTextScale === "number" ? clampEditorTextScale(prefs.editorTextScale) : cur.editorTextScale,
