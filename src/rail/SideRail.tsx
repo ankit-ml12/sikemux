@@ -20,7 +20,7 @@ import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingR
 import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
 import { AgentFace } from "../buddies/Buddy";
-import { IconAgent, IconClose, IconFolder, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
+import { IconAgent, IconClose, IconFolder, IconMove, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
@@ -461,9 +461,9 @@ function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], cu
             hint: mark(current === space.id),
             run: () => cmd.setProjectSpace(session.cwd, space.id),
         })),
-        { label: "New Space…", run: () => void newSpace((id) => cmd.setProjectSpace(session.cwd, id)) },
+        { label: "New Space…", icon: <IconPlus size={13} />, run: () => void newSpace((id) => cmd.setProjectSpace(session.cwd, id)) },
         { sep: true },
-        { label: "No Space", hint: mark(current === undefined), run: () => cmd.setProjectSpace(session.cwd, null) },
+        { label: "No Space", icon: <IconMove size={13} />, hint: mark(current === undefined), run: () => cmd.setProjectSpace(session.cwd, null) },
     ];
 }
 

@@ -5,7 +5,7 @@ import { AgentTitleInput } from "../agents/AgentTitleInput";
 import * as cmd from "../state/commands";
 import { projectSessionId } from "../state/selectors";
 import { useStore } from "../state/store";
-import { AgentIcon } from "../ui/Icons";
+import { AgentIcon, IconMessage, IconPencil, IconTrash } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { TreeContextMenu } from "./FileTree";
 import { chatKey, type RecentChats } from "./useRecentChats";
@@ -109,9 +109,11 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
                     x={menu.x}
                     y={menu.y}
                     items={[
-                        { label: "Open", run: () => open(menu.chat) },
-                        { label: "Rename…", run: () => setRenaming(chatKey(menu.chat)) },
-                        ...(canDeleteChats(menu.chat.agent) ? [{ sep: true }, { label: "Delete…", danger: true, run: () => remove(menu.chat) }] : []),
+                        { label: "Open", icon: <IconMessage size={13} />, run: () => open(menu.chat) },
+                        { label: "Rename…", icon: <IconPencil size={13} />, run: () => setRenaming(chatKey(menu.chat)) },
+                        ...(canDeleteChats(menu.chat.agent)
+                            ? [{ sep: true }, { label: "Delete…", icon: <IconTrash size={13} />, danger: true, run: () => remove(menu.chat) }]
+                            : []),
                     ]}
                     onClose={() => setMenu(null)}
                 />

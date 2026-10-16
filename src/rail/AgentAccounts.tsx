@@ -8,7 +8,7 @@ import { fetchResource, invalidate, peekResource, type ResourceHandle, useResour
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { ProviderProfile } from "../state/types";
-import { IconChevron, IconRefresh } from "../ui/Icons";
+import { IconChevron, IconPlus, IconRefresh } from "../ui/Icons";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
@@ -159,7 +159,7 @@ function accountMenu(
             run: selected ? undefined : () => cmd.selectProviderProfile(provider, account.id),
         };
     });
-    items.push({ sep: true }, { label: "Add account…", run: () => openAccountDialog({ provider }) });
+    items.push({ sep: true }, { label: "Add account…", icon: <IconPlus size={13} />, run: () => openAccountDialog({ provider }) });
     return items;
 }
 

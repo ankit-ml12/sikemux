@@ -2,7 +2,7 @@ import { renameEditorPath } from "../state/editorPaths";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
+import type { ComponentType, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
 import { subscribe } from "../state/bus";
@@ -12,7 +12,18 @@ import { notify, reportError, swallow } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { confirmDialog } from "../state/dialog";
 import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTarget, showPathDropHover } from "../state/dropRegistry";
-import { IconChevron, IconCollapseAll, IconFilePlus, IconFolder, IconFolderPlus, IconSearch } from "../ui/Icons";
+import {
+    IconChevron,
+    IconCollapseAll,
+    IconCopy,
+    IconFile,
+    IconFilePlus,
+    IconFolder,
+    IconFolderPlus,
+    IconPencil,
+    IconSearch,
+    IconTrash,
+} from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
 import { gitFileDecoration, gitFolderDecorations, type GitStatusDecoration } from "../git/gitFileStatus";
@@ -65,6 +76,8 @@ export interface CtxItem {
     sep?: boolean;
     run?: () => void;
 }
+
+export const menuIcon = (Glyph: ComponentType<{ size?: number }>): ReactNode => <Glyph size={13} />;
 
 function validEntryName(raw: string): string | null {
     const name = raw.trim();
@@ -546,26 +559,31 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     const buildMenuItems = (entry: DirEntry | null): CtxItem[] => {
         if (!entry) {
             return [
-                { label: "New File", run: () => startNew("file", cwd) },
-                { label: "New Folder", run: () => startNew("folder", cwd) },
+                { label: "New File", icon: <IconFilePlus size={13} />, run: () => startNew("file", cwd) },
+                { label: "New Folder", icon: <IconFolderPlus size={13} />, run: () => startNew("folder", cwd) },
                 { sep: true },
-                { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => revealInFinder(cwd) },
-                { label: "Copy Path", run: () => void copyToClipboard(cwd, "path") },
+                { label: `Reveal in ${FILE_MANAGER_NAME}`, icon: <IconFolder size={13} />, run: () => revealInFinder(cwd) },
+                { label: "Copy Path", icon: <IconCopy size={13} />, run: () => void copyToClipboard(cwd, "path") },
             ];
         }
         const tail: CtxItem[] = [
-            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => revealInFinder(entry.path) },
-            { label: "Copy Path", run: () => void copyToClipboard(entry.path, "path") },
-            { label: "Copy Relative Path", run: () => void copyToClipboard(relativePath(entry.path), "relative path") },
+            { label: `Reveal in ${FILE_MANAGER_NAME}`, icon: <IconFolder size={13} />, run: () => revealInFinder(entry.path) },
+            { label: "Copy Path", icon: <IconCopy size={13} />, run: () => void copyToClipboard(entry.path, "path") },
+            {
+                label: "Copy Relative Path",
+                icon: <IconCopy size={13} />,
+                run: () => void copyToClipboard(relativePath(entry.path), "relative path"),
+            },
         ];
         const head: CtxItem[] = entry.is_dir
             ? [
-                  { label: "New File", run: () => startNew("file", entry.path) },
-                  { label: "New Folder", run: () => startNew("folder", entry.path) },
+                  { label: "New File", icon: <IconFilePlus size={13} />, run: () => startNew("file", entry.path) },
+                  { label: "New Folder", icon: <IconFolderPlus size={13} />, run: () => startNew("folder", entry.path) },
               ]
             : [
                   {
                       label: "Open",
+                      icon: <IconFile size={13} />,
                       run: () => {
                           setSelectedDir(null);
                           onKeepFile(entry);
@@ -575,8 +593,8 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         return [
             ...head,
             { sep: true },
-            { label: "Rename…", run: () => startRename(entry) },
-            { label: "Delete", danger: true, run: () => void deleteEntry(entry) },
+            { label: "Rename…", icon: <IconPencil size={13} />, run: () => startRename(entry) },
+            { label: "Delete", icon: <IconTrash size={13} />, danger: true, run: () => void deleteEntry(entry) },
             { sep: true },
             ...tail,
         ];

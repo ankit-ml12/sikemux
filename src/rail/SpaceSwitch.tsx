@@ -31,6 +31,7 @@ import {
     IconLaptop,
     IconLeaf,
     IconMusic,
+    IconPencil,
     IconPlus,
     IconRocket,
     IconStack,
@@ -38,6 +39,7 @@ import {
     IconTerminal,
     IconTrash,
     IconUser,
+    IconWrench,
 } from "../ui/Icons";
 import { TreeContextMenu, useFloatingPosition, type CtxItem } from "./FileTree";
 
@@ -103,8 +105,8 @@ export function SpaceSwitch({ spaces, activeSpaceId }: { spaces: readonly Projec
         return rect ? { x: rect.left, y: rect.bottom + 4, width: rect.width } : { x: 0, y: 0 };
     };
     const sharedItems: CtxItem[] = [
-        { label: "New Space…", run: () => void newSpace() },
-        { label: "Edit Spaces…", run: () => setOverlay({ kind: "editor", at: editorAt() }) },
+        { label: "New Space…", icon: <IconPlus size={13} />, run: () => void newSpace() },
+        { label: "Edit Spaces…", icon: <IconWrench size={13} />, run: () => setOverlay({ kind: "editor", at: editorAt() }) },
     ];
     const menuFor = (event: ReactMouseEvent, space?: ProjectSpace) => {
         event.preventDefault();
@@ -112,13 +114,13 @@ export function SpaceSwitch({ spaces, activeSpaceId }: { spaces: readonly Projec
         const at = { x: event.clientX, y: event.clientY };
         const items: CtxItem[] = space
             ? [
-                  { label: "Rename…", run: () => renameSpace(space) },
-                  { label: "Change Icon…", run: () => setOverlay({ kind: "icons", at, spaceId: space.id }) },
-                  ...(space.icon ? [{ label: "Remove Icon", run: () => cmd.setSpaceIcon(space.id, "") }] : []),
+                  { label: "Rename…", icon: <IconPencil size={13} />, run: () => renameSpace(space) },
+                  { label: "Change Icon…", icon: <IconPencil size={13} />, run: () => setOverlay({ kind: "icons", at, spaceId: space.id }) },
+                  ...(space.icon ? [{ label: "Remove Icon", icon: <IconTrash size={13} />, run: () => cmd.setSpaceIcon(space.id, "") }] : []),
                   { sep: true },
                   ...sharedItems,
                   { sep: true },
-                  { label: "Delete Space…", danger: true, run: () => deleteSpace(space) },
+                  { label: "Delete Space…", icon: <IconTrash size={13} />, danger: true, run: () => deleteSpace(space) },
               ]
             : sharedItems;
         setOverlay({ kind: "menu", at, items });
