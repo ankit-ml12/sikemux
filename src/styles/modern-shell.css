@@ -771,7 +771,7 @@ textarea:focus,
     border-radius: var(--radius-2);
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
     background-image: linear-gradient(var(--tab-tint), var(--tab-tint));
-    box-shadow: none;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 6%, transparent);
     color: var(--text-secondary);
     overflow: hidden;
     transition:
@@ -796,12 +796,13 @@ textarea:focus,
     color: var(--text-secondary);
 }
 
-/* The chosen tab is lifted by a soft grey fill alone; the others lose their edge and step back. */
+/* The chosen tab is lifted by a soft grey fill alone; the others keep only a faint edge and step back. */
 .tabbar.v-agent .tab-wrap.active,
 .tabbar.v-editor .tab-wrap.active,
 .tabbar.v-desk .tab-wrap.active,
 .tabbar.v-stack .tab-wrap.active {
     --tab-tint: var(--surface-chosen);
+    box-shadow: none;
     color: var(--text-primary);
 }
 
