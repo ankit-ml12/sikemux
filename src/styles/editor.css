@@ -218,7 +218,13 @@
 .tree-ctx-menu .tree-ctx-item:hover,
 .tree-ctx-menu .tree-ctx-item:focus-visible {
     box-shadow: none;
-    background: var(--surface-selected);
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+/* The current choice is ticked at the row's end, as in a native menu, so it never reads as the hovered one. */
+.tree-ctx-check {
+    display: flex;
+    flex: none;
     color: var(--text-primary);
 }
 .tree-ctx-item.disabled {

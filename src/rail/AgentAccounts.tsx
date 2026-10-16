@@ -23,12 +23,6 @@ function useMinuteClock(): number {
     return now;
 }
 
-function initials(name: string): string {
-    const words = name.trim().split(/\s+/).filter(Boolean);
-    const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0]?.slice(0, 2) ?? "");
-    return letters.toUpperCase() || "?";
-}
-
 /**
  * The rail's footer: the plan limits of the account new chats start on. The
  * account is named in the head, which opens the person's other accounts with
@@ -148,8 +142,8 @@ function accountMenu(
             hint: !signedOut && peak != null ? `${Math.round(peak)}%` : undefined,
             selected,
             icon: (
-                <span className="agent-account-mark" aria-hidden="true">
-                    {initials(name)}
+                <span className="agent-account-mark" style={{ background: account.accent }} aria-hidden="true">
+                    {name.trim().charAt(0).toUpperCase() || "?"}
                 </span>
             ),
             run: selected ? undefined : () => cmd.selectProviderProfile(provider, account.id),

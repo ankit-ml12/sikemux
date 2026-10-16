@@ -13,6 +13,7 @@ import { copyText } from "../lib/clipboard";
 import { confirmDialog } from "../state/dialog";
 import { dispatchPaths, pathDropTargetAt, registerFolderDrop, resolvePathDropTarget, showPathDropHover } from "../state/dropRegistry";
 import {
+    IconCheck,
     IconChevron,
     IconCollapseAll,
     IconCopy,
@@ -1008,6 +1009,11 @@ export function TreeContextMenu({
                             {it.hint && (
                                 <span className="tree-ctx-hint" title={it.hint}>
                                     {it.hint}
+                                </span>
+                            )}
+                            {it.selected && (
+                                <span className="tree-ctx-check" aria-hidden="true">
+                                    <IconCheck size={11} />
                                 </span>
                             )}
                         </button>
