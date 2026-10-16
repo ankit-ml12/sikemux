@@ -1,8 +1,6 @@
-import { navigateTabs } from "../lib/tabNavigation";
 import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
-import { useSideScroll } from "../hooks/useSideScroll";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import { hasUsage, type UsageAgentType } from "../agents/catalog";
 import * as cmd from "../state/commands";
@@ -18,6 +16,7 @@ import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { inTeams } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { Tooltip } from "../ui/Tooltip";
+import { Dropdown } from "../ui/Dropdown";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
 import { leavingRail } from "./railMotion";
@@ -36,6 +35,7 @@ import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgent
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
+const ALL_AGENTS = "all";
 
 const persistedSessionIdOf = (a: Agent) => a.resumeId ?? a.id;
 
@@ -468,13 +468,52 @@ function AgentHeader({
     return (
         <div className="agent-header">
             <div className="agent-header-top">
-                {allAgents ? (
-                    <span className="agent-header-name">
-                        <span className="agent-glyph">
-                            <IconInbox size={16} />
-                        </span>
-                        <span className="agent-header-label">All agents</span>
-                    </span>
+                {agents.length > 1 ? (
+                    <Dropdown
+                        className="agent-picker"
+                        label="Agent provider"
+                        value={allAgents ? ALL_AGENTS : (type ?? "")}
+                        icon={
+                            allAgents ? (
+                                <span className="agent-glyph">
+                                    <IconInbox size={16} />
+                                </span>
+                            ) : (
+                                type && (
+                                    <span className={`agent-glyph ${type}`}>
+                                        <AgentIcon type={type} size={16} />
+                                    </span>
+                                )
+                            )
+                        }
+                        options={[
+                            {
+                                value: ALL_AGENTS,
+                                label: "All agents",
+                                icon: (
+                                    <span className="agent-glyph">
+                                        <IconInbox size={14} />
+                                    </span>
+                                ),
+                            },
+                            ...agents.map((a) => ({
+                                value: a.type,
+                                label: a.label,
+                                icon: (
+                                    <span className={`agent-glyph ${a.type}`}>
+                                        <AgentIcon type={a.type} size={14} />
+                                    </span>
+                                ),
+                                meta: hasUsage(a.type) && usagePeaks[a.type] != null ? `${Math.round(usagePeaks[a.type]!)}%` : undefined,
+                            })),
+                        ]}
+                        menuWidth={200}
+                        onChange={(value) => {
+                            if (value === ALL_AGENTS) return cmd.setAgentRailAllAgents(true);
+                            setType(value as AgentType);
+                            cmd.setAgentRailAllAgents(false);
+                        }}
+                    />
                 ) : type ? (
                     <span className="agent-header-name">
                         <span className={`agent-glyph ${type}`}>
@@ -484,51 +523,6 @@ function AgentHeader({
                     </span>
                 ) : (
                     <span className="agent-header-label">Agents</span>
-                )}
-                {agents.length > 1 && (
-                    <ProviderStrip>
-                        {!allAgents && (
-                            <Tooltip label="All agents">
-                                <button
-                                    role="tab"
-                                    aria-selected={false}
-                                    onKeyDown={navigateTabs}
-                                    className="agent-header-btn all-agents"
-                                    aria-label="All agents"
-                                    onClick={(event) => {
-                                        event.currentTarget.focus();
-                                        cmd.setAgentRailAllAgents(true);
-                                    }}>
-                                    <IconInbox size={15} />
-                                </button>
-                            </Tooltip>
-                        )}
-                        {agents
-                            .filter((a) => allAgents || a.type !== type)
-                            .map((a) => (
-                                <Tooltip
-                                    key={a.type}
-                                    label={
-                                        hasUsage(a.type) && usagePeaks[a.type] != null
-                                            ? `${a.label} — ${Math.round(usagePeaks[a.type]!)}% of the busiest limit used`
-                                            : a.label
-                                    }>
-                                    <button
-                                        role="tab"
-                                        aria-selected={false}
-                                        onKeyDown={navigateTabs}
-                                        className={`agent-header-btn ${a.type}`}
-                                        aria-label={a.label}
-                                        onClick={(event) => {
-                                            event.currentTarget.focus();
-                                            setType(a.type);
-                                            cmd.setAgentRailAllAgents(false);
-                                        }}>
-                                        <AgentIcon type={a.type} size={15} />
-                                    </button>
-                                </Tooltip>
-                            ))}
-                    </ProviderStrip>
                 )}
                 <div className="agent-header-actions">
                     <Tooltip label="Filter recent chats">
@@ -551,17 +545,6 @@ function AgentHeader({
                     <RailToggle edge="end" />
                 </div>
             </div>
-        </div>
-    );
-}
-
-/** The other providers, in a strip that scrolls sideways and fades at whichever end has more. */
-function ProviderStrip({ children }: { children: ReactNode }) {
-    const { ref, className, measure } = useSideScroll<HTMLDivElement>();
-    useLayoutEffect(measure);
-    return (
-        <div ref={ref} className={`agent-header-types ${className}`} role="tablist" aria-label="Agent provider" onScroll={measure}>
-            {children}
         </div>
     );
 }

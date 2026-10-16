@@ -1127,7 +1127,6 @@ textarea,
         .row-x,
         .proj-row,
         .proj-child,
-        .agent-header-btn,
         .rail-search,
         .agent-row,
         .dlg-input,
@@ -1301,41 +1300,30 @@ textarea,
 }
 
 /* ---- Agent rail header ---------------------------------------------------
- * The chosen provider is named; the others sit after it as marks in a strip
- * that scrolls sideways, fading at whichever end has more.
+ * The chosen provider's name is the picker for the others: bare until hovered,
+ * so it reads as the title it replaces.
  */
-.agent-header-types {
-    flex: 1 1 auto;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
+.dd-btn.agent-picker {
+    gap: 7px;
+    height: 28px;
+    margin-left: calc(-1 * var(--space-1h));
+    padding: 0 var(--space-1h);
+    border-color: transparent;
+    background: transparent;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
 }
 
-.agent-header-name:has(+ .agent-header-types) {
-    padding-right: var(--space-2);
-    border-right: 1px solid var(--line-soft);
-}
-
-.agent-header-types::-webkit-scrollbar {
-    display: none;
-}
-
-.agent-header-btn {
-    --agent-provider: var(--acc);
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    color: var(--agent-provider);
-    transition: background var(--dur-1);
-}
-
-.agent-header-btn:hover {
+.dd-btn.agent-picker:hover:not(:disabled) {
+    border-color: transparent;
     background: var(--surface-hover);
+}
+
+.dd-btn.agent-picker[aria-expanded="true"] {
+    border-color: transparent;
+    background: var(--surface-selected);
+    box-shadow: none;
 }
 
 .agent-header-name {

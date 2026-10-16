@@ -194,7 +194,8 @@ describe("agent rail", () => {
         expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
         expect(screen.getByText("reset 1h 30m")).toBeInTheDocument();
 
-        await user.click(screen.getByRole("tab", { name: "Claude" }));
+        await user.click(screen.getByRole("button", { name: "Agent provider" }));
+        await user.click(screen.getByRole("option", { name: /^Claude/ }));
         expect(await screen.findByRole("region", { name: "Claude plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "7d usage" })).toHaveAttribute("aria-valuenow", "82");
         expect(mocks.usage).toHaveBeenCalledWith("codex", undefined);
@@ -351,13 +352,15 @@ describe("agent rail", () => {
         expect(await screen.findByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: /Claude chat/ })).not.toBeInTheDocument();
 
-        await user.click(screen.getByRole("tab", { name: "All agents" }));
+        await user.click(screen.getByRole("button", { name: "Agent provider" }));
+        await user.click(screen.getByRole("option", { name: "All agents" }));
         expect(await screen.findByRole("button", { name: /Claude chat/ })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
         expect(getState().agentRailAllAgents).toBe(true);
         expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
 
-        await user.click(screen.getByRole("tab", { name: "Claude" }));
+        await user.click(screen.getByRole("button", { name: "Agent provider" }));
+        await user.click(screen.getByRole("option", { name: /^Claude/ }));
         expect(getState().agentRailAllAgents).toBe(false);
         await waitFor(() => expect(screen.queryByRole("button", { name: /Codex chat/ })).not.toBeInTheDocument());
     });

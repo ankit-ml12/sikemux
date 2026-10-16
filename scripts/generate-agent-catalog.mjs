@@ -30,7 +30,6 @@ const FLAGS = ["accounts", "usage", "deletableChats", "bypass"];
 const BRANDED = [
   [".agent-glyph.%", "color"],
   [".agent-dormant-notch.%", "background"],
-  [".agent-header-btn.%", "--agent-provider"],
   [".agent-usage.%", "--usage-fill"],
   [".desk.%", "--desk-agent"],
   [".proj-pip-%", "color"],
