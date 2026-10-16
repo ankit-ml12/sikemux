@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@clerk/expo';
 
 import { Button } from '@/ui/controls';
+import { PromptGlyph } from '@/ui/prompt';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, useStyles } from '@/ui/theme';
 import { choose, closeOffer, useOffered } from './setting';
@@ -26,7 +27,10 @@ export function NotificationsOffer() {
 
   return (
     <Sheet visible={visible} onClose={closeOffer}>
-      <Text style={styles.title}>Turn on notifications?</Text>
+      <View style={styles.head}>
+        <PromptGlyph icon="IconInbox" small />
+        <Text style={styles.title}>Turn on notifications?</Text>
+      </View>
       <View style={styles.choices}>
         <Button title="Not now" onPress={notNow} style={styles.choice} />
         <Button kind="primary" title="Turn on" onPress={accept} style={styles.choice} />
@@ -37,7 +41,8 @@ export function NotificationsOffer() {
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-    title: { fontFamily: fonts.uiSemibold, fontSize: 15, color: colors.ink, paddingHorizontal: 8, paddingTop: 12, paddingBottom: 16 },
+    head: { alignItems: 'center', gap: 12, paddingTop: 12, paddingBottom: 20 },
+    title: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     choices: { flexDirection: 'row', gap: 8 },
     choice: { flex: 1 },
   });

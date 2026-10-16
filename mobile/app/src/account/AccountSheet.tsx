@@ -114,6 +114,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
             <Button title="Try again" disabled={leaving} onPress={() => void leave()} />
             <Button
               kind="danger"
+              icon="IconLogOut"
               title={leaving ? 'Signing out…' : 'Sign out anyway'}
               disabled={leaving}
               onPress={() => void leave(true)}
@@ -123,6 +124,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
       ) : (
         <Button
           kind="danger"
+          icon="IconLogOut"
           title={leaving ? 'Signing out…' : 'Sign out'}
           disabled={leaving}
           onPress={() => void leave()}
