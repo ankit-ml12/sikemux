@@ -12,6 +12,7 @@ import type { ProviderProfile } from "../state/types";
 import { AgentIcon } from "../ui/Icons";
 import { SignInError, SignInScreen, SignInWaiting } from "../plugin-api/SignIn";
 import {
+    accountName,
     addAccount,
     cancelSignIn,
     closeAccountDialog,
@@ -219,8 +220,10 @@ function BrowserHelp({ url, account }: { url: string; account: ProviderProfile }
 function SignedIn({ provider, account, mark }: { provider: AccountProvider; account: ProviderProfile; mark: ReactNode }) {
     const status = useResource(agentAccountR, provider, account.configPath);
     const current = useStore((s) => selectedProviderProfile(provider, s.providerProfiles, s.selectedProviderProfileIds));
+    const currentStatus = useResource(agentAccountR, provider, current?.configPath);
     const plan = status.data?.plan ? planLabel(status.data.plan) : null;
     const who = [status.data?.email ?? status.data?.organization, plan].filter(Boolean).join(" · ");
+    const name = accountName(account, status.data);
     const switchTo = () => {
         cmd.selectProviderProfile(provider, account.id);
         closeAccountDialog();
@@ -228,15 +231,15 @@ function SignedIn({ provider, account, mark }: { provider: AccountProvider; acco
     return (
         <SignInScreen
             mark={mark}
-            title={`${account.name} is signed in`}
+            title={`${name} is signed in`}
             lede={status.data?.signedIn === false ? "It is not signed in yet." : who || "Checking who signed in…"}>
             {current && current.id !== account.id ? (
                 <>
                     <button type="button" className="signin-btn primary" autoFocus onClick={switchTo}>
-                        Switch to {account.name}
+                        Switch to {name}
                     </button>
                     <button type="button" className="signin-btn" onClick={closeAccountDialog}>
-                        Keep using {current.name}
+                        Keep using {accountName(current, currentStatus.data)}
                     </button>
                 </>
             ) : (

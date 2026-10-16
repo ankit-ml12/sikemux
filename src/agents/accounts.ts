@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from "react";
-import { agentApi } from "../api/agents";
+import { agentApi, type AgentAccountStatus } from "../api/agents";
 import { acpApi, type AcpAccount } from "../api/acp";
 import { invalidate } from "../state/resources";
 import { reportError } from "../state/toast";
 import { hasAccounts, type AccountAgentType } from "./catalog";
-import type { Agent, AgentProvider, AgentType, ProviderProfile } from "../state/types";
+import { DEFAULT_PROVIDER_PROFILES, type Agent, type AgentProvider, type AgentType, type ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 
 /* An account is a provider profile: its directory holds one sign-in. */
@@ -17,6 +17,13 @@ export function isAccountProvider(type: AgentType | AgentProvider | null | undef
 
 export function accountsOf(provider: AccountProvider, profiles: readonly ProviderProfile[]): ProviderProfile[] {
     return profiles.filter((profile) => profile.provider === provider);
+}
+
+/* A profile still under its built-in name says nothing about whose account
+   it is, so it goes by the name on the account instead. */
+export function accountName(account: ProviderProfile, status: AgentAccountStatus | undefined): string {
+    const unnamed = DEFAULT_PROVIDER_PROFILES.some((builtin) => builtin.id === account.id && builtin.name === account.name);
+    return (unnamed && status?.name) || account.name;
 }
 
 export function acpAccount(profile: ProviderProfile): AcpAccount {

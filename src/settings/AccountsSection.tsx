@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { AccountSignIn } from "../agents/AccountSignIn";
-import { accountsOf, openAccountDialog, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
+import { accountName, accountsOf, openAccountDialog, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import { ACCOUNT_AGENT_TYPES, agentLabel } from "../agents/catalog";
 import * as cmd from "../state/commands";
@@ -81,6 +81,7 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
     const signedIn = status.data?.signedIn === true;
     const known = status.data !== undefined;
     const plan = status.data?.plan ? planLabel(status.data.plan) : null;
+    const name = accountName(account, status.data);
     const who = !known
         ? status.status === "error"
             ? "Could not ask who is signed in"
@@ -93,12 +94,12 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
         <SettingsRow
             icon={
                 <span className="account-row-avatar" style={{ background: account.accent }} aria-hidden="true">
-                    {account.name.trim().charAt(0).toUpperCase() || "?"}
+                    {name.trim().charAt(0).toUpperCase() || "?"}
                 </span>
             }
             label={
                 <span className="account-row-label">
-                    {account.name}
+                    {name}
                     {inUse && <span className="account-row-badge">New chats</span>}
                 </span>
             }
@@ -128,11 +129,11 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
                 </>
             )}
             {!account.id.startsWith("builtin-") && (
-                <Tooltip label={`Remove ${account.name} from Sikemux`}>
+                <Tooltip label={`Remove ${name} from Sikemux`}>
                     <button
                         className="settings-btn danger account-row-remove"
                         type="button"
-                        aria-label={`Remove ${account.name}`}
+                        aria-label={`Remove ${name}`}
                         onClick={() => cmd.deleteProviderProfile(account.id)}>
                         <IconTrash size={12} />
                     </button>

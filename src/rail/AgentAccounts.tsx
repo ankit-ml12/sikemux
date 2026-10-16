@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentAccountStatus, AgentUsage } from "../api/agents";
-import { accountsOf, openAccountDialog, type AccountProvider } from "../agents/accounts";
+import type { AgentUsage } from "../api/agents";
+import { accountName, accountsOf, openAccountDialog, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import { agentLabel } from "../agents/catalog";
 import * as cmd from "../state/commands";
 import { fetchResource, invalidate, peekResource, type ResourceHandle, useResource } from "../state/resources";
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { DEFAULT_PROVIDER_PROFILES, type ProviderProfile } from "../state/types";
+import type { ProviderProfile } from "../state/types";
 import { IconChevron, IconRefresh } from "../ui/Icons";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
@@ -27,13 +27,6 @@ function initials(name: string): string {
     const words = name.trim().split(/\s+/).filter(Boolean);
     const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0]?.slice(0, 2) ?? "");
     return letters.toUpperCase() || "?";
-}
-
-/* A profile still under its built-in name says nothing about whose account
-   it is, so it goes by the name on the account instead. */
-function accountName(account: ProviderProfile, status: AgentAccountStatus | undefined): string {
-    const unnamed = DEFAULT_PROVIDER_PROFILES.some((builtin) => builtin.id === account.id && builtin.name === account.name);
-    return (unnamed && status?.name) || account.name;
 }
 
 /**
