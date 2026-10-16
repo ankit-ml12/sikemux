@@ -42,13 +42,14 @@ export interface ChatQuestions {
     writing: boolean;
     answer: (question: AgentQuestion, answer: QuestionAnswer, shown: string | null) => Promise<boolean>;
     pick: (question: AgentQuestion, pick: QuestionPick) => void;
+    /** Picks a choice, or ticks it on a question that takes several. */
     choose: (question: AgentQuestion, choice: number) => void;
     show: (question: AgentQuestion) => void;
     fold: (folded: boolean) => void;
     submit: () => void;
     write: (question: AgentQuestion) => void;
     stopComposing: () => void;
-    /** A key pressed while nothing is typed: numbers pick, arrows move, Enter picks or sends. True when it did something. */
+    /** A key pressed while nothing is typed: numbers pick, arrows move, Space ticks, Enter picks, moves on or sends. True when it did something. */
     key: (key: string, primary: boolean) => boolean;
 }
 
@@ -142,23 +143,49 @@ export function useChatQuestions(agentId: string, messages: readonly ChatMessage
         [onError, open, sending],
     );
 
+    /** Moves on from `question` once it has its answer: to the next question still without one, or sends a lone question. */
+    const moveOn = useCallback(
+        (question: AgentQuestion, given: ReadonlyMap<string, QuestionPick>) => {
+            setCursor(null);
+            if (open.length === 1) {
+                send(given);
+                return;
+            }
+            const following =
+                open.slice(open.indexOf(question) + 1).find((other) => !given.has(other.id)) ?? open.find((other) => !given.has(other.id));
+            if (following) setShownId(following.id);
+        },
+        [open, send],
+    );
+
     const pick = useCallback(
         (question: AgentQuestion, given: QuestionPick) => {
             const next = new Map(picks).set(question.id, given);
             setPicks(next);
-            setCursor(null);
-            if (open.length === 1) {
-                send(next);
-                return;
-            }
-            const following =
-                open.slice(open.indexOf(question) + 1).find((other) => !next.has(other.id)) ?? open.find((other) => !next.has(other.id));
-            if (following) setShownId(following.id);
+            moveOn(question, next);
         },
-        [open, picks, send],
+        [moveOn, picks],
     );
 
-    const choose = useCallback((question: AgentQuestion, choice: number) => pick(question, choicePick(question, choice)), [pick]);
+    /** Ticks or unticks a choice of a question that takes several, staying on it. */
+    const toggle = useCallback(
+        (question: AgentQuestion, choice: number) => {
+            const held = picks.get(question.id)?.answer;
+            const ticked = held && "choices" in held ? held.choices : [];
+            const choices = ticked.includes(choice) ? ticked.filter((other) => other !== choice) : [...ticked, choice].sort((a, b) => a - b);
+            const next = new Map(picks);
+            if (choices.length === 0) next.delete(question.id);
+            else next.set(question.id, { answer: { choices }, shown: choices.map((index) => question.choices[index]?.label ?? "").join(", ") });
+            setPicks(next);
+            setCursor({ id: question.id, at: choice });
+        },
+        [picks],
+    );
+
+    const choose = useCallback(
+        (question: AgentQuestion, choice: number) => (question.multi ? toggle(question, choice) : pick(question, choicePick(question, choice))),
+        [pick, toggle],
+    );
     const show = useCallback((question: AgentQuestion) => {
         setShownId(question.id);
         setCursor(null);
@@ -191,7 +218,17 @@ export function useChatQuestions(agentId: string, messages: readonly ChatMessage
             show(open[(at + open.length) % open.length]);
             return true;
         }
+        if (key === " " && current.multi) {
+            toggle(current, cursor);
+            return true;
+        }
         if (key !== "Enter") return false;
+        if (current.multi) {
+            if (!picked) toggle(current, cursor);
+            else if (ready) submit();
+            else moveOn(current, picks);
+            return true;
+        }
         const already = picked && "choice" in picked.answer && picked.answer.choice === cursor;
         if (ready && (already || count === 0)) submit();
         else if (count > 0) choose(current, cursor);

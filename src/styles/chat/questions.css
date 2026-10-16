@@ -182,6 +182,32 @@
     margin-top: 4px;
 }
 
+.chat-questions-tick {
+    position: relative;
+    width: 12px;
+    height: 12px;
+    margin-top: 3.5px;
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1.25px color-mix(in oklab, var(--ink) 30%, transparent);
+}
+
+.chat-questions-choice.chosen .chat-questions-tick {
+    background: var(--text-primary);
+    box-shadow: none;
+}
+
+.chat-questions-choice.chosen .chat-questions-tick::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 6px;
+    height: 3.5px;
+    border: solid var(--surface-sunken);
+    border-width: 0 0 1.5px 1.5px;
+    transform: rotate(-45deg);
+}
+
 .chat-questions-body {
     display: grid;
     min-width: 0;

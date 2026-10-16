@@ -18,6 +18,8 @@ export interface AgentQuestion {
     /** Two or three words naming the question, such as Photo access. */
     readonly header?: string;
     readonly choices: QuestionChoice[];
+    /** The person may pick more than one of `choices`. */
+    readonly multi?: boolean;
     /** The asker waits for the answer; otherwise it goes on with `assumption`. */
     readonly blocked: boolean;
     readonly assumption: string | null;
@@ -34,7 +36,8 @@ export interface AgentQuestion {
     readonly ticket?: string;
 }
 
-export type QuestionAnswer = { readonly answer: string } | { readonly choice: number } | { readonly fine: true };
+export type QuestionAnswer =
+    { readonly answer: string } | { readonly choice: number } | { readonly choices: readonly number[] } | { readonly fine: true };
 
 /** Beside the field a secret is typed into. */
 export const secretNote = (asker: string): string =>

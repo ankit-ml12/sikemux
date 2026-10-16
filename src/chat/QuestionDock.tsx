@@ -102,7 +102,10 @@ export function QuestionDock({
     }
 
     const picked = picks.get(current.id);
-    const chosen = picked && "choice" in picked.answer ? picked.answer.choice : null;
+    const chosen = (index: number) =>
+        picked !== undefined &&
+        ("choice" in picked.answer ? picked.answer.choice === index : "choices" in picked.answer && picked.answer.choices.includes(index));
+    const multi = current.multi === true;
     const typed = picked && "answer" in picked.answer && !current.secret ? picked.shown : null;
     const via = viaNote(current);
     return (
@@ -122,7 +125,7 @@ export function QuestionDock({
                         </button>
                     ))}
                 </div>
-                {count > 1 && (
+                {(count > 1 || multi) && (
                     <button type="button" className="chat-questions-send" disabled={!questions.ready || sending} onClick={questions.submit}>
                         Send
                         <kbd>{PRIMARY_SHORTCUT}↵</kbd>
@@ -134,22 +137,26 @@ export function QuestionDock({
             </div>
             <div className="chat-questions-text">
                 {current.text}
+                {multi && <span className="chat-questions-via"> Pick any.</span>}
                 {via && <span className="chat-questions-via"> · {via}</span>}
             </div>
             {(current.choices.length > 0 || typed) && (
-                <div className="chat-questions-choices" role="radiogroup" aria-label={questionTitle(current, open.indexOf(current), count)}>
+                <div
+                    className="chat-questions-choices"
+                    role={multi ? "group" : "radiogroup"}
+                    aria-label={questionTitle(current, open.indexOf(current), count)}>
                     {current.choices.map((choice, index) => {
                         const recommended = RECOMMENDED.test(choice.label);
                         return (
                             <button
                                 key={index}
                                 type="button"
-                                role="radio"
-                                aria-checked={chosen === index}
-                                className={`chat-questions-choice${chosen === index ? " chosen" : ""}${questions.cursor === index ? " cursor" : ""}`}
+                                role={multi ? "checkbox" : "radio"}
+                                aria-checked={chosen(index)}
+                                className={`chat-questions-choice${chosen(index) ? " chosen" : ""}${questions.cursor === index ? " cursor" : ""}`}
                                 disabled={sending}
                                 onClick={() => questions.choose(current, index)}>
-                                <span className="chat-questions-key">{index + 1}</span>
+                                <span className="chat-questions-key">{multi ? <span className="chat-questions-tick" /> : index + 1}</span>
                                 <span className="chat-questions-body">
                                     <span className="chat-questions-label">
                                         {recommended ? choice.label.replace(RECOMMENDED, "") : choice.label}
