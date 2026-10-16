@@ -29,12 +29,13 @@ function iconsUpToDate() {
 async function generateIcons() {
   const bundle = resolve(cache, 'sikemux-icons.mjs');
   const entry = `
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import * as Icons from ${JSON.stringify(resolve(desktop, 'ui/Icons.tsx'))};
 export const rendered = Object.fromEntries(
   Object.entries(Icons)
     .filter(([name, Icon]) => typeof Icon === "function" && (name.startsWith("Icon") || name === "Logo"))
-    .map(([name, Icon]) => [name, renderToStaticMarkup(Icon({ size: 16, percent: 80 }))]),
+    .map(([name, Icon]) => [name, renderToStaticMarkup(createElement(Icon, { size: 16, percent: 80 }))]),
 );
 `;
   mkdirSync(cache, { recursive: true });
