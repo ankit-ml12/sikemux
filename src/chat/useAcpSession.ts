@@ -4,7 +4,7 @@ import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
 import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { getState } from "../state/store";
-import { acpAccount } from "../agents/accounts";
+import { acpAccount, takeMove } from "../agents/accounts";
 import { noteSignedOut } from "../agents/statusRefresh";
 import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
@@ -89,6 +89,7 @@ export function useAcpSession({
         let mounted = true;
         const reattaching = reattachingRef.current;
         reattachingRef.current = false;
+        takeMove(agent.id, undefined);
         const hold = Boolean(agentRef.current.resumeId) || reattaching;
         dispatch({ type: "reset", hold });
         setReplaying(hold);
@@ -264,6 +265,7 @@ export function useAcpSession({
             updateTimerRef.current = null;
             queuedUpdatesRef.current = [];
             controller.abort();
+            if (takeMove(agent.id, agentRef.current.profileId)) reattachingRef.current = true;
             lifecycleRef.current = reattachingRef.current ? lifecycle : lifecycle.finally(() => acpApi.stop(agent.id).catch(() => {}));
         };
     }, [

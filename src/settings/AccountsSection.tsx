@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AccountSignIn } from "../agents/AccountSignIn";
-import { accountName, accountsOf, openAccountDialog, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
+import { accountName, accountsOf, openAccountDialog, signOut, switchAccount, useSignIn, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import { ACCOUNT_AGENT_TYPES, agentLabel } from "../agents/catalog";
 import * as cmd from "../state/commands";
@@ -117,7 +117,10 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
                 </button>
             ) : (
                 !inUse && (
-                    <button className="settings-btn" type="button" onClick={() => cmd.selectProviderProfile(provider, account.id)}>
+                    <button
+                        className="settings-btn"
+                        type="button"
+                        onClick={() => void switchAccount(provider, account).catch(reportError("Switch account"))}>
                         Use
                     </button>
                 )

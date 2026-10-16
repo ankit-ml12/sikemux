@@ -19,6 +19,7 @@ import {
     dismissSignIn,
     signIn,
     submitSignInCode,
+    switchAccount,
     useAccountDialog,
     useSignIn,
     type AccountDialogRequest,
@@ -225,7 +226,7 @@ function SignedIn({ provider, account, mark }: { provider: AccountProvider; acco
     const who = [status.data?.email ?? status.data?.organization, plan].filter(Boolean).join(" · ");
     const name = accountName(account, status.data);
     const switchTo = () => {
-        cmd.selectProviderProfile(provider, account.id);
+        void switchAccount(provider, account).catch(reportError("Switch account"));
         closeAccountDialog();
     };
     return (
