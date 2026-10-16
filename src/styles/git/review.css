@@ -81,7 +81,8 @@
 .merge-review-item {
     overflow: clip;
     border: 1px solid var(--border);
-    border-radius: var(--radius-2);
+    border-radius: var(--radius-3);
+    background: color-mix(in oklab, var(--surface) 45%, transparent);
 }
 .merge-review-item.focused > .merge-file-header {
     background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent)

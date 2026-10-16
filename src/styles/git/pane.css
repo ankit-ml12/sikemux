@@ -6,8 +6,8 @@
     outline: none;
 }
 
-/* The changes view is panels on the pane's picture: the commit box, the files, the history and the review,
-   each with its own edge and corner and a gap between them, never a shared line. */
+/* The changes view is panels on the pane's picture: the commit box, the files and the history, each with its own
+   edge and corner and a gap between them, never a shared line. The review's files are cards of their own. */
 .git-body {
     display: flex;
     flex: 1;
@@ -29,8 +29,7 @@
 }
 .git-left > .git-compose,
 .git-left > .git-list,
-.git-left > .git-history,
-.git-body > .git-right {
+.git-left > .git-history {
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
     background: color-mix(in oklab, var(--surface) 45%, transparent);
