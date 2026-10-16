@@ -314,11 +314,16 @@ struct Answer {
     note: Option<PendingNote>,
 }
 
-fn ask() -> Option<Answer> {
-    let endpoint = std::env::var_os("SIKEMUX_CLI_ENDPOINT")
+/// Where agents reach the core that started them.
+pub(super) fn endpoint() -> Option<PathBuf> {
+    std::env::var_os("SIKEMUX_CLI_ENDPOINT")
         .filter(|path| !path.is_empty())
         .map(PathBuf::from)
-        .or_else(crate::cli::endpoint::default_endpoint_path)?;
+        .or_else(crate::cli::endpoint::default_endpoint_path)
+}
+
+fn ask() -> Option<Answer> {
+    let endpoint = endpoint()?;
     let top = std::env::current_dir().ok()?;
     let index = std::env::var_os("GIT_INDEX_FILE").map(|index| top.join(index));
     let params = json!({

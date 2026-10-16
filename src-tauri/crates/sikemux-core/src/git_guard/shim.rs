@@ -12,6 +12,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -219,7 +220,7 @@ fn run_hook() -> i32 {
         .iter()
         .find_map(|key| tool[*key].as_str())
         .map_or_else(|| PathBuf::from(cwd), |dir| Path::new(cwd).join(dir));
-    match super::refusal(command, &cwd) {
+    match super::refusal(command, &cwd, &others) {
         Some(refusal) => {
             eprintln!("{refusal}");
             2
@@ -242,6 +243,7 @@ fn run(args: Vec<OsString>) -> i32 {
         &words,
         private_index,
         sikemux_process::user_environment::command(&git),
+        &others,
     ) {
         eprintln!("{refusal}");
         return 1;
@@ -268,6 +270,23 @@ fn run(args: Vec<OsString>) -> i32 {
     eprintln!("git: {}: {error}", git.display());
     126
 }
+
+/// The other agents whose work a git command in `dir` would touch, as the
+/// core that started this agent knows them.
+fn others(dir: &Path, paths: &[String]) -> Option<Vec<String>> {
+    let answer = crate::cli::client::attempt(
+        &footer::endpoint()?,
+        &dir.to_string_lossy(),
+        None,
+        crate::cli::protocol::GIT_GUARD_METHOD,
+        &json!({ "paths": paths }),
+        GUARD_WAIT,
+    )
+    .ok()?;
+    serde_json::from_value(answer.get("others")?.clone()).ok()
+}
+
+const GUARD_WAIT: Duration = Duration::from_secs(10);
 
 /// The git this shim stands in for, never the shim itself.
 fn real_git() -> Option<PathBuf> {
