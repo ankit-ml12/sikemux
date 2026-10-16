@@ -222,7 +222,7 @@ describe("agent rail", () => {
 
         render(<AgentRailBody />);
 
-        expect(await screen.findByRole("tab", { name: "Hermes" })).toBeInTheDocument();
+        expect(await screen.findByText("Hermes")).toBeInTheDocument();
         expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
         expect(mocks.usage).not.toHaveBeenCalled();
     });

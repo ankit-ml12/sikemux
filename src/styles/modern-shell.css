@@ -633,24 +633,6 @@ textarea:focus,
     gap: var(--space-2);
 }
 
-/* The rail's other headers are one row, so they share a tight padding. This
-   one ends in the provider tiles, which need clearance from the rule below. */
-.workspace-rail .agent-header {
-    padding-bottom: var(--space-3);
-}
-
-/* The provider switch spans the rail instead of competing with the title. */
-.agent-header-types {
-    display: flex;
-    gap: var(--space-1);
-}
-.agent-header-types > * {
-    flex: 1 1 0;
-}
-.agent-header-types .agent-header-btn {
-    width: 100%;
-}
-
 /* Now the rail's only name for this panel — the tab strip that used to say it
  * first is gone — but a rail header is a signpost, not a masthead. */
 .agent-header-label {
@@ -658,25 +640,6 @@ textarea:focus,
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
     letter-spacing: var(--tracking-normal);
-}
-
-.agent-header-types,
-.agent-header-actions {
-    gap: 4px;
-}
-
-.agent-header-types {
-    flex: 0 0 auto;
-}
-
-.agent-header-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-xs);
-}
-
-.agent-header-btn.active {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 24%, transparent);
 }
 
 .agent-usage {
@@ -1338,28 +1301,45 @@ textarea,
 }
 
 /* ---- Agent rail header ---------------------------------------------------
- * The provider buttons only had a surface when active, so the row read as one
- * boxed icon among loose glyphs, and the usage meter was a hard bar pinned to
- * the bottom edge — it collided with the button's rounded corner.
+ * The chosen provider is named; the others sit after it as marks in a strip
+ * that scrolls sideways, fading at whichever end has more.
  */
+.agent-header-types {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.agent-header-name:has(+ .agent-header-types) {
+    padding-right: var(--space-2);
+    border-right: 1px solid var(--line-soft);
+}
+
+.agent-header-types::-webkit-scrollbar {
+    display: none;
+}
+
 .agent-header-btn {
-    /* Each provider keeps its full mark colour; the tile's border and tint mark the selected one. */
+    --agent-provider: var(--acc);
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
     color: var(--agent-provider);
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 55%), transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 66%, transparent);
+    transition: background var(--dur-1);
 }
 
-.agent-header-btn:hover:not(:disabled) {
-    color: var(--agent-provider);
-}
-
-.agent-header-btn.active {
-    color: var(--agent-provider);
-    background: color-mix(in srgb, var(--agent-provider) 12%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--agent-provider) 34%, transparent);
+.agent-header-btn:hover {
+    background: var(--surface-hover);
 }
 
 .agent-header-name {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -1373,16 +1353,6 @@ textarea,
     letter-spacing: var(--tracking-tight);
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.agent-header-plan {
-    flex: 0 0 auto;
-    padding: 1px 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-chip);
-    color: var(--text-tertiary);
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
 }
 
 .agent-header-actions {

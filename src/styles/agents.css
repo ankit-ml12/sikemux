@@ -392,46 +392,9 @@
     border-bottom: 1px solid var(--border);
     flex: 0 0 auto;
 }
-.agent-header-types,
 .agent-header-actions {
     display: flex;
     gap: 2px;
-}
-.agent-header-types {
-    flex: 1;
-}
-.agent-header-btn {
-    --agent-provider: var(--acc);
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 28px;
-    color: var(--text-tertiary);
-    transition:
-        color 0.12s,
-        background 0.12s;
-}
-.agent-header-btn:hover {
-    color: var(--text-primary);
-    background: var(--surface-raised);
-}
-.agent-header-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-}
-.agent-header-btn:disabled:hover {
-    color: var(--text-tertiary);
-    background: transparent;
-}
-.agent-header-btn.active {
-    color: var(--acc);
-    background: var(--surface-selected);
-}
-/* The all-agents tab leads the provider row, standing a little apart from it. */
-.agent-header-types > .all-agents {
-    margin-right: 6px;
 }
 
 /* This project or all projects: a hairline track with a neutral thumb that

@@ -9,6 +9,7 @@ import {
     type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useSideScroll } from "../hooks/useSideScroll";
 import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
 import { SPACE_ICONS, type SpaceIcon } from "../state/projectSpaces";
@@ -175,16 +176,7 @@ function SpaceTrack({
     activeSpaceId: string | null;
     onMenu: (event: ReactMouseEvent, space?: ProjectSpace) => void;
 }) {
-    const trackRef = useRef<HTMLDivElement>(null);
-    const [clipped, setClipped] = useState({ start: false, end: false });
-
-    const measure = () => {
-        const track = trackRef.current;
-        if (!track) return;
-        const start = track.scrollLeft > 1;
-        const end = track.scrollLeft + track.clientWidth < track.scrollWidth - 1;
-        setClipped((was) => (was.start === start && was.end === end ? was : { start, end }));
-    };
+    const { ref: trackRef, className: scrollClass, measure } = useSideScroll<HTMLDivElement>();
 
     useLayoutEffect(() => {
         const track = trackRef.current;
@@ -196,25 +188,7 @@ function SpaceTrack({
             else if (right > track.scrollLeft + track.clientWidth) track.scrollLeft = right - track.clientWidth;
         }
         measure();
-    }, [activeSpaceId, spaces]);
-
-    useEffect(() => {
-        const track = trackRef.current;
-        if (!track) return;
-        const observer = new ResizeObserver(measure);
-        observer.observe(track);
-        // A mouse wheel only scrolls up and down, so it moves the track sideways instead.
-        const onWheel = (event: WheelEvent) => {
-            if (event.deltaX !== 0 || track.scrollWidth <= track.clientWidth) return;
-            event.preventDefault();
-            track.scrollLeft += event.deltaY;
-        };
-        track.addEventListener("wheel", onWheel, { passive: false });
-        return () => {
-            observer.disconnect();
-            track.removeEventListener("wheel", onWheel);
-        };
-    }, []);
+    }, [activeSpaceId, spaces, measure, trackRef]);
 
     const option = (space: ProjectSpace | null) => {
         const id = space?.id ?? null;
@@ -236,7 +210,7 @@ function SpaceTrack({
     return (
         <div
             ref={trackRef}
-            className={`space-track${clipped.start ? " clipped-start" : ""}${clipped.end ? " clipped-end" : ""}`}
+            className={`space-track ${scrollClass}`}
             role="radiogroup"
             aria-label="Projects shown"
             onScroll={measure}
