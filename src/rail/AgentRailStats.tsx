@@ -1,8 +1,8 @@
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import { agentDisplayOf, agentIdsOf, openAgents } from "../state/selectors";
 import { useStore } from "../state/store";
 import type { Agent, AgentRailScope, AgentType } from "../state/types";
-import { AgentIcon, IconAgent, IconAgents, IconCommand } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconAgents, IconCommand, IconMessage } from "../ui/Icons";
 
 /** What is running in the rail's scope: every agent with its subagents, the agents alone, their subagents and their shells. */
 export function AgentRailStats({ scope, provider }: { scope: AgentRailScope; provider: AgentType | null }) {
@@ -37,13 +37,11 @@ export function AgentRailStats({ scope, provider }: { scope: AgentRailScope; pro
 
     return (
         <div className="agent-stats">
-            <span className="agent-stat agent-stat-all" title="Agents and their subagents">
+            <Stat kind="all" count={stats.agents + stats.subagents} what="agents and subagents">
                 <IconAgents size={14} />
-                <b>{stats.agents + stats.subagents}</b>
-                <span>all</span>
-            </span>
-            <span className="agent-stat agent-stat-agents" title="Agents">
-                {stats.types.length > 0 && (
+            </Stat>
+            <Stat kind="agents" count={stats.agents} what="agents">
+                {stats.types.length > 0 ? (
                     <span className="proj-child-icons">
                         {stats.types.map((type) => (
                             <span key={type} className={`proj-pip proj-pip-${type}`}>
@@ -51,20 +49,26 @@ export function AgentRailStats({ scope, provider }: { scope: AgentRailScope; pro
                             </span>
                         ))}
                     </span>
+                ) : (
+                    <IconMessage size={14} />
                 )}
-                <b>{stats.agents}</b>
-                <span>agents</span>
-            </span>
-            <span className="agent-stat agent-stat-subagents" title="Subagents running">
+            </Stat>
+            <Stat kind="subagents" count={stats.subagents} what="subagents running">
                 <IconAgent size={14} />
-                <b>{stats.subagents}</b>
-                <span>subagents</span>
-            </span>
-            <span className="agent-stat agent-stat-shells" title="Shells and monitors running">
+            </Stat>
+            <Stat kind="shells" count={stats.shells} what="shells and monitors running">
                 <IconCommand size={14} />
-                <b>{stats.shells}</b>
-                <span>shells</span>
-            </span>
+            </Stat>
         </div>
+    );
+}
+
+function Stat({ kind, count, what, children }: { kind: string; count: number; what: string; children: ReactNode }) {
+    const label = `${count} ${what}`;
+    return (
+        <span className={`agent-stat agent-stat-${kind}${count === 0 ? " is-empty" : ""}`} role="img" aria-label={label} title={label}>
+            {children}
+            {count > 0 && <b>{count}</b>}
+        </span>
     );
 }
