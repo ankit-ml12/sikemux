@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install Sikemux on a Mac or on x86_64 Linux.
+description: "Install Sikemux on a Mac or on x86_64 Linux."
 sidebar:
   order: 1
 ---

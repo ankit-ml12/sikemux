@@ -1,6 +1,6 @@
 ---
 title: Desk tabs
-description: Each agent's browser tabs, beside its chat.
+description: "Each agent's browser tabs, beside its chat."
 sidebar:
   order: 1
 ---

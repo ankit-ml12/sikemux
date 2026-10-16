@@ -1,6 +1,6 @@
 ---
 title: How agents use pages
-description: What an agent can do with a tab, and pages that need a password.
+description: "What an agent can do with a tab, and pages that need a password."
 sidebar:
   order: 2
 ---

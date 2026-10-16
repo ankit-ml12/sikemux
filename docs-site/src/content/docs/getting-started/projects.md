@@ -1,6 +1,6 @@
 ---
 title: Open a project
-description: Projects, and the sikemux.json that adds actions and tasks to one.
+description: "Projects, and the sikemux.json that adds actions and tasks to one."
 sidebar:
   order: 3
 ---

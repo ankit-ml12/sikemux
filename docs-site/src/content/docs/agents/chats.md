@@ -1,6 +1,6 @@
 ---
 title: Chats and terminals
-description: An agent's chat, its own terminal UI, and how to talk to it while it works.
+description: "An agent's chat, its own terminal UI, and how to talk to it while it works."
 sidebar:
   order: 2
 ---

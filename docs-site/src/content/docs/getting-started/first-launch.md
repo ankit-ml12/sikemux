@@ -1,6 +1,6 @@
 ---
 title: First launch
-description: The welcome screen, and getting an agent ready.
+description: "The welcome screen, and getting an agent ready."
 sidebar:
   order: 2
 ---
