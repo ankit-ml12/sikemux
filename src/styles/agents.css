@@ -1151,19 +1151,21 @@
     flex: none;
 }
 .agent-stat b {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
     align-self: flex-start;
     min-width: 13px;
     height: 13px;
     margin: -6px 0 0 -3px;
-    padding: 0 3px;
+    padding: 0 4px;
     border-radius: 7px;
     background: color-mix(in srgb, var(--ink) 12%, transparent);
     color: var(--ink);
     font-size: var(--text-3xs);
     font-weight: var(--weight-medium);
     font-variant-numeric: tabular-nums;
-    line-height: 13px;
-    text-align: center;
+    line-height: 1;
 }
 .agent-stat.is-empty > svg,
 .agent-stat.is-empty .proj-child-icons {
