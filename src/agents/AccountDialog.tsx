@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { portsApi } from "../api/ports";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { planLabel } from "../rail/usageFormat";
@@ -10,8 +10,8 @@ import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
 import { Checkbox } from "../ui/Controls";
-import { AgentIcon, IconCheck } from "../ui/Icons";
-import { Kbd } from "../ui/Kbd";
+import { AgentIcon } from "../ui/Icons";
+import { SignInError, SignInScreen, SignInWaiting } from "../plugin-api/SignIn";
 import {
     addAccount,
     cancelSignIn,
@@ -95,169 +95,144 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
         }
     };
 
+    const mark = (
+        <span className={`agent-glyph ${provider}`}>
+            <AgentIcon type={provider} size={34} />
+        </span>
+    );
+    const foot = "Each account keeps its sign-in in a folder of its own. Chats and settings are shared between them.";
+
     return (
         <div className="dlg-scrim" onMouseDown={close}>
             <div
                 ref={modalRef}
                 tabIndex={-1}
-                className={`dlg account-dlg ${provider}`}
+                className="dlg account-dlg"
                 role="dialog"
                 aria-modal="true"
                 aria-label={request.profileId ? `Sign in to ${label}` : `Add a ${label} account`}
                 onMouseDown={(event) => event.stopPropagation()}>
-                <div className="account-dlg-hero" data-step={step}>
-                    <span className={`account-dlg-mark agent-glyph ${provider}`} aria-hidden="true">
-                        <AgentIcon type={provider} size={26} />
-                        {step === "done" && (
-                            <span className="account-dlg-done">
-                                <IconCheck size={10} />
-                            </span>
+                {step === "done" && profile ? (
+                    <SignedIn provider={provider} account={profile} mark={mark} />
+                ) : (
+                    <SignInScreen
+                        mark={mark}
+                        title={step === "name" ? `Add a ${label} account` : `Sign in to ${profile?.name ?? label}`}
+                        lede={`Sign in with ${label}'s own login in your browser.`}
+                        foot={foot}>
+                        {step === "name" && (
+                            <form
+                                className="signin-form"
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    void create();
+                                }}>
+                                <label className="signin-field">
+                                    <span>Name</span>
+                                    <input
+                                        className="signin-input"
+                                        autoFocus
+                                        placeholder="Work"
+                                        maxLength={40}
+                                        spellCheck={false}
+                                        autoComplete="off"
+                                        value={name}
+                                        disabled={busy}
+                                        onChange={(event) => setName(event.target.value)}
+                                    />
+                                </label>
+                                <button type="submit" className="signin-btn primary" disabled={busy || !name.trim()}>
+                                    Continue with {label}
+                                </button>
+                            </form>
                         )}
-                    </span>
-                    {step === "name" && (
-                        <>
-                            <h2 className="dlg-title">Add a {label} account</h2>
-                            <p>Sign in with {label}'s own login in your browser. Chats and settings are shared between your accounts.</p>
-                        </>
-                    )}
-                    {step === "waiting" && (
-                        <>
-                            <h2 className="dlg-title">Finish in your browser</h2>
-                            <p>{label}'s login is open in your browser. This updates on its own once you are signed in.</p>
-                        </>
-                    )}
-                    {step === "failed" && signing?.phase === "failed" && (
-                        <>
-                            <h2 className="dlg-title">Sign-in did not finish</h2>
-                            <p>{signing.message}</p>
-                        </>
-                    )}
-                    {step === "done" && profile && <SignedIn provider={provider} account={profile} />}
-                </div>
-
-                {step === "name" && (
-                    <form
-                        id="account-dlg-name"
-                        className="account-dlg-field"
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            void create();
-                        }}>
-                        <label htmlFor="account-dlg-input">Name</label>
-                        <input
-                            id="account-dlg-input"
-                            className="dlg-input"
-                            autoFocus
-                            placeholder="Work"
-                            maxLength={40}
-                            spellCheck={false}
-                            autoComplete="off"
-                            value={name}
-                            disabled={busy}
-                            onChange={(event) => setName(event.target.value)}
-                        />
-                    </form>
+                        {step === "waiting" && profile && (
+                            <>
+                                <SignInWaiting onCancel={close}>Finish signing in in your browser</SignInWaiting>
+                                {signing?.phase === "waiting" && signing.url && <BrowserHelp url={signing.url} account={profile} />}
+                            </>
+                        )}
+                        {step === "failed" && profile && (
+                            <>
+                                <SignInError error={signing?.phase === "failed" ? signing.message : null} />
+                                <button type="button" className="signin-btn primary" onClick={() => start(profile)}>
+                                    Try again
+                                </button>
+                            </>
+                        )}
+                        {step !== "waiting" && (
+                            <div className="signin-alt">
+                                <button type="button" className="signin-link" onClick={close}>
+                                    Cancel
+                                </button>
+                            </div>
+                        )}
+                    </SignInScreen>
                 )}
-                {step === "waiting" && signing?.phase === "waiting" && profile && <BrowserHelp url={signing.url} account={profile} />}
-
-                <div className="dlg-foot">
-                    <span className="dlg-hint">
-                        <Kbd>esc</Kbd> {step === "done" ? "close" : "cancel"}
-                    </span>
-                    {step === "name" && (
-                        <>
-                            <button type="button" className="dlg-btn" onClick={close}>
-                                Cancel
-                            </button>
-                            <button type="submit" form="account-dlg-name" className="dlg-btn primary" disabled={busy || !name.trim()}>
-                                Continue in browser
-                            </button>
-                        </>
-                    )}
-                    {step === "waiting" && (
-                        <button type="button" className="dlg-btn" onClick={close}>
-                            Cancel
-                        </button>
-                    )}
-                    {step === "failed" && profile && (
-                        <>
-                            <button type="button" className="dlg-btn" onClick={close}>
-                                Cancel
-                            </button>
-                            <button type="button" className="dlg-btn primary" onClick={() => start(profile)}>
-                                Try again
-                            </button>
-                        </>
-                    )}
-                    {step === "done" && (
-                        <button type="button" className="dlg-btn primary" autoFocus onClick={closeAccountDialog}>
-                            Done
-                        </button>
-                    )}
-                </div>
             </div>
         </div>
     );
 }
 
 /** The page again, or a code, for when the browser did not come up or asks for one. */
-function BrowserHelp({ url, account }: { url: string | null; account: ProviderProfile }) {
+function BrowserHelp({ url, account }: { url: string; account: ProviderProfile }) {
     const [code, setCode] = useState<string | null>(null);
-    if (!url) return <div className="account-dlg-wait" aria-live="polite" />;
-    return (
-        <div className="account-dlg-help">
-            {code === null ? (
-                <>
-                    <button type="button" className="dlg-btn" onClick={() => void portsApi.openExternal(url).catch(reportError("Open sign-in page"))}>
-                        Open the page again
-                    </button>
-                    <button type="button" className="dlg-btn" onClick={() => setCode("")}>
-                        Paste a code
-                    </button>
-                </>
-            ) : (
-                <form
-                    className="account-dlg-code"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        if (!code.trim()) return;
-                        void submitSignInCode(account, code)
-                            .then(() => setCode(null))
-                            .catch(reportError("Sign-in code"));
-                    }}>
+    if (code !== null) {
+        return (
+            <form
+                className="signin-form"
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!code.trim()) return;
+                    void submitSignInCode(account, code)
+                        .then(() => setCode(null))
+                        .catch(reportError("Sign-in code"));
+                }}>
+                <label className="signin-field">
+                    <span>Code from the page</span>
                     <input
-                        className="dlg-input"
+                        className="signin-input mono"
                         autoFocus
-                        aria-label="Sign-in code"
-                        placeholder="Code from the page"
                         spellCheck={false}
                         autoComplete="off"
                         value={code}
                         onChange={(event) => setCode(event.target.value)}
                     />
-                    <button type="submit" className="dlg-btn primary" disabled={!code.trim()}>
-                        Send
-                    </button>
-                </form>
-            )}
+                </label>
+                <button type="submit" className="signin-btn" disabled={!code.trim()}>
+                    Send code
+                </button>
+            </form>
+        );
+    }
+    return (
+        <div className="signin-alt">
+            <button type="button" className="signin-link" onClick={() => void portsApi.openExternal(url).catch(reportError("Open sign-in page"))}>
+                Open the page again
+            </button>
+            <button type="button" className="signin-link" onClick={() => setCode("")}>
+                Paste a code
+            </button>
         </div>
     );
 }
 
-function SignedIn({ provider, account }: { provider: AccountProvider; account: ProviderProfile }) {
+function SignedIn({ provider, account, mark }: { provider: AccountProvider; account: ProviderProfile; mark: ReactNode }) {
     const status = useResource(agentAccountR, provider, account.configPath);
     const inUse = useStore((s) => selectedProviderProfile(provider, s.providerProfiles, s.selectedProviderProfileIds)?.id === account.id);
     const plan = status.data?.plan ? planLabel(status.data.plan) : null;
     const who = [status.data?.email ?? status.data?.organization, plan].filter(Boolean).join(" · ");
     return (
-        <>
-            <h2 className="dlg-title">{account.name} is signed in</h2>
-            <p>{status.data?.signedIn === false ? "It is not signed in yet." : who || "Checking who signed in…"}</p>
-            <div className="account-dlg-use">
-                <Checkbox checked={inUse} disabled={inUse} onChange={(on) => on && cmd.selectProviderProfile(provider, account.id)}>
-                    Start new chats on this account
-                </Checkbox>
-            </div>
-        </>
+        <SignInScreen
+            mark={mark}
+            title={`${account.name} is signed in`}
+            lede={status.data?.signedIn === false ? "It is not signed in yet." : who || "Checking who signed in…"}>
+            <Checkbox checked={inUse} disabled={inUse} onChange={(on) => on && cmd.selectProviderProfile(provider, account.id)}>
+                Start new chats on this account
+            </Checkbox>
+            <button type="button" className="signin-btn primary" autoFocus onClick={closeAccountDialog}>
+                Done
+            </button>
+        </SignInScreen>
     );
 }
