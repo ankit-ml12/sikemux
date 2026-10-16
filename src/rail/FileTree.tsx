@@ -912,6 +912,7 @@ export function TreeContextMenu({
     /** Open upward with its bottom at `y`, for buttons at the foot of the window. */
     above?: boolean;
 }) {
+    const iconed = items.some((item) => item.icon);
     const ref = useRef<HTMLDivElement>(null);
     const pos = useFloatingPosition(ref, x, y, alignRight, above);
 
@@ -977,7 +978,7 @@ export function TreeContextMenu({
                                 onClose();
                                 it.run?.();
                             }}>
-                            {it.icon && <span className="tree-ctx-icon">{it.icon}</span>}
+                            {iconed && <span className="tree-ctx-icon">{it.icon}</span>}
                             <span className="tree-ctx-label" title={it.label}>
                                 {it.label}
                                 {it.detail && (

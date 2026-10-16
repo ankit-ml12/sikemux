@@ -240,7 +240,14 @@
 .tree-ctx-icon {
     display: flex;
     flex: none;
-    margin-right: -4px;
+    justify-content: center;
+    min-width: 14px;
+    margin-right: -2px;
+    color: var(--text-tertiary);
+}
+.tree-ctx-item:hover .tree-ctx-icon,
+.tree-ctx-item.danger .tree-ctx-icon {
+    color: inherit;
 }
 .tree-ctx-label {
     flex: 1 1 auto;
