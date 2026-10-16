@@ -500,7 +500,7 @@
 .chat-work::after {
     content: "";
     display: block;
-    height: 1.5px;
+    height: 1px;
     margin-top: 4px;
     background: color-mix(in oklab, var(--ink) 14%, transparent);
 }
