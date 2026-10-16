@@ -150,7 +150,12 @@ async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Wo
     let Some(Tracker::Jira { site }) = tracker(ticket) else {
         return;
     };
-    let issue = plugins::call("jira", "issue", json!({ "key": ticket.key, "site": site })).await;
+    let issue = plugins::call(
+        "sikemux.jira",
+        "issue",
+        json!({ "key": ticket.key, "site": site }),
+    )
+    .await;
     match work {
         Work::Push {
             to,
@@ -186,7 +191,7 @@ async fn push(
         .is_some_and(|status| status.eq_ignore_ascii_case(to));
     if !there {
         plugins::call(
-            "jira",
+            "sikemux.jira",
             "transition",
             json!({ "key": key, "to": to, "site": site }),
         )
@@ -194,7 +199,7 @@ async fn push(
     }
     if let Some(body) = comment {
         plugins::call(
-            "jira",
+            "sikemux.jira",
             "comment",
             json!({ "key": key, "body": body, "site": site }),
         )
