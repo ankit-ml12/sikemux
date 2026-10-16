@@ -353,7 +353,7 @@ describe("agent rail", () => {
         expect(screen.queryByRole("button", { name: /Claude chat/ })).not.toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Agent provider" }));
-        await user.click(screen.getByRole("option", { name: "All agents" }));
+        await user.click(screen.getByRole("option", { name: "All harnesses" }));
         expect(await screen.findByRole("button", { name: /Claude chat/ })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
         expect(getState().agentRailAllAgents).toBe(true);

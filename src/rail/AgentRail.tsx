@@ -489,7 +489,7 @@ function AgentHeader({
                         options={[
                             {
                                 value: ALL_AGENTS,
-                                label: "All agents",
+                                label: "All harnesses",
                                 icon: (
                                     <span className="agent-glyph">
                                         <IconInbox size={14} />
