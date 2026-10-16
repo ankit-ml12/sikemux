@@ -11,6 +11,7 @@ import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
 import { DEFAULT_BUDDY_STYLE } from "../buddies/style";
+import { DEFAULT_PANE_DITHER, type PaneDither } from "../lib/paneDither";
 import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
 import type { AccountAgentType } from "../agents/catalog";
 
@@ -69,6 +70,7 @@ export interface DomainState {
     buddyMotion: boolean;
     /** A picture on disk that panes show, dithered, in place of the grain. */
     paneImage: string | null;
+    paneDither: PaneDither;
     terminalFontSize: number;
     chatTextScale: number;
     editorTextScale: number;
@@ -274,6 +276,7 @@ export const useStore = create<StoreState>(() => {
         buddyShape: DEFAULT_BUDDY_STYLE.shape,
         buddyMotion: true,
         paneImage: null,
+        paneDither: DEFAULT_PANE_DITHER,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
         editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,

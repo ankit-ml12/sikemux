@@ -52,6 +52,8 @@ import {
 import { Dropdown } from "../ui/Dropdown";
 import { Checkbox, Slider, Switch } from "../ui/Controls";
 import { Tooltip } from "../ui/Tooltip";
+import { PaneField } from "../ui/ShaderField";
+import { DITHER_PATTERNS, GRAIN_SHAPES, PANE_DITHER_RANGES, clampPaneDither, DEFAULT_PANE_DITHER, type PaneDither } from "../lib/paneDither";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";
@@ -117,6 +119,7 @@ export function SettingsPanel() {
     const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const home = useStore((s) => s.home);
+    const paneShader = useStore((s) => s.paneShader);
     const page = useStore((s) => s.settingsPage);
     const target = useStore((s) => s.settingsTarget);
     const settingsBinding = resolvedKeybinding(keybindingOverrides, "settings.toggle");
@@ -285,6 +288,7 @@ export function SettingsPanel() {
                 </aside>
 
                 <div className="settings-main">
+                    <PaneField enabled={paneShader} />
                     <header className="settings-topbar">
                         <span className="settings-topbar-title">{searching ? "Search" : SETTINGS_PAGE_NAMES[page]}</span>
                         <button
@@ -1243,6 +1247,127 @@ interface ThemeEdit {
     baseName: string;
 }
 
+const PATTERN_OPTIONS = DITHER_PATTERNS.map((value) => ({ value, label: value === "random" ? "Random" : `Bayer ${value}` }));
+const SHAPE_OPTIONS = GRAIN_SHAPES.map((value) => ({ value, label: value[0].toUpperCase() + value.slice(1) }));
+
+type RangedDitherKey = keyof typeof PANE_DITHER_RANGES;
+
+function DitherKnob({ label, field, value, format }: { label: string; field: RangedDitherKey; value: number; format: (v: number) => string }) {
+    const set = (v: number) => cmd.setPaneDither({ [field]: clampPaneDither(field, v) });
+    return (
+        <div className="settings-knob">
+            <Slider label={label} {...PANE_DITHER_RANGES[field]} value={value} onChange={set} />
+            <NumberField value={value} onCommit={set} format={format} />
+        </div>
+    );
+}
+
+function PaneSettings({ paneShader, paneImage, home }: { paneShader: boolean; paneImage: string | null; home: string }) {
+    const dither = useStore((state) => state.paneDither);
+    const choose =
+        <K extends keyof PaneDither>(key: K) =>
+        (value: string) =>
+            cmd.setPaneDither({ [key]: value });
+    return (
+        <SettingsSection title="Panes" sub="Grain settings apply with no picture set, image settings with one. Changes show live behind this page.">
+            <SettingsRows>
+                <SettingsRow
+                    label="Pane texture"
+                    desc="The dithered grain behind each pane."
+                    asLabel
+                    control={<Switch checked={paneShader} onChange={cmd.setPaneShader} label="Pane texture" />}
+                />
+                <SettingsRow
+                    label="Pane image"
+                    desc={paneImage ? prettyPath(paneImage, home) : "A picture shared by every pane, dithered in place of the grain."}>
+                    <div className="settings-actions">
+                        {paneImage && (
+                            <button className="settings-btn" type="button" onClick={() => cmd.setPaneImage(null)}>
+                                Remove
+                            </button>
+                        )}
+                        <button
+                            className="settings-btn"
+                            type="button"
+                            onClick={() =>
+                                void settingsApi
+                                    .pickImage()
+                                    .then((path) => path && cmd.setPaneImage(path))
+                                    .catch(reportError("image picker"))
+                            }>
+                            {paneImage ? "Change…" : "Choose…"}
+                        </button>
+                    </div>
+                </SettingsRow>
+                <SettingsRow label="Strength" desc="How strongly the dither shows over the pane.">
+                    <DitherKnob label="Dither strength" field="strength" value={dither.strength} format={(v) => v.toFixed(2)} />
+                </SettingsRow>
+                <SettingsRow label="Grain shape" desc="The noise the grain is drawn from." wide>
+                    <Dropdown
+                        className="settings-dd"
+                        label="Grain shape"
+                        value={dither.grainShape}
+                        options={SHAPE_OPTIONS}
+                        onChange={choose("grainShape")}
+                    />
+                </SettingsRow>
+                <SettingsRow label="Grain pattern" desc="The grid that orders the dots." wide>
+                    <Dropdown
+                        className="settings-dd"
+                        label="Grain dither pattern"
+                        value={dither.grainPattern}
+                        options={PATTERN_OPTIONS}
+                        onChange={choose("grainPattern")}
+                    />
+                </SettingsRow>
+                <SettingsRow label="Grain dot size" desc="Pixels per dot.">
+                    <DitherKnob label="Grain dot size" field="grainSize" value={dither.grainSize} format={(v) => `${v}px`} />
+                </SettingsRow>
+                <SettingsRow label="Grain scale" desc="How large the shapes in the noise are.">
+                    <DitherKnob label="Grain scale" field="grainScale" value={dither.grainScale} format={(v) => v.toFixed(1)} />
+                </SettingsRow>
+                <SettingsRow label="Grain speed" desc="How fast the grain drifts; 0 holds it still.">
+                    <DitherKnob label="Grain speed" field="grainSpeed" value={dither.grainSpeed} format={(v) => v.toFixed(2)} />
+                </SettingsRow>
+
+                <SettingsRow label="Image pattern" desc="The grid that orders the dots." wide>
+                    <Dropdown
+                        className="settings-dd"
+                        label="Image dither pattern"
+                        value={dither.imagePattern}
+                        options={PATTERN_OPTIONS}
+                        onChange={choose("imagePattern")}
+                    />
+                </SettingsRow>
+                <SettingsRow label="Image dot size" desc="Pixels per dot.">
+                    <DitherKnob label="Image dot size" field="imageSize" value={dither.imageSize} format={(v) => `${v}px`} />
+                </SettingsRow>
+                <SettingsRow label="Image colour steps" desc="Shades per channel; fewer gives a harsher posterised look.">
+                    <DitherKnob label="Image colour steps" field="imageSteps" value={dither.imageSteps} format={(v) => String(v)} />
+                </SettingsRow>
+                <SettingsRow
+                    label="Image colours"
+                    desc="Keep the picture's own colours, or draw it in the theme's ink."
+                    asLabel
+                    control={
+                        <Switch
+                            checked={dither.imageOriginalColors}
+                            onChange={(imageOriginalColors) => cmd.setPaneDither({ imageOriginalColors })}
+                            label="Image colours"
+                        />
+                    }
+                />
+
+                <SettingsRow label="Reset dither" desc="Put every dither setting back to its default.">
+                    <button className="settings-btn" type="button" onClick={() => cmd.setPaneDither(DEFAULT_PANE_DITHER)}>
+                        Reset
+                    </button>
+                </SettingsRow>
+            </SettingsRows>
+        </SettingsSection>
+    );
+}
+
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = useStore((state) => state.uiTextScale);
     const paneShader = useStore((state) => state.paneShader);
@@ -1353,36 +1478,10 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                             onChange={(value) => cmd.setUiTextScale(Number(value))}
                         />
                     </SettingsRow>
-                    <SettingsRow
-                        label="Pane texture"
-                        desc="The dithered grain behind each pane."
-                        asLabel
-                        control={<Switch checked={paneShader} onChange={cmd.setPaneShader} label="Pane texture" />}
-                    />
-                    <SettingsRow
-                        label="Pane image"
-                        desc={paneImage ? prettyPath(paneImage, home) : "A picture shared by every pane, dithered in place of the grain."}>
-                        <div className="settings-actions">
-                            {paneImage && (
-                                <button className="settings-btn" type="button" onClick={() => cmd.setPaneImage(null)}>
-                                    Remove
-                                </button>
-                            )}
-                            <button
-                                className="settings-btn"
-                                type="button"
-                                onClick={() =>
-                                    void settingsApi
-                                        .pickImage()
-                                        .then((path) => path && cmd.setPaneImage(path))
-                                        .catch(reportError("image picker"))
-                                }>
-                                {paneImage ? "Change…" : "Choose…"}
-                            </button>
-                        </div>
-                    </SettingsRow>
                 </SettingsRows>
             </SettingsSection>
+
+            <PaneSettings paneShader={paneShader} paneImage={paneImage} home={home} />
 
             <BuddySettings />
 

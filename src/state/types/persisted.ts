@@ -1,4 +1,5 @@
 import type { Theme } from "../../themes";
+import type { PaneDither } from "../../lib/paneDither";
 import type { CustomCommand } from "../../commands/registry";
 import type { KeybindingOverrides } from "../../commands/keybindings";
 import type { HeldRelease } from "../../api/releases";
@@ -74,6 +75,7 @@ export interface PersistedPrefs {
     buddyShape?: string;
     buddyMotion?: boolean;
     paneImage?: string | null;
+    paneDither?: PaneDither;
     terminalFontSize?: number;
     chatTextScale?: number;
     editorTextScale?: number;
