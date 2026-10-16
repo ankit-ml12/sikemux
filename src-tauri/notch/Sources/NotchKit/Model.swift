@@ -148,7 +148,14 @@ enum Mark: Hashable {
 /// One group on the closed island's right wing.
 enum Rollup: Hashable {
     case mark(Mark)
-    case stillRunning
+    case subagents
+    case shells
+
+    /// Totals show their count even at one; a state shows it only past one.
+    func showsCount(_ count: Int) -> Bool {
+        if case .mark = self { return count > 1 }
+        return true
+    }
 }
 
 /// A permission an agent waits on, with the person's choices.

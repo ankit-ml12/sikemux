@@ -197,7 +197,7 @@ if arguments.contains("--film") {
 }
 
 render("C1-idle", agents: [])
-render("C7-still-running", agents: ["a3", "a5"])
+render("C7-subagents-and-shells", agents: ["a2", "a5"])
 render("O5-finished", agents: ["a2", "a4", "a10", "a11"], height: 340) { $0.mode = .open }
 render("C2-working", agents: ["a2", "a3"])
 render("C3-needs-you")

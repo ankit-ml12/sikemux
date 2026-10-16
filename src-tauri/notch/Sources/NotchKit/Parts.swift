@@ -17,13 +17,16 @@ struct StateMark: View {
     }
 }
 
-/// Shells or monitors an agent left running, in the terminal glyph so it does not read as the dot that waits on you.
-struct StillRunning: View {
+/// The glyph beside a running total on the closed island, in the slot a state mark takes.
+struct RunningGlyph: View {
+    let icon: IconDef
+    let size: CGFloat
+    let colour: Color
+
     var body: some View {
-        IconView(icon: Icons.command, size: 11)
-            .foregroundStyle(Theme.warn)
+        IconView(icon: icon, size: size)
+            .foregroundStyle(colour)
             .frame(width: 16, height: 16)
-            .accessibilityLabel("Shells or monitors still running")
     }
 }
 

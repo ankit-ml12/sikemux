@@ -318,15 +318,14 @@ final class NotchStore {
         return projects.max { (counts[$0.name] ?? 0) < (counts[$1.name] ?? 0) } ?? projects.first
     }
 
-    /// How many items need you, how many agents work or left shells running, and how many items are done, leaving
-    /// out what is none. Shells left running sit beside working: the agent is still at something.
+    /// How many items need you, how many agents work, how many subagents and shells run across every agent, and
+    /// how many items are done, leaving out what is none.
     var rollups: [(mark: Rollup, count: Int)] {
-        let listed = Set(entries.compactMap(\.item.agentId))
-        let still = view.chats.filter { ($0.subagents > 0 || $0.tasks > 0) && !listed.contains($0.agentId) }.count
         let counts: [(Rollup, Int)] = [
             (.mark(.needs), entries.filter { $0.mark == .needs }.count),
             (.mark(.working), view.inbox.working),
-            (.stillRunning, still),
+            (.subagents, view.chats.reduce(0) { $0 + $1.subagents }),
+            (.shells, view.chats.reduce(0) { $0 + $1.tasks }),
             (.mark(.done), entries.filter { $0.mark == .done || $0.mark == .failed }.count),
         ]
         return counts.filter { $0.1 > 0 }.map { (mark: $0.0, count: $0.1) }

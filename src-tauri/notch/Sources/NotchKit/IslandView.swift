@@ -191,7 +191,7 @@ struct ClosedWings: View {
         var left: CGFloat = 0
         if count > 0 { left = 14 + 20 + CGFloat(min(count, 3) - 1) * 17 + 10 }
         if count > 3 { left += 9 + 6.5 * CGFloat(String(count - 3).count + 1) }
-        let groups = rollups.map { ($0.count > 1 ? CGFloat(String($0.count).count) * 7.5 + 6 : 0) + 16 }
+        let groups = rollups.map { ($0.mark.showsCount($0.count) ? CGFloat(String($0.count).count) * 7.5 + 6 : 0) + 16 }
         let held = groups.reduce(0, +) + CGFloat(rollups.count - 1) * ClosedWings.groupGap
         return (left, 10 + held + 14)
     }
@@ -232,12 +232,13 @@ struct ClosedWings: View {
                 HStack(spacing: Self.groupGap) {
                     ForEach(store.rollups, id: \.mark) { group in
                         HStack(spacing: 6) {
-                            if group.count > 1 {
+                            if group.mark.showsCount(group.count) {
                                 Text("\(group.count)").font(Theme.ui(12, .semibold)).monospacedDigit().foregroundStyle(Theme.ink)
                             }
                             switch group.mark {
                             case .mark(let mark): StateMark(mark: mark)
-                            case .stillRunning: StillRunning()
+                            case .subagents: RunningGlyph(icon: Icons.agent, size: 10, colour: Theme.live)
+                            case .shells: RunningGlyph(icon: Icons.command, size: 11, colour: Theme.warn)
                             }
                         }
                     }

@@ -122,7 +122,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .st.blocked { color: var(--warn); }
 .st.done { color: var(--acc); }
 .st.failed { color: var(--danger); }
-.st.still { color: var(--warn); }
+.st.subagents { color: var(--live); }
+.st.shells { color: var(--warn); }
 .st .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .st .ping { position: absolute; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; opacity: 0; }
 .st.blocked.fresh .ping { animation: ping 520ms cubic-bezier(0.2, 0.6, 0.3, 1) both; }
@@ -432,8 +433,8 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             three option ids from <code>attentions</code>, a question's answers and the lead it went to first from the core's <code>questions</code> call,
             and each chat's subagents and shells from <code>chats</code>.</td></tr>
         <tr><td>Closed wings</td><td>Each wing is as wide as what it holds. The left holds the marks of the first three items in the inbox, then +N.
-            The right fits a mark for each state some item is in: needs you, then working (the core's count of agents at work), then shells still running,
-            then done (to review or finished), each with its count above one, 10 pt apart. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
+            The right fits a mark for each state some item is in: needs you, then working (the core's count of agents at work), then the subagents and the shells or monitors
+            running across every agent, then done (to review or finished), each state with its count above one and the two totals always with theirs, 10 pt apart. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
         <tr><td>Open</td><td>680 wide, 560 on a display without a notch, where the header is 38 tall so its controls clear the screen edge; height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state. A label wherever the tier changes.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
             Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
@@ -582,22 +583,26 @@ function stateMark(state, fresh) {
     if (state === "blocked") return `<span class="st blocked${fresh ? " fresh" : ""}"><span class="ping"></span><span class="ping"></span><span class="dot"></span></span>`;
     if (state === "done") return `<span class="st done"><span class="dot"></span></span>`;
     if (state === "failed") return `<span class="st failed"><span class="dot"></span></span>`;
-    if (state === "still") return `<span class="st still">${GLYPH.command}</span>`;
+    if (state === "subagents") return `<span class="st subagents">${GLYPH.agent}</span>`;
+    if (state === "shells") return `<span class="st shells">${GLYPH.command}</span>`;
     return "";
 }
 
-/** How many items need you, agents work or left shells running, and items are done, leaving out what is none. */
+const TALLIES = new Set(["subagents", "shells"]);
+
+/** How many items need you, agents work, subagents and shells run across every agent, and items are done, leaving out what is none. */
 function rollups(agents) {
-    const counts = {
-        blocked: (a) => a.tier === "needs",
-        working: (a) => a.tier === "progress",
-        still: (a) => !a.tier && (a.tasks || a.subagents),
-        done: (a) => a.tier === "review" || a.tier === "finished",
-    };
-    return Object.entries(counts)
-        .map(([state, has]) => ({ state, count: agents.filter(has).length }))
-        .filter((group) => group.count > 0);
+    const sum = (key) => agents.reduce((total, a) => total + (a[key] || 0), 0);
+    return [
+        { state: "blocked", count: agents.filter((a) => a.tier === "needs").length },
+        { state: "working", count: agents.filter((a) => a.tier === "progress").length },
+        { state: "subagents", count: sum("subagents") },
+        { state: "shells", count: sum("tasks") },
+        { state: "done", count: agents.filter((a) => a.tier === "review" || a.tier === "finished").length },
+    ].filter((group) => group.count > 0);
 }
+
+const showsCount = (group) => group.count > 1 || TALLIES.has(group.state);
 
 function notchPath(w, h, t, b) {
     return `M0 0Q${t} 0 ${t} ${t}L${t} ${h - b}Q${t} ${h} ${t + b} ${h}L${w - t - b} ${h}Q${w - t} ${h} ${w - t} ${h - b}L${w - t} ${t}Q${w - t} 0 ${w} 0Z`;
@@ -688,7 +693,7 @@ class Island {
         let left = open ? 14 + 20 + (Math.min(open, 3) - 1) * 17 + 10 : 0;
         if (open > 3) left += 9 + 6.5 * (String(open - 3).length + 1);
         const digits = (n) => String(n).length * 7.5;
-        const held = groups.reduce((sum, g) => sum + (g.count > 1 ? digits(g.count) + 6 : 0) + 16, 0) + (groups.length - 1) * 10;
+        const held = groups.reduce((sum, g) => sum + (showsCount(g) ? digits(g.count) + 6 : 0) + 16, 0) + (groups.length - 1) * 10;
         return { left, right: 10 + held + 14 };
     }
 
@@ -739,7 +744,7 @@ class Island {
                         extra > 0 ? `<span class="tile count" style="font-size:10px">+${extra}</span>` : ""}</span></div>
                 ${plain ? "" : `<div class="gap" style="width:${d.notchW}px"></div>`}
                 <div class="wing r" style="width:${wings.right + (plain ? 4 : 0)}px;height:${d.notchH}px">
-                    ${groups.map((g) => `<span class="group">${g.count > 1 ? `<span class="count">${g.count}</span>` : ""}${stateMark(g.state, this.freshPing)}</span>`).join("")}</div>`;
+                    ${groups.map((g) => `<span class="group">${showsCount(g) ? `<span class="count">${g.count}</span>` : ""}${stateMark(g.state, this.freshPing)}</span>`).join("")}</div>`;
             if (plain) this.layers.wings.firstElementChild.nextElementSibling.style.paddingRight = "10px";
         }
 
@@ -1080,8 +1085,8 @@ const SECTIONS = [
               shows: "Three marks, then +N.", opts: { agents: () => [...allWorking(), { id: "a12", type: "pi", title: "x", project: "x", tier: "progress", state: "working" }] } },
             { id: "C6", name: "Pointer resting", when: "The pointer is on the island, for the 0.3 s before it opens.",
               shows: "The shadow comes on and the trackpad ticks once. The island keeps its size until it opens.", opts: { agents: () => only(["a2", "a3"]), hover: true } },
-            { id: "C7", name: "Shells still running", when: "An agent is idle but left shells or monitors running.",
-              shows: "The amber terminal glyph the Mac's tabs use, after working and before done, with a count past one. The agent is not in the inbox: only a running turn is working.", opts: { agents: () => only(["a3", "a5"]) } },
+            { id: "C7", name: "Subagents and shells running", when: "Agents, working or idle, have subagents or left shells or monitors running.",
+              shows: "After working and before done, the total of subagents beside the green agent glyph, then the total of shells and monitors beside the amber terminal glyph the Mac's tabs use, each with its count even at one.", opts: { agents: () => only(["a2", "a5"]) } },
         ],
     },
     {
