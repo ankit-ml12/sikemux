@@ -402,10 +402,6 @@
 .workspace-rail.agent-rail .agent-actions + .scope-track {
     margin-top: var(--space-2);
 }
-.workspace-rail.agent-rail .scope-track + *,
-.workspace-rail.agent-rail .scope-track + .agent-all-projects > :first-child {
-    margin-top: var(--space-2);
-}
 .scope-track {
     position: relative;
     display: grid;
@@ -888,8 +884,18 @@
 }
 
 /* New chat, terminal and browser sit right under the scope track, a short step above the first group. */
+/* New chat, terminal and browser and the scope track stay put; only the list
+   under them scrolls, starting a short step below the track. */
+.agent-rail-top {
+    flex: none;
+    padding: var(--space-1) var(--gutter-rail) 0;
+}
 .agent-rail > .rail-scroll {
-    padding-top: var(--space-1);
+    padding-top: var(--space-2);
+}
+.workspace-rail.agent-rail > .rail-scroll > :first-child,
+.workspace-rail.agent-rail > .rail-scroll > .agent-all-projects > :first-child {
+    margin-top: 0;
 }
 .agent-new-kbd {
     flex: none;

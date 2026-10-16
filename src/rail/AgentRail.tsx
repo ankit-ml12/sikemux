@@ -343,7 +343,7 @@ export function AgentRailBody() {
                     />
                 </div>
             )}
-            <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
+            <div className="agent-rail-top">
                 <div className="agent-actions">
                     {selectedType && (
                         <NewRow
@@ -364,6 +364,8 @@ export function AgentRailBody() {
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
                 </div>
                 <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
+            </div>
+            <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
