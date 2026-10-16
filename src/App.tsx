@@ -27,6 +27,7 @@ import { SessionSwitcher } from "./palettes/SessionSwitcher";
 import { Workspace } from "./workspace/Workspace";
 import { Toaster } from "./shell/Toaster";
 import { CommandPalette } from "./palettes/CommandPalette";
+import { ThemePalette } from "./palettes/ThemePalette";
 import { AccountDialogHost } from "./agents/AccountDialog";
 import { DialogHost } from "./shell/DialogHost";
 import { ShareHost } from "./share/ShareControls";
@@ -746,6 +747,7 @@ export default function App() {
         document.documentElement.style.setProperty("--pane-strength", String(paneStrength));
     }, [paneStrength]);
     const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
+    const themePaletteOpen = useStore((s) => s.themePaletteOpen);
     const commandPopup = useStore((s) => s.commandPopup);
     const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
     const onboardingOpen = useStore((s) => s.onboardingOpen);
@@ -758,6 +760,7 @@ export default function App() {
             newTabPaletteOpen ||
             settingsOpen ||
             commandPaletteOpen ||
+            themePaletteOpen ||
             sessionSwitcherOpen ||
             onboardingOpen ||
             Boolean(commandPopup),
@@ -1051,6 +1054,7 @@ export default function App() {
             {installedPlugins.map(({ id, Overlay }) => (Overlay ? <Overlay key={id} /> : null))}
             {sessionSwitcherOpen && <SessionSwitcher />}
             {commandPaletteOpen && <ApplicationCommandPalette />}
+            {themePaletteOpen && <ThemePalette />}
             {commandPopup && (
                 <div className="experience-backdrop command-popup-backdrop" role="presentation" onMouseDown={cmd.closeCommandPopup}>
                     <section

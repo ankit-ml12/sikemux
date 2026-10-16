@@ -7,44 +7,14 @@
     padding: 6px;
 }
 
-.command-palette-item {
-    min-height: 48px;
-    gap: 10px;
+/* The themes being tried on are the point, so nothing dims them. */
+.theme-palette-backdrop {
+    background: transparent;
 }
 
 .command-palette-item:disabled {
     cursor: not-allowed;
     opacity: 0.52;
-}
-
-.command-palette-icon {
-    color: var(--cmd);
-}
-
-.command-palette-icon.custom {
-    color: var(--live);
-}
-
-.command-palette-copy {
-    min-width: 0;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    text-align: left;
-}
-
-.command-palette-copy .picker-name,
-.command-palette-copy .picker-sub {
-    width: auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.command-palette-copy .picker-sub {
-    padding-left: 0;
-    text-align: left;
 }
 
 .command-palette-meta {
@@ -57,9 +27,9 @@
 }
 
 .command-palette-shortcut {
-    min-width: 48px;
+    min-width: 40px;
     flex: 0 0 auto;
-    padding: 3px 6px;
+    padding: 1px 6px;
     color: var(--text-tertiary);
     font-family: var(--kbd);
     font-size: var(--text-2xs);

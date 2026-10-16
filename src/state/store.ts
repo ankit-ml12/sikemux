@@ -217,6 +217,7 @@ export interface ViewState {
     boardProjects: Record<string, string>;
 
     commandPaletteOpen: boolean;
+    themePaletteOpen: boolean;
     onboardingOpen: boolean;
     diagnosticsOpen: boolean;
     whatsNewOpen: boolean;
@@ -354,6 +355,7 @@ export const useStore = create<StoreState>(() => {
         agentBoardAuto: {},
         boardProjects: {},
         commandPaletteOpen: false,
+        themePaletteOpen: false,
         onboardingOpen: false,
         diagnosticsOpen: false,
         whatsNewOpen: false,

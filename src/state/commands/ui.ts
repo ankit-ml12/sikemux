@@ -32,6 +32,8 @@ export const forceCloseAgentPalette = (): void => setState({ agentPaletteOpen: f
 export const openCommandPalette = (): void => setState({ commandPaletteOpen: true });
 export const closeCommandPalette = (): void => setState({ commandPaletteOpen: false });
 export const toggleCommandPalette = (): void => setState((s) => ({ commandPaletteOpen: !s.commandPaletteOpen }));
+export const openThemePalette = (): void => setState({ themePaletteOpen: true, commandPaletteOpen: false });
+export const closeThemePalette = (): void => setState({ themePaletteOpen: false });
 export const openOnboarding = (): void => setState({ onboardingOpen: true, diagnosticsOpen: false, whatsNewOpen: false });
 export const closeOnboarding = (complete = true): void => setState({ onboardingOpen: false, ...(complete ? { onboardingComplete: true } : {}) });
 export const openDiagnostics = (): void => setState({ diagnosticsOpen: true, onboardingOpen: false, whatsNewOpen: false });

@@ -119,6 +119,13 @@ const coreKeybindingActions = [
         defaultBinding: on("Meta+Digit0", "Ctrl+Digit0"),
     },
     {
+        id: "theme.switch",
+        label: "Switch theme",
+        detail: "Preview each theme as you move through them, Enter keeps one",
+        category: "Workspace",
+        defaultBinding: null,
+    },
+    {
         id: "agent.new",
         label: "New agent",
         detail: "Start the agent you launched last in this project, ready to type to",
