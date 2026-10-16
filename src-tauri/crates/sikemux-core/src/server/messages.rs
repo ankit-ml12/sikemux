@@ -1503,9 +1503,11 @@ async fn handed(
         }
         Reach::Remote => return Err(format!("{name} runs on another host")),
     }
-    mailbox.note_sent(&letter, &target.agent_id);
-    if letter.from_id != BOARD {
-        super::board::reached_by_more_than_offer(core, &target.agent_id);
+    if !notice {
+        mailbox.note_sent(&letter, &target.agent_id);
+        if letter.from_id != BOARD {
+            super::board::reached_by_more_than_offer(core, &target.agent_id);
+        }
     }
     if held.is_none() && mailbox.has_waiting(&target.agent_id) {
         held = Some("already has messages waiting");
