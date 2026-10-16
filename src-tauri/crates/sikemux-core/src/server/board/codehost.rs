@@ -45,6 +45,11 @@ impl Pull {
     }
 }
 
+/// The plugin that speaks for `host`.
+fn plugin(host: &str) -> String {
+    format!("sikemux.{host}")
+}
+
 fn text(value: &Value, key: &str) -> Option<String> {
     value
         .get(key)
@@ -56,7 +61,8 @@ fn text(value: &Value, key: &str) -> Option<String> {
 /// The code host the remote `url` is on, with an account signed in to it.
 pub(super) async fn find(url: &str) -> Result<Repo, String> {
     for (host, label) in HOSTS {
-        let Ok(found) = plugins::call(host, "resolveRemote", json!({ "url": url })).await else {
+        let Ok(found) = plugins::call(&plugin(host), "resolveRemote", json!({ "url": url })).await
+        else {
             continue;
         };
         let repo = &found["repo"];
@@ -66,10 +72,14 @@ pub(super) async fn find(url: &str) -> Result<Repo, String> {
         if found["sameHost"] != Value::Bool(true) {
             continue;
         }
-        let account = plugins::call(host, "accountFor", json!({ "owner": owner, "name": name }))
-            .await
-            .ok()
-            .and_then(|account| account.as_str().map(str::to_owned));
+        let account = plugins::call(
+            &plugin(host),
+            "accountFor",
+            json!({ "owner": owner, "name": name }),
+        )
+        .await
+        .ok()
+        .and_then(|account| account.as_str().map(str::to_owned));
         if account.is_none() {
             return Err(format!(
                 "sign in to {label} in Sikemux with an account that can reach {owner}/{name}, so Auto can open the pull request"
@@ -92,7 +102,12 @@ pub(super) async fn find(url: &str) -> Result<Repo, String> {
 /// when the code host the remote `url` is on can tell.
 pub(crate) async fn pulls_of(url: &str, sha: &str) -> Result<Vec<Value>, String> {
     let repo = find(url).await?;
-    let found = plugins::call(repo.host, "commitPulls", repo.params(json!({ "sha": sha }))).await?;
+    let found = plugins::call(
+        &plugin(repo.host),
+        "commitPulls",
+        repo.params(json!({ "sha": sha })),
+    )
+    .await?;
     Ok(found.as_array().cloned().unwrap_or_default())
 }
 
@@ -119,13 +134,17 @@ pub(super) async fn open(
     body: &str,
 ) -> Result<Pull, String> {
     let params = repo.params(json!({ "title": title, "head": head, "base": base, "body": body }));
-    let error = match plugins::call(repo.host, "createPull", params).await {
+    let error = match plugins::call(&plugin(repo.host), "createPull", params).await {
         Ok(found) => return pull_of(repo, &found),
         Err(error) => error,
     };
-    let open = plugins::call(repo.host, "pulls", repo.params(json!({ "state": "open" })))
-        .await
-        .unwrap_or_default();
+    let open = plugins::call(
+        &plugin(repo.host),
+        "pulls",
+        repo.params(json!({ "state": "open" })),
+    )
+    .await
+    .unwrap_or_default();
     open.as_array()
         .into_iter()
         .flatten()
@@ -147,7 +166,7 @@ pub(super) enum Checks {
 pub(super) async fn checks(pull: &Pull, branch: &str, sha: &str) -> Result<Checks, String> {
     let repo = pull.repo();
     let page = plugins::call(
-        repo.host,
+        &plugin(repo.host),
         "runs",
         repo.params(json!({ "headSha": sha, "branch": branch, "perPage": 50 })),
     )
@@ -203,7 +222,7 @@ pub(super) struct Looked {
 pub(super) async fn look(pull: &Pull) -> Result<Looked, String> {
     let repo = pull.repo();
     let found = plugins::call(
-        repo.host,
+        &plugin(repo.host),
         "pull",
         repo.params(json!({ "number": pull.number })),
     )
@@ -239,7 +258,7 @@ pub(crate) struct Feedback {
 pub(super) async fn feedback(pull: &Pull, since: Option<&str>) -> Result<Vec<Feedback>, String> {
     let repo = pull.repo();
     let found = plugins::call(
-        repo.host,
+        &plugin(repo.host),
         "reviewFeedback",
         repo.params(json!({ "number": pull.number, "since": since })),
     )
@@ -260,7 +279,7 @@ pub(super) async fn answer(
         .map(|(to, body, quote)| json!({ "to": to, "body": body, "quote": quote }))
         .collect();
     plugins::call(
-        repo.host,
+        &plugin(repo.host),
         "answerReview",
         repo.params(json!({ "number": pull.number, "replies": replies, "reviewers": reviewers })),
     )
@@ -272,7 +291,7 @@ pub(super) async fn answer(
 pub(super) async fn close(pull: &Pull) -> Result<(), String> {
     let repo = pull.repo();
     plugins::call(
-        repo.host,
+        &plugin(repo.host),
         "setPullState",
         repo.params(json!({ "number": pull.number, "state": "closed" })),
     )
@@ -291,7 +310,7 @@ pub(super) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
     let mut last = String::new();
     for method in methods {
         let params = repo.params(json!({ "number": pull.number, "method": method, "sha": sha }));
-        match plugins::call(repo.host, "mergePull", params).await {
+        match plugins::call(&plugin(repo.host), "mergePull", params).await {
             Ok(_) => return Ok(()),
             Err(error) if error.to_lowercase().contains("not allowed") => last = error,
             Err(error) => return Err(error),
