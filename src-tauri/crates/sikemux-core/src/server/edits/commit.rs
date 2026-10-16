@@ -177,7 +177,7 @@ fn nothing_yours(left: &[Left]) -> String {
 }
 
 /// `path`, given from `dir` or whole, from the top of the checkout.
-fn in_checkout(top: &Path, dir: &Path, path: &str) -> Result<String, String> {
+pub(super) fn in_checkout(top: &Path, dir: &Path, path: &str) -> Result<String, String> {
     let mut clean = PathBuf::new();
     for part in dir.join(path).components() {
         match part {
@@ -194,7 +194,7 @@ fn in_checkout(top: &Path, dir: &Path, path: &str) -> Result<String, String> {
         .map_err(|_| format!("{path} is outside this checkout"))
 }
 
-fn names(paths: &[String], file: &str) -> bool {
+pub(super) fn names(paths: &[String], file: &str) -> bool {
     paths.iter().any(|path| {
         path.is_empty()
             || file == path
