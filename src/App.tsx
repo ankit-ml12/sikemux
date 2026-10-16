@@ -740,6 +740,10 @@ export default function App() {
     useEffect(() => {
         document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
     }, [uiTextScale]);
+    const paneStrength = useStore((s) => s.paneStrength);
+    useEffect(() => {
+        document.documentElement.style.setProperty("--pane-strength", String(paneStrength));
+    }, [paneStrength]);
     const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
     const commandPopup = useStore((s) => s.commandPopup);
     const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);

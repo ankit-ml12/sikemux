@@ -74,6 +74,7 @@ export interface PersistedPrefs {
     buddyShape?: string;
     buddyMotion?: boolean;
     paneImage?: string | null;
+    paneStrength?: number;
     terminalFontSize?: number;
     chatTextScale?: number;
     editorTextScale?: number;

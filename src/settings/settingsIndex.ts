@@ -66,6 +66,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("appearance", "Interface", "Text size", "font zoom scale larger smaller accessibility"),
     row("appearance", "Interface", "Pane texture", "dither dithering shader grain noise background effect"),
     row("appearance", "Interface", "Pane image", "picture photo wallpaper background dither dithered custom"),
+    row("appearance", "Interface", "Pane strength", "dither grain picture opacity intensity texture image"),
     section("appearance", "Buddies", "agent icon character avatar mascot face"),
     row("appearance", "Buddies", "Show buddies", "agent icon character avatar mascot harness logo"),
     row("appearance", "Buddies", "Pack", "agent icon character avatar mascot style"),

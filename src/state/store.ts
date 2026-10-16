@@ -69,6 +69,8 @@ export interface DomainState {
     buddyMotion: boolean;
     /** A picture on disk that panes show, dithered, in place of the grain. */
     paneImage: string | null;
+    /** How strongly the pane texture or picture shows, 1 being as designed. */
+    paneStrength: number;
     terminalFontSize: number;
     chatTextScale: number;
     editorTextScale: number;
@@ -274,6 +276,7 @@ export const useStore = create<StoreState>(() => {
         buddyShape: DEFAULT_BUDDY_STYLE.shape,
         buddyMotion: true,
         paneImage: null,
+        paneStrength: 1,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
         editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,

@@ -14,7 +14,7 @@ import { registerCustomThemes } from "../themes/bus";
 import { effectiveMode, normalizePermissionMode } from "../agents/agentLaunch";
 import { ACCOUNT_AGENT_TYPES, AGENT_TYPES, hasAccounts, isAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
-import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
+import { clampPaneStrength, mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentInWindow } from "./selectors";
 import { collectPanes, newId, removePane } from "./layout";
 import { BROWSER_ACTIVE, deskEditorId, deskView, fileKey, simulatorKey } from "./desks";
@@ -105,6 +105,7 @@ const PERSISTED_KEYS = [
     "buddyShape",
     "buddyMotion",
     "paneImage",
+    "paneStrength",
     "terminalFontSize",
     "chatTextScale",
     "editorTextScale",
@@ -172,6 +173,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         buddyShape: s.buddyShape,
         buddyMotion: s.buddyMotion,
         paneImage: s.paneImage,
+        paneStrength: s.paneStrength,
         terminalFontSize: s.terminalFontSize,
         chatTextScale: s.chatTextScale,
         editorTextScale: s.editorTextScale,
@@ -1181,6 +1183,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         buddyShape: boundedOptionalString(prefs.buddyShape, 40) ?? cur.buddyShape,
         buddyMotion: typeof prefs.buddyMotion === "boolean" ? prefs.buddyMotion : cur.buddyMotion,
         paneImage: typeof prefs.paneImage === "string" || prefs.paneImage === null ? prefs.paneImage : cur.paneImage,
+        paneStrength: typeof prefs.paneStrength === "number" ? clampPaneStrength(prefs.paneStrength) : cur.paneStrength,
         terminalFontSize: typeof prefs.terminalFontSize === "number" ? clampTerminalFontSize(prefs.terminalFontSize) : cur.terminalFontSize,
         chatTextScale: typeof prefs.chatTextScale === "number" ? clampChatTextScale(prefs.chatTextScale) : cur.chatTextScale,
         editorTextScale: typeof prefs.editorTextScale === "number" ? clampEditorTextScale(prefs.editorTextScale) : cur.editorTextScale,

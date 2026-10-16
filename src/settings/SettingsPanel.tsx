@@ -1247,6 +1247,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
     const uiTextScale = useStore((state) => state.uiTextScale);
     const paneShader = useStore((state) => state.paneShader);
     const paneImage = useStore((state) => state.paneImage);
+    const paneStrength = useStore((state) => state.paneStrength);
     const home = useStore((state) => state.home);
     const customThemes = useStore((s) => s.customThemes);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
@@ -1379,6 +1380,12 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                                 }>
                                 {paneImage ? "Change…" : "Choose…"}
                             </button>
+                        </div>
+                    </SettingsRow>
+                    <SettingsRow label="Pane strength" desc="How strongly the texture or picture shows. 1.00 is the default.">
+                        <div className="settings-knob">
+                            <Slider label="Pane strength" min={0} max={2} step={0.05} value={paneStrength} onChange={cmd.setPaneStrength} />
+                            <NumberField value={paneStrength} onCommit={cmd.setPaneStrength} format={(v) => v.toFixed(2)} />
                         </div>
                     </SettingsRow>
                 </SettingsRows>
