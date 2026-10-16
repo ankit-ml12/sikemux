@@ -23,6 +23,8 @@ const PEEK_ROWS = 2.5;
 const PULL_DOWN = 70;
 
 const CAMERA = 'camera';
+/** Google Play allows reading the photo library only to apps built around it, so Android uses the system picker. */
+const GALLERY = Platform.OS === 'ios';
 type Cell = LibraryPhoto | typeof CAMERA;
 
 /**
@@ -44,7 +46,7 @@ export function AttachSheet({
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const window = useWindowDimensions();
-  const library = useLibrary(visible);
+  const library = useLibrary(GALLERY && visible);
   const [full, setFull] = useState(false);
   const [chosen, setChosen] = useState<LibraryPhoto[]>([]);
   const [shown, setShown] = useState(visible);
@@ -69,7 +71,7 @@ export function AttachSheet({
   };
 
   const sees = library.access === 'all' || library.access === 'limited';
-  const gallery = library.access !== 'denied';
+  const gallery = GALLERY && library.access !== 'denied';
   const cell = (window.width - 32) / COLUMNS;
   const peek = HANDLE + TILES + (library.access === 'limited' ? LIMITED_LINE : 0) + cell * PEEK_ROWS;
   const toggle = (photo: LibraryPhoto) => {
@@ -90,7 +92,7 @@ export function AttachSheet({
       <Tile
         icon="IconImage"
         label="Photos"
-        onPress={() => (sees ? setFull(true) : library.canAsk ? library.ask() : leave(() => pickPhotos(room)))}
+        onPress={() => (sees ? setFull(true) : GALLERY && library.canAsk ? library.ask() : leave(() => pickPhotos(room)))}
       />
       <Tile icon="IconFile" label="Files" onPress={() => leave(() => pickFiles(room))} />
     </View>
@@ -158,7 +160,7 @@ export function AttachSheet({
             }
           />
         </View>
-      ) : (
+      ) : GALLERY ? (
         <>
           {tiles}
           <View style={styles.off}>
@@ -170,6 +172,8 @@ export function AttachSheet({
             )}
           </View>
         </>
+      ) : (
+        tiles
       )}
     </Sheet>
   );

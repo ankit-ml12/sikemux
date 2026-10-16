@@ -42,7 +42,7 @@ async function newestPhotos(offset: number): Promise<LibraryPhoto[]> {
 export function useLibrary(open: boolean) {
   const active = useAppActive();
   const [access, setAccess] = useState<LibraryAccess>('asking');
-  // The phone shows its prompt again only while this holds: once on iOS, until a second refusal on Android.
+  // The phone shows its prompt again only while this holds, which iOS allows once.
   const [canAsk, setCanAsk] = useState(true);
   const [photos, setPhotos] = useState<LibraryPhoto[]>([]);
   const [ended, setEnded] = useState(false);
