@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AccountSignIn } from "../agents/AccountSignIn";
 import { accountName, accountsOf, openAccountDialog, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
@@ -10,9 +10,9 @@ import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
 import { Switch } from "../ui/Controls";
-import { IconPlus, IconTrash } from "../ui/Icons";
-import { Tooltip } from "../ui/Tooltip";
+import { IconMore, IconPlus } from "../ui/Icons";
 import { planLabel } from "../rail/usageFormat";
+import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
 const PROVIDERS = ACCOUNT_AGENT_TYPES.map((id) => ({ id, label: agentLabel(id) }));
@@ -40,26 +40,15 @@ function ProviderAccounts({ provider, label }: { provider: AccountProvider; labe
     const current = selectedProviderProfile(provider, profiles, selections) ?? accounts[0];
 
     return (
-        <SettingsSection
-            title={accountsSectionTitle(provider)}
-            meta={accounts.length === 1 ? "1 account" : `${accounts.length} accounts`}
-            sub={`Each ${label} account signs in through ${label}'s own login and keeps the sign-in in its own folder. Chats and settings are shared, so a chat can move between them.`}>
+        <SettingsSection title={accountsSectionTitle(provider)} meta={accounts.length === 1 ? "1 account" : `${accounts.length} accounts`}>
             <SettingsRows>
                 {accounts.map((account) => (
                     <AccountRow key={account.id} provider={provider} account={account} inUse={account.id === current?.id} />
                 ))}
-                <SettingsRow
-                    icon={<IconPlus size={14} />}
-                    label="Another account"
-                    desc={`Sign in to a second ${label} account, such as one for work.`}>
-                    <button className="settings-btn" type="button" onClick={() => openAccountDialog({ provider })}>
-                        Add account
-                    </button>
-                </SettingsRow>
                 {accounts.length > 1 && (
                     <SettingsRow
                         label="Auto-rotate at limits"
-                        desc={`Switch to your next ${label} account when one hits its limit. Check ${label === "Claude" ? "Anthropic's" : "OpenAI's"} terms first.`}
+                        desc={`Check ${label === "Claude" ? "Anthropic's" : "OpenAI's"} terms first.`}
                         asLabel
                         control={
                             <Switch
@@ -71,6 +60,10 @@ function ProviderAccounts({ provider, label }: { provider: AccountProvider; labe
                     />
                 )}
             </SettingsRows>
+            <button type="button" className="account-add" onClick={() => openAccountDialog({ provider })}>
+                <IconPlus size={13} />
+                Add account
+            </button>
         </SettingsSection>
     );
 }
@@ -78,6 +71,7 @@ function ProviderAccounts({ provider, label }: { provider: AccountProvider; labe
 function AccountRow({ provider, account, inUse }: { provider: AccountProvider; account: ProviderProfile; inUse: boolean }) {
     const status = useResource(agentAccountR, provider, account.configPath);
     const signing = useSignIn(account.id);
+    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const signedIn = status.data?.signedIn === true;
     const known = status.data !== undefined;
     const plan = status.data?.plan ? planLabel(status.data.plan) : null;
@@ -89,6 +83,11 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
         : signedIn
           ? [status.data?.email ?? status.data?.organization, plan].filter(Boolean).join(" · ") || "Signed in"
           : "Signed out";
+    const removable = !account.id.startsWith("builtin-");
+    const items: CtxItem[] = [
+        ...(signedIn ? [{ label: "Sign out", run: () => void signOut(account).catch(reportError("Sign out")) }] : []),
+        ...(removable ? [{ label: `Remove ${name}`, danger: true, run: () => cmd.deleteProviderProfile(account.id) }] : []),
+    ];
 
     return (
         <SettingsRow
@@ -100,7 +99,7 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
             label={
                 <span className="account-row-label">
                     {name}
-                    {inUse && <span className="account-row-badge">New chats</span>}
+                    {inUse && <span className="account-row-badge">In use</span>}
                 </span>
             }
             desc={
@@ -115,30 +114,26 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
                     Sign in
                 </button>
             ) : (
-                <>
-                    {!inUse && (
-                        <button className="settings-btn" type="button" onClick={() => cmd.selectProviderProfile(provider, account.id)}>
-                            Use for new chats
-                        </button>
-                    )}
-                    {signedIn && (
-                        <button className="settings-btn" type="button" onClick={() => void signOut(account).catch(reportError("Sign out"))}>
-                            Sign out
-                        </button>
-                    )}
-                </>
-            )}
-            {!account.id.startsWith("builtin-") && (
-                <Tooltip label={`Remove ${name} from Sikemux`}>
-                    <button
-                        className="settings-btn danger account-row-remove"
-                        type="button"
-                        aria-label={`Remove ${name}`}
-                        onClick={() => cmd.deleteProviderProfile(account.id)}>
-                        <IconTrash size={12} />
+                !inUse && (
+                    <button className="settings-btn" type="button" onClick={() => cmd.selectProviderProfile(provider, account.id)}>
+                        Use
                     </button>
-                </Tooltip>
+                )
             )}
+            {items.length > 0 && (
+                <button
+                    className="account-row-more"
+                    type="button"
+                    aria-label={`More for ${name}`}
+                    aria-haspopup="menu"
+                    onClick={(event) => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        setMenu({ x: box.right, y: box.bottom + 4 });
+                    }}>
+                    <IconMore size={14} />
+                </button>
+            )}
+            {menu && <TreeContextMenu x={menu.x} y={menu.y} alignRight items={items} onClose={() => setMenu(null)} />}
         </SettingsRow>
     );
 }

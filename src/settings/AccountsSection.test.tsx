@@ -57,7 +57,7 @@ describe("accounts in Settings", () => {
         render(<AccountsSections />);
 
         expect(await screen.findAllByText("me@example.com · Max")).toHaveLength(2);
-        expect(screen.getAllByText("New chats")).toHaveLength(2);
+        expect(screen.getAllByText("In use")).toHaveLength(2);
         expect(screen.queryByRole("switch")).not.toBeInTheDocument();
     });
 
@@ -93,14 +93,14 @@ describe("accounts in Settings", () => {
         const user = userEvent.setup();
         render(<AccountsSections />);
 
-        await user.click(await screen.findByRole("button", { name: "Use for new chats" }));
+        await user.click(await screen.findByRole("button", { name: "Use" }));
         expect(getState().selectedProviderProfileIds.claude).toBe("claude-work");
 
         await user.click(screen.getByRole("switch", { name: "Auto-rotate Claude accounts at limits" }));
         expect(getState().accountAutoSwitch.claude).toBe(true);
 
-        const [signOut] = screen.getAllByRole("button", { name: "Sign out" });
-        await user.click(signOut);
+        await user.click(screen.getByRole("button", { name: "More for Work" }));
+        await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
         await waitFor(() => expect(mocks.signOut).toHaveBeenCalled());
     });
 
