@@ -244,7 +244,7 @@ function ProjectBlock({ s }: { s: Session }) {
                         <AgentFace
                             key={a.id}
                             agent={a}
-                            size={20}
+                            size={16}
                             logoSize={20}
                             logoClass={`proj-pip proj-pip-${a.type}`}
                             buddyClass="proj-pip buddy-mark"
@@ -296,7 +296,7 @@ function ProjectBlock({ s }: { s: Session }) {
               ))
             : [];
     const agentIcons: ReactNode[] = agents.map((a) => (
-        <AgentFace key={a.id} agent={a} size={20} logoSize={20} logoClass={`proj-pip proj-pip-${a.type}`} buddyClass="proj-pip buddy-mark" />
+        <AgentFace key={a.id} agent={a} size={16} logoSize={20} logoClass={`proj-pip proj-pip-${a.type}`} buddyClass="proj-pip buddy-mark" />
     ));
 
     const surfaceRow = (role: ProjectSurfaceRole): SubRow => {

@@ -369,18 +369,14 @@
     gap: var(--space-2);
 }
 
-.tabbar.v-agent:has(.buddy-mark) {
-    --mark: 26px;
-}
-
 /* The logos these replace are drawn small inside their box and overlap; buddies fill theirs, so they sit side by side. */
 .proj-pip.buddy-mark + .proj-pip {
     margin-left: 1px;
 }
 
 button.agent-surface-mark {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
     padding: 0;
     border: 0;
     background: transparent;

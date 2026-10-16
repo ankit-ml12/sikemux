@@ -145,7 +145,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             title="Change buddy"
                             aria-label="Change buddy"
                             onClick={() => openBuddyPicker(agent.id)}>
-                            <AgentBuddy agent={agent} size={20} />
+                            <AgentBuddy agent={agent} size={17} />
                         </button>
                     ) : (
                         <span className={`agent-surface-mark agent-glyph ${agent.type}`} aria-hidden="true">

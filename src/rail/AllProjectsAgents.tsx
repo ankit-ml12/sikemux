@@ -122,7 +122,7 @@ export function OpenAgentRow({
     onDoubleClick?: () => void;
     onContextMenu?: (event: MouseEvent) => void;
 }) {
-    const glyph = <AgentFace agent={agent} size={22} logoSize={20} logoClass={`agent-glyph ${agent.type}`} buddyClass="agent-glyph buddy-mark" />;
+    const glyph = <AgentFace agent={agent} size={18} logoSize={20} logoClass={`agent-glyph ${agent.type}`} buddyClass="agent-glyph buddy-mark" />;
     return (
         <div className={teamWrapClass(link)} {...wrap}>
             {title ? (

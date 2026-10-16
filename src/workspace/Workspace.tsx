@@ -418,7 +418,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     icon: agent ? (
                         <AgentFace
                             agent={agent}
-                            size={26}
+                            size={20}
                             logoSize={19}
                             logoClass={`agent-glyph ${agent.type}`}
                             buddyClass="agent-glyph buddy-mark"
@@ -476,7 +476,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                         icon: (
                             <AgentFace
                                 agent={agent}
-                                size={26}
+                                size={20}
                                 logoSize={19}
                                 logoClass={`agent-glyph ${agent.type}`}
                                 buddyClass="agent-glyph buddy-mark"

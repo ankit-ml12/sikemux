@@ -12,7 +12,7 @@ export function ChatWelcome({ cwd, agent }: { cwd: string; agent: Agent }) {
             <div className="chat-welcome-head">
                 <AgentFace
                     agent={agent}
-                    size={44}
+                    size={38}
                     logoSize={40}
                     logoClass={`chat-welcome-mark agent-glyph ${agent.type}`}
                     buddyClass="chat-welcome-mark agent-glyph buddy-mark"
