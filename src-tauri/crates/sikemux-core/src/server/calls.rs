@@ -25,8 +25,11 @@ pub(crate) fn needs(method: &str) -> Needs {
         "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" | "inbox"
         | "digest" | "agentMessages" => Needs::Watch,
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
-        | "boardRetry" => Needs::Full,
-        "pairing" | "answerPairing" | "changeDevice" => Needs::Owner,
+        | "boardRetry" | "renameAgent" | "shares" | "agentAccounts" | "agentStatus"
+        | "agentAccountStatus" | "agentUsage" | "cancelResume" => Needs::Full,
+        "pairing" | "answerPairing" | "changeDevice" | "linkHost" | "shareChat" | "stopShare"
+        | "commitStaged" | "setAgentAccounts" | "addAgentAccount" | "forgetAgentStatus"
+        | "markAgentSignedOut" | "addProject" | "removeProject" => Needs::Owner,
         "changeOwners" | "commitOwners" => Needs::Watch,
         _ => Needs::Local,
     }
@@ -72,6 +75,8 @@ pub(crate) async fn call(
         "agentNames" => answer(agent_names(&core).await?),
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
         "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),
+        "addProject" => answer(workspace::add_project(&core, parse(params)?).await?),
+        "removeProject" => answer(workspace::remove_project(&core, parse(params)?)?),
         method if crate::agent_accounts::METHODS.contains(&method) => {
             super::agent_accounts::call(&core, method, params).await
         }

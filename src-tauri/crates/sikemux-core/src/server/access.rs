@@ -3,8 +3,9 @@
 //! the CLI or an agent's shell, may read and stop the core and set up a host
 //! with no window, but not act as the person. A paired device does what it is
 //! approved for at the moment it asks, and never touches the core itself. One
-//! with full control that joined through this host's own account may also
-//! answer for its owner: let devices in and change or remove them.
+//! with full control that joined through this host's own account is the person,
+//! as the app is: it lets devices in, links hosts, adds projects and agent
+//! accounts, shares chats and commits, so a host with no window is run from it.
 
 use crate::protocol::{DeviceAccess, Request};
 
@@ -89,7 +90,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AcpSetPermissionMode { .. }
         | Request::AcpSetConfig { .. }
         | Request::StartChat { .. }
-        | Request::ResumeChat { .. } => Needs::Full,
+        | Request::ResumeChat { .. }
+        | Request::AcpSwitchAccount { .. } => Needs::Full,
         Request::Configure { .. }
         | Request::ListManifests
         | Request::ReloadManifests
@@ -114,8 +116,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::WatchView
         | Request::FocusAgent { .. }
         | Request::PublishPalette { .. }
-        | Request::PublishBackdrop { .. }
-        | Request::AcpSwitchAccount { .. } => Needs::Local,
+        | Request::PublishBackdrop { .. } => Needs::Local,
     }
 }
 

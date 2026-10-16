@@ -1,6 +1,6 @@
-//! The projects the app has open and the agents it can start, kept by the
-//! core across restarts so a paired device can start or wake a chat with no
-//! app running. The core offers each agent on each of the person's accounts
+//! The projects on this host, the app's and those the person added from a
+//! device, and the agents it can start, kept by the core across restarts so a
+//! paired device can start or wake a chat with no app running. The core offers each agent on each of the person's accounts
 //! and finds its program itself; a launch builds its environment afresh,
 //! keys and all.
 
@@ -76,7 +76,11 @@ struct Asleep {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Saved {
+    /// The projects the app has open.
     projects: Vec<ProjectInfo>,
+    /// The projects the person added from a device, which no app holds.
+    #[serde(default)]
+    added: Vec<ProjectInfo>,
     /// The person's agent accounts, absent until the app first says which they are.
     accounts: Option<Book>,
     /// The mode the person starts agents in, absent until the app first says.
@@ -85,6 +89,13 @@ struct Saved {
     chats: Option<Vec<PublishedChat>>,
     recent: Vec<PublishedRecent>,
     asleep: Vec<Asleep>,
+}
+
+impl Saved {
+    /// Every project on this host: the app's, then those added from devices.
+    fn all_projects(&self) -> impl Iterator<Item = &ProjectInfo> {
+        self.projects.iter().chain(&self.added)
+    }
 }
 
 #[derive(Default)]
@@ -203,10 +214,71 @@ impl Workspaces {
         }
         let mut published = self.lock();
         let changed = published.saved.permission_mode.as_ref() != Some(&permission_mode);
+        published
+            .saved
+            .added
+            .retain(|added| !projects.iter().any(|project| project.path == added.path));
         published.saved.projects = projects;
         published.saved.permission_mode = Some(permission_mode);
         self.save(&published.saved);
         Ok(changed)
+    }
+
+    /// Adds a folder on this host as a project, or answers the project already there.
+    fn add_project(&self, path: PathBuf, name: Option<String>) -> CoreResult<ProjectInfo> {
+        let mut published = self.lock();
+        if let Some(project) = published
+            .saved
+            .all_projects()
+            .find(|project| project.path == path)
+        {
+            return Ok(project.clone());
+        }
+        if published.saved.all_projects().count() >= MAX_PROJECTS {
+            return Err("this host already keeps as many projects as it can".into());
+        }
+        let name = name
+            .map(|name| {
+                name.trim()
+                    .chars()
+                    .take(MAX_TITLE_CHARS)
+                    .collect::<String>()
+            })
+            .filter(|name| !name.is_empty())
+            .or_else(|| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| path.display().to_string());
+        let project = ProjectInfo {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            path,
+        };
+        published.saved.added.push(project.clone());
+        self.save(&published.saved);
+        Ok(project)
+    }
+
+    fn remove_project(&self, path: &Path) -> CoreResult<()> {
+        let mut published = self.lock();
+        if published
+            .saved
+            .projects
+            .iter()
+            .any(|project| project.path == path)
+        {
+            return Err(
+                "that project is open in Sikemux's window on this host; close it there".into(),
+            );
+        }
+        let before = published.saved.added.len();
+        published.saved.added.retain(|project| project.path != path);
+        if published.saved.added.len() == before {
+            return Err("that folder is not a project on this host".into());
+        }
+        self.save(&published.saved);
+        Ok(())
     }
 
     pub(crate) fn accounts(&self) -> Option<Book> {
@@ -358,8 +430,7 @@ impl Workspaces {
     fn project_path(&self, id: &str) -> CoreResult<PathBuf> {
         self.lock()
             .saved
-            .projects
-            .iter()
+            .all_projects()
             .find(|project| project.id == id)
             .map(|project| project.path.clone())
             .ok_or_else(|| CoreError::from("that project is not open in Sikemux on this host"))
@@ -485,8 +556,7 @@ impl Workspaces {
             .filter(|chat| !running_now(chat, open))
             .filter_map(|chat| {
                 let project = saved
-                    .projects
-                    .iter()
+                    .all_projects()
                     .find(|project| project.path == chat.cwd)?;
                 Some(RecentInfo {
                     id: recent_id(chat),
@@ -517,8 +587,7 @@ impl Workspaces {
             return Err("that chat is already open on this host".into());
         }
         let project = saved
-            .projects
-            .iter()
+            .all_projects()
             .find(|project| project.path == chat.cwd)
             .ok_or_else(|| {
                 CoreError::from("that chat's project is not open in Sikemux on this host")
@@ -545,8 +614,7 @@ impl Workspaces {
     pub(crate) fn project_paths(&self) -> Vec<PathBuf> {
         self.lock()
             .saved
-            .projects
-            .iter()
+            .all_projects()
             .map(|project| project.path.clone())
             .collect()
     }
@@ -640,7 +708,7 @@ impl Workspaces {
     pub(crate) fn view(&self) -> Workspace {
         let published = self.lock();
         Workspace {
-            projects: published.saved.projects.clone(),
+            projects: published.saved.all_projects().cloned().collect(),
             launchers: published
                 .launchers
                 .iter()
@@ -1012,6 +1080,50 @@ pub(crate) async fn set_workspace(core: &Arc<Core>, params: WorkspaceParams) -> 
     {
         refresh_launchers(core.clone()).await;
     }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct AddProjectParams {
+    path: PathBuf,
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// Makes a folder on this host a project, so agents can be started in it from
+/// any device, with or without the app.
+pub(crate) async fn add_project(
+    core: &Arc<Core>,
+    params: AddProjectParams,
+) -> CoreResult<ProjectInfo> {
+    if !params.path.is_absolute() {
+        return Err("a project's folder must be an absolute path".into());
+    }
+    let path = params.path;
+    let path = blocking(move || {
+        let path = std::fs::canonicalize(&path)
+            .map_err(|error| CoreError::from(format!("{}: {error}", path.display())))?;
+        if path.is_dir() {
+            Ok(path)
+        } else {
+            Err(format!("{} is not a folder", path.display()).into())
+        }
+    })
+    .await?;
+    let project = core.workspaces.add_project(path, params.name)?;
+    core.publish_device_view();
+    Ok(project)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RemoveProjectParams {
+    path: PathBuf,
+}
+
+/// Stops offering a project a device added. Agents already at work in it keep working.
+pub(crate) fn remove_project(core: &Core, params: RemoveProjectParams) -> CoreResult<()> {
+    core.workspaces.remove_project(&params.path)?;
+    core.publish_device_view();
     Ok(())
 }
 
