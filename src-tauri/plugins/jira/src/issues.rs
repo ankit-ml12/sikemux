@@ -306,48 +306,6 @@ pub fn pick<'a>(transitions: &'a [Transition], wanted: &str) -> Option<&'a Trans
         .or_else(|| transitions.iter().find(|transition| same(&transition.to)))
 }
 
-/// Issue keys such as `ABC-123` in a branch name or commit message, upper-cased, in order and
-/// without repeats. A project key is 2 to 10 letters starting a word, as Jira makes them.
-pub fn keys_in(text: &str) -> Vec<String> {
-    let characters: Vec<char> = text.chars().collect();
-    let at = |index: usize| characters.get(index).copied();
-    let mut found: Vec<String> = Vec::new();
-    let mut index = 0;
-    while index < characters.len() {
-        let starts_word =
-            index == 0 || at(index - 1).is_some_and(|before| !before.is_ascii_alphanumeric());
-        let letters = characters
-            .iter()
-            .skip(index)
-            .take_while(|character| character.is_ascii_alphabetic())
-            .count();
-        if starts_word && (2..=10).contains(&letters) && at(index + letters) == Some('-') {
-            let digits = characters
-                .iter()
-                .skip(index + letters + 1)
-                .take_while(|character| character.is_ascii_digit())
-                .count();
-            let end = index + letters + 1 + digits;
-            if digits > 0 && at(end).is_none_or(|next| !next.is_ascii_alphanumeric()) {
-                let project: String = characters.iter().skip(index).take(letters).collect();
-                let number: String = characters
-                    .iter()
-                    .skip(index + letters + 1)
-                    .take(digits)
-                    .collect();
-                let key = format!("{}-{number}", project.to_ascii_uppercase());
-                if !found.contains(&key) {
-                    found.push(key);
-                }
-                index = end;
-                continue;
-            }
-        }
-        index += letters.max(1);
-    }
-    found
-}
-
 /// The ids of the custom fields Sikemux reads, which differ from site to site.
 #[derive(Clone, Default, Debug, PartialEq)]
 pub(crate) struct CustomFields {
@@ -417,11 +375,6 @@ pub(crate) fn issue_path(key: &str) -> JiraResult<String> {
         )));
     }
     Ok(format!("/rest/api/3/issue/{key}"))
-}
-
-#[derive(Deserialize)]
-pub struct KeysRequest {
-    pub text: String,
 }
 
 #[derive(Deserialize)]
@@ -1393,17 +1346,6 @@ mod tests {
                 body: "Looks good".into()
             }]
         );
-    }
-
-    #[test]
-    fn issue_keys_are_found_in_branch_names_and_commit_messages() {
-        assert_eq!(keys_in("abc-123-fix-x"), ["ABC-123"]);
-        assert_eq!(
-            keys_in("feature/PROJ-7_and_ABC-12: tidy, see ABC-12"),
-            ["PROJ-7", "ABC-12"]
-        );
-        assert_eq!(keys_in("main"), Vec::<String>::new());
-        assert_eq!(keys_in("v2-1 and x-1 and ABC-1x"), Vec::<String>::new());
     }
 
     #[test]

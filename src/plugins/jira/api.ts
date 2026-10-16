@@ -180,7 +180,6 @@ export const jiraApi = {
     /** Moves an issue into a board column through whichever transition leads to one of its statuses. */
     moveIssue: (key: string, column: JiraColumn, site?: string) =>
         backend.call<void>("moveIssue", { key, statusIds: column.statusIds, column: column.name, site }),
-    keys: (text: string) => backend.call<string[]>("keys", { text }),
     /** A person's picture as a `data:` address, since the window cannot load Atlassian's images itself. */
     avatar(url: string): Promise<string> {
         const known = avatars.get(url);

@@ -34,12 +34,6 @@ export const jiraFiltersR = resource({
     staleAfterMs: 300_000,
 });
 
-export const jiraKeysR = resource({
-    kind: "jira.keys",
-    fetch: (text: string): Promise<string[]> => jiraApi.keys(text),
-    staleAfterMs: 3_600_000,
-});
-
 export const jiraProjectsR = resource({
     kind: "jira.projects",
     fetch: (site: string): Promise<JiraProject[]> => jiraApi.projects(site || undefined),
