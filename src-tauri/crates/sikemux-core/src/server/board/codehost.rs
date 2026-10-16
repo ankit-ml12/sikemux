@@ -239,6 +239,12 @@ pub(crate) async fn runs(
     Ok(page["runs"].as_array().cloned().unwrap_or_default())
 }
 
+/// The repository's CI workflows, each with its `id`, `name` and `path`.
+pub(crate) async fn workflows(repo: &Repo) -> Result<Vec<Value>, String> {
+    let found = plugins::call(&plugin(repo.host), "workflows", repo.params(json!({}))).await?;
+    Ok(found.as_array().cloned().unwrap_or_default())
+}
+
 /// One run, `{ run, jobs }`.
 pub(crate) async fn run(repo: &Repo, id: &Value) -> Result<Value, String> {
     plugins::call(

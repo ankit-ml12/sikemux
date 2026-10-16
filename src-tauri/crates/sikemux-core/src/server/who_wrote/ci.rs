@@ -105,7 +105,7 @@ pub(super) fn asked(top: &Path, target: &str) -> Result<Option<Asked>, String> {
         |branch: String, workflow: Option<String>| Ok(Some(Asked::Latest { branch, workflow }));
     match target.to_ascii_lowercase().as_str() {
         "ci" => return latest(current_branch(top)?, None),
-        "main" => return latest("main".to_owned(), None),
+        "main" => return latest(main_branch(top), None),
         _ => {}
     }
     if target.chars().all(|c| c.is_ascii_digit()) && !is_commit(top, target) {
@@ -125,6 +125,17 @@ fn current_branch(top: &Path) -> Result<String, String> {
         return Err("this checkout is on no branch; name the CI run or its address".into());
     }
     Ok(branch)
+}
+
+/// The branch `origin` names as its main one, else `main`.
+fn main_branch(top: &Path) -> String {
+    git(
+        top,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .ok()
+    .and_then(|head| head.trim().strip_prefix("origin/").map(str::to_owned))
+    .unwrap_or_else(|| "main".to_owned())
 }
 
 fn is_commit(top: &Path, target: &str) -> bool {
@@ -181,11 +192,15 @@ fn is_workflow(top: &Path, name: &str) -> bool {
     let Ok(pipelines) = std::fs::read_to_string(top.join("bitbucket-pipelines.yml")) else {
         return false;
     };
-    same("default") && pipelines.contains("default:")
-        || pipelines
-            .lines()
-            .filter_map(|line| line.trim().strip_suffix(':'))
-            .any(same)
+    pipelines.lines().any(|line| {
+        let indent = line.len() - line.trim_start().len();
+        let key = line.trim().strip_suffix(':');
+        match indent {
+            2 => key == Some("default") && same("default"),
+            4 => key.is_some_and(same),
+            _ => false,
+        }
+    })
 }
 
 async fn timed<T>(
@@ -218,7 +233,7 @@ pub(super) async fn find(origin: &str, asked: Asked) -> Result<Ci, String> {
     let mut also_failing = Vec::new();
     let (id, job) = match asked {
         Asked::Run(address) => {
-            if address.contains("://")
+            if address.contains('/')
                 && !address
                     .to_ascii_lowercase()
                     .contains(&format!("/{}/", repo.slug().to_ascii_lowercase()))
@@ -233,11 +248,22 @@ pub(super) async fn find(origin: &str, asked: Asked) -> Result<Ci, String> {
             (id, codehost::job_in(&address))
         }
         Asked::Latest { branch, workflow } => {
-            let runs: Vec<Value> = timed(ASK_BUDGET, codehost::runs(&repo, &branch, None, false))
-                .await?
-                .into_iter()
-                .filter(|run| workflow.as_deref().is_none_or(|name| is_named(run, name)))
-                .collect();
+            let id = match &workflow {
+                Some(name) => Some(
+                    timed(ASK_BUDGET, codehost::workflows(&repo))
+                        .await?
+                        .into_iter()
+                        .find(|found| is_named(found, name))
+                        .map(|found| found["id"].clone())
+                        .ok_or_else(|| format!("{} has no workflow called {name}", repo.slug()))?,
+                ),
+                None => None,
+            };
+            let runs = timed(
+                ASK_BUDGET,
+                codehost::runs(&repo, &branch, id.as_ref(), false),
+            )
+            .await?;
             let picked = latest_failing(&runs, &branch, workflow.as_deref(), &mut notes)?;
             also_failing = red(&runs)
                 .into_iter()
@@ -256,11 +282,9 @@ pub(super) async fn find(origin: &str, asked: Asked) -> Result<Ci, String> {
             also_failing,
         });
     }
-    let failing = Arc::new(read_run(&repo, &id, job).await?);
-    if failing.run["conclusion"]
-        .as_str()
-        .is_some_and(|conclusion| !codehost::passed(conclusion))
-    {
+    let (failing, whole) = read_run(&repo, &id, job).await?;
+    let failing = Arc::new(failing);
+    if whole {
         remember_run(&key, &failing);
     }
     Ok(Ci {
@@ -346,9 +370,19 @@ fn sha_and_url(run: &Value) -> (String, String) {
 /// Reads the run `id`: its failing jobs, the end of the first one's log, the
 /// latest earlier run of its workflow on its branch that passed, and the run
 /// since then where it first failed.
-async fn read_run(repo: &Repo, id: &Value, job: Option<Value>) -> Result<Failing, String> {
+/// Whether every part was read, so the answer can be kept.
+async fn read_run(repo: &Repo, id: &Value, job: Option<Value>) -> Result<(Failing, bool), String> {
     let detail = timed(ASK_BUDGET, codehost::run(repo, id)).await?;
     let run = &detail["run"];
+    match conclusion(run) {
+        None => return Err("that run has not finished; ask again once it has".into()),
+        Some(found) if !codehost::failed(found) => {
+            return Err(format!(
+                "that run ended {found}, not failed; name a failing run, or ci for the latest one"
+            ))
+        }
+        Some(_) => {}
+    }
     let sha = text(run, "sha").to_owned();
     if sha.is_empty() {
         return Err("the code host did not say which commit that run built".into());
@@ -364,6 +398,7 @@ async fn read_run(repo: &Repo, id: &Value, job: Option<Value>) -> Result<Failing
         .find(|found| job.as_ref().is_some_and(|job| found["id"] == *job))
         .or(failed_jobs.first())
         .map(|found| found["id"].clone());
+    let reads_log = read.is_some();
     let history = async {
         let branch = run["branch"].as_str()?;
         let history = timed(
@@ -396,13 +431,14 @@ async fn read_run(repo: &Repo, id: &Value, job: Option<Value>) -> Result<Failing
             .ok()
     };
     let (history, log) = tokio::join!(history, log);
+    let whole = history.is_some() && (log.is_some() || !reads_log);
     let (passed, began) = history.unwrap_or_default();
     let (error, named) = log.as_deref().map(read_error).unwrap_or_default();
     let failed_jobs: Vec<&str> = failed_jobs
         .iter()
         .map(|found| text(found, "name"))
         .collect();
-    Ok(Failing {
+    let failing = Failing {
         run: json!({
             "workflow": run["name"],
             "url": run["url"],
@@ -417,7 +453,8 @@ async fn read_run(repo: &Repo, id: &Value, job: Option<Value>) -> Result<Failing
         began,
         error,
         named,
-    })
+    };
+    Ok((failing, whole))
 }
 
 fn cached(key: &str) -> Option<Arc<Failing>> {
@@ -550,7 +587,8 @@ fn names(named: &str, file: &str) -> bool {
         true => {
             named == file
                 || file.ends_with(&format!("/{named}"))
-                || file.contains('/') && named.ends_with(&format!("/{file}"))
+                || (file.contains('/') || named.starts_with('/'))
+                    && named.ends_with(&format!("/{file}"))
         }
         false => file.rsplit('/').next() == Some(named),
     }
@@ -603,7 +641,7 @@ pub(super) fn commits(top: &Path, ci: &Ci) -> Result<Found, String> {
     let end = match failing
         .began
         .as_ref()
-        .filter(|(sha, _)| is_commit(top, sha))
+        .filter(|(sha, _)| is_commit(top, sha) && sha != passed)
     {
         Some((sha, url)) => {
             found.notes.push(format!(
@@ -693,6 +731,11 @@ pub(super) fn commits(top: &Path, ci: &Ci) -> Result<Found, String> {
         .collect();
     ranked.sort_by_key(|(rank, ..)| std::cmp::Reverse(*rank));
     found.total = Some(total);
+    if total > MAX_RANGE {
+        found.notes.push(format!(
+            "Only the latest {MAX_RANGE} of them were weighed against the error."
+        ));
+    }
     for (_, hash, why) in ranked {
         if let Some(why) = why {
             found.why.insert(hash.clone(), why);
