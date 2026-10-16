@@ -70,7 +70,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("appearance", "Buddies", "Show buddies", "agent icon character avatar mascot harness logo"),
     row("appearance", "Buddies", "Pack", "agent icon character avatar mascot style"),
     row("appearance", "Buddies", "Shape", "agent icon character avatar mixed"),
-    row("appearance", "Buddies", "Preview", "agent icon character avatar sample"),
     row("appearance", "Buddies", "Animate faces", "motion blink animation"),
     ...(IS_MACOS
         ? [

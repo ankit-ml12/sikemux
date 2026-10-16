@@ -363,10 +363,69 @@
     margin-top: 0;
 }
 
-.buddy-samples {
+/* Settings: packs as cards and shapes as tiles, each its own rounded item with a gap between. */
+.buddy-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: var(--space-1h);
+    margin-top: var(--space-2);
+}
+
+.buddy-card,
+.buddy-shape {
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    font-family: var(--ui);
+    transition:
+        color var(--dur-1) linear,
+        border-color var(--dur-1) linear,
+        background var(--dur-1) linear;
+}
+.buddy-card:hover,
+.buddy-shape:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+.buddy-card.on,
+.buddy-shape.on {
+    color: var(--text-primary);
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+}
+
+.buddy-card {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-1h);
+    padding: var(--space-2) var(--space-1) var(--space-1h);
+}
+
+.buddy-card-sample {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+    gap: 2px;
+}
+
+.buddy-card-name {
+    font-size: var(--text-xs);
+}
+
+.buddy-shapes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    gap: var(--space-1h);
+    margin-top: var(--space-2);
+}
+
+.buddy-shape {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
+    padding: 0;
+}
+.buddy-shape.mix {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
 }
 
 /* The logos these replace are drawn small inside their box and overlap; buddies fill theirs, so they sit side by side. */
