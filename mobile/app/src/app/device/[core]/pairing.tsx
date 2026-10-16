@@ -143,8 +143,7 @@ function LinkSheet({
             {link.name}
           </Text>
           <Text style={type.meta}>
-            {platformName(link.platform)} · linked {formatAgo(link.linkedAt, now)} · {agentCount(link.agents)} across the link. Its agents
-            can start agents here, and agents here can start them there.
+            {platformName(link.platform)} · linked {formatAgo(link.linkedAt, now)} · {agentCount(link.agents)} across the link
           </Text>
           <Button
             kind="danger"

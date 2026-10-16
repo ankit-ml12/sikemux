@@ -101,7 +101,7 @@ function Recent({
     if (resuming) return;
     if (!full) {
       haptics.warning();
-      setNote({ text: `This phone can watch ${hostName}, not resume its chats. The host can give it full access.`, failed: false });
+      setNote({ text: `This phone can only watch ${hostName}.`, failed: false });
       return;
     }
     if (live.status !== 'open') {
@@ -471,9 +471,6 @@ function Unpaired({ device }: { device?: PairedDevice }) {
       <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]} accessibilityRole="header">
         This host no longer knows this phone
       </Text>
-      <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>
-        It was removed on the host. Forget it here, then connect to it again from Devices.
-      </Text>
       {problem ? <Text style={styles.problem}>{problem}</Text> : null}
       <Button
         kind="danger"
@@ -508,9 +505,9 @@ export default function Device() {
   const away = live.status === 'closed' || !!status.problem;
   const unreachable =
     behind === 'host'
-      ? { title: 'This host needs a newer Sikemux', body: 'Update Sikemux on the host, then come back here.' }
+      ? { title: 'This host needs a newer Sikemux' }
       : behind === 'phone'
-        ? { title: 'Update this app', body: 'This host runs a newer Sikemux than this app understands.' }
+        ? { title: 'Update this app', body: 'This host runs a newer Sikemux.' }
         : { title: "Can't reach this host", body: 'It may be asleep, offline, or have remote access turned off.' };
   const snapshot = live.snapshot;
   const [picking, setPicking] = useState(false);
@@ -576,7 +573,7 @@ export default function Device() {
       ) : away && !snapshot ? (
         <View style={styles.away}>
           <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>{unreachable.title}</Text>
-          <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>{unreachable.body}</Text>
+          {unreachable.body ? <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>{unreachable.body}</Text> : null}
           {behind ? null : (
             <>
               <View style={styles.trying}>

@@ -6,7 +6,7 @@ import { haptics } from '@/ui/haptics';
 import { goHome } from '@/ui/navigate';
 import { Button } from '@/ui/controls';
 import { Sheet } from '@/ui/Sheet';
-import { fonts, type Palette, useStyles, useType } from '@/ui/theme';
+import { fonts, type Palette, useStyles } from '@/ui/theme';
 import { forgetBackdrop } from './backdrop';
 import { forget } from './hub';
 import { deviceName, type PairedDevice } from './paired';
@@ -45,7 +45,6 @@ export function useForget(device: PairedDevice | undefined, done?: () => void) {
 /** The device screen's options: who may connect to the host, and forgetting it. */
 export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice; visible: boolean; onClose: () => void }) {
   const styles = useStyles(makeStyles);
-  const type = useType();
   const { forgetting, problem, leave } = useForget(device, onClose);
   const name = deviceName(device);
 
@@ -64,10 +63,6 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
             }}
           />
         ) : null}
-        <Text style={type.body}>
-          Forgetting removes this host from the phone and, if it can be reached, removes this phone from the host&apos;s paired devices.
-          While it is on your account, it stays in Devices to connect to again.
-        </Text>
         {problem ? <Text style={styles.problem}>{problem}</Text> : null}
         <Button
           kind="danger"
