@@ -50,7 +50,7 @@ import { EditorFindBar } from "./EditorFindBar";
 import { EditorInsights } from "./EditorInsights";
 import { PaneField } from "../ui/ShaderField";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
-import { localPath } from "../chat/imagePreview";
+import { localPath } from "../lib/imagePaths";
 import { safeWebUrl } from "../lib/urls";
 import { keybindingLabelForAction } from "../commands/keybindings";
 

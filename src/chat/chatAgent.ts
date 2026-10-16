@@ -6,7 +6,7 @@ import { swallow } from "../state/toast";
 import type { Agent } from "../state/types";
 import type { AcpSubagent } from "./types";
 import { safeWebUrl } from "../lib/urls";
-import { localPath } from "./imagePreview";
+import { localPath } from "../lib/imagePaths";
 
 export const ChatAgentContext = createContext<{ id: string; type: Agent["type"] }>({ id: "", type: "claude" });
 

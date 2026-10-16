@@ -1,9 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { extensionOf } from "../../languages";
+import { IMAGE_EXTS } from "../../lib/imagePaths";
 
 export type ViewerKind = "image" | "video" | "audio" | "font" | "document" | "binary";
-
-const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif", "tif", "tiff", "heic", "heif"];
 
 /* Extensions that are never text, so the editor goes straight to a viewer
    instead of reading them first. Anything not named here that turns out not
@@ -34,10 +33,6 @@ const DOCUMENT_MIMES = new Set([
 const UNPLAYABLE_VIDEO = new Set(["video/x-matroska", "video/x-msvideo"]);
 
 export const extname = extensionOf;
-
-export function isImagePath(path: string | null | undefined): boolean {
-    return !!path && IMAGE_EXTS.includes(extname(path));
-}
 
 export function isPreviewPath(path: string | null | undefined): boolean {
     return !!path && PREVIEW_EXTS.has(extname(path));

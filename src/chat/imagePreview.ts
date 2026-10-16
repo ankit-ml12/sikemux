@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fsapi } from "../api/fs";
-import { isImagePath, previewUrl } from "../editor/viewers/fileKinds";
-import { fileUriToPath } from "../lib/paths";
+import { previewUrl } from "../editor/viewers/fileKinds";
+import { isImagePath } from "../lib/imagePaths";
 import { useRemoteOrigin, type RemoteOrigin } from "./origin";
 
 const MAX_CACHED = 12;
@@ -89,17 +89,6 @@ function loadPreview(path: string): Promise<string | null> {
         .finally(() => pending.delete(path));
     pending.set(path, request);
     return request;
-}
-
-export function localPath(uri: string | null | undefined): string | null {
-    if (!uri) return null;
-    if (!uri.startsWith("file://")) return uri.startsWith("/") ? uri : null;
-    return fileUriToPath(uri);
-}
-
-export function localImagePath(uri: string | null | undefined): string | null {
-    const path = localPath(uri);
-    return path && isImagePath(path) ? path : null;
 }
 
 /** What the preview cache is holding, in characters. */
