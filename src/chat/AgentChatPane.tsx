@@ -16,7 +16,7 @@ import { newFoldMemory } from "./longText";
 import { sentPrompts } from "./promptHistory";
 import { activeToolLabel } from "./toolLabels";
 import { runningSubagents, subagentsById } from "./transcript";
-import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
+import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort, lostConnectionText } from "./chatStatus";
 import { ChatAgentContext, ChatSubagentsContext, ReaderScrollContext } from "./chatAgent";
 import { warmTranscript } from "./ChatMessageRow";
 import { ChatTranscript } from "./ChatTranscript";
@@ -33,7 +33,7 @@ import type { AgentQuestion } from "../agents/agentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
 import { useChatQuestions } from "./useChatQuestions";
 import { ResumeActions } from "./ResumeActions";
-import { ChatFailureActions } from "./ChatFailureActions";
+import { ChatFailureActions, NetworkFailureActions } from "./ChatFailureActions";
 import LiveStack from "./LiveStack";
 import QuestionRows from "./QuestionRows";
 
@@ -211,6 +211,7 @@ export function AgentChatPane({
         replaying,
         commands: state.commands,
         steerable,
+        held: state.failure?.kind === "network",
         dispatch,
         onError: setComposerError,
     });
@@ -427,9 +428,18 @@ export function AgentChatPane({
                                         {displayState.error && recovery === null && (
                                             <div className="chat-error" role="alert">
                                                 <IconWarning size={14} />
-                                                <span>{displayState.error}</span>
-                                                {displayState.failure && profile && (
-                                                    <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
+                                                <span>
+                                                    {displayState.failure?.kind === "network" ? lostConnectionText(agent.type) : displayState.error}
+                                                </span>
+                                                {displayState.failure?.kind === "network" ? (
+                                                    <NetworkFailureActions
+                                                        agent={agent}
+                                                        failure={displayState.failure}
+                                                        onDismiss={() => dispatch({ type: "dismiss_error" })}
+                                                    />
+                                                ) : (
+                                                    displayState.failure &&
+                                                    profile && <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
                                                 )}
                                             </div>
                                         )}

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { EmptyState, IconInfo, IconPlus, SkeletonRows, Tooltip } from "../../plugin-api/ui";
+import { EmptyState, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
 import { GitColumns } from "../../git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { issueR, issuesR } from "../resources";
@@ -148,7 +148,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
     const list =
         issues.status === "loading" && !issues.data ? (
             <SkeletonRows rows={8} label="Loading issues" />
-        ) : issues.error ? (
+        ) : issues.error && !issues.data ? (
             <EmptyState
                 title="Could not read issues"
                 message={failureMessage(issues.error)}
@@ -157,6 +157,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
             />
         ) : (
             <div className="gha-list pr-list">
+                <StaleNotice handle={issues} />
                 <div className="gha-list-head">
                     <div className="gha-chips">
                         {LIST_STATES.map((state) => (

@@ -290,6 +290,20 @@
 }
 
 /* What fixes the failure sits beside it: a sign-in, or another account. */
+/* What the agent itself said about a failed turn, opened from Details. */
+.chat-error-details {
+    flex-basis: 100%;
+    max-height: 160px;
+    margin: 0;
+    padding: 6px 8px;
+    overflow: auto;
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--danger) 6%, transparent);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: pre-wrap;
+}
+
 .chat-error-actions {
     display: flex;
     flex-wrap: wrap;

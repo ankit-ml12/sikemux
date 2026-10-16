@@ -252,6 +252,40 @@ async fn a_claude_chat_says_when_claude_retries_its_request() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_turn_the_network_cut_short_says_so_plainly_and_goes_again_on_retry() {
+    let config = tempfile::tempdir().expect("config");
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    client
+        .acp_start(claude_launch("claude-offline", config.path()))
+        .await
+        .expect("start");
+    chat.until_kind(ChatEventKind::Ready).await;
+    prompt(&client, "claude-offline", &message_id(), "offline").await;
+
+    let error = chat.until_kind(ChatEventKind::Error).await;
+    assert_eq!(error.payload["failure"]["kind"], "network");
+    assert_eq!(
+        error.payload["message"],
+        "Lost the connection to the model provider"
+    );
+    assert_eq!(
+        error.payload["failure"]["details"],
+        "API Error: Connection error."
+    );
+
+    client
+        .call(
+            "retryFailed",
+            serde_json::json!({ "agentId": "claude-offline" }),
+        )
+        .await
+        .expect("retry");
+    chat.until(|event| said(std::slice::from_ref(event)).contains("back online"))
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_claude_tool_waits_for_the_persons_answer() {
     let config = tempfile::tempdir().expect("config");
     let core = TestCore::start();

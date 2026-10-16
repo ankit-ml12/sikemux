@@ -20,6 +20,7 @@ pub(super) async fn run(core: Arc<Core>) {
         };
         if change != NetworkEvent::Offline {
             remote::network_back(&core).await;
+            core.chats.retry_offline_failures();
         }
         core.broadcast_local(&Event::Network { change });
     }

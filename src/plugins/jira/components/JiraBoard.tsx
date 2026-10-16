@@ -9,6 +9,7 @@ import {
     IconRefresh,
     IconSearch,
     SkeletonRows,
+    StaleNotice,
     useCardDrag,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
@@ -69,7 +70,7 @@ export function JiraBoard({
         if (issue) void move(issue, Number(column));
     });
 
-    if (whole.status === "error") return <EmptyState message={whole.error ?? "Jira could not open this board."} tone="error" />;
+    if (whole.status === "error" && !whole.data) return <EmptyState message={whole.error ?? "Jira could not open this board."} tone="error" />;
     if (!whole.data) return <SkeletonRows rows={6} label="Loading the board" />;
     const board = whole.data;
     const narrowed = picked.size === 0 ? board : found.data;
@@ -237,6 +238,7 @@ export function JiraBoard({
                     )}
                 </div>
             </header>
+            <StaleNotice handle={whole} />
             {board.kind === "scrum" && !board.sprint ? (
                 <EmptyState message="No sprint is running on this board." />
             ) : found.status === "error" && picked.size > 0 ? (

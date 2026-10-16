@@ -55,6 +55,13 @@ for (const agent of agents) {
     if (typeof agent[flag] !== "boolean")
       throw new Error(`${agent.type} does not say whether it has ${flag}`);
   }
+  if (
+    agent.install !== null &&
+    !/^curl -fsSL https:\/\/\S+ \| (ba)?sh$/.test(agent.install ?? "")
+  )
+    throw new Error(
+      `${agent.type} install must be null or "curl -fsSL https://… | sh"`,
+    );
 }
 if (new Set(agents.map((agent) => agent.type)).size !== agents.length)
   throw new Error("src/agents/catalog.json lists an agent twice");
@@ -82,6 +89,7 @@ const entries = agents.map((agent) => ({
   command: agent.command,
   brand: agent.brand,
   ...Object.fromEntries(FLAGS.map((flag) => [flag, agent[flag]])),
+  install: agent.install,
 }));
 
 await emit(

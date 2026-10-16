@@ -138,6 +138,9 @@ pub(crate) struct ReaderState {
     /// result already says it. One moved to the background is shown then.
     foreground: HashMap<String, Value>,
     compaction: Option<String>,
+    /// Claude Code retried this turn's request with no answer from Anthropic,
+    /// so a failure that ends it was the network's.
+    offline_retries: bool,
     /// The list Claude's task tools keep, shown as the chat's plan.
     task_plan: TaskPlan,
     used: Option<u64>,
@@ -439,6 +442,7 @@ impl Reader {
                 tasks: HashMap::new(),
                 foreground: HashMap::new(),
                 compaction: None,
+                offline_retries: false,
                 task_plan: TaskPlan::default(),
                 used: None,
                 size: 200_000,
@@ -1006,7 +1010,7 @@ impl Reader {
             TurnEnd::Completed(json!({ "stopReason": "cancelled" }))
         } else if let Some(failure) = turn.failure {
             TurnEnd::Failed {
-                failure,
+                failure: self.offline(failure),
                 response: Some(json!({ "stopReason": "end_turn" })),
             }
         } else if result.get("is_error").and_then(Value::as_bool) == Some(true) {
@@ -1032,17 +1036,18 @@ impl Reader {
                 FailureKind::Other
             };
             TurnEnd::Failed {
-                failure: Failure {
+                failure: self.offline(Failure {
                     kind,
                     title: said,
                     details: None,
                     resets_at: None,
-                },
+                }),
                 response: Some(json!({ "stopReason": "end_turn" })),
             }
         } else {
             TurnEnd::Completed(json!({ "stopReason": stop_reason(result) }))
         };
+        self.data.offline_retries = false;
         self.sink.end_turn(turn.number, end);
         self.name_chat();
     }
@@ -1245,6 +1250,18 @@ impl Reader {
         self.sink.update(&self.data.session_id, update);
     }
 
+    /// A failure Claude gave no reason for reads as the network's when the turn
+    /// was retrying with no answer from Anthropic, or Claude's words say so.
+    fn offline(&self, failure: Failure) -> Failure {
+        let networked = failure.kind == FailureKind::Other
+            && (self.data.offline_retries || crate::acp::account::sounds_offline(&failure.title));
+        if networked {
+            Failure::lost_connection(failure.title)
+        } else {
+            failure
+        }
+    }
+
     /// Claude Code went idle: anything the turn still waited on is over.
     fn idle(&mut self) {
         let turn = self
@@ -1256,13 +1273,14 @@ impl Reader {
             Some(turn) => {
                 let end = match turn.failure {
                     Some(failure) if !turn.cancelled => TurnEnd::Failed {
-                        failure,
+                        failure: self.offline(failure),
                         response: Some(json!({ "stopReason": "end_turn" })),
                     },
                     _ => TurnEnd::Completed(json!({
                         "stopReason": if turn.cancelled { "cancelled" } else { "end_turn" },
                     })),
                 };
+                self.data.offline_retries = false;
                 self.sink.end_turn(turn.number, end);
             }
             None => self.sink.work_ended("end_turn"),
@@ -1311,6 +1329,7 @@ impl Reader {
             Some(status) => format!("Anthropic answered {status}"),
             None => "No answer from Anthropic".to_owned(),
         };
+        self.data.offline_retries |= status.is_none();
         let update = crate::acp::account::retrying("api_retry", category, attempt, &detail);
         self.sink.update(&self.data.session_id, update);
     }

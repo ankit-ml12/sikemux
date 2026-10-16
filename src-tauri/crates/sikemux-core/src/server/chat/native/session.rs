@@ -647,6 +647,9 @@ pub(crate) async fn run<B: Backend>(
                 }
                 chat.emit(ChatEventKind::Error, failure);
                 state.failed_prompt = state.last_prompt.take();
+                if failed.failure.kind == FailureKind::Network && state.failed_prompt.is_some() {
+                    chat.offline_failed.store(true, Ordering::Release);
+                }
                 if let (FailureKind::Limit, Some(prompt)) =
                     (failed.failure.kind, state.failed_prompt.clone())
                 {
@@ -946,6 +949,24 @@ pub(crate) async fn run<B: Backend>(
                 begin(&chat, &mut backend, state.turn, Prompt::from(&prompt)).await;
                 state.last_prompt = Some(prompt);
             }
+            ChatCommand::RetryFailed => {
+                let Some(prompt) = state.failed_prompt.take() else {
+                    continue;
+                };
+                if chat.running.swap(true, Ordering::AcqRel) {
+                    state.failed_prompt = Some(prompt);
+                    continue;
+                }
+                letter_turn = false;
+                state.fresh_turn(&chat);
+                state.turn += 1;
+                begin(&chat, &mut backend, state.turn, Prompt::from(&prompt)).await;
+                state.last_prompt = Some(prompt);
+            }
+            ChatCommand::DiscardFailed => {
+                state.failed_prompt = None;
+                reset::cancel(&chat);
+            }
             ChatCommand::Cancel => {
                 if let Some(switching) = state.switching.as_mut() {
                     switching.carry_on = false;
@@ -1027,6 +1048,7 @@ impl SessionState {
         self.exhausted.clear();
         self.signed_in_again = false;
         self.failed_prompt = None;
+        chat.offline_failed.store(false, Ordering::Release);
         reset::cancel(chat);
     }
 

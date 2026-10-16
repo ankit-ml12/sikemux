@@ -2,7 +2,7 @@ import { useState } from "react";
 import { GitColumns } from "../../git/GitColumns";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { useResourceEnabled } from "../../plugin-api/resources";
-import { EmptyState, IconExternal, IconGit, IconRefresh, SkeletonRows, Tooltip } from "../../plugin-api/ui";
+import { EmptyState, IconExternal, IconGit, IconRefresh, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
 import { hostApi, failureMessage, type Release, type RepoRef } from "../api";
 import { useHost } from "../registry";
 import { releasesR } from "../resources";
@@ -175,7 +175,7 @@ export function ReleasesView({ paneId, repo, active }: Props) {
     const left =
         releases.status === "loading" && !releases.data ? (
             <SkeletonRows rows={6} label="Loading releases" />
-        ) : releases.error ? (
+        ) : releases.error && !releases.data ? (
             <EmptyState
                 title="Could not read releases"
                 message={failureMessage(releases.error)}
@@ -184,6 +184,7 @@ export function ReleasesView({ paneId, repo, active }: Props) {
             />
         ) : (
             <div className="gha-list pr-list">
+                <StaleNotice handle={releases} />
                 <div className="gha-list-head">
                     <span className="gha-dim">
                         {rows.length === RELEASES_READ ? `Newest ${RELEASES_READ}` : `${rows.length} release${rows.length === 1 ? "" : "s"}`}

@@ -15,6 +15,7 @@ export interface JobRef {
 
 export type RundeckLevel =
     | { kind: "matrix" }
+    | { kind: "activity"; project: string }
     | ({ kind: "service" } & JobRef)
     | ({ kind: "deploy"; branch?: string; options?: Record<string, string> } & JobRef)
     | ({ kind: "execution"; executionId: number } & JobRef);
@@ -90,8 +91,6 @@ interface RundeckRuntime {
     /** Folder open/closed choices per pane, keyed by `treeKey`. Absent means "follow the selection". */
     treeOpen: Record<string, Record<string, boolean>>;
     treeWidth: number;
-    /** The job each pane's list has picked out for the side panel. */
-    selectedJob: Record<string, string>;
     /** Whether each pane lists its jobs or lines up the folders beside each other. */
     layout: Record<string, "list" | "compare">;
 }
@@ -101,13 +100,8 @@ export const useRundeck = create<RundeckRuntime>()(() => ({
     jobPaletteOpen: false,
     treeOpen: {},
     treeWidth: 220,
-    selectedJob: {},
     layout: {},
 }));
-
-export function selectRundeckJob(paneId: string, jobId: string): void {
-    useRundeck.setState((state) => ({ selectedJob: { ...state.selectedJob, [paneId]: jobId } }));
-}
 
 export function setRundeckLayout(paneId: string, layout: "list" | "compare"): void {
     useRundeck.setState((state) => ({ layout: { ...state.layout, [paneId]: layout } }));
@@ -115,17 +109,15 @@ export function setRundeckLayout(paneId: string, layout: "list" | "compare"): vo
 
 onPaneClosed((paneId) => {
     const state = useRundeck.getState();
-    if (!(paneId in state.views) && !(paneId in state.treeOpen) && !(paneId in state.selectedJob) && !(paneId in state.layout)) return;
+    if (!(paneId in state.views) && !(paneId in state.treeOpen) && !(paneId in state.layout)) return;
     useRundeck.setState((current) => {
         const views = { ...current.views };
         const treeOpen = { ...current.treeOpen };
-        const selectedJob = { ...current.selectedJob };
         const layout = { ...current.layout };
         delete views[paneId];
         delete treeOpen[paneId];
-        delete selectedJob[paneId];
         delete layout[paneId];
-        return { views, treeOpen, selectedJob, layout };
+        return { views, treeOpen, layout };
     });
 });
 
@@ -177,6 +169,12 @@ export function rundeckHome(paneId: string): void {
 export function selectRundeckGroup(paneId: string, project: string, group: string | null = null): void {
     updateRundeckSettings({ activeProject: project, activeGroup: group });
     rundeckHome(paneId);
+}
+
+/** Every run in a project, over its job list so Back leads there. */
+export function openRundeckActivity(paneId: string, project: string): void {
+    if (rundeckSettings.get().activeProject !== project) updateRundeckSettings({ activeProject: project, activeGroup: null });
+    setStack(paneId, [...HOME.stack, { kind: "activity", project }]);
 }
 
 export function openRundeckJobPalette(): void {

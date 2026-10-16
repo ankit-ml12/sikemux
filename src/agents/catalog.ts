@@ -46,3 +46,8 @@ export function canDeleteChats(type: AgentType): boolean {
 export function canBypassPermissions(type: AgentType): boolean {
     return BY_TYPE.get(type)?.bypass === true;
 }
+
+/** The agent's official install command, which puts it where its own updater expects. Null when it has none to run. */
+export function installCommand(type: string): string | null {
+    return BY_TYPE.get(type)?.install ?? null;
+}

@@ -8,7 +8,8 @@
             "accounts": true,
             "usage": true,
             "deletableChats": true,
-            "bypass": true
+            "bypass": true,
+            "install": "curl -fsSL https://claude.ai/install.sh | bash"
         },
         {
             "type": "codex",
@@ -18,7 +19,8 @@
             "accounts": true,
             "usage": true,
             "deletableChats": true,
-            "bypass": true
+            "bypass": true,
+            "install": "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
         },
         {
             "type": "hermes",
@@ -28,7 +30,8 @@
             "accounts": false,
             "usage": false,
             "deletableChats": false,
-            "bypass": true
+            "bypass": true,
+            "install": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
         },
         {
             "type": "pi",
@@ -38,7 +41,8 @@
             "accounts": false,
             "usage": false,
             "deletableChats": false,
-            "bypass": false
+            "bypass": false,
+            "install": "curl -fsSL https://pi.dev/install.sh | sh"
         },
         {
             "type": "opencode",
@@ -48,7 +52,8 @@
             "accounts": false,
             "usage": false,
             "deletableChats": false,
-            "bypass": false
+            "bypass": false,
+            "install": "curl -fsSL https://opencode.ai/install | bash"
         },
         {
             "type": "omp",
@@ -58,7 +63,8 @@
             "accounts": false,
             "usage": false,
             "deletableChats": false,
-            "bypass": true
+            "bypass": true,
+            "install": "curl -fsSL https://omp.sh/install | sh"
         },
         {
             "type": "grok",
@@ -68,7 +74,8 @@
             "accounts": false,
             "usage": false,
             "deletableChats": false,
-            "bypass": true
+            "bypass": true,
+            "install": "curl -fsSL https://x.ai/cli/install.sh | bash"
         },
         {
             "type": "muse",
@@ -78,7 +85,8 @@
             "accounts": false,
             "usage": false,
             "deletableChats": false,
-            "bypass": true
+            "bypass": true,
+            "install": null
         }
     ]
 }

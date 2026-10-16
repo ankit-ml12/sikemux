@@ -13,6 +13,7 @@ import {
     IconPlus,
     IconPullRequest,
     SkeletonRows,
+    StaleNotice,
     Tooltip,
 } from "../../plugin-api/ui";
 import type { GitCommit } from "../../api/git";
@@ -789,7 +790,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
     const list =
         pulls.status === "loading" && !pulls.data ? (
             <SkeletonRows rows={8} label="Loading pull requests" />
-        ) : pulls.error ? (
+        ) : pulls.error && !pulls.data ? (
             <EmptyState
                 title="Could not read pull requests"
                 message={failureMessage(pulls.error)}
@@ -798,6 +799,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
             />
         ) : (
             <div className="gha-list pr-list">
+                <StaleNotice handle={pulls} />
                 <div className="gha-list-head">
                     <div className="gha-chips">
                         {LIST_STATES.map((state) => (

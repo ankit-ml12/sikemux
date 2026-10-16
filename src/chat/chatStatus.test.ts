@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
-import { activityText, backendState } from "./chatStatus";
+import { activityText, backendState, lostConnectionText } from "./chatStatus";
 import type { Agent } from "../state/types";
 import type { AcpPermissionRequest, ChatMessage, ChatState } from "./types";
 
@@ -65,5 +65,13 @@ describe("activityText", () => {
 
     it("leaves an empty transcript to the connection card", () => {
         expect(activityText(state({ connection: "starting" }), null)).toBeNull();
+    });
+});
+
+describe("lostConnectionText", () => {
+    it("names whose servers the chat lost, or says so generally", () => {
+        expect(lostConnectionText("claude")).toMatch(/^Lost connection to Anthropic\./);
+        expect(lostConnectionText("codex")).toMatch(/^Lost connection to OpenAI\./);
+        expect(lostConnectionText("opencode")).toMatch(/^Lost connection to the model provider\./);
     });
 });
