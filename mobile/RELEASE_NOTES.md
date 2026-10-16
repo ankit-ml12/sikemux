@@ -4,3 +4,4 @@
 • Streamed text comes in at an even pace, and a chat stays at its end through bursts of it.
 • The jump-to-latest arrow hides once a fling stops at the end.
 • A host on an older Sikemux reads as an empty inbox instead of crashing.
+• A resumed chat loads its latest turns first.
