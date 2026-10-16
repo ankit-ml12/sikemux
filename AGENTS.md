@@ -46,10 +46,9 @@
 - Size and speed trade against each other; make that trade only where nobody can
   feel it. Build cold code for size and keep hot paths (terminal output,
   serialization, search, git) at full speed. Measure both sides before choosing.
-- The checks hold what a person would feel, not today's numbers plus a margin:
-  `pnpm perf:budget` for the bundle and `pnpm perf` for timings in WebKit. When
-  one fails, fix the code. Raise a limit only when the limit itself was wrong,
-  and say why.
+- `pnpm perf:budget` (the bundle) and `pnpm perf` (timings in WebKit) are for
+  measuring, not gates: neither runs in CI or `pnpm check`. Run them when a
+  change touches startup or a hot path.
 - A change that adds weight (a dependency, a font, an image, a crate in the
   core) says what it costs the DMG.
 
