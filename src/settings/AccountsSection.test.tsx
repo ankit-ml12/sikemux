@@ -96,7 +96,7 @@ describe("accounts in Settings", () => {
         await user.click(await screen.findByRole("button", { name: "Use for new chats" }));
         expect(getState().selectedProviderProfileIds.claude).toBe("claude-work");
 
-        await user.click(screen.getByRole("switch", { name: /Move Claude chats to another account/ }));
+        await user.click(screen.getByRole("switch", { name: "Auto-rotate Claude accounts at limits" }));
         expect(getState().accountAutoSwitch.claude).toBe(true);
 
         const [signOut] = screen.getAllByRole("button", { name: "Sign out" });

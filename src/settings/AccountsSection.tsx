@@ -58,14 +58,14 @@ function ProviderAccounts({ provider, label }: { provider: AccountProvider; labe
                 </SettingsRow>
                 {accounts.length > 1 && (
                     <SettingsRow
-                        label="Move chats when one runs out"
-                        desc={`A chat that hits a usage limit carries on with your next signed-in ${label} account. Off by default: ${label === "Claude" ? "Anthropic's" : "OpenAI's"} terms expect one person's ordinary use per plan.`}
+                        label="Auto-rotate at limits"
+                        desc={`Switch to your next ${label} account when one hits its limit. Check ${label === "Claude" ? "Anthropic's" : "OpenAI's"} terms first.`}
                         asLabel
                         control={
                             <Switch
                                 checked={autoSwitch}
                                 onChange={(on) => cmd.setAccountAutoSwitch(provider, on)}
-                                label={`Move ${label} chats to another account at a usage limit`}
+                                label={`Auto-rotate ${label} accounts at limits`}
                             />
                         }
                     />
