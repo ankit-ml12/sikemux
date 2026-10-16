@@ -155,8 +155,8 @@
 
 ## Docs
 
-- The user docs for docs.sikemux.com live in `docs-site/`, an Astro Starlight site with
-  its own package. `pnpm dev` there serves them.
+- The user docs for docs.sikemux.com live in `docs-site/`, a Fumadocs site on Astro with
+  its own package, dark only in sikemux.com's palette. `pnpm dev` there serves them.
 - A change that adds, removes or renames something users see updates its page in
   `docs-site/src/content/docs/` in the same commit.
 - The pages under `reference/` are generated: run `pnpm docs:reference` after changing
