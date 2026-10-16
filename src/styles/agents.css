@@ -1150,10 +1150,10 @@
     place-items: center;
     box-sizing: border-box;
     align-self: flex-start;
-    min-width: 13px;
-    height: 13px;
+    min-width: 14px;
+    height: 14px;
     margin: -6px 0 0 -3px;
-    padding: 0 4px;
+    padding: 0 3px;
     border-radius: 7px;
     background: color-mix(in srgb, var(--ink) 12%, transparent);
     color: var(--ink);
