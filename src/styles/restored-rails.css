@@ -98,7 +98,7 @@
 }
 /* A child's name always reads in full; the marks beside it give way instead. */
 .side-rail .proj-child-label {
-    flex: 1 0 auto;
+    flex: 0 0 auto;
     white-space: nowrap;
     font-size: calc(12.5px * var(--ui-text-scale, 1));
     letter-spacing: 0.01em;
@@ -116,12 +116,19 @@
     align-items: center;
     flex-shrink: 0;
 }
-/* Squeezed, the stack loses marks from its far side, so the +N count stays. */
+/* The marks take the room left beside the name and show as many as fit,
+   counting the rest; FittedIcons in SideRail.tsx measures it. */
 .side-rail .proj-child .proj-child-icons {
-    flex: 0 1 auto;
-    justify-content: flex-end;
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
+}
+.proj-child-icons-more {
+    flex: none;
+    margin-left: 4px;
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    font-variant-numeric: tabular-nums;
 }
 .proj-pip {
     display: inline-flex;

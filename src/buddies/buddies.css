@@ -428,11 +428,6 @@
     font-weight: var(--weight-medium);
 }
 
-/* The logos these replace are drawn small inside their box and overlap; buddies fill theirs, so they sit side by side. */
-.proj-pip.buddy-mark + .proj-pip {
-    margin-left: 1px;
-}
-
 button.agent-surface-mark {
     width: 18px;
     height: 18px;

@@ -359,8 +359,6 @@ function ProjectBlock({ s }: { s: Session }) {
             </div>
             <div className="proj-children" ref={foldChildren}>
                 {children.map((c) => {
-                    const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
-                    const overflow = c.icons.length - visibleIcons.length;
                     return (
                         <Tooltip key={c.key} label={c.title} side="right">
                             <button
@@ -375,12 +373,7 @@ function ProjectBlock({ s }: { s: Session }) {
                                 <span className="proj-child-tick" />
                                 <span className="proj-child-ic">{c.icon}</span>
                                 <span className="proj-child-label">{c.label}</span>
-                                {visibleIcons.length > 0 && (
-                                    <span className="proj-child-icons">
-                                        {visibleIcons}
-                                        {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                    </span>
-                                )}
+                                {c.icons.length > 0 && <FittedIcons icons={c.icons} />}
                                 {c.status}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
@@ -826,3 +819,33 @@ export const SideRail = memo(function SideRail() {
         </RailContext.Provider>
     );
 });
+
+/* A mark is 20px wide and each one after it overlaps the last, by more for
+   buddies, which fill their box, than for logos drawn small inside theirs. */
+const MARK = 20;
+const MARK_STEP = { buddies: 10, logos: 14 };
+const MORE = 22;
+
+/** As many marks as the row has room for, the rest counted as +N, so none is ever cut in half. */
+function FittedIcons({ icons }: { icons: ReactNode[] }) {
+    const ref = useRef<HTMLSpanElement>(null);
+    const [room, setRoom] = useState(Infinity);
+    const step = useStore((s) => (s.buddies ? MARK_STEP.buddies : MARK_STEP.logos));
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const observer = new ResizeObserver(() => setRoom(el.clientWidth));
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+    const width = (count: number, more: boolean) => (count > 0 ? MARK + (count - 1) * step : 0) + (more ? MORE : 0);
+    let shown = Math.min(icons.length, MAX_BADGE_ICONS);
+    while (shown > 0 && width(shown, shown < icons.length) > room) shown--;
+    const overflow = icons.length - shown;
+    return (
+        <span ref={ref} className="proj-child-icons">
+            {icons.slice(0, shown)}
+            {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+        </span>
+    );
+}
