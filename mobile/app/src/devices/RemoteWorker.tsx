@@ -5,7 +5,7 @@ import { AGENT_LABELS } from '@mac/state/agentStatus';
 import type { RemoteAgent, RemoteStatus } from '@/core/protocol';
 import { AgentIcon } from '@/ui/Icon';
 import { Row } from '@/ui/list';
-import { Dot, NeedsYou, Working } from '@/ui/status';
+import { AgentState, Dot } from '@/ui/status';
 import { useColors } from '@/ui/theme';
 
 const STATUS_LABELS: Record<RemoteStatus, string> = {
@@ -18,10 +18,9 @@ const STATUS_LABELS: Record<RemoteStatus, string> = {
 function WorkerEnd({ worker }: { worker: RemoteAgent }) {
   const colors = useColors();
   if (!worker.reachable) return <Dot color={colors.rest} hollow />;
-  if (worker.status === 'blocked') return <NeedsYou />;
-  if (worker.status === 'working') return <Working />;
-  if (worker.status === 'done') return <Dot color={colors.accent} />;
-  return null;
+  return worker.status === 'blocked' || worker.status === 'working' || worker.status === 'done' ? (
+    <AgentState group={worker.status} />
+  ) : null;
 }
 
 /** A worker an agent here started on a linked host, set in when it sits under the agent that started it. */

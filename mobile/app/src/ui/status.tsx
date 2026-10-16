@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 import { collisionLabel, type CollisionMark } from '@mac/agents/collisions';
+import type { AgentGroup } from '@/core/protocol';
 
 import { Icon } from './Icon';
 import { useAnimating } from './motion';
@@ -99,6 +100,15 @@ export function Collided({ mark }: { mark: CollisionMark }) {
       <Icon name="IconMerge" size={11} color={mark.claim ? colors.warn : colors.danger} />
     </View>
   );
+}
+
+/** Where an agent's turn is, as the Mac rail marks it: squares while it works, a dot once something waits, nothing idle. */
+export function AgentState({ group }: { group: AgentGroup }) {
+  const colors = useColors();
+  if (group === 'working') return <Working />;
+  if (group === 'blocked') return <Dot color={colors.warn} size={7} />;
+  if (group === 'done') return <Dot color={colors.accent} size={7} />;
+  return null;
 }
 
 export function Dot({ color, size = 8, hollow }: { color: string; size?: number; hollow?: boolean }) {

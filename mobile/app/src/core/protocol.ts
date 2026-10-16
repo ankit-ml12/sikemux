@@ -66,6 +66,10 @@ export type SessionInfo = {
   /** The agent finished or asked for something nobody has looked at yet. */
   unread: boolean;
   activeAt?: number;
+  /** An agent terminal's group, as the core ranks it. */
+  group?: AgentGroup;
+  /** An agent terminal's place among the open agents, in the order they want the person: 0 first. */
+  attentionRank?: number;
 };
 
 export type ChatState = 'starting' | 'ready' | 'stopped';
@@ -101,6 +105,8 @@ export type ChatInfo = {
   activeAt?: number;
   /** The core's group for it, which counts a question it waits on the person to answer. */
   group?: AgentGroup;
+  /** Its place among the open agents, chats and agent terminals together, in the order they want the person: 0 first. */
+  attentionRank?: number;
 };
 
 /** The options a permission request comes down to, and what the agent wants to do. */
@@ -211,9 +217,6 @@ export type Inbox = {
   remoteAgents?: RemoteAgent[];
 };
 
-/** What the `digest` call says happened since the person left. */
-export type Digest = { since?: number; away: boolean; finished: InboxItem[]; failed: InboxItem[]; waiting: InboxItem[] };
-
 /** Everything the phone shows of one host, as it last sent it. */
 export type Snapshot = {
   workspace: Workspace;
@@ -321,7 +324,6 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
     : { items, working: next.working, agentMessages, collisions, remoteAgents };
 }
 export const readHost = (json: string) => readCore<HostInfo>(json);
-export const readDigest = (json: string) => readCore<Digest>(json);
 export const readPairing = (json: string) => readCore<Pairing>(json);
 
 /** A chat event as the Mac app's chat code reads it. */

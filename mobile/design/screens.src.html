@@ -497,7 +497,6 @@
   .rows .row .s .place { color: var(--live); margin-right: 4px; }
   .rows .row .s .place svg { display: inline-block; vertical-align: -1px; }
   .rows .row code { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
-  .rows .row.ask { margin-top: 8px; }
   .rows .row .s b { font-weight: 500; color: var(--text-secondary); }
   .rows .row .mark.folder { color: var(--live); }
   .rows .row .mark.nobody .hollow { width: 9px; height: 9px; border-radius: 999px; border: 1.5px solid var(--gray-700); }
@@ -642,11 +641,6 @@
   .ichips { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 6px; }
   .ichips span { height: 32px; padding: 0 12px; border-radius: 10px; display: inline-flex; align-items: center; font-size: 13.5px; font-weight: 500; border: 1px solid var(--border); background: var(--surface-raised); color: var(--text-primary); }
   .ichips span.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-  .away-digest { margin-top: 12px; padding: 10px 4px 6px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-raised); }
-  .away-digest .head { display: flex; align-items: center; padding: 0 8px 4px; }
-  .away-digest .head b { display: block; font-size: 15px; font-weight: 600; color: var(--text-primary); }
-  .away-digest .head b i { font-style: normal; font-weight: 400; color: var(--text-tertiary); }
-  .away-digest .head .facts { font-size: 12px; color: var(--text-tertiary); }
   .found { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 30px; }
   .found h2 { margin-top: 28px; font-size: 25px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; color: var(--text-primary); }
   .found p { margin-top: 10px; font-size: 15px; line-height: 1.5; }
@@ -1300,39 +1294,23 @@
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>A device</h2>
-  <p>A device opens on its host's name, set large over the host's backdrop, with a line above it saying it is online and what runs on it. Under the name, Agents, Terminals and Board as words to switch between, and the project picker at the right. Then the host's inbox: rows straight on the ground under small-caps labels, ranked by the host's core the same way the Mac's rail and the notch list them. Running agents keep the rail's green squares.</p>
+  <p>A device opens on its host's name, set large over the host's backdrop, with a line above it saying it is online and what runs on it. Under the name, Agents, Terminals and Board as words to switch between, and the project picker at the right. Then the host's open agents in one list, straight on the ground, ranked by the host's core the same way the Mac's rail and the notch list them, and its recent chats under them. Running agents keep the rail's green squares.</p>
   <div class="phones">
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
         <div class="host-head"><div class="where"><i class="live"></i>Online · 5 agents · 2 terminals</div><h1>MacBook Pro</h1></div>
-        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">3</i></span><span>Terminals</span><span>Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">2</i></span><span>Terminals</span><span>Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
-          <div class="glabel">Needs you</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Needs your permission</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
-            <div class="ibelow"><div class="cmd">pnpm test src/settings</div><div class="ichips"><span>Deny</span><span class="primary">Allow</span></div></div>
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Maple</b><i>·</i><em>Move the ledger import</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Asks you</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
-            <div class="ibelow"><div class="said">Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.</div><div class="ichips"><span>Cents</span><span>Decimals</span><span>Reply…</span></div></div>
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Wren</b><i>·</i><em>Measure the rail's row heights</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Went on assuming rows are measured at 2x</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
-            <div class="ibelow"><div class="ichips"><span>Fine</span><span>Change</span></div></div>
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Keeps changing the same lines as Cedar</div></div><span class="collided">{{IconMerge:11}}</span><span class="status-slot"><span class="dot warn"></span></span></div>
-            <div class="ibelow"><div class="said">They collided 3 times in ten minutes, last in src/pty/replay.rs. Have one of them take the file, or tell them how to split it.</div></div>
-          </div>
-          <div class="glabel">To review</div>
-          <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Birch</b><i>·</i><em>Download size on the hero</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Finished, with changes to review</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
-            <div class="ibelow"><div class="said">The hero now reads the size from the latest release, and falls back to "about 16 MB" when GitHub can't be reached.</div><div class="facts">3 files changed · Recording · 0:14</div></div>
-          </div>
-          <div class="glabel">Working <span class="n">2</span></div>
-          <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Working</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Reconnecting…</div></div><span class="collided">{{IconMerge:11}}</span><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
-          </div>
-          <div class="glabel">Idle</div>
-          <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Heron</b><i>·</i><em>Watch the release build</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Idle</div></div><span class="shells">{{IconCommand:11}}2</span><span class="collided claim">{{IconMerge:11}}</span><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Maple</b><i>·</i><em>Move the ledger import</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Birch</b><i>·</i><em>Download size on the hero</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="collided">{{IconMerge:11}}</span><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="collided">{{IconMerge:11}}</span><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Pike</b><i>·</i><em>Regenerate the API reference</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>api-docs</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Heron</b><i>·</i><em>Watch the release build</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="shells">{{IconCommand:11}}2</span><span class="collided claim">{{IconMerge:11}}</span><span class="status-slot"></span></div>
           </div>
           <div class="glabel">Recent</div>
           <div class="rows">
@@ -1343,7 +1321,7 @@
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Agents</b><div class="note">The host's inbox, in the order its core ranks it for the rail, the notch and the phone alike: Needs you first, then To review, Finished and Working, under small-caps labels with a hairline running right and no boxes or dividers. The phone draws the items as they come and never sorts them itself. A row reads as the Mac's rail does: the name Sikemux gave the agent, a faint dot, its title in the dimmer ink, then its project while all projects are shown and the core's own line for what it needs or did. What can be answered is answered on the row: a permission shows the command and Deny and Allow; a question shows its words in up to three lines and its answers as chips, with Reply… opening the chat to write one; an assumption has Fine and Change. A phone that can only watch answers permissions and leaves questions to the chat. Each chip is its own rounded control, a little apart. Finished work shows what the agent left: its last words or its card's result in two lines, how many files it changed and any browser recording it made. Working counts every agent at work, terminals too. A working agent retrying a failed request reads Reconnecting… until it gets through. An agent that just changed lines another agent had uncommitted carries the Mac rail's red merge mark beside its counts, and so does the other; a lockfile, migration or generated file two agents edited at once marks both in amber instead. The mark says with whom and in which file to a screen reader, and goes after ten minutes or once the agent commits that file. Two agents that keep colliding come under Needs you, once for the pair, with the file they last met in. Tapping a row opens its chat; a terminal agent opens Terminals, a card without an open agent opens Board, and a pull request opens in the browser. Open chats with nothing to show sit under Idle with their own counts, then the saved chats the host's rail lists as recent: the first ten, Show more for the rest; tapping one resumes it on the host and opens it, and a phone that can only watch is told so under the list. The tab's count is what needs you. The project picker and the agent filter narrow every list. The header scrolls with the list: once the name passes under the top bar, the bar takes it as its title and the Agents / Terminals / Board row stays pinned beneath it, floating on the backdrop, and rows fade out as they slide under it and into the home bar.</div></figcaption>
+      <figcaption><b>Agents</b><div class="note">The host's open agents in one list, with no labels, in the order its core ranks them for the Mac's rail: what wants you first, then what finished and you have not seen, then what is working, then the rest. The phone draws them as they come and never sorts them itself. A row reads as the Mac's rail does: the agent's mark, the name Sikemux gave it, a faint dot and its title in the dimmer ink, and while all projects are shown a second line with the folder and the project's name. The end shows how many subagents and shells it still has running, then its state: the rail's squares while it works, an amber dot when it needs you, an accent dot when it finished and you have not looked, and nothing when it is idle. Nothing is answered on the row; tapping it opens the chat, where permissions and questions wait. Agents running in terminals sit in the same list and open Terminals. An agent that just changed lines another agent had uncommitted carries the Mac rail's red merge mark beside its counts, and so does the other; a lockfile, migration or generated file two agents edited at once marks both in amber instead. The mark says with whom and in which file to a screen reader, and goes after ten minutes or once the agent commits that file. Under the open agents, Recent lists the saved chats the host's rail lists as recent: the first ten, Show more for the rest; tapping one resumes it on the host and opens it, and a phone that can only watch is told so under the list. The tab's count is what needs you. The project picker and the agent filter narrow both lists. The header scrolls with the list: once the name passes under the top bar, the bar takes it as its title and the Agents / Terminals / Board row stays pinned beneath it, floating on the backdrop, and rows fade out as they slide under it and into the home bar.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1353,48 +1331,17 @@
         <div class="host-head"><div class="where"><i class="live"></i>Online · 2 agents</div><h1>MacBook Pro</h1></div>
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span><span>Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
-          <div class="glabel">Needs you</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Wren</b><em> on studio</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Asks you</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
-            <div class="ibelow"><div class="said">Keep the old CSV importer, or drop it with this change?</div><div class="ichips"><span>Keep it</span><span>Drop it</span></div></div>
-          </div>
-          <div class="glabel">Working <span class="n">2</span></div>
-          <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Move the ledger to cents</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Working</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Move the ledger to cents</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
             <div class="row worker"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t"><b>Otter</b><em> on studio</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Working</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
             <div class="row worker gone"><span class="mark codex" style="opacity:.5">{{IconCodex:16}}</span><div class="body"><div class="t"><b>Fern</b><em> on build-box</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Out of reach</div></div><span class="status-slot"><span class="dot off"></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:16}}</span><div class="body"><div class="t"><b>Wren</b><em> on studio</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Needs input</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Workers on linked hosts</b><div class="note">An agent here can start workers on another host linked to the same account; they run there, on that host's own sign-ins. Each sits right under the agent that started it, a little in from it and with a smaller mark, as the agent's name and the host it runs on: Otter on studio. The line under it is its project there and the rail's word for where it is, and the end shows the same squares, ring or dot as any agent. Its chat lives on its own host, so tapping it does nothing here. When its host can't be reached the row dims, the dot goes hollow and its line says Out of reach in place of its state. A worker that waits on the person comes up under Needs you on its own row instead, named with its host the same way, and its question is answered from that row like any other; its chat is not here, so there is no Reply…. A worker whose lead has closed, or is a terminal agent the list doesn't show, gathers under On linked hosts at the end while all projects are shown.</div></figcaption>
-    </figure>
-
-    <figure><div class="phone"><div class="island"></div>
-      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
-        <div class="host-head"><div class="where"><i class="live"></i>Online · 4 agents</div><h1>MacBook Pro</h1></div>
-        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span><span>Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
-        <div class="pad grow">
-          <div class="away-digest">
-            <div class="head"><div style="flex:1"><b>While you were away <i>· 3h</i></b><div class="facts">3 finished · 1 failed · 1 waits on you</div></div><span class="icon-btn">{{IconClose:18}}</span></div>
-            <div class="rows">
-              <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s">cargo test exited with 101</div></div><span class="status-slot"><span class="dot" style="background:var(--danger)"></span></span></div>
-              <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Birch</b><i>·</i><em>Download size on the hero</em></div><div class="s">The hero now reads the size from the latest release</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
-              <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s">Rows are 2px tighter; checked at 2x</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
-            </div>
-          </div>
-          <div class="glabel">Needs you</div>
-          <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Needs your permission</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
-            <div class="ibelow"><div class="cmd">pnpm test src/settings</div><div class="ichips"><span>Deny</span><span class="primary">Allow</span></div></div>
-          </div>
-        </div>
-      </div>
-      <div class="home-bar"></div></div>
-      <figcaption><b>While you were away</b><div class="note">Coming back to the app after ten minutes or more, the host's digest leads the list: what finished and failed since the app went away, failures first, the first four as rows with the core's line for each, and how many more. The count line says how many finished, failed and still wait on you; those waiting are already in Needs you below, so they are not listed twice. On the first visit after the app starts, it shows what happened since the person left the host, and only while they are still away from it. × puts it away until the next time. Tapping a row opens its chat.</div></figcaption>
+      <figcaption><b>Workers on linked hosts</b><div class="note">An agent here can start workers on another host linked to the same account; they run there, on that host's own sign-ins. Each sits right under the agent that started it, a little in from it and with a smaller mark, as the agent's name and the host it runs on: Otter on studio. The line under it is its project there and the rail's word for where it is, and the end shows the same squares or dot as any agent. Its chat lives on its own host, so tapping it does nothing here. When its host can't be reached the row dims, the dot goes hollow and its line says Out of reach in place of its state. A worker whose lead has closed sits at the end of the same list while all projects are shown, as Wren does here, still with its own line.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1455,12 +1402,9 @@
         <div class="host-head"><div class="where"><i class="off"></i>Reconnecting…</div><h1>MacBook Pro</h1></div>
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow" style="opacity:.5">
-          <div class="glabel">Needs you</div>
-          <div class="rows"><div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Needs your permission</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
-            <div class="ibelow"><div class="cmd">pnpm test</div><div class="ichips"><span>Deny</span><span class="primary">Allow</span></div></div></div>
-          <div class="glabel">Working <span class="n">1</span></div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Working</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
         </div>
       </div>
@@ -1700,25 +1644,17 @@
         <div class="host-head"><div class="where"><i class="live"></i>Online · Dev · 4 agents · 3 terminals</div><h1>MacBook Pro</h1></div>
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
-          <div class="glabel">Needs you</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Needs your permission</div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
-          <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
-          </div>
-          <div class="glabel">Done</div>
-          <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Birch</b><i>·</i><em>Download size on the hero</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Done</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
-          </div>
-          <div class="glabel">Idle</div>
-          <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Willow</b><i>·</i><em>Release notes for v0.4.3</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Sleeping</div></div><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Birch</b><i>·</i><em>Download size on the hero</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Willow</b><i>·</i><em>Release notes for v0.4.3</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front</div></div><span class="status-slot"></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>All projects</b><div class="note">The picker sits on the tabs' line, at the right, because it scopes both. Unscoped it says All projects, and each row names its project.</div></figcaption>
+      <figcaption><b>All projects</b><div class="note">The picker sits on the tabs' line, at the right, because it scopes both. Unscoped it says All projects, and each row's second line names its project, with nothing else on it.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1752,17 +1688,15 @@
         <div class="host-head"><div class="where"><i class="live"></i>Online · Dev · 4 agents · 3 terminals</div><h1>MacBook Pro</h1></div>
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="claude">{{IconClaude:14}}</span><span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
-          <div class="glabel">Needs you</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s">Needs your permission</div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
-          <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s">Editing…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>One project, one provider</b><div class="note">The picker names the project, and carries the provider's mark while the sheet filters to one. Rows drop the project name they no longer need, and New chat starts one in this project. The project is kept per device.</div></figcaption>
+      <figcaption><b>One project, one provider</b><div class="note">The picker names the project, and carries the provider's mark while the sheet filters to one. Rows drop the second line, since the project was all it said, and New chat starts one in this project. The project is kept per device.</div></figcaption>
     </figure>
 
   </div>
@@ -1781,16 +1715,11 @@
         <div class="host-head"><div class="where"><i class="live"></i>Online · Dev · 4 agents · 3 terminals</div><h1>MacBook Pro</h1></div>
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
-          <div class="glabel">Needs you</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s">Needs your permission</div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
-          <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s">Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
-          </div>
-          <div class="glabel">Idle</div>
-          <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s">Idle</div></div><span class="status-slot"></span></div>
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Juniper</b><i>·</i><em>App naming</em></div><div class="s">Sleeping</div></div><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div></div><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Juniper</b><i>·</i><em>App naming</em></div></div><span class="status-slot"></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
@@ -2190,7 +2119,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>A secret question</b><div class="note">The agent asked for something secret, such as a password or a token, so the question came straight to the person. Under its words sits a masked field with Send beside it, and a dim line under a lock saying the answer stays private: the agent reads it from a file only the person's account can open, and it never shows in the chat. The field is never the composer, so the composer keeps no Answering chip and no draft of it, and nothing is corrected, suggested or saved to the keyboard or the password manager. Any answers the agent offered still sit above it as rows. Once sent, the answer folds into Answered, kept private, here and in the transcript afterwards, never its text. In the inbox its chip reads Answer privately… and opens the chat. A watching phone shows the question without the field.</div></figcaption>
+      <figcaption><b>A secret question</b><div class="note">The agent asked for something secret, such as a password or a token, so the question came straight to the person. Under its words sits a masked field with Send beside it, and a dim line under a lock saying the answer stays private: the agent reads it from a file only the person's account can open, and it never shows in the chat. The field is never the composer, so the composer keeps no Answering chip and no draft of it, and nothing is corrected, suggested or saved to the keyboard or the password manager. Any answers the agent offered still sit above it as rows. Once sent, the answer folds into Answered, kept private, here and in the transcript afterwards, never its text. A watching phone shows the question without the field.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

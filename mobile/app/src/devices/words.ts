@@ -21,17 +21,6 @@ export function chatDisplay(chat: ChatInfo): AgentDisplay {
   return agentDisplay(state, { subagents: chat.subagents, tasks: chat.tasks });
 }
 
-/** The Mac rail's words for where a chat is, plus the phone's own for a chat that is not running yet. */
-export function chatState(chat: ChatInfo): string {
-  const display = chatDisplay(chat);
-  if (display.group === 'blocked') return display.label;
-  if (chat.asleep) return 'Sleeping';
-  if (chat.state === 'stopped') return 'Stopped';
-  if (chat.state === 'starting') return 'Starting…';
-  if (display.group === 'working' && chat.reconnecting != null) return 'Reconnecting…';
-  return display.label;
-}
-
 export function inProject(project: ProjectInfo, path: string): boolean {
   return path === project.path || path.startsWith(`${project.path}/`);
 }

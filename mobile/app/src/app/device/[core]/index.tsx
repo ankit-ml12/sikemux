@@ -7,25 +7,22 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { agentLabel } from '@mac/agents/catalog';
 import type { CollisionMark } from '@mac/agents/collisions';
 import { formatAge } from '@mac/lib/format';
-import { AGENT_LABELS } from '@mac/state/agentStatus';
-import type { ChatInfo, InboxItem, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
+import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
 import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { Board } from '@/devices/Board';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { WorkerRow, workersOf } from '@/devices/RemoteWorker';
-import { Inbox } from '@/devices/Inbox';
-import { useDigest } from '@/devices/digest';
 import { summary } from '@/devices/status';
-import { chatDisplay, chatState, chatTitle, folder, inProject, itemIn } from '@/devices/words';
+import { chatDisplay, chatTitle, folder, inProject, itemIn } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { Collided, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
+import { AgentState, Collided, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals' | 'board';
@@ -165,6 +162,26 @@ function Recent({
   );
 }
 
+type OpenAgent = { kind: 'chat'; chat: ChatInfo; rank?: number } | { kind: 'terminal'; session: SessionInfo; rank?: number };
+
+/** The open agents in the host rail's order, what wants the person first; agents the core has not ranked go last. */
+function openAgents(snapshot: Snapshot, scope: ProjectInfo | undefined, provider: string): OpenAgent[] {
+  const chats = snapshot.chats
+    .filter((chat) => (!scope || inProject(scope, chat.cwd)) && (provider === 'all' || chat.provider === provider))
+    .map((chat): OpenAgent => ({ kind: 'chat', chat, rank: chat.attentionRank }));
+  const terminals = snapshot.sessions
+    .filter(
+      (session) =>
+        session.agentName &&
+        session.running &&
+        (!scope || session.project === scope.id) &&
+        (provider === 'all' || session.agentType === provider),
+    )
+    .map((session): OpenAgent => ({ kind: 'terminal', session, rank: session.attentionRank }));
+  return [...chats, ...terminals].sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
+}
+
+/** The host's agent rail: its open agents in one list, each with its own state, then its recent chats. */
 function Agents({
   core,
   snapshot,
@@ -183,73 +200,47 @@ function Agents({
   onTab: (tab: Tab) => void;
 }) {
   const styles = useStyles(makeStyles);
-  const live = useLive(core);
-  const minute = useMinute();
-  const connection = live.status === 'open' ? live.connection : undefined;
-  const { digest, dismiss } = useDigest(core, connection);
-  const items = snapshot.inbox.items.filter((item) => (!scope || itemIn(item, scope)) && (provider === 'all' || item.cli === provider));
-  const listed = new Set(snapshot.inbox.items.map((item) => item.agentId));
-  const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
-  const idle = scoped.filter((chat) => !listed.has(chat.agentId) && (provider === 'all' || chat.provider === provider));
-  const workers = (snapshot.inbox.remoteAgents ?? []).filter((worker) => !listed.has(worker.agentId));
-  const leads = new Set([...items.map((item) => item.agentId), ...idle.map((chat) => chat.agentId)]);
+  const open = openAgents(snapshot, scope, provider);
+  const workers = snapshot.inbox.remoteAgents ?? [];
+  const leads = new Set(open.map((agent) => (agent.kind === 'chat' ? agent.chat.agentId : agent.session.agentId)));
   const strays = scope
     ? []
     : workers.filter((worker) => !(worker.lead && leads.has(worker.lead)) && (provider === 'all' || worker.cli === provider));
-  const placeOf = (item: InboxItem) => {
-    const where = item.card?.project ?? item.project;
-    return scope || !where ? undefined : projectName(snapshot, where);
-  };
+  const placeOf = (project: string | undefined) => (scope || !project ? undefined : projectName(snapshot, project));
 
   return (
     <>
-      <Inbox
-        core={core}
-        connection={connection}
-        items={items}
-        working={snapshot.inbox.working}
-        collisions={snapshot.inbox.collisions}
-        workers={workers}
-        attentions={snapshot.attentions}
-        full={full}
-        placeOf={placeOf}
-        digest={digest}
-        minute={minute}
-        onDismissDigest={dismiss}
-        onTab={onTab}
-      />
-      {idle.length ? (
-        <>
-          <SectionLabel>{AGENT_LABELS.idle}</SectionLabel>
-          <Rows>
-            {idle.map((chat) => (
-              <Fragment key={chat.agentId}>
+      {open.length || strays.length ? (
+        <Rows>
+          {open.map((agent) =>
+            agent.kind === 'chat' ? (
+              <Fragment key={agent.chat.agentId}>
                 <ChatRow
                   core={core}
-                  chat={chat}
-                  collision={snapshot.inbox.collisions?.[chat.agentId]}
-                  place={scope ? undefined : projectName(snapshot, chat.cwd)}
+                  chat={agent.chat}
+                  collision={snapshot.inbox.collisions?.[agent.chat.agentId]}
+                  place={placeOf(agent.chat.cwd)}
                 />
-                {workersOf(workers, chat.agentId).map((worker) => (
+                {workersOf(workers, agent.chat.agentId).map((worker) => (
                   <WorkerRow key={worker.agentId} worker={worker} nested />
                 ))}
               </Fragment>
-            ))}
-          </Rows>
-        </>
-      ) : null}
-      {strays.length ? (
-        <>
-          <SectionLabel>On linked hosts</SectionLabel>
-          <Rows>
-            {strays.map((worker) => (
-              <WorkerRow key={worker.agentId} worker={worker} />
-            ))}
-          </Rows>
-        </>
+            ) : (
+              <Fragment key={agent.session.id}>
+                <TerminalAgentRow session={agent.session} place={placeOf(agent.session.project)} onOpen={() => onTab('terminals')} />
+                {agent.session.agentId
+                  ? workersOf(workers, agent.session.agentId).map((worker) => <WorkerRow key={worker.agentId} worker={worker} nested />)
+                  : null}
+              </Fragment>
+            ),
+          )}
+          {strays.map((worker) => (
+            <WorkerRow key={worker.agentId} worker={worker} />
+          ))}
+        </Rows>
       ) : null}
       <Recent core={core} snapshot={snapshot} scope={scope} provider={provider} full={full} hostName={hostName} />
-      {!items.length && !scoped.length && !strays.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
+      {!open.length && !strays.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
         <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text>
       ) : null}
     </>
@@ -289,15 +280,38 @@ const ChatRow = memo(function ChatRow({
       name={chat.name}
       title={chatTitle(chat)}
       place={place}
-      detail={chatState(chat)}
       end={
         <>
           {display.subagents ? <SubagentCount count={display.subagents} /> : null}
           {display.tasks ? <ShellCount count={display.tasks} /> : null}
           {collision ? <Collided mark={collision} /> : null}
+          <AgentState group={display.group} />
         </>
       }
       onPress={() => router.push(`/device/${core}/chat/${chat.agentId}`)}
+    />
+  );
+});
+
+/** An agent running in a terminal, listed with the chats as the host's rail lists it. */
+const TerminalAgentRow = memo(function TerminalAgentRow({
+  session,
+  place,
+  onOpen,
+}: {
+  session: SessionInfo;
+  place?: string;
+  onOpen: () => void;
+}) {
+  const group = session.group ?? (session.unread ? 'done' : 'idle');
+  return (
+    <Row
+      mark={<AgentIcon provider={session.agentType ?? 'agent'} size={20} />}
+      name={session.agentName}
+      title={terminalTitle(session)}
+      place={place}
+      end={<AgentState group={group} />}
+      onPress={onOpen}
     />
   );
 });
@@ -424,9 +438,7 @@ function UnderBar({ height, open, bottom }: { height: number; open: Animated.Ani
         </Defs>
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#over-home)" />
       </Svg>
-      <Animated.View
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom, backgroundColor: '#000', opacity: open }}
-      />
+      <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom, backgroundColor: '#000', opacity: open }} />
     </View>
   );
 }
