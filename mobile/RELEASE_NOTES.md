@@ -1,4 +1,4 @@
-# 0.1.0-nightly.23
+# 0.1.0-nightly.24
 
 • The Agents tab is your computer's rail: open agents, then recent chats, titles first.
 • Agents wear their buddies, and chats read like the computer's: tool rows, diffs, markdown, subagent cards and the worked-for summary.
