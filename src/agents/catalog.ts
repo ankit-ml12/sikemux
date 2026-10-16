@@ -19,6 +19,11 @@ export function agentLabel(type: string): string {
     return BY_TYPE.get(type)?.label ?? type;
 }
 
+/** One line on what the agent is, for someone choosing which to install. */
+export function agentAbout(type: string): string | null {
+    return BY_TYPE.get(type)?.about ?? null;
+}
+
 export function agentBrand(type: AgentType): string {
     return BY_TYPE.get(type)!.brand;
 }

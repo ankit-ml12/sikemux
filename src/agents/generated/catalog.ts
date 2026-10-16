@@ -3,6 +3,7 @@ export const AGENT_CATALOG = [
     {
         type: "claude",
         label: "Claude",
+        about: "Anthropic's coding agent",
         command: "claude",
         brand: "#d97757",
         accounts: true,
@@ -14,6 +15,7 @@ export const AGENT_CATALOG = [
     {
         type: "codex",
         label: "Codex",
+        about: "OpenAI's coding agent",
         command: "codex",
         brand: "#7a9dff",
         accounts: true,
@@ -25,6 +27,7 @@ export const AGENT_CATALOG = [
     {
         type: "hermes",
         label: "Hermes",
+        about: "Nous Research's coding agent",
         command: "hermes",
         brand: "#e0a050",
         accounts: false,
@@ -36,6 +39,7 @@ export const AGENT_CATALOG = [
     {
         type: "pi",
         label: "Pi",
+        about: "A minimal terminal coding agent",
         command: "pi",
         brand: "#7dd3fc",
         accounts: false,
@@ -47,6 +51,7 @@ export const AGENT_CATALOG = [
     {
         type: "opencode",
         label: "OpenCode",
+        about: "An open-source agent for many model providers",
         command: "opencode",
         brand: "#a78bfa",
         accounts: false,
@@ -58,6 +63,7 @@ export const AGENT_CATALOG = [
     {
         type: "omp",
         label: "OMP",
+        about: "oh-my-pi, a terminal coding agent",
         command: "omp",
         brand: "#f97316",
         accounts: false,
@@ -69,6 +75,7 @@ export const AGENT_CATALOG = [
     {
         type: "grok",
         label: "Grok",
+        about: "xAI's coding agent",
         command: "grok",
         brand: "#fcfcfc",
         accounts: false,
@@ -80,6 +87,7 @@ export const AGENT_CATALOG = [
     {
         type: "muse",
         label: "Muse",
+        about: "Meta's coding agent",
         command: "muse",
         brand: "#0081fb",
         accounts: false,
