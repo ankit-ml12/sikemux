@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AccessibilityInfo, type TextInput, KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
@@ -159,13 +159,10 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const [foldsBefore, setFoldsBefore] = useState<Map<number, WorkFold>>();
   const folds = useMemo(() => workFolds(state.messages, state.running, foldsBefore), [state.messages, state.running, foldsBefore]);
   if (folds !== foldsBefore) setFoldsBefore(folds);
-  const [openWork, setOpenWork] = useState<ReadonlySet<string>>(() => new Set());
-  const toggleWork = (id: string) =>
-    setOpenWork((shown) => {
-      const next = new Set(shown);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  // The list redraws its rows when a summary opens or closes, and only then, so it watches those folds alone.
+  const openWork = useSyncExternalStore(session.folds.subscribe, () => session.folds.openUnder('work/'));
+  const workOpen = (id: string) => session.folds.isOpen(`work/${id}`, false);
+  const toggleWork = (id: string) => session.folds.set(`work/${id}`, !workOpen(id));
   const marks = useMemo(
     () => [chat.replayed, chat.unsent, chat.sentFiles, liveId, open, openStrip, folds, openWork],
     [chat.replayed, chat.unsent, chat.sentFiles, liveId, open, openStrip, folds, openWork],
@@ -278,7 +275,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                       getItemType={(message, index) => {
                         const fold = folds.get(index);
                         // Folded work draws nothing, so it is never recycled into a whole answer.
-                        return fold && index < fold.end && !openWork.has(fold.id) && !message.parts.some(outlivesFold)
+                        return fold && index < fold.end && !workOpen(fold.id) && !message.parts.some(outlivesFold)
                           ? 'folded'
                           : message.role;
                       }}
@@ -286,7 +283,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                       renderItem={({ item, index }) => {
                         const fold = folds.get(index);
                         const workId = fold ? fold.id : '';
-                        const folded = fold !== undefined && !openWork.has(workId);
+                        const folded = fold !== undefined && !workOpen(workId);
                         const summary =
                           fold && index === fold.start ? (
                             <WorkSummary

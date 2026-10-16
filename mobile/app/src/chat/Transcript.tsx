@@ -16,7 +16,7 @@ import { CopyButton } from '@/ui/CopyButton';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Working } from '@/ui/status';
-import { fonts, italic, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
+import { fonts, italic, mixed, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
 import { useAnimating } from '@/ui/motion';
 import { Shimmer } from '@/ui/Shimmer';
 import { FoldsContext, useFold } from './folds';
@@ -444,6 +444,7 @@ export function WorkSummary({
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
+  const provider = useContext(ProviderContext);
   const worked = workedLabel(took, thought);
   const counted = callsLabel(calls);
   return (
@@ -453,22 +454,24 @@ export function WorkSummary({
           haptics.select();
           onToggle();
         }}
-        style={styles.workSum}
+        style={({ pressed }) => [styles.workSum, pressed && styles.workPressed]}
         hitSlop={6}
         accessibilityRole="button"
         accessibilityLabel={calls > 0 ? `${worked}, ${counted}` : worked}
         accessibilityState={{ expanded: open }}>
+        <AgentIcon provider={provider} size={17} />
         <Text style={styles.workText}>{worked}</Text>
         {calls > 0 ? (
           <>
-            <Text style={[styles.workCalls, styles.workDot]}>·</Text>
-            <Text style={styles.workCalls}>{counted}</Text>
+            <Text style={[styles.workText, styles.workDot]}>·</Text>
+            <Text style={styles.workText}>{counted}</Text>
           </>
         ) : null}
         <View style={[styles.workChevron, open && { transform: [{ rotate: '90deg' }] }]}>
-          <Icon name="IconChevron" size={11} color={colors.inkDim} />
+          <Icon name="IconChevron" size={10} color={mixed(colors.ink, colors.inkDim, 0.6)} />
         </View>
       </Pressable>
+      <View style={styles.workRule} />
     </View>
   );
 }
@@ -617,17 +620,21 @@ const makeStyles = (colors: Palette) => {
     retry: { color: colors.ink, fontFamily: fonts.uiMedium },
     queued: { alignItems: 'flex-end', alignSelf: 'stretch', opacity: 0.55, marginBottom: 6 },
     queuedLabel: { fontFamily: fonts.ui, fontSize: 11, color: colors.inkFaint, marginTop: 4 },
-    work: {
-      marginTop: 8,
-      marginBottom: 4,
-      paddingBottom: 4,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+    work: { marginTop: 8, marginBottom: 4 },
+    workSum: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      height: 24,
+      alignSelf: 'flex-start',
+      marginLeft: -6,
+      paddingHorizontal: 6,
+      borderRadius: 6,
     },
-    workSum: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24, alignSelf: 'flex-start' },
-    workText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkDim },
-    workCalls: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkFaint },
+    workPressed: { backgroundColor: translucent(colors.ink, 0.06) },
+    workText: { fontFamily: fonts.ui, fontSize: 12.5, color: mixed(colors.ink, colors.inkDim, 0.6) },
     workDot: { marginHorizontal: -2 },
+    workRule: { height: 1, marginTop: 4, backgroundColor: translucent(colors.ink, 0.14) },
     workChevron: { opacity: 0.7 },
     strip: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 24, marginTop: 6 },
     stripMine: { justifyContent: 'flex-end' },

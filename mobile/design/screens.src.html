@@ -226,10 +226,13 @@
   .tools-sum .ico { opacity: .7; }
   .tools-sum.open .ico { transform: rotate(90deg); }
   .tools-body { margin-left: 6px; padding: 2px 0; }
-  .work { margin: 8px 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
-  .work-sum { display: inline-flex; align-items: center; gap: 8px; height: 24px; color: var(--ink-dim); font-family: var(--ui); font-size: 12.5px; }
-  .work-sum .calls { color: var(--ink-faint); }
-  .work-sum .ico { opacity: .7; }
+  .work { margin: 8px 0 4px; }
+  .work::after { content: ""; display: block; height: 1px; margin-top: 4px; background: color-mix(in oklab, var(--ink) 14%, transparent); }
+  .work-sum { display: inline-flex; align-items: center; gap: 8px; height: 24px; margin-left: -6px; padding: 0 6px; color: color-mix(in oklab, var(--ink) 60%, var(--ink-dim)); font-family: var(--ui); font-size: 12.5px; }
+  .work-sum > span:first-child { display: grid; }
+  .work-sum > span:first-child svg { width: 17px; height: 17px; }
+  .work-sum > .ico { opacity: .7; }
+  .work-sum.open > .ico { transform: rotate(90deg); }
   .tool { position: relative; display: grid; grid-template-columns: 10px 14px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 22px; }
   .tool::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--tree-spine); }
   .tool:last-child::before { bottom: 50%; }
@@ -1749,7 +1752,7 @@
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>An agent</h2>
-  <p>The Mac's chat pane, line for line: your messages in a bubble on the right, the agent's prose with no bubble, its thinking in faint italics, tool calls as a tree with the coloured verbs, open while the agent is still adding to them and folded to "N tool calls" once it moves on. Once a turn ends, everything before its reply folds under "Worked for 48s · 1 tool call" with a hairline under it, or "Thought for 3s" when the turn only thought, and a tap opens it again. Then the working line with the agent's logo breathing. No line runs under the header: the transcript fades out under it and above the composer, over the backdrop. The composer is the Mac's: attach, YOLO, model, effort, context ring, send or stop. What the agent still has going sits in one line docked on the composer, and opens into a sheet.</p>
+  <p>The Mac's chat pane, line for line: your messages in a bubble on the right, the agent's prose with no bubble, its thinking in faint italics, tool calls as a tree with the coloured verbs, open while the agent is still adding to them and folded to "N tool calls" once it moves on. Once a turn ends, everything before its reply folds under the agent's logo and "Worked for 48s · 1 tool call" with the Mac's rule under it, or "Thought for 3s" when the turn only thought, and a tap opens it again; one opened stays open after leaving the chat and coming back. Then the working line with the agent's logo breathing. No line runs under the header: the transcript fades out under it and above the composer, over the backdrop. The composer is the Mac's: attach, YOLO, model, effort, context ring, send or stop. What the agent still has going sits in one line docked on the composer, and opens into a sheet.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -1758,7 +1761,7 @@
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user"><code class="chip">usePty.test.tsx &gt; replays the snapshot once</code> fails about one run in ten on CI. Find out why and fix it without adding sleeps.</div>
-          <div class="work"><span class="work-sum">Worked for 48s <span class="calls">· 1 tool call</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="codex">{{IconCodex:17}}</span>Worked for 48s <span class="calls">· 1 tool call</span>{{IconChevron:10}}</span></div>
           <div class="prose">The channel could deliver bytes already inside the attach snapshot. The controller now drops channel output until the snapshot is written, which passes 100 out of 100 runs.</div>
           <div class="msg-user">Good. Run the whole terminal suite, then commit it.</div>
           <div class="thought">Running every terminal test before the commit, since the change touches attach and detach.</div>
@@ -1835,7 +1838,7 @@
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser, so it stays right between deploys.</div>
         </div>
         <div class="composer-wrap" style="padding-bottom:8px">
@@ -1869,7 +1872,7 @@
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
         </div>
         <div class="composer-wrap">
@@ -1905,7 +1908,7 @@
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
         </div>
         <div class="composer-wrap">
@@ -1937,7 +1940,7 @@
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
           <div class="sent-files">
             <span class="thumb photo"></span>
@@ -1983,7 +1986,7 @@
         <div class="chat" style="justify-content:flex-start">
           <div class="prose">The channel could deliver bytes already inside the attach snapshot, so the first write landed twice whenever the channel won the race.</div>
           <div class="msg-user">Good. Run the whole terminal suite, then commit it.</div>
-          <div class="work"><span class="work-sum">Worked for 31s <span class="calls">· 3 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="codex">{{IconCodex:17}}</span>Worked for 31s <span class="calls">· 3 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">All 214 terminal tests pass. The fix keeps channel output back until the snapshot is written, then lets it through in order.</div>
         </div>
         <div class="composer-wrap jumps">
@@ -2014,7 +2017,7 @@
           <div class="prose">All 214 terminal tests pass. The fix keeps channel output back until the snapshot is written, then lets it through in order.</div>
           <div class="letter-from"><span class="claude">{{IconClaude:13}}</span><span>Message from <b>Otter</b></span></div>
           <div class="prose">I'm changing the attach handshake in <code class="chip">core/session.rs</code>. Hold off on committing the replay fix until I push, so we don't both touch the snapshot code.</div>
-          <div class="work"><span class="work-sum">Worked for 6s <span class="calls">· 1 tool call</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="codex">{{IconCodex:17}}</span>Worked for 6s <span class="calls">· 1 tool call</span>{{IconChevron:10}}</span></div>
           <div class="prose">Holding the commit. I told Otter the fix only touches the reader, and asked it to send word once its change is in.</div>
         </div>
         <div class="composer-wrap">
@@ -2043,7 +2046,7 @@
         <div class="chat" style="justify-content:flex-start">
           <div class="letter-from"><span class="claude">{{IconClaude:13}}</span><span>Message from <b>Otter</b></span></div>
           <div class="prose">Take PROJ-12: move the ledger import onto the new amounts table. Ask me if anything about the data is unclear.</div>
-          <div class="work"><span class="work-sum">Worked for 41s <span class="calls">· 6 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="codex">{{IconCodex:17}}</span>Worked for 41s <span class="calls">· 6 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asks you · Otter didn't know</span><span class="ticket">PROJ-12</span></div>
           <div class="prose" style="margin-top:0">Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.</div>
           <div class="ask-options">
@@ -2144,7 +2147,7 @@
         <div class="chat" style="justify-content:flex-start">
           <div class="earlier"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Loading earlier messages…</div>
           <div class="msg-user"><code class="chip">usePty.test.tsx &gt; replays the snapshot once</code> fails about one run in ten on CI. Find out why and fix it without adding sleeps.</div>
-          <div class="work"><span class="work-sum">Worked for 1m 12s <span class="calls">· 4 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="codex">{{IconCodex:17}}</span>Worked for 1m 12s <span class="calls">· 4 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">The channel could deliver bytes already inside the attach snapshot, so the first write landed twice whenever the channel won the race.</div>
         </div>
         <div class="composer-wrap jumps">
@@ -2173,7 +2176,7 @@
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
           <div class="msg-user failed">Make it say "MB" with one decimal</div>
           <div class="unsent"><span class="no">{{IconWarning:12}}</span><span class="no">Not sent</span>·<b>Retry</b></div>
@@ -2276,7 +2279,7 @@ expected 1 write, got 2</div>
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
         </div>
         <div class="scrim"></div>
@@ -2335,7 +2338,7 @@ expected 1 write, got 2</div>
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="justify-content:flex-start">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser, so it stays right between deploys.</div>
         </div>
         <div class="composer-wrap">
@@ -2597,7 +2600,7 @@ expected 1 write, got 2</div>
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
-          <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose" style="margin-top:0">Done. The size is read from the latest release at build time:</div>
           <div class="code-box">const dmg = assets.find((a) =&gt;
   a.name.endsWith("_aarch64.dmg"));<span class="cp">{{IconCopy:12}}</span></div>
@@ -2629,7 +2632,7 @@ expected 1 write, got 2</div>
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Moss</b><i>·</i><em>Atlassian MCP vs our plugin</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Why did it pick Atlassian's server?</div>
-          <div class="work"><span class="work-sum">Worked for 41s <span class="calls">· 6 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 41s <span class="calls">· 6 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="page-card">{{IconWindow:14}}<b>Jira tools compared</b><span>on the computer</span></div>
           <div class="prose" style="margin-top:4px">What it needed, against what each one has:</div>
           <div class="md-table"><div class="scroll"><table>
@@ -2933,7 +2936,7 @@ expected 1 write, got 2</div>
         <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Comet</b><i>·</i><em>Fix the share dialog flicker</em></span></span><span class="icon-btn" style="opacity:0"></span></div>
         <div class="chat">
           <div class="msg-user">Why does the share dialog flicker when I open it?</div>
-          <div class="work"><span class="work-sum">Worked for 1m 0s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 1m 0s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Found it. The dialog re-mounts on every poll, because the store hands it a new list each time.</div>
           <div class="msg-user">Great, fix it and run the tests.</div>
           <div class="tools">
