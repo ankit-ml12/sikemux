@@ -211,8 +211,10 @@
 }
 .diff-row[data-kind="hidden"] {
     height: 4px;
-    background: color-mix(in oklab, var(--ink) 7%, transparent);
     cursor: pointer;
+}
+.diff-row[data-kind="hidden"]:hover {
+    background: color-mix(in oklab, var(--ink) 7%, transparent);
 }
 .diff-num {
     position: sticky;
