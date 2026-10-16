@@ -8,7 +8,9 @@ import { join } from "node:path";
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
 const COPIES_KEEP = 3;
-const COPY_IDLE = HOUR;
+// macOS records a file's read time at most once a day, so a copy read an hour
+// ago can still look a day unread.
+const COPY_IDLE = DAY + HOUR;
 const DEPS_IDLE = 3 * DAY;
 const PRUNE_EVERY = HOUR;
 
@@ -85,7 +87,7 @@ function pruneIncremental(dir) {
 // Every compile and link reads the outputs it depends on, which refreshes their
 // access time, so outputs left unread for days belong to no current build.
 // Workspace crates get a new `<crate>-<hash>` copy many times a day, so beyond
-// the few most recently read copies of a crate, an hour unread is enough.
+// the few most recently read copies of a crate, a day unread is enough.
 function pruneDeps(dir) {
   const byUnit = new Map();
   for (const entry of entries(dir)) {
@@ -117,9 +119,28 @@ function pruneDeps(dir) {
   }
 }
 
+// Cargo trusts a fingerprint without checking its outputs still exist, so a
+// fingerprint left behind by a removed library makes the next link fail.
+function pruneFingerprints(profile) {
+  const outputs = new Set(
+    entries(join(profile, "deps")).map((entry) => entry.name.split(".")[0]),
+  );
+  const dir = join(profile, ".fingerprint");
+  for (const entry of entries(dir)) {
+    const hash = entry.name.slice(entry.name.lastIndexOf("-") + 1);
+    const lib = entries(join(dir, entry.name)).find(
+      (file) => file.name.startsWith("lib-") && !file.name.includes("."),
+    );
+    if (lib && !outputs.has(`lib${lib.name.slice(4)}-${hash}`)) {
+      remove(join(dir, entry.name));
+    }
+  }
+}
+
 for (const profile of profileDirs(target)) {
   pruneIncremental(join(profile, "incremental"));
   pruneDeps(join(profile, "deps"));
+  pruneFingerprints(profile);
 }
 
 const verb = dryRun ? "Would free" : "Freed";
