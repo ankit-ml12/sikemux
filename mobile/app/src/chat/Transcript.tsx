@@ -32,7 +32,7 @@ import { useAnimating } from '@/ui/motion';
 import { Shimmer } from '@/ui/Shimmer';
 import { FoldsContext, useFold } from './folds';
 import { Markdown } from './Markdown';
-import { useRevealed } from './reveal';
+import { useStreamedText } from './reveal';
 import { SentAttachments } from './Attachments';
 import { hostImagePath } from './FileRef';
 import { useHostFile } from './hostFiles';
@@ -57,12 +57,12 @@ function LongText({ id, text, live, style }: { id: string; text: string; live: b
   const styles = useStyles(makeStyles);
   const folds = useContext(FoldsContext);
   const [whole, setWhole] = useFold(`whole/${id}`, false);
-  const shown = useRevealed(id, text, live);
+  const streamed = useStreamedText(id, text, live);
   if (live) folds.streamed.add(id);
   const cut = whole || folds.streamed.has(id) ? null : cutLongText(text);
   return (
     <>
-      <Markdown text={cut ? cut.head : shown} style={style} />
+      {cut ? <Markdown text={cut.head} style={style} /> : <Markdown text={streamed.text} fading={streamed.fading} style={style} />}
       {cut ? (
         <Pressable onPress={() => setWhole(true)} hitSlop={6} style={styles.showRest} accessibilityRole="button">
           <Text style={styles.showRestText}>{showRestLabel(cut.hidden)}</Text>

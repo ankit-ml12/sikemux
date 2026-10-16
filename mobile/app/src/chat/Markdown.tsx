@@ -7,11 +7,12 @@ import { decodedFenceName } from '@mac/chat/transcript';
 import { safeWebUrl } from '@mac/lib/urls';
 import { CopyButton } from '@/ui/CopyButton';
 import { Icon } from '@/ui/Icon';
-import { fonts, italic, type Palette, useColors, useStyles } from '@/ui/theme';
+import { fonts, italic, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
 import { DiffRow, SidewaysRows } from './Diff';
 import { FileRef, fileRuns, hostImagePath, LinkedImage, namesFile } from './FileRef';
 import { ImageViewerHost } from './ImageViewer';
 import { blocks, inlines, settledLength, type Block, type Inline } from './markdownBlocks';
+import type { Fading } from './reveal';
 
 /** A link the phone opens: the web links the Mac would open, and mail. */
 const openable = (url: string) => safeWebUrl(url) ?? (/^mailto:/i.test(url) ? url : null);
@@ -87,6 +88,32 @@ function renderInline(nodes: Inline[], styles: Styles, paths = true): ReactNode[
 }
 
 const inline = (text: string, styles: Styles) => renderInline(inlines(text), styles);
+
+/** A line whose newest words are still fading in: the settled start as markdown, then each word at its own strength. */
+function lineWithFading(text: string, fading: Fading | undefined, style: StyleProp<TextStyle>, styles: Styles): ReactNode {
+  const coming =
+    fading
+      ?.map((piece) => piece.text)
+      .join('')
+      .trimEnd() ?? '';
+  if (!fading?.length || !coming || !text.endsWith(coming)) return inline(text, styles);
+  const ink = StyleSheet.flatten(style)?.color;
+  let left = coming.length;
+  return (
+    <>
+      {inline(text.slice(0, text.length - coming.length), styles)}
+      {fading.map((piece, index) => {
+        const words = piece.text.slice(0, left);
+        left -= words.length;
+        return (
+          <Text key={index} style={typeof ink === 'string' && { color: translucent(ink, piece.opacity) }}>
+            {words.replace(/[*~]/g, '')}
+          </Text>
+        );
+      })}
+    </>
+  );
+}
 
 const HEADING_SIZES = [20, 18, 16.5];
 
@@ -220,7 +247,7 @@ function sameBlock(before: Block, after: Block): boolean {
 
 /** One block, drawn again only when its own text changes, so a streaming message redraws just its tail. */
 const BlockView = memo(
-  function BlockView({ block, style, styles }: { block: Block; style: StyleProp<TextStyle>; styles: Styles }) {
+  function BlockView({ block, style, styles, fading }: { block: Block; style: StyleProp<TextStyle>; styles: Styles; fading?: Fading }) {
     switch (block.kind) {
       case 'code':
         return <CodeBlock lang={block.lang} text={block.text} styles={styles} />;
@@ -237,7 +264,7 @@ const BlockView = memo(
             ]}
             accessibilityRole="header"
             selectable>
-            {inline(block.text, styles)}
+            {lineWithFading(block.text, fading, style, styles)}
           </Text>
         );
       case 'item':
@@ -251,7 +278,7 @@ const BlockView = memo(
               </View>
             )}
             <Text style={[style, { flex: 1 }, block.checked === true && styles.done]} selectable>
-              {inline(block.text, styles)}
+              {lineWithFading(block.text, fading, style, styles)}
             </Text>
           </View>
         );
@@ -268,28 +295,34 @@ const BlockView = memo(
       default:
         return (
           <Text style={style} selectable>
-            {inline(block.text, styles)}
+            {lineWithFading(block.text, fading, style, styles)}
           </Text>
         );
     }
   },
-  (before, after) => before.style === after.style && before.styles === after.styles && sameBlock(before.block, after.block),
+  (before, after) =>
+    before.style === after.style &&
+    before.styles === after.styles &&
+    before.fading === after.fading &&
+    sameBlock(before.block, after.block),
 );
 
-export function Markdown({ text, style }: { text: string; style: StyleProp<TextStyle> }) {
+/** Markdown text; `fading` is its end, still coming in, drawn fainter word by word. */
+export function Markdown({ text, style, fading }: { text: string; style: StyleProp<TextStyle>; fading?: Fading }) {
   const source = text.replace(/\r\n/g, '\n');
   const cut = settledLength(source);
-  return <Parsed settled={source.slice(0, cut)} tail={source.slice(cut)} style={style} />;
+  return <Parsed settled={source.slice(0, cut)} tail={source.slice(cut)} style={style} fading={fading} />;
 }
 
-function Parsed({ settled, tail, style }: { settled: string; tail: string; style: StyleProp<TextStyle> }) {
+function Parsed({ settled, tail, style, fading }: { settled: string; tail: string; style: StyleProp<TextStyle>; fading?: Fading }) {
   const styles = useStyles(makeStyles);
   const done = useMemo(() => blocks(settled), [settled]);
+  const all = [...done, ...blocks(tail)];
   return (
     <ImageViewerHost>
       <View style={styles.stack}>
-        {[...done, ...blocks(tail)].map((block, index) => (
-          <BlockView key={index} block={block} style={style} styles={styles} />
+        {all.map((block, index) => (
+          <BlockView key={index} block={block} style={style} styles={styles} fading={index === all.length - 1 ? fading : undefined} />
         ))}
       </View>
     </ImageViewerHost>
