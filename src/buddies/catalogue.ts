@@ -4,7 +4,7 @@ import { cyclops, glow, googly, matrix, peekers, soot } from "./packs/eyes";
 import { screens } from "./packs/screens";
 import type { BuddyPack, BuddyShape, BuddyState } from "./shared";
 import type { Agent, AgentPresentationState } from "../state/types";
-import { agentDisplay } from "../state/agentStatus";
+import { agentDisplay, type AgentGroup } from "../state/agentStatus";
 import { EVERY_PACK, EVERY_SHAPE, type BuddyStyle } from "./style";
 
 export { DEFAULT_BUDDY_STYLE, EVERY_PACK, EVERY_SHAPE, type BuddyStyle } from "./style";
@@ -66,7 +66,11 @@ export function leastUsedColor(agents: Iterable<Pick<Agent, "buddy" | "cwd">>, c
 }
 
 export function buddyStateOf(state: AgentPresentationState | undefined): BuddyState {
-    switch (agentDisplay(state).group) {
+    return buddyStateOfGroup(agentDisplay(state).group);
+}
+
+export function buddyStateOfGroup(group: AgentGroup | undefined): BuddyState {
+    switch (group) {
         case "blocked":
             return "waiting";
         case "working":

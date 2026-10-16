@@ -72,6 +72,7 @@
     "allow-remote-publish-on-screen",
     "allow-notch-configure",
     "allow-remote-publish-palette",
+    "allow-remote-publish-buddies",
     "allow-remote-publish-backdrop",
     "allow-task-watch",
     "allow-app-quit-and-stop-everything",

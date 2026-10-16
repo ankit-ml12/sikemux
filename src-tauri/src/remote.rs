@@ -36,6 +36,10 @@ pub struct PublishedAgents(Mutex<Option<AgentList>>);
 #[derive(Default)]
 pub struct PublishedRecentChats(Mutex<Option<Vec<PublishedRecent>>>);
 
+/// The buddies the app last published, or none while they are off, sent again like the backdrop.
+#[derive(Default)]
+pub struct PublishedBuddies(Mutex<Value>);
+
 /// The agents the app last showed, sent again like the backdrop.
 #[derive(Default)]
 pub struct PublishedOnScreen(Mutex<Vec<String>>);
@@ -105,6 +109,23 @@ pub async fn remote_publish_agents(
 }
 
 #[tauri::command]
+pub async fn remote_publish_buddies(
+    manager: State<'_, PtyManager>,
+    published: State<'_, PublishedBuddies>,
+    buddies: Value,
+) -> AppResult<()> {
+    if let Ok(mut last) = published.0.lock() {
+        *last = buddies.clone();
+    }
+    let client = manager.client().await?;
+    client
+        .call("publishBuddies", buddies)
+        .await
+        .map_err(core_error)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn remote_publish_recent(
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedRecentChats>,
@@ -163,6 +184,15 @@ pub(crate) async fn connected(
     if let Some((chats, titles)) = agents {
         if let Err(error) = client.publish_agents(chats, titles).await {
             eprintln!("Sikemux could not tell its core which agents it has: {error}");
+        }
+    }
+    let buddies = app
+        .try_state::<PublishedBuddies>()
+        .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
+        .filter(|buddies| !buddies.is_null());
+    if let Some(buddies) = buddies {
+        if let Err(error) = client.call("publishBuddies", buddies).await {
+            eprintln!("Sikemux could not tell its core the buddies it draws: {error}");
         }
     }
     let recent = app

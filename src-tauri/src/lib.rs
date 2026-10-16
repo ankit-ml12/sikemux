@@ -276,6 +276,7 @@ pub fn run() {
         .manage(remote::PublishedOnScreen::default())
         .manage(agent_names::AgentsInApp::default())
         .manage(remote::PublishedPalette::default())
+        .manage(remote::PublishedBuddies::default())
         .manage(remote::PublishedBackdrop::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
@@ -337,6 +338,7 @@ pub fn run() {
             remote::remote_publish_on_screen,
             notch::notch_configure,
             remote::remote_publish_palette,
+            remote::remote_publish_buddies,
             remote::remote_publish_backdrop,
             pty::commands::task_watch,
             pty::commands::app_quit_and_stop_everything,

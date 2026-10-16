@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { agentApi } from "../api/agents";
+import { publishBuddies, type PublishedBuddies } from "../buddies/published";
 import { remoteApi, type PublishedChat } from "../api/remote";
 import { getIpcTransport } from "../api/transport";
 import { backdropPicture, grainDotColor } from "../remote/backdrop";
@@ -26,7 +27,8 @@ export const RECENT_REFRESH_MS = 120_000;
 
 /**
  * Tells the core which projects are open, the mode agents start in and what the app calls its agents, for the notch and
- * paired devices, and which agent is on screen. While remote access is on, also the theme and backdrop devices draw in.
+ * paired devices, the buddies it draws for them, and which agent is on screen. While remote access is on, also the theme
+ * and backdrop devices draw in.
  */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
@@ -43,6 +45,14 @@ export function RemoteWorkspaceBridge() {
         [agents, windows, sessions, sessionOrder, windowsBySession],
     );
     const titles = useMemo(() => JSON.stringify(remoteTitles({ agents })), [agents]);
+    const buddiesOn = useStore((s) => s.buddies);
+    const buddyPack = useStore((s) => s.buddyPack);
+    const buddyShape = useStore((s) => s.buddyShape);
+    const buddyMotion = useStore((s) => s.buddyMotion);
+    const buddies = useMemo(
+        () => JSON.stringify(buddiesOn ? publishBuddies(Object.values(agents), { pack: buddyPack, shape: buddyShape }, buddyMotion) : null),
+        [buddiesOn, agents, buddyPack, buddyShape, buddyMotion],
+    );
     const active = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const focused = useWindowFocused();
     const onScreen = focused ? active : undefined;
@@ -101,6 +111,13 @@ export function RemoteWorkspaceBridge() {
     }, [chats, titles]);
 
     usePublishRecent(enabled);
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            remoteApi.publishBuddies(JSON.parse(buddies) as PublishedBuddies | null).catch(swallow("publish buddies to the core"));
+        }, PUBLISH_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [buddies]);
 
     useEffect(() => {
         remoteApi.publishOnScreen(onScreen ? [onScreen] : []).catch(swallow("tell the core which agent is on screen"));

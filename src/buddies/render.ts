@@ -1,13 +1,13 @@
 import { twinkle, type BuddyPack, type BuddyShape, type BuddyState } from "./shared";
 
 const MOTION: Record<BuddyState, string> = { idle: "", working: "bd-bob", waiting: "bd-hop", done: "", error: "bd-shake" };
-const FULL_BOX = "0 0 24 24";
+export const FULL_BOX = "0 0 24 24";
 const PAD = 0.7;
 
 const boxes = new Map<string, string>();
 
 /* Shapes fill different parts of their 24×24 box, so each is cropped to its own drawing and every buddy fills the slot it is given. */
-function boxOf(pack: BuddyPack, shape: BuddyShape): string {
+export function buddyBox(pack: BuddyPack, shape: BuddyShape): string {
     const key = `${pack.id}/${shape.id}`;
     const known = boxes.get(key);
     if (known) return known;
@@ -33,8 +33,8 @@ function boxOf(pack: BuddyPack, shape: BuddyShape): string {
     return box;
 }
 
-export function buddyMarkup(pack: BuddyPack, shape: BuddyShape, color: string, state: BuddyState, uid: string): string {
-    const box = boxOf(pack, shape);
+/** `box` is measured on this page unless given; a phone cannot measure, so it passes the one the app published. */
+export function buddyMarkup(pack: BuddyPack, shape: BuddyShape, color: string, state: BuddyState, uid: string, box = buddyBox(pack, shape)): string {
     const [x, y, side] = box.split(" ").map(Number);
     const sparkle = state === "done" ? twinkle(x + side - side * 0.08, y + side * 0.1) : "";
     return `<svg viewBox="${box}" aria-hidden="true"><g class="${MOTION[state]}">${shape.draw(color, state, uid)}${sparkle}</g></svg>`;

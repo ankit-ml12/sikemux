@@ -53,6 +53,7 @@ export const IPC_COMMANDS = [
     "remote_publish_on_screen",
     "notch_configure",
     "remote_publish_palette",
+    "remote_publish_buddies",
     "remote_publish_backdrop",
     "task_watch",
     "app_quit_and_stop_everything",
