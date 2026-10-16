@@ -28,6 +28,7 @@ import type { Pull } from "../codehost/types";
 import { FileIcon } from "../ui/FileIcon";
 import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import {
+    AgentIcon,
     IconCheckout,
     IconChevron,
     IconCopy,
@@ -35,6 +36,9 @@ import {
     IconFetch,
     IconFile,
     IconGit,
+    IconKeyboard,
+    IconLink,
+    IconLogLines,
     IconMerge,
     IconMinus,
     IconMore,
@@ -43,7 +47,9 @@ import {
     IconPull,
     IconPullRequest,
     IconPush,
+    IconRefresh,
     IconSearch,
+    IconStack,
     IconTrash,
     IconWarning,
 } from "../ui/Icons";
@@ -394,6 +400,7 @@ function GitWorkbench({
                 ...(i > 0 ? [{ sep: true }] : []),
                 ...AI_MODELS[provider].map((model) => ({
                     label: `${AI_PROVIDER_LABEL[provider]} · ${model}`,
+                    icon: <AgentIcon type={provider} size={13} className={`agent-glyph ${provider}`} />,
                     hint: provider === aiProvider && model === aiModel ? "✓" : undefined,
                     run: () => useGitWorkbench.setState({ provider, model }),
                 })),
@@ -608,15 +615,17 @@ function GitWorkbench({
         ...(b.current
             ? []
             : [
-                  { label: "Check out", hint: "↵", run: () => checkoutBranch(b.name) },
-                  { label: `Merge into ${currentBranch || "HEAD"}`, hint: "M", run: () => mergeRef(b.name) },
-                  { label: `Squash merge into ${currentBranch || "HEAD"}`, run: () => mergeRef(b.name, true) },
+                  { label: "Check out", hint: "↵", icon: <IconCheckout size={13} />, run: () => checkoutBranch(b.name) },
+                  { label: `Merge into ${currentBranch || "HEAD"}`, hint: "M", icon: <IconMerge size={13} />, run: () => mergeRef(b.name) },
+                  { label: `Squash merge into ${currentBranch || "HEAD"}`, icon: <IconMerge size={13} />, run: () => mergeRef(b.name, true) },
                   { sep: true },
               ]),
-        { label: "New branch from here", hint: "n", run: () => openNewBranchPrompt(b.name) },
-        { label: "Rename…", hint: "R", run: () => openBranchRenamePrompt(b) },
-        { label: "Copy name", run: () => void copyValue(b.name, b.name) },
-        ...(b.current ? [] : [{ sep: true }, { label: "Delete…", hint: "d", danger: true, run: () => openBranchDeleteMenu(b) }]),
+        { label: "New branch from here", hint: "n", icon: <IconPlus size={13} />, run: () => openNewBranchPrompt(b.name) },
+        { label: "Rename…", hint: "R", icon: <IconPencil size={13} />, run: () => openBranchRenamePrompt(b) },
+        { label: "Copy name", icon: <IconCopy size={13} />, run: () => void copyValue(b.name, b.name) },
+        ...(b.current
+            ? []
+            : [{ sep: true }, { label: "Delete…", hint: "d", icon: <IconTrash size={13} />, danger: true, run: () => openBranchDeleteMenu(b) }]),
     ];
 
     const checkoutRemoteBranch = (remote: string, rb: GitRemoteBranch) =>
@@ -650,13 +659,20 @@ function GitWorkbench({
         {
             label: rb.tracked_by ? `Check out ${rb.tracked_by}` : "Check out as a local branch",
             hint: "↵",
+            icon: <IconCheckout size={13} />,
             run: () => checkoutRemoteBranch(remote, rb),
         },
-        { label: `Merge into ${currentBranch || "HEAD"}`, hint: "M", run: () => mergeRef(rb.full_ref) },
-        { label: `Set as upstream of ${currentBranch || "HEAD"}`, hint: "u", disabled: !currentBranch, run: () => setUpstreamTo(rb) },
-        { label: "Copy name", run: () => void copyValue(rb.full_ref, rb.full_ref) },
+        { label: `Merge into ${currentBranch || "HEAD"}`, hint: "M", icon: <IconMerge size={13} />, run: () => mergeRef(rb.full_ref) },
+        {
+            label: `Set as upstream of ${currentBranch || "HEAD"}`,
+            hint: "u",
+            icon: <IconLink size={13} />,
+            disabled: !currentBranch,
+            run: () => setUpstreamTo(rb),
+        },
+        { label: "Copy name", icon: <IconCopy size={13} />, run: () => void copyValue(rb.full_ref, rb.full_ref) },
         { sep: true },
-        { label: `Delete on ${remote}…`, danger: true, run: () => confirmRemoteBranchDelete(remote, rb) },
+        { label: `Delete on ${remote}…`, icon: <IconTrash size={13} />, danger: true, run: () => confirmRemoteBranchDelete(remote, rb) },
     ];
 
     const doFetch = (remote: string | null) =>
@@ -691,9 +707,10 @@ function GitWorkbench({
         });
 
     const remoteItems = (r: GitRemote): CtxItem[] => [
-        { label: `Fetch ${r.name}`, hint: "f", run: () => doFetch(r.name) },
+        { label: `Fetch ${r.name}`, hint: "f", icon: <IconFetch size={13} />, run: () => doFetch(r.name) },
         {
             label: "Edit URL…",
+            icon: <IconPencil size={13} />,
             run: () =>
                 openGitPrompt({
                     title: `Edit url · ${r.name}`,
@@ -710,6 +727,7 @@ function GitWorkbench({
         },
         {
             label: "Rename…",
+            icon: <IconPencil size={13} />,
             run: () =>
                 openGitPrompt({
                     title: `Rename remote · ${r.name}`,
@@ -725,10 +743,11 @@ function GitWorkbench({
                     },
                 }),
         },
-        { label: "Copy URL", run: () => void copyValue(r.url, `${r.name} URL`) },
+        { label: "Copy URL", icon: <IconCopy size={13} />, run: () => void copyValue(r.url, `${r.name} URL`) },
         { sep: true },
         {
             label: "Remove remote…",
+            icon: <IconTrash size={13} />,
             danger: true,
             run: () =>
                 openGitConfirm({
@@ -771,13 +790,14 @@ function GitWorkbench({
 
     const openBranchPicker = (anchor: HTMLElement) =>
         openMenuAt(anchor, [
-            { label: "New branch…", hint: "N", run: () => openNewBranchPrompt() },
-            { label: "Check out by name…", hint: "c", run: openCheckoutPrompt },
-            { label: "Show all branches", hint: "3", run: () => setPanel("branches") },
+            { label: "New branch…", hint: "N", icon: <IconPlus size={13} />, run: () => openNewBranchPrompt() },
+            { label: "Check out by name…", hint: "c", icon: <IconCheckout size={13} />, run: openCheckoutPrompt },
+            { label: "Show all branches", hint: "3", icon: <IconGit size={13} />, run: () => setPanel("branches") },
             { sep: true },
             ...branches.map((b) => ({
                 label: b.name,
                 hint: b.current ? "current" : (b.upstream ?? undefined),
+                icon: <IconGit size={13} />,
                 disabled: b.current,
                 run: () => checkoutBranch(b.name),
             })),
@@ -787,16 +807,27 @@ function GitWorkbench({
 
     const openMoreMenu = (anchor: HTMLElement) =>
         openMenuAt(anchor, [
-            { label: "Fetch all remotes", hint: "F", run: () => doFetch(null) },
-            { label: "Add remote…", run: openAddRemotePrompt },
+            { label: "Fetch all remotes", hint: "F", icon: <IconFetch size={13} />, run: () => doFetch(null) },
+            { label: "Add remote…", icon: <IconPlus size={13} />, run: openAddRemotePrompt },
             { sep: true },
-            { label: "Stash changes…", hint: "s", disabled: files.length === 0, run: openFilesStashMenu },
-            { label: "Discard unstaged changes…", danger: true, disabled: unstagedFiles.length === 0, run: discardAllUnstaged },
-            { label: stashes.length ? `Stashes (${stashes.length})…` : "No stashes", disabled: stashes.length === 0, run: openStashesMenu },
+            { label: "Stash changes…", hint: "s", icon: <IconStack size={13} />, disabled: files.length === 0, run: openFilesStashMenu },
+            {
+                label: "Discard unstaged changes…",
+                icon: <IconDiscard size={13} />,
+                danger: true,
+                disabled: unstagedFiles.length === 0,
+                run: discardAllUnstaged,
+            },
+            {
+                label: stashes.length ? `Stashes (${stashes.length})…` : "No stashes",
+                icon: <IconStack size={13} />,
+                disabled: stashes.length === 0,
+                run: openStashesMenu,
+            },
             { sep: true },
-            { label: "Refresh", hint: "r", run: refreshRepoState },
-            { label: cmdLogOpen ? "Hide command log" : "Show command log", hint: "@", run: toggleGitCmdLog },
-            { label: "Keyboard shortcuts", hint: "?", run: openHelpCheatsheet },
+            { label: "Refresh", hint: "r", icon: <IconRefresh size={13} />, run: refreshRepoState },
+            { label: cmdLogOpen ? "Hide command log" : "Show command log", hint: "@", icon: <IconLogLines size={13} />, run: toggleGitCmdLog },
+            { label: "Keyboard shortcuts", hint: "?", icon: <IconKeyboard size={13} />, run: openHelpCheatsheet },
         ]);
 
     // ---- Keyboard ----

@@ -5,6 +5,7 @@ import {
     ContextMenu,
     EmptyState,
     IconChevron,
+    IconMove,
     IconRefresh,
     IconSearch,
     SkeletonRows,
@@ -145,6 +146,7 @@ export function JiraBoard({
                                     y: event.clientY,
                                     items: board.columns.map((target, to) => ({
                                         label: `Move to ${target.name}`,
+                                        icon: <IconMove size={13} />,
                                         disabled: to === index,
                                         run: () => void move(issue, to),
                                     })),
