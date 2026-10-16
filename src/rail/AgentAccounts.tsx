@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentUsage } from "../api/agents";
-import { accountName, accountsOf, openAccountDialog, type AccountProvider } from "../agents/accounts";
+import { accountName, accountsOf, openAccountDialog, signOut, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import { agentLabel } from "../agents/catalog";
 import * as cmd from "../state/commands";
@@ -8,7 +8,8 @@ import { fetchResource, invalidate, peekResource, type ResourceHandle, useResour
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { ProviderProfile } from "../state/types";
-import { IconChevron, IconPlus, IconRefresh } from "../ui/Icons";
+import { IconChevron, IconPlus, IconPower, IconRefresh, IconTrash } from "../ui/Icons";
+import { reportError } from "../state/toast";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
@@ -150,6 +151,20 @@ function accountMenu(
         };
     });
     items.push({ sep: true }, { label: "Add account…", icon: <IconPlus size={13} />, run: () => openAccountDialog({ provider }) });
+    const currentStatus = peekResource(agentAccountR, provider, current.configPath);
+    if (currentStatus?.signedIn)
+        items.push({
+            label: `Sign out of ${accountName(current, currentStatus)}`,
+            icon: <IconPower size={13} />,
+            run: () => void signOut(current).catch(reportError("Sign out")),
+        });
+    for (const account of accounts.filter((candidate) => !candidate.id.startsWith("builtin-")))
+        items.push({
+            label: `Remove ${accountName(account, peekResource(agentAccountR, provider, account.configPath))}`,
+            icon: <IconTrash size={13} />,
+            danger: true,
+            run: () => cmd.deleteProviderProfile(account.id),
+        });
     return items;
 }
 

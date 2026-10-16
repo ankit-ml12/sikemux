@@ -467,7 +467,7 @@ describe("agent rail", () => {
         render(<AgentRailBody />);
 
         await user.click(await screen.findByRole("button", { name: "Codex account: Kishore" }));
-        expect(await screen.findByRole("menuitem", { name: /Work/ })).toBeInTheDocument();
+        expect(await screen.findByRole("menuitem", { name: /^Work/ })).toBeInTheDocument();
     });
 
     it("starts new chats on another account from the account menu and reads its limits and chats", async () => {
@@ -493,7 +493,7 @@ describe("agent rail", () => {
 
         await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", undefined));
         await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
-        await user.click(screen.getByRole("menuitem", { name: /Work/ }));
+        await user.click(screen.getByRole("menuitem", { name: /^Work/ }));
 
         expect(getState().selectedProviderProfileIds.codex).toBe("codex-work");
         await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "~/.codex-work"));
@@ -527,7 +527,7 @@ describe("agent rail", () => {
         await waitFor(() => expect(mocks.signIn).toHaveBeenCalled());
     });
 
-    it("adds an account from the rail, leaving the rest to Settings", async () => {
+    it("adds an account from the rail, and never offers to remove the built-in one", async () => {
         const user = userEvent.setup();
         render(
             <>
@@ -537,7 +537,7 @@ describe("agent rail", () => {
         );
 
         await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
-        expect(screen.queryByRole("menuitem", { name: /Sign out|Remove|Manage/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole("menuitem", { name: /^Remove/ })).not.toBeInTheDocument();
         await user.click(screen.getByRole("menuitem", { name: "Add account…" }));
 
         expect(screen.getByRole("dialog", { name: "Add a Codex account" })).toBeInTheDocument();
