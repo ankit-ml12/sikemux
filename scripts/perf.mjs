@@ -66,6 +66,21 @@ const SCENARIOS = {
       ],
     ],
   },
+  theme: {
+    options: { steps: 12 },
+    describe: (result) =>
+      Object.entries(result).map(
+        ([window, r]) =>
+          `${window}: shown p50 ${r.p50Ms} ms, longest ${r.longestMs} ms`,
+      ),
+    limits: [
+      [
+        "theme shown p50",
+        (result) => Math.max(...Object.values(result).map((r) => r.p50Ms)),
+        100,
+      ],
+    ],
+  },
   startup: {
     options: {},
     describe: (result) => [

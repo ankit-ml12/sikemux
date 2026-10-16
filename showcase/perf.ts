@@ -1,6 +1,7 @@
 import { git } from "./perf/git";
 import { startup } from "./perf/startup";
 import { terminal } from "./perf/terminal";
+import { theme } from "./perf/theme";
 
 /*
  * Times the app in a WebKit tab: open /showcase/perf.html and call
@@ -12,6 +13,7 @@ const SCENARIOS: Record<string, (options?: never) => Promise<object>> = {
   git,
   startup,
   terminal,
+  theme,
 };
 
 async function run(name: string, options?: object) {

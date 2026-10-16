@@ -6,7 +6,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import { invokeCommand as invoke } from "../api/invoke";
-import { currentTerminalTheme, registerTerminal } from "../themes/bus";
+import { currentTerminalTheme, refreshTerminalTheme, registerTerminal } from "../themes/bus";
 import { currentTerminalFontSize, registerTerminalFontSize } from "./fontSize";
 import { IS_MACOS } from "../lib/platform";
 import {
@@ -320,7 +320,7 @@ export function useXterm(opts: {
             cleanup = disposeResources;
 
             try {
-                const unregisterTheme = registerTerminal(term);
+                const unregisterTheme = registerTerminal(term, () => visibleRef.current);
                 resourceDisposers.push(unregisterTheme);
                 const fit = new FitAddon();
                 const search = new SearchAddon();
@@ -797,6 +797,7 @@ export function useXterm(opts: {
     useEffect(() => {
         if (!visible) return;
         if (termRef.current) {
+            refreshTerminalTheme(termRef.current);
             scheduleOutputRef.current();
             return whenStageStill(() => resizeRef.current());
         }

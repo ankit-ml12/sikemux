@@ -129,8 +129,9 @@ export function withoutScope(subject: string): string {
     return subject.replace(/^[a-z]+(\([^)]*\))?!?:\s+/i, "") || subject;
 }
 
-function readVar(el: HTMLElement, name: string): string {
-    return getComputedStyle(el).getPropertyValue(name).trim();
+// The theme sets these on the root element itself, so reading them there needs no style resolve.
+function readVar(name: string): string {
+    return document.documentElement.style.getPropertyValue(name).trim();
 }
 const FALLBACK_PALETTE = ["#a277ff", "#61ffca", "#ff6ac1", "#ffca85", "#7cc5ff", "#ff6767"];
 const FALLBACK_WARN = "#ffca85";
@@ -142,8 +143,8 @@ interface GraphColors {
     void: string;
 }
 
-function readPalette(el: HTMLElement): string[] {
-    const themed = ["--acc", "--live", "--cmd", "--warn", "--danger"].map((n) => readVar(el, n)).filter(Boolean);
+function readPalette(): string[] {
+    const themed = ["--acc", "--live", "--cmd", "--warn", "--danger"].map(readVar).filter(Boolean);
     const all = [...themed, "#7cc5ff", "#ffd166", "#9b8cff"];
     return all.length ? all : FALLBACK_PALETTE;
 }
@@ -298,19 +299,15 @@ export const GitGraph = memo(function GitGraph({
     const { rows, maxLanes } = useMemo(() => computeGraph(commits), [commits]);
     const gutter = gutterWidth(maxLanes);
     const [themeRevision, setThemeRevision] = useState(0);
-    // Reading a CSS variable forces a style resolve, so the palette is read
-    // once per theme rather than on every redraw. Until it is read nothing is drawn.
     const [colors, setColors] = useState<GraphColors | null>(null);
 
     useEffect(() => subscribeTheme(() => setThemeRevision((n) => n + 1)), []);
 
     useLayoutEffect(() => {
-        const el = wrapRef.current;
-        if (!el) return;
         setColors({
-            palette: readPalette(el),
-            unpushed: readVar(el, "--warn") || FALLBACK_WARN,
-            void: readVar(el, "--void") || FALLBACK_VOID,
+            palette: readPalette(),
+            unpushed: readVar("--warn") || FALLBACK_WARN,
+            void: readVar("--void") || FALLBACK_VOID,
         });
     }, [themeRevision]);
 

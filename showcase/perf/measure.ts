@@ -2,7 +2,11 @@ import type { ShowcaseBackend } from "../backend";
 
 export interface Showcase {
   backend: ShowcaseBackend;
-  cmd: { selectSession(id: string): void; selectWindowId(id: string): void };
+  cmd: {
+    selectSession(id: string): void;
+    selectWindowId(id: string): void;
+    setThemeId(id: string): void;
+  };
 }
 
 export const showcase = () =>
