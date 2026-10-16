@@ -249,9 +249,6 @@ export default function HostPairing() {
                     title={request.name || 'A host'}
                     detail={`${platformName(request.platform)} · from your account`}
                   />
-                  <Text style={styles.ask}>
-                    Agents on {request.name || 'that host'} could start agents on {hostName}, signed in as you here.
-                  </Text>
                   <View style={styles.chips}>
                     <Chip title="Decline" busy={busy === request.id} onPress={() => void answer(request.id, null)} />
                     <Chip title="Allow" primary busy={busy === request.id} onPress={() => void answer(request.id, 'full')} />
@@ -307,7 +304,6 @@ const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
     body: { paddingHorizontal: 16 },
-    ask: { ...type.meta, fontSize: 12.5, lineHeight: 17, paddingLeft: TEXT_INSET, paddingRight: 8 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: TEXT_INSET, paddingTop: 2, paddingBottom: 8 },
     note: { ...type.meta, fontSize: 13, paddingHorizontal: 8, paddingTop: 16 },
     problem: { color: colors.danger },
