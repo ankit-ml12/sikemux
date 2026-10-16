@@ -295,10 +295,6 @@ function ProjectBlock({ s }: { s: Session }) {
                   </span>
               ))
             : [];
-    const agentIcons: ReactNode[] = agents.map((a) => (
-        <AgentFace key={a.id} agent={a} size={16} logoSize={20} logoClass={`proj-pip proj-pip-${a.type}`} buddyClass="proj-pip buddy-mark" />
-    ));
-
     const surfaceRow = (role: ProjectSurfaceRole): SubRow => {
         const { label, shortcut, open } = PROJECT_SURFACES[role];
         return {
@@ -330,8 +326,7 @@ function ProjectBlock({ s }: { s: Session }) {
         title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
         open: () => cmd.focusAgents(),
         active: activeRole === "agent",
-        icons: agentIcons,
-        status: rollup && showsAgentState(rollup) ? <AgentStateIndicator display={rollup} /> : undefined,
+        icons: [],
     };
     const children: SubRow[] = PROJECT_SURFACE_ORDER.flatMap((role) => {
         const row = surfaceRow(role);
@@ -353,6 +348,7 @@ function ProjectBlock({ s }: { s: Session }) {
                             <IconFolder size={LINE_ICON_SIZE} />
                         </span>
                         <span className="proj-name">{s.name}</span>
+                        {agentBadge}
                     </button>
                 </Tooltip>
                 <SessionCloseButton session={s} />
@@ -374,7 +370,6 @@ function ProjectBlock({ s }: { s: Session }) {
                                 <span className="proj-child-ic">{c.icon}</span>
                                 <span className="proj-child-label">{c.label}</span>
                                 {c.icons.length > 0 && <FittedIcons icons={c.icons} />}
-                                {c.status}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
                         </Tooltip>
@@ -394,7 +389,6 @@ interface SubRow {
     open: () => void;
     active: boolean;
     icons: ReactNode[];
-    status?: ReactNode;
 }
 
 function renderSession(s: Session) {
