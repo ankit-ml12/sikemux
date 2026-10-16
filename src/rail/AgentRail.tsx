@@ -251,15 +251,18 @@ export function AgentRailBody() {
             last.stagger = true;
         }
         const recents = scroll ? [...scroll.querySelectorAll<HTMLElement>(".agent-row.recent")] : [];
-        if (last.stagger && recents.length > 0) {
-            recents.slice(0, 12).forEach((row, i) =>
+        if (scroll && last.stagger && recents.length > 0) {
+            const bottom = scroll.getBoundingClientRect().bottom;
+            const shown = recents.filter((row) => row.getBoundingClientRect().top < bottom);
+            const step = Math.min(20, 120 / shown.length);
+            shown.forEach((row, i) =>
                 animate(
                     row,
                     [
                         { opacity: 0, transform: "translateY(4px)" },
                         { opacity: 1, transform: "none" },
                     ],
-                    { duration: 150, delay: i * 20, fill: "backwards" },
+                    { duration: 150, delay: i * step, fill: "backwards" },
                 ),
             );
             last.stagger = false;
