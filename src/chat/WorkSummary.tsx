@@ -21,7 +21,7 @@ export function WorkSummary({
         <div className="chat-work">
             <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={onToggle}>
                 <span className={`chat-work-mark agent-glyph ${agent}`} aria-hidden="true">
-                    <AgentIcon type={agent} size={14} />
+                    <AgentIcon type={agent} size={17} />
                 </span>
                 <span>{workedLabel(took, thought)}</span>
                 {calls > 0 && (
