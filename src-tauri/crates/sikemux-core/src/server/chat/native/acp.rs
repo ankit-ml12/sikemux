@@ -406,6 +406,9 @@ impl Backend for Acp {
             .call(AGENT_METHOD_NAMES.initialize, initialize, None)
             .await
             .map_err(failed)?;
+        let command =
+            crate::agent_catalog::agent(&launch.provider).map_or("", |entry| entry.command);
+        let sign_in = crate::acp::sign_in::methods(&initialized, command);
         let initialized: InitializeResponse =
             serde_json::from_value(initialized).map_err(|error| failed(error.to_string()))?;
         if let Some(agent) = &initialized.agent_info {
@@ -414,6 +417,7 @@ impl Backend for Acp {
         let mut capabilities = params(&initialized.agent_capabilities)?;
         let steering = air::steering_supported(&params(&initialized.meta)?);
         capabilities["steering"] = json!(steering);
+        capabilities["signInMethods"] = json!(sign_in);
         let can_load = initialized.agent_capabilities.load_session;
 
         let (session_id, setup) = Self::open(&driver, launch, can_load)
@@ -513,6 +517,17 @@ impl Backend for Acp {
 
     /// A background task outlives the turn that started it, so stopping one
     /// does not wait on the agent's answer.
+    async fn authenticate(&mut self, method_id: &str) -> Result<(), String> {
+        self.driver
+            .call(
+                AGENT_METHOD_NAMES.authenticate,
+                json!({ "methodId": method_id }),
+                None,
+            )
+            .await
+            .map(|_| ())
+    }
+
     async fn stop_task(&mut self, task_id: &str) -> Result<(), String> {
         let stop = air::StopAsyncTask {
             session_id: self.session_id.clone(),

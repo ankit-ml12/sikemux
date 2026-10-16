@@ -1,6 +1,6 @@
 import { useModalFocus } from "../hooks/useModalFocus";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { type AgentSession } from "../api/agents";
+import { type AgentInfo, type AgentSession } from "../api/agents";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "./agentProfiles";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { rankBy } from "../lib/fuzzy";
@@ -11,7 +11,9 @@ import { useStore } from "../state/store";
 import type { AgentPermissionMode, AgentType } from "../state/types";
 import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../ui/Icons";
 import { formatAge } from "../lib/format";
-import { agentLabel } from "./catalog";
+import { agentAbout, agentLabel, installCommand } from "./catalog";
+import { installAgent } from "./AgentInstall";
+import { withMissingAgents } from "./setupList";
 import { leavingOverlay } from "../lib/motion";
 
 type Row = AgentSession & { type: AgentType };
@@ -44,7 +46,8 @@ export function AgentPalette() {
     const defaultMode = useStore((state) => state.defaultAgentPermissionMode);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
     const catalog = useResource(agentCatalogR, runtimeProfiles);
-    const agents = useMemo(() => catalog.data ?? [], [catalog.data]);
+    const found = useMemo(() => catalog.data ?? [], [catalog.data]);
+    const agents = useMemo(() => (catalog.data ? withMissingAgents(catalog.data) : []), [catalog.data]);
     const origin = useRef({ sessionId: session?.id ?? "", cwd: session?.cwd ?? "" });
     const inputRef = useRef<HTMLInputElement>(null);
     const mouseActive = useMouseActive();
@@ -67,7 +70,7 @@ export function AgentPalette() {
             };
         }
 
-        const availableAgents = agents.filter((agent) => agent.available !== false);
+        const availableAgents = found.filter((agent) => agent.available !== false);
         const sessionArgs = availableAgents.map((agent) => [agent.type, origin.current.cwd, agent.configPath ?? undefined] as const);
 
         /* The open agents already keep these listings warm, so the picker opens
@@ -90,7 +93,7 @@ export function AgentPalette() {
         return () => {
             cancelled = true;
         };
-    }, [agents]);
+    }, [found, agents.length]);
 
     useEffect(() => {
         if (session && session.id !== origin.current.sessionId) cmd.forceCloseAgentPalette();
@@ -119,7 +122,14 @@ export function AgentPalette() {
     const items = useMemo(() => {
         const fresh = agents.map(({ type }): NewAgentItem => ({ kind: "new", type }));
         const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
-        const rankedFresh = rankBy(query, fresh, (item) => `+ new ${agentLabel(item.type)} ${item.type}`);
+        const rankedFresh = rankBy(query, fresh, (item) =>
+            installable(
+                item,
+                agents.find((agent) => agent.type === item.type),
+            )
+                ? `install ${agentLabel(item.type)} ${item.type}`
+                : `+ new ${agentLabel(item.type)} ${item.type}`,
+        );
         const rankedResumable = rankBy(query, resumable, (item) => `${item.row.title} ${agentLabel(item.row.type)} ${item.row.type}`);
         return [...rankedFresh, ...rankedResumable];
     }, [agents, query, rows]);
@@ -129,7 +139,8 @@ export function AgentPalette() {
             items
                 .map((item, index) => {
                     const type = typeForItem(item);
-                    return { index, available: agents.find((agent) => agent.type === type)?.available !== false };
+                    const provider = agents.find((agent) => agent.type === type);
+                    return { index, available: provider?.available !== false || installable(item, provider) };
                 })
                 .filter(({ available }) => available)
                 .map(({ index }) => index),
@@ -161,6 +172,11 @@ export function AgentPalette() {
         if (!item || !origin.current.sessionId || !origin.current.cwd) return;
         const type = typeForItem(item);
         const provider = agents.find((agent) => agent.type === type);
+        if (installable(item, provider)) {
+            cmd.closeAgentPalette();
+            installAgent(type);
+            return;
+        }
         if (!provider || provider.available === false) return;
         const selectedProfile = selectedProviderProfile(type, profiles, profileSelections);
         const resume = item.kind === "resume" ? item.row : undefined;
@@ -254,9 +270,10 @@ export function AgentPalette() {
                     {items.map((item, index) => {
                         const type = typeForItem(item);
                         const provider = agents.find((agent) => agent.type === type);
-                        const available = provider?.available !== false;
+                        const install = installable(item, provider);
+                        const available = provider?.available !== false || install;
                         const key = item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`;
-                        const name = item.kind === "new" ? `+ new ${agentLabel(type)}` : item.row.title;
+                        const name = install ? `Install ${agentLabel(type)}` : item.kind === "new" ? `+ new ${agentLabel(type)}` : item.row.title;
                         return (
                             <Fragment key={key}>
                                 {index === firstResumeIndex && firstResumeIndex > 0 && <div className="agent-palette-divider" />}
@@ -264,7 +281,7 @@ export function AgentPalette() {
                                     type="button"
                                     className={`picker-item${index === selected ? " sel" : ""}`}
                                     disabled={!available}
-                                    aria-label={`${name} in ${launchMode(type) === YOLO ? "YOLO" : "Normal"} mode`}
+                                    aria-label={install ? name : `${name} in ${launchMode(type) === YOLO ? "YOLO" : "Normal"} mode`}
                                     onMouseEnter={() => {
                                         if (mouseActive.current && available) setSelected(index);
                                     }}
@@ -274,15 +291,17 @@ export function AgentPalette() {
                                     </span>
                                     <span className="picker-name">{name}</span>
                                     <span className="picker-sub">
-                                        {!available
-                                            ? provider?.error || "Agent executable is unavailable"
-                                            : launchMode(type) !== mode
-                                              ? "opens safe"
-                                              : item.kind === "new"
-                                                ? provider?.status?.state === "signedOut"
-                                                    ? "signed out"
-                                                    : ""
-                                                : `${agentLabel(type)} · ${formatAge(item.row.mtime * 1000)}`}
+                                        {install
+                                            ? agentAbout(type)
+                                            : !available
+                                              ? provider?.error || "Agent executable is unavailable"
+                                              : launchMode(type) !== mode
+                                                ? "opens safe"
+                                                : item.kind === "new"
+                                                  ? provider?.status?.state === "signedOut"
+                                                      ? "signed out"
+                                                      : ""
+                                                  : `${agentLabel(type)} · ${formatAge(item.row.mtime * 1000)}`}
                                     </span>
                                 </button>
                             </Fragment>
@@ -292,4 +311,9 @@ export function AgentPalette() {
             </div>
         </div>
     );
+}
+
+/** A new-chat row for an agent that is not installed, which installs it instead. */
+function installable(item: AgentItem, provider: AgentInfo | undefined): boolean {
+    return item.kind === "new" && provider?.status?.state === "missing" && !!installCommand(item.type);
 }

@@ -254,6 +254,11 @@ export const TOOL_ROWS = {
     jira_edit: { verb: "edit", kind: "edit", icon: "issue", target: ["{key}"], detail: ["{site}"], plugin: "sikemux.jira" },
     jira_link: { verb: "link", kind: "edit", icon: "link", target: ["{key} {relation} {other}"], detail: ["{site}"], plugin: "sikemux.jira" },
     jira_worklog: { verb: "log", kind: "edit", icon: "clock", target: ["{key}"], detail: ["{time}"], plugin: "sikemux.jira" },
+    linear_search: { verb: "search", kind: "search", icon: "search", target: ["{query}", "my issues"], plugin: "sikemux.linear" },
+    linear_issue: { verb: "read", kind: "read", icon: "issue", target: ["{id}"], plugin: "sikemux.linear" },
+    linear_comment: { verb: "comment", kind: "edit", icon: "message", target: ["{id}"], plugin: "sikemux.linear" },
+    linear_update: { verb: "update", kind: "edit", icon: "status", target: ["{id} {state}", "{id}"], plugin: "sikemux.linear" },
+    linear_create: { verb: "create", kind: "edit", icon: "square-plus", target: ["{team}: {title}"], plugin: "sikemux.linear" },
     rundeck_projects: { verb: "list", kind: "read", icon: "folder", target: ["Rundeck projects"], plugin: "sikemux.rundeck" },
     rundeck_jobs: {
         verb: "list",

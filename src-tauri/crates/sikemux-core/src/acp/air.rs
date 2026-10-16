@@ -6,7 +6,8 @@
 //! the chat the same updates.
 
 use agent_client_protocol::schema::v1::{
-    ClientCapabilities, ClientSessionCapabilities, ContentBlock, Meta, NoticeCapabilities,
+    AuthCapabilities, ClientCapabilities, ClientSessionCapabilities, ContentBlock, Meta,
+    NoticeCapabilities,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -29,8 +30,12 @@ pub fn client_capabilities() -> ClientCapabilities {
             }
         }),
     );
+    // Sikemux can run the agent's own sign-in in a terminal, so the agent may
+    // offer it. Zed's earlier form of the same capability is in `_meta`.
+    meta.insert("terminal-auth".into(), json!(true));
     ClientCapabilities::new()
         .session(ClientSessionCapabilities::new().notices(NoticeCapabilities::new()))
+        .auth(AuthCapabilities::new().terminal(true))
         .meta(meta)
 }
 
@@ -87,6 +92,16 @@ impl StopAsyncTask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capabilities_offer_a_terminal_sign_in_in_both_forms() {
+        let capabilities = serde_json::to_value(client_capabilities()).unwrap();
+        assert_eq!(capabilities.pointer("/auth/terminal"), Some(&json!(true)));
+        assert_eq!(
+            capabilities.pointer("/_meta/terminal-auth"),
+            Some(&json!(true))
+        );
+    }
 
     #[test]
     fn capabilities_name_the_extension_parts_the_frontend_renders() {

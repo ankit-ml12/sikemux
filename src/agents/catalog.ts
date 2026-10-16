@@ -19,6 +19,11 @@ export function agentLabel(type: string): string {
     return BY_TYPE.get(type)?.label ?? type;
 }
 
+/** One line on what the agent is, for someone choosing which to install. */
+export function agentAbout(type: string): string | null {
+    return BY_TYPE.get(type)?.about ?? null;
+}
+
 export function agentBrand(type: AgentType): string {
     return BY_TYPE.get(type)!.brand;
 }
@@ -50,4 +55,9 @@ export function canBypassPermissions(type: AgentType): boolean {
 /** The agent's official install command, which puts it where its own updater expects. Null when it has none to run. */
 export function installCommand(type: string): string | null {
     return BY_TYPE.get(type)?.install ?? null;
+}
+
+/** The arguments that start the agent's own sign-in. Null when it has none. */
+export function loginArgs(type: string): readonly string[] | null {
+    return BY_TYPE.get(type)?.login ?? null;
 }

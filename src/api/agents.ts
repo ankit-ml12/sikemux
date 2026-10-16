@@ -163,6 +163,8 @@ export const agentApi = {
     cancelResume: (agentId: string): Promise<void> => accountCall("cancelResume", { agentId }),
     /** Sends the prompt a failed turn stopped again. */
     retryFailed: (agentId: string): Promise<void> => accountCall("retryFailed", { agentId }),
+    /** Asks a chat's agent to sign in by one of the methods it handles itself. */
+    authenticateChat: (agentId: string, methodId: string): Promise<void> => accountCall("authenticateChat", { agentId, methodId }),
     /** Lets go of the prompt a failed turn stopped, so nothing sends it again. */
     discardFailed: (agentId: string): Promise<void> => accountCall("discardFailed", { agentId }),
     signIn: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>

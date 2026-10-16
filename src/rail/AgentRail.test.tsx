@@ -157,6 +157,16 @@ describe("agent rail", () => {
         expect(agent).toMatchObject({ resumeId: "older", title: "Fix terminal focus", cwd: "/code/sikemux" });
     });
 
+    it("offers to set up an agent when it finds none", async () => {
+        mocks.available.mockResolvedValue([]);
+        mocks.saved.mockReturnValue([]);
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+
+        await user.click(await screen.findByRole("button", { name: "No agents yet. Set one up" }));
+        expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents", settingsTarget: "Agents on this machine" });
+    });
+
     it("starts a fresh chat for the selected provider from the new chat row", async () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);

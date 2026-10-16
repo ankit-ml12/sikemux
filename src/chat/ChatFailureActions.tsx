@@ -1,5 +1,7 @@
 import { agentApi } from "../api/agents";
 import { AccountSignIn } from "../agents/AccountSignIn";
+import { signInAgent } from "../agents/AgentInstall";
+import { agentLabel, loginArgs } from "../agents/catalog";
 import { accountsOf, isAccountProvider, moveChat } from "../agents/accounts";
 import { useResource } from "../state/resources";
 import { agentAccountR } from "../state/resources.defs";
@@ -9,9 +11,57 @@ import type { Agent, ProviderProfile } from "../state/types";
 import type { ChatFailure } from "./types";
 import { useState } from "react";
 
+/** A way the agent said, as it started, that it can be signed in. */
+export type SignInMethod =
+    | { kind: "terminal"; id: string; name: string; description: string | null; args: string[]; env: [string, string][] }
+    | { kind: "agent"; id: string; name: string; description: string | null };
+
 /** What the person can do about a turn that failed because of its account. */
-export function ChatFailureActions({ agent, profile, failure }: { agent: Agent; profile: ProviderProfile; failure: ChatFailure }) {
-    if (!isAccountProvider(profile.provider)) return null;
+export function ChatFailureActions({
+    agent,
+    profile,
+    failure,
+    signInMethods = [],
+}: {
+    agent: Agent;
+    profile: ProviderProfile | undefined;
+    failure: ChatFailure;
+    signInMethods?: readonly SignInMethod[];
+}) {
+    if (!profile || !isAccountProvider(profile.provider)) {
+        if (failure.kind !== "signIn") return null;
+        const own = { type: agent.type, command: agent.executablePath ?? agent.type, configPath: null };
+        if (signInMethods.length > 0) {
+            return (
+                <span className="chat-error-actions">
+                    {signInMethods.map((method) => (
+                        <button
+                            key={method.id}
+                            type="button"
+                            title={method.description ?? undefined}
+                            onClick={() =>
+                                method.kind === "terminal"
+                                    ? signInAgent(own, { method: { args: method.args, env: method.env }, retry: agent.id })
+                                    : void agentApi
+                                          .authenticateChat(agent.id, method.id)
+                                          .then(() => agentApi.retryFailed(agent.id))
+                                          .catch(reportError(`Sign in to ${agentLabel(agent.type)}`))
+                            }>
+                            {method.name}
+                        </button>
+                    ))}
+                </span>
+            );
+        }
+        if (!loginArgs(agent.type)) return null;
+        return (
+            <span className="chat-error-actions">
+                <button type="button" onClick={() => signInAgent(own, { retry: agent.id })}>
+                    Sign in to {agentLabel(agent.type)}
+                </button>
+            </span>
+        );
+    }
     if (failure.kind === "signIn") {
         return (
             <span className="chat-error-actions">

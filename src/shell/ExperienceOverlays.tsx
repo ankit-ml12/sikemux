@@ -7,13 +7,13 @@ import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
-import type { AgentInfo } from "../api/agents";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { actionForEvent, keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
 import { AgentIcon, IconAgent, IconFolder, IconSearch, IconServer, Logo } from "../ui/Icons";
 import { agentStatusLabel } from "../agents/agentStatus";
-import { installAgent } from "../agents/AgentInstall";
-import { AGENT_TYPES, agentLabel, installCommand } from "../agents/catalog";
+import { installAgent, signInAgent } from "../agents/AgentInstall";
+import { installCommand, loginArgs } from "../agents/catalog";
+import { setupOrder, withMissingAgents } from "../agents/setupList";
 import { Kbd } from "../ui/Kbd";
 import { ShaderField } from "../ui/ShaderField";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -171,18 +171,7 @@ export function Onboarding() {
         }
     };
     const found = catalog.data ?? [];
-    const notFound: AgentInfo[] = catalog.data
-        ? AGENT_TYPES.filter((type) => installCommand(type) && !found.some((agent) => agent.type === type)).map((type) => ({
-              type,
-              label: agentLabel(type),
-              command: type,
-              available: false,
-              defaultModel: null,
-              defaultEffort: null,
-              status: { state: "missing" },
-          }))
-        : [];
-    const agents = [...found, ...notFound].sort((a, b) => Number(b.available !== false) - Number(a.available !== false));
+    const agents = catalog.data ? setupOrder(withMissingAgents(found)) : [];
     const dragWindow = (event: React.MouseEvent<HTMLElement>) => {
         if (event.button !== 0 || event.target !== event.currentTarget) return;
         event.preventDefault();
@@ -262,6 +251,11 @@ export function Onboarding() {
                                         {agent.status?.state === "missing" && installCommand(agent.type) && (
                                             <button type="button" className="welcome-agent-install" onClick={() => installAgent(agent.type)}>
                                                 Install
+                                            </button>
+                                        )}
+                                        {agent.status?.state === "signedOut" && loginArgs(agent.type) && (
+                                            <button type="button" className="welcome-agent-install" onClick={() => signInAgent(agent)}>
+                                                Sign in
                                             </button>
                                         )}
                                     </li>

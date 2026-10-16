@@ -33,7 +33,7 @@ import type { AgentQuestion } from "../agents/agentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
 import { useChatQuestions } from "./useChatQuestions";
 import { ResumeActions } from "./ResumeActions";
-import { ChatFailureActions, NetworkFailureActions } from "./ChatFailureActions";
+import { ChatFailureActions, NetworkFailureActions, type SignInMethod } from "./ChatFailureActions";
 import LiveStack from "./LiveStack";
 import QuestionRows from "./QuestionRows";
 
@@ -438,8 +438,14 @@ export function AgentChatPane({
                                                         onDismiss={() => dispatch({ type: "dismiss_error" })}
                                                     />
                                                 ) : (
-                                                    displayState.failure &&
-                                                    profile && <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
+                                                    displayState.failure && (
+                                                        <ChatFailureActions
+                                                            agent={agent}
+                                                            profile={profile}
+                                                            failure={displayState.failure}
+                                                            signInMethods={state.capabilities.signInMethods as SignInMethod[] | undefined}
+                                                        />
+                                                    )
                                                 )}
                                             </div>
                                         )}

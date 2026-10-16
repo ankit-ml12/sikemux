@@ -54,7 +54,7 @@ struct Agent {
     next_request: AtomicU64,
     model: Mutex<String>,
     account: String,
-    signed_in: bool,
+    signed_in: AtomicBool,
 }
 
 impl Agent {
@@ -405,16 +405,21 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
                     std::thread::sleep(Duration::from_millis(20));
                 }
             }
-            agent.reply(
-                &id,
-                json!({
-                    "protocolVersion": 1,
-                    "agentCapabilities": {
-                        "loadSession": true,
-                        "promptCapabilities": { "embeddedContext": true },
-                    },
-                }),
-            );
+            let mut answer = json!({
+                "protocolVersion": 1,
+                "agentCapabilities": {
+                    "loadSession": true,
+                    "promptCapabilities": { "embeddedContext": true },
+                },
+            });
+            if params["clientCapabilities"]["auth"]["terminal"] == true {
+                answer["authMethods"] = json!([
+                    { "type": "terminal", "id": "fake-login", "name": "Log in", "args": ["login"] },
+                    { "id": "fake-key", "name": "API key", "description": "Use a key from the environment" },
+                    { "id": "elsewhere", "name": "Elsewhere", "_meta": { "terminal-auth": { "command": "/bin/elsewhere", "args": [] } } },
+                ]);
+            }
+            agent.reply(&id, answer);
         }
         ("session/new", Some(id)) => {
             let session_id = format!(
@@ -459,11 +464,17 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
             replay_history(agent, &session_id);
             agent.reply(&id, json!({ "configOptions": agent.config() }));
         }
-        ("session/prompt", Some(id)) if !agent.signed_in => agent.send(json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32000, "message": "Authentication required" },
-        })),
+        ("authenticate", Some(id)) if params["methodId"] == "fake-key" => {
+            agent.signed_in.store(true, Ordering::Relaxed);
+            agent.reply(&id, json!({}));
+        }
+        ("session/prompt", Some(id)) if !agent.signed_in.load(Ordering::Relaxed) => {
+            agent.send(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32000, "message": "Authentication required" },
+            }))
+        }
         ("session/prompt", Some(id)) if limited(&agent.account) => {
             let session_id = params["sessionId"].as_str().unwrap_or_default().to_owned();
             record(&session_id, "user", &prompt_text(&params));
@@ -541,7 +552,7 @@ fn main() {
         next_request: AtomicU64::new(1),
         model: Mutex::new("fast".into()),
         account: std::env::var("FAKE_ACP_ACCOUNT").unwrap_or_else(|_| "main".into()),
-        signed_in,
+        signed_in: AtomicBool::new(signed_in),
     });
     let sessions = AtomicU64::new(1);
     for line in std::io::stdin().lock().lines() {

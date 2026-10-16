@@ -73,6 +73,7 @@ import { ActivityPage } from "../shell/ActivityPage";
 import { DevicesPage } from "./DevicesPage";
 import { SkillsSection } from "./SkillsSection";
 import { ModelProvidersSection } from "./ModelProvidersSection";
+import { AgentSetupSection } from "./AgentSetupSection";
 import { AccountsSections } from "./AccountsSection";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 import { BuddySettings } from "../buddies/BuddySettings";
@@ -528,6 +529,8 @@ function AgentsPage() {
         setDraft({ id: `profile-${Date.now().toString(36)}`, name: "", provider: "claude", accent: providerAccent("claude"), environmentKeys: [] });
     return (
         <SettingsPage>
+            <AgentSetupSection />
+
             <SettingsSection
                 title="Launch boundary"
                 meta={AGENT_PERMISSION_COPY[defaultPermissionMode].label}

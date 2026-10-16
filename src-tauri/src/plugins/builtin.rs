@@ -18,6 +18,8 @@ pub fn plugins() -> Vec<Arc<dyn Plugin>> {
         sikemux_plugin_gitlab::plugin(),
         #[cfg(feature = "jira")]
         sikemux_plugin_jira::plugin(),
+        #[cfg(feature = "linear")]
+        sikemux_plugin_linear::plugin(),
         #[cfg(feature = "rundeck")]
         sikemux_plugin_rundeck::plugin(),
         #[cfg(feature = "signoz")]

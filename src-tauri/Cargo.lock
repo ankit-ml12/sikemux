@@ -5792,6 +5792,7 @@ dependencies = [
  "sikemux-plugin-github",
  "sikemux-plugin-gitlab",
  "sikemux-plugin-jira",
+ "sikemux-plugin-linear",
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-plugin-slack",
@@ -6066,6 +6067,21 @@ dependencies = [
  "sikemux-process",
  "tokio",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-linear"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
+ "tokio",
  "workspace-hack",
 ]
 
@@ -8618,6 +8634,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-task",
  "futures-util",
  "getrandom 0.3.4",
  "getrandom 0.4.3",
@@ -8673,6 +8690,7 @@ dependencies = [
  "tokio-util",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
+ "tower-http",
  "tracing",
  "typenum",
  "url",
