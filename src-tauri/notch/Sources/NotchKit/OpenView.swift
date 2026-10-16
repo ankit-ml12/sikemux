@@ -163,7 +163,7 @@ struct EntryRow: View {
     }
 }
 
-/// Mark, task, project, time, state: one line.
+/// Mark, task, then the agent's name, counts, project, time and state at the end: one line.
 struct RowLine: View {
     let entry: Entry
     let marks: Namespace.ID
@@ -171,9 +171,12 @@ struct RowLine: View {
     var body: some View {
         HStack(spacing: 10) {
             AgentMark(provider: entry.provider, size: 20).matchedGeometryEffect(id: entry.id, in: marks)
-            NamedTitle(entry: entry)
+            Text(entry.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.ink)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let name = entry.item.name {
+                Text(name).font(Theme.ui(11)).foregroundStyle(Theme.inkFaint).lineLimit(1).fixedSize()
+            }
             if entry.subagents > 0 { SubagentCount(count: entry.subagents) }
             if entry.tasks > 0 { ShellCount(count: entry.tasks) }
             ProjectLabel(project: entry.project).frame(maxWidth: 150, alignment: .trailing).fixedSize()
@@ -185,21 +188,6 @@ struct RowLine: View {
                 SinceText(mark: entry.mark, since: entry.since).frame(minWidth: 44, alignment: .trailing)
             }
             StateMark(mark: entry.mark)
-        }
-    }
-}
-
-/// What the agent works on, then its name, small and dim at the end, as the app's rail reads.
-struct NamedTitle: View {
-    let entry: Entry
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(entry.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.ink).lineLimit(1)
-            if let name = entry.item.name {
-                Spacer(minLength: 0)
-                Text(name).font(Theme.ui(11)).foregroundStyle(Theme.inkFaint).layoutPriority(1)
-            }
         }
     }
 }
