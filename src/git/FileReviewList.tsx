@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { FileIcon } from "../ui/FileIcon";
-import { IconChevron } from "../ui/Icons";
+import { IconChevron, IconCollapseAll, IconExpandAll } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { basename, dirname } from "../lib/paths";
 
@@ -100,9 +100,11 @@ export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status,
                     className="merge-review-action"
                     onClick={() => setCollapsed(new Set())}
                     disabled={expandedCount === paths.length}>
+                    <IconExpandAll size={12} />
                     Expand all
                 </button>
                 <button type="button" className="merge-review-action" onClick={() => setCollapsed(new Set(paths))} disabled={expandedCount === 0}>
+                    <IconCollapseAll size={12} />
                     Collapse all
                 </button>
             </div>

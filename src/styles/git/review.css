@@ -28,8 +28,6 @@
     min-height: 34px;
     flex: 0 0 auto;
     padding: 0 10px 0 14px;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 .merge-review-count {
     margin-right: auto;
@@ -37,6 +35,9 @@
     font-size: var(--text-xs);
 }
 .merge-review-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     height: 22px;
     padding: 0 7px;
     color: var(--text-tertiary);
