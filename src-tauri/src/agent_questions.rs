@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 use crate::pty::PtyManager;
 
 /// The core's question calls, the only ones the page may make through this.
-const METHODS: [&str; 2] = ["questions", "answerQuestion"];
+const METHODS: [&str; 3] = ["questions", "answerQuestion", "answerQuestions"];
 
 /// The window call the core sends the open questions in.
 pub(crate) const CHANGED_METHOD: &str = "agent.questions";

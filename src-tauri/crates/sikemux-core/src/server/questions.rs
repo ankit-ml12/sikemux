@@ -34,6 +34,8 @@ const MAX_QUESTION_BYTES: usize = 8 * 1024;
 const MAX_CHOICES: usize = 9;
 const MAX_LABEL_CHARS: usize = 200;
 const MAX_DETAIL_CHARS: usize = 400;
+/// A question's title on the tab the person picks it by.
+const MAX_HEADER_CHARS: usize = 40;
 const MAX_ANSWER_BYTES: usize = 64 * 1024;
 const MAX_OPEN_PER_AGENT: usize = 8;
 /// A lead whose turn ended may still be handed the question back unread, so
@@ -81,6 +83,8 @@ struct Question {
     asked: String,
     /// What the person is asked, which a lead that passes it on may reword.
     text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    header: Option<String>,
     choices: Vec<Choice>,
     blocked: bool,
     assumption: Option<String>,
@@ -116,6 +120,7 @@ impl Question {
             "project": self.project,
             "asked": self.asked,
             "text": self.text,
+            "header": self.header,
             "choices": self.choices,
             "blocked": self.blocked,
             "assumption": self.assumption,
@@ -194,6 +199,7 @@ pub(crate) struct ForPerson {
 /// A question as an agent asked it.
 struct Asked {
     text: String,
+    header: Option<String>,
     choices: Vec<Choice>,
     blocked: bool,
     assumption: Option<String>,
@@ -549,6 +555,7 @@ fn open(
             project: project.clone(),
             asked: asked.text.clone(),
             text: asked.text,
+            header: asked.header,
             choices: asked.choices,
             blocked: asked.blocked,
             assumption: asked.assumption,
@@ -656,6 +663,8 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
     let text = text_param(params, "question", MAX_QUESTION_BYTES)?
         .ok_or("question must be what you want to know, as nonempty text")?;
     let choices = choices(params.get("choices"))?;
+    let header = text_param(params, "header", MAX_QUESTION_BYTES)?
+        .map(|header| clipped(&header, MAX_HEADER_CHARS));
     if let Some(worker) = text_param(params, "for", 200)? {
         if let Some(foreign) = foreign_worker(core, &agent_id, &worker) {
             let choices = serde_json::to_value(&choices).map_err(|error| error.to_string())?;
@@ -697,6 +706,7 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
         &request.project,
         vec![Asked {
             text,
+            header,
             choices,
             blocked,
             assumption,
@@ -817,8 +827,14 @@ pub(crate) fn ask_from_cli(core: &Arc<Core>, agent_id: &str, input: &Value) -> S
                 .get("options")
                 .and_then(Value::as_array)
                 .map(|options| options.iter().take(MAX_CHOICES).cloned().collect());
+            let header = question
+                .get("header")
+                .and_then(Value::as_str)
+                .filter(|header| !header.trim().is_empty())
+                .map(|header| clipped(header, MAX_HEADER_CHARS));
             Some(Asked {
                 text: text.to_owned(),
+                header,
                 choices: choices(options.map(Value::Array).as_ref()).unwrap_or_default(),
                 blocked: true,
                 assumption: None,
@@ -891,64 +907,117 @@ pub(crate) struct AnswerParams {
 /// The person's answer: the first one wins, and reaches the asker as a
 /// message.
 pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Value, String> {
-    let question = {
-        let mut state = core.harness.questions.lock();
-        let index = state
-            .open
-            .iter()
-            .position(|question| question.id == params.id)
-            .ok_or("That question has been answered already")?;
-        let text = answer_text(&state.open[index], &params)?;
-        let question = state.open.remove(index);
-        core.harness.questions.changed(&mut state);
-        (question, text)
-    };
-    let (question, text) = question;
-    if let Some(host) = &question.from_host {
-        let params = serde_json::to_value(&params).map_err(|error| error.to_string())?;
-        super::hosts::route::relay_answer(core, host, params);
-        return Ok(json!({ "answered": true }));
-    }
-    let Some(mut text) = text else {
-        return Ok(json!({ "answered": true }));
-    };
-    if question.secret {
-        match core.harness.questions.keep_secret(&question, &text) {
-            Ok(path) => text = secret_note(&path),
-            Err(error) => {
-                let mut state = core.harness.questions.lock();
-                state.open.push(question);
-                core.harness.questions.changed(&mut state);
-                return Err(error);
-            }
-        }
-    }
-    let note = match &question.assumption {
-        Some(assumption) => format!(
-            "The person answered the question you went on without. If that is not what you assumed ({assumption}), change course."
-        ),
-        None => "The person answered the question you asked; go on with it.".to_owned(),
-    };
-    let answered = |question_text: &str| messages::Answered {
-        question: question_text.to_owned(),
-        asker: question.name.clone(),
-        cli: question.cli.clone(),
-        secret: question.secret,
-    };
-    if let Err(error) = messages::answer(
+    answer_all(
         core,
-        question.agent_id.clone(),
-        answered(&question.asked),
-        text.clone(),
-        note,
+        AnswersParams {
+            answers: vec![params],
+        },
     )
     .await
-    {
+}
+
+#[derive(Deserialize)]
+pub(crate) struct AnswersParams {
+    answers: Vec<AnswerParams>,
+}
+
+/// The person's answers to questions asked together. Each asker gets all of
+/// its answers in one message, so the first does not start a turn before the
+/// rest arrive.
+pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Result<Value, String> {
+    let taken = {
         let mut state = core.harness.questions.lock();
-        state.open.push(question);
+        let mut taken = Vec::with_capacity(params.answers.len());
+        for given in params.answers {
+            let question = state
+                .open
+                .iter()
+                .find(|question| question.id == given.id)
+                .ok_or("That question has been answered already")?;
+            let text = answer_text(question, &given)?;
+            taken.push((question.clone(), given, text));
+        }
+        state
+            .open
+            .retain(|question| !taken.iter().any(|(taken, ..)| taken.id == question.id));
         core.harness.questions.changed(&mut state);
-        return Err(error);
+        taken
+    };
+    let reopen = |questions: Vec<Question>| {
+        let mut state = core.harness.questions.lock();
+        state.open.extend(questions);
+        core.harness.questions.changed(&mut state);
+    };
+    let mut letters: Vec<(Question, String)> = Vec::new();
+    for (question, given, text) in taken {
+        if let Some(host) = &question.from_host {
+            let params = serde_json::to_value(&given).map_err(|error| error.to_string())?;
+            super::hosts::route::relay_answer(core, host, params);
+            continue;
+        }
+        let Some(mut text) = text else { continue };
+        if question.secret {
+            match core.harness.questions.keep_secret(&question, &text) {
+                Ok(path) => text = secret_note(&path),
+                Err(error) => {
+                    reopen(
+                        letters
+                            .into_iter()
+                            .map(|(question, _)| question)
+                            .chain([question])
+                            .collect(),
+                    );
+                    return Err(error);
+                }
+            }
+        }
+        letters.push((question, text));
     }
+    let mut askers: Vec<&str> = letters
+        .iter()
+        .map(|(question, _)| question.agent_id.as_str())
+        .collect();
+    askers.sort_unstable();
+    askers.dedup();
+    let mut failed = None;
+    for asker in askers {
+        let own: Vec<&(Question, String)> = letters
+            .iter()
+            .filter(|(question, _)| question.agent_id == asker)
+            .collect();
+        let sent = own
+            .iter()
+            .map(|(question, text)| {
+                let note = match &question.assumption {
+                    Some(assumption) => format!(
+                        "The person answered the question you went on without. If that is not what you assumed ({assumption}), change course."
+                    ),
+                    None => "The person answered the question you asked; go on with it.".to_owned(),
+                };
+                (answered(question, &question.asked), text.clone(), note)
+            })
+            .collect();
+        if let Err(error) = messages::answer(core, asker.to_owned(), sent).await {
+            reopen(
+                own.into_iter()
+                    .map(|(question, _)| question.clone())
+                    .collect(),
+            );
+            failed = Some(error);
+            continue;
+        }
+        for (question, text) in own {
+            copy_to_lead(core, question, text).await;
+        }
+    }
+    match failed {
+        Some(error) => Err(error),
+        None => Ok(json!({ "answered": true })),
+    }
+}
+
+/// The person's answer, copied to the lead a question went to first.
+async fn copy_to_lead(core: &Arc<Core>, question: &Question, text: &str) {
     if let (
         false,
         Stage::Person {
@@ -961,9 +1030,22 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
             "The person answered {}'s question, which went to you first. {} has the answer too.",
             question.name, question.name
         );
-        let _ = messages::answer(core, lead_id.clone(), answered(&question.text), text, note).await;
+        let _ = messages::answer(
+            core,
+            lead_id.clone(),
+            vec![(answered(question, &question.text), text.to_owned(), note)],
+        )
+        .await;
     }
-    Ok(json!({ "answered": true }))
+}
+
+fn answered(question: &Question, question_text: &str) -> messages::Answered {
+    messages::Answered {
+        question: question_text.to_owned(),
+        asker: question.name.clone(),
+        cli: question.cli.clone(),
+        secret: question.secret,
+    }
 }
 
 /// What the agent is told in place of the secret the person answered with.

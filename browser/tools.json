@@ -1583,6 +1583,11 @@
           "minLength": 1,
           "maxLength": 8192
         },
+        "header": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
         "choices": {
           "type": "array",
           "maxItems": 9,

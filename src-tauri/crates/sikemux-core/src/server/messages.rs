@@ -1193,9 +1193,7 @@ pub(crate) async fn question(
 pub(crate) async fn answer(
     core: &Arc<Core>,
     to: String,
-    answered: Answered,
-    text: String,
-    note: String,
+    answers: Vec<(Answered, String, String)>,
 ) -> Result<Value, String> {
     let target = {
         let core = core.clone();
@@ -1209,7 +1207,7 @@ pub(crate) async fn answer(
         .await
         .map_err(|error| error.to_string())?
     };
-    let letter = Letter {
+    let mut letters = answers.into_iter().map(|(answered, text, note)| Letter {
         kind: Kind::Answer,
         from_id: "person".to_owned(),
         from_name: "the person".to_owned(),
@@ -1218,8 +1216,25 @@ pub(crate) async fn answer(
         at: unix_ms(),
         note: Some(note),
         answers: Some(answered),
-    };
-    deliver(core, &target, letter).await
+    });
+    let letter = letters.next().ok_or("there is no answer to send")?;
+    let rest: Vec<Letter> = letters.collect();
+    if rest.is_empty() {
+        return deliver(core, &target, letter).await;
+    }
+    if target.reach == Reach::Remote {
+        let mut delivered = carry(core, &target, letter, None).await?;
+        for letter in rest {
+            delivered = carry(core, &target, letter, None).await?;
+        }
+        return Ok(delivered);
+    }
+    let text = std::iter::once(&letter)
+        .chain(&rest)
+        .map(wrapped)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    deliver_as(core, &target, letter, text).await
 }
 
 /// The agent `to`, unless it has stopped or is gone.
@@ -1395,11 +1410,23 @@ pub(crate) async fn report_as(
 }
 
 async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Value, String> {
+    let text = wrapped(&letter);
+    deliver_as(core, target, letter, text).await
+}
+
+/// Delivers `text` in place of `letter`'s own, such as several answers read
+/// as one message.
+async fn deliver_as(
+    core: &Arc<Core>,
+    target: &Listed,
+    letter: Letter,
+    text: String,
+) -> Result<Value, String> {
     if target.reach == Reach::Remote {
         return carry(core, target, letter, None).await;
     }
     let queued = Queued {
-        text: wrapped(&letter),
+        text,
         origin: Some(Origin {
             from: letter.from_id.clone(),
             kind: letter.kind,

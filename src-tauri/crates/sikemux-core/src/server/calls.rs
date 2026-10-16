@@ -24,7 +24,7 @@ pub(crate) fn needs(method: &str) -> Needs {
     match method {
         "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" | "inbox"
         | "digest" | "agentMessages" => Needs::Watch,
-        "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
+        "answerQuestion" | "answerQuestions" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" | "renameAgent" | "shares" | "agentAccounts" | "agentStatus"
         | "agentAccountStatus" | "agentUsage" | "cancelResume" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" | "linkHost" | "shareChat" | "stopShare"
@@ -101,6 +101,7 @@ pub(crate) async fn call(
         "changeDevice" => answer(remote::change_device(&core, parse(params)?)?),
         "questions" => answer(questions::views(&core)),
         "answerQuestion" => answer(questions::answer(&core, parse(params)?).await?),
+        "answerQuestions" => answer(questions::answer_all(&core, parse(params)?).await?),
         "agentMessages" => answer(agent_messages(&core, parse(params)?).await?),
         "boards" => answer(board::boards(&core)),
         "board" => answer(board::board(&core, params).await?),
