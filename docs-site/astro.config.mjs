@@ -15,6 +15,7 @@ export default defineConfig({
       sidebar: [
         { label: "Getting started", items: [{ autogenerate: { directory: "getting-started" } }] },
         { label: "Agents", items: [{ autogenerate: { directory: "agents" } }] },
+        { label: "Each agent", items: [{ autogenerate: { directory: "each-agent" } }] },
         { label: "Browser", items: [{ autogenerate: { directory: "browser" } }] },
         { label: "Reference", items: [{ autogenerate: { directory: "reference" } }] },
       ],
