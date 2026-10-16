@@ -187,7 +187,7 @@ export function ChatComposer({
     history,
     worktree,
     answering,
-    onDigit,
+    onQuestionKey,
 }: {
     agent: Agent;
     profile?: ProviderProfile;
@@ -216,8 +216,8 @@ export function ChatComposer({
     worktree?: { state: WorktreeSwitchState; toggle: () => void };
     /** The question an agent asked that whatever is sent answers. */
     answering?: ComposerAnswering | null;
-    /** A number key pressed in the empty box; true when it answered something. */
-    onDigit?: (digit: number) => boolean;
+    /** A key pressed in the empty box while the agent waits on questions; true when it did something with it. */
+    onQuestionKey?: (key: string, primary: boolean) => boolean;
 }) {
     const [draft, setDraft] = useState("");
     const [historyPosition, setHistoryPosition] = useState<HistoryPosition | null>(null);
@@ -559,7 +559,9 @@ export function ChatComposer({
                             }
                         }
                         const plainKey = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
-                        if (plainKey && onDigit && /^[1-9]$/.test(event.key) && !event.currentTarget.value && onDigit(Number(event.key))) {
+                        const primary = hasPrimaryModifier(event.nativeEvent);
+                        const questionKey = (plainKey || (primary && !event.shiftKey && !event.altKey)) && !drafted;
+                        if (questionKey && onQuestionKey?.(event.key, primary)) {
                             event.preventDefault();
                             return;
                         }

@@ -36,6 +36,7 @@ import { ResumeActions } from "./ResumeActions";
 import { ChatFailureActions, NetworkFailureActions, type SignInMethod } from "./ChatFailureActions";
 import LiveStack from "./LiveStack";
 import QuestionRows from "./QuestionRows";
+import { QuestionDock, questionTitle } from "./QuestionDock";
 
 /* Reading a whole transcript is one round trip to the parser, so this waits
    at most this long before showing it anyway. */
@@ -270,27 +271,18 @@ export function AgentChatPane({
     const questions = useChatQuestions(agent.id, state.messages, setComposerError);
     const focusComposer = () => paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
     const writeAnswer = (question: AgentQuestion) => {
-        if (question.secret) {
-            paneRef.current?.querySelector<HTMLInputElement>(".chat-ask-secret input")?.focus();
-            return;
-        }
         questions.write(question);
         window.requestAnimationFrame(focusComposer);
     };
-    const answerByKey = (question: AgentQuestion | null | undefined, digit: number, offersWriting: boolean): boolean => {
-        if (!question || questions.writing || questions.busy) return false;
-        if (digit <= question.choices.length) questions.choose(question, digit - 1);
-        else if (offersWriting && digit === question.choices.length + 1) writeAnswer(question);
-        else return false;
-        return true;
-    };
-    const answerFromComposer =
-        questions.composing && !questions.writing ? (digit: number) => answerByKey(questions.composing, digit, false) : undefined;
     const sendMessage = (message: OutgoingMessage, steerNow: boolean): boolean => {
         const question = questions.composing;
         if (!question) return worktree.sendMessage(message, steerNow);
         const text = answerText(message);
         if (!text) return false;
+        if (!questions.writing) {
+            questions.pick(question, { answer: { answer: text }, shown: text });
+            return true;
+        }
         void questions.answer(question, { answer: text }, text).then((answered) => {
             if (!answered) deliverToAgent(agent.id, message);
         });
@@ -355,11 +347,16 @@ export function AgentChatPane({
     const recoveryLabel = resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : null;
     const welcoming = displayState.messages.length === 0 && (displayState.connection === "ready" || (!agent.resumeId && !disconnected));
     const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
-    const composerPlaceholder = placeholderFor(state, {
-        resuming,
-        disconnected,
-        commands: state.connection !== "ready" || state.commands.length > 0,
-    });
+    const composerPlaceholder =
+        questions.composing && !questions.writing
+            ? `Or answer “${questionTitle(questions.composing, questions.open.indexOf(questions.composing), questions.open.length)}” in your own words`
+            : questions.writing && questions.composing
+              ? `Answer ${questions.composing.name}`
+              : placeholderFor(state, {
+                    resuming,
+                    disconnected,
+                    commands: state.connection !== "ready" || state.commands.length > 0,
+                });
     const sessionActions = <ResumeActions agent={agent} profile={profile} cwd={cwd} retry={failure ? "Retry" : "Reconnect"} onRetry={retry} />;
     const failureDetail = failure?.detail && <span className="chat-recovery-detail">{failure.detail}</span>;
 
@@ -449,14 +446,8 @@ export function AgentChatPane({
                                                 )}
                                             </div>
                                         )}
-                                        {(questions.open.length > 0 || questions.assumed.length > 0 || questions.answered.length > 0) && (
-                                            <QuestionRows
-                                                questions={questions}
-                                                active={active}
-                                                paneRef={paneRef}
-                                                onWrite={writeAnswer}
-                                                onDigit={(digit) => answerByKey(questions.open[0], digit, true)}
-                                            />
+                                        {(questions.assumed.length > 0 || questions.answered.length > 0) && (
+                                            <QuestionRows questions={questions} onWrite={writeAnswer} />
                                         )}
                                         {displayState.messages.length > 0 && (resuming || disconnected) && (
                                             <div className="chat-reconnect" role="status">
@@ -476,8 +467,9 @@ export function AgentChatPane({
                                         <IconArrowDown size={14} />
                                     </button>
                                 )}
-                                {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
+                                {(questions.open.length > 0 || subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
                                     <LiveStack
+                                        questions={<QuestionDock questions={questions} active={active} paneRef={paneRef} />}
                                         subagents={subagents}
                                         tasks={displayState.tasks}
                                         folds={liveFolds}
@@ -511,7 +503,7 @@ export function AgentChatPane({
                                     changingConfig={changingConfig}
                                     changingPermissions={changingPermissions}
                                     permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
-                                    placeholder={questions.composing ? `Answer ${questions.composing.name}` : composerPlaceholder}
+                                    placeholder={composerPlaceholder}
                                     error={composerError}
                                     onError={setComposerError}
                                     onSend={sendMessage}
@@ -525,14 +517,16 @@ export function AgentChatPane({
                                     history={sentHistory}
                                     worktree={worktree}
                                     answering={
-                                        questions.composing && {
-                                            name: questions.composing.name,
-                                            cli: questions.composing.cli,
-                                            question: questions.composing.text,
-                                            onRemove: questions.stopComposing,
-                                        }
+                                        questions.writing && questions.composing
+                                            ? {
+                                                  name: questions.composing.name,
+                                                  cli: questions.composing.cli,
+                                                  question: questions.composing.text,
+                                                  onRemove: questions.stopComposing,
+                                              }
+                                            : null
                                     }
-                                    onDigit={answerFromComposer}
+                                    onQuestionKey={questions.open.length > 0 ? questions.key : undefined}
                                 />
                             </div>
                             <div className="chat-drop-target" aria-hidden="true">

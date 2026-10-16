@@ -15,6 +15,8 @@ export interface AgentQuestion {
     readonly asked: string;
     /** What the person is asked, which a lead that passed it on may have reworded. */
     readonly text: string;
+    /** Two or three words naming the question, such as Photo access. */
+    readonly header?: string;
     readonly choices: QuestionChoice[];
     /** The asker waits for the answer; otherwise it goes on with `assumption`. */
     readonly blocked: boolean;

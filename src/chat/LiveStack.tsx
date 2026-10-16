@@ -236,8 +236,9 @@ function QueuedMessages({
     );
 }
 
-/** What is still going on under the transcript: running subagents, background tasks and messages waiting their turn. */
+/** What is still going on under the transcript: questions waiting on the person, running subagents, background tasks and messages waiting their turn. */
 export default function LiveStack({
+    questions,
     subagents,
     tasks,
     folds,
@@ -245,6 +246,7 @@ export default function LiveStack({
     onStop,
     queue,
 }: {
+    questions?: ReactNode;
     subagents: AcpSubagent[];
     tasks: AcpAsyncTask[];
     folds: GroupFolds;
@@ -255,6 +257,7 @@ export default function LiveStack({
 }) {
     return (
         <div className="chat-live-stack">
+            {questions}
             <RunningSubagents subagents={subagents} folds={folds} />
             <BackgroundTasks tasks={tasks} stopping={stopping} onStop={onStop} folds={folds} />
             {queue && <QueuedMessages {...queue} />}
