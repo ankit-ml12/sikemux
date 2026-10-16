@@ -131,6 +131,9 @@ jobs:
       - name: Check the generated agent catalog matches its source
         run: pnpm agent-catalog:check
 
+      - name: Check the docs reference pages match their source
+        run: pnpm docs:reference:check
+
       - name: Check the file icons match the installed icon theme
         run: pnpm file-icons:check
 
