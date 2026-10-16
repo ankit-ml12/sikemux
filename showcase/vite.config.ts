@@ -22,7 +22,7 @@ const LOCAL_ROOTS: Record<string, string> = {
 
 const PANE_IMAGE_FILE = join(
   homedir(),
-  "wallpaper/old/jinx-graffiti-5120x2880-19975.jpg",
+  "wallpaper/⚪️ The Midnight Garden ⚪️ #artoftheday #Photoshop #CreativeDesign #midjourneyart #DigitalArt #GenerativeAI #generativeart #Wallpaper #Wallpapers #promptart #art #artfulexpchc #midjourney #AIArtwork #midjourneyartwork #MidjourneyAI #midjou.jpg",
 );
 
 const WALLPAPER_FILE = join(

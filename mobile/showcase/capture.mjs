@@ -16,7 +16,7 @@ import { chromium } from '../../node_modules/playwright-core/index.mjs';
 const here = import.meta.dirname;
 const app = resolve(here, '../app');
 const CORE = 'showcase0000000000000000000000000000000000000000000000000000core';
-const PANE_SOURCE = join(homedir(), 'wallpaper/old/jinx-graffiti-5120x2880-19975.jpg');
+const PANE_SOURCE = join(homedir(), 'wallpaper/⚪️ The Midnight Garden ⚪️ #artoftheday #Photoshop #CreativeDesign #midjourneyart #DigitalArt #GenerativeAI #generativeart #Wallpaper #Wallpapers #promptart #art #artfulexpchc #midjourney #AIArtwork #midjourneyartwork #MidjourneyAI #midjou.jpg');
 const PANE = '/tmp/sikemux-phone-pane.jpg';
 
 const { values: options, positionals: only } = parseArgs({
