@@ -81,10 +81,7 @@
     font-weight: var(--weight-semibold);
     letter-spacing: 0.02em;
 }
-/* The list reads as messages and ages; who wrote a commit and its hash are in its detail, and the hash shows on the row in hand. */
-.git-history .gg-row > .gg-avatar {
-    display: none;
-}
+/* A commit's hash shows on the row in hand; at rest the list reads as who, what and when. */
 .git-history .gg-row:not(:hover, .sel) > .gg-hash {
     display: none;
 }
