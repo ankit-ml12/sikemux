@@ -37,9 +37,9 @@ function icon(_, name, size = '16') {
     .replace('<svg ', '<svg class="ico" aria-hidden="true" ');
 }
 
-function backdropScript() {
+function script(entry) {
   const bundled = buildSync({
-    entryPoints: [resolve(here, 'backdrop.js')],
+    entryPoints: [resolve(here, entry)],
     bundle: true,
     format: 'esm',
     write: false,
@@ -53,7 +53,7 @@ function build() {
   const page = source.replace(/\{\{(Icon\w+|Logo)(?::(\d+))?\}\}/g, icon);
   writeFileSync(
     resolve(here, 'screens.html'),
-    page.replace('{{BackdropScript}}', () => backdropScript()),
+    page.replace('{{BackdropScript}}', () => script('backdrop.js')).replace('{{BuddiesScript}}', () => script('buddies.js')),
   );
 }
 

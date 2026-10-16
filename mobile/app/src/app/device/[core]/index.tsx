@@ -18,6 +18,7 @@ import { summary } from '@/devices/status';
 import { chatDisplay, chatTitle, folder, inProject, itemIn } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
+import { AgentFace } from '@/ui/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
@@ -53,7 +54,7 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
         <View style={styles.faces}>
           {chats.slice(0, 3).map((chat, index) => (
             <View key={chat.agentId} style={[styles.face, index > 0 && { marginLeft: -4 }]}>
-              <AgentIcon provider={chat.provider} size={16} />
+              <AgentFace agentId={chat.agentId} provider={chat.provider} group={chat.group} size={16} />
             </View>
           ))}
         </View>
@@ -276,7 +277,7 @@ const ChatRow = memo(function ChatRow({
   const display = chatDisplay(chat);
   return (
     <Row
-      mark={<AgentIcon provider={chat.provider} size={20} />}
+      mark={<AgentFace agentId={chat.agentId} provider={chat.provider} group={display.group} size={20} />}
       name={chat.name}
       title={chatTitle(chat)}
       place={place}
@@ -306,7 +307,7 @@ const TerminalAgentRow = memo(function TerminalAgentRow({
   const group = session.group ?? (session.unread ? 'done' : 'idle');
   return (
     <Row
-      mark={<AgentIcon provider={session.agentType ?? 'agent'} size={20} />}
+      mark={<AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} group={group} size={20} />}
       name={session.agentName}
       title={terminalTitle(session)}
       place={place}

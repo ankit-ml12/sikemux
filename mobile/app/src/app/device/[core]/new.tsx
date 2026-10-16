@@ -17,6 +17,7 @@ import { problem as problemOf, useLive } from '@/devices/hub';
 import { chatTitle } from '@/devices/words';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
+import { AgentFace } from '@/ui/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Nav, Screen, useKeyboardShown } from '@/ui/screen';
 import { Working } from '@/ui/status';
@@ -179,7 +180,7 @@ export default function NewChat() {
       <Nav title={launcher ? <ChatTitle provider={launcher.provider} title={chatTitle({ provider: launcher.provider })} /> : undefined} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={styles.welcome}>
-          {launcher ? <AgentIcon provider={launcher.provider} size={40} /> : null}
+          {launcher ? <AgentFace agentId={project?.id} provider={launcher.provider} size={38} logoSize={40} /> : null}
           <Text style={styles.welcomeTitle}>{project?.name ?? 'New chat'}</Text>
           {workspace && !workspace.launchers.length ? (
             <Text style={[type.meta, { textAlign: 'center' }]}>Open Sikemux on the host so it can offer its agents.</Text>
