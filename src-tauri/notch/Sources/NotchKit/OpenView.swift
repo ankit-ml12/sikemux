@@ -163,7 +163,7 @@ struct EntryRow: View {
     }
 }
 
-/// Mark, task, then the agent's name, counts, project, time and state at the end: one line.
+/// Laid out as the app's agent rail row: mark, task with how long ago, project, then the name, counts and state together at the end.
 struct RowLine: View {
     let entry: Entry
     let marks: Namespace.ID
@@ -171,23 +171,29 @@ struct RowLine: View {
     var body: some View {
         HStack(spacing: 10) {
             AgentMark(provider: entry.provider, size: 20).matchedGeometryEffect(id: entry.id, in: marks)
-            Text(entry.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.ink)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let name = entry.item.name {
-                Text(name).font(Theme.ui(11)).foregroundStyle(Theme.inkFaint).lineLimit(1).fixedSize()
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(entry.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.ink).lineLimit(1)
+                if entry.mark == .working, let attempt = entry.reconnecting {
+                    Text(attempt > 0 ? "Reconnecting… \(attempt)" : "Reconnecting…")
+                        .font(Theme.ui(11.5))
+                        .foregroundStyle(Theme.inkFaint)
+                        .fixedSize()
+                } else if entry.since != nil {
+                    SinceText(mark: entry.mark, since: entry.since).fixedSize()
+                }
             }
-            if entry.subagents > 0 { SubagentCount(count: entry.subagents) }
-            if entry.tasks > 0 { ShellCount(count: entry.tasks) }
+            .frame(maxWidth: .infinity, alignment: .leading)
             ProjectLabel(project: entry.project).frame(maxWidth: 150, alignment: .trailing).fixedSize()
-            if entry.mark == .working, let attempt = entry.reconnecting {
-                Text(attempt > 0 ? "Reconnecting… \(attempt)" : "Reconnecting…")
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.inkFaint)
-            } else if entry.since != nil {
-                SinceText(mark: entry.mark, since: entry.since).frame(minWidth: 44, alignment: .trailing)
+            if entry.item.name != nil || entry.subagents > 0 || entry.tasks > 0 || entry.mark != .idle {
+                HStack(spacing: 8) {
+                    if let name = entry.item.name {
+                        Text(name).font(Theme.ui(11)).foregroundStyle(Theme.inkFaint).lineLimit(1).fixedSize()
+                    }
+                    if entry.subagents > 0 { SubagentCount(count: entry.subagents) }
+                    if entry.tasks > 0 { ShellCount(count: entry.tasks) }
+                    StateMark(mark: entry.mark)
+                }
             }
-            StateMark(mark: entry.mark)
         }
     }
 }

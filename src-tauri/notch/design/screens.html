@@ -157,21 +157,22 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .phone .ok { width: 5px; height: 5px; border-radius: 50%; background: var(--live); }
 
 .row { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 12px; }
-.row .title, .ask-head .title { flex: 1 1 auto; min-width: 0; }
+.head { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.head .title { flex: 0 1 auto; min-width: 0; }
+.end { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 .proj { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 150px; font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .proj svg { flex: 0 0 auto; color: var(--ink-faint); }
 .subagents { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
 .subagents svg { fill: currentColor; stroke: none; color: var(--live); }
 .shells { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
 .shells svg { width: 11px; height: 11px; color: var(--warn); }
-.time { min-width: 44px; text-align: right; }
 .row:hover { background: rgba(255, 255, 255, 0.07); }
 .mark { width: 20px; height: 20px; flex: 0 0 auto; }
 .mark svg { width: 20px; height: 20px; display: block; }
 .text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sub { font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.time, .word { font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time, .word { flex: none; font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .ask { padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); margin-bottom: 2px; }
 .ask .ask-head { display: flex; align-items: center; gap: 10px; }
@@ -566,6 +567,13 @@ function agentName(a) {
     return a.name ? `<span class="agent-name">${a.name}</span>` : "";
 }
 
+/** Laid out as the app's agent rail row: the task with how long ago, the project, then the name, counts and state together at the end. */
+function rowLine(a) {
+    const since = a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : a.time ? `<span class="time">${a.time}</span>` : "";
+    const end = `${agentName(a)}${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}${stateMark(a.state)}`;
+    return `<span class="head"><span class="title">${a.title}</span>${since}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>${end ? `<span class="end">${end}</span>` : ""}`;
+}
+
 /** What answers a question: up to two of its choices, then Answer in Sikemux, which opens the agent's chat. */
 function questionActions(a, size) {
     const choices = a.question.choices.length <= 2 ? a.question.choices : [];
@@ -824,8 +832,7 @@ class Island {
                         <div class="ask">
                             <div class="ask-head">
                                 <span class="mark">${ICON[a.type]}</span>
-                                <span class="title">${a.title}</span>${agentName(a)}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
-                                <span class="time">${a.time}</span>${stateMark("blocked")}
+                                ${rowLine({ ...a, state: "blocked" })}
                             </div>
                             ${a.question ? `<div class="question">${a.question.text}</div>${questionActions(a, " small")}` : `
                             <div class="cmd"><span class="sign">$</span>${a.ask.cmd}</div>
@@ -837,8 +844,7 @@ class Island {
                         </div>` : `
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
-                            <span class="title">${a.title}</span>${agentName(a)}${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
-                            ${a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : a.time ? `<span class="time">${a.time}</span>` : ""}${stateMark(a.state)}
+                            ${rowLine(a)}
                         </div>`}`).join("");
             }
         } else {
@@ -1114,7 +1120,7 @@ const SECTIONS = [
         lede: "Opened by resting the pointer for 0.3 s. The header sits in the menu-bar band, split around the camera: tabs on the left, Sikemux on the right.",
         states: [
             { id: "O1", name: "Agents", when: "Opened, on the Agents tab.",
-              shows: "Every open agent once, in the order the app's rail lists them, what wants you first, with no labels between them. Each row reads as the rail does: what the agent works on, then the name Sikemux gave it, small and dim beside the row's counts, project and state. Idle agents are listed too, with no mark at the end. A permission, or a question with up to two answers, can be answered in place. Clicking a row opens that agent in Sikemux.",
+              shows: "Every open agent once, in the order the app's rail lists them, what wants you first, with no labels between them. Each row reads as the rail does: what the agent works on with how long ago, its project, then the name Sikemux gave it with its counts and state together at the end. Idle agents are listed too, with no mark at the end. A permission, or a question with up to two answers, can be answered in place. Clicking a row opens that agent in Sikemux.",
               leaves: "The pointer leaves, and 0.1 s later it closes.", opts: { agents: () => freshAgents(), mode: "open" } },
             { id: "O2", name: "New agent", when: "Opened, on the New agent tab.",
               shows: "Sikemux's own composer: add files, the yolo toggle, the model picker (agent mark + model, in accent), effort, project and send.",
