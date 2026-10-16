@@ -192,7 +192,7 @@ pub fn cli(
 }
 
 /// The core's calls about accounts and their limits, all of them the app's own.
-pub const METHODS: [&str; 11] = [
+pub const METHODS: [&str; 12] = [
     "agentAccounts",
     "setAgentAccounts",
     "addAgentAccount",
@@ -204,4 +204,5 @@ pub const METHODS: [&str; 11] = [
     "cancelResume",
     "retryFailed",
     "discardFailed",
+    "authenticateChat",
 ];

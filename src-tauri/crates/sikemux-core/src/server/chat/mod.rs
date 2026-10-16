@@ -106,6 +106,11 @@ pub(crate) enum ChatCommand {
     },
     /// Sends the prompt the last failed turn stopped again, if one is kept.
     RetryFailed,
+    /// Asks the agent to sign in by itself, by one of the methods it offered.
+    Authenticate {
+        method_id: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     /// Lets go of the prompt the last failed turn stopped.
     DiscardFailed,
     /// Lets go of the agent, still running, for a core that replaces this one.
@@ -1669,6 +1674,20 @@ pub(crate) async fn set_permission_mode(
     tokio::time::timeout(REPLY_TIMEOUT, answer)
         .await
         .map_err(|_| CoreError::from("Permission update timed out"))?
+        .map_err(|_| CoreError::from(STOPPED))?
+        .map_err(CoreError::from)
+}
+
+/// Asks `agent_id`'s agent to sign in by `method_id`, one of the methods it
+/// offered that it handles itself.
+pub(crate) async fn authenticate(core: &Core, agent_id: &str, method_id: String) -> CoreResult<()> {
+    bounded_text("sign-in method", &method_id, 256)?;
+    let (reply, answer) = oneshot::channel();
+    core.chats
+        .running(agent_id)?
+        .send(ChatCommand::Authenticate { method_id, reply })?;
+    answer
+        .await
         .map_err(|_| CoreError::from(STOPPED))?
         .map_err(CoreError::from)
 }

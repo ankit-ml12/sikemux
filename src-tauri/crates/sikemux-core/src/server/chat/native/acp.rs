@@ -517,6 +517,17 @@ impl Backend for Acp {
 
     /// A background task outlives the turn that started it, so stopping one
     /// does not wait on the agent's answer.
+    async fn authenticate(&mut self, method_id: &str) -> Result<(), String> {
+        self.driver
+            .call(
+                AGENT_METHOD_NAMES.authenticate,
+                json!({ "methodId": method_id }),
+                None,
+            )
+            .await
+            .map(|_| ())
+    }
+
     async fn stop_task(&mut self, task_id: &str) -> Result<(), String> {
         let stop = air::StopAsyncTask {
             session_id: self.session_id.clone(),
