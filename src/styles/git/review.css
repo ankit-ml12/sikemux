@@ -76,8 +76,7 @@
 }
 .merge-review-item.focused > .merge-file-header {
     background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent)
-        linear-gradient(var(--surface-selected), var(--surface-selected));
-    box-shadow: inset 0 0 0 1px var(--border-selected);
+        linear-gradient(var(--surface-chosen), var(--surface-chosen));
 }
 .merge-file-dir {
     color: var(--text-tertiary);
@@ -164,8 +163,8 @@
     scrollbar-color: var(--ink-faint) transparent;
 }
 .diff-view.tinted {
-    --diff-add-row: color-mix(in lab, transparent 80%, var(--live));
-    --diff-del-row: color-mix(in lab, transparent 80%, var(--danger));
+    --diff-add-row: color-mix(in lab, transparent 92%, var(--live));
+    --diff-del-row: color-mix(in lab, transparent 92%, var(--danger));
 }
 .diff-view::-webkit-scrollbar {
     width: 12px;
@@ -231,29 +230,12 @@
     font: var(--text-2xs) / 19px var(--ui);
     user-select: none;
 }
-.diff-row[data-kind="added"] .diff-num::before,
-.diff-row[data-kind="deleted"] .diff-num::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 4px;
-    height: 100%;
-}
-.diff-row[data-kind="added"] .diff-num::before {
-    background: var(--live);
-}
-.diff-row[data-kind="deleted"] .diff-num::before {
-    background-image: linear-gradient(0deg, var(--diff-del-row) 50%, var(--danger) 50%);
-    background-size: 1.9px 1.9px;
-}
+/* A changed line is told by a faint tint and a coloured line number, never a bar down its edge. */
 .diff-view.tinted .diff-row[data-kind="added"] .diff-num {
     color: var(--live);
-    background: color-mix(in lab, transparent 85%, var(--live));
 }
 .diff-view.tinted .diff-row[data-kind="deleted"] .diff-num {
     color: var(--danger);
-    background: color-mix(in lab, transparent 85%, var(--danger));
 }
 .diff-view.tinted .diff-row[data-kind="added"] .diff-code {
     background: var(--diff-add-row);

@@ -30,12 +30,7 @@
     min-height: 0;
     overflow-y: auto;
 }
-.acc-item {
-    border-bottom: 1px solid var(--border);
-}
-.acc-item.open > .acc-header {
-    box-shadow: 0 1px 0 var(--border);
-}
+
 .acc-header {
     display: flex;
     align-items: center;
@@ -46,7 +41,8 @@
     top: 0;
     z-index: 2;
     /* A pinned header covers the code scrolling under it, so it keeps a near-solid ground even in a transparent window. */
-    background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent);
+    background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent)
+        linear-gradient(color-mix(in oklab, var(--ink) 4%, transparent), color-mix(in oklab, var(--ink) 4%, transparent));
     cursor: pointer;
     user-select: none;
 }
