@@ -21,7 +21,7 @@ struct OpenHeader: View {
                 select(.inbox)
             } label: {
                 HStack(spacing: 6) {
-                    Text("Inbox").foregroundStyle(island.tab == .inbox ? Theme.ink : Theme.inkDim)
+                    Text("Agents").foregroundStyle(island.tab == .inbox ? Theme.ink : Theme.inkDim)
                     Text("\(store.entries.count)").foregroundStyle(island.tab == .inbox ? Theme.inkDim : Theme.inkFaint).monospacedDigit()
                 }
                 .font(Theme.ui(12, .semibold))
@@ -84,7 +84,7 @@ struct OpenBody: View {
                 Text(error).font(Theme.ui(11.5)).foregroundStyle(Theme.danger).padding(.horizontal, 12).padding(.top, 4)
             }
             switch island.tab {
-            case .inbox: InboxList(store: store, island: island, marks: marks)
+            case .inbox: AgentList(store: store, island: island, marks: marks)
             case .compose: Composer(store: store, island: island)
             }
         }
@@ -92,8 +92,8 @@ struct OpenBody: View {
     }
 }
 
-/// The inbox in the core's order, under a label wherever the tier changes.
-struct InboxList: View {
+/// The open agents in the app rail's order, in one list.
+struct AgentList: View {
     let store: NotchStore
     let island: IslandModel
     let marks: Namespace.ID
@@ -101,7 +101,7 @@ struct InboxList: View {
     var body: some View {
         if store.entries.isEmpty {
             VStack(spacing: 14) {
-                Text("Nothing waiting on you").font(Theme.ui(13)).foregroundStyle(Theme.inkDim)
+                Text("No agents open").font(Theme.ui(13)).foregroundStyle(Theme.inkDim)
                 Button {
                     island.tab = .compose
                     island.keyboard?(.take)
@@ -123,15 +123,7 @@ struct InboxList: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(store.entries.enumerated()), id: \.element.id) { index, entry in
-                        if index == 0 || store.entries[index - 1].item.tier != entry.item.tier {
-                            Text(Self.label(entry.item.tier))
-                                .font(Theme.ui(11, .semibold))
-                                .foregroundStyle(Theme.inkFaint)
-                                .padding(.horizontal, 12)
-                                .padding(.top, 10)
-                                .padding(.bottom, 4)
-                        }
+                    ForEach(store.entries) { entry in
                         if entry.mark == .needs {
                             AskCard(store: store, island: island, entry: entry, marks: marks)
                         } else {
@@ -146,15 +138,6 @@ struct InboxList: View {
             }
             .frame(maxHeight: 330)
             .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private static func label(_ tier: InboxItem.Tier) -> String {
-        switch tier {
-        case .needs: "Needs you"
-        case .review: "To review"
-        case .finished: "Finished"
-        case .progress: "Working"
         }
     }
 }
@@ -206,17 +189,17 @@ struct RowLine: View {
     }
 }
 
-/// The agent's name, then its task in the dimmer ink, as the app's rail reads.
+/// What the agent works on, then its name, small and dim at the end, as the app's rail reads.
 struct NamedTitle: View {
     let entry: Entry
 
     var body: some View {
-        if let name = entry.item.name {
-            Text(name).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
-                + Text(" · ").font(Theme.ui(13)).foregroundStyle(Theme.inkFaint)
-                + Text(entry.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.inkDim)
-        } else {
-            Text(entry.title).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(entry.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.ink).lineLimit(1)
+            if let name = entry.item.name {
+                Spacer(minLength: 0)
+                Text(name).font(Theme.ui(11)).foregroundStyle(Theme.inkFaint).layoutPriority(1)
+            }
         }
     }
 }

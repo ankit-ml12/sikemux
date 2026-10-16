@@ -12,6 +12,7 @@ struct StateMark: View {
         case .needs: PingDot(colour: Theme.warn)
         case .done: Dot(colour: Theme.accent)
         case .failed: Dot(colour: Theme.danger)
+        case .idle: EmptyView()
         }
     }
 }

@@ -3,10 +3,11 @@ import Foundation
 struct DeviceView: Decodable, Equatable {
     let workspace: Workspace
     let chats: [ChatInfo]
+    let sessions: [SessionInfo]
     let attentions: [Attention]
     let inbox: Inbox
 
-    static let empty = DeviceView(workspace: Workspace(projects: [], launchers: []), chats: [], attentions: [], inbox: Inbox(items: [], working: 0))
+    static let empty = DeviceView(workspace: Workspace(projects: [], launchers: []), chats: [], sessions: [], attentions: [], inbox: Inbox(items: [], working: 0))
 }
 
 struct Workspace: Decodable, Equatable {
@@ -29,13 +30,31 @@ struct Launcher: Decodable, Equatable {
     let effort: ConfigSelect?
 }
 
-/// What a chat still has going, which the inbox does not say.
+/// An open chat, and what it still has going, which the inbox does not say.
 struct ChatInfo: Decodable, Equatable {
     let agentId: String
+    let name: String?
+    let provider: String
+    let title: String?
+    let cwd: String
+    /// Its place among the open agents, in the order the app's rail lists them: 0 first.
+    let attentionRank: Int?
     let subagents: Int
     let tasks: Int
     /// The attempt the agent is retrying a failed request on, 0 when it did not say.
     let reconnecting: Int?
+}
+
+/// A terminal, which is an open agent when it carries one.
+struct SessionInfo: Decodable, Equatable {
+    let id: UInt64
+    let running: Bool
+    let project: String?
+    let agentId: String?
+    let agentName: String?
+    let agentType: String?
+    let title: String?
+    let attentionRank: Int?
 }
 
 struct Attention: Decodable, Equatable {
@@ -82,6 +101,8 @@ struct Inbox: Decodable, Equatable {
 struct InboxItem: Decodable, Equatable, Identifiable {
     enum Tier: String, Decodable {
         case needs, review, finished, progress
+        /// An open agent the inbox has nothing on; the island lists it all the same.
+        case idle
     }
 
     enum Kind: String, Decodable {
@@ -121,7 +142,7 @@ struct InboxItem: Decodable, Equatable, Identifiable {
 
 /// The marks beside a row and in the closed island's right wing.
 enum Mark: Hashable {
-    case needs, working, done, failed
+    case needs, working, done, failed, idle
 }
 
 /// One group on the closed island's right wing.
@@ -194,6 +215,7 @@ struct Entry: Identifiable, Equatable {
         case .needs: .needs
         case .progress: .working
         case .review, .finished: item.kind == .failed ? .failed : .done
+        case .idle: .idle
         }
     }
 
@@ -216,10 +238,22 @@ extension DeviceView {
         return URL(fileURLWithPath: value).lastPathComponent
     }
 
-    /// The inbox's items, with the question each asks from `questions`.
+    /// Every open agent once, in the app rail's order, each with what the inbox says about it and the question it asks
+    /// from `questions`. Agents on other hosts the inbox lists follow; items that are not about an agent are left out.
     func entries(_ questions: [AgentQuestion]) -> [Entry] {
-        inbox.items.map { item in
-            let chat = chats.first { $0.agentId == item.agentId }
+        let open = chats.map { (agentId: $0.agentId, rank: $0.attentionRank) }
+            + sessions.compactMap { session in
+                session.running ? session.agentId.map { (agentId: $0, rank: session.attentionRank) } : nil
+            }
+        let ranked = open.enumerated()
+            .sorted { ($0.element.rank ?? Int.max, $0.offset) < ($1.element.rank ?? Int.max, $1.offset) }
+            .map(\.element.agentId)
+        let listed = Set(ranked)
+        var seen = Set<String>()
+        let others = inbox.items.compactMap(\.agentId).filter { !listed.contains($0) && seen.insert($0).inserted }
+        return (ranked + others).compactMap { agentId in
+            guard let item = inbox.items.first(where: { $0.agentId == agentId }) ?? idleItem(agentId) else { return nil }
+            let chat = chats.first { $0.agentId == agentId }
             return Entry(
                 item: item,
                 project: projectName(item.project),
@@ -230,6 +264,22 @@ extension DeviceView {
                 reconnecting: chat?.reconnecting
             )
         }
+    }
+
+    private func idleItem(_ agentId: String) -> InboxItem? {
+        if let chat = chats.first(where: { $0.agentId == agentId }) {
+            return InboxItem(
+                id: "agent:\(agentId)", tier: .idle, kind: .other, agentId: agentId, name: chat.name, cli: chat.provider,
+                project: chat.cwd, title: chat.title ?? "New \(agentName(chat.provider)) chat", what: "", detail: nil, at: 0,
+                session: nil, card: nil, requestId: nil, questionId: nil, url: nil
+            )
+        }
+        guard let session = sessions.first(where: { $0.agentId == agentId }) else { return nil }
+        return InboxItem(
+            id: "agent:\(agentId)", tier: .idle, kind: .other, agentId: agentId, name: session.agentName,
+            cli: session.agentType, project: session.project, title: session.title, what: "", detail: nil, at: 0,
+            session: session.id, card: nil, requestId: nil, questionId: nil, url: nil
+        )
     }
 }
 

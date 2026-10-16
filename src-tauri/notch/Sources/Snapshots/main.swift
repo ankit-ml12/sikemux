@@ -38,14 +38,17 @@ let fixture = #"""
     "backdrop": {"texture": false, "image": null}
   },
   "chats": [
-    {"agentId": "a1", "subagents": 0, "tasks": 0},
-    {"agentId": "a2", "subagents": 3, "tasks": 0},
-    {"agentId": "a3", "subagents": 0, "tasks": 0, "reconnecting": 3},
-    {"agentId": "a4", "subagents": 0, "tasks": 0},
-    {"agentId": "a5", "subagents": 0, "tasks": 2},
-    {"agentId": "a9", "subagents": 0, "tasks": 0},
-    {"agentId": "a10", "subagents": 0, "tasks": 0},
-    {"agentId": "a11", "subagents": 0, "tasks": 0}
+    {"agentId": "a1", "name": "Otter", "provider": "claude", "cwd": "/Users/me/sikemux", "attentionRank": 0, "subagents": 0, "tasks": 0},
+    {"agentId": "a2", "name": "Flint", "provider": "codex", "cwd": "/Users/me/server", "attentionRank": 5, "subagents": 3, "tasks": 0},
+    {"agentId": "a3", "name": "Wren", "provider": "opencode", "cwd": "/Users/me/sikemux", "attentionRank": 6, "subagents": 0, "tasks": 0, "reconnecting": 3},
+    {"agentId": "a4", "name": "Birch", "provider": "grok", "cwd": "/Users/me/sikemux-front", "attentionRank": 2, "subagents": 0, "tasks": 0},
+    {"agentId": "a5", "name": "Heron", "provider": "claude", "title": "Profile the terminal flood", "cwd": "/Users/me/sikemux", "attentionRank": 7, "subagents": 0, "tasks": 2},
+    {"agentId": "a9", "name": "Maple", "provider": "codex", "cwd": "/Users/me/server", "attentionRank": 1, "subagents": 0, "tasks": 0},
+    {"agentId": "a10", "name": "Pine", "provider": "claude", "cwd": "/Users/me/server", "attentionRank": 3, "subagents": 0, "tasks": 0},
+    {"agentId": "a11", "name": "Moss", "provider": "claude", "cwd": "/Users/me/sikemux", "attentionRank": 4, "subagents": 0, "tasks": 0}
+  ],
+  "sessions": [
+    {"id": 7, "running": true, "project": "p-front", "agentId": "t1", "agentName": "Cedar", "agentType": "claude", "title": "Tighten the rail spacing", "attentionRank": 8}
   ],
   "attentions": [
     {"id": "p1", "agentId": "a1",
@@ -94,6 +97,7 @@ func view(keeping ids: Set<String>?) -> DeviceView {
     return DeviceView(
         workspace: full.workspace,
         chats: full.chats.filter { ids.contains($0.agentId) },
+        sessions: full.sessions.filter { $0.agentId.map(ids.contains) ?? false },
         attentions: full.attentions.filter { ids.contains($0.agentId) },
         inbox: Inbox(items: items, working: items.filter { $0.kind == .working }.count)
     )

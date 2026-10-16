@@ -155,8 +155,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .phone { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-dim); padding: 0 6px; }
 .phone .ok { width: 5px; height: 5px; border-radius: 50%; background: var(--live); }
 
-.group-label { font-size: 11px; font-weight: 600; color: var(--ink-faint); padding: 12px 12px 4px; }
-.group-label:first-child { padding-top: 6px; }
 .row { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 12px; }
 .row .title, .ask-head .title { flex: 1 1 auto; min-width: 0; }
 .proj { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 150px; font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -209,7 +207,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .sub svg { flex: 0 0 auto; margin-right: 4px; color: var(--ink-faint); }
 .sub { display: flex; align-items: center; }
 .dotsep { margin: 0 5px; color: var(--ink-faint); }
-.title .after-name { font-weight: 500; color: var(--ink-dim); }
+.title:has(> .agent-name) { display: flex; align-items: baseline; }
+.title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.agent-name { flex: none; margin-left: auto; padding-left: 8px; font-size: 11px; font-weight: 400; color: var(--ink-faint); }
 .yolo-ring {
     position: absolute; inset: 0; border-radius: inherit; padding: 1px; overflow: hidden; pointer-events: none;
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -428,8 +428,9 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             Centre on the gap between the two areas, not on the screen. No notch: height = menu bar (<code>frame.maxY − visibleFrame.maxY</code>).</td></tr>
         <tr><td>Shape</td><td>Top corners curve outward into the menu bar, bottom corners inward. Radii (top / bottom): closed 6 / 14, peek 14 / 22, open 19 / 24.
             Both radii animate with the size.</td></tr>
-        <tr><td>Inbox</td><td>Everything listed comes from the device view's <code>inbox</code>, already ranked by the core, the same list the rail and phones show:
-            <code>items</code> in order and the <code>working</code> count. The island never sorts. It adds only what the inbox leaves out: a permission's
+        <tr><td>Agents</td><td>The list is every open agent in the device view's <code>chats</code> and agent <code>sessions</code>, in their <code>attentionRank</code>,
+            the order the rail and phones show; agents on other hosts the <code>inbox</code> lists follow. The island never ranks them itself. Each takes its state and words
+            from its first <code>inbox</code> item, and the <code>working</code> count still drives the closed wing. It adds what the inbox leaves out: a permission's
             three option ids from <code>attentions</code>, a question's answers and the lead it went to first from the core's <code>questions</code> call,
             and each chat's subagents and shells from <code>chats</code>.</td></tr>
         <tr><td>Closed wings</td><td>Each wing is as wide as what it holds. The left holds the marks of the first three items in the inbox, then +N.
@@ -533,8 +534,7 @@ const DISPLAYS = {
 const RADII = { closed: [6, 14], peek: [14, 22], open: [19, 24] };
 const SPRING = { open: [0.42, 0.8], close: [0.45, 1.0], hover: [0.38, 0.8] };
 
-/** The core's inbox, in its order: what needs you, then changes to review, then finished turns, then work under way.
- *  A chat that only left shells running is not listed; it shows only in the closed island's count. */
+/** Every open agent, in the order the app's rail lists them: what wants you first. An idle one has no tier. */
 function freshAgents() {
     return [
         { id: "a1", name: "Otter", type: "claude", title: "Fix the login flake", project: "sikemux", tier: "needs", state: "blocked", time: "2:14",
@@ -551,10 +551,8 @@ function freshAgents() {
     ];
 }
 
-const TIER_LABEL = { needs: "Needs you", review: "To review", finished: "Finished", progress: "Working" };
-const TIERS = Object.keys(TIER_LABEL);
-/** What the inbox lists, ranked by tier as the core does it. */
-const listed = (agents) => agents.filter((a) => a.tier).sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier));
+/** The open agents, already in the rail's order. */
+const listed = (agents) => agents;
 
 /** The core turns a device away when nobody answers it within two minutes. */
 const ANSWER_WINDOW = 120;
@@ -564,9 +562,9 @@ function timeLeft(device) {
     return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 }
 
-/** An agent's name, then its task in the dimmer ink, as the app's rail reads. */
+/** What the agent works on, then its name, small and dim at the end, as the app's rail reads. */
 function named(a) {
-    return `${a.name}<span class="dotsep">·</span><span class="after-name">${a.title}</span>`;
+    return `<span class="title-text">${a.title}</span><span class="agent-name">${a.name}</span>`;
 }
 
 /** What answers a question: up to two of its choices, then Answer in Sikemux, which opens the agent's chat. */
@@ -798,7 +796,7 @@ class Island {
         this.layers.open.style.width = `${inner}px`;
         const count = listed(this.agents).length;
         const tabs = `
-            <button class="chip" data-tab="agents" aria-selected="${this.tab === "agents"}">Inbox <span class="n">${count}</span></button>
+            <button class="chip" data-tab="agents" aria-selected="${this.tab === "agents"}">Agents <span class="n">${count}</span></button>
             <button class="chip" data-tab="new" aria-selected="${this.tab === "new"}">${GLYPH.plus.replace("<svg", '<svg width="12" height="12"')} New agent</button>`;
         const tools = `
             ${this.channel === "dev" ? '<span class="devtag">dev</span>' : ""}
@@ -814,12 +812,11 @@ class Island {
                 </div>`;
         } else if (this.tab === "agents") {
             if (!listed(this.agents).length) {
-                body = `<div style="padding:18px 8px 14px;text-align:center;font-size:13px;color:var(--ink-dim)">Nothing waiting on you
+                body = `<div style="padding:18px 8px 14px;text-align:center;font-size:13px;color:var(--ink-dim)">No agents open
                     <div style="margin-top:14px"><button class="btn primary" data-tab="new">${GLYPH.plus.replace("<svg", '<svg width="12" height="12"')} New agent</button></div></div>`;
             } else {
                 const items = listed(this.agents);
                 body = items.map((a, i) => `
-                    ${i === 0 || items[i - 1].tier !== a.tier ? `<div class="group-label">${TIER_LABEL[a.tier]}</div>` : ""}
                     ${a.tier === "needs" ? `
                         <div class="ask">
                             <div class="ask-head">
@@ -838,7 +835,7 @@ class Island {
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
                             <span class="title">${named(a)}</span>${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
-                            ${a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : `<span class="time">${a.time}</span>`}${stateMark(a.state)}
+                            ${a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : `<span class="time">${a.time ?? ""}</span>`}${stateMark(a.state)}
                         </div>`}`).join("");
             }
         } else {
@@ -1113,8 +1110,8 @@ const SECTIONS = [
         id: "open", letter: "O", title: "Open",
         lede: "Opened by resting the pointer for 0.3 s. The header sits in the menu-bar band, split around the camera: tabs on the left, Sikemux on the right.",
         states: [
-            { id: "O1", name: "Inbox", when: "Opened, on the Inbox tab.",
-              shows: "The inbox in the core's order, labelled Needs you, To review, Finished and Working where the tier changes, each row reading as the app's rail does: the name Sikemux gave the agent, a faint dot, then its task in the dimmer ink. A permission, or a question with up to two answers, can be answered in place. Clicking a row opens that agent in Sikemux, or a card's pull request.",
+            { id: "O1", name: "Agents", when: "Opened, on the Agents tab.",
+              shows: "Every open agent once, in the order the app's rail lists them, what wants you first, with no labels between them. Each row reads as the rail does: what the agent works on, then the name Sikemux gave it, small and dim at the row's end. Idle agents are listed too, with no mark at the end. A permission, or a question with up to two answers, can be answered in place. Clicking a row opens that agent in Sikemux.",
               leaves: "The pointer leaves, and 0.1 s later it closes.", opts: { agents: () => freshAgents(), mode: "open" } },
             { id: "O2", name: "New agent", when: "Opened, on the New agent tab.",
               shows: "Sikemux's own composer: add files, the yolo toggle, the model picker (agent mark + model, in accent), effort, project and send.",
@@ -1124,9 +1121,9 @@ const SECTIONS = [
               shows: "The composer's picker, opening downward so the island grows to hold it: search, the agents as chips, then that agent's models with a check on the current one.",
               leaves: "Picking a model or pressing Esc closes it. Picking another agent swaps the list.",
               opts: { agents: () => freshAgents(), mode: "open", tab: "new", menu: "model", draft: "Turn the notch mockup into a SwiftUI spec" } },
-            { id: "O4", name: "Empty", when: "Opened with nothing in the inbox.", shows: "Nothing waiting on you, and one New agent button.", opts: { agents: [], mode: "open" } },
+            { id: "O4", name: "Empty", when: "Opened with no agent open.", shows: "No agents open, and one New agent button.", opts: { agents: [], mode: "open" } },
             { id: "O5", name: "Finished work", when: "Opened while turns wait to be seen.",
-              shows: "Changes to review, then finished turns, newest first, each with how long ago; one that ran into a problem has a red dot. Every row counts what its agent still has going: ✦ subagents in green, >_ shells and monitors in amber. Agents that are idle, asleep or stopped are not listed: the rail has them.",
+              shows: "Changes to review, then finished turns, newest first, each with how long ago; one that ran into a problem has a red dot. Every row counts what its agent still has going: ✦ subagents in green, >_ shells and monitors in amber.",
               opts: { agents: () => only(["a2", "a4", "a10", "a11"]), mode: "open" } },
         ],
     },
