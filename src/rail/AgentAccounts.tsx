@@ -173,7 +173,6 @@ function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {
             </div>
         );
     }
-    const resets = [...new Set(windows.map((window) => resetCountdown(window.resetsAt, now).replace(/^reset /, "")))];
     return (
         <>
             {windows.map((window, index) => {
@@ -198,11 +197,11 @@ function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {
                             <span className="agent-usage-pct">
                                 <CountUp value={rounded} />%
                             </span>
+                            <span className="agent-usage-reset">{resetCountdown(window.resetsAt, now).replace(/^reset /, "")}</span>
                         </div>
                     </Tooltip>
                 );
             })}
-            <div className="agent-usage-resets">resets in {resets.join(" · ")}</div>
         </>
     );
 }

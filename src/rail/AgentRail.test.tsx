@@ -194,7 +194,7 @@ describe("agent rail", () => {
 
         expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
-        expect(screen.getByText("resets in 1h 30m")).toBeInTheDocument();
+        expect(screen.getByText("1h 30m")).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Agent provider" }));
         await user.click(screen.getByRole("option", { name: /^Claude/ }));

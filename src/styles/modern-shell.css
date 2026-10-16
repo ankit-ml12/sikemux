@@ -656,10 +656,6 @@ textarea:focus,
     padding-inline: var(--space-2);
 }
 
-.agent-usage-resets {
-    padding-inline: var(--space-2);
-}
-
 .agent-usage-head {
     margin-bottom: 9px;
 }

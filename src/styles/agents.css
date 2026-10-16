@@ -506,12 +506,12 @@
     color: var(--text-tertiary);
     background: transparent;
 }
-/* One line a limit: its name, a grey ruler, how much is used. The ruler only
+/* One line a limit: its name, a grey ruler, how much is used, when it resets. The ruler only
    takes a colour once a limit is close to running out. */
 .agent-usage-row {
     --usage-signal: color-mix(in oklab, var(--ink) 62%, transparent);
     display: grid;
-    grid-template-columns: 62px minmax(0, 1fr) 34px;
+    grid-template-columns: 58px minmax(0, 1fr) 28px 42px;
     align-items: center;
     gap: 10px;
     height: 18px;
@@ -559,11 +559,13 @@
     background-image: repeating-linear-gradient(90deg, var(--usage-signal) 0 var(--usage-cell), transparent var(--usage-cell) var(--usage-pitch));
     transition: width 0.32s cubic-bezier(0.2, 0.75, 0.2, 1);
 }
-.agent-usage-resets {
-    margin-top: 8px;
+.agent-usage-reset {
+    overflow: hidden;
     color: var(--text-tertiary);
     font-size: var(--text-3xs);
     font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
 }
 .agent-usage-empty {
     color: var(--text-tertiary);
