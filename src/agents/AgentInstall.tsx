@@ -5,6 +5,7 @@ import { getIpcTransport } from "../api/transport";
 import { fetchResource, invalidate } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { getState } from "../state/store";
+import { swallow } from "../state/toast";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { selectedAgentRuntimeProfiles } from "./agentProfiles";
 import { agentStatusLabel } from "./agentStatus";
@@ -12,7 +13,23 @@ import { agentLabel, installCommand, loginArgs, type AgentType } from "./catalog
 import { expandHome } from "../lib/paths";
 import type { PtyDirectCommand } from "../state/types";
 
-type Job = { kind: "install"; type: AgentType } | { kind: "signIn"; type: AgentType; program: string; configPath: string | null };
+/** A sign-in the agent offered itself, in place of the catalog's. */
+interface OfferedSignIn {
+    args: readonly string[];
+    env: readonly (readonly [string, string])[];
+}
+
+type Job =
+    | { kind: "install"; type: AgentType }
+    | {
+          kind: "signIn";
+          type: AgentType;
+          program: string;
+          configPath: string | null;
+          method?: OfferedSignIn;
+          /** The chat whose refused prompt goes again once the sign-in works. */
+          retry?: string;
+      };
 
 const useJob = create<{ job: Job | null; run: number }>(() => ({ job: null, run: 0 }));
 
@@ -26,8 +43,9 @@ export function installAgent(type: AgentType): void {
 }
 
 /** Opens the sheet that runs the agent's own sign-in, on the account its profile names. */
-export function signInAgent(agent: Pick<AgentInfo, "type" | "command" | "configPath">): void {
-    if (loginArgs(agent.type)) open({ kind: "signIn", type: agent.type, program: agent.command, configPath: agent.configPath ?? null });
+export function signInAgent(agent: Pick<AgentInfo, "type" | "command" | "configPath">, from?: { method?: OfferedSignIn; retry?: string }): void {
+    if (!from?.method && !loginArgs(agent.type)) return;
+    open({ kind: "signIn", type: agent.type, program: agent.command, configPath: agent.configPath ?? null, ...from });
 }
 
 function closeSheet(): void {
@@ -50,11 +68,13 @@ export function sheetCommand(job: Job, home: string): { direct: PtyDirectCommand
         const command = installCommand(job.type)!;
         return { direct: { program: "/bin/bash", args: ["-c", command] }, shown: command };
     }
-    const args = [...loginArgs(job.type)!];
+    const args = [...(job.method?.args ?? loginArgs(job.type)!)];
     const shown = [job.type, ...args].join(" ");
     const variable = ACCOUNT_VARIABLE[job.type];
-    if (!variable || !job.configPath) return { direct: { program: job.program, args }, shown };
-    return { direct: { program: "/usr/bin/env", args: [`${variable}=${accountDir(job.configPath, home)}`, job.program, ...args] }, shown };
+    const env = (job.method?.env ?? []).map(([name, value]) => `${name}=${value}`);
+    if (variable && job.configPath) env.push(`${variable}=${accountDir(job.configPath, home)}`);
+    if (env.length === 0) return { direct: { program: job.program, args }, shown };
+    return { direct: { program: "/usr/bin/env", args: [...env, job.program, ...args] }, shown };
 }
 
 interface PtyExited {
@@ -106,10 +126,11 @@ function AgentSheet({ job }: { job: Job }) {
             return;
         }
         setPhase({ kind: "checking" });
+        if (job.kind === "signIn" && job.retry) void agentApi.retryFailed(job.retry).catch(swallow("send the prompt again"));
         void checkAgentsAgain(type)
             .then((agent) => setPhase({ kind: "done", agent }))
             .catch(() => setPhase({ kind: "done", agent: undefined }));
-    }, [exit, ptyId, phase.kind, type]);
+    }, [exit, ptyId, phase.kind, type, job]);
 
     const again = () => {
         setExit(null);

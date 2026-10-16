@@ -6,6 +6,7 @@ import type { PtyDirectCommand } from "../state/types/domain";
 const mocks = vi.hoisted(() => ({
     exited: null as null | ((event: { payload: { id: number; code: number | null } }) => void),
     refreshStatuses: vi.fn(async () => {}),
+    retryFailed: vi.fn(async () => {}),
     fetchResource: vi.fn(),
     invalidate: vi.fn(),
 }));
@@ -24,7 +25,7 @@ vi.mock("../api/transport", () => ({
         },
     }),
 }));
-vi.mock("../api/agents", () => ({ agentApi: { refreshStatuses: mocks.refreshStatuses } }));
+vi.mock("../api/agents", () => ({ agentApi: { refreshStatuses: mocks.refreshStatuses, retryFailed: mocks.retryFailed } }));
 vi.mock("../state/resources", () => ({ fetchResource: mocks.fetchResource, invalidate: mocks.invalidate }));
 vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
 
@@ -114,6 +115,26 @@ describe("installing an agent", () => {
         expect(await screen.findByRole("status")).toHaveTextContent("Claude is signed in: Ready · subscription.");
         expect(mocks.refreshStatuses).toHaveBeenCalledOnce();
         fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    });
+
+    it("runs a sign-in the agent offered, and sends the refused prompt again once it works", async () => {
+        expect(
+            sheetCommand(
+                { kind: "signIn", type: "grok", program: "/g/grok", configPath: null, method: { args: ["login", "--web"], env: [["GROK_X", "1"]] } },
+                "/Users/me",
+            ),
+        ).toEqual({ direct: { program: "/usr/bin/env", args: ["GROK_X=1", "/g/grok", "login", "--web"] }, shown: "grok login --web" });
+
+        render(<AgentInstallHost />);
+        act(() => signInAgent({ type: "grok", command: "/g/grok", configPath: null }, { method: { args: ["login"], env: [] }, retry: "grok-1" }));
+        await screen.findByTestId("terminal");
+        exit(7, 1);
+        expect(mocks.retryFailed).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+        await screen.findByTestId("terminal");
+        exit(7, 0);
+        await waitFor(() => expect(mocks.retryFailed).toHaveBeenCalledWith("grok-1"));
+        fireEvent.click(await screen.findByRole("button", { name: "Close" }));
     });
 
     it("says so when the agent still reads as signed out", async () => {
