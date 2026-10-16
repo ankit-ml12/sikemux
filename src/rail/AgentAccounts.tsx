@@ -8,7 +8,7 @@ import { fetchResource, invalidate, peekResource, type ResourceHandle, useResour
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { ProviderProfile } from "../state/types";
-import { IconChevron, IconPlus, IconPower, IconRefresh, IconTrash } from "../ui/Icons";
+import { IconChevron, IconPlus, IconPower, IconRefresh, IconTrash, IconUser } from "../ui/Icons";
 import { reportError } from "../state/toast";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
@@ -148,23 +148,21 @@ function accountMenu(
                 </span>
             ),
             run: selected ? undefined : () => cmd.selectProviderProfile(provider, account.id),
+            actions: [
+                signedOut
+                    ? { label: `Sign in to ${name}`, icon: <IconUser size={13} />, run: () => openAccountDialog({ provider, profileId: account.id }) }
+                    : {
+                          label: `Sign out of ${name}`,
+                          icon: <IconPower size={13} />,
+                          run: () => void signOut(account).catch(reportError("Sign out")),
+                      },
+                ...(account.id.startsWith("builtin-")
+                    ? []
+                    : [{ label: `Remove ${name}`, icon: <IconTrash size={13} />, danger: true, run: () => cmd.deleteProviderProfile(account.id) }]),
+            ],
         };
     });
     items.push({ sep: true }, { label: "Add account…", icon: <IconPlus size={13} />, run: () => openAccountDialog({ provider }) });
-    const currentStatus = peekResource(agentAccountR, provider, current.configPath);
-    if (currentStatus?.signedIn)
-        items.push({
-            label: `Sign out of ${accountName(current, currentStatus)}`,
-            icon: <IconPower size={13} />,
-            run: () => void signOut(current).catch(reportError("Sign out")),
-        });
-    for (const account of accounts.filter((candidate) => !candidate.id.startsWith("builtin-")))
-        items.push({
-            label: `Remove ${accountName(account, peekResource(agentAccountR, provider, account.configPath))}`,
-            icon: <IconTrash size={13} />,
-            danger: true,
-            run: () => cmd.deleteProviderProfile(account.id),
-        });
     return items;
 }
 

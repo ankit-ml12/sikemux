@@ -221,6 +221,47 @@
     background: var(--surface-hover);
     color: var(--text-primary);
 }
+/* An item's own actions wait at its row's end and take the place of its hint
+   and tick while the row is pointed at or focused. */
+.tree-ctx-row {
+    position: relative;
+    display: flex;
+}
+.tree-ctx-row > .tree-ctx-item {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.tree-ctx-actions {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transform: translateY(-50%);
+    transition: opacity var(--dur-1);
+}
+.tree-ctx-row:is(:hover, :focus-within) > .tree-ctx-actions {
+    opacity: 1;
+}
+.tree-ctx-row:is(:hover, :focus-within) > .tree-ctx-item :is(.tree-ctx-hint, .tree-ctx-check) {
+    visibility: hidden;
+}
+.tree-ctx-act {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    color: var(--text-tertiary);
+}
+.tree-ctx-act:is(:hover, :focus-visible) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.tree-ctx-act.danger:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+}
 /* The current choice is ticked at the row's end, as in a native menu, so it never reads as the hovered one. */
 .tree-ctx-check {
     display: flex;

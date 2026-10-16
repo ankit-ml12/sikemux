@@ -76,6 +76,15 @@ export interface CtxItem {
     selected?: boolean;
     sep?: boolean;
     run?: () => void;
+    /** Small actions on the item itself, shown at its row's end while it is pointed at or focused. */
+    actions?: CtxAction[];
+}
+
+export interface CtxAction {
+    label: string;
+    icon: ReactNode;
+    danger?: boolean;
+    run: () => void;
 }
 
 export const menuIcon = (Glyph: ComponentType<{ size?: number }>): ReactNode => <Glyph size={13} />;
@@ -982,41 +991,42 @@ export function TreeContextMenu({
                     it.sep ? (
                         <div key={i} className="tree-ctx-sep" />
                     ) : (
-                        <button
-                            key={i}
-                            type="button"
-                            disabled={it.disabled}
-                            role="menuitem"
-                            tabIndex={-1}
-                            className={`tree-ctx-item${it.danger ? " danger" : ""}${it.disabled ? " disabled" : ""}${it.selected ? " selected" : ""}`}
-                            onPointerMove={(event) => {
-                                if (!it.disabled && document.activeElement !== event.currentTarget) event.currentTarget.focus();
-                            }}
-                            onClick={() => {
-                                if (it.disabled) return;
-                                onClose();
-                                it.run?.();
-                            }}>
-                            {iconed && <span className="tree-ctx-icon">{it.icon}</span>}
-                            <span className="tree-ctx-label" title={it.label}>
-                                {it.label}
-                                {it.detail && (
-                                    <small className="tree-ctx-detail" title={it.detail}>
-                                        {it.detail}
-                                    </small>
+                        <MenuRow key={i} actions={it.actions} onClose={onClose}>
+                            <button
+                                type="button"
+                                disabled={it.disabled}
+                                role="menuitem"
+                                tabIndex={-1}
+                                className={`tree-ctx-item${it.danger ? " danger" : ""}${it.disabled ? " disabled" : ""}${it.selected ? " selected" : ""}`}
+                                onPointerMove={(event) => {
+                                    if (!it.disabled && document.activeElement !== event.currentTarget) event.currentTarget.focus();
+                                }}
+                                onClick={() => {
+                                    if (it.disabled) return;
+                                    onClose();
+                                    it.run?.();
+                                }}>
+                                {iconed && <span className="tree-ctx-icon">{it.icon}</span>}
+                                <span className="tree-ctx-label" title={it.label}>
+                                    {it.label}
+                                    {it.detail && (
+                                        <small className="tree-ctx-detail" title={it.detail}>
+                                            {it.detail}
+                                        </small>
+                                    )}
+                                </span>
+                                {it.hint && (
+                                    <span className="tree-ctx-hint" title={it.hint}>
+                                        {it.hint}
+                                    </span>
                                 )}
-                            </span>
-                            {it.hint && (
-                                <span className="tree-ctx-hint" title={it.hint}>
-                                    {it.hint}
-                                </span>
-                            )}
-                            {it.selected && (
-                                <span className="tree-ctx-check" aria-hidden="true">
-                                    <IconCheck size={11} />
-                                </span>
-                            )}
-                        </button>
+                                {it.selected && (
+                                    <span className="tree-ctx-check" aria-hidden="true">
+                                        <IconCheck size={11} />
+                                    </span>
+                                )}
+                            </button>
+                        </MenuRow>
                     ),
                 )}
             </div>
@@ -1072,6 +1082,33 @@ function EntryInputRow({
                     e.stopPropagation();
                 }}
             />
+        </div>
+    );
+}
+
+function MenuRow({ actions, onClose, children }: { actions?: CtxAction[]; onClose: () => void; children: ReactNode }) {
+    if (!actions?.length) return children;
+    return (
+        <div className="tree-ctx-row" role="none">
+            {children}
+            <span className="tree-ctx-actions">
+                {actions.map((action) => (
+                    <button
+                        key={action.label}
+                        type="button"
+                        role="menuitem"
+                        tabIndex={-1}
+                        aria-label={action.label}
+                        title={action.label}
+                        className={`tree-ctx-act${action.danger ? " danger" : ""}`}
+                        onClick={() => {
+                            onClose();
+                            action.run();
+                        }}>
+                        {action.icon}
+                    </button>
+                ))}
+            </span>
         </div>
     );
 }
