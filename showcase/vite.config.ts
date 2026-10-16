@@ -276,12 +276,13 @@ function send(response: ServerResponse, status: number, value: unknown) {
 }
 
 let chosenWallpaper: Buffer | null = null;
+let chosenScreenshot: Buffer | null = null;
 
 let snapshotBrowser: Promise<Browser> | null = null;
 
 async function snapshot(
   origin: string,
-  { state, layout }: Record<string, unknown>,
+  { state, layout, screenshot }: Record<string, unknown>,
 ): Promise<string[]> {
   snapshotBrowser ??= import("playwright-core").then(({ chromium }) =>
     chromium.launch({ channel: "chrome" }),
@@ -296,21 +297,30 @@ async function snapshot(
   try {
     await context.clock.setFixedTime(new Date("2026-09-26T09:41:00"));
     const page = await context.newPage();
-    await page.goto(`${origin}/showcase/twitter.html?capture`);
-    await page.frameLocator("iframe").locator(".shell").waitFor();
-    const app = page.frames()[1];
-    await app.waitForFunction(() => "showcase" in window);
-    await app.evaluate((restored) => {
-      const { showcase } = window as unknown as {
-        showcase: {
-          store: { setState: (state: object) => void };
-          backend: { stepLive: () => number };
+    if (screenshot) {
+      await page.goto(`${origin}/showcase/twitter.html?capture&screenshot`);
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll<HTMLImageElement>(".shot")].every(
+          (image) => image.complete && image.naturalWidth > 0,
+        ),
+      );
+    } else {
+      await page.goto(`${origin}/showcase/twitter.html?capture`);
+      await page.frameLocator("iframe").locator(".shell").waitFor();
+      const app = page.frames()[1];
+      await app.waitForFunction(() => "showcase" in window);
+      await app.evaluate((restored) => {
+        const { showcase } = window as unknown as {
+          showcase: {
+            store: { setState: (state: object) => void };
+            backend: { stepLive: () => number };
+          };
         };
-      };
-      showcase.store.setState(restored as object);
-      while (showcase.backend.stepLive() >= 0);
-    }, state);
-    await page.waitForTimeout(1500);
+        showcase.store.setState(restored as object);
+        while (showcase.backend.stepLive() >= 0);
+      }, state);
+      await page.waitForTimeout(1500);
+    }
     const stamp = new Date().toLocaleString("sv").replace(/[ :]/g, "-");
     if (layout !== "thirds") {
       const name = `sikemux-${stamp}.png`;
@@ -360,6 +370,16 @@ function serveDemoFiles(server: ViteDevServer | PreviewServer, port: number) {
       return response.end(
         readFileSync(join(import.meta.dirname, "pages", `${shownPage[1]}.html`)),
       );
+    }
+    if (request.url?.split("?")[0] === "/screenshot") {
+      if (request.method === "POST") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(chunk as Buffer);
+        chosenScreenshot = Buffer.concat(chunks);
+        return response.end();
+      }
+      if (!chosenScreenshot) return response.writeHead(404).end();
+      return response.end(chosenScreenshot);
     }
     if (request.url?.split("?")[0] === "/wallpaper") {
       if (request.method === "POST") {
