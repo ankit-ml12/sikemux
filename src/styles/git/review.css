@@ -85,6 +85,10 @@
     border-radius: var(--radius-3);
     background: color-mix(in oklab, var(--surface) 45%, transparent);
 }
+/* Pinned while its card scrolls under it, a header keeps the card's top corners, so it still reads as the card's top. */
+.merge-review-item > .merge-file-header {
+    border-radius: calc(var(--radius-3) - 1px) calc(var(--radius-3) - 1px) 0 0;
+}
 .merge-review-item.focused > .merge-file-header {
     background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent)
         linear-gradient(var(--surface-chosen), var(--surface-chosen));
