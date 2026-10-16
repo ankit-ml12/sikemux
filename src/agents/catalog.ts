@@ -56,3 +56,8 @@ export function canBypassPermissions(type: AgentType): boolean {
 export function installCommand(type: string): string | null {
     return BY_TYPE.get(type)?.install ?? null;
 }
+
+/** The arguments that start the agent's own sign-in. Null when it has none. */
+export function loginArgs(type: string): readonly string[] | null {
+    return BY_TYPE.get(type)?.login ?? null;
+}

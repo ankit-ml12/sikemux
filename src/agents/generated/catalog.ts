@@ -11,6 +11,7 @@ export const AGENT_CATALOG = [
         deletableChats: true,
         bypass: true,
         install: "curl -fsSL https://claude.ai/install.sh | bash",
+        login: ["auth", "login"],
     },
     {
         type: "codex",
@@ -23,6 +24,7 @@ export const AGENT_CATALOG = [
         deletableChats: true,
         bypass: true,
         install: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+        login: ["login"],
     },
     {
         type: "hermes",
@@ -35,6 +37,7 @@ export const AGENT_CATALOG = [
         deletableChats: false,
         bypass: true,
         install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+        login: ["model"],
     },
     {
         type: "pi",
@@ -47,6 +50,7 @@ export const AGENT_CATALOG = [
         deletableChats: false,
         bypass: false,
         install: "curl -fsSL https://pi.dev/install.sh | sh",
+        login: ["--terminal-login"],
     },
     {
         type: "opencode",
@@ -59,6 +63,7 @@ export const AGENT_CATALOG = [
         deletableChats: false,
         bypass: false,
         install: "curl -fsSL https://opencode.ai/install | bash",
+        login: ["auth", "login"],
     },
     {
         type: "omp",
@@ -71,6 +76,7 @@ export const AGENT_CATALOG = [
         deletableChats: false,
         bypass: true,
         install: "curl -fsSL https://omp.sh/install | sh",
+        login: ["login"],
     },
     {
         type: "grok",
@@ -83,6 +89,7 @@ export const AGENT_CATALOG = [
         deletableChats: false,
         bypass: true,
         install: "curl -fsSL https://x.ai/cli/install.sh | bash",
+        login: ["login"],
     },
     {
         type: "muse",
@@ -95,5 +102,6 @@ export const AGENT_CATALOG = [
         deletableChats: false,
         bypass: true,
         install: null,
+        login: null,
     },
 ] as const;
