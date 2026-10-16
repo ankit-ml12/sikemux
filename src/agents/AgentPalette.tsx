@@ -122,7 +122,14 @@ export function AgentPalette() {
     const items = useMemo(() => {
         const fresh = agents.map(({ type }): NewAgentItem => ({ kind: "new", type }));
         const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
-        const rankedFresh = rankBy(query, fresh, (item) => `+ new ${agentLabel(item.type)} ${item.type}`);
+        const rankedFresh = rankBy(query, fresh, (item) =>
+            installable(
+                item,
+                agents.find((agent) => agent.type === item.type),
+            )
+                ? `install ${agentLabel(item.type)} ${item.type}`
+                : `+ new ${agentLabel(item.type)} ${item.type}`,
+        );
         const rankedResumable = rankBy(query, resumable, (item) => `${item.row.title} ${agentLabel(item.row.type)} ${item.row.type}`);
         return [...rankedFresh, ...rankedResumable];
     }, [agents, query, rows]);

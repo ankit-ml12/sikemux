@@ -214,7 +214,9 @@ describe("AgentPalette", () => {
         expect(screen.queryByRole("button", { name: /Install Codex/ })).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: /Muse/ })).not.toBeInTheDocument();
 
-        await user.click(grok);
+        await user.type(screen.getByRole("textbox", { name: "Search agent sessions" }), "install gr");
+        expect(screen.getByRole("button", { name: "Install Grok" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Install Grok" }));
         expect(installAgent).toHaveBeenCalledWith("grok");
         expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
         expect(getState().agentPaletteOpen).toBe(false);
