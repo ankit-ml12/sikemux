@@ -212,7 +212,7 @@ function Agents({
   return (
     <>
       {open.length || strays.length ? (
-        <Rows>
+        <Rows style={styles.open}>
           {open.map((agent) =>
             agent.kind === 'chat' ? (
               <Fragment key={agent.chat.agentId}>
@@ -757,6 +757,7 @@ const makeStyles = (colors: Palette) => {
     picker: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
     pickerText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.secondary },
     body: { paddingHorizontal: 16 },
+    open: { marginTop: 10 },
     newChat: {
       position: 'absolute',
       right: 16,
