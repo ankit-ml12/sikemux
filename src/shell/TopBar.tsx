@@ -146,7 +146,7 @@ function BatteryChip() {
     return (
         <Tooltip label={detail ? `${pct}% · ${detail}` : `${pct}%`}>
             <span className={`tb-batt tb-batt-${tone}${batt.charging ? " charging" : ""}`}>
-                <IconBattery size={11} percent={pct} charging={batt.charging} />
+                <IconBattery size={12} percent={pct} charging={batt.charging} />
                 <span className="tb-batt-pct">{pct}%</span>
             </span>
         </Tooltip>

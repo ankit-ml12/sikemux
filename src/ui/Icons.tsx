@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { AgentType } from "../state/types";
 
 const brunoLogo = new URL("../assets/bruno.svg", import.meta.url).href;
@@ -624,26 +625,25 @@ export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) 
     return <IconWindow size={size} />;
 }
 
+/** A battery drawn the way macOS draws it: a thin rounded case, a soft cap, and the charge filling it; charging, a bolt breaks out of it top and bottom. */
 export function IconBattery({ size = 14, percent, charging, className }: IconProps & { percent: number; charging?: boolean }) {
-    const padding = 2.2;
-    const inner = 24 - 4 - 2 - padding * 2; // body width minus borders + cap + pads
-    const fillW = Math.max(0, Math.min(inner, (inner * percent) / 100));
-    const fillX = 2 + padding;
+    const knockout = useId();
+    const level = Math.max(0, Math.min(100, percent)) / 100;
+    const bolt = "M14.6 -1.6 L8.4 7.4 H12.6 L11.4 14.6 L17.6 5.6 H13.4 Z";
     return (
-        <svg width={size * (24 / 16)} height={size} viewBox="0 0 24 16" fill="none" className={className} aria-hidden="true">
-            <rect x="1" y="2.5" width="19" height="11" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-            <rect x="20.6" y="5.5" width="2" height="5" rx="0.6" fill="currentColor" />
-            <rect x={fillX} y={2.5 + padding} width={fillW} height={11 - padding * 2} rx="0.4" fill="currentColor" />
+        <svg width={(size * 28) / 13} height={size} viewBox="0 0 28 13" fill="none" className={className} aria-hidden="true" overflow="visible">
             {charging && (
-                <path
-                    d="M11 5 L8 9 H10.5 L9.6 12 L13 7.6 H10.6 L11 5 Z"
-                    fill="currentColor"
-                    stroke="var(--void, #100e16)"
-                    strokeWidth="1.2"
-                    strokeLinejoin="round"
-                    paintOrder="stroke"
-                />
+                <mask id={knockout} maskUnits="userSpaceOnUse" x="-2" y="-4" width="32" height="21">
+                    <rect x="-2" y="-4" width="32" height="21" fill="#fff" />
+                    <path d={bolt} fill="#000" stroke="#000" strokeWidth="2.4" strokeLinejoin="round" />
+                </mask>
             )}
+            <g mask={charging ? `url(#${knockout})` : undefined}>
+                <rect x="0.5" y="0.5" width="23.5" height="12" rx="3.6" stroke="currentColor" strokeOpacity="0.45" />
+                <path d="M25.4 4.4a1.6 1.6 0 0 1 1.6 1.6v1a1.6 1.6 0 0 1-1.6 1.6z" fill="currentColor" fillOpacity="0.45" />
+                <rect x="2" y="2" width={Math.max(level > 0 ? 2.2 : 0, 20.5 * level)} height="9" rx="2.2" fill="currentColor" />
+            </g>
+            {charging && <path d={bolt} fill="currentColor" />}
         </svg>
     );
 }
