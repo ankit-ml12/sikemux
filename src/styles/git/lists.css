@@ -199,7 +199,7 @@
 }
 /* The Staged and Unstaged groups are the column's headings in the Changes tab. */
 .git-file-group {
-    height: 32px;
+    height: 26px;
     padding: 0 2px 0 8px;
 }
 .git-file-group.follows {

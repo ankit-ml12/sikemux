@@ -35,7 +35,7 @@
     background: color-mix(in oklab, var(--surface) 45%, transparent);
 }
 .git-left > .git-list {
-    padding-top: 6px;
+    padding-top: 2px;
 }
 /* The gap between the columns is the handle that resizes them; a line shows in it only while it is in hand. */
 .git-split {
