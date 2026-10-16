@@ -9,7 +9,7 @@ import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { selectFocusMode } from "../state/selectors";
 import { useStore } from "../state/store";
-import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "../ui/Icons";
+import { IconBattery, IconFocus, IconGit, IconMic } from "../ui/Icons";
 import { WorkspaceTabs } from "../workspace/Workspace";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { useVoice } from "../voice/dictation";
@@ -125,10 +125,11 @@ function VoicePill() {
     const phase = useVoice((s) => s.phase);
     if (phase !== "listening" && phase !== "transcribing") return null;
     return (
-        <span className={`voice-pill voice-pill-${phase}`} role="status">
-            <IconMic size={11} />
-            {phase === "listening" ? "listening" : "writing"}
-        </span>
+        <Tooltip label={phase === "listening" ? "Listening" : "Writing what you said"}>
+            <span className={`voice-mic ${phase}`} role="status" aria-label={phase === "listening" ? "Listening" : "Writing what you said"}>
+                <IconMic size={14} />
+            </span>
+        </Tooltip>
     );
 }
 
@@ -165,7 +166,6 @@ function ClockChip() {
 
 export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const zoomed = useStore((s) => s.zoomedPaneId != null);
     const zen = useStore(selectFocusMode);
     const focusShortcut = useShortcutLabel("view.focusMode");
     const settingsShortcut = useShortcutLabel("settings.toggle");
@@ -185,12 +185,6 @@ export const TopBar = memo(function TopBar() {
 
             <div className="tb-right" onPointerEnter={() => setStripHovered(true)}>
                 <VoicePill />
-                {zoomed && (
-                    <span className="zoom-pill">
-                        <IconZoom size={11} />
-                        zoom
-                    </span>
-                )}
                 {isProject && session.cwd && <GitChip repo={session.cwd} />}
                 {isProject && session.cwd && <PortsChip sessionId={session.id} />}
                 {plugins.map(({ id, TopBarItem }) =>

@@ -77,8 +77,6 @@ textarea:focus,
 
 .tb-btn,
 .env-dd-btn,
-.zoom-pill,
-.voice-pill,
 .tb-git-chip,
 .tb-deploy-chip {
     border-radius: var(--radius-xs);
@@ -1256,8 +1254,6 @@ textarea,
         .tb-git-chip,
         .tb-deploy-chip,
         .gha-topbar,
-        .zoom-pill,
-        .voice-pill,
         .agent-view-switch button
     ) {
     border-radius: var(--radius-1) !important;
