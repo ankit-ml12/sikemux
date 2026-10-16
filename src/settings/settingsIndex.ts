@@ -99,6 +99,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("about", "Privacy", "Share anonymous usage", "analytics telemetry tracking opt out posthog"),
     section("about", "Help", "what's new changelog diagnostics welcome onboarding"),
 
+    section("agents", "Agents on this machine", "install reinstall missing claude codex opencode hermes pi omp grok cli"),
     section("agents", "Launch boundary", "permissions yolo sandbox safety bypass approval"),
     section("agents", "Claude accounts", "sign in login logout email subscription max pro switch rotate limit add second work personal"),
     section("agents", "Codex accounts", "sign in login logout email chatgpt plus pro switch rotate limit add second work personal"),
