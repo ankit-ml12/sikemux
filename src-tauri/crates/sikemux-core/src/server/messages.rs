@@ -1481,8 +1481,10 @@ async fn handed(
     }
     let mut woke = "";
     let mut held = None;
+    let notice = letter.kind == Kind::Notice;
     match target.reach {
         Reach::Chat | Reach::Terminal => {}
+        Reach::Asleep if notice => held = Some("is asleep"),
         Reach::Asleep if !core.window.is_open() => held = Some("is asleep while Sikemux is closed"),
         Reach::Asleep => {
             workspace::wake_chat(core, None, target.agent_id.clone())
@@ -1543,6 +1545,18 @@ async fn handed(
             }
             Err(busy) => held = Some(busy),
         }
+    }
+    if notice {
+        let busy = held.unwrap_or_default();
+        return Ok((
+            answer(
+                "dropped",
+                format!(
+                    "{name} {busy}, and a notice is only worth reading at once, so it was dropped."
+                ),
+            ),
+            Outcome::Dropped,
+        ));
     }
     let (waiting, superseded) = mailbox.wait(&target.agent_id, queued.clone());
     log(core, &target.agent_id, &superseded, Outcome::Dropped);
