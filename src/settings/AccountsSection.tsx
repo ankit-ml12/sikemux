@@ -11,7 +11,7 @@ import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
 import { Switch } from "../ui/Controls";
-import { IconTrash } from "../ui/Icons";
+import { IconPlus, IconTrash } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { planLabel } from "../rail/usageFormat";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
@@ -53,7 +53,10 @@ function ProviderAccounts({ provider, label, accent }: { provider: AccountProvid
                 {adding ? (
                     <AddAccountRow provider={provider} label={label} accent={accent} onDone={() => setAdding(false)} />
                 ) : (
-                    <SettingsRow label="Another account" desc={`Sign in to a second ${label} account, such as one for work.`}>
+                    <SettingsRow
+                        icon={<IconPlus size={14} />}
+                        label="Another account"
+                        desc={`Sign in to a second ${label} account, such as one for work.`}>
                         <button className="settings-btn" type="button" onClick={() => setAdding(true)}>
                             Add account
                         </button>
@@ -94,12 +97,13 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
 
     return (
         <SettingsRow
-            stack
+            icon={
+                <span className="account-row-avatar" style={{ background: account.accent }} aria-hidden="true">
+                    {account.name.trim().charAt(0).toUpperCase() || "?"}
+                </span>
+            }
             label={
                 <span className="account-row-label">
-                    <span className="account-row-avatar" style={{ background: account.accent }} aria-hidden="true">
-                        {account.name.trim().charAt(0).toUpperCase() || "?"}
-                    </span>
                     {account.name}
                     {inUse && <span className="account-row-badge">New chats</span>}
                 </span>

@@ -175,7 +175,8 @@
     flex-direction: column;
 }
 
-/* An account row: its initial, its name, and which one new chats start on. */
+/* An account row: its initial beside its name and who it signs in as, which one
+   new chats start on, and its actions at the right like every other row. */
 .account-row-label {
     display: inline-flex;
     align-items: center;
@@ -211,17 +212,6 @@
 }
 .settings-row-control .account-sign-in-note {
     flex: 0 1 auto;
-}
-/* Stacked, so the actions sit under the account rather than over its name. */
-.settings-row:has(.account-row-label) .settings-row-control {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-}
-.settings-row:has(.account-row-label) .settings-row-control > * {
-    flex: 0 0 auto;
-}
-.account-row-label {
-    flex-wrap: wrap;
 }
 .account-row-badge {
     white-space: nowrap;
