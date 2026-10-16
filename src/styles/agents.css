@@ -402,7 +402,7 @@
 .workspace-rail.agent-rail .agent-actions + .scope-track {
     margin-top: var(--space-2);
 }
-.workspace-rail .scope-track + .panel-group {
+.workspace-rail.agent-rail .scope-track + * {
     margin-top: var(--space-2);
 }
 .scope-track {
