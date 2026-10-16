@@ -72,6 +72,7 @@ pub(crate) async fn call(
         "nameAgent" => answer(name_agent(&core, parse(params)?).await?),
         "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
+        "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
         "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),

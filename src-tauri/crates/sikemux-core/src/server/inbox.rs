@@ -166,6 +166,9 @@ pub(crate) struct View {
     /// Agents on linked hosts working with agents here, each shown under its
     /// lead.
     pub remote_agents: Vec<RemoteAgent>,
+    /// The characters the app draws for its agents, while buddies are on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buddies: Option<super::workspace::Buddies>,
 }
 
 /// An agent on a linked host that works with agents here.
@@ -748,6 +751,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         agent_messages: core.harness.mailbox.log.latest(),
         collisions: core.collisions.marks(),
         remote_agents: remote_agents(core),
+        buddies: core.workspaces.buddies(),
     }
 }
 
