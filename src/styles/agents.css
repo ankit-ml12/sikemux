@@ -402,7 +402,8 @@
 .workspace-rail.agent-rail .agent-actions + .scope-track {
     margin-top: var(--space-2);
 }
-.workspace-rail.agent-rail .scope-track + * {
+.workspace-rail.agent-rail .scope-track + *,
+.workspace-rail.agent-rail .scope-track + .agent-all-projects > :first-child {
     margin-top: var(--space-2);
 }
 .scope-track {
