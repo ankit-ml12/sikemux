@@ -89,9 +89,6 @@
 .merge-review-item > .merge-file-header {
     border-radius: calc(var(--radius-3) - 1px) calc(var(--radius-3) - 1px) 0 0;
 }
-.merge-review-item.focused > .merge-file-header {
-    background: color-mix(in srgb, var(--surface-sunken) 85%, transparent) linear-gradient(var(--surface-chosen), var(--surface-chosen));
-}
 .merge-file-dir {
     color: var(--text-tertiary);
 }
