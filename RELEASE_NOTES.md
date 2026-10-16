@@ -1,19 +1,16 @@
-# Sikemux v0.5.3-nightly.4
+# Sikemux v0.5.3-nightly.5
 
-The fourth nightly on the 0.5.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The fifth nightly on the 0.5.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.3
+## New since nightly.4
 
-- **Linear.** A new Linear plugin signs in with a personal API key and shows your issues in a pane. Agents get tools to read, comment on, move and file issues.
-- **Sign in to agents from Sikemux.** A chat refused for sign-in offers its agent's own ways to sign in, the welcome screen offers Sign in for a signed-out agent, and the install sheet runs the agent's own sign-in after installing. Agents learn that Sikemux can run their sign-in in a terminal.
-- **Set up agents anywhere.** Settings lists every agent with Install, ready ones first, the agent palette offers agents not on this computer as Install, and an empty rail offers to set one up.
-- **Accounts.** Sign out of the current account or remove an added one right on its row in the account menu.
-- **The rail.** Only the agent list scrolls, so the new rows and the scope track stay put. A project child's name never truncates for the marks beside it; the marks stack, and the rest are counted as +N. Buddies stack like agent marks.
-- **The top bar** drops the zoom pill and the Jira issue chip, has one Rundeck deploy chip, and dictation is a mic that pulses while it listens.
-- The Git pane carries the pane picture like the others, and folding a reviewed file keeps every row at its real height.
-- A dragged board card keeps moving after it leaves its own column, and a page an agent shows no longer flickers.
-- The line under a finished answer's work summary is 1px again.
+- **Questions with several choices.** An agent's questions open above the composer as tabs, each with a short header, and every answer goes in one Send. A question that takes several choices shows checkboxes: numbers and Space tick, Enter moves on.
+- **who_wrote names who broke CI.** Give it a failed CI run and it names the agents whose changes broke it. The core also answers whose uncommitted work a git command would touch, and the git guard refuses only where other agents work.
+- **Agents hear what changed in the guide** after a Sikemux update.
+- **Themes.** Switch theme previews each theme as you move through the list, and switching repaints only what shows. Command rows in the palettes are one line each.
+- **The rail and the notch.** An agent's name sits with its counts and state at the row's end, the open island lists every open agent in the rail's order, and the closed island totals subagents and shells across every agent.
+- Buddies reach the notch and your phone too.
+- A terminal agent that dies the moment it starts is still resumed.
+- The board reads and moves Jira tickets again, and Auto reaches the GitHub and Bitbucket plugins again.
 
-Thanks to Ankit Patidar for the Linear plugin, signing in to agents from Sikemux and setting up agents from Settings, the rail and the palette.
-
-For the complete patch history, compare [`v0.5.3-nightly.3...v0.5.3-nightly.4`](https://github.com/nodelike/sikemux/compare/v0.5.3-nightly.3...v0.5.3-nightly.4).
+For the complete patch history, compare [`v0.5.3-nightly.4...v0.5.3-nightly.5`](https://github.com/nodelike/sikemux/compare/v0.5.3-nightly.4...v0.5.3-nightly.5).
