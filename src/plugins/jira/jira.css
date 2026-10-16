@@ -658,6 +658,23 @@
     color: var(--text-secondary);
 }
 
+.jira-detail .prose {
+    font-size: var(--text-md);
+}
+
+.jira-detail-main .jira-section-title,
+.jira-detail .prose :is(h1, h2) {
+    font-size: var(--text-lg);
+}
+
+.jira-detail .prose :is(h3, h4, h5, h6) {
+    font-size: var(--text-md);
+}
+
+.jira-detail .prose code {
+    font-size: var(--text-sm);
+}
+
 .jira-comment {
     display: flex;
     gap: 10px;
