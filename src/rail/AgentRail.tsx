@@ -363,9 +363,8 @@ export function AgentRailBody() {
                     <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
                 </div>
-                <AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />
                 <InboxPanel />
-                {scope === "all" && <AllProjectsAgents />}
+                {scope === "all" && <AllProjectsAgents stats={<AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />} />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"
@@ -380,7 +379,7 @@ export function AgentRailBody() {
 
                 {scope === "project" && opens.length > 0 && (
                     <Panel variant="group" className="agent-group">
-                        <PanelHeader label="Open" rule />
+                        <PanelHeader label="Open" rule extra={<AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />} />
                         {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
                             isRemoteWorker(a) ? (
                                 <RemoteAgentRow key={a.id} agent={a.remote} link={link} />

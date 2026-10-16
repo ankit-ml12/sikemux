@@ -974,9 +974,6 @@
     color: var(--text-tertiary);
 }
 .workspace-rail.agent-rail .agent-actions + * {
-    margin-top: var(--space-1h);
-}
-.workspace-rail.agent-rail .agent-stats + * {
     margin-top: var(--space-4);
 }
 
@@ -1134,15 +1131,13 @@
     font-size: var(--text-2xs);
 }
 
-/* What is running in the rail's scope, one line under the new chat, terminal
-   and browser rows. Each stat keeps the mark its rows use, so the line reads
-   as their sum. */
+/* What is running in the rail's scope, at the right of the Open header. Each
+   stat keeps the mark its rows use, so the line reads as their sum. */
 .agent-stats {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-1h) var(--space-2) var(--space-1) var(--space-1h);
     color: var(--text-tertiary);
 }
 .agent-stat {
