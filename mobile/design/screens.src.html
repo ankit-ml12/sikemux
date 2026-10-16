@@ -295,10 +295,10 @@
   .send.off { opacity: .28; }
   .send i { width: 10px; height: 10px; border-radius: 2px; background: currentColor; display: block; }
   .attachments { display: flex; gap: 7px; padding: 4px 4px 2px; }
-  .attachments > span { position: relative; flex: none; height: 58px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-sunken); overflow: hidden; }
-  .attachments > .thumb { width: 76px; }
-  .attachments > .file { display: flex; align-items: center; gap: 8px; max-width: 190px; padding: 0 30px 0 10px; color: var(--ink-dim); }
-  .attachments .x { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; }
+  .attachments > span { position: relative; flex: none; height: 44px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-sunken); overflow: hidden; }
+  .attachments > .thumb { width: 58px; }
+  .attachments > .file { display: flex; align-items: center; gap: 8px; max-width: 190px; padding: 0 26px 0 10px; color: var(--ink-dim); }
+  .attachments .x { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; }
   .attachments .sending { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(9, 9, 11, .55); }
   .attachments .sending i { width: 16px; height: 16px; border-radius: 999px; border: 2px solid color-mix(in oklab, var(--ink) 30%, transparent); border-top-color: var(--ink); display: block; }
   .file-words { min-width: 0; }
@@ -1962,7 +1962,7 @@
           <div class="composer focus">
             <div class="attachments">
               <span class="thumb photo"><span class="x">{{IconClose:10}}</span></span>
-              <span class="file">{{IconFile:20}}<span class="file-words"><b>hero-copy.md</b><span>4 KB</span></span><span class="x">{{IconClose:10}}</span></span>
+              <span class="file">{{IconFile:16}}<span class="file-words"><b>hero-copy.md</b><span>4 KB</span></span><span class="x">{{IconClose:10}}</span></span>
             </div>
             <div class="ta">Match this screenshot, using the copy in the file<span class="caret"></span></div>
             <div class="bar">
