@@ -320,6 +320,32 @@
   .viewer-stage .photo { width: 100%; aspect-ratio: 4 / 3; }
   .sources { display: grid; gap: 8px; padding-bottom: 4px; }
   .sources > span { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-raised); font-size: 15.5px; font-weight: 500; color: var(--ink); }
+  .attach-tiles { display: flex; gap: 10px; padding: 2px 4px 14px; }
+  .attach-tiles > span { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+  .attach-tiles i { width: 100%; height: 54px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-raised); display: grid; place-items: center; color: var(--ink); }
+  .gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .gallery > span { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; border: 1px solid transparent; }
+  .gallery > .cam { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-color: var(--border); background: var(--surface-raised); font-size: 12px; font-weight: 500; color: var(--ink); }
+  .gallery > .on { border: 2px solid var(--acc); }
+  .gallery .pick { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 999px; border: 1.5px solid rgba(255, 255, 255, .9); background: rgba(9, 9, 11, .25); display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 600; color: var(--bg); }
+  .gallery > .on .pick { border-color: var(--acc); background: var(--acc); top: 4px; right: 4px; }
+  .gallery .ph1 { background: linear-gradient(200deg, #6c8cd5 0%, #2e3d63 55%, #121826 100%); }
+  .gallery .ph2 { background: radial-gradient(circle at 30% 70%, #81b88b 0 22%, transparent 23%), linear-gradient(170deg, #ffca85 0%, #d97757 48%, #3a2a24 100%); }
+  .gallery .ph3 { background: linear-gradient(135deg, #1e1e22 0 40%, #3f3f43 40% 44%, #27272b 44% 100%); }
+  .gallery .ph4 { background: radial-gradient(circle at 60% 40%, #e7e5ef 0 12%, transparent 13%), linear-gradient(180deg, #19191e, #3a3354); }
+  .gallery .ph5 { background: linear-gradient(160deg, #61ffca 0%, #2a6b5a 50%, #0f2a24 100%); }
+  .gallery .ph6 { background: linear-gradient(20deg, #ff6ac1 0%, #7a3a7a 40%, #1d1430 100%); }
+  .gallery .ph7 { background: repeating-linear-gradient(90deg, #27272b 0 12px, #1e1e22 12px 24px), #1e1e22; }
+  .gallery .ph8 { background: radial-gradient(circle at 50% 110%, #e2c08d 0 35%, transparent 36%), linear-gradient(180deg, #2b2147, #5b3fa8); }
+  .sheet.gallery-half { height: 470px; overflow: hidden; padding: 8px 12px 0; }
+  .gallery-line { display: flex; justify-content: flex-end; padding: 0 4px 10px; font-size: 13px; font-weight: 600; color: var(--acc); }
+  .gallery-off { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 6px; }
+  .gallery-off span:first-child { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+  .gallery-full { background: var(--surface-overlay); padding: 0 12px; overflow: hidden; }
+  .gallery-head { height: 46px; flex: none; display: flex; align-items: center; margin: 0 -4px 6px; }
+  .gallery-head b { flex: 1; text-align: center; font-size: 16px; font-weight: 600; color: var(--text-primary); }
+  .gallery-head .spacer { width: 40px; }
+  .gallery-add { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 16px 34px; background: linear-gradient(to bottom, transparent, var(--surface-overlay) 40%); }
   .composer-wrap.jumps { position: relative; }
   .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); color: var(--ink-dim); box-shadow: 0 6px 18px rgba(0,0,0,.52); }
 
@@ -1922,31 +1948,97 @@
           <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
         </div>
-        <div class="composer-wrap">
-          <div class="composer">
-            <div class="ta ph">Ask about this project</div>
-            <div class="bar">
-              <span class="ib">{{IconPlus:18}}</span>
-              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
-              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
-              <span class="spacer"></span>
-              <span class="send">{{IconArrowUp:16}}</span>
-            </div>
-          </div>
-        </div>
         <div class="scrim"></div>
-        <div class="sheet">
+        <div class="sheet gallery-half">
           <div class="grabber"></div>
-          <div class="sources">
-            <span>{{IconImage:19}}Photos</span>
-            <span>{{IconFile:19}}Files</span>
+          <div class="attach-tiles">
+            <span><i>{{IconCamera:20}}</i>Camera</span>
+            <span><i>{{IconImage:20}}</i>Photos</span>
+            <span><i>{{IconFile:20}}</i>Files</span>
+          </div>
+          <div class="gallery">
+            <span class="cam">{{IconCamera:20}}Camera</span>
+            <span class="photo ph1"></span><span class="photo ph2"></span><span class="photo ph3"></span>
+            <span class="photo ph4"></span><span class="photo ph5"></span><span class="photo"></span><span class="photo ph6"></span>
+            <span class="photo ph7"></span><span class="photo ph8"></span><span class="photo ph2"></span><span class="photo ph1"></span>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Adding photos and files</b><div class="note">The + at the left of the composer, where the Mac's is, opens a short sheet with Photos and Files. Photos opens the system's photo picker, which needs no access to the library; Files opens the Files app. A phone that can only watch has no +.</div></figcaption>
+      <figcaption><b>Adding photos and files</b><div class="note">The + at the left of the composer, where the Mac's is, opens a sheet: Camera, Photos and Files across the top, and under them the latest photos, four to a row, after a Camera square. Only now, the first time, does the phone ask to see the photos. A tap on a photo picks it; dragging the sheet up opens all of them. Camera takes a picture, Photos opens every photo, Files opens the Files app. Videos are not shown, since a chat takes pictures and files only. A phone that can only watch has no +.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen gallery-full">
+        <div class="gallery-head"><span class="icon-btn">{{IconClose:15}}</span><b>Recents</b><span class="spacer"></span></div>
+        <div class="gallery">
+          <span class="photo ph1"><i class="pick"></i></span><span class="photo ph2 on"><i class="pick">1</i></span><span class="photo ph3"><i class="pick"></i></span><span class="photo ph4"><i class="pick"></i></span>
+          <span class="photo ph5"><i class="pick"></i></span><span class="photo"><i class="pick"></i></span><span class="photo ph6"><i class="pick"></i></span><span class="photo ph7 on"><i class="pick">2</i></span>
+          <span class="photo ph8"><i class="pick"></i></span><span class="photo ph2"><i class="pick"></i></span><span class="photo ph1"><i class="pick"></i></span><span class="photo ph5"><i class="pick"></i></span>
+          <span class="photo ph3"><i class="pick"></i></span><span class="photo ph4"><i class="pick"></i></span><span class="photo ph8"><i class="pick"></i></span><span class="photo ph6"><i class="pick"></i></span>
+          <span class="photo ph7"><i class="pick"></i></span><span class="photo"><i class="pick"></i></span><span class="photo ph2"><i class="pick"></i></span><span class="photo ph3"><i class="pick"></i></span>
+          <span class="photo ph1"><i class="pick"></i></span><span class="photo ph6"><i class="pick"></i></span><span class="photo ph4"><i class="pick"></i></span><span class="photo ph8"><i class="pick"></i></span>
+          <span class="photo ph5"><i class="pick"></i></span><span class="photo ph7"><i class="pick"></i></span><span class="photo ph3"><i class="pick"></i></span><span class="photo"><i class="pick"></i></span>
+        </div>
+        <div class="gallery-add"><span class="btn primary">Add 2 photos</span></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>All your photos</b><div class="note">Dragged up, the sheet fills the screen with every photo, newest first, under × and Recents; it scrolls through the whole library and pulls back down from its top. A tap marks a photo with its number, in the order picked, up to the ten a message takes; a second tap takes it off. Add puts them on the composer, the same JPEGs at most 2048 pixels on their longest side as before.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet gallery-half">
+          <div class="grabber"></div>
+          <div class="attach-tiles">
+            <span><i>{{IconCamera:20}}</i>Camera</span>
+            <span><i>{{IconImage:20}}</i>Photos</span>
+            <span><i>{{IconFile:20}}</i>Files</span>
+          </div>
+          <div class="gallery-line">Manage</div>
+          <div class="gallery">
+            <span class="cam">{{IconCamera:20}}Camera</span>
+            <span class="photo ph3 on"><i class="pick">1</i></span><span class="photo ph6"><i class="pick"></i></span><span class="photo ph8"><i class="pick"></i></span>
+          </div>
+          <div class="gallery-add"><span class="btn primary">Add 1 photo</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Some photos allowed</b><div class="note">When the phone was given only some photos, the sheet shows those under a Manage link, with no sentence about it; Manage opens the system's list to choose more or fewer, and the grid follows. With a photo picked, Add sits at the bottom, over the photos, in either size of the sheet.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="attach-tiles">
+            <span><i>{{IconCamera:20}}</i>Camera</span>
+            <span><i>{{IconImage:20}}</i>Photos</span>
+            <span><i>{{IconFile:20}}</i>Files</span>
+          </div>
+          <div class="gallery-off">
+            <span>No photo access</span>
+            <span class="chip-btn primary">Allow access</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Not allowed yet</b><div class="note">Turned down, the sheet keeps its three tiles over "No photo access" and Allow access; that, or a tap on Photos, brings the phone's own prompt back over the sheet. Once the phone stops letting Sikemux ask, after the first refusal on iPhone and the second on Android, the button is Open Settings instead, with no explanation; Photos then opens the system's photo picker, which needs no access, so attaching still works.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

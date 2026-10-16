@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
@@ -8,9 +8,9 @@ import type { ConnectionLike } from '@sikemux/native';
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerAttachments } from '@/chat/Attachments';
 import { ChatTitle } from '@/chat/ChatTitle';
-import { AttachSheet, YoloToggle, type Source } from '@/chat/Composer';
+import { AttachSheet } from '@/chat/AttachSheet';
+import { YoloToggle } from '@/chat/Composer';
 import { ComposerInput } from '@/chat/ComposerInput';
-import { pickFiles, pickPhotos } from '@/chat/pick';
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type Attachment } from '@/chat/session';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf, useLive } from '@/devices/hub';
@@ -81,7 +81,6 @@ export default function NewChat() {
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<'agent' | 'project' | 'attach'>();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const source = useRef<Source | null>(null);
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string>();
   const [started, setStarted] = useState<string>();
@@ -107,8 +106,8 @@ export default function NewChat() {
         : undefined;
   const busy = useRef(false);
 
-  const pick = (from: Source) => {
-    (from === 'photos' ? pickPhotos(room) : pickFiles(room))
+  const attach = (picking: Promise<Attachment[]>) => {
+    picking
       .then((picked) => {
         const tooBig = picked.filter((attachment) => attachment.size > MAX_ATTACHMENT_BYTES);
         if (tooBig.length) {
@@ -119,17 +118,6 @@ export default function NewChat() {
         setAttachments((now) => [...now, ...fits].slice(0, MAX_ATTACHMENTS));
       })
       .catch((error: unknown) => setProblem(`Could not pick: ${error instanceof Error ? error.message : String(error)}`));
-  };
-  // iOS shows a picker only once the sheet over the screen has gone.
-  const choose = (from: Source) => {
-    setSheet(undefined);
-    if (Platform.OS === 'ios') source.current = from;
-    else pick(from);
-  };
-  const dismissed = () => {
-    const from = source.current;
-    source.current = null;
-    if (from) pick(from);
   };
 
   const upload = async (connection: ConnectionLike, agentId: string): Promise<string[]> => {
@@ -264,7 +252,7 @@ export default function NewChat() {
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
-      <AttachSheet visible={sheet === 'attach'} onClose={() => setSheet(undefined)} onPick={choose} onDismiss={dismissed} />
+      <AttachSheet visible={sheet === 'attach'} room={room} onClose={() => setSheet(undefined)} onAttach={attach} />
       <AgentSheet
         visible={sheet === 'agent'}
         onClose={() => setSheet(undefined)}

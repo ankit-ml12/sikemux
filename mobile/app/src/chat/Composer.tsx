@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { ActivityIndicator, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
@@ -20,7 +20,7 @@ import { Sheet } from '@/ui/Sheet';
 import { brand, fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { ComposerAttachments } from './Attachments';
 import { ComposerInput } from './ComposerInput';
-import { pickFiles, pickPhotos } from './pick';
+import { AttachSheet } from './AttachSheet';
 import { MAX_ATTACHMENTS, type Attachment, type ChatSession } from './session';
 import { useDraft } from './useChat';
 import { matchingCommands } from './commands';
@@ -361,44 +361,6 @@ function ConfigSheet({
   );
 }
 
-export type Source = 'photos' | 'files';
-
-/** Where a message's photos and files come from. */
-export function AttachSheet({
-  visible,
-  onClose,
-  onPick,
-  onDismiss,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onPick: (source: Source) => void;
-  onDismiss: () => void;
-}) {
-  const colors = useColors();
-  const styles = useStyles(makeStyles);
-  const sources: { source: Source; label: string; icon: 'IconImage' | 'IconFile' }[] = [
-    { source: 'photos', label: 'Photos', icon: 'IconImage' },
-    { source: 'files', label: 'Files', icon: 'IconFile' },
-  ];
-  return (
-    <Sheet visible={visible} onClose={onClose} onDismiss={onDismiss}>
-      <View style={styles.sources}>
-        {sources.map(({ source, label, icon }) => (
-          <Pressable
-            key={source}
-            onPress={() => onPick(source)}
-            style={({ pressed }) => [styles.source, pressed && { backgroundColor: colors.active }]}
-            accessibilityRole="button">
-            <Icon name={icon} size={19} color={colors.ink} />
-            <Text style={styles.sourceText}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </Sheet>
-  );
-}
-
 export type ComposerQuestion = {
   name: string;
   cli: string;
@@ -486,7 +448,6 @@ export const Composer = memo(function Composer({
   const styles = useStyles(makeStyles);
   const draft = useDraft(session);
   const [adding, setAdding] = useState(false);
-  const source = useRef<Source | null>(null);
   const uploading = attachments.some((attachment) => attachment.upload === 'sending');
   const room = MAX_ATTACHMENTS - attachments.length;
   const [focused, setFocused] = useState(false);
@@ -549,22 +510,10 @@ export const Composer = memo(function Composer({
     });
   };
 
-  const pick = (from: Source) => {
-    const picking = from === 'photos' ? pickPhotos(room) : pickFiles(room);
+  const attach = (picking: Promise<Attachment[]>) => {
     picking
       .then(session.attach)
       .catch((error: unknown) => session.report(`could not pick: ${error instanceof Error ? error.message : String(error)}`));
-  };
-  // iOS shows a picker only once the sheet over the screen has gone.
-  const choose = (from: Source) => {
-    setAdding(false);
-    if (Platform.OS === 'ios') source.current = from;
-    else pick(from);
-  };
-  const dismissed = () => {
-    const from = source.current;
-    source.current = null;
-    if (from) pick(from);
   };
 
   return (
@@ -654,7 +603,7 @@ export const Composer = memo(function Composer({
           )}
         </View>
       </View>
-      <AttachSheet visible={adding} onClose={() => setAdding(false)} onPick={choose} onDismiss={dismissed} />
+      <AttachSheet visible={adding} room={room} onClose={() => setAdding(false)} onAttach={attach} />
       <ConfigSheet
         visible={sheet}
         onClose={() => setSheet(false)}
@@ -806,19 +755,6 @@ const makeStyles = (colors: Palette) => {
     commandName: { fontFamily: fonts.mono, fontSize: 13, color: colors.accent },
     commandText: { flex: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.tertiary },
 
-    sources: { gap: 8, paddingBottom: 4 },
-    source: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      minHeight: 52,
-      paddingHorizontal: 14,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.raised,
-    },
-    sourceText: { fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.ink },
     sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
     sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     sheetLabel: {
