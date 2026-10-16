@@ -722,6 +722,15 @@
   .live-strip .live-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: transparent; background: linear-gradient(90deg, var(--text-secondary) 0%, var(--ink) 45%, var(--text-secondary) 90%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; animation: shimmer 2.2s linear infinite; }
   .live-strip .pcs.after { flex: none; gap: 10px; }
   .live-strip + .composer { position: relative; }
+  /* the sheet's rows: what a subagent spent so far after what it is doing, and a workflow's agents set in under it */
+  .rows .row .s.costed { display: flex; align-items: baseline; gap: 8px; }
+  .rows .row .s.costed .d { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .rows .row .s.costed .cost { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .rows .row.nested { padding-left: 46px; }
+  .rows .row.faint .t { color: var(--text-tertiary); }
+  .rows .row.faint .mark { opacity: .6; }
+  .rows .row .ends .wf-done { display: grid; color: color-mix(in srgb, var(--live) 58%, var(--ink-faint)); }
+  .rows .row .ends .wf-failed { display: grid; color: var(--danger); }
   .ctx { --c: var(--acc); display: block; width: 14px; height: 14px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--border) 0);
     -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.8px)); }
   .ctx.claude { --c: var(--brand-claude); } .ctx.codex { --c: var(--brand-codex); } .ctx.warm { --c: var(--warn); } .ctx.hot { --c: var(--danger); }
@@ -2376,7 +2385,7 @@ expected 1 write, got 2</div>
           <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
         </div>
         <div class="composer-wrap">
-          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconTimer:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconWorkflow:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
           <div class="composer">
             <div class="ta ph">Send to queue behind the running turn</div>
             <div class="bar">
@@ -2392,7 +2401,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>What is still going</b><div class="note">While something runs, the line leads with what it is doing now, shimmering, and turns to the next running subagent or task every few seconds; the counts shrink to icons and numbers at the end. A turn ends long before the work it started does, so what the Mac stacks over its composer sits here as one line docked on the composer's top edge: running subagents with the agent's mark, background tasks counted by the kind the agent names them (shells, monitors), messages waiting behind the turn, and the plan's progress while a step is left. The rail's squares lead while anything runs. With more than three kinds the words drop and the counts stay. It shows only while something is live, and a permission request or the slash-command list takes its place. A tap opens the sheet beside.</div></figcaption>
+      <figcaption><b>What is still going</b><div class="note">While something runs, the line leads with what it is doing now, shimmering, and turns to the next running subagent, task or workflow agent every few seconds, and the line follows each one as it moves on; the counts shrink to icons and numbers at the end. A turn ends long before the work it started does, so what the Mac stacks over its composer sits here as one line docked on the composer's top edge: running subagents with the agent's mark, background tasks counted by the kind the agent names them (shells, monitors, a Claude workflow with the Mac's workflow mark), messages waiting behind the turn, and the plan's progress while a step is left. The rail's squares lead while anything runs. With more than three kinds the words drop and the counts stay. It shows only while something is live, and a permission request or the slash-command list takes its place. A tap opens the sheet beside.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -2413,7 +2422,7 @@ expected 1 write, got 2</div>
           <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Running a command…</span><span class="el">31s</span></div>
         </div>
         <div class="composer-wrap">
-          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconTimer:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
+          <div class="live-strip"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="live-line">Explore · read src/server/chat/feed.rs</span><span class="pcs after"><span class="pc"><span class="claude">{{IconClaude:12}}</span><b>2</b></span><span class="pc">{{IconCommand:12}}<b>1</b></span><span class="pc">{{IconWorkflow:12}}<b>1</b></span></span><span class="up">{{IconChevron:10}}</span></div>
           <div class="composer">
             <div class="ta ph">Send to queue behind the running turn</div>
             <div class="bar">
@@ -2432,16 +2441,18 @@ expected 1 write, got 2</div>
           <div class="grabber"></div>
           <div class="glabel" style="padding-top:4px">Subagents <span class="n">2</span></div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Explore</div><div class="s">search data-test=checkout</div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
-            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Review</div><div class="s">read run-18234.log</div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Explore</div><div class="s costed"><span class="d">search data-test=checkout</span><span class="cost">18.4K tokens · 6 calls</span></div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Review</div><div class="s costed"><span class="d">read run-18234.log</span><span class="cost">9.1K tokens · 3 calls</span></div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
           <div class="glabel">Shell <span class="n">1</span></div>
           <div class="rows">
             <div class="row"><span class="mark">{{IconCommand:15}}</span><div class="body"><div class="t">pnpm dev --port 5174</div><div class="s">Local:   http://localhost:5174/</div></div><span class="ends"><span class="mini">Stop</span></span></div>
           </div>
-          <div class="glabel">Monitor <span class="n">1</span></div>
+          <div class="glabel">Workflow <span class="n">1</span></div>
           <div class="rows">
-            <div class="row"><span class="mark">{{IconTimer:15}}</span><div class="body"><div class="t">Preview deploy</div><div class="s">Waiting for the build to finish</div></div><span class="ends"><span class="mini">Stop</span></span></div>
+            <div class="row"><span class="mark">{{IconWorkflow:15}}</span><div class="body"><div class="t">Audit the checkout flow</div><div class="s costed"><span class="d">Reviewing each step</span><span class="cost">1/2 agents</span></div></div><span class="ends"><span class="mini">Stop</span></span></div>
+            <div class="row nested faint"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Cart</div><div class="s costed"><span class="d">review</span><span class="cost">22K tokens · 14 tools</span></div></div><span class="ends"><span class="wf-done">{{IconCheck:12}}</span></span></div>
+            <div class="row nested"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t">Payment</div><div class="s costed"><span class="d">Reading PaymentForm.tsx</span><span class="cost">8.3K tokens · 5 tools</span></div></div><span class="ends"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
           <div class="glabel acts">Queued <span class="n">2</span><span class="act mini">Steer all</span></div>
           <div class="rows">
@@ -2458,7 +2469,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>All of it, in a sheet</b><div class="note">The strip opens the Mac's live stack, section by section under the rail's small-caps labels: subagents with what each is doing now, background tasks grouped by kind with what they last said and a Stop each where the agent allows it, the queue with Steer on each and Steer all, and the plan as a checklist: done steps checked and quiet, the one in hand with the squares, the rest as hollow dots. Steer appears only when the agent takes a message mid-turn and a turn is running; it puts the message into the turn now, and if the turn ended first it goes as the next prompt. × takes a message off the queue. Buttons are gapped chips, each with its own border.</div></figcaption>
+      <figcaption><b>All of it, in a sheet</b><div class="note">The strip opens the Mac's live stack, section by section under the rail's small-caps labels: subagents with what each is doing now and the tokens and calls it has spent, background tasks grouped by kind with what they last said and a Stop each where the agent allows it, a workflow with how many of its agents are done and each agent set in under it, as the Mac's live stack draws them: its label, the phase it is in or what it is doing now (or why it failed), its tokens and tools, and the squares while it works, a green check when done or a red × when it failed, queued and finished ones faded, the queue with Steer on each and Steer all, and the plan as a checklist: done steps checked and quiet, the one in hand with the squares, the rest as hollow dots. Steer appears only when the agent takes a message mid-turn and a turn is running; it puts the message into the turn now, and if the turn ended first it goes as the next prompt. × takes a message off the queue. Buttons are gapped chips, each with its own border.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

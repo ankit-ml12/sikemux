@@ -4,7 +4,7 @@ import { AgentIcon, IconCheck, IconChevron, IconClock, IconClose, IconCommand, I
 import { ChatAgentContext } from "./chatAgent";
 import { queuedLabel, type QueuedMessage } from "./queuedMessages";
 import { Shimmer } from "./Shimmer";
-import { groupTasks, subagentActivity, subagentCost, taskDetail, workflowAgentCost, workflowAgentDetail } from "./transcript";
+import { groupTasks, subagentActivity, subagentCost, taskDetail, workflowAgentCost, workflowAgentCount, workflowAgentDetail } from "./transcript";
 import type { AcpAsyncTask, AcpSubagent, AcpWorkflowAgent } from "./types";
 
 export type GroupFolds = {
@@ -60,11 +60,6 @@ function BackgroundTasks({
             ))}
         </>
     );
-}
-
-function workflowAgentCount(agents: AcpWorkflowAgent[]): string {
-    const finished = agents.filter((agent) => agent.state === "completed" || agent.state === "failed").length;
-    return `${finished}/${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
 }
 
 function WorkflowAgentRow({ agent }: { agent: AcpWorkflowAgent }) {

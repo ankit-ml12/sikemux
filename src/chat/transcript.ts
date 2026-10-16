@@ -267,6 +267,11 @@ export function workflowAgentCost(agent: AcpWorkflowAgent): string | undefined {
     return cost.filter(Boolean).join(" · ") || undefined;
 }
 
+export function workflowAgentCount(agents: AcpWorkflowAgent[]): string {
+    const finished = agents.filter((agent) => agent.state === "completed" || agent.state === "failed").length;
+    return `${finished}/${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
+}
+
 export function subagentCost(subagent: AcpSubagent): string | undefined {
     const calls = subagent.messages.reduce((count, message) => count + message.parts.filter((part) => part.kind === "tool").length, 0);
     const cost = [subagent.tokens && `${tokenCount(subagent.tokens)} tokens`, calls > 0 && callCount(calls)];
