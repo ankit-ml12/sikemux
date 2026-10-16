@@ -1,0 +1,18 @@
+---
+title: Accounts and limits
+description: Several Claude or Codex accounts, and how much of a plan is left.
+sidebar:
+  order: 4
+---
+
+Claude Code and Codex can keep several accounts, such as one for work and one for yourself. Each account is a separate folder for the CLI's own sign-in. Sikemux never sees or stores the credentials.
+
+## Add an account
+
+In **Settings → Agents**, under Claude or Codex, choose **Another account → Add account**, give it a name, then sign in in your browser.
+
+With two or more accounts, **Move chats when one runs out** lets a chat that hits a usage limit carry on with your next signed-in account. It is off by default: each provider's terms expect one person's ordinary use per plan.
+
+## Limits
+
+The agent rail shows how much of the selected account's plan is used, with a countdown to each reset. Pick the account from the menu beside **Limits**.
