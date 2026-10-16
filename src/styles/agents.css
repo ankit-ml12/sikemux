@@ -14,6 +14,16 @@
     font-size: 11.5px;
     line-height: 1.6;
 }
+.agent-empty-setup {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    color: var(--text-primary);
+    font-size: 11.5px;
+}
+.agent-empty-setup:hover {
+    background: var(--surface-hover);
+}
 .agent-row {
     width: 100%;
 }

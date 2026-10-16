@@ -22,6 +22,7 @@ import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef }
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
+import { AGENT_SETUP_SECTION } from "../settings/AgentSetupSection";
 import { usagePeak } from "./usageFormat";
 import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
@@ -367,13 +368,17 @@ export function AgentRailBody() {
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
-                        {catalog.status === "loading"
-                            ? "detecting agent CLIs..."
-                            : availableAgents.length === 0
-                              ? "no agent CLIs detected on PATH"
-                              : needle
-                                ? "no recent chats match this filter"
-                                : "no agents yet — start one above"}
+                        {catalog.status === "loading" ? (
+                            "detecting agent CLIs..."
+                        ) : availableAgents.length === 0 ? (
+                            <button type="button" className="agent-empty-setup" onClick={() => cmd.openSettings("agents", AGENT_SETUP_SECTION)}>
+                                No agents yet. Set one up
+                            </button>
+                        ) : needle ? (
+                            "no recent chats match this filter"
+                        ) : (
+                            "no agents yet — start one above"
+                        )}
                     </div>
                 )}
 
