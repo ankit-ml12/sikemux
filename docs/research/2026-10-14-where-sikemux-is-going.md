@@ -20,6 +20,7 @@ records where Sikemux is now headed; where it disagrees with later sections, sec
 
 Sikemux is headed to development driven from servers, not laptops. Agents run unattended on servers and
 act on events: a webhook, red CI, a new ticket, an alert, a schedule. Nobody has to be watching.
+[ADR 0014](../architecture/0014-agents-run-on-hosts-and-every-client-is-a-way-in.md) records the decision.
 
 - **Every core is a node.** A host is any server running the core: a Linux box, a Mac mini, a cloud
   machine. Hosts and clients are the same kind of thing on one account, linked as ADR 0013 already does.
