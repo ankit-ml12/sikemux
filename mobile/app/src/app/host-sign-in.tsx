@@ -63,11 +63,7 @@ export default function HostSignIn() {
         <Nav back="Devices" />
         <View style={styles.block}>
           <Text style={styles.title}>{step.added ? `${step.name} is on your account` : 'Refused'}</Text>
-          <Text style={styles.detail}>
-            {step.added
-              ? 'It finishes signing in by itself. Connect to it from Devices; it still asks before it lets each phone in.'
-              : `${step.name} was not added, and its sign-in has stopped.`}
-          </Text>
+          {step.added ? null : <Text style={styles.detail}>{step.name} was not added.</Text>}
           <Button title="Done" onPress={goBack} style={styles.action} />
         </View>
       </Screen>
@@ -84,8 +80,7 @@ export default function HostSignIn() {
           </View>
           <Text style={styles.title}>Add {host.name} to your account?</Text>
           <Text style={styles.detail}>
-            {platformName(host.platform)} · {host.channel}. Only add a computer you are setting up yourself right now: phones on your
-            account will find it and can ask to join it.
+            {platformName(host.platform)} · {host.channel}. Only add a computer you are setting up right now.
           </Text>
           {problem ? <Text style={styles.problem}>{problem}</Text> : null}
           <Button

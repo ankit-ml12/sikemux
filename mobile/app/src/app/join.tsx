@@ -156,9 +156,7 @@ export default function Join() {
       ) : (
         <View style={styles.block}>
           <Text style={styles.title}>{problem ? problem.title : `Allow this phone on ${name}`}</Text>
-          <Text style={styles.detail}>
-            {problem ? problem.detail : `On ${name}, choose whether to let this phone in, and with what access.`}
-          </Text>
+          {problem ? <Text style={styles.detail}>{problem.detail}</Text> : null}
           <View style={[styles.glyph, problem && styles.glyphFailed]}>
             <DeviceIcon kind="laptop" size={34} color={problem ? colors.danger : colors.ink} />
           </View>

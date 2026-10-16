@@ -136,15 +136,11 @@ export default function SignIn() {
 
   const detail =
     step.kind === 'email'
-      ? 'New here? The same steps make your account.'
+      ? undefined
       : step.kind === 'code'
-        ? step.purpose === 'trust'
-          ? `Sikemux sent a code to ${email}, to confirm this phone is yours.`
-          : step.purpose === 'verify'
-            ? `Sikemux sent a code to ${email}, to confirm the address is yours.`
-            : `Sikemux sent a code to ${email}, so you can choose a new password.`
+        ? `Sikemux sent a code to ${email}.`
         : step.kind === 'create'
-          ? 'At least 15 characters. A password found in a known breach is refused.'
+          ? 'At least 15 characters.'
           : email;
 
   return (
@@ -162,7 +158,7 @@ export default function SignIn() {
       ) : (
         <View style={styles.block}>
           <Text style={styles.title}>{TITLES[step.kind]}</Text>
-          <Text style={styles.detail}>{detail}</Text>
+          {detail ? <Text style={styles.detail}>{detail}</Text> : null}
           {step.kind === 'email' ? (
             <Field
               key="email"
