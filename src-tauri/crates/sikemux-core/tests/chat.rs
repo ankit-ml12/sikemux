@@ -265,6 +265,23 @@ async fn a_chat_starts_and_streams_a_turn() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_chat_knows_how_its_agent_can_be_signed_in() {
+    let core = TestCore::start();
+    let (client, _chat) = core.connect().await;
+    let start = client
+        .acp_start(chat_launch("agent-sign-in", "workspace-write"))
+        .await
+        .expect("start");
+    assert_eq!(
+        start.capabilities["signInMethods"],
+        json!([
+            { "kind": "terminal", "id": "fake-login", "name": "Log in", "description": null, "args": ["login"], "env": [] },
+            { "kind": "agent", "id": "fake-key", "name": "API key", "description": "Use a key from the environment" },
+        ])
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_prompt_turned_away_mid_turn_is_not_kept() {
     let core = TestCore::start();
     let (sender, mut heard) = core.connect().await;
