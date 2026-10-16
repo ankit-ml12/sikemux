@@ -502,11 +502,11 @@
     display: block;
     height: 1px;
     margin-top: 4px;
-    background: var(--line);
+    background: color-mix(in oklab, var(--ink) 14%, transparent);
 }
 
-.chat-work-calls {
-    color: var(--ink-faint);
+.chat-work .chat-tools-sum {
+    color: color-mix(in oklab, var(--ink) 60%, var(--ink-dim));
 }
 
 .chat-work-dot {
