@@ -8,7 +8,7 @@ import { activeAgentId, agentDisplayOf, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
 import { IconClose, IconMerge } from "../ui/Icons";
-import { Panel, PanelHeader } from "../ui/Panel";
+import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentLabel } from "../agents/AgentLabel";
 import { collisionLabel, type CollisionMark } from "../agents/collisions";
@@ -68,7 +68,6 @@ export function AllProjectsAgents() {
     return (
         <div ref={root} className="agent-all-projects">
             <Panel variant="group" className="agent-group">
-                <PanelHeader label="Open" rule />
                 {teams.map(({ agent: row, link }) =>
                     isRemoteWorker(row) ? (
                         <RemoteAgentRow key={row.id} agent={row.remote} link={link} />

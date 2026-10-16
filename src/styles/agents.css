@@ -397,13 +397,18 @@
     gap: 2px;
 }
 
-/* This project, by name, or all projects: two words at the right of the rail,
-   the chosen one in ink, each followed by how many agents it has open. */
+/* This project, by name, or all projects: two words over the open agents, the
+   chosen one in ink, each followed by how many agents it has open. */
+.workspace-rail.agent-rail .agent-actions + .scope-tabs {
+    margin-top: var(--space-2);
+}
 .scope-tabs {
     display: flex;
-    justify-content: flex-end;
     gap: var(--space-3);
-    padding-right: var(--row-inset);
+    padding-left: calc(var(--row-inset) + var(--space-1));
+}
+.workspace-rail .scope-tabs + .panel-group {
+    margin-top: var(--space-1h);
 }
 .scope-tabs button {
     display: inline-flex;
@@ -878,37 +883,6 @@
 
 .workspace-rail[data-density="compact"] .agent-row {
     height: 27px;
-}
-
-.agent-attention .panel-label {
-    color: var(--warn);
-}
-.inbox-count {
-    flex: none;
-    font-family: var(--mono);
-    font-size: var(--text-3xs);
-    color: var(--text-tertiary);
-}
-.inbox-answers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-    padding: 0 var(--space-2) var(--space-1h) calc(var(--space-2) + var(--mark) + var(--space-2));
-}
-.inbox-why {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.inbox-why.failed {
-    color: var(--danger);
-}
-.inbox-why + svg {
-    margin-left: 3px;
-}
-.inbox-project {
-    flex: none;
 }
 
 /* New chat, terminal and browser sit right under the scope track, a short step above the first group. */

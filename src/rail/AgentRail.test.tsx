@@ -428,7 +428,6 @@ describe("agent rail", () => {
 
         await user.click(screen.getByRole("tab", { name: /^All projects, \d+ open, 1 waiting$/ }));
         expect(await screen.findByRole("button", { name: /Hero image/ })).toBeInTheDocument();
-        expect(screen.getByText("Inbox 1")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: /^New chat/ })).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: /Hero image/ }));

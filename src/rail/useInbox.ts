@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { INBOX_EVENT, inboxApi, type Inbox, type InboxItem } from "../api/inbox";
 import { getIpcTransport } from "../api/transport";
+import { agentWindowId, ownerSessionId, projectSessionId } from "../state/selectors";
+import type { StoreState } from "../state/store";
 import { swallow } from "../state/toast";
 
 interface InboxState {
@@ -43,4 +45,12 @@ export function inInboxOrder<T extends { id: string }>(agents: readonly T[], ite
         return index < 0 ? items.length : index;
     };
     return [...agents].sort((a, b) => rank(a) - rank(b));
+}
+
+/** The project an item belongs to among those open: its agent's, else its folder's. */
+export function itemSessionId(state: Pick<StoreState, "windows" | "sessionOrder" | "windowsBySession" | "sessions">, item: InboxItem): string | null {
+    const windowId = item.agentId && agentWindowId(state, item.agentId);
+    if (windowId) return ownerSessionId(state, windowId);
+    const project = item.project ?? item.card?.project;
+    return project ? projectSessionId(state, project) : null;
 }

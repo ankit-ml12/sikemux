@@ -17,19 +17,18 @@ import { inTeams } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { Tooltip } from "../ui/Tooltip";
 import { Dropdown } from "../ui/Dropdown";
-import { Panel, PanelHeader } from "../ui/Panel";
+import { Panel } from "../ui/Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { usagePeak } from "./usageFormat";
-import { InboxPanel, itemSessionId } from "./InboxPanel";
 import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTabs } from "./ScopeTabs";
 import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
-import { inInboxOrder, useInbox } from "./useInbox";
+import { inInboxOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
@@ -372,7 +371,6 @@ export function AgentRailBody() {
                     waitingElsewhere={waitingElsewhere}
                     onChange={cmd.setAgentRailScope}
                 />
-                <InboxPanel />
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
@@ -388,7 +386,6 @@ export function AgentRailBody() {
 
                 {scope === "project" && opens.length > 0 && (
                     <Panel variant="group" className="agent-group">
-                        <PanelHeader label="Open" rule />
                         {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
                             isRemoteWorker(a) ? (
                                 <RemoteAgentRow key={a.id} agent={a.remote} link={link} />
