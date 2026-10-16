@@ -9,7 +9,6 @@ import { agentAccountR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
-import { Checkbox } from "../ui/Controls";
 import { AgentIcon } from "../ui/Icons";
 import { SignInError, SignInScreen, SignInWaiting } from "../plugin-api/SignIn";
 import {
@@ -219,20 +218,32 @@ function BrowserHelp({ url, account }: { url: string; account: ProviderProfile }
 
 function SignedIn({ provider, account, mark }: { provider: AccountProvider; account: ProviderProfile; mark: ReactNode }) {
     const status = useResource(agentAccountR, provider, account.configPath);
-    const inUse = useStore((s) => selectedProviderProfile(provider, s.providerProfiles, s.selectedProviderProfileIds)?.id === account.id);
+    const current = useStore((s) => selectedProviderProfile(provider, s.providerProfiles, s.selectedProviderProfileIds));
     const plan = status.data?.plan ? planLabel(status.data.plan) : null;
     const who = [status.data?.email ?? status.data?.organization, plan].filter(Boolean).join(" · ");
+    const switchTo = () => {
+        cmd.selectProviderProfile(provider, account.id);
+        closeAccountDialog();
+    };
     return (
         <SignInScreen
             mark={mark}
             title={`${account.name} is signed in`}
             lede={status.data?.signedIn === false ? "It is not signed in yet." : who || "Checking who signed in…"}>
-            <Checkbox checked={inUse} disabled={inUse} onChange={(on) => on && cmd.selectProviderProfile(provider, account.id)}>
-                Start new chats on this account
-            </Checkbox>
-            <button type="button" className="signin-btn primary" autoFocus onClick={closeAccountDialog}>
-                Done
-            </button>
+            {current && current.id !== account.id ? (
+                <>
+                    <button type="button" className="signin-btn primary" autoFocus onClick={switchTo}>
+                        Switch to {account.name}
+                    </button>
+                    <button type="button" className="signin-btn" onClick={closeAccountDialog}>
+                        Keep using {current.name}
+                    </button>
+                </>
+            ) : (
+                <button type="button" className="signin-btn primary" autoFocus onClick={closeAccountDialog}>
+                    Done
+                </button>
+            )}
         </SignInScreen>
     );
 }
