@@ -294,3 +294,7 @@ body {
     font-size: 12px;
   }
 }
+
+.prose thead:not(:has(th:not(:empty))) {
+  display: none;
+}
