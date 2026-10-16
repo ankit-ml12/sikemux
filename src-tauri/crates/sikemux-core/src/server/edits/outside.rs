@@ -15,7 +15,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use super::prior::{text_of, Before, Priors, MAX_FILE_BYTES};
 use super::{changed, line_count, owners::run, Edit, Store};
 use crate::protocol::AgentStatus;
-use crate::server::collisions::GRACE_MS;
+use crate::server::collisions::{exact_ms, Written, GRACE_MS};
 use crate::server::messages::{listed, Listed};
 use crate::server::names::project_of;
 use crate::server::remote::unix_ms;
@@ -52,47 +52,10 @@ struct Checkout {
     worked_at: u64,
 }
 
-/// When a path first changed: the file's own modification time when the file
-/// system keeps it finely enough to tell back-to-back commands apart, else
-/// when the change was seen.
-#[derive(Clone, Copy)]
-struct Changed {
-    at: u64,
-    exact: bool,
-}
-
-impl Changed {
-    /// A modification time far from when the change was seen was set by
-    /// whatever wrote the file, such as an unpacked archive, so it is not used.
-    fn of(path: &Path, seen: u64) -> Self {
-        let written = std::fs::metadata(path)
-            .ok()
-            .and_then(|meta| exact_ms(&meta));
-        match written.filter(|at| *at + GRACE_MS >= seen && *at <= seen + GRACE_MS) {
-            Some(at) => Self { at, exact: true },
-            None => Self {
-                at: seen,
-                exact: false,
-            },
-        }
-    }
-}
-
-/// When a file last changed, if its file system keeps it finer than a second.
-fn exact_ms(meta: &std::fs::Metadata) -> Option<u64> {
-    meta.modified()
-        .ok()
-        .filter(|at| {
-            at.duration_since(UNIX_EPOCH)
-                .is_ok_and(|since| since.subsec_nanos() != 0)
-        })
-        .map(unix_ms_of)
-}
-
 #[derive(Default)]
 struct Seen {
     /// Each changed path, with when it first changed.
-    changed: HashMap<PathBuf, Changed>,
+    changed: HashMap<PathBuf, Written>,
     /// When the checkout's commit or branch first moved.
     committed: Option<u64>,
     /// When more files changed than could wait to be looked at.
@@ -128,7 +91,7 @@ impl Seen {
         }
         if self.changed.len() < MAX_WAITING || self.changed.contains_key(&path) {
             if let std::collections::hash_map::Entry::Vacant(entry) = self.changed.entry(path) {
-                let changed = Changed::of(entry.key(), now);
+                let changed = Written::of(entry.key(), now);
                 entry.insert(changed);
             }
         } else {
@@ -484,7 +447,7 @@ fn reconcile(store: &Store, top: &Path, project: &str, seen: &Mutex<Seen>, look:
                 continue;
             };
             if let Some(at) = meta.modified().ok().filter(|at| *at >= since) {
-                let changed = Changed {
+                let changed = Written {
                     at: unix_ms_of(at),
                     exact: exact_ms(&meta).is_some(),
                 };
@@ -524,10 +487,10 @@ fn look(
     top: &Path,
     project: &str,
     seen: &Mutex<Seen>,
-    due: Vec<(PathBuf, Changed)>,
+    due: Vec<(PathBuf, Written)>,
     agents: &mut Option<Vec<Listed>>,
 ) {
-    let mut due: Vec<(String, PathBuf, Changed)> = due
+    let mut due: Vec<(String, PathBuf, Written)> = due
         .into_iter()
         .filter(|(path, _)| !core.collisions.editing(path))
         .filter_map(|(path, at)| Some((inside(top, &path)?, path, at)))
@@ -555,7 +518,7 @@ fn look_at(
     top: &Path,
     project: &str,
     seen: &Mutex<Seen>,
-    due: &[(String, PathBuf, Changed)],
+    due: &[(String, PathBuf, Written)],
     agents: &mut Option<Vec<Listed>>,
 ) {
     let asked: Vec<&str> = store.priors(project, |priors| {
@@ -589,7 +552,7 @@ fn look_at(
         ignored_files.map(|(inside, ..)| inside.as_str()),
         true,
     );
-    let changes: Vec<(Edit, [Changed; 2])> = store.priors(project, |priors| {
+    let changes: Vec<(Edit, [Written; 2])> = store.priors(project, |priors| {
         due.iter()
             .filter(|(inside, ..)| !ignored(inside))
             .filter_map(|(inside, path, first)| {
@@ -609,27 +572,17 @@ fn look_at(
         .into_iter()
         .map(|(edit, [first, last])| {
             let place = Path::new(&edit.path);
-            let at_work = |at: u64, grace: u64| -> BTreeSet<String> {
-                let (shells, terminals) = core
-                    .collisions
-                    .at_work(core, listed, project, place, at, grace);
-                shells.into_iter().chain(terminals).collect()
-            };
             let mut times = vec![first];
             if last.at != first.at {
                 times.push(last);
             }
             let mut at_work: Vec<String> = times
                 .into_iter()
-                .flat_map(|changed| {
-                    let exact = match changed.exact {
-                        true => at_work(changed.at, 0),
-                        false => BTreeSet::new(),
-                    };
-                    match exact.is_empty() {
-                        true => at_work(changed.at, GRACE_MS),
-                        false => exact,
-                    }
+                .flat_map(|written| {
+                    let (shells, terminals) = core
+                        .collisions
+                        .writers(core, listed, project, place, written);
+                    shells.into_iter().chain(terminals)
                 })
                 .collect();
             at_work.sort_unstable();
@@ -683,7 +636,7 @@ fn told(
     priors: &mut Priors,
     path: &Path,
     committed: Option<Option<&str>>,
-) -> Option<(Edit, Option<Changed>)> {
+) -> Option<(Edit, Option<Written>)> {
     let key = path.to_string_lossy();
     let Some((text, meta)) = text_of(path) else {
         if path.exists() {
@@ -707,7 +660,7 @@ fn told(
         }
     };
     priors.keep(&key, Some((&text, &meta)));
-    let last = exact_ms(&meta).map(|at| Changed { at, exact: true });
+    let last = exact_ms(&meta).map(|at| Written { at, exact: true });
     let edit = (before != text).then(|| Edit {
         at: unix_ms(),
         agent_id: String::new(),
