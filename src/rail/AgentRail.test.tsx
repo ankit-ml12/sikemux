@@ -25,6 +25,7 @@ vi.mock("../api/agents", () => ({
         account: mocks.account,
         addAccount: mocks.addAccount,
         signIn: mocks.signIn,
+        forgetAccount: () => Promise.resolve(),
         onSignInPage: () => Promise.resolve(() => {}),
         renameSession: mocks.renameSession,
         deleteSession: mocks.deleteSession,
@@ -74,6 +75,7 @@ import type { RecentChatsPage, RecentChatsRequest } from "../api/agents";
 import { acceptDialog, dismissDialog, useDialogs } from "../state/dialog";
 import { invalidate } from "../state/resources";
 import { getState, setState } from "../state/store";
+import { AccountDialogHost } from "../agents/AccountDialog";
 import { AgentRailBody } from "./AgentRail";
 import { agentIdsOf } from "../state/selectors";
 import { withAgents } from "../test/agents";
@@ -502,7 +504,7 @@ describe("agent rail", () => {
         expect(await screen.findByTitle("work@example.com")).toBeInTheDocument();
     });
 
-    it("sends a signed-out account to Settings to sign in", async () => {
+    it("signs a signed-out account in from the rail", async () => {
         mocks.account.mockResolvedValue({
             signedIn: false,
             name: null,
@@ -513,22 +515,32 @@ describe("agent rail", () => {
             sessions: "/home/me/.codex/sessions",
         });
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(
+            <>
+                <AgentRailBody />
+                <AccountDialogHost />
+            </>,
+        );
 
-        await user.click(await screen.findByRole("button", { name: "Sign in from Settings" }));
-        expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents", settingsTarget: "Codex accounts" });
-        expect(mocks.signIn).not.toHaveBeenCalled();
+        await user.click(await screen.findByRole("button", { name: "Sign in" }));
+        expect(screen.getByRole("dialog", { name: "Sign in to Codex" })).toBeInTheDocument();
+        await waitFor(() => expect(mocks.signIn).toHaveBeenCalled());
     });
 
-    it("leaves managing accounts to Settings", async () => {
+    it("adds an account from the rail, leaving the rest to Settings", async () => {
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(
+            <>
+                <AgentRailBody />
+                <AccountDialogHost />
+            </>,
+        );
 
         await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
-        expect(screen.queryByRole("menuitem", { name: /Add account|Sign out|Remove/ })).not.toBeInTheDocument();
-        await user.click(screen.getByRole("menuitem", { name: "Manage accounts…" }));
+        expect(screen.queryByRole("menuitem", { name: /Sign out|Remove|Manage/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("menuitem", { name: "Add account…" }));
 
-        expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents", settingsTarget: "Codex accounts" });
+        expect(screen.getByRole("dialog", { name: "Add a Codex account" })).toBeInTheDocument();
     });
 
     it("asks for the next page as the list scrolls to its end", async () => {

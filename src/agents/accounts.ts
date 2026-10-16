@@ -5,6 +5,7 @@ import { invalidate } from "../state/resources";
 import { reportError } from "../state/toast";
 import { hasAccounts, type AccountAgentType } from "./catalog";
 import type { Agent, AgentProvider, AgentType, ProviderProfile } from "../state/types";
+import * as cmd from "../state/commands";
 
 /* An account is a provider profile: its directory holds one sign-in. */
 
@@ -108,4 +109,52 @@ export async function signOut(profile: ProviderProfile, executablePath?: string)
     } finally {
         void refreshAccount(profile.provider, profile.configPath);
     }
+}
+
+/** Makes a new account a folder of its own that shares the default one's chats and settings. */
+export async function addAccount(provider: AccountProvider, name: string, accent: string): Promise<ProviderProfile> {
+    const configPath = await agentApi.addAccount(provider, name);
+    const profile: ProviderProfile = {
+        id: `profile-${Date.now().toString(36)}`,
+        name,
+        provider,
+        accent,
+        configPath,
+        environmentKeys: [],
+    };
+    cmd.saveProviderProfile(profile);
+    return profile;
+}
+
+/** The sign-in dialog: a new account for `provider`, or `profileId` signing in again. */
+export interface AccountDialogRequest {
+    provider: AccountProvider;
+    profileId?: string;
+}
+
+let dialog: (AccountDialogRequest & { id: number }) | null = null;
+let dialogCount = 0;
+const dialogListeners = new Set<() => void>();
+
+function setDialog(next: typeof dialog): void {
+    dialog = next;
+    for (const listener of dialogListeners) listener();
+}
+
+export function openAccountDialog(request: AccountDialogRequest): void {
+    setDialog({ ...request, id: ++dialogCount });
+}
+
+export function closeAccountDialog(): void {
+    setDialog(null);
+}
+
+export function useAccountDialog() {
+    return useSyncExternalStore(
+        (listener) => {
+            dialogListeners.add(listener);
+            return () => dialogListeners.delete(listener);
+        },
+        () => dialog,
+    );
 }

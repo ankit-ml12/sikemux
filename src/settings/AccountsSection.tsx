@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
-import { agentApi } from "../api/agents";
+import { useMemo } from "react";
 import { AccountSignIn } from "../agents/AccountSignIn";
-import { accountsOf, signIn, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
-import { providerAccent, selectedProviderProfile } from "../agents/agentProfiles";
+import { accountsOf, openAccountDialog, signOut, useSignIn, type AccountProvider } from "../agents/accounts";
+import { selectedProviderProfile } from "../agents/agentProfiles";
 import { ACCOUNT_AGENT_TYPES, agentLabel } from "../agents/catalog";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
@@ -16,14 +15,14 @@ import { Tooltip } from "../ui/Tooltip";
 import { planLabel } from "../rail/usageFormat";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
-const PROVIDERS = ACCOUNT_AGENT_TYPES.map((id) => ({ id, label: agentLabel(id), accent: providerAccent(id) }));
+const PROVIDERS = ACCOUNT_AGENT_TYPES.map((id) => ({ id, label: agentLabel(id) }));
 
 /** Where the person keeps their Claude and Codex accounts: who each is signed in as, and everything done to them. */
 export function AccountsSections() {
     return (
         <>
             {PROVIDERS.map((provider) => (
-                <ProviderAccounts key={provider.id} provider={provider.id} label={provider.label} accent={provider.accent} />
+                <ProviderAccounts key={provider.id} provider={provider.id} label={provider.label} />
             ))}
         </>
     );
@@ -33,13 +32,12 @@ export function accountsSectionTitle(provider: AccountProvider): string {
     return `${agentLabel(provider)} accounts`;
 }
 
-function ProviderAccounts({ provider, label, accent }: { provider: AccountProvider; label: string; accent: string }) {
+function ProviderAccounts({ provider, label }: { provider: AccountProvider; label: string }) {
     const profiles = useStore((s) => s.providerProfiles);
     const selections = useStore((s) => s.selectedProviderProfileIds);
     const autoSwitch = useStore((s) => s.accountAutoSwitch[provider] === true);
     const accounts = useMemo(() => accountsOf(provider, profiles), [provider, profiles]);
     const current = selectedProviderProfile(provider, profiles, selections) ?? accounts[0];
-    const [adding, setAdding] = useState(false);
 
     return (
         <SettingsSection
@@ -50,18 +48,14 @@ function ProviderAccounts({ provider, label, accent }: { provider: AccountProvid
                 {accounts.map((account) => (
                     <AccountRow key={account.id} provider={provider} account={account} inUse={account.id === current?.id} />
                 ))}
-                {adding ? (
-                    <AddAccountRow provider={provider} label={label} accent={accent} onDone={() => setAdding(false)} />
-                ) : (
-                    <SettingsRow
-                        icon={<IconPlus size={14} />}
-                        label="Another account"
-                        desc={`Sign in to a second ${label} account, such as one for work.`}>
-                        <button className="settings-btn" type="button" onClick={() => setAdding(true)}>
-                            Add account
-                        </button>
-                    </SettingsRow>
-                )}
+                <SettingsRow
+                    icon={<IconPlus size={14} />}
+                    label="Another account"
+                    desc={`Sign in to a second ${label} account, such as one for work.`}>
+                    <button className="settings-btn" type="button" onClick={() => openAccountDialog({ provider })}>
+                        Add account
+                    </button>
+                </SettingsRow>
                 {accounts.length > 1 && (
                     <SettingsRow
                         label="Move chats when one runs out"
@@ -113,8 +107,12 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
                     {who}
                 </span>
             }>
-            {signing || (known && !signedIn) ? (
+            {signing ? (
                 <AccountSignIn profile={account} buttonClass="settings-btn" />
+            ) : known && !signedIn ? (
+                <button className="settings-btn" type="button" onClick={() => openAccountDialog({ provider, profileId: account.id })}>
+                    Sign in
+                </button>
             ) : (
                 <>
                     {!inUse && (
@@ -140,65 +138,6 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
                     </button>
                 </Tooltip>
             )}
-        </SettingsRow>
-    );
-}
-
-/* A new account gets a folder of its own that shares the default one's chats
-   and settings, then signs in there straight away. */
-function AddAccountRow({ provider, label, accent, onDone }: { provider: AccountProvider; label: string; accent: string; onDone: () => void }) {
-    const [name, setName] = useState("");
-    const [busy, setBusy] = useState(false);
-    const add = async () => {
-        const trimmed = name.trim();
-        if (!trimmed || busy) return;
-        setBusy(true);
-        try {
-            const configPath = await agentApi.addAccount(provider, trimmed);
-            const profile: ProviderProfile = {
-                id: `profile-${Date.now().toString(36)}`,
-                name: trimmed,
-                provider,
-                accent,
-                configPath,
-                environmentKeys: [],
-            };
-            cmd.saveProviderProfile(profile);
-            onDone();
-            void signIn(profile);
-        } catch (error) {
-            reportError("Add account")(error);
-            setBusy(false);
-        }
-    };
-    return (
-        <SettingsRow label="New account" desc="A name for it, then sign in in your browser." wide>
-            <form
-                className="model-provider-key"
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    void add();
-                }}>
-                <input
-                    className="settings-input"
-                    autoFocus
-                    aria-label={`New ${label} account name`}
-                    placeholder="Work"
-                    maxLength={40}
-                    value={name}
-                    disabled={busy}
-                    onChange={(event) => setName(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === "Escape") onDone();
-                    }}
-                />
-                <button className="settings-btn" type="button" disabled={busy} onClick={onDone}>
-                    Cancel
-                </button>
-                <button className="settings-btn primary" type="submit" disabled={busy || !name.trim()}>
-                    Add and sign in
-                </button>
-            </form>
         </SettingsRow>
     );
 }

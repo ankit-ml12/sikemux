@@ -26,6 +26,7 @@ import { SessionSwitcher } from "./palettes/SessionSwitcher";
 import { Workspace } from "./workspace/Workspace";
 import { Toaster } from "./shell/Toaster";
 import { CommandPalette } from "./palettes/CommandPalette";
+import { AccountDialogHost } from "./agents/AccountDialog";
 import { DialogHost } from "./shell/DialogHost";
 import { ShareHost } from "./share/ShareControls";
 import { BuddyBridge } from "./buddies/Buddy";
@@ -1074,6 +1075,7 @@ export default function App() {
                 {whatsNewOpen && <WhatsNewOverlay />}
             </Suspense>
             <DialogHost />
+            <AccountDialogHost />
             <ShareHost />
             <BuddyPickerHost />
             <ImageViewer />

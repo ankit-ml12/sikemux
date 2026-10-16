@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentAccountStatus, AgentUsage } from "../api/agents";
-import { accountsOf, type AccountProvider } from "../agents/accounts";
-import { accountsSectionTitle } from "../settings/AccountsSection";
+import { accountsOf, openAccountDialog, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import { agentLabel } from "../agents/catalog";
 import * as cmd from "../state/commands";
@@ -129,8 +128,8 @@ export function AgentAccountsPanel({
             {signedOut ? (
                 <div className="agent-usage-empty">
                     {name} is signed out.{" "}
-                    <button type="button" className="agent-usage-link" onClick={() => manageAccounts(provider)}>
-                        Sign in from Settings
+                    <button type="button" className="agent-usage-link" onClick={() => openAccountDialog({ provider, profileId: current.id })}>
+                        Sign in
                     </button>
                 </div>
             ) : (
@@ -140,12 +139,8 @@ export function AgentAccountsPanel({
     );
 }
 
-function manageAccounts(provider: AccountProvider): void {
-    cmd.openSettings("agents", accountsSectionTitle(provider));
-}
-
-/* Only which account new chats use is chosen here; everything done to an
-   account happens in Settings. */
+/* Which account new chats use, and a new one to sign in; everything else done
+   to an account happens in Settings. */
 function accountMenu(
     provider: AccountProvider,
     accounts: ProviderProfile[],
@@ -171,7 +166,7 @@ function accountMenu(
             run: selected ? undefined : () => cmd.selectProviderProfile(provider, account.id),
         };
     });
-    items.push({ sep: true }, { label: "Manage accounts…", run: () => manageAccounts(provider) });
+    items.push({ sep: true }, { label: "Add account…", run: () => openAccountDialog({ provider }) });
     return items;
 }
 
