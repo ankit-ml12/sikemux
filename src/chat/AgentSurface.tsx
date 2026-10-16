@@ -8,7 +8,9 @@ import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { isResumableSession } from "../terminal/sessionResume";
-import { AgentIcon, IconAgent, IconMoreVertical, IconPanelRight, IconPlug, IconTerminal } from "../ui/Icons";
+import { AgentBuddy } from "../buddies/Buddy";
+import { openBuddyPicker } from "../buddies/commands";
+import { IconAgent, IconMoreVertical, IconPanelRight, IconPlug, IconTerminal } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { agentDisplay } from "../state/agentStatus";
 import { shownDeskPaneId } from "../state/selectors";
@@ -135,9 +137,14 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
         <section className="agent-surface" data-view={view}>
             <header className="agent-surface-header">
                 <div className="agent-surface-name">
-                    <span className={`agent-surface-mark agent-glyph ${agent.type}`} aria-hidden="true">
-                        <AgentIcon type={agent.type} size={16} />
-                    </span>
+                    <button
+                        type="button"
+                        className="agent-surface-mark agent-glyph buddy-mark"
+                        title="Change buddy"
+                        aria-label="Change buddy"
+                        onClick={() => openBuddyPicker(agent.id)}>
+                        <AgentBuddy agent={agent} size={20} />
+                    </button>
                     {renaming ? (
                         <AgentTitleInput
                             title={agent.title}

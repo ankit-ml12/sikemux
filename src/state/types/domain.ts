@@ -142,6 +142,15 @@ export interface Agent {
     worktree?: AgentWorktree;
     /** The terminal core session running this agent's TUI, which outlives the app. */
     ptyId?: number;
+    /** The character drawn for this agent. Without a pack and shape it follows the default style in settings. */
+    buddy?: AgentBuddy;
+}
+
+export interface AgentBuddy {
+    /** A slot in the pack's palette, given out so open agents rarely share one. */
+    color: number;
+    pack?: string;
+    shape?: string;
 }
 
 export interface AgentWorktree {

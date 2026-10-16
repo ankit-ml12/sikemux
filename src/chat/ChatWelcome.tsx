@@ -1,17 +1,17 @@
 import { Calendar, isEmptyActivity, Overview, useActivitySummary } from "../shell/ActivityPage";
-import { AgentIcon } from "../ui/Icons";
+import { AgentBuddy } from "../buddies/Buddy";
 import { basename } from "../lib/paths";
-import type { AgentType } from "../state/types";
+import type { Agent } from "../state/types";
 import "../styles/activity.css";
 
-export function ChatWelcome({ cwd, agentType }: { cwd: string; agentType: AgentType }) {
+export function ChatWelcome({ cwd, agent }: { cwd: string; agent: Agent }) {
     const { summary, failed } = useActivitySummary(cwd);
     const totals = summary?.totals;
     return (
         <div className="chat-welcome">
             <div className="chat-welcome-head">
-                <span className={`chat-welcome-mark agent-glyph ${agentType}`} aria-hidden="true">
-                    <AgentIcon type={agentType} size={40} />
+                <span className="chat-welcome-mark agent-glyph buddy-mark" aria-hidden="true">
+                    <AgentBuddy agent={agent} size={44} />
                 </span>
                 <span className="chat-welcome-title">{basename(cwd) || cwd}</span>
             </div>

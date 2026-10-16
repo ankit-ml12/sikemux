@@ -28,6 +28,7 @@ import { DEFAULT_SPACE_ICON, isSpaceIcon, spaceName, type SpaceIcon } from "./pr
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
+    AgentBuddy,
     AgentPermissionMode,
     AgentWorktree,
     AgentProvider,
@@ -99,6 +100,9 @@ const PERSISTED_KEYS = [
     "customThemes",
     "uiTextScale",
     "paneShader",
+    "buddyPack",
+    "buddyShape",
+    "buddyMotion",
     "paneImage",
     "terminalFontSize",
     "chatTextScale",
@@ -162,6 +166,9 @@ function packPrefs(s: StoreState): PersistedPrefs {
         customThemes: s.customThemes,
         uiTextScale: s.uiTextScale,
         paneShader: s.paneShader,
+        buddyPack: s.buddyPack,
+        buddyShape: s.buddyShape,
+        buddyMotion: s.buddyMotion,
         paneImage: s.paneImage,
         terminalFontSize: s.terminalFontSize,
         chatTextScale: s.chatTextScale,
@@ -439,7 +446,18 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (value.renamed === true) agent.renamed = true;
     const worktree = toAgentWorktree(value.worktree);
     if (worktree) agent.worktree = worktree;
+    const buddy = toAgentBuddy(value.buddy);
+    if (buddy) agent.buddy = buddy;
     return agent;
+}
+
+function toAgentBuddy(value: unknown): AgentBuddy | null {
+    if (!isRecord(value) || !Number.isInteger(value.color) || (value.color as number) < 0 || (value.color as number) > 63) return null;
+    const buddy: AgentBuddy = { color: value.color as number };
+    const pack = boundedOptionalString(value.pack, 40);
+    const shape = boundedOptionalString(value.shape, 40);
+    if (pack && shape) Object.assign(buddy, { pack, shape });
+    return buddy;
 }
 
 function persistedSession(sess: Session): PersistedSession {
@@ -468,6 +486,7 @@ function persistedAgent(agent: Agent): PersistedAgent {
         ...(agent.renamed ? { renamed: true } : {}),
         ...(agent.worktree ? { worktree: agent.worktree } : {}),
         ...(agent.ptyId !== undefined ? { ptyId: agent.ptyId } : {}),
+        ...(agent.buddy ? { buddy: agent.buddy } : {}),
     };
 }
 
@@ -1155,6 +1174,9 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         customThemes: Array.isArray(prefs.customThemes) ? prefs.customThemes.filter(isTheme) : cur.customThemes,
         uiTextScale: typeof prefs.uiTextScale === "number" && [1, 1.1, 1.25].includes(prefs.uiTextScale) ? prefs.uiTextScale : cur.uiTextScale,
         paneShader: typeof prefs.paneShader === "boolean" ? prefs.paneShader : cur.paneShader,
+        buddyPack: boundedOptionalString(prefs.buddyPack, 40) ?? cur.buddyPack,
+        buddyShape: boundedOptionalString(prefs.buddyShape, 40) ?? cur.buddyShape,
+        buddyMotion: typeof prefs.buddyMotion === "boolean" ? prefs.buddyMotion : cur.buddyMotion,
         paneImage: typeof prefs.paneImage === "string" || prefs.paneImage === null ? prefs.paneImage : cur.paneImage,
         terminalFontSize: typeof prefs.terminalFontSize === "number" ? clampTerminalFontSize(prefs.terminalFontSize) : cur.terminalFontSize,
         chatTextScale: typeof prefs.chatTextScale === "number" ? clampChatTextScale(prefs.chatTextScale) : cur.chatTextScale,

@@ -405,7 +405,7 @@ export function AgentChatPane({
                                                 <WorktreeNote step={worktree.step} worktree={agent.worktree} home={home} />
                                             </Suspense>
                                         )}
-                                        {welcoming && <ChatWelcome cwd={cwd} agentType={agent.type} />}
+                                        {welcoming && <ChatWelcome cwd={cwd} agent={agent} />}
                                         {displayState.messages.length === 0 && !welcoming && (
                                             <div className={`chat-connection-state ${displayState.connection}`} role="status">
                                                 {(connecting || resuming) && <span className="chat-activity-loader" aria-hidden="true" />}

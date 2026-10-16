@@ -10,6 +10,7 @@ import type { KeybindingOverrides } from "../commands/keybindings";
 import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
+import { DEFAULT_BUDDY_STYLE } from "../buddies/style";
 import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
 import type { AccountAgentType } from "../agents/catalog";
 
@@ -60,6 +61,10 @@ export interface DomainState {
     customThemes: Theme[];
     uiTextScale: number;
     paneShader: boolean;
+    /** The default character style: a pack id or "all", and a shape id or "mixed". */
+    buddyPack: string;
+    buddyShape: string;
+    buddyMotion: boolean;
     /** A picture on disk that panes show, dithered, in place of the grain. */
     paneImage: string | null;
     terminalFontSize: number;
@@ -262,6 +267,9 @@ export const useStore = create<StoreState>(() => {
         customThemes: [],
         uiTextScale: 1,
         paneShader: true,
+        buddyPack: DEFAULT_BUDDY_STYLE.pack,
+        buddyShape: DEFAULT_BUDDY_STYLE.shape,
+        buddyMotion: true,
         paneImage: null,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,

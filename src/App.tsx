@@ -28,6 +28,8 @@ import { Toaster } from "./shell/Toaster";
 import { CommandPalette } from "./palettes/CommandPalette";
 import { DialogHost } from "./shell/DialogHost";
 import { ShareHost } from "./share/ShareControls";
+import { BuddyBridge } from "./buddies/Buddy";
+import { BuddyPickerHost } from "./buddies/BuddyPicker";
 import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
@@ -1003,6 +1005,7 @@ export default function App() {
             <NotchBridge />
             <RemoteChatBridge />
             <AgentNameBridge />
+            <BuddyBridge />
             <AgentQuestionBridge />
             <AgentBoardBridge />
             <GlobalSkillsBridge />
@@ -1072,6 +1075,7 @@ export default function App() {
             </Suspense>
             <DialogHost />
             <ShareHost />
+            <BuddyPickerHost />
             <ImageViewer />
             <VoiceCaption />
             <PairingPrompt />

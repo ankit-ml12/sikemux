@@ -6,7 +6,8 @@ import { inTeams, type TeamLink } from "../agents/teams";
 import type { AgentDisplay } from "../state/agentStatus";
 import { activeAgentId, agentDisplayOf, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
-import { AgentIcon, IconClose, IconMerge } from "../ui/Icons";
+import { AgentBuddy } from "../buddies/Buddy";
+import { IconClose, IconMerge } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentLabel } from "../agents/AgentLabel";
@@ -122,8 +123,8 @@ export function OpenAgentRow({
     onContextMenu?: (event: MouseEvent) => void;
 }) {
     const glyph = (
-        <span className={`agent-glyph ${agent.type}`}>
-            <AgentIcon type={agent.type} size={20} />
+        <span className="agent-glyph buddy-mark">
+            <AgentBuddy agent={agent} size={22} />
         </span>
     );
     return (

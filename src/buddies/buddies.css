@@ -1,0 +1,336 @@
+.buddy {
+    display: inline-block;
+    flex: none;
+    line-height: 0;
+}
+
+.buddy svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.buddy .bd-blink,
+.buddy .bd-twinkle,
+.buddy .bd-rock,
+.buddy .bd-wave {
+    transform-box: fill-box;
+    transform-origin: center;
+}
+.buddy .bd-rock,
+.buddy .bd-wave {
+    transform-origin: 50% 100%;
+}
+
+/* A still buddy, or one on a Mac that asks for less motion, keeps its pose. */
+@media (prefers-reduced-motion: no-preference) {
+    .buddy:not(.still) .bd-blink {
+        animation: bd-blink 3.6s infinite;
+    }
+    .buddy:not(.still) .bd-look {
+        animation: bd-look 1.2s ease-in-out infinite alternate;
+    }
+    .buddy:not(.still) .bd-glance {
+        animation: bd-glance 5s ease-in-out infinite;
+    }
+    .buddy:not(.still) .bd-roam {
+        animation: bd-roam 4s ease-in-out infinite;
+    }
+    .buddy:not(.still) .bd-dart {
+        animation: bd-dart 0.8s steps(2) infinite;
+    }
+    .buddy:not(.still) .bd-bob {
+        animation: bd-bob 0.7s ease-in-out infinite alternate;
+    }
+    .buddy:not(.still) .bd-hop {
+        animation: bd-hop 1.2s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+    }
+    .buddy:not(.still) .bd-shake {
+        animation: bd-shake 0.5s steps(1) infinite;
+    }
+    .buddy:not(.still) .bd-flash {
+        animation: bd-flash 0.9s steps(1) infinite;
+    }
+    .buddy:not(.still) .bd-twinkle {
+        animation: bd-twinkle 1.5s ease-in-out infinite;
+    }
+    .buddy:not(.still) .bd-roll {
+        animation: bd-roll 1.8s linear infinite;
+    }
+    .buddy:not(.still) .bd-rock {
+        animation: bd-rock 1.8s ease-in-out infinite;
+    }
+    .buddy:not(.still) .bd-wave {
+        animation: bd-wave 0.9s ease-in-out infinite alternate;
+    }
+    .buddy:not(.still) .bd-drip {
+        animation: bd-drip 1.6s ease-in infinite;
+    }
+}
+
+@keyframes bd-blink {
+    0%,
+    93%,
+    100% {
+        transform: scaleY(1);
+    }
+    96% {
+        transform: scaleY(0.1);
+    }
+}
+@keyframes bd-look {
+    from {
+        transform: translateX(-0.9px);
+    }
+    to {
+        transform: translateX(0.9px);
+    }
+}
+@keyframes bd-glance {
+    0%,
+    35%,
+    100% {
+        transform: translateX(0);
+    }
+    42%,
+    58% {
+        transform: translateX(-1.3px);
+    }
+    66%,
+    80% {
+        transform: translateX(1.1px);
+    }
+}
+@keyframes bd-roam {
+    0%,
+    20%,
+    100% {
+        transform: translate(0, 0);
+    }
+    30%,
+    45% {
+        transform: translate(-0.9px, -0.4px);
+    }
+    55%,
+    70% {
+        transform: translate(0.9px, 0.3px);
+    }
+    80% {
+        transform: translate(0, 0.6px);
+    }
+}
+@keyframes bd-dart {
+    from {
+        transform: translateX(-1px);
+    }
+    to {
+        transform: translateX(1px);
+    }
+}
+@keyframes bd-bob {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(-0.8px);
+    }
+}
+@keyframes bd-hop {
+    0%,
+    55%,
+    100% {
+        transform: translateY(0);
+    }
+    25% {
+        transform: translateY(-1.8px);
+    }
+}
+@keyframes bd-shake {
+    25% {
+        transform: translateX(0.5px);
+    }
+    50% {
+        transform: translateX(-0.5px);
+    }
+    75% {
+        transform: translateX(0.3px);
+    }
+}
+@keyframes bd-flash {
+    50% {
+        opacity: 0.35;
+    }
+}
+@keyframes bd-twinkle {
+    0%,
+    100% {
+        opacity: 0.2;
+        transform: scale(0.5);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+@keyframes bd-roll {
+    from {
+        transform: translateY(-2px);
+    }
+    to {
+        transform: translateY(13px);
+    }
+}
+@keyframes bd-rock {
+    0%,
+    100% {
+        transform: rotate(-5deg);
+    }
+    50% {
+        transform: rotate(5deg);
+    }
+}
+@keyframes bd-wave {
+    from {
+        transform: rotate(-14deg);
+    }
+    to {
+        transform: rotate(10deg);
+    }
+}
+@keyframes bd-drip {
+    0% {
+        transform: translateY(-0.6px);
+        opacity: 0;
+    }
+    30% {
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(1.2px);
+        opacity: 0.9;
+    }
+}
+
+.buddy-dlg {
+    width: min(620px, 100%);
+}
+.buddy-dlg .dlg-body {
+    padding: var(--space-3) var(--space-5) 0;
+    gap: var(--space-3);
+}
+
+/* Each pack, tile and colour is its own rounded item with a gap between, never one box cut into parts. */
+.buddy-packs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1h);
+}
+
+.buddy-chip,
+.buddy-tile,
+.buddy-swatch {
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--text-secondary);
+    font-family: var(--ui);
+    transition:
+        color var(--dur-1) linear,
+        border-color var(--dur-1) linear,
+        background var(--dur-1) linear;
+}
+.buddy-chip:hover,
+.buddy-tile:hover,
+.buddy-swatch:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+.buddy-chip.on,
+.buddy-tile.on,
+.buddy-swatch.on {
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+    color: var(--text-primary);
+}
+
+.buddy-chip {
+    height: 26px;
+    padding: 0 var(--space-2h, 10px);
+    font-size: var(--text-xs);
+}
+
+.buddy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    align-content: start;
+    gap: var(--space-1h);
+    height: 296px;
+    overflow-y: auto;
+}
+
+.buddy-tile {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-1h);
+    padding: var(--space-2) var(--space-1) var(--space-1h);
+    font-size: var(--text-2xs);
+    min-width: 0;
+}
+.buddy-tile > span:last-child {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.buddy-colors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1h);
+}
+
+.buddy-swatch {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+}
+.buddy-swatch > span {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+}
+
+.buddy-dlg-current {
+    margin-right: var(--space-1);
+}
+
+.agent-glyph.buddy-mark {
+    color: inherit;
+}
+
+.buddy-samples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.tabbar.v-agent {
+    --mark: 26px;
+}
+
+/* The logos these replace are drawn small inside their box and overlap; buddies fill theirs, so they sit side by side. */
+.proj-pip.buddy-mark + .proj-pip {
+    margin-left: 1px;
+}
+
+button.agent-surface-mark {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}

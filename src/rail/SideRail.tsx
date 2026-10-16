@@ -19,7 +19,8 @@ import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconClose, IconFolder, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
+import { AgentBuddy } from "../buddies/Buddy";
+import { IconAgent, IconClose, IconFolder, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
@@ -240,8 +241,8 @@ function ProjectBlock({ s }: { s: Session }) {
             {visibleAgents.length > 0 && (
                 <span className="proj-child-icons">
                     {visibleAgents.map((a) => (
-                        <span key={a.id} className={`proj-pip proj-pip-${a.type}`}>
-                            <AgentIcon type={a.type} size={20} />
+                        <span key={a.id} className="proj-pip buddy-mark">
+                            <AgentBuddy agent={a} size={20} />
                         </span>
                     ))}
                     {agentOverflow > 0 && <span className="proj-child-icons-more">+{agentOverflow}</span>}
@@ -290,8 +291,8 @@ function ProjectBlock({ s }: { s: Session }) {
               ))
             : [];
     const agentIcons: ReactNode[] = agents.map((a) => (
-        <span key={a.id} className={`proj-pip proj-pip-${a.type}`}>
-            <AgentIcon type={a.type} size={20} />
+        <span key={a.id} className="proj-pip buddy-mark">
+            <AgentBuddy agent={a} size={20} />
         </span>
     ));
 

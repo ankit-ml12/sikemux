@@ -42,6 +42,7 @@ export type PersistedAgent = Pick<
     | "renamed"
     | "worktree"
     | "ptyId"
+    | "buddy"
 >;
 
 export interface PersistedSnapshot {
@@ -68,6 +69,9 @@ export interface PersistedPrefs {
     customThemes?: Theme[];
     uiTextScale?: number;
     paneShader?: boolean;
+    buddyPack?: string;
+    buddyShape?: string;
+    buddyMotion?: boolean;
     paneImage?: string | null;
     terminalFontSize?: number;
     chatTextScale?: number;

@@ -74,6 +74,7 @@ import { SkillsSection } from "./SkillsSection";
 import { ModelProvidersSection } from "./ModelProvidersSection";
 import { AccountsSections } from "./AccountsSection";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
+import { BuddySettings } from "../buddies/BuddySettings";
 import { useVoice, type VoiceState } from "../voice/dictation";
 import "../styles/settings.css";
 
@@ -1382,6 +1383,8 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     </SettingsRow>
                 </SettingsRows>
             </SettingsSection>
+
+            <BuddySettings />
 
             {IS_MACOS && (
                 <SettingsSection title="Window">
