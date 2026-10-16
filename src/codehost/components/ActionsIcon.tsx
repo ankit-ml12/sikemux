@@ -107,15 +107,6 @@ export function SectionIcon({ section, size = 14 }: { section: Section; size?: n
     }
 }
 
-export function SignOutIcon({ size = 14 }: { size?: number }) {
-    return (
-        <Stroke size={size}>
-            <path d="M6.5 2.5H4a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 4 13.5h2.5" />
-            <path d="M10.5 5 13.5 8l-3 3M13.5 8H6.5" />
-        </Stroke>
-    );
-}
-
 export function NotPlannedIcon({ size = 14 }: { size?: number }) {
     return (
         <Stroke size={size}>

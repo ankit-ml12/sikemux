@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { IconCheck, Tooltip } from "../../plugin-api/ui";
+import { IconCheck, IconGit, IconPlus, IconPower, IconUser, Tooltip } from "../../plugin-api/ui";
 import { useAccount, useHost, type CodeHost, type HostAccountEntry } from "../registry";
 import { accountsR, hostStatusR } from "../resources";
 import { forgetAccount, SECTIONS, setProjectAccount, type Section } from "../state";
-import { SectionIcon, SignOutIcon } from "./ActionsIcon";
+import { SectionIcon } from "./ActionsIcon";
 import { Avatar, Initial } from "./Pictures";
 import "../strip.css";
 
@@ -105,7 +105,9 @@ function AccountRow({ entry, current, onPick }: { entry: HostAccountEntry; curre
             role="menuitemradio"
             aria-checked={current}
             onClick={onPick}>
-            {entry.avatarUrl ? <Avatar url={entry.avatarUrl} login={entry.login} /> : <Initial login={entry.login} />}
+            <span className="tree-ctx-icon">
+                {entry.avatarUrl ? <Avatar url={entry.avatarUrl} login={entry.login} /> : <Initial login={entry.login} />}
+            </span>
             <span className="host-account-name">
                 {entry.login}
                 {entry.detail && <span className="host-account-detail">{entry.detail}</span>}
@@ -221,6 +223,9 @@ export function HostAccountButton({
                                 />
                             ))}
                         <button type="button" className="env-dd-item" role="menuitem" onClick={() => act(onAddAccount)}>
+                            <span className="tree-ctx-icon">
+                                <IconPlus size={13} />
+                            </span>
                             Add another account…
                         </button>
                         <button
@@ -231,15 +236,24 @@ export function HostAccountButton({
                                 setMenuOpen(false);
                                 onPickRepo();
                             }}>
+                            <span className="tree-ctx-icon">
+                                <IconGit size={13} />
+                            </span>
                             Choose another repository…
                         </button>
                         {accounts.length > 1 && !isDefault && (
                             <button type="button" className="env-dd-item" role="menuitem" onClick={() => act(() => void makeDefault())}>
+                                <span className="tree-ctx-icon">
+                                    <IconUser size={13} />
+                                </span>
                                 Open new projects as {account.login}
                             </button>
                         )}
                         <button type="button" className="env-dd-item" role="menuitem" onClick={() => act(() => void signOut())}>
-                            <SignOutIcon size={12} /> Sign {account.login} out
+                            <span className="tree-ctx-icon">
+                                <IconPower size={13} />
+                            </span>
+                            Sign {account.login} out
                         </button>
                     </div>
                 </>

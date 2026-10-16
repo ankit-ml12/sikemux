@@ -138,7 +138,7 @@
 .terminal-menu button {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     width: 100%;
     min-height: 27px;
     padding: 0 8px;
@@ -161,6 +161,7 @@
 }
 
 .terminal-menu kbd {
+    margin-left: auto;
     color: var(--ink-faint);
     font: 9px var(--mono);
 }

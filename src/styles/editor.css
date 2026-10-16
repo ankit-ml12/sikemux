@@ -245,8 +245,7 @@
     margin-right: -2px;
     color: var(--text-tertiary);
 }
-.tree-ctx-item:hover .tree-ctx-icon,
-.tree-ctx-item.danger .tree-ctx-icon {
+[role^="menuitem"]:is(:hover, .danger) > .tree-ctx-icon {
     color: inherit;
 }
 .tree-ctx-label {

@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { PluginTopBarProps } from "../../../plugin-api";
 import { currentBranch, git, gitOverviewR, notify, reportError } from "../../../plugin-api/host";
 import { invalidate, peekResource, useResourceEnabled } from "../../../plugin-api/resources";
-import { IconChevron, IconGit, IconRundeck, Tooltip } from "../../../plugin-api/ui";
+import { IconCheckout, IconChevron, IconRundeck, Tooltip } from "../../../plugin-api/ui";
 import type { MatrixCell, RundeckJob } from "../api";
 import { rndJobCellsR, rndJobIndexR, rndProjectsR } from "../resources";
 import { basenameOf, displayStatus, groupSegments, isProdTarget, targetTone, type EnvTone } from "../shape";
@@ -192,7 +192,9 @@ function DeployChip({ job, cell, repo }: { job: RundeckJob; cell: MatrixCell | n
                             role="menuitem"
                             onClick={deployBranch}
                             disabled={runsBranch && repoStatus.status === "loading" && !repoStatus.data}>
-                            <IconRundeck size={12} />
+                            <span className="tree-ctx-icon">
+                                <IconRundeck size={13} />
+                            </span>
                             <span>{deployLabel}</span>
                             {runsBranch && branch && <span className={`tb-deploy-menu-branch rnd-branch-${branchKind(branch)}`}>{branch}</span>}
                         </button>
@@ -205,7 +207,9 @@ function DeployChip({ job, cell, repo }: { job: RundeckJob; cell: MatrixCell | n
                                     role="menuitem"
                                     onClick={checkoutBranch}
                                     disabled={checkingOut || deployed === branch}>
-                                    <IconGit size={12} />
+                                    <span className="tree-ctx-icon">
+                                        <IconCheckout size={13} />
+                                    </span>
                                     <span>{checkingOut ? "checking out…" : "checkout"}</span>
                                 </button>
                             </Tooltip>

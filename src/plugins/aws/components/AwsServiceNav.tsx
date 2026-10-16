@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useResource, useResourceEnabled } from "../../../plugin-api/resources";
-import { IconChevron } from "../../../plugin-api/ui";
+import { IconChevron, IconUser } from "../../../plugin-api/ui";
 import { awsIdentityR, awsProfilesR } from "../resources";
 import { AWS_SERVICES, awsSettings, setAwsProfile, setAwsService, useAws, type AwsService } from "../state";
 import { AwsAgentProfile } from "./AwsAgentProfile";
@@ -108,9 +108,14 @@ function Account({ profile }: { profile: string }) {
                                     setOpen(false);
                                     if (!on) setAwsProfile(p.name);
                                 }}>
-                                <span className="aws-profile-item-name">{split.title}</span>
-                                <span className="aws-profile-item-meta">
-                                    {[id && formatAccount(id), p.kind === "sso" ? "SSO" : p.kind, p.region].filter(Boolean).join(" · ")}
+                                <span className="tree-ctx-icon">
+                                    <IconUser size={13} />
+                                </span>
+                                <span className="aws-profile-item-text">
+                                    <span className="aws-profile-item-name">{split.title}</span>
+                                    <span className="aws-profile-item-meta">
+                                        {[id && formatAccount(id), p.kind === "sso" ? "SSO" : p.kind, p.region].filter(Boolean).join(" · ")}
+                                    </span>
                                 </span>
                             </button>
                         );
