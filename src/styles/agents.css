@@ -506,11 +506,18 @@
     color: var(--text-tertiary);
     background: transparent;
 }
+/* One line a limit: its name, a grey ruler, how much is used. The ruler only
+   takes a colour once a limit is close to running out. */
 .agent-usage-row {
-    --usage-signal: var(--usage-fill);
+    --usage-signal: color-mix(in oklab, var(--ink) 62%, transparent);
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 10px;
+    height: 18px;
 }
 .agent-usage-row + .agent-usage-row {
-    margin-top: 14px;
+    margin-top: 6px;
 }
 .agent-usage-row[data-tone="warm"] {
     --usage-signal: var(--warn);
@@ -518,69 +525,31 @@
 .agent-usage-row[data-tone="hot"] {
     --usage-signal: var(--danger);
 }
-.agent-usage-line {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    margin-bottom: 6px;
-    font-size: 10px;
-    line-height: 1;
-}
 .agent-usage-name {
     min-width: 0;
-    flex: 0 1 auto;
-    overflow: hidden;
-    color: var(--text-secondary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-/* Countdowns are short and never truncate — a long window name gives up its
-   width first, since the ellipsis still identifies it. */
-.agent-usage-reset {
-    min-width: 0;
-    flex: 1 0 auto;
     overflow: hidden;
     color: var(--text-tertiary);
-    font-size: var(--text-3xs);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
+    font-size: var(--text-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-.agent-usage-gauge {
-    display: flex;
-    align-items: center;
-    gap: 10px;
 }
 .agent-usage-pct {
-    flex: 0 0 auto;
-    min-width: 38px;
-    color: var(--usage-signal);
-    font-size: 15px;
+    color: var(--text-primary);
+    font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
-    font-weight: 620;
-    letter-spacing: -0.04em;
-    line-height: 1;
+    text-align: right;
 }
-.agent-usage-row[data-tone="steady"] .agent-usage-pct {
-    color: color-mix(in srgb, var(--usage-signal) 58%, var(--text-primary));
-}
-.agent-usage-pct i {
-    margin-left: 1px;
-    color: var(--text-tertiary);
-    font-size: var(--text-3xs);
-    font-style: normal;
-    font-weight: 400;
+.agent-usage-row:not([data-tone="steady"]) .agent-usage-pct {
+    color: var(--usage-signal);
 }
 /* Tick geometry is shared by track and fill, so lit and unlit ticks line up. */
 .agent-usage-track {
     position: relative;
-    flex: 1 1 auto;
-    height: 12px;
+    height: 10px;
     overflow: hidden;
     background-image: repeating-linear-gradient(
         90deg,
-        color-mix(in srgb, var(--text-tertiary) 30%, transparent) 0 var(--usage-cell),
+        color-mix(in oklab, var(--ink) 10%, transparent) 0 var(--usage-cell),
         transparent var(--usage-cell) var(--usage-pitch)
     );
 }
@@ -589,6 +558,12 @@
     inset: 0 auto 0 0;
     background-image: repeating-linear-gradient(90deg, var(--usage-signal) 0 var(--usage-cell), transparent var(--usage-cell) var(--usage-pitch));
     transition: width 0.32s cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+.agent-usage-resets {
+    margin-top: 8px;
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    font-variant-numeric: tabular-nums;
 }
 .agent-usage-empty {
     color: var(--text-tertiary);
@@ -610,10 +585,7 @@
     margin-bottom: 8px;
 }
 .workspace-rail[data-density="compact"] .agent-usage-row + .agent-usage-row {
-    margin-top: 11px;
-}
-.workspace-rail[data-density="compact"] .agent-usage-pct {
-    font-size: 13.5px;
+    margin-top: 4px;
 }
 @media (prefers-reduced-motion: reduce) {
     .agent-usage-empty[data-loading="true"] {

@@ -82,17 +82,13 @@ export function AgentAccountsPanel({
                     aria-haspopup="menu"
                     aria-expanded={menu !== null}
                     aria-label={`${providerLabel} account: ${name}`}
-                    title={signedOut ? "Signed out" : (status.data?.email ?? undefined)}
+                    title={signedOut ? "Signed out" : [status.data?.email, plan && planLabel(plan)].filter(Boolean).join(" · ") || undefined}
                     onClick={() => {
                         readOthers();
                         const box = head.current!.getBoundingClientRect();
                         setMenu({ x: box.left, y: box.top - 6, width: box.width });
                     }}>
-                    <span className="agent-account-mark" aria-hidden="true">
-                        {initials(name)}
-                    </span>
                     <span className="agent-account-name">{name}</span>
-                    {plan && <span className="agent-account-plan">{planLabel(plan)}</span>}
                     <IconChevron size={9} className="agent-account-chevron" />
                 </button>
                 <Tooltip label={`Refresh ${providerLabel} plan limits`}>
@@ -177,6 +173,7 @@ function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {
             </div>
         );
     }
+    const resets = [...new Set(windows.map((window) => resetCountdown(window.resetsAt, now).replace(/^reset /, "")))];
     return (
         <>
             {windows.map((window, index) => {
@@ -188,29 +185,24 @@ function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {
                         side="left"
                         label={`${window.label}: ${rounded}% used. ${resetTitle(window.resetsAt)}`}>
                         <div className="agent-usage-row" data-tone={usageTone(percent)}>
-                            <div className="agent-usage-line">
-                                <span className="agent-usage-name">{window.label}</span>
-                                <span className="agent-usage-reset">{resetCountdown(window.resetsAt, now)}</span>
-                            </div>
-                            <div className="agent-usage-gauge">
-                                <span className="agent-usage-pct">
-                                    <CountUp value={rounded} />
-                                    <i>%</i>
-                                </span>
-                                <span
-                                    className="agent-usage-track"
-                                    role="meter"
-                                    aria-label={`${window.label} usage`}
-                                    aria-valuemin={0}
-                                    aria-valuemax={100}
-                                    aria-valuenow={rounded}>
-                                    <span className="agent-usage-fill" style={{ width: `${percent}%` }} />
-                                </span>
-                            </div>
+                            <span className="agent-usage-name">{window.label}</span>
+                            <span
+                                className="agent-usage-track"
+                                role="meter"
+                                aria-label={`${window.label} usage`}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={rounded}>
+                                <span className="agent-usage-fill" style={{ width: `${percent}%` }} />
+                            </span>
+                            <span className="agent-usage-pct">
+                                <CountUp value={rounded} />%
+                            </span>
                         </div>
                     </Tooltip>
                 );
             })}
+            <div className="agent-usage-resets">resets in {resets.join(" · ")}</div>
         </>
     );
 }

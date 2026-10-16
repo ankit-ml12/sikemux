@@ -194,7 +194,7 @@ describe("agent rail", () => {
 
         expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
-        expect(screen.getByText("reset 1h 30m")).toBeInTheDocument();
+        expect(screen.getByText("resets in 1h 30m")).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Agent provider" }));
         await user.click(screen.getByRole("option", { name: /^Claude/ }));
@@ -501,7 +501,7 @@ describe("agent rail", () => {
             expect(mocks.recent).toHaveBeenCalledWith(expect.objectContaining({ providers: [{ agent: "codex", configPath: "~/.codex-work" }] })),
         );
         expect(await screen.findByRole("button", { name: "Codex account: Work" })).toBeInTheDocument();
-        expect(await screen.findByTitle("work@example.com")).toBeInTheDocument();
+        expect(await screen.findByTitle(/^work@example.com/)).toBeInTheDocument();
     });
 
     it("signs a signed-out account in from the rail", async () => {
