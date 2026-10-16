@@ -30,7 +30,7 @@ name = "sikemux_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["aws", "bitbucket", "bruno", "database", "github", "gitlab", "jira", "rundeck", "signoz", "slack"]
+default = ["aws", "bitbucket", "bruno", "database", "github", "gitlab", "jira", "linear", "rundeck", "signoz", "slack"]
 ipc-command-tests = ["tauri/test"]
 aws = ["dep:sikemux-plugin-aws"]
 bitbucket = ["dep:sikemux-plugin-bitbucket"]
@@ -39,6 +39,7 @@ bruno = ["dep:sikemux-plugin-bruno"]
 database = ["dep:sikemux-plugin-database"]
 github = ["dep:sikemux-plugin-github"]
 jira = ["dep:sikemux-plugin-jira"]
+linear = ["dep:sikemux-plugin-linear"]
 rundeck = ["dep:sikemux-plugin-rundeck"]
 signoz = ["dep:sikemux-plugin-signoz"]
 slack = ["dep:sikemux-plugin-slack"]
@@ -89,6 +90,7 @@ sikemux-plugin-bruno = { path = "plugins/bruno", optional = true }
 sikemux-plugin-database = { path = "plugins/database", optional = true }
 sikemux-plugin-github = { path = "plugins/github", optional = true }
 sikemux-plugin-jira = { path = "plugins/jira", optional = true }
+sikemux-plugin-linear = { path = "plugins/linear", optional = true }
 sikemux-plugin-rundeck = { path = "plugins/rundeck", optional = true }
 sikemux-plugin-signoz = { path = "plugins/signoz", optional = true }
 sikemux-plugin-slack = { path = "plugins/slack", optional = true }
@@ -168,6 +170,8 @@ opt-level = "z"
 [profile.release.package.sikemux-plugin-gitlab]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-jira]
+opt-level = "z"
+[profile.release.package.sikemux-plugin-linear]
 opt-level = "z"
 [profile.release.package.sikemux-plugin-rundeck]
 opt-level = "z"
