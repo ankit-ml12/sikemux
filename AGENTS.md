@@ -153,6 +153,16 @@
   change adds, removes or renames something the site describes, say so, so the site
   can be updated.
 
+## Docs
+
+- The user docs for docs.sikemux.com live in `docs-site/`, an Astro Starlight site with
+  its own package. `pnpm dev` there serves them.
+- A change that adds, removes or renames something users see updates its page in
+  `docs-site/src/content/docs/` in the same commit.
+- The pages under `reference/` are generated: run `pnpm docs:reference` after changing
+  a default shortcut, the CLI's help or `browser/tools.json`. CI fails while they are
+  out of date.
+
 ## UI rules
 
 - Never mark a selected, focused or active item with a coloured bar down its left
