@@ -1,33 +1,19 @@
 import { useSyncExternalStore } from "react";
-import { INBOX_EVENT, inboxApi, type Inbox, type InboxDigest, type InboxItem } from "../api/inbox";
+import { INBOX_EVENT, inboxApi, type Inbox, type InboxItem } from "../api/inbox";
 import { getIpcTransport } from "../api/transport";
 import { swallow } from "../state/toast";
 
 interface InboxState {
     inbox: Inbox;
-    /** What happened while the person was away, until they dismiss it. */
-    digest: InboxDigest | null;
 }
 
-let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, collisions: {}, remoteAgents: [] }, digest: null };
+let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, collisions: {}, remoteAgents: [] } };
 const listeners = new Set<() => void>();
 let started = false;
 
-function set(next: Partial<InboxState>): void {
-    state = { ...state, ...next };
-    for (const listener of listeners) listener();
-}
-
 function take(inbox: Inbox): void {
-    const back = state.inbox.away && !inbox.away;
-    set(inbox.away ? { inbox, digest: null } : { inbox });
-    if (!back) return;
-    inboxApi
-        .digest()
-        .then((digest) => {
-            if (!state.inbox.away && digest.finished.length + digest.failed.length > 0) set({ digest });
-        })
-        .catch(swallow("read the inbox digest"));
+    state = { inbox };
+    for (const listener of listeners) listener();
 }
 
 function start(): void {
@@ -48,10 +34,6 @@ function subscribe(listener: () => void): () => void {
 /** The core's inbox, kept for the whole app once anything reads it. */
 export function useInbox(): InboxState {
     return useSyncExternalStore(subscribe, () => state);
-}
-
-export function dismissDigest(): void {
-    set({ digest: null });
 }
 
 /** Agents in the order the inbox lists them; those it does not list keep their order after it. */

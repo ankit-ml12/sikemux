@@ -13,7 +13,7 @@ import { getState, useStore, type StoreState } from "../state/store";
 import { reportError } from "../state/toast";
 import { AgentIcon, IconFolder, IconTerminal } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
-import { dismissDigest, useInbox } from "./useInbox";
+import { useInbox } from "./useInbox";
 
 /** The project an item belongs to among those open: its agent's, else its folder's. */
 export function itemSessionId(state: Pick<StoreState, "windows" | "sessionOrder" | "windowsBySession" | "sessions">, item: InboxItem): string | null {
@@ -40,37 +40,23 @@ function openItem(item: InboxItem): void {
 }
 
 /**
- * What waits on the person across every project, in the order the core ranks it; work under way is only counted. Above it,
- * once they come back, how many agents finished or failed while they were away.
+ * What waits on the person across every project, in the order the core ranks it; work under way is only counted.
  */
 export function InboxPanel() {
-    const { inbox, digest } = useInbox();
+    const { inbox } = useInbox();
     const items = inbox.items.filter((item) => item.tier !== "progress");
+    if (items.length === 0) return null;
     return (
-        <>
-            {digest && (
-                <Panel variant="group" className="agent-group">
-                    <PanelHeader
-                        label="While you were away"
-                        rule
-                        extra={<span className="inbox-count">{`${digest.finished.length} finished · ${digest.failed.length} failed`}</span>}
-                        actions={[{ label: "Dismiss", onClick: dismissDigest }]}
-                    />
-                </Panel>
-            )}
-            {items.length > 0 && (
-                <Panel variant="group" className={`agent-group${items[0].tier === "needs" ? " agent-attention" : ""}`}>
-                    <PanelHeader
-                        label={`Inbox ${items.length}`}
-                        rule
-                        extra={inbox.working > 0 && <span className="inbox-count">{inbox.working} working</span>}
-                    />
-                    {items.map((item) => (
-                        <InboxRow key={item.id} item={item} />
-                    ))}
-                </Panel>
-            )}
-        </>
+        <Panel variant="group" className={`agent-group${items[0].tier === "needs" ? " agent-attention" : ""}`}>
+            <PanelHeader
+                label={`Inbox ${items.length}`}
+                rule
+                extra={inbox.working > 0 && <span className="inbox-count">{inbox.working} working</span>}
+            />
+            {items.map((item) => (
+                <InboxRow key={item.id} item={item} />
+            ))}
+        </Panel>
     );
 }
 

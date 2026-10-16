@@ -79,20 +79,10 @@ export interface Inbox {
     remoteAgents: RemoteAgent[];
 }
 
-/** What finished, failed and still waits since the person last left. */
-export interface InboxDigest {
-    since: number | null;
-    away: boolean;
-    finished: InboxItem[];
-    failed: InboxItem[];
-    waiting: InboxItem[];
-}
-
 /** Sent by the window whenever the core's inbox changes. */
 export const INBOX_EVENT = "inbox_changed";
 
 export const inboxApi = {
     read: () => invoke<Inbox>("inbox_call", { method: "inbox", params: null }),
-    digest: () => invoke<InboxDigest>("inbox_call", { method: "digest", params: {} }),
     agentMessages: (project: string) => invoke<AgentMessageLog>("inbox_call", { method: "agentMessages", params: { project } }),
 };
