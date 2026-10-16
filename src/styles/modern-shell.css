@@ -660,16 +660,6 @@ textarea:focus,
     margin-bottom: 9px;
 }
 
-/* Refresh is there when you reach for it. */
-.agent-usage-head .rail-group-add {
-    opacity: 0;
-    transition: opacity var(--dur-1);
-}
-.agent-usage-head:hover .rail-group-add,
-.agent-usage-head .rail-group-add:focus-visible {
-    opacity: 1;
-}
-
 .rail-search {
     height: 34px;
     margin: 10px 12px 2px;
