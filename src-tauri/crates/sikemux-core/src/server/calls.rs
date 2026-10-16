@@ -29,7 +29,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "agentAccountStatus" | "agentUsage" | "cancelResume" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" | "linkHost" | "shareChat" | "stopShare"
         | "commitStaged" | "setAgentAccounts" | "addAgentAccount" | "forgetAgentStatus"
-        | "markAgentSignedOut" | "addProject" | "removeProject" => Needs::Owner,
+        | "markAgentSignedOut" | "addProject" | "removeProject" => Needs::Person,
         "changeOwners" | "commitOwners" => Needs::Watch,
         _ => Needs::Local,
     }

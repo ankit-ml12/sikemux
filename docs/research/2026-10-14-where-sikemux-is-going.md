@@ -22,10 +22,10 @@ Sikemux is headed to development driven from servers, not laptops. Agents run un
 act on events: a webhook, red CI, a new ticket, an alert, a schedule. Nobody has to be watching.
 [ADR 0014](../architecture/0014-agents-run-on-hosts-and-every-client-is-a-way-in.md) records the decision.
 
-- **Every core is a node.** A host is any server running the core: a Linux box, a Mac mini, a cloud
-  machine. Hosts and clients are the same kind of thing on one account, linked as ADR 0013 already does.
-- **The person is one participant, joining through any client.** The web (app.sikemux.com), the phone,
-  the Mac app and the notch are equal ways in. None of them is where the work happens.
+- **Every core is a host.** A host is anything running the core: a Linux box, a Mac mini, a cloud
+  server, a laptop. Hosts on one account link, as ADR 0013 already does.
+- **The person is one participant, joining from any device.** The web app (app.sikemux.com), the phone
+  app, the desktop app and the notch are equal ways in. None of them is where the work happens.
 - **Each piece of work gets its own sandbox.** Perplexity's SPACE (Apache-2.0, Rust, Firecracker
   microVMs) is the candidate: it suspends a sandbox with its memory while an agent waits and wakes it on
   an event, branches a running sandbox cheaply, and keeps credentials outside the sandbox so an agent can

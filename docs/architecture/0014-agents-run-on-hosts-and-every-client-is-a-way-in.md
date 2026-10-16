@@ -21,11 +21,11 @@ sandbox and share work at commits.
 - **Development is driven from hosts, not laptops.** Agents run on hosts unattended and start
   work from events: a webhook, red CI, a new ticket, an alert, a schedule. Nobody has to be
   watching.
-- **Every core is a node.** A host is any machine running the core: a Linux server, a Mac mini, a
-  cloud machine, the person's own Mac. Each runs the same core and links to the others on its
+- **Every core is a host.** A host is anything running the core: a Linux server, a Mac mini, a
+  cloud server, the person's own laptop. Each runs the same core and links to the others on its
   account as ADR 0013 does. The core runs without a window and installs on Linux on its own.
-- **The person is one participant, joining through any client.** The web at app.sikemux.com, the
-  phone, the Mac app and the notch are equal ways in to any host on the account. None of them is
+- **The person is one participant, joining from any device.** The web app at app.sikemux.com, the
+  phone app, the desktop app and the notch are equal ways in to any host on the account. None of them is
   where the work happens, and feature logic a client needs lives in the core or in TypeScript the
   clients share.
 - **Each piece of work runs in a sandbox of its own.** The core starts work through a sandbox

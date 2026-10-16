@@ -32,7 +32,7 @@ pub(crate) enum Peer {
 pub(crate) enum Needs {
     Watch,
     Full,
-    Owner,
+    Person,
     Local,
 }
 
@@ -227,7 +227,9 @@ pub(crate) fn permit(peer: &Peer, standing: Option<Standing>, needs: Needs) -> C
     };
     match needs {
         Needs::Local => Err(CoreError::from(LOCAL_ONLY)),
-        Needs::Owner if !owners || access != DeviceAccess::Full => Err(CoreError::from(OWNER_ONLY)),
+        Needs::Person if !owners || access != DeviceAccess::Full => {
+            Err(CoreError::from(OWNER_ONLY))
+        }
         Needs::Full if access == DeviceAccess::Watch => Err(CoreError::from(WATCH_ONLY)),
         _ => Ok(()),
     }
