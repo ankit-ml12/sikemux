@@ -19,6 +19,7 @@ import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
 import { AgentFace } from '@/ui/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
+import { type Glyph, PromptGlyph } from '@/ui/prompt';
 import { Nav, Screen, useKeyboardShown } from '@/ui/screen';
 import { Working } from '@/ui/status';
 import { Sheet, SheetLabel } from '@/ui/Sheet';
@@ -104,6 +105,8 @@ export default function NewChat() {
       : workspace && !project
         ? 'No open projects on the host.'
         : undefined;
+  const noAgents = Boolean(workspace && !workspace.launchers.length);
+  const absent: Glyph | undefined = noAgents ? 'IconAgent' : live.status === 'open' && workspace && !project ? 'IconFolder' : undefined;
   const busy = useRef(false);
 
   const attach = (picking: Promise<Attachment[]>) => {
@@ -168,11 +171,13 @@ export default function NewChat() {
       <Nav title={launcher ? <ChatTitle provider={launcher.provider} title={chatTitle({ provider: launcher.provider })} /> : undefined} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={styles.welcome}>
-          {launcher ? <AgentFace agentId={project?.id} provider={launcher.provider} size={38} logoSize={40} /> : null}
-          <Text style={styles.welcomeTitle}>{project?.name ?? 'New chat'}</Text>
-          {workspace && !workspace.launchers.length ? (
-            <Text style={[type.meta, { textAlign: 'center' }]}>No agents on the host.</Text>
+          {absent ? (
+            <PromptGlyph icon={absent} small />
+          ) : launcher ? (
+            <AgentFace agentId={project?.id} provider={launcher.provider} size={38} logoSize={40} />
           ) : null}
+          <Text style={styles.welcomeTitle}>{project?.name ?? 'New chat'}</Text>
+          {noAgents ? <Text style={[type.meta, { textAlign: 'center' }]}>No agents on the host.</Text> : null}
           {problem ? <Text style={styles.problem}>{problem}</Text> : null}
           {!problem && blocked ? (
             <Text style={[type.meta, { textAlign: 'center' }]} accessibilityLiveRegion="polite">

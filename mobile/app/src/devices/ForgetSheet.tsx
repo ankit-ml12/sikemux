@@ -5,11 +5,12 @@ import { router } from 'expo-router';
 import { haptics } from '@/ui/haptics';
 import { goHome } from '@/ui/navigate';
 import { Button } from '@/ui/controls';
+import { PromptGlyph } from '@/ui/prompt';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, useStyles } from '@/ui/theme';
 import { forgetBackdrop } from './backdrop';
 import { forget } from './hub';
-import { deviceName, type PairedDevice } from './paired';
+import { deviceKind, deviceName, type PairedDevice } from './paired';
 
 /** Forgets a host and goes back to Devices; a failure stays to be shown. */
 export function useForget(device: PairedDevice | undefined, done?: () => void) {
@@ -51,9 +52,12 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.body}>
-        <Text style={styles.title} numberOfLines={1}>
-          {name}
-        </Text>
+        <View style={styles.head}>
+          <PromptGlyph icon={deviceKind(device.model)} small />
+          <Text style={styles.title} numberOfLines={1}>
+            {name}
+          </Text>
+        </View>
         {device.access === 'full' ? (
           <Button
             title="Paired devices"
@@ -66,6 +70,7 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
         {problem ? <Text style={styles.problem}>{problem}</Text> : null}
         <Button
           kind="danger"
+          icon="IconTrash"
           title={forgetting ? 'Forgetting…' : 'Forget this host'}
           onPress={leave}
           disabled={forgetting}
@@ -79,6 +84,7 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     body: { paddingHorizontal: 4, gap: 12 },
+    head: { alignItems: 'center', gap: 12, paddingTop: 8, paddingBottom: 4 },
     title: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     problem: { fontFamily: fonts.ui, fontSize: 13.5, lineHeight: 19, color: colors.danger },
     button: { marginTop: 8 },

@@ -9,7 +9,7 @@ import type { CollisionMark } from '@mac/agents/collisions';
 import { formatAge } from '@mac/lib/format';
 import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
-import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
+import { deviceKind, deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { Board } from '@/devices/Board';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
@@ -22,6 +22,7 @@ import { AgentFace } from '@/ui/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
+import { EmptyState, Prompt } from '@/ui/prompt';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { AgentState, Collided, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
@@ -242,7 +243,7 @@ function Agents({
       ) : null}
       <Recent core={core} snapshot={snapshot} scope={scope} provider={provider} full={full} hostName={hostName} />
       {!open.length && !strays.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
-        <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text>
+        <EmptyState icon="IconAgent" text={scope ? `No agents in ${scope.name}.` : 'No agents running.'} />
       ) : null}
     </>
   );
@@ -367,14 +368,13 @@ const TerminalRow = memo(function TerminalRow({ session }: { session: SessionInf
 });
 
 function Terminals({ snapshot, scope }: { snapshot: Snapshot; scope?: ProjectInfo }) {
-  const styles = useStyles(makeStyles);
   const groups = new Map<string, SessionInfo[]>();
   for (const session of snapshot.sessions) {
     if (scope && session.project !== scope.id) continue;
     const project = snapshot.workspace.projects.find((known) => known.id === session.project)?.name ?? 'Other';
     groups.set(project, [...(groups.get(project) ?? []), session]);
   }
-  if (!groups.size) return <Text style={styles.empty}>{scope ? `No terminals in ${scope.name}.` : 'No terminals open.'}</Text>;
+  if (!groups.size) return <EmptyState icon="IconCommand" text={scope ? `No terminals in ${scope.name}.` : 'No terminals open.'} />;
   return (
     <>
       {[...groups].map(([project, sessions]) => (
@@ -464,22 +464,19 @@ function HostTab({ label, count, on, onPress }: { label: string; count?: number;
 /** The host turned this phone away: only forgetting it here and connecting again helps. */
 function Unpaired({ device }: { device?: PairedDevice }) {
   const styles = useStyles(makeStyles);
-  const type = useType();
   const { forgetting, problem, leave } = useForget(device);
   return (
-    <View style={styles.away}>
-      <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]} accessibilityRole="header">
-        This host no longer knows this phone
-      </Text>
+    <Prompt icon="IconUnlink" title="This host no longer knows this phone" fill>
       {problem ? <Text style={styles.problem}>{problem}</Text> : null}
       <Button
         kind="danger"
+        icon="IconTrash"
         title={forgetting ? 'Forgetting…' : 'Forget this host'}
         onPress={() => void leave()}
         disabled={forgetting || !device}
         style={styles.retry}
       />
-    </View>
+    </Prompt>
   );
 }
 
@@ -571,9 +568,7 @@ export default function Device() {
       {status.unpaired ? (
         <Unpaired device={device} />
       ) : away && !snapshot ? (
-        <View style={styles.away}>
-          <Text style={[type.title, { fontSize: 20, textAlign: 'center' }]}>{unreachable.title}</Text>
-          {unreachable.body ? <Text style={[type.body, { textAlign: 'center', marginTop: 8 }]}>{unreachable.body}</Text> : null}
+        <Prompt icon={behind ? 'IconDownload' : deviceKind(device?.model)} title={unreachable.title} detail={unreachable.body} fill>
           {behind ? null : (
             <>
               <View style={styles.trying}>
@@ -590,7 +585,7 @@ export default function Device() {
               />
             </>
           )}
-        </View>
+        </Prompt>
       ) : !snapshot ? (
         <View style={styles.away}>
           <View style={styles.trying}>
@@ -777,7 +772,6 @@ const makeStyles = (colors: Palette) => {
     faces: { flexDirection: 'row' },
     face: { width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
     termCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
     age: { fontSize: 12, fontVariant: ['tabular-nums'] },
     more: { minHeight: 40, justifyContent: 'center', paddingLeft: 38, paddingRight: 8, borderRadius: 9 },
     morePressed: { backgroundColor: colors.active },
@@ -787,7 +781,7 @@ const makeStyles = (colors: Palette) => {
     liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.live },
     away: { flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120 },
     trying: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 16 },
-    retry: { marginTop: 24 },
+    retry: { marginTop: 24, alignSelf: 'stretch' },
     stale: { opacity: 0.5 },
     problem: { ...type.meta, color: colors.danger, textAlign: 'center', marginTop: 12 },
   });

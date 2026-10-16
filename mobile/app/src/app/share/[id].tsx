@@ -20,20 +20,25 @@ import { useTranscriptScroll } from '@/chat/transcriptScroll';
 import { Activity, Earlier, EarlierLost, Message, ProviderContext, WorkSummary } from '@/chat/Transcript';
 import { phoneCipher } from '@/share/cipher';
 import { AgentIcon, Icon } from '@/ui/Icon';
+import { EmptyState, type Glyph } from '@/ui/prompt';
 import { Nav, Screen } from '@/ui/screen';
 import { Working } from '@/ui/status';
-import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 
-const PROBLEMS: Partial<Record<ShareSnapshot['status'], string>> = {
-  missing: 'This chat is not running on its host right now.',
-  notFound: 'No chat is shared at this link.',
-  signedOut: 'Sign in to Sikemux to watch shared chats.',
-  unreadable: 'This link does not open the chat it points at. Check that the whole link was copied.',
+type Problem = { icon: Glyph; text: string };
+
+const PROBLEMS: Partial<Record<ShareSnapshot['status'], Problem>> = {
+  missing: { icon: 'IconPower', text: 'This chat is not running on its host right now.' },
+  notFound: { icon: 'IconUnlink', text: 'No chat is shared at this link.' },
+  signedOut: { icon: 'IconUser', text: 'Sign in to Sikemux to watch shared chats.' },
+  unreadable: { icon: 'IconUnlink', text: 'This link does not open the chat it points at. Check that the whole link was copied.' },
 };
 
-function problemOf(snapshot: ShareSnapshot): string | undefined {
+function problemOf(snapshot: ShareSnapshot): Problem | undefined {
   if (snapshot.status === 'ended')
-    return snapshot.endedBecause === 'expired' ? 'This share has expired.' : 'Sharing this chat has stopped.';
+    return snapshot.endedBecause === 'expired'
+      ? { icon: 'IconHourglass', text: 'This share has expired.' }
+      : { icon: 'IconStop', text: 'Sharing this chat has stopped.' };
   return PROBLEMS[snapshot.status];
 }
 
@@ -62,17 +67,17 @@ export default function SharedChatScreen() {
     return (
       <Screen>
         <Nav title={<Text>Shared chat</Text>} />
-        <Missing text="This link is incomplete. Copy the whole link." />
+        <Missing problem={{ icon: 'IconUnlink', text: 'This link is incomplete. Copy the whole link.' }} />
       </Screen>
     );
   return <Watching key={link.id} link={link} />;
 }
 
-function Missing({ text }: { text: string }) {
+function Missing({ problem }: { problem: Problem }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.alone}>
-      <Text style={styles.gone}>{text}</Text>
+      <EmptyState icon={problem.icon} text={problem.text} />
     </View>
   );
 }
@@ -143,7 +148,7 @@ function SharedChat({ session }: { session: ShareSession }) {
     ? snapshot.hostOnline
       ? `Read-only${snapshot.expiresAt ? ` · link ends in ${endsIn(snapshot.expiresAt, now)}` : ''}`
       : 'Read-only · the sharer is offline'
-    : problem;
+    : problem.text;
 
   return (
     <Screen>
@@ -159,7 +164,7 @@ function SharedChat({ session }: { session: ShareSession }) {
       />
       {!state.messages.length ? (
         problem ? (
-          <Missing text={problem} />
+          <Missing problem={problem} />
         ) : (
           <View style={styles.attaching} accessibilityLiveRegion="polite">
             <Working />
@@ -264,13 +269,11 @@ function SharedChat({ session }: { session: ShareSession }) {
 }
 
 const makeStyles = (colors: Palette) => {
-  const type = typeFor(colors);
   return StyleSheet.create({
     title: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink, flexShrink: 1 },
     transcript: { flex: 1 },
     content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 28 },
-    alone: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 18, paddingVertical: 24 },
-    gone: { ...type.meta, textAlign: 'center' },
+    alone: { flex: 1, justifyContent: 'center', paddingBottom: 80 },
     attaching: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 10, paddingVertical: 24 },
     waiting: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.tertiary, marginTop: 10 },
     error: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, marginTop: 10 },

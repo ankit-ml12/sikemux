@@ -21,6 +21,7 @@ import { useHostQuestions } from '@/devices/questions';
 import { chatDisplay, folder } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Row, Rows, SectionLabel } from '@/ui/list';
+import { EmptyState } from '@/ui/prompt';
 import { Dot, NeedsYou, Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles } from '@/ui/theme';
 
@@ -86,8 +87,7 @@ export function Board({
 }
 
 function Problem({ text }: { text: string }) {
-  const styles = useStyles(makeStyles);
-  return <Text style={styles.empty}>{`Couldn't read the board: ${text}`}</Text>;
+  return <EmptyState icon="IconWarning" text={`Couldn't read the board: ${text}`} />;
 }
 
 function OneBoard({
@@ -105,7 +105,6 @@ function OneBoard({
   questions: readonly AgentQuestion[];
   seen: string;
 }) {
-  const styles = useStyles(makeStyles);
   const read = useCall<ProjectBoard>(connection, 'board', { project: scope.path }, seen);
   if (read.problem) return <Problem text={read.problem} />;
   if (!read.board) return null;
@@ -113,7 +112,7 @@ function OneBoard({
   const byId = new Map(cards.map((card) => [card.id, card]));
   return (
     <>
-      {cards.length ? null : <Text style={styles.empty}>{`No cards on ${scope.name}'s board.`}</Text>}
+      {cards.length ? null : <EmptyState icon="IconBoard" text={`No cards on ${scope.name}'s board.`} />}
       {COLUMNS.map(([column, label]) => {
         const shown = cards.filter((card) => cardColumn(card, questions) === column);
         if (!shown.length) return null;
@@ -284,12 +283,11 @@ function AllBoards({
   onScope: (project: string) => void;
 }) {
   const colors = useColors();
-  const styles = useStyles(makeStyles);
   const read = useCall<ProjectBoard[]>(connection, 'boards', null, seen);
   if (read.problem) return <Problem text={read.problem} />;
   if (!read.board) return null;
   const boards = read.board.filter((board) => board.cards.length > 0);
-  if (!boards.length) return <Text style={styles.empty}>No board has cards yet.</Text>;
+  if (!boards.length) return <EmptyState icon="IconBoard" text="No board has cards yet." />;
   return (
     <>
       <SectionLabel>Boards</SectionLabel>
@@ -320,7 +318,6 @@ function AllBoards({
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
     owner: { fontFamily: fonts.uiMedium, color: colors.secondary },
     key: { fontFamily: fonts.mono, fontSize: 11 },
     held: { color: colors.warn },

@@ -1475,10 +1475,26 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents</span><span>Terminals</span><span>Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
+        <div class="pad grow">
+          <div class="empty-state"><span class="prompt-glyph small">{{IconAgent:20}}</span>No agents running.</div>
+        </div>
+        <div class="fab">{{IconPlus:18}}New chat</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Nothing running</b><div class="note">An empty tab shows the small tile with the tab's own glyph over one quiet line. Terminals reads "No terminals open." under the command glyph, and Board "No board has cards yet." under the board glyph, or why it could not be read under the warning sign. With a project picked, each names it.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span></div>
         <div class="host-head"><div class="where"><i class="off"></i>Asleep or offline · seen 9:12</div><h1>MacBook Pro</h1></div>
         <div class="stack" style="padding-bottom:120px">
-          <h2 style="font-size:20px">Can't reach MacBook Pro</h2>
+          <div class="prompt-glyph">{{IconLaptop:34}}</div>
+          <h2 style="font-size:22px">Can't reach MacBook Pro</h2>
           <p>It may be asleep, offline, or have remote access turned off.</p>
           <div class="waiting" style="margin-top:14px"><span class="spin"></span>Trying again</div>
           <div class="btn" style="align-self:stretch;margin-top:12px">Try now</div>
@@ -1524,12 +1540,31 @@
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
         <div class="host-head"><div class="where"><i class="off"></i>No longer knows this phone</div><h1>MacBook Pro</h1></div>
         <div class="stack" style="padding-bottom:120px">
-          <h2 style="font-size:20px">This host no longer knows this phone</h2>
-          <div class="btn danger" style="align-self:stretch;margin-top:12px">Forget this host</div>
+          <div class="prompt-glyph">{{IconUnlink:34}}</div>
+          <h2 style="font-size:22px">This host no longer knows this phone</h2>
+          <div class="btn danger" style="align-self:stretch;margin-top:12px">{{IconTrash:17}}Forget this host</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Removed on the host</b><div class="note">When the host has unpaired this phone, trying again can't help, so the phone stops trying and says so. Forget this host forgets it here and goes back to Devices, where a host on the account offers Connect again.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · 5 agents · 2 terminals</div><h1>MacBook Pro</h1></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <div class="sheet-head"><span class="prompt-glyph small">{{IconLaptop:20}}</span>MacBook Pro</div>
+        <div class="choices">
+          <div class="btn">Paired devices</div>
+          <div class="btn danger" style="margin-top:8px">{{IconTrash:17}}Forget this host</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Host options</b><div class="note">The ··· in a host's top bar: the host's own glyph over its name, Paired devices for a phone with full control, and Forget this host with the Mac's trash, as its Remove button has.</div></figcaption>
     </figure>
 
 
@@ -3017,6 +3052,30 @@ expected 1 write, got 2</div>
       <figcaption><b>New chat, host away</b><div class="note">When Send can't start a chat, the welcome says why in place of the calendar: the host is reconnecting or not connected yet, or it has no project open to start one in. Send wakes as soon as the reason goes. A second tap while a chat is starting does nothing, so one tap starts one chat.</div></figcaption>
     </figure>
 
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>New Claude chat</b></span></span><span class="end"></span></div>
+        <div class="welcome-chat">
+          <div class="empty-state" style="padding:0"><span class="prompt-glyph small">{{IconFolder:20}}</span><b style="font-size:20px;font-weight:600;letter-spacing:-0.025em;color:var(--text-primary)">New chat</b>No open projects on the host.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta" style="color:var(--text-tertiary)">Ask Claude…</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Claude<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>New chat, nothing to start</b><div class="note">When the host has no project open, the folder takes the agent's place over the title; when it offers no agents at all, the agent glyph does, with "No agents on the host."</div></figcaption>
+    </figure>
+
 
   </div>
 </section>
@@ -3125,6 +3184,23 @@ expected 1 write, got 2</div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Stopped or expired</b><div class="note">What was shared stays on screen with one line under it saying why the share ended: stopped by the sharer, or past its time. While the sharer's computer is offline, the line reads "Read-only · the sharer is offline" and the chat stays as it last was.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="named"><b>Shared chat</b></span></span><span class="icon-btn" style="opacity:0"></span></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:80px">
+          <div class="empty-state" style="padding-top:0"><span class="prompt-glyph small">{{IconUnlink:20}}</span>No chat is shared at this link.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer" style="display:flex;align-items:center;gap:10px;padding:14px;color:var(--ink-dim);font-size:13.5px;line-height:1.45">
+            {{IconEye:17}}<span>No chat is shared at this link.</span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Shared chat, nothing to show</b><div class="note">A link that opens nothing says why under a glyph for it: the broken link for a link that is wrong or cut short, the person for signing in first, power for a chat not running on its host, the hourglass for an expired share and stop for one the sharer stopped.</div></figcaption>
     </figure>
 
   </div>
