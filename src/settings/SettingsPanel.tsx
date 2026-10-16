@@ -52,6 +52,7 @@ import {
 import { Dropdown } from "../ui/Dropdown";
 import { Checkbox, Slider, Switch } from "../ui/Controls";
 import { Tooltip } from "../ui/Tooltip";
+import { PaneField } from "../ui/ShaderField";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";
@@ -117,6 +118,7 @@ export function SettingsPanel() {
     const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const home = useStore((s) => s.home);
+    const paneShader = useStore((s) => s.paneShader);
     const page = useStore((s) => s.settingsPage);
     const target = useStore((s) => s.settingsTarget);
     const settingsBinding = resolvedKeybinding(keybindingOverrides, "settings.toggle");
@@ -285,6 +287,7 @@ export function SettingsPanel() {
                 </aside>
 
                 <div className="settings-main">
+                    <PaneField enabled={paneShader} />
                     <header className="settings-topbar">
                         <span className="settings-topbar-title">{searching ? "Search" : SETTINGS_PAGE_NAMES[page]}</span>
                         <button
