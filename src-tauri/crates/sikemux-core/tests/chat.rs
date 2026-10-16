@@ -628,6 +628,54 @@ fn turns_completed(events: &[ChatEvent]) -> usize {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_agent_signs_in_by_its_own_method_and_the_refused_prompt_goes_again() {
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    let history = tempfile::tempdir().expect("history");
+    let sign_in = history.path().join("signed-in");
+    std::fs::write(&sign_in, "").expect("sign out");
+    let mut launch = account_launch("agent-auth", history.path(), "");
+    launch.env.insert(
+        "FAKE_ACP_SIGN_IN".into(),
+        sign_in.to_string_lossy().into_owned(),
+    );
+    client.acp_start(launch).await.expect("start");
+    client
+        .acp_prompt(
+            "agent-auth".into(),
+            None,
+            "who".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    let refused = chat.until_kind(ChatEventKind::Error).await;
+    assert_eq!(refused.payload["failure"]["kind"], "signIn", "{refused:?}");
+
+    let unknown = client
+        .call(
+            "authenticateChat",
+            json!({ "agentId": "agent-auth", "methodId": "nope" }),
+        )
+        .await;
+    assert!(unknown.is_err(), "{unknown:?}");
+    client
+        .call(
+            "authenticateChat",
+            json!({ "agentId": "agent-auth", "methodId": "fake-key" }),
+        )
+        .await
+        .expect("authenticate");
+    client
+        .call("retryFailed", json!({ "agentId": "agent-auth" }))
+        .await
+        .expect("retry");
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    assert_eq!(chat.text(), "account personal");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_sign_in_made_elsewhere_reaches_the_chat_on_its_next_prompt() {
     let core = TestCore::start();
     let (client, mut chat) = core.connect().await;

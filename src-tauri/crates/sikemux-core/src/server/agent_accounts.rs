@@ -36,6 +36,13 @@ struct Resuming {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Authenticate {
+    agent_id: String,
+    method_id: String,
+}
+
+#[derive(Deserialize)]
 struct Adding {
     provider: String,
     name: String,
@@ -138,6 +145,11 @@ pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreR
             } else {
                 chat.discard_failed().map_err(|error| error.to_string())?;
             }
+            answer(())
+        }
+        "authenticateChat" => {
+            let params: Authenticate = parse(params)?;
+            super::chat::authenticate(core, &params.agent_id, params.method_id).await?;
             answer(())
         }
         _ => Err(format!("this host does not know {method}").into()),

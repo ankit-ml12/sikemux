@@ -354,6 +354,15 @@ pub(crate) trait Backend: Sized + Send {
         task_id: &str,
     ) -> impl std::future::Future<Output = Result<(), String>> + Send;
 
+    /// Asks the agent to sign in by itself, by `method_id`, one of the
+    /// methods it offered.
+    fn authenticate(
+        &mut self,
+        _method_id: &str,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send {
+        async { Err("This agent signs in only through its own sign-in".to_string()) }
+    }
+
     /// Takes the conversation back to before the person's message `message_id`,
     /// answering with the session it goes on in when that is a new one.
     fn rewind(
@@ -962,6 +971,9 @@ pub(crate) async fn run<B: Backend>(
                 state.turn += 1;
                 begin(&chat, &mut backend, state.turn, Prompt::from(&prompt)).await;
                 state.last_prompt = Some(prompt);
+            }
+            ChatCommand::Authenticate { method_id, reply } => {
+                let _ = reply.send(backend.authenticate(&method_id).await);
             }
             ChatCommand::DiscardFailed => {
                 state.failed_prompt = None;
