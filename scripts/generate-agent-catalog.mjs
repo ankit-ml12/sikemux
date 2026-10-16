@@ -47,7 +47,7 @@ for (const agent of agents) {
     throw new Error(
       `${agent.type} brand ${agent.brand} is not a #rrggbb colour`,
     );
-  for (const field of ["label", "command"]) {
+  for (const field of ["label", "about", "command"]) {
     if (typeof agent[field] !== "string" || !agent[field])
       throw new Error(`${agent.type} has no ${field}`);
   }
@@ -86,6 +86,7 @@ async function pretty(path, source) {
 const entries = agents.map((agent) => ({
   type: agent.type,
   label: agent.label,
+  about: agent.about,
   command: agent.command,
   brand: agent.brand,
   ...Object.fromEntries(FLAGS.map((flag) => [flag, agent[flag]])),
