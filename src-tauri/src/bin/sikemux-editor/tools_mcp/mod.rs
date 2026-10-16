@@ -113,8 +113,8 @@ struct Offer {
     plugins: Mutex<Option<Arc<Vec<Tool>>>>,
     /// What the agent was last given by `tools/list`.
     given: Mutex<Option<Vec<Value>>>,
-    /// The guide as the agent was last told it reads.
-    told_guide: Mutex<String>,
+    /// The guide as the agent was last told it reads, once the app served one.
+    told_guide: Mutex<Option<String>>,
     /// Parts of the guide that changed since, to tell the agent with its
     /// next tool answer: `None` for the opening, else a topic.
     guide_news: Mutex<Vec<Option<String>>>,
@@ -126,7 +126,7 @@ impl Offer {
         Self {
             simulator,
             reviewer,
-            told_guide: Mutex::new(built.guide_source().to_owned()),
+            told_guide: Mutex::default(),
             built: Arc::new(built),
             served: Mutex::default(),
             plugins: Mutex::default(),
@@ -141,7 +141,7 @@ impl Offer {
             simulator: true,
             reviewer: false,
             built: Arc::new(Manifest::load()),
-            told_guide: Mutex::new(manifest.guide_source().to_owned()),
+            told_guide: Mutex::new(Some(manifest.guide_source().to_owned())),
             served: Mutex::new(Some(Arc::new(manifest))),
             plugins: Mutex::new(plugins.map(Arc::new)),
             given: Mutex::default(),
@@ -170,9 +170,12 @@ impl Offer {
     /// since the agent was last told.
     fn hold(&self, manifest: Manifest) -> Arc<Manifest> {
         let mut told = lock(&self.told_guide);
-        let changed = manifest.guide_changes(&told);
-        if !changed.is_empty() {
-            manifest.guide_source().clone_into(&mut told);
+        let changed = told
+            .as_deref()
+            .map(|told| manifest.guide_changes(told))
+            .unwrap_or_default();
+        if told.is_none() || !changed.is_empty() {
+            *told = Some(manifest.guide_source().to_owned());
             let mut news = lock(&self.guide_news);
             for part in changed {
                 if !news.contains(&part) {
@@ -381,8 +384,8 @@ fn serve(offer: Arc<Offer>, agent_id: String) {
                     let mut answer =
                         call(&offer, &*relays.quick, &*relays.patient, &name, &arguments);
                     if calls.finish(&id) {
-                        if let Some(news) = offer.take_guide_news() {
-                            if let Some(blocks) = answer["content"].as_array_mut() {
+                        if let Some(blocks) = answer["content"].as_array_mut() {
+                            if let Some(news) = offer.take_guide_news() {
                                 blocks.push(text(&news));
                             }
                         }
