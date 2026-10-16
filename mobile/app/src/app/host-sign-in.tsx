@@ -8,9 +8,9 @@ import { platformName } from '@mac/remote/access';
 import { approveHost, pendingHost, refuseHost } from '@/account/api';
 import { retryHosts } from '@/account/session';
 import { haptics } from '@/ui/haptics';
-import { DeviceIcon } from '@/ui/Icon';
 import { Button, Field } from '@/ui/controls';
 import { goBack } from '@/ui/navigate';
+import { Prompt } from '@/ui/prompt';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
@@ -61,10 +61,13 @@ export default function HostSignIn() {
     return (
       <Screen>
         <Nav back="Devices" />
-        <View style={styles.block}>
-          <Text style={styles.title}>{step.added ? `${step.name} is on your account` : 'Refused'}</Text>
-          {step.added ? null : <Text style={styles.detail}>{step.name} was not added.</Text>}
-          <Button title="Done" onPress={goBack} style={styles.action} />
+        <Prompt
+          icon={step.added ? 'IconCheck' : 'IconClose'}
+          title={step.added ? `${step.name} is on your account` : 'Refused'}
+          detail={step.added ? undefined : `${step.name} was not added.`}
+        />
+        <View style={styles.form}>
+          <Button title="Done" onPress={goBack} />
         </View>
       </Screen>
     );
@@ -74,41 +77,40 @@ export default function HostSignIn() {
     return (
       <Screen>
         <Nav back="Back" onBack={() => setStep({ kind: 'enter' })} />
-        <ScrollView contentContainerStyle={[styles.block, { paddingBottom: bottom }]}>
-          <View style={styles.glyph}>
-            <DeviceIcon kind={host.platform === 'linux' ? 'desktop' : 'laptop'} size={34} />
+        <ScrollView contentContainerStyle={{ paddingBottom: bottom }}>
+          <Prompt
+            icon={host.platform === 'linux' ? 'desktop' : 'laptop'}
+            title={`Add ${host.name} to your account?`}
+            detail={`${platformName(host.platform)} · ${host.channel}. Only add a computer you are setting up right now.`}
+          />
+          <View style={styles.form}>
+            {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+            <Button
+              kind="primary"
+              title="Add host"
+              busy={busy === 'add'}
+              disabled={busy !== undefined}
+              onPress={() =>
+                void run('add', async () => {
+                  await approveHost(token, code);
+                  retryHosts();
+                  return { kind: 'done', name: host.name, added: true };
+                })
+              }
+            />
+            <Button
+              kind="danger"
+              title="Not mine"
+              busy={busy === 'refuse'}
+              disabled={busy !== undefined}
+              onPress={() =>
+                void run('refuse', async () => {
+                  await refuseHost(token, code);
+                  return { kind: 'done', name: host.name, added: false };
+                })
+              }
+            />
           </View>
-          <Text style={styles.title}>Add {host.name} to your account?</Text>
-          <Text style={styles.detail}>
-            {platformName(host.platform)} · {host.channel}. Only add a computer you are setting up right now.
-          </Text>
-          {problem ? <Text style={styles.problem}>{problem}</Text> : null}
-          <Button
-            kind="primary"
-            title="Add host"
-            busy={busy === 'add'}
-            disabled={busy !== undefined}
-            onPress={() =>
-              void run('add', async () => {
-                await approveHost(token, code);
-                retryHosts();
-                return { kind: 'done', name: host.name, added: true };
-              })
-            }
-            style={styles.action}
-          />
-          <Button
-            kind="danger"
-            title="Not mine"
-            busy={busy === 'refuse'}
-            disabled={busy !== undefined}
-            onPress={() =>
-              void run('refuse', async () => {
-                await refuseHost(token, code);
-                return { kind: 'done', name: host.name, added: false };
-              })
-            }
-          />
         </ScrollView>
       </Screen>
     );
@@ -118,33 +120,40 @@ export default function HostSignIn() {
   return (
     <Screen>
       <Nav back="Devices" />
-      <ScrollView contentContainerStyle={[styles.block, { paddingBottom: bottom }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Add a host with a code</Text>
-        <Text style={styles.detail}>
-          Enter the code <Text style={styles.mono}>sikemux core sign-in</Text> shows on the computer.
-        </Text>
-        <Field
-          value={typed}
-          onChangeText={setTyped}
-          placeholder="BCDF-GHJK"
-          autoCapitalize="characters"
-          autoCorrect={false}
-          autoComplete="off"
-          autoFocus={!given}
-          returnKeyType="go"
-          onSubmitEditing={() => entered && void look(entered)}
-          accessibilityLabel="Code"
-          style={styles.code}
+      <ScrollView contentContainerStyle={{ paddingBottom: bottom }} keyboardShouldPersistTaps="handled">
+        <Prompt
+          icon="IconServer"
+          title="Add a host with a code"
+          detail={
+            <>
+              Enter the code <Text style={styles.mono}>sikemux core sign-in</Text> shows on the computer.
+            </>
+          }
         />
-        {problem ? <Text style={styles.problem}>{problem}</Text> : null}
-        <Button
-          kind="primary"
-          title="Continue"
-          busy={busy === 'look'}
-          disabled={!entered || busy !== undefined}
-          onPress={() => void look(entered)}
-          style={styles.action}
-        />
+        <View style={styles.form}>
+          <Field
+            icon="IconTerminal"
+            value={typed}
+            onChangeText={setTyped}
+            placeholder="BCDF-GHJK"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            autoComplete="off"
+            autoFocus={!given}
+            returnKeyType="go"
+            onSubmitEditing={() => entered && void look(entered)}
+            accessibilityLabel="Code"
+            style={styles.code}
+          />
+          {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+          <Button
+            kind="primary"
+            title="Continue"
+            busy={busy === 'look'}
+            disabled={!entered || busy !== undefined}
+            onPress={() => void look(entered)}
+          />
+        </View>
       </ScrollView>
     </Screen>
   );
@@ -153,13 +162,9 @@ export default function HostSignIn() {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    block: { paddingHorizontal: 20, paddingTop: 12, gap: 12 },
-    glyph: { paddingBottom: 4 },
-    title: { ...type.title, fontSize: 24 },
-    detail: { ...type.body },
+    form: { paddingTop: 24, paddingHorizontal: 24, gap: 12 },
     mono: { ...type.mono, color: colors.ink },
     code: { ...type.mono, fontSize: 20, letterSpacing: 2, color: colors.ink },
     problem: { ...type.meta, fontSize: 13.5, color: colors.danger },
-    action: { marginTop: 8 },
   });
 };

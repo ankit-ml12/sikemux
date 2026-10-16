@@ -662,15 +662,23 @@
   .choices { display: flex; flex-direction: column; gap: 8px; }
   .ink { color: var(--text-primary); font-weight: 500; }
   .gone { margin: 0; padding: 0 8px 0 18px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.5; }
-  /* a title, one line under it, then the thing it is about: code tiles or the host's tile */
-  .prompt { padding: 40px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .prompt h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
-  .prompt p { margin-top: 8px; min-height: 3em; font-size: 15px; line-height: 1.5; text-wrap: balance; }
-  .prompt .digits { margin-top: 32px; }
+  /* a glyph, a title and one line under it, then what it asks for: code tiles, or a form under it */
+  .prompt { padding: 32px 28px 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .prompt h2 { margin-top: 20px; color: var(--text-primary); font-size: 22px; font-weight: 600; letter-spacing: -0.028em; line-height: 1.25; text-wrap: balance; }
+  .prompt p { margin-top: 8px; font-size: 15px; line-height: 1.5; text-wrap: balance; }
+  .prompt .digits { margin-top: 24px; }
+  .prompt-form { padding: 24px 24px 0; display: flex; flex-direction: column; gap: 12px; }
+  .stack .prompt-glyph { margin-bottom: 10px; }
   .digits span.gap { background: none; border: 0; }
   .dev-connect { flex: none; height: 32px; padding: 0 13px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-raised); font-size: 14px; font-weight: 600; color: var(--text-primary); }
-  .join-glyph { margin-top: 32px; width: 76px; height: 76px; border-radius: 18px; display: grid; place-items: center; border: 1px solid var(--border-strong); background: var(--surface-raised); color: var(--text-primary); }
-  .join-glyph.failed { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 7%, var(--surface-sunken)); color: color-mix(in oklab, var(--danger) 70%, var(--ink)); }
+  /* one of the Mac's icons on a raised tile: large over a prompt's title, small over an empty list's line or a sheet's title */
+  .prompt-glyph { flex: none; width: 76px; height: 76px; border-radius: 18px; display: grid; place-items: center; border: 1px solid var(--border-strong); background: var(--surface-raised); color: var(--text-primary); }
+  .prompt-glyph.small { width: 44px; height: 44px; border-radius: 12px; border-color: var(--border); color: var(--text-secondary); }
+  .prompt-glyph.danger { border-color: color-mix(in oklab, var(--danger) 55%, transparent); background: color-mix(in oklab, var(--danger) 7%, var(--surface-sunken)); color: var(--danger); }
+  .empty-state { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 28px 0; text-align: center; font-size: 13px; color: var(--text-tertiary); }
+  .sheet-head { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 8px 20px; font-size: 17px; font-weight: 600; letter-spacing: -0.02em; color: var(--text-primary); }
+  .field .lead { display: flex; margin: 0 12px 0 -2px; color: var(--text-tertiary); }
+  .field.on .lead { color: var(--text-secondary); }
 
   .waiting { display: flex; align-items: center; gap: 8px; margin-top: 22px; font-size: 13px; color: var(--text-tertiary); }
   .spin { width: 15px; height: 15px; border-radius: 999px; border: 2px solid var(--gray-300); border-top-color: var(--text-secondary); animation: spin .9s linear infinite; }
@@ -912,24 +920,30 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="signin">
+        <div class="prompt">
+          <div class="prompt-glyph">{{IconUser:34}}</div>
           <h2>Continue with email</h2>
-          <div class="field on">contact@nodelike.com<span class="caret"></span></div>
+        </div>
+        <div class="prompt-form">
+          <div class="field on"><span class="lead">{{IconInbox:18}}</span>contact@nodelike.com<span class="caret"></span></div>
           <div class="btn primary">Continue</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Email</b><div class="note">One field. The next screen depends on whether the address has an account: a password to sign in, or a new password and a code to make one.</div></figcaption>
+      <figcaption><b>Email</b><div class="note">The account's glyph over the title, and one field, marked with the inbox. The next screen depends on whether the address has an account: a password to sign in, or a new password and a code to make one.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="signin">
+        <div class="prompt">
+          <div class="prompt-glyph">{{IconUser:34}}</div>
           <h2>Enter your password</h2>
           <p>contact@nodelike.com</p>
-          <div class="field on">••••••••••••••••<span class="caret"></span><span class="reveal">{{IconEye:18}}</span></div>
+        </div>
+        <div class="prompt-form">
+          <div class="field on"><span class="lead">{{IconLock:18}}</span>••••••••••••••••<span class="caret"></span><span class="reveal">{{IconEye:18}}</span></div>
           <div class="btn primary">Sign in</div>
           <div class="text-link">Forgot your password?</div>
         </div>
@@ -943,6 +957,7 @@
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="prompt">
+          <div class="prompt-glyph">{{IconInbox:34}}</div>
           <h2>Check your email</h2>
           <p>Sikemux sent a code to contact@nodelike.com.</p>
           <div class="digits"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span class="cur"></span><span></span><span></span></div>
@@ -964,8 +979,8 @@
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Cancel</span></div>
         <div class="prompt">
+          <div class="prompt-glyph">{{IconLaptop:34}}</div>
           <h2>Allow this phone on Work MacBook</h2>
-          <div class="join-glyph">{{IconLaptop:34}}</div>
         </div>
         <div style="flex:1"></div>
         <div class="footer">
@@ -998,9 +1013,9 @@
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="prompt">
+          <div class="prompt-glyph danger">{{IconLaptop:34}}</div>
           <h2>Work MacBook said no</h2>
           <p>Someone at Work MacBook turned this phone down.</p>
-          <div class="join-glyph failed">{{IconLaptop:34}}</div>
         </div>
         <div style="flex:1"></div>
         <div class="footer">
@@ -1520,10 +1535,13 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span></div>
-        <div class="signin" style="padding-top:12px">
+        <div class="prompt">
+          <div class="prompt-glyph">{{IconServer:34}}</div>
           <h2>Add a host with a code</h2>
-          <p style="margin:0">Enter the code <span class="m" style="color:var(--text-primary)">sikemux core sign-in</span> shows on the computer.</p>
-          <div class="field on"><span class="m" style="font-size:20px;letter-spacing:2px">BCDF-GHJK</span><span class="caret"></span></div>
+          <p>Enter the code <span class="m" style="color:var(--text-primary)">sikemux core sign-in</span> shows on the computer.</p>
+        </div>
+        <div class="prompt-form">
+          <div class="field on"><span class="lead">{{IconTerminal:18}}</span><span class="m" style="font-size:20px;letter-spacing:2px">BCDF-GHJK</span><span class="caret"></span></div>
           <div class="btn primary">Continue</div>
         </div>
       </div>
@@ -1535,11 +1553,13 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
-        <div class="signin" style="padding-top:12px">
-          <span style="color:var(--text-primary)">{{IconDesktop:34}}</span>
+        <div class="prompt">
+          <div class="prompt-glyph">{{IconDesktop:34}}</div>
           <h2>Add build-box to your account?</h2>
-          <p style="margin:0">Linux · stable. Only add a computer you are setting up right now.</p>
-          <div class="btn primary" style="margin-top:8px">Add host</div>
+          <p>Linux · stable. Only add a computer you are setting up right now.</p>
+        </div>
+        <div class="prompt-form">
+          <div class="btn primary">Add host</div>
           <div class="btn danger">Not mine</div>
         </div>
       </div>
