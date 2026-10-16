@@ -267,3 +267,53 @@
 .skills-failure {
     color: var(--danger);
 }
+.agent-setup-list {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.agent-setup-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--s-raised);
+}
+.agent-setup-row.is-missing {
+    border-style: dashed;
+    background: none;
+}
+.agent-setup-row.is-missing .agent-glyph {
+    opacity: 0.4;
+    filter: grayscale(1);
+}
+.agent-setup-name {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.agent-setup-name b {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.agent-setup-name small {
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
+.agent-setup-name small.is-signedOut {
+    color: var(--warn);
+}
+.agent-setup-name small.is-broken {
+    color: var(--danger);
+}
+.agent-setup-note {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
