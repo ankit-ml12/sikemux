@@ -35,8 +35,7 @@ export function RestoreAccount({ deletesAt }: { deletesAt: string }) {
       <View style={styles.block}>
         <Text style={styles.title}>Your account is being deleted</Text>
         <Text style={styles.body}>
-          It will be deleted for good on <Text style={styles.ink}>{day}</Text>. Restore it to keep using Sikemux. Your devices were signed
-          out, so each one signs in again.
+          It will be deleted for good on <Text style={styles.ink}>{day}</Text>.
         </Text>
         {problem ? <Text style={styles.problem}>{problem}</Text> : null}
       </View>

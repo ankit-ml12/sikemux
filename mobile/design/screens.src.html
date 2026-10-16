@@ -1020,8 +1020,7 @@
       <div class="sheet">
         <div class="grabber"></div>
         <div class="sheet-title">Turn on notifications?</div>
-        <div class="sheet-note" style="padding-top:4px">Get told when an agent stops to ask, finishes, or runs into a problem. What it's doing is encrypted on your computer; only this phone can read it.</div>
-        <div class="choices across"><div class="btn">Not now</div><div class="btn primary">Turn on</div></div>
+        <div class="choices across" style="margin-top:16px"><div class="btn">Not now</div><div class="btn primary">Turn on</div></div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Notifications, after connecting</b><div class="note">Asked once, on the host that just let the phone in, because that is when a notification first means something; never at first launch. Turn on brings the system's own prompt next. Not now leaves them off, and the account sheet can turn them on later. Closing the sheet any other way decides nothing, so it is asked again when the next host lets the phone in. Only a signed-in phone is asked: notifications travel through the account.</div></figcaption>
@@ -1121,14 +1120,13 @@
           <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
-        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s">When agents need you or finish</div></div><span class="toggle"></span></div>
-        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
-        <div class="btn danger">Sign out</div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div></div><span class="toggle"></span></div>
+        <div class="btn danger" style="margin-top:16px">Sign out</div>
         <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Signing out says what it does before it does it. Deleting the account is a quiet link under it, leading to a screen that explains it first. The last line is the installed release, nightly number included, quiet like the Mac's About, then the commit of the code running on it: the build's own, or once an over-the-air update replaced it, "update", that update's commit and the day it was made.</div></figcaption>
+      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Deleting the account is a quiet link under it, leading to a screen that explains it first. The last line is the installed release, nightly number included, quiet like the Mac's About, then the commit of the code running on it: the build's own, or once an over-the-air update replaced it, "update", that update's commit and the day it was made.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1144,8 +1142,7 @@
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
         <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s" style="color:var(--acc)">Allow them in Android settings</div></div><span class="toggle off"></span></div>
-        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
-        <div class="btn danger">Sign out</div>
+        <div class="btn danger" style="margin-top:16px">Sign out</div>
         <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
@@ -1166,7 +1163,7 @@
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's iPhone</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
         <div class="sheet-title">Can't reach Sikemux</div>
-        <div class="sheet-note" style="padding-top:4px">Signing out now leaves this phone on your account until you remove it at app.sikemux.com.</div>
+        <div class="sheet-note" style="padding-top:4px">This phone stays on your account until removed at app.sikemux.com.</div>
         <div class="choices"><div class="btn">Try again</div><div class="btn danger">Sign out anyway</div></div>
         <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
@@ -1187,9 +1184,8 @@
           <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div><div class="s" style="color:var(--danger)">Not on your account yet: Can't reach Sikemux. Check the phone is online.</div></div><span style="font-size:15px;font-weight:500;color:var(--acc)">Try again</span></div>
-        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s">When agents need you or finish</div></div><span class="toggle"></span></div>
-        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
-        <div class="btn danger">Sign out</div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div></div><span class="toggle"></span></div>
+        <div class="btn danger" style="margin-top:16px">Sign out</div>
         <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
@@ -1209,9 +1205,8 @@
           <div style="min-width:0"><div class="t">Kishore Gunalan</div><div class="s">contact@nodelike.com</div><div class="s">Signed in with Google</div></div>
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
-        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div><div class="s">When agents need you or finish</div></div><span class="toggle"></span></div>
-        <div class="sheet-note">Signing out takes this phone off your account and forgets every host paired with it.</div>
-        <div class="btn danger">Sign out</div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div></div><span class="toggle"></span></div>
+        <div class="btn danger" style="margin-top:16px">Sign out</div>
         <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="text-link" style="height:44px;line-height:44px;color:var(--acc)">Restart to update</div>
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
@@ -1225,12 +1220,11 @@
       <div class="screen">
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:22px">This phone was removed from your account</h2>
-          <p>It was removed from another device or at app.sikemux.com, so it signed out and forgot the hosts it was paired with. Sign in again to use it.</p>
         </div>
         <div class="footer"><div class="btn primary">Continue</div></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Removed</b><div class="note">The phone stays connected to the account while the app is open, so it hears at once when it is removed, and on its next launch if it was away. It signs out, forgets its hosts, and says why before the welcome screen. When the account was deleted elsewhere the same screen reads "Your account was deleted" and "It was deleted on another device or at app.sikemux.com. This phone signed out and forgot the hosts it was paired with. Sign in again within 30 days to restore it." A host joining, renaming or leaving the account changes the Devices list the same way, without a reload.</div></figcaption>
+      <figcaption><b>Removed</b><div class="note">The phone stays connected to the account while the app is open, so it hears at once when it is removed, and on its next launch if it was away. It signs out, forgets its hosts, and says why before the welcome screen. When the account was deleted elsewhere the same screen reads "Your account was deleted" and "Sign in again within 30 days to restore it." A host joining, renaming or leaving the account changes the Devices list the same way, without a reload.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1238,7 +1232,7 @@
       <div class="screen">
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:22px">Update Sikemux</h2>
-          <p>This version, 0.1.0-nightly.3, is older than Sikemux works with now. Install 0.1.0-nightly.5 or later to reach your hosts again.</p>
+          <p>This version, 0.1.0-nightly.3, is too old. Install 0.1.0-nightly.5 or later.</p>
         </div>
         <div class="footer"><div class="btn primary">Get the update</div></div>
       </div>
@@ -1252,20 +1246,19 @@
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="signin">
           <h2>Delete your account</h2>
-          <p style="margin-bottom:0">This deletes <b class="ink">contact@nodelike.com</b> from Sikemux. Changed your mind? Sign in again within 30 days to restore it.</p>
+          <p style="margin-bottom:0">This deletes <b class="ink">contact@nodelike.com</b>. You can restore it within 30 days.</p>
           <ul class="gone">
-            <li>Hosts are signed out. The phones paired to them keep working.</li>
+            <li>Hosts are signed out.</li>
             <li>Phones, this one too, are signed out and removed from every host.</li>
-            <li>After 30 days your sign-in, device keys and the account’s history are erased, and backups within 30 days after that.</li>
+            <li>After 30 days your sign-in, device keys and history are erased, and backups 30 days later.</li>
           </ul>
-          <p style="margin:0">Your code and files never reached us, so they stay on your hosts.</p>
           <div class="field-label" style="margin-top:8px">Type <span class="m" style="color:var(--text-primary)">delete</span> to confirm</div>
           <div class="field on">delete<span class="caret"></span></div>
           <div class="btn danger">Delete account</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Delete account</b><div class="note">Reached from the account sheet. It says what goes, in the words app.sikemux.com/delete-account uses, and what never reached us. The button wakes only once "delete" is typed, the same word as on the web. While it runs the button reads "Deleting…", and a failure, such as the server out of reach, shows in red above it with nothing deleted.</div></figcaption>
+      <figcaption><b>Delete account</b><div class="note">Reached from the account sheet. It says what goes, in a few lines. The button wakes only once "delete" is typed, the same word as on the web. While it runs the button reads "Deleting…", and a failure, such as the server out of reach, shows in red above it with nothing deleted.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1274,7 +1267,7 @@
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="prompt">
           <h2>Confirm it's you</h2>
-          <p>Sikemux sent a code to c*****@nodelike.com. Enter it to delete your account.</p>
+          <p>Sikemux sent a code to c*****@nodelike.com.</p>
           <div class="digits"><span>4</span><span>8</span><span>1</span><span class="gap"></span><span class="cur"></span><span></span><span></span></div>
         </div>
         <div style="flex:1"></div>
@@ -1294,7 +1287,7 @@
       <div class="screen">
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:22px">Your account is deleted</h2>
-          <p>Every device on it is signed out. Changed your mind? Sign in again within 30 days to restore it. Your code and files never reached us, so they are still on your hosts.</p>
+          <p>Sign in again within 30 days to restore it.</p>
         </div>
         <div class="footer"><div class="btn primary">Continue</div></div>
       </div>
@@ -1307,7 +1300,7 @@
       <div class="screen">
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:22px">Your account is being deleted</h2>
-          <p>It will be deleted for good on <b class="ink">10 November 2026</b>. Restore it to keep using Sikemux. Your devices were signed out, so each one signs in again.</p>
+          <p>It will be deleted for good on <b class="ink">10 November 2026</b>.</p>
         </div>
         <div class="footer"><div class="btn primary">Restore account</div><div class="btn">Sign out</div></div>
       </div>
@@ -1333,7 +1326,7 @@
       <div class="screen">
         <div class="stack" style="padding-bottom:120px">
           <h2 style="font-size:22px">Can't reach Sikemux</h2>
-          <p>This phone needs the internet once to load your account. Check the connection, then try again.</p>
+          <p>Check the phone is online.</p>
         </div>
         <div class="footer"><div class="btn primary">Try again</div></div>
       </div>

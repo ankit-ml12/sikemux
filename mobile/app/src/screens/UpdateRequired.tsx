@@ -15,8 +15,7 @@ export function UpdateRequired({ required }: { required: Required }) {
       <View style={styles.block}>
         <Text style={styles.title}>Update Sikemux</Text>
         <Text style={styles.body}>
-          This version, {required.current}, is older than Sikemux works with now. Install {required.minimum} or later to reach your hosts
-          again.
+          This version, {required.current}, is too old. Install {required.minimum} or later.
         </Text>
       </View>
       <View style={[styles.footer, { paddingBottom: bottom }]}>

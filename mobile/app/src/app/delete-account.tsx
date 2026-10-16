@@ -14,9 +14,9 @@ import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 const GONE = [
-  'Hosts are signed out. The phones paired to them keep working.',
+  'Hosts are signed out.',
   'Phones, this one too, are signed out and removed from every host.',
-  'After 30 days your sign-in, device keys and the account’s history are erased, and backups within 30 days after that.',
+  'After 30 days your sign-in, device keys and history are erased, and backups 30 days later.',
 ];
 
 function describe(error: unknown): string {
@@ -132,11 +132,9 @@ export default function DeleteAccount() {
         <Nav back="Back" onBack={back} />
         <View style={byEmail ? styles.codeBlock : styles.block}>
           <Text style={[styles.title, byEmail && styles.centered]}>Confirm it&apos;s you</Text>
-          <Text style={[styles.detail, byEmail && styles.centered]}>
-            {phase.factor.strategy === 'email_code'
-              ? `Sikemux sent a code to ${phase.factor.to}. Enter it to delete your account.`
-              : 'Enter your password to delete your account.'}
-          </Text>
+          {phase.factor.strategy === 'email_code' ? (
+            <Text style={[styles.detail, styles.centered]}>Sikemux sent a code to {phase.factor.to}.</Text>
+          ) : null}
           {byEmail ? (
             <View style={styles.tiles}>
               <CodeEntry
@@ -182,8 +180,7 @@ export default function DeleteAccount() {
       <ScrollView contentContainerStyle={[styles.block, { paddingBottom: bottom }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Delete your account</Text>
         <Text style={styles.detail}>
-          This deletes {email ? <Text style={styles.ink}>{email}</Text> : 'it'} from Sikemux. Changed your mind? Sign in again within 30
-          days to restore it.
+          This deletes {email ? <Text style={styles.ink}>{email}</Text> : 'your account'}. You can restore it within 30 days.
         </Text>
         <View style={styles.list}>
           {GONE.map((line) => (
@@ -193,7 +190,6 @@ export default function DeleteAccount() {
             </View>
           ))}
         </View>
-        <Text style={styles.detail}>Your code and files never reached us, so they stay on your hosts.</Text>
         <Text style={styles.label}>
           Type <Text style={styles.word}>{CONFIRM_WORD}</Text> to confirm
         </Text>

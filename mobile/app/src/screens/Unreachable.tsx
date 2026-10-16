@@ -15,7 +15,7 @@ export function Unreachable() {
         <Text style={styles.title} accessibilityRole="header">
           Can&apos;t reach Sikemux
         </Text>
-        <Text style={styles.body}>This phone needs the internet once to load your account. Check the connection, then try again.</Text>
+        <Text style={styles.body}>Check the phone is online.</Text>
       </View>
       <View style={[styles.footer, { paddingBottom: bottom }]}>
         <Button kind="primary" title="Try again" onPress={() => reloadAppAsync().catch(() => {})} />
