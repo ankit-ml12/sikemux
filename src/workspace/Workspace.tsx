@@ -33,7 +33,7 @@ import { agentMenu, renameAgentNamePrompt, renameAgentPrompt } from "./agentMenu
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentFace } from "../buddies/Buddy";
-import { IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
+import { IconArrowUp, IconClose, IconCopy, IconFolder, IconMove, IconPencil, IconPlus, IconRotate, IconSquarePlus, WindowIcon } from "../ui/Icons";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { PROJECT_SURFACES } from "../workbench/surfaces";
@@ -343,16 +343,23 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         const naming: CtxItem[] =
             win.role === "term"
                 ? [
-                      { label: "Rename…", run: () => void renameTerminalTab(win, termTitles) },
-                      ...(win.customName ? [{ label: "Use Automatic Name", run: () => cmd.renameWindow(win.id, "") }] : []),
+                      { label: "Rename…", icon: <IconPencil size={13} />, run: () => void renameTerminalTab(win, termTitles) },
+                      ...(win.customName
+                          ? [{ label: "Use Automatic Name", icon: <IconRotate size={13} />, run: () => cmd.renameWindow(win.id, "") }]
+                          : []),
                       { sep: true },
                   ]
                 : [];
         return [
             ...naming,
-            { label: "Duplicate", run: () => cmd.duplicateWindow(win.id) },
-            { label: "Close", hint: closeShortcut, disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
-            { label: "Close Others", disabled: others.length === 0, run: () => cmd.closeWindowsById(others.map((t) => t.id)) },
+            { label: "Duplicate", icon: <IconSquarePlus size={13} />, run: () => cmd.duplicateWindow(win.id) },
+            { label: "Close", icon: <IconClose size={13} />, hint: closeShortcut, disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
+            {
+                label: "Close Others",
+                icon: <IconClose size={13} />,
+                disabled: others.length === 0,
+                run: () => cmd.closeWindowsById(others.map((t) => t.id)),
+            },
         ];
     };
 
@@ -366,20 +373,25 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         const toRight = index >= 0 ? open.slice(index + 1) : [];
         const saved = open.filter((path) => !dirty.has(path));
         return [
-            { label: "Close", hint: closeShortcut, run: () => close([doc]) },
-            { label: "Close Others", disabled: others.length === 0, run: () => close(others) },
-            { label: "Close to the Left", disabled: toLeft.length === 0, run: () => close(toLeft) },
-            { label: "Close to the Right", disabled: toRight.length === 0, run: () => close(toRight) },
-            { label: "Close Saved", disabled: saved.length === 0, run: () => close(saved) },
-            { label: "Close All", run: () => close(open) },
+            { label: "Close", icon: <IconClose size={13} />, hint: closeShortcut, run: () => close([doc]) },
+            { label: "Close Others", icon: <IconClose size={13} />, disabled: others.length === 0, run: () => close(others) },
+            { label: "Close to the Left", icon: <IconClose size={13} />, disabled: toLeft.length === 0, run: () => close(toLeft) },
+            { label: "Close to the Right", icon: <IconClose size={13} />, disabled: toRight.length === 0, run: () => close(toRight) },
+            { label: "Close Saved", icon: <IconClose size={13} />, disabled: saved.length === 0, run: () => close(saved) },
+            { label: "Close All", icon: <IconClose size={13} />, run: () => close(open) },
             { sep: true },
-            { label: "Copy Path", run: () => void copyPath(doc, doc, "path") },
+            { label: "Copy Path", icon: <IconCopy size={13} />, run: () => void copyPath(doc, doc, "path") },
             {
                 label: "Copy Relative Path",
+                icon: <IconCopy size={13} />,
                 run: () => void copyPath(doc, relativePath(doc, session.cwd) ?? basename(doc), "relative path"),
             },
             { sep: true },
-            { label: `Reveal in ${FILE_MANAGER_NAME}`, run: () => void fsapi.revealInFinder(doc).catch(reportError("reveal")) },
+            {
+                label: `Reveal in ${FILE_MANAGER_NAME}`,
+                icon: <IconFolder size={13} />,
+                run: () => void fsapi.revealInFinder(doc).catch(reportError("reveal")),
+            },
         ];
     };
 
@@ -635,7 +647,14 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     if (!ref && pane) {
                         const win = windowsById[pane.windowId];
                         const movable = !!win && !!paneToSeparate(win, getState(), pane.paneId);
-                        return [{ label: "Move Back to Tab Bar", disabled: !movable, run: () => cmd.separatePane(pane.windowId, pane.paneId) }];
+                        return [
+                            {
+                                label: "Move Back to Tab Bar",
+                                icon: <IconMove size={13} />,
+                                disabled: !movable,
+                                run: () => cmd.separatePane(pane.windowId, pane.paneId),
+                            },
+                        ];
                     }
                     if (!ref) return [];
                     const win = windowsById[ref.id];
@@ -643,7 +662,9 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     const pluginDocs = ref.doc !== undefined ? pluginDocuments(win.role) : undefined;
                     if (ref.doc !== undefined && pluginDocs) {
                         const doc = ref.doc;
-                        return pluginDocs.menu ? [...pluginDocs.menu(win.activePaneId, doc)] : [{ label: "Close", run: () => cmd.closeTab(ref) }];
+                        return pluginDocs.menu
+                            ? [...pluginDocs.menu(win.activePaneId, doc)]
+                            : [{ label: "Close", icon: <IconClose size={13} />, run: () => cmd.closeTab(ref) }];
                     }
                     if (ref.doc !== undefined) return fileMenu(win, ref.doc);
                     if (win.role === "agent") {
