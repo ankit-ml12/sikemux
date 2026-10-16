@@ -265,6 +265,11 @@
     flex: none;
     color: var(--text-primary);
 }
+.tree-ctx-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
 .tree-ctx-item.disabled {
     color: var(--text-tertiary);
     cursor: default;

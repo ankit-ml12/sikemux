@@ -104,6 +104,7 @@ export function AgentAccountsPanel({
                     width={menu.width}
                     above
                     className="agent-account-menu"
+                    tickBesideLabel
                     items={items}
                     onClose={() => setMenu(null)}
                 />

@@ -927,6 +927,7 @@ export function TreeContextMenu({
     above = false,
     width,
     className,
+    tickBesideLabel = false,
 }: {
     x: number;
     y: number;
@@ -939,6 +940,8 @@ export function TreeContextMenu({
     alignRight?: boolean;
     /** Open upward with its bottom at `y`, for buttons at the foot of the window. */
     above?: boolean;
+    /** Ticks the current item right after its name instead of at the row's end. */
+    tickBesideLabel?: boolean;
 }) {
     const iconed = items.some((item) => item.icon);
     const ref = useRef<HTMLDivElement>(null);
@@ -1008,7 +1011,14 @@ export function TreeContextMenu({
                                 }}>
                                 {iconed && <span className="tree-ctx-icon">{it.icon}</span>}
                                 <span className="tree-ctx-label" title={it.label}>
-                                    {it.label}
+                                    {tickBesideLabel ? (
+                                        <span className="tree-ctx-name">
+                                            {it.label}
+                                            {it.selected && <IconCheck size={11} className="tree-ctx-check" />}
+                                        </span>
+                                    ) : (
+                                        it.label
+                                    )}
                                     {it.detail && (
                                         <small className="tree-ctx-detail" title={it.detail}>
                                             {it.detail}
@@ -1020,7 +1030,7 @@ export function TreeContextMenu({
                                         {it.hint}
                                     </span>
                                 )}
-                                {it.selected && (
+                                {it.selected && !tickBesideLabel && (
                                     <span className="tree-ctx-check" aria-hidden="true">
                                         <IconCheck size={11} />
                                     </span>
