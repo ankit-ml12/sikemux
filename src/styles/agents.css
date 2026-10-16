@@ -662,7 +662,7 @@
 
 /* The accounts open as wide as the limits they sit over: the initial, the name
    over its email, how much it has used, a tick on the one new chats start on,
-   and its sign-out and remove at the row's end. */
+   then its sign-out and remove. */
 .tree-ctx-menu.agent-account-menu {
     gap: 2px;
     font-family: inherit;

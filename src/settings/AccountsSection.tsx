@@ -10,7 +10,7 @@ import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
 import { Switch } from "../ui/Controls";
-import { IconMore, IconPlus, IconPower, IconTrash } from "../ui/Icons";
+import { IconLogOut, IconMore, IconPlus, IconTrash } from "../ui/Icons";
 import { planLabel } from "../rail/usageFormat";
 import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
@@ -85,7 +85,7 @@ function AccountRow({ provider, account, inUse }: { provider: AccountProvider; a
           : "Signed out";
     const removable = !account.id.startsWith("builtin-");
     const items: CtxItem[] = [
-        ...(signedIn ? [{ label: "Sign out", icon: <IconPower size={13} />, run: () => void signOut(account).catch(reportError("Sign out")) }] : []),
+        ...(signedIn ? [{ label: "Sign out", icon: <IconLogOut size={13} />, run: () => void signOut(account).catch(reportError("Sign out")) }] : []),
         ...(removable
             ? [{ label: `Remove ${name}`, icon: <IconTrash size={13} />, danger: true, run: () => cmd.deleteProviderProfile(account.id) }]
             : []),

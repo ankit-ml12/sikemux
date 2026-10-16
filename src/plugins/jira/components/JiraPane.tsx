@@ -14,8 +14,8 @@ import {
     IconExternal,
     IconEye,
     IconInbox,
+    IconLogOut,
     IconPencil,
-    IconPower,
     IconSearch,
     IconStack,
     IconStar,
@@ -151,7 +151,7 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     className="jira-signout"
                     title={`Sign out of ${site}`}
                     onClick={() => void jiraApi.signOut(site).then(refreshJira).catch(reportError("sign out of Jira"))}>
-                    <IconPower size={14} className="jira-list-mark" />
+                    <IconLogOut size={14} className="jira-list-mark" />
                     <span className="jira-list-label">Sign out</span>
                 </button>
             </nav>

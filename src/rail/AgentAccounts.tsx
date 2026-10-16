@@ -8,7 +8,7 @@ import { fetchResource, invalidate, peekResource, type ResourceHandle, useResour
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { ProviderProfile } from "../state/types";
-import { IconChevron, IconPlus, IconPower, IconRefresh, IconTrash, IconUser } from "../ui/Icons";
+import { IconChevron, IconLogOut, IconPlus, IconRefresh, IconTrash, IconUser } from "../ui/Icons";
 import { reportError } from "../state/toast";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
@@ -153,7 +153,7 @@ function accountMenu(
                     ? { label: `Sign in to ${name}`, icon: <IconUser size={13} />, run: () => openAccountDialog({ provider, profileId: account.id }) }
                     : {
                           label: `Sign out of ${name}`,
-                          icon: <IconPower size={13} />,
+                          icon: <IconLogOut size={13} />,
                           run: () => void signOut(account).catch(reportError("Sign out")),
                       },
                 ...(account.id.startsWith("builtin-")

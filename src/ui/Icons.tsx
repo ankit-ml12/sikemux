@@ -255,6 +255,13 @@ export const IconPower = makeSvgIcon(
         <path d="M4.7 4.4a5 5 0 1 0 6.6 0" />
     </>,
 );
+/** A door with an arrow leaving it: signing out. */
+export const IconLogOut = makeSvgIcon(
+    <>
+        <path d="M6.4 2.6H3.6a1 1 0 0 0-1 1v8.8a1 1 0 0 0 1 1h2.8" />
+        <path d="M10.4 5.2 13.2 8l-2.8 2.8M13.2 8H6.2" />
+    </>,
+);
 export const IconRotate = makeSvgIcon(
     <>
         <rect x="2.2" y="7.2" width="8.6" height="6.2" rx="1.2" />

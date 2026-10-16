@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { IconCheck, IconGit, IconPlus, IconPower, IconUser, Tooltip } from "../../plugin-api/ui";
+import { IconCheck, IconGit, IconLogOut, IconPlus, IconUser, Tooltip } from "../../plugin-api/ui";
 import { useAccount, useHost, type CodeHost, type HostAccountEntry } from "../registry";
 import { accountsR, hostStatusR } from "../resources";
 import { forgetAccount, SECTIONS, setProjectAccount, type Section } from "../state";
@@ -251,7 +251,7 @@ export function HostAccountButton({
                         )}
                         <button type="button" className="env-dd-item" role="menuitem" onClick={() => act(() => void signOut())}>
                             <span className="tree-ctx-icon">
-                                <IconPower size={13} />
+                                <IconLogOut size={13} />
                             </span>
                             Sign {account.login} out
                         </button>

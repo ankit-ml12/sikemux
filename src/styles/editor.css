@@ -221,31 +221,28 @@
     background: var(--surface-hover);
     color: var(--text-primary);
 }
-/* An item's own actions wait at its row's end and take the place of its hint
-   and tick while the row is pointed at or focused. */
+/* An item's own actions sit at its row's end, after its hint and tick, and the
+   row tints as a whole while any part of it is pointed at. */
 .tree-ctx-row {
-    position: relative;
     display: flex;
+    align-items: center;
+    border-radius: var(--radius-xs);
 }
 .tree-ctx-row > .tree-ctx-item {
     flex: 1 1 auto;
     min-width: 0;
 }
+.tree-ctx-menu .tree-ctx-row > .tree-ctx-item:is(:hover, :focus-visible) {
+    background: transparent;
+}
+.tree-ctx-row:has(> .tree-ctx-item:is(:hover, :focus-visible)) {
+    background: var(--surface-hover);
+}
 .tree-ctx-actions {
-    position: absolute;
-    top: 50%;
-    right: 6px;
     display: flex;
+    flex: none;
     gap: 2px;
-    opacity: 0;
-    transform: translateY(-50%);
-    transition: opacity var(--dur-1);
-}
-.tree-ctx-row:is(:hover, :focus-within) > .tree-ctx-actions {
-    opacity: 1;
-}
-.tree-ctx-row:is(:hover, :focus-within) > .tree-ctx-item :is(.tree-ctx-hint, .tree-ctx-check) {
-    visibility: hidden;
+    padding-right: 4px;
 }
 .tree-ctx-act {
     display: grid;
