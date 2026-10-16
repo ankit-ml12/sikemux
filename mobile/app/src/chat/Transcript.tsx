@@ -9,6 +9,7 @@ import { rateLabel, sentLabel, type RowMeta } from '@mac/chat/messageMeta';
 import { cutLongText, showRestLabel } from '@mac/chat/longText';
 import { contextChip, type SentContext } from '@mac/chat/promptContext';
 import {
+  attachmentName,
   groupParts,
   sentParts,
   shownParts,
@@ -33,6 +34,9 @@ import { FoldsContext, useFold } from './folds';
 import { Markdown } from './Markdown';
 import { useRevealed } from './reveal';
 import { SentAttachments } from './Attachments';
+import { hostImagePath } from './FileRef';
+import { useHostFile } from './hostFiles';
+import { ImageViewer } from './ImageViewer';
 import type { Attachment, Held, Unsent } from './session';
 import { ToolGroup } from './Tools';
 import { AnsweredQuestion } from './Question';
@@ -291,34 +295,53 @@ function Parts({ id, parts, untimed, live }: { id: string; parts: ChatPart[]; un
   );
 }
 
-/** An image or file the agent put in its answer. */
-function Content({ block }: { block: AcpContentBlock }) {
+/** A picture in an answer, opening over the whole screen on a tap. */
+function Picture({ uri, name }: { uri: string; name: string }) {
+  const styles = useStyles(makeStyles);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Pressable onPress={() => setOpen(true)} accessibilityRole="imagebutton" accessibilityLabel={`${name}, open`}>
+        <Image source={{ uri }} style={styles.image} resizeMode="contain" accessibilityIgnoresInvertColors />
+      </Pressable>
+      {open ? <ImageViewer uri={uri} name={name} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function ResourceChip({ name, image }: { name: string; image: boolean }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  if (block.type === 'text' && block.text?.trim()) return <Markdown text={block.text} style={styles.prose} />;
-  if (block.type === 'image' && block.data && block.mimeType?.startsWith('image/')) {
-    return (
-      <Image
-        source={{ uri: `data:${block.mimeType};base64,${block.data}` }}
-        style={styles.image}
-        resizeMode="contain"
-        accessibilityLabel="Image from the agent"
-        accessibilityIgnoresInvertColors
-      />
-    );
-  }
-  const resource = typeof block.resource === 'object' && block.resource !== null ? (block.resource as { uri?: unknown }) : null;
-  const uri = block.uri ?? (typeof resource?.uri === 'string' ? resource.uri : undefined);
-  const name = block.title ?? block.name ?? (uri ? basename(uri) : undefined);
-  if (!name) return null;
   return (
     <View style={styles.resource} accessible accessibilityLabel={`File ${name}`}>
-      <Icon name={block.mimeType?.startsWith('image/') ? 'IconImage' : 'IconFile'} size={14} color={colors.inkDim} />
+      <Icon name={image ? 'IconImage' : 'IconFile'} size={14} color={colors.inkDim} />
       <Text style={styles.resourceText} numberOfLines={1} selectable>
         {name}
       </Text>
     </View>
   );
+}
+
+/** A picture the answer links to on the host, previewed as the Mac previews it, or its file until it arrives. */
+function HostPicture({ path, name }: { path: string; name: string }) {
+  const uri = useHostFile(path, true);
+  return uri ? <Picture uri={uri} name={name} /> : <ResourceChip name={name} image />;
+}
+
+/** An image or file the agent put in its answer. */
+function Content({ block }: { block: AcpContentBlock }) {
+  const styles = useStyles(makeStyles);
+  if (block.type === 'text' && block.text?.trim()) return <Markdown text={block.text} style={styles.prose} />;
+  if (block.type === 'image' && block.data && block.mimeType?.startsWith('image/')) {
+    return <Picture uri={`data:${block.mimeType};base64,${block.data}`} name={attachmentName(block.mimeType)} />;
+  }
+  const resource = typeof block.resource === 'object' && block.resource !== null ? (block.resource as { uri?: unknown }) : null;
+  const uri = block.uri ?? (typeof resource?.uri === 'string' ? resource.uri : undefined);
+  const name = block.title ?? block.name ?? (uri ? basename(uri) : undefined);
+  if (!name) return null;
+  const image = uri ? hostImagePath(uri) : null;
+  if (image) return <HostPicture path={image} name={name} />;
+  return <ResourceChip name={name} image={Boolean(block.mimeType?.startsWith('image/'))} />;
 }
 
 /** What the Mac shows under a message on hover: Copy, when it was sent or finished and how long it took, and how fast it was written. */
