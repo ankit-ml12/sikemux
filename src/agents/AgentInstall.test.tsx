@@ -28,7 +28,7 @@ vi.mock("../api/agents", () => ({ agentApi: { refreshStatuses: mocks.refreshStat
 vi.mock("../state/resources", () => ({ fetchResource: mocks.fetchResource, invalidate: mocks.invalidate }));
 vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
 
-import { AgentInstallHost, installAgent } from "./AgentInstall";
+import { AgentInstallHost, installAgent, sheetCommand, signInAgent } from "./AgentInstall";
 
 const exit = (id: number, code: number | null) => act(() => mocks.exited!({ payload: { id, code } }));
 
@@ -83,6 +83,46 @@ describe("installing an agent", () => {
 
         exit(7, 0);
         expect(await screen.findByText(/can't find OMP yet/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    });
+
+    it("runs the agent's own sign-in on the account its profile names", () => {
+        const signIn = (configPath: string | null) =>
+            sheetCommand({ kind: "signIn", type: "claude", program: "/opt/bin/claude", configPath }, "/Users/me");
+        expect(signIn(null)).toEqual({ direct: { program: "/opt/bin/claude", args: ["auth", "login"] }, shown: "claude auth login" });
+        expect(signIn("~/.claude-work").direct).toEqual({
+            program: "/usr/bin/env",
+            args: ["CLAUDE_CONFIG_DIR=/Users/me/.claude-work", "/opt/bin/claude", "auth", "login"],
+        });
+        expect(signIn("/x/work/settings.json").direct.args[0]).toBe("CLAUDE_CONFIG_DIR=/x/work");
+        expect(sheetCommand({ kind: "signIn", type: "opencode", program: "/bin/opencode", configPath: "/ignored" }, "/Users/me").direct).toEqual({
+            program: "/bin/opencode",
+            args: ["auth", "login"],
+        });
+    });
+
+    it("says the agent is signed in once its sign-in succeeds", async () => {
+        mocks.fetchResource.mockResolvedValue([
+            { type: "claude", label: "Claude", available: true, status: { state: "ready", account: "subscription" } },
+        ]);
+        render(<AgentInstallHost />);
+        act(() => signInAgent({ type: "claude", command: "/opt/bin/claude", configPath: null }));
+
+        expect(await screen.findByTestId("terminal")).toHaveTextContent("auth login");
+        expect(screen.getByRole("dialog", { name: "Sign in to Claude" })).toBeInTheDocument();
+        exit(7, 0);
+        expect(await screen.findByRole("status")).toHaveTextContent("Claude is signed in: Ready · subscription.");
+        expect(mocks.refreshStatuses).toHaveBeenCalledOnce();
+        fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    });
+
+    it("says so when the agent still reads as signed out", async () => {
+        mocks.fetchResource.mockResolvedValue([{ type: "codex", label: "Codex", available: true, status: { state: "signedOut" } }]);
+        render(<AgentInstallHost />);
+        act(() => signInAgent({ type: "codex", command: "/opt/bin/codex", configPath: null }));
+        await screen.findByTestId("terminal");
+        exit(7, 0);
+        expect(await screen.findByRole("status")).toHaveTextContent("Codex still reads as signed out.");
         fireEvent.click(screen.getByRole("button", { name: "Close" }));
     });
 
