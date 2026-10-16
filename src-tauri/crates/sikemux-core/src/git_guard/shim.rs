@@ -239,12 +239,8 @@ fn run(args: Vec<OsString>) -> i32 {
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let private_index = std::env::var_os("GIT_INDEX_FILE").is_some();
-    if let Some(refusal) = super::refused(
-        &words,
-        private_index,
-        sikemux_process::user_environment::command(&git),
-        &others,
-    ) {
+    let real = || sikemux_process::user_environment::command(&git);
+    if let Some(refusal) = super::refused(&words, private_index, &real, &others) {
         eprintln!("{refusal}");
         return 1;
     }

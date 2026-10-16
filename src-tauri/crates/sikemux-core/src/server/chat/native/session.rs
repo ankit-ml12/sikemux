@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 use crate::acp::account::{self, Failure, FailureKind, SignIn};
 use crate::acp::{permission, SessionEnd};
-use crate::git_guard;
 use crate::protocol::{ChatAccount, ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 
 use super::super::rebind::{
@@ -250,60 +249,30 @@ impl Sink {
     /// question so a core that takes the chat over can answer it too.
     /// `respond` is told the chosen option's id, or none when it was
     /// cancelled.
-    pub fn ask(&self, request: Value, reply: Value, respond: Respond) {
-        let choices = permission::choices(&request);
-        let chat = self.chat.clone();
-        let guarded = choices
-            .command
-            .filter(|command| git_guard::may_refuse(command));
-        let (Some(command), Some(reject)) = (guarded, choices.reject) else {
-            ask_person(&chat, request, reply, respond);
-            return;
-        };
-        tokio::spawn(async move {
-            let checked = chat.clone();
-            let refused = tokio::task::spawn_blocking(move || git_refusal(&checked, &command))
-                .await
-                .ok()
-                .flatten();
-            match refused {
-                Some(_) => respond(Some(reject)),
-                None => ask_person(&chat, request, reply, respond),
+    pub fn ask(&self, mut request: Value, reply: Value, respond: Respond) {
+        if self.chat.approves() {
+            if let Some(option_id) = permission::approval(&request) {
+                respond(Some(option_id));
+                return;
             }
-        });
-    }
-}
-
-/// Why `chat`'s agent may not run the shell `command`, by the git guard.
-fn git_refusal(chat: &Chat, command: &str) -> Option<String> {
-    let core = chat.core.upgrade()?;
-    let others = |dir: &std::path::Path, paths: &[String]| {
-        crate::server::edits::guard::others(&core, Some(chat.agent_id()), dir, paths).ok()
-    };
-    git_guard::refusal(command, &chat.launch.cwd, &others)
-}
-
-/// Puts the permission request to the person, unless the chat approves it.
-fn ask_person(chat: &Arc<Chat>, mut request: Value, reply: Value, respond: Respond) {
-    if chat.approves() {
-        if let Some(option_id) = permission::approval(&request) {
-            respond(Some(option_id));
-            return;
         }
-    }
-    let option_ids = request
-        .get("options")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|option| Some(option.get("optionId")?.as_str()?.to_owned()))
-        .collect();
-    let request_id = Uuid::new_v4().to_string();
-    if let Some(object) = request.as_object_mut() {
-        object.insert("requestId".into(), Value::String(request_id.clone()));
-    }
-    if chat.hold_permission(request_id, option_ids, respond, request.clone(), reply) {
-        chat.emit(ChatEventKind::PermissionRequest, request);
+        let option_ids = request
+            .get("options")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|option| Some(option.get("optionId")?.as_str()?.to_owned()))
+            .collect();
+        let request_id = Uuid::new_v4().to_string();
+        if let Some(object) = request.as_object_mut() {
+            object.insert("requestId".into(), Value::String(request_id.clone()));
+        }
+        if self
+            .chat
+            .hold_permission(request_id, option_ids, respond, request.clone(), reply)
+        {
+            self.chat.emit(ChatEventKind::PermissionRequest, request);
+        }
     }
 }
 

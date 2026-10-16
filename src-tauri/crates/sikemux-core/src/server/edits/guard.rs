@@ -15,20 +15,23 @@ use crate::server::messages::{listed, Reach};
 use crate::server::Core;
 
 /// The other agents than `agent_id` with uncommitted lines in `paths`, as
-/// given in `dir`. With no paths, those with lines anywhere in its checkout,
-/// and those working in it.
+/// given in `dir`, leaving out any outside its checkout. With no paths, those
+/// with lines anywhere in the checkout, and those working in it.
 pub(crate) fn others(
     core: &Core,
-    agent_id: Option<&str>,
+    agent_id: &str,
     dir: &Path,
     paths: &[String],
 ) -> Result<Vec<String>, String> {
     let (owners, diff) = traced(core, dir, false)?;
-    let named = paths
+    let named: Vec<String> = paths
         .iter()
-        .map(|path| in_checkout(&diff.top, dir, path))
-        .collect::<Result<Vec<_>, _>>()?;
-    let theirs = |author: &&Author| !agent_id.is_some_and(|id| author.agents().any(|of| of == id));
+        .filter_map(|path| in_checkout(&diff.top, dir, path).ok())
+        .collect();
+    if named.is_empty() && !paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let theirs = |author: &&Author| author.agents().any(|of| of != agent_id);
     let mut others: BTreeSet<String> = owners
         .files
         .iter()
@@ -47,7 +50,7 @@ pub(crate) fn others(
             listed(core)
                 .into_iter()
                 .filter(|agent| matches!(agent.reach, Reach::Chat | Reach::Terminal))
-                .filter(|agent| Some(agent.agent_id.as_str()) != agent_id)
+                .filter(|agent| agent.agent_id != agent_id)
                 .filter(|agent| {
                     core.edits.checkout_of(core, &agent.agent_id).as_deref() == Some(&top)
                 })
@@ -66,12 +69,12 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             serde_json::from_value(paths.clone()).map_err(|_| "paths must be a list of paths")?
         }
     };
-    let (core, agent_id, dir) = (
-        core.clone(),
-        request.agent_id.clone(),
-        PathBuf::from(&request.project),
-    );
-    blocking(move || Ok(others(&core, agent_id.as_deref(), &dir, &paths)?))
+    let agent_id = request
+        .agent_id
+        .clone()
+        .ok_or("git.guard needs the calling agent's id")?;
+    let (core, dir) = (core.clone(), PathBuf::from(&request.project));
+    blocking(move || Ok(others(&core, &agent_id, &dir, &paths)?))
         .await
         .map_err(|error| error.to_string())
         .map(|others| serde_json::json!({ "others": others }))

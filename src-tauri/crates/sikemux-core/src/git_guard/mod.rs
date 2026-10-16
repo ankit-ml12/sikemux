@@ -28,59 +28,63 @@ pub(crate) fn refusal(command: &str, cwd: &Path, others: &Others) -> Option<Stri
         if base_name(first) != "git" {
             return None;
         }
-        let mut git = sikemux_process::user_environment::command("git");
-        git.current_dir(cwd);
-        refused(args, false, git, others)
-    })
-}
-
-/// Whether `command` runs a git command the guard may refuse, by its words
-/// alone, without asking git or the core.
-pub(crate) fn may_refuse(command: &str) -> bool {
-    segments(command).iter().any(|words| {
-        let Some(words) = command_words(words) else {
-            return false;
+        let git = || {
+            let mut git = sikemux_process::user_environment::command("git");
+            git.current_dir(cwd);
+            git
         };
-        if let Some(script) = shell_script(words) {
-            return may_refuse(script);
-        }
-        words.split_first().is_some_and(|(first, args)| {
-            base_name(first) == "git" && touches(git_args(args), false).is_some()
-        })
+        refused(args, false, &git, others)
     })
 }
 
-/// The script of `sh -c script`, or of a shell given other flags first.
+/// The script of `sh -c script`, or of a shell given other options first.
 fn shell_script(words: &[String]) -> Option<&str> {
     let (shell, rest) = words.split_first()?;
     if !is_shell(shell) {
         return None;
     }
-    let flags = rest.iter().take_while(|word| word.starts_with('-'));
-    let at = flags
-        .clone()
-        .position(|flag| !flag.starts_with("--") && flag.ends_with('c'))?;
-    rest.get(at + 1).map(String::as_str)
+    let mut words = rest.iter();
+    while let Some(word) = words.next() {
+        match word.as_str() {
+            "-o" | "+o" => {
+                words.next();
+            }
+            flag if flag.starts_with('-') && !flag.starts_with("--") && flag.contains('c') => {
+                return words.next().map(String::as_str);
+            }
+            flag if flag.starts_with(['-', '+']) => {}
+            _ => return None,
+        }
+    }
+    None
 }
 
-/// Why `git` with `args` may not run, if it may not. `git` is the real git,
-/// started where the command runs, to find the repository with.
+/// Why `git` with `args` may not run, if it may not. `git` starts the real
+/// git where the command runs, to find the repository with.
 /// `private_index` says the command stages into an index of its own rather
 /// than the checkout's.
-fn refused(args: &[String], private_index: bool, git: Command, others: &Others) -> Option<String> {
+fn refused(
+    args: &[String],
+    private_index: bool,
+    git: &dyn Fn() -> Command,
+    others: &Others,
+) -> Option<String> {
     let subcommand = git_args(args);
     let touched = touches(subcommand, private_index)?;
+    if matches!(&touched, Touch::Paths { paths, .. } if paths.is_empty()) {
+        return None;
+    }
     let options = args
         .get(..args.len() - subcommand.len())
         .unwrap_or_default();
-    let checkout = checkout(git, options)?;
-    if checkout.linked {
+    let checkout = checkout(git(), options);
+    if checkout.as_ref().is_some_and(|checkout| checkout.linked) {
         return None;
     }
     let shown = format!("git {}", subcommand.join(" "));
     match touched {
         Touch::Everything(why) => {
-            let who = match others(&checkout.dir, &[]) {
+            let who = match checkout.and_then(|checkout| others(&checkout.dir, &[])) {
                 Some(names) if names.is_empty() => return None,
                 Some(names) => {
                     let verb = if names.len() == 1 { "works" } else { "work" };
@@ -93,11 +97,15 @@ fn refused(args: &[String], private_index: bool, git: Command, others: &Others) 
             ))
         }
         Touch::Paths { mut paths, named } => {
+            let checkout = checkout?;
             if !named {
+                if is_commit(git(), options, &paths[0]) {
+                    paths.remove(0);
+                }
                 paths.retain(|path| checkout.dir.join(path).symlink_metadata().is_ok());
-            }
-            if paths.is_empty() {
-                return None;
+                if paths.is_empty() {
+                    return None;
+                }
             }
             let names = others(&checkout.dir, &paths).filter(|names| !names.is_empty())?;
             let names = listed(&names);
@@ -108,9 +116,22 @@ fn refused(args: &[String], private_index: bool, git: Command, others: &Others) 
     }
 }
 
+/// Whether git, given the global `options`, reads `word` as a commit, as
+/// `git checkout` does with its first word before taking it for a path.
+fn is_commit(mut git: Command, options: &[String], word: &str) -> bool {
+    git.args(options)
+        .args(["rev-parse", "--verify", "--quiet", "--end-of-options"])
+        .arg(format!("{word}^{{commit}}"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 /// The checkout git runs in, given the global `options`: the folder it runs
 /// in, and whether it is a linked worktree, with its own index and files,
-/// rather than a repository's main checkout. None outside a checkout.
+/// rather than a repository's main checkout. None when git cannot say.
 struct Checkout {
     dir: PathBuf,
     linked: bool,
@@ -144,8 +165,9 @@ fn checkout(mut git: Command, options: &[String]) -> Option<Checkout> {
 enum Touch {
     /// The whole checkout, and what the command does to it.
     Everything(&'static str),
-    /// Files whose uncommitted changes the command throws away. `named` says
-    /// they follow a `--`, so are surely paths rather than a branch.
+    /// Files whose uncommitted changes the command throws away. Unless
+    /// `named`, they are `git checkout`'s words, the first of which may be a
+    /// commit rather than a path.
     Paths { paths: Vec<String>, named: bool },
 }
 
