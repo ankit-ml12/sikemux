@@ -69,6 +69,7 @@ export interface PersistedPrefs {
     customThemes?: Theme[];
     uiTextScale?: number;
     paneShader?: boolean;
+    buddies?: boolean;
     buddyPack?: string;
     buddyShape?: string;
     buddyMotion?: boolean;

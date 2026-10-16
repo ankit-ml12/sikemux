@@ -32,7 +32,7 @@ import { PaneField, PanePaintedContext } from "../ui/ShaderField";
 import { agentMenu, renameAgentNamePrompt, renameAgentPrompt } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
-import { AgentBuddy } from "../buddies/Buddy";
+import { AgentFace } from "../buddies/Buddy";
 import { IconArrowUp, IconPlus, WindowIcon } from "../ui/Icons";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
@@ -416,9 +416,13 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     title,
                     note: agent?.name,
                     icon: agent ? (
-                        <span className="agent-glyph buddy-mark">
-                            <AgentBuddy agent={agent} size={26} />
-                        </span>
+                        <AgentFace
+                            agent={agent}
+                            size={26}
+                            logoSize={19}
+                            logoClass={`agent-glyph ${agent.type}`}
+                            buddyClass="agent-glyph buddy-mark"
+                        />
                     ) : undefined,
                 };
             }
@@ -470,9 +474,13 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                         active: key === activeKey,
                         note: agent.name,
                         icon: (
-                            <span className="agent-glyph buddy-mark">
-                                <AgentBuddy agent={agent} size={26} />
-                            </span>
+                            <AgentFace
+                                agent={agent}
+                                size={26}
+                                logoSize={19}
+                                logoClass={`agent-glyph ${agent.type}`}
+                                buddyClass="agent-glyph buddy-mark"
+                            />
                         ),
                         badge: display.subagents + display.tasks > 0 ? <BackgroundCounts display={display} /> : undefined,
                         accessory: showsAgentState(display) ? <AgentStateIndicator display={display} /> : undefined,

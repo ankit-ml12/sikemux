@@ -61,6 +61,8 @@ export interface DomainState {
     customThemes: Theme[];
     uiTextScale: number;
     paneShader: boolean;
+    /** Agents show a character in place of their harness logo. */
+    buddies: boolean;
     /** The default character style: a pack id or "all", and a shape id or "mixed". */
     buddyPack: string;
     buddyShape: string;
@@ -267,6 +269,7 @@ export const useStore = create<StoreState>(() => {
         customThemes: [],
         uiTextScale: 1,
         paneShader: true,
+        buddies: false,
         buddyPack: DEFAULT_BUDDY_STYLE.pack,
         buddyShape: DEFAULT_BUDDY_STYLE.shape,
         buddyMotion: true,

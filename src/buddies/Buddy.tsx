@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { useStore } from "../state/store";
+import { AgentIcon } from "../ui/Icons";
 import type { Agent } from "../state/types";
 import { buddyStateOf, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyState } from "./catalogue";
 import { assignBuddyColors } from "./commands";
@@ -54,11 +55,38 @@ export const AgentBuddy = memo(function AgentBuddy({
     return <BuddyArt pack={look.pack} shape={look.shape} color={look.color} state={state ?? buddyStateOf(live)} size={size} className={className} />;
 });
 
-/** Gives each new agent its colour. Mounted once, at the app's root. */
+/** The agent's buddy when buddies are on, otherwise its harness logo, each in its own wrapper. */
+export function AgentFace({
+    agent,
+    size,
+    logoSize,
+    logoClass,
+    buddyClass,
+}: {
+    agent: Pick<Agent, "id" | "type" | "buddy">;
+    size: number;
+    logoSize: number;
+    logoClass: string;
+    buddyClass: string;
+}) {
+    const on = useStore((s) => s.buddies);
+    return on ? (
+        <span className={buddyClass}>
+            <AgentBuddy agent={agent} size={size} />
+        </span>
+    ) : (
+        <span className={logoClass}>
+            <AgentIcon type={agent.type} size={logoSize} />
+        </span>
+    );
+}
+
+/** Gives each new agent its colour while buddies are on. Mounted once, at the app's root. */
 export function BuddyBridge() {
+    const on = useStore((s) => s.buddies);
     const agents = useStore((s) => s.agents);
     useEffect(() => {
-        if (Object.values(agents).some((agent) => !agent.buddy)) assignBuddyColors();
-    }, [agents]);
+        if (on && Object.values(agents).some((agent) => !agent.buddy)) assignBuddyColors();
+    }, [on, agents]);
     return null;
 }

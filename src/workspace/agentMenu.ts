@@ -7,6 +7,7 @@ import type { Agent, Session } from "../state/types";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { openShareDialog } from "../share/macShares";
 import { openBuddyPicker } from "../buddies/commands";
+import { getState } from "../state/store";
 
 /**
  * The menu an agent's tab, its header and its rail row open. `others` are the agents "Close Others" closes.
@@ -23,7 +24,7 @@ export function agentMenu(
     const items: CtxItem[] = [
         { label: "Rename…", run: () => void renameAgentNamePrompt(agent) },
         { label: "Edit Title…", run: retitle },
-        { label: "Change Buddy…", run: () => openBuddyPicker(agent.id) },
+        ...(getState().buddies ? [{ label: "Change Buddy…", run: () => openBuddyPicker(agent.id) }] : []),
         ...(agent.launchState === "dormant"
             ? [{ label: "Resume", run: () => cmd.selectAgent(agent.id) }]
             : agent.resumeId

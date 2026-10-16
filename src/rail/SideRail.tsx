@@ -19,7 +19,7 @@ import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentBuddy } from "../buddies/Buddy";
+import { AgentFace } from "../buddies/Buddy";
 import { IconAgent, IconClose, IconFolder, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
@@ -241,9 +241,14 @@ function ProjectBlock({ s }: { s: Session }) {
             {visibleAgents.length > 0 && (
                 <span className="proj-child-icons">
                     {visibleAgents.map((a) => (
-                        <span key={a.id} className="proj-pip buddy-mark">
-                            <AgentBuddy agent={a} size={20} />
-                        </span>
+                        <AgentFace
+                            key={a.id}
+                            agent={a}
+                            size={20}
+                            logoSize={20}
+                            logoClass={`proj-pip proj-pip-${a.type}`}
+                            buddyClass="proj-pip buddy-mark"
+                        />
                     ))}
                     {agentOverflow > 0 && <span className="proj-child-icons-more">+{agentOverflow}</span>}
                 </span>
@@ -291,9 +296,7 @@ function ProjectBlock({ s }: { s: Session }) {
               ))
             : [];
     const agentIcons: ReactNode[] = agents.map((a) => (
-        <span key={a.id} className="proj-pip buddy-mark">
-            <AgentBuddy agent={a} size={20} />
-        </span>
+        <AgentFace key={a.id} agent={a} size={20} logoSize={20} logoClass={`proj-pip proj-pip-${a.type}`} buddyClass="proj-pip buddy-mark" />
     ));
 
     const surfaceRow = (role: ProjectSurfaceRole): SubRow => {

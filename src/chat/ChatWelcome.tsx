@@ -1,5 +1,5 @@
 import { Calendar, isEmptyActivity, Overview, useActivitySummary } from "../shell/ActivityPage";
-import { AgentBuddy } from "../buddies/Buddy";
+import { AgentFace } from "../buddies/Buddy";
 import { basename } from "../lib/paths";
 import type { Agent } from "../state/types";
 import "../styles/activity.css";
@@ -10,9 +10,13 @@ export function ChatWelcome({ cwd, agent }: { cwd: string; agent: Agent }) {
     return (
         <div className="chat-welcome">
             <div className="chat-welcome-head">
-                <span className="chat-welcome-mark agent-glyph buddy-mark" aria-hidden="true">
-                    <AgentBuddy agent={agent} size={44} />
-                </span>
+                <AgentFace
+                    agent={agent}
+                    size={44}
+                    logoSize={40}
+                    logoClass={`chat-welcome-mark agent-glyph ${agent.type}`}
+                    buddyClass="chat-welcome-mark agent-glyph buddy-mark"
+                />
                 <span className="chat-welcome-title">{basename(cwd) || cwd}</span>
             </div>
             {!failed && (

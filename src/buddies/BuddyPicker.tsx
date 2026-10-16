@@ -4,7 +4,7 @@ import { useOccludeNativeViews } from "../state/nativeViews";
 import { useStore } from "../state/store";
 import type { Agent } from "../state/types";
 import { AgentBuddy, BuddyArt } from "./Buddy";
-import { BUDDY_PACKS, resolveBuddy } from "./catalogue";
+import { BUDDY_PACKS, resolveBuddy, type BuddyShape } from "./catalogue";
 import { closeBuddyPicker, resetAgentBuddy, setAgentBuddyColor, setAgentBuddyShape, useBuddyPicker } from "./commands";
 
 export function BuddyPickerHost() {
@@ -22,9 +22,12 @@ function BuddyPicker({ agent }: { agent: Agent }) {
     const defaultShape = useStore((s) => s.buddyShape);
     const look = resolveBuddy(agent, { pack: defaultPack, shape: defaultShape });
     const [packId, setPackId] = useState(look.pack.id);
+    const [hovered, setHovered] = useState<BuddyShape | null>(null);
     const pack = BUDDY_PACKS.find((candidate) => candidate.id === packId) ?? look.pack;
-    const color = pack.colors[look.colorIndex % pack.colors.length];
+    const colorIndex = look.colorIndex % pack.colors.length;
+    const color = pack.colors[colorIndex];
     const chosen = agent.buddy?.pack !== undefined;
+    const named = hovered ? `${pack.name} · ${hovered.name}` : `${look.pack.name} · ${look.shape.name}`;
 
     useEffect(() => {
         const onKey = (event: KeyboardEvent) => {
@@ -47,25 +50,51 @@ function BuddyPicker({ agent }: { agent: Agent }) {
                 aria-modal="true"
                 aria-label={`Buddy for ${agent.title}`}
                 onMouseDown={(event) => event.stopPropagation()}>
-                <div className="dlg-head">
-                    <AgentBuddy agent={agent} size={32} className="buddy-dlg-current" />
-                    <h2 className="dlg-title">{agent.name ? `${agent.name}'s buddy` : "Buddy"}</h2>
+                <div className="buddy-head">
+                    <AgentBuddy agent={agent} size={44} />
+                    <div className="buddy-head-text">
+                        <h2 className="dlg-title">{agent.name ?? "Buddy"}</h2>
+                        <span className="buddy-head-name">{named}</span>
+                    </div>
+                    <div className="buddy-colors" role="radiogroup" aria-label="Colour">
+                        {pack.colors.map((swatch, index) => (
+                            <button
+                                key={swatch}
+                                type="button"
+                                role="radio"
+                                aria-checked={index === colorIndex}
+                                aria-label={`Colour ${index + 1}`}
+                                className={`buddy-swatch${index === colorIndex ? " on" : ""}`}
+                                onClick={() => setAgentBuddyColor(agent.id, index)}>
+                                <span style={{ background: swatch }} />
+                            </button>
+                        ))}
+                    </div>
                 </div>
-                <div className="dlg-body">
-                    <div className="buddy-packs" role="tablist" aria-label="Packs">
+                <div className="buddy-body">
+                    <div className="buddy-packs" role="tablist" aria-label="Packs" aria-orientation="vertical">
                         {BUDDY_PACKS.map((candidate) => (
                             <button
                                 key={candidate.id}
                                 type="button"
                                 role="tab"
                                 aria-selected={candidate.id === pack.id}
-                                className={`buddy-chip${candidate.id === pack.id ? " on" : ""}`}
+                                className={`buddy-pack${candidate.id === pack.id ? " on" : ""}`}
                                 onClick={() => setPackId(candidate.id)}>
-                                {candidate.name}
+                                <BuddyArt
+                                    pack={candidate}
+                                    shape={candidate.shapes[0]}
+                                    color={candidate.colors[look.colorIndex % candidate.colors.length]}
+                                    state="idle"
+                                    size={18}
+                                    className="still"
+                                />
+                                <span>{candidate.name}</span>
+                                {look.pack.id === candidate.id && <i className="buddy-pack-dot" aria-hidden="true" />}
                             </button>
                         ))}
                     </div>
-                    <div className="buddy-grid" role="listbox" aria-label={pack.name}>
+                    <div className="buddy-grid" role="listbox" aria-label={pack.name} onMouseLeave={() => setHovered(null)}>
                         {pack.shapes.map((shape) => {
                             const on = look.pack.id === pack.id && look.shape.id === shape.id;
                             return (
@@ -74,28 +103,14 @@ function BuddyPicker({ agent }: { agent: Agent }) {
                                     type="button"
                                     role="option"
                                     aria-selected={on}
-                                    title={shape.name}
+                                    aria-label={shape.name}
                                     className={`buddy-tile${on ? " on" : ""}`}
+                                    onMouseEnter={() => setHovered(shape)}
                                     onClick={() => setAgentBuddyShape(agent.id, pack.id, shape.id)}>
-                                    <BuddyArt pack={pack} shape={shape} color={color} state="idle" size={34} />
-                                    <span>{shape.name}</span>
+                                    <BuddyArt pack={pack} shape={shape} color={color} state="idle" size={40} />
                                 </button>
                             );
                         })}
-                    </div>
-                    <div className="buddy-colors" role="radiogroup" aria-label="Colour">
-                        {pack.colors.map((swatch, index) => (
-                            <button
-                                key={swatch}
-                                type="button"
-                                role="radio"
-                                aria-checked={index === look.colorIndex % pack.colors.length}
-                                aria-label={`Colour ${index + 1}`}
-                                className={`buddy-swatch${index === look.colorIndex % pack.colors.length ? " on" : ""}`}
-                                onClick={() => setAgentBuddyColor(agent.id, index)}>
-                                <span style={{ background: swatch }} />
-                            </button>
-                        ))}
                     </div>
                 </div>
                 <div className="dlg-foot">

@@ -13,12 +13,19 @@ export function BuddySettings() {
     const pack = useStore((s) => s.buddyPack);
     const shape = useStore((s) => s.buddyShape);
     const motion = useStore((s) => s.buddyMotion);
+    const on = useStore((s) => s.buddies);
     const chosen = packById(pack);
     const samples = useMemo(() => SAMPLES.map((sample) => resolveBuddy(sample, { pack, shape })), [pack, shape]);
 
     return (
         <SettingsSection title="Buddies">
             <SettingsRows>
+                <SettingsRow
+                    label="Show buddies"
+                    desc="Agents get a character in place of their harness logo."
+                    asLabel
+                    control={<Switch checked={on} onChange={cmd.setBuddies} label="Show buddies" />}
+                />
                 <SettingsRow label="Pack" desc="The characters new agents get. Right-click an agent to give it a different one.">
                     <Dropdown
                         className="settings-dd"

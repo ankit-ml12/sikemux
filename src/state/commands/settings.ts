@@ -16,6 +16,7 @@ export const setNotch = (patch: Partial<import("../../notch/notchSettings").Notc
 export const setIosSimulator = (value: boolean): void => setState({ iosSimulator: value });
 export const setSimulatorFrame = (value: boolean): void => setState({ simulatorFrame: value });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
+export const setBuddies = (value: boolean): void => setState({ buddies: value });
 export const setBuddyStyle = (pack: string, shape: string): void => setState({ buddyPack: pack, buddyShape: shape });
 export const setBuddyMotion = (value: boolean): void => setState({ buddyMotion: value });
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
