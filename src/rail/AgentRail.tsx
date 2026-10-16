@@ -248,23 +248,11 @@ export function AgentRailBody() {
                 ],
                 { duration: 140 },
             );
+            if (scroll) holdList(scroll);
             last.stagger = true;
         }
-        const recents = scroll ? [...scroll.querySelectorAll<HTMLElement>(".agent-row.recent")] : [];
-        if (scroll && last.stagger && recents.length > 0) {
-            const bottom = scroll.getBoundingClientRect().bottom;
-            const shown = recents.filter((row) => row.getBoundingClientRect().top < bottom);
-            const step = Math.min(20, 120 / shown.length);
-            shown.forEach((row, i) =>
-                animate(
-                    row,
-                    [
-                        { opacity: 0, transform: "translateY(4px)" },
-                        { opacity: 1, transform: "none" },
-                    ],
-                    { duration: 150, delay: i * step, fill: "backwards" },
-                ),
-            );
+        if (scroll && last.stagger && recent.status !== "loading") {
+            revealList(scroll);
             last.stagger = false;
         }
         seen.current = { session: session?.id, active, ids, view, stagger: last.stagger };
@@ -548,5 +536,33 @@ function AgentHeader({
                 </div>
             </div>
         </div>
+    );
+}
+
+const LIST_HOLD_MS = 300;
+const listHolds = new WeakMap<HTMLElement, number>();
+
+/* A new view's list waits hidden for its chats, so it never shows half of its rows. */
+function holdList(scroll: HTMLElement): void {
+    scroll.dataset.revealing = "true";
+    window.clearTimeout(listHolds.get(scroll));
+    listHolds.set(
+        scroll,
+        window.setTimeout(() => revealList(scroll), LIST_HOLD_MS),
+    );
+}
+
+/* Then the whole list wipes in from the top as one piece. */
+function revealList(scroll: HTMLElement): void {
+    window.clearTimeout(listHolds.get(scroll));
+    if (scroll.dataset.revealing !== "true") return;
+    delete scroll.dataset.revealing;
+    animate(
+        scroll,
+        [
+            { clipPath: "inset(0 0 100% 0)", opacity: 0.4 },
+            { clipPath: "inset(0 0 0% 0)", opacity: 1 },
+        ],
+        { duration: 200 },
     );
 }

@@ -893,6 +893,9 @@
 .agent-rail > .rail-scroll {
     padding-top: var(--space-2);
 }
+.agent-rail > .rail-scroll[data-revealing="true"] {
+    opacity: 0;
+}
 .workspace-rail.agent-rail > .rail-scroll > :first-child,
 .workspace-rail.agent-rail > .rail-scroll > .agent-all-projects > :first-child {
     margin-top: 0;

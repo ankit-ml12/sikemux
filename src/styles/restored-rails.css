@@ -2,10 +2,12 @@
     flex-direction: column;
     min-width: 240px;
 }
+/* The scrollbar's room is kept even with nothing to scroll, so the rows never
+   change width when a list grows past it. */
 .agent-rail > .rail-scroll {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
+    overflow-y: scroll;
 }
 /*
  * The project navigator is a tree, not a list of pills.
