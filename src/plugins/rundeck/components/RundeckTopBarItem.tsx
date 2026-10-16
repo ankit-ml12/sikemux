@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { PluginTopBarProps } from "../../../plugin-api";
 import { currentBranch, git, gitOverviewR, notify, reportError } from "../../../plugin-api/host";
 import { invalidate, peekResource, useResourceEnabled } from "../../../plugin-api/resources";
-import { IconCheckout, IconChevron, IconRundeck, Tooltip } from "../../../plugin-api/ui";
+import { IconCheck, IconCheckout, IconChevron, IconRundeck, Tooltip } from "../../../plugin-api/ui";
 import type { MatrixCell, RundeckJob } from "../api";
 import { rndJobCellsR, rndJobIndexR, rndProjectsR } from "../resources";
 import { basenameOf, displayStatus, groupSegments, isLiveStatus, isProdTarget, targetTone, type EnvTone } from "../shape";
@@ -65,74 +65,35 @@ export function RundeckTopBarItem({ projectCwd, stripHovered }: PluginTopBarProp
 
     return (
         <>
-            <LocationPicker
+            <DeployChip
                 jobs={matches}
-                active={active}
+                job={active}
+                cell={cell}
+                repo={projectCwd}
                 prodEnvs={prodEnvs}
                 onPick={(job) => setDeployTarget(projectCwd, { project: job.project, jobId: job.id })}
             />
-            <DeployChip job={active} cell={cell} repo={projectCwd} />
             <span className="tb-sep" />
         </>
     );
 }
 
-function LocationPicker({
+/** Where the project deploys, and one menu to pick the place, deploy there, or check out what it runs. */
+function DeployChip({
     jobs,
-    active,
+    job,
+    cell,
+    repo,
     prodEnvs,
     onPick,
 }: {
     jobs: RundeckJob[];
-    active: RundeckJob;
+    job: RundeckJob;
+    cell: MatrixCell | null;
+    repo: string;
     prodEnvs: string[];
     onPick: (job: RundeckJob) => void;
 }) {
-    const [open, setOpen] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
-    useMenuKeys(open, menuRef, () => setOpen(false));
-    const many = jobs.length > 1;
-    const dot = (job: RundeckJob) => DOT_CLASS[targetTone(job.project, job.group, prodEnvs)];
-
-    return (
-        <div className="env-dd" data-no-window-drag>
-            <button
-                className="env-dd-btn"
-                type="button"
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                onClick={() => many && setOpen((v) => !v)}
-                aria-label={many ? "Switch deploy location" : locationLabel(active)}>
-                <span className={`env-dot ${dot(active)}`} />
-                <span className="env-dd-label">{locationLabel(active)}</span>
-                {many && <IconChevron size={10} className="env-dd-chev" />}
-            </button>
-            {open && many && (
-                <>
-                    <div className="env-dd-scrim" onClick={() => setOpen(false)} />
-                    <div className="env-dd-menu" role="listbox" aria-label="Deploy location" ref={menuRef}>
-                        {jobs.map((job) => (
-                            <button
-                                key={`${job.project}:${job.id}`}
-                                className={`env-dd-item${job.id === active.id ? " active" : ""}`}
-                                role="option"
-                                aria-selected={job.id === active.id}
-                                onClick={() => {
-                                    onPick(job);
-                                    setOpen(false);
-                                }}>
-                                <span className={`env-dot ${dot(job)}`} />
-                                <span>{locationLabel(job)}</span>
-                            </button>
-                        ))}
-                    </div>
-                </>
-            )}
-        </div>
-    );
-}
-
-function DeployChip({ job, cell, repo }: { job: RundeckJob; cell: MatrixCell | null; repo: string }) {
     const repoStatus = useResourceEnabled(true, gitOverviewR, repo);
     const checkedOut = currentBranch(repoStatus.data?.status);
     const detached = !!repoStatus.data && checkedOut === null;
@@ -144,6 +105,8 @@ function DeployChip({ job, cell, repo }: { job: RundeckJob; cell: MatrixCell | n
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     useMenuKeys(menuOpen, menuRef, () => setMenuOpen(false));
+    const dot = (candidate: RundeckJob) => DOT_CLASS[targetTone(candidate.project, candidate.group, prodEnvs)];
+    const place = locationLabel(job);
 
     const deployBranch = () => {
         setMenuOpen(false);
@@ -166,31 +129,50 @@ function DeployChip({ job, cell, repo }: { job: RundeckJob; cell: MatrixCell | n
             .finally(() => setCheckingOut(false));
     };
 
-    const summary = latest
-        ? `${displayStatus(latest.status, latest.custom_status)}${latest.branch ? ` · ${latest.branch}` : ""} · ${locationLabel(job)}`
-        : `Rundeck actions for ${locationLabel(job)}`;
+    const lastRun =
+        latest && `Last run ${displayStatus(latest.status, latest.custom_status).toLowerCase()}${latest.branch ? ` · ${latest.branch}` : ""}`;
     const deployLabel = !runsBranch
-        ? "run"
+        ? `Run on ${place}`
         : repoStatus.status === "loading" && !repoStatus.data
-          ? "deploy (loading branch…)"
+          ? "Deploy (reading the branch…)"
           : detached
-            ? "deploy (detached HEAD)"
-            : "deploy";
+            ? "Deploy (detached HEAD)"
+            : "Deploy";
 
     return (
         <span className="tb-deploy-actions" data-no-window-drag>
-            <Tooltip label={deployed ? `deployed: ${deployed} · last run: ${summary}` : summary}>
+            <Tooltip label={[deployed ? `${place} runs ${deployed}` : place, lastRun].filter(Boolean).join(" · ")} disabled={menuOpen}>
                 <button className="tb-deploy-chip" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen}>
                     <IconRundeck size={12} />
-                    {latest && <i className={`tb-deploy-dot ${statusKind(latest.status)}`} aria-hidden="true" />}
-                    {deployed && <span className={`tb-deploy-branch rnd-branch-${branchKind(deployed)}`}>{deployed}</span>}
+                    <span className={`env-dot ${dot(job)}`} />
+                    <span className="tb-deploy-place">{place}</span>
                     <IconChevron size={10} className="env-dd-chev" />
                 </button>
             </Tooltip>
             {menuOpen && (
                 <>
                     <div className="env-dd-scrim" onClick={() => setMenuOpen(false)} />
-                    <div className="env-dd-menu tb-deploy-menu" role="menu" aria-label="Rundeck actions" ref={menuRef}>
+                    <div className="env-dd-menu tb-deploy-menu" role="menu" aria-label="Deploy" ref={menuRef}>
+                        {jobs.length > 1 && (
+                            <>
+                                <div className="env-dd-group">Deploy to</div>
+                                {jobs.map((candidate) => (
+                                    <button
+                                        key={`${candidate.project}:${candidate.id}`}
+                                        className={`env-dd-item${candidate.id === job.id ? " active" : ""}`}
+                                        role="menuitemradio"
+                                        aria-checked={candidate.id === job.id}
+                                        onClick={() => onPick(candidate)}>
+                                        <span className="tree-ctx-icon">
+                                            <span className={`env-dot ${dot(candidate)}`} />
+                                        </span>
+                                        <span className="env-dd-label">{locationLabel(candidate)}</span>
+                                        {candidate.id === job.id && <IconCheck size={11} className="env-dd-check" />}
+                                    </button>
+                                ))}
+                                <div className="env-dd-sep" />
+                            </>
+                        )}
                         <button
                             className="env-dd-item"
                             role="menuitem"
@@ -203,20 +185,24 @@ function DeployChip({ job, cell, repo }: { job: RundeckJob; cell: MatrixCell | n
                             {runsBranch && branch && <span className={`tb-deploy-menu-branch rnd-branch-${branchKind(branch)}`}>{branch}</span>}
                         </button>
                         {deployed && (
-                            <Tooltip
-                                side="left"
-                                label={`Checkout deployed branch ${deployed}. If it only exists on a remote, Sikemux will fetch and create a tracking local branch.`}>
-                                <button
-                                    className="env-dd-item"
-                                    role="menuitem"
-                                    onClick={checkoutBranch}
-                                    disabled={checkingOut || deployed === branch}>
+                            <button className="env-dd-item" role="menuitem" onClick={checkoutBranch} disabled={checkingOut || deployed === branch}>
+                                <span className="tree-ctx-icon">
+                                    <IconCheckout size={13} />
+                                </span>
+                                <span>{checkingOut ? "Checking out…" : "Check out"}</span>
+                                <span className={`tb-deploy-menu-branch rnd-branch-${branchKind(deployed)}`}>{deployed}</span>
+                            </button>
+                        )}
+                        {latest && (
+                            <>
+                                <div className="env-dd-sep" />
+                                <div className="env-dd-info">
                                     <span className="tree-ctx-icon">
-                                        <IconCheckout size={13} />
+                                        <i className={`tb-deploy-dot ${statusKind(latest.status)}`} aria-hidden="true" />
                                     </span>
-                                    <span>{checkingOut ? "checking out…" : "checkout"}</span>
-                                </button>
-                            </Tooltip>
+                                    <span>{lastRun}</span>
+                                </div>
+                            </>
                         )}
                     </div>
                 </>

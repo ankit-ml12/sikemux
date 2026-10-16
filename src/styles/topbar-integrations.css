@@ -33,12 +33,50 @@
 .tb-deploy-chip:hover {
     color: var(--ink);
 }
+.tb-deploy-place {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+}
+.tb-deploy-chip:hover .tb-deploy-place {
+    color: var(--text-primary);
+}
+.env-dd-group {
+    padding: 6px 9px 4px;
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.env-dd-sep {
+    height: 1px;
+    margin: 4px 8px;
+    background: var(--border);
+}
+.env-dd-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 9px;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
+.env-dd-check {
+    flex: none;
+    margin-left: auto;
+    color: var(--text-primary);
+}
 .tb-deploy-menu .env-dd-item:disabled {
     opacity: 0.55;
     cursor: wait;
 }
 .tb-deploy-menu {
-    min-width: 150px;
+    min-width: 220px;
 }
 .tb-deploy-menu-branch {
     margin-left: auto;

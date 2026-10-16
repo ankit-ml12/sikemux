@@ -287,35 +287,11 @@
     background: var(--surface-selected);
 }
 
-.env-dd {
-    position: relative;
-    flex: 0 1 auto;
-    min-width: 0;
-}
-.env-dd-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 24px;
-    max-width: 100%;
-    min-width: 0;
-    padding: 0 8px;
-    border: 1px solid var(--border);
-    background: var(--surface-raised);
-    color: var(--text-secondary);
-    font-size: var(--text-2xs);
-}
 .env-dd-label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-.env-dd-btn > .env-dd-chev {
-    flex: 0 0 auto;
-}
-.env-dd-btn:hover {
-    color: var(--text-primary);
 }
 .env-dd-chev {
     color: var(--text-tertiary);
@@ -369,7 +345,7 @@
     font-size: var(--text-xs);
 }
 .env-dd-item:hover {
-    background: var(--surface-selected);
+    background: var(--surface-hover);
     color: var(--text-primary);
 }
 .env-dd-item.active {

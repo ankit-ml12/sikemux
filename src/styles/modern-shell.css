@@ -76,7 +76,6 @@ textarea:focus,
 }
 
 .tb-btn,
-.env-dd-btn,
 .tb-git-chip,
 .tb-deploy-chip {
     border-radius: var(--radius-xs);
@@ -1111,7 +1110,6 @@ textarea,
     :where(
         .top-bar,
         .tb-btn,
-        .env-dd-btn,
         .env-dd-item,
         .sess-row,
         .row-x,
