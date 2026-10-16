@@ -1,6 +1,6 @@
 ---
 title: Accounts and limits
-description: Several Claude or Codex accounts, and how much of a plan is left.
+description: "Several Claude or Codex accounts, and how much of a plan is left."
 sidebar:
   order: 4
 ---

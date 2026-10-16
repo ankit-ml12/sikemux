@@ -1,6 +1,6 @@
 ---
 title: Updates
-description: Stable and nightly channels, and how Sikemux updates itself.
+description: "Stable and nightly channels, and how Sikemux updates itself."
 sidebar:
   order: 4
 ---

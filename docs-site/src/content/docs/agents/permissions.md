@@ -1,6 +1,6 @@
 ---
 title: Permission modes
-description: Normal and YOLO, and why agents start in YOLO.
+description: "Normal and YOLO, and why agents start in YOLO."
 sidebar:
   order: 3
 ---

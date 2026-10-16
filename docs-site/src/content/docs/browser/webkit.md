@@ -1,6 +1,6 @@
 ---
 title: WebKit
-description: Desk tabs use the same engine as Safari, and what that means.
+description: "Desk tabs use the same engine as Safari, and what that means."
 sidebar:
   order: 3
 ---
