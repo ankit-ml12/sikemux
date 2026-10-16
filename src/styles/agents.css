@@ -403,7 +403,7 @@
     margin-top: var(--space-2);
 }
 .workspace-rail .scope-track + .panel-group {
-    margin-top: var(--space-1h);
+    margin-top: var(--space-2);
 }
 .scope-track {
     position: relative;
