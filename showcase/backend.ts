@@ -61,15 +61,10 @@ interface RecentRequest {
   exclude: { agent: string; id: string }[];
 }
 
-// The demo's saved chats all belong to the sikemux project.
 function recentPage(request: RecentRequest) {
   const rows = request.providers
     .flatMap(({ agent }) =>
-      (SAVED_SESSIONS[agent] ?? []).map((row) => ({
-        ...row,
-        agent,
-        project: SIKEMUX,
-      })),
+      (SAVED_SESSIONS[agent] ?? []).map((row) => ({ ...row, agent })),
     )
     .filter((row) => request.projects.includes(row.project))
     .filter(
@@ -129,7 +124,7 @@ function sessionSearch({
       cli: row.cli,
       sessionId: row.id,
       title: row.title,
-      project: SIKEMUX,
+      project: row.project,
       activeAt: row.mtime * 1000,
       snippets: row.said ? [row.said] : [],
     }));
@@ -527,38 +522,42 @@ export class ShowcaseBackend implements IpcTransport {
     });
 
     this.on("available_agents", constant(AVAILABLE_AGENTS));
-    this.on(
-      "agent_sessions",
-      ({ agent }) => SAVED_SESSIONS[agent as string] ?? [],
+    this.on("agent_sessions", ({ agent, cwd }) =>
+      (SAVED_SESSIONS[agent as string] ?? []).filter(
+        (row) => row.project === cwd,
+      ),
     );
     this.on("agent_recent_sessions", ({ request }) =>
       recentPage(request as RecentRequest),
     );
-    this.on("agent_usage", ({ agent, configPath }) => {
-      const usage = AGENT_USAGE[agent as keyof typeof AGENT_USAGE] ?? null;
-      const peak =
-        OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""]?.used;
-      if (!usage || peak === undefined) return usage;
-      return {
-        ...usage,
-        windows: usage.windows.map((window, index) => ({
-          ...window,
-          usedPercent: index === 0 ? peak : Math.round(peak / 2),
-        })),
-      };
+    this.on("agent_accounts_call", ({ method, params }) => {
+      const { provider, configPath } = (params ?? {}) as Args;
+      const account = OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""];
+      if (method === "agentUsage") {
+        const usage = AGENT_USAGE[provider as keyof typeof AGENT_USAGE] ?? null;
+        if (!usage || !account) return usage;
+        return {
+          ...usage,
+          windows: usage.windows.map((window, index) => ({
+            ...window,
+            usedPercent:
+              index === 0 ? account.used : Math.round(account.used / 2),
+          })),
+        };
+      }
+      if (method === "agentAccountStatus")
+        return {
+          signedIn: true,
+          name: null,
+          email: account?.email ?? "edon@acme.dev",
+          plan: null,
+          organization: null,
+          method: "subscription",
+          sessions: `/demo/${String(provider)}/sessions`,
+        };
+      return null;
     });
     this.on("model_providers", () => []);
-    this.on("agent_account_status", ({ agent, configPath }) => ({
-      signedIn: true,
-      name: null,
-      email:
-        OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""]?.email ??
-        "edon@acme.dev",
-      plan: null,
-      organization: null,
-      method: "subscription",
-      sessions: `/demo/${String(agent)}/sessions`,
-    }));
     this.on("acp_attach", () => ({ status: "missing" }));
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);

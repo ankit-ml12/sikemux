@@ -1,5 +1,5 @@
 import { AGENTS } from "./workspace";
-import { MOODBOARD, SIKEMUX } from "./projects";
+import { FRONT, MOODBOARD, SIKEMUX } from "./projects";
 
 type Update = Record<string, unknown>;
 
@@ -110,11 +110,9 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
     ],
     live: [
       think("Running the rail tests first, then the density snapshot at 2x."),
-      tool(
-        "execute",
-        "pnpm test src/rail/AgentRail src/rail/SideRail",
-        { rawOutput: " ✓ src/rail/AgentRail.test.tsx (25 tests) 318ms" },
-      ),
+      tool("execute", "pnpm test src/rail/AgentRail src/rail/SideRail", {
+        rawOutput: " ✓ src/rail/AgentRail.test.tsx (25 tests) 318ms",
+      }),
       tool(
         "execute",
         "pnpm vitest run src/rail/AgentRailDensity.test.tsx",
@@ -173,7 +171,7 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       ),
       tool(
         "execute",
-        "git commit -m \"fix(terminal): stop showing the same output twice after reconnecting\"",
+        'git commit -m "fix(terminal): stop showing the same output twice after reconnecting"',
         {},
         "in_progress",
       ),
@@ -264,7 +262,9 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       ),
     ],
     live: [
-      think("Reading the ticket and production logs, then checking the fix in the browser."),
+      think(
+        "Reading the ticket and production logs, then checking the fix in the browser.",
+      ),
       tool("read", "mcp__sikemux-tools__jira_issue", {
         rawInput: { key: "ACME-412" },
         durationMs: 700,
@@ -317,7 +317,11 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       tool("other", "mcp__sikemux-tools__page_show", {
         rawInput: { title: "How a checkout request flows" },
         rawOutput: JSON.stringify({
-          page: { id: "a1c4e7f20b9d4c3e8f5a6b7c8d9e0f11", title: "How a checkout request flows", height: 330 },
+          page: {
+            id: "a1c4e7f20b9d4c3e8f5a6b7c8d9e0f11",
+            title: "How a checkout request flows",
+            height: 330,
+          },
         }),
         durationMs: 300,
       }),
@@ -335,7 +339,11 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       tool("other", "mcp__sikemux-tools__page_show", {
         rawInput: { title: "checkout p95 latency, last 24 hours" },
         rawOutput: JSON.stringify({
-          page: { id: "b2d5f8a31c0e4d5f9a6b7c8d9e0f1a22", title: "checkout p95 latency, last 24 hours", height: 360 },
+          page: {
+            id: "b2d5f8a31c0e4d5f9a6b7c8d9e0f1a22",
+            title: "checkout p95 latency, last 24 hours",
+            height: 360,
+          },
         }),
         durationMs: 300,
       }),
@@ -347,13 +355,15 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       user(
         "Sketch three options for the empty projects page before I pick one.",
       ),
-      say(
-        "Here are three, drawn with the site's colours. I'd go with B.",
-      ),
+      say("Here are three, drawn with the site's colours. I'd go with B."),
       tool("other", "mcp__sikemux-tools__page_show", {
         rawInput: { title: "Empty projects page, three ways" },
         rawOutput: JSON.stringify({
-          page: { id: "c3e6a9b42d1f4e6a8b7c9d0e1f2a3b33", title: "Empty projects page, three ways", height: 330 },
+          page: {
+            id: "c3e6a9b42d1f4e6a8b7c9d0e1f2a3b33",
+            title: "Empty projects page, three ways",
+            height: 330,
+          },
         }),
         durationMs: 300,
       }),
@@ -429,39 +439,99 @@ const hoursAgo = (hours: number) =>
 /** `said` stands in for what the person and the agent wrote, which the core's search also reads. */
 export const SAVED_SESSIONS: Record<
   string,
-  { id: string; title: string; mtime: number; said?: string }[]
+  { id: string; title: string; mtime: number; project: string; said?: string }[]
 > = {
   claude: [
     {
       id: "s-c1",
       title: "Split the Rundeck matrix into its own pane",
+      project: SIKEMUX,
       mtime: hoursAgo(3),
       said: "Each job's matrix of nodes gets a pane of its own, with the log tail under it.",
     },
     {
       id: "s-c2",
       title: "Why does the shader dim the gutter?",
+      project: SIKEMUX,
       mtime: hoursAgo(26),
       said: "The gutter sits under the vignette, so its alpha is multiplied twice.",
     },
-    { id: "s-c3", title: "Release notes for v0.4.1", mtime: hoursAgo(49) },
+    {
+      id: "s-c3",
+      title: "Release notes for v0.4.1",
+      project: SIKEMUX,
+      mtime: hoursAgo(49),
+    },
+    {
+      id: "s-c4",
+      title: "Halftone the lookbook photos without banding",
+      project: MOODBOARD,
+      mtime: hoursAgo(2),
+      said: "Dither before the halftone pass, so the dots stop stepping in the shadows.",
+    },
+    {
+      id: "s-c5",
+      title: "Pull a palette from each moodboard",
+      project: MOODBOARD,
+      mtime: hoursAgo(20),
+    },
+    {
+      id: "s-c6",
+      title: "Lazy-load the board grid past the fold",
+      project: MOODBOARD,
+      mtime: hoursAgo(45),
+    },
+    {
+      id: "s-c7",
+      title: "Rewrite the pricing table for the new plans",
+      project: FRONT,
+      mtime: hoursAgo(8),
+    },
+    {
+      id: "s-c8",
+      title: "Make the download button read the latest release",
+      project: FRONT,
+      mtime: hoursAgo(52),
+      said: "The button finds the DMG by its _aarch64.dmg suffix on the latest release.",
+    },
   ],
   codex: [
     {
       id: "s-x1",
       title: "Benchmark CodeMirror virtualised scrolling",
+      project: SIKEMUX,
       mtime: hoursAgo(5),
     },
     {
       id: "s-x2",
       title: "Port the git graph lanes to Rust",
+      project: SIKEMUX,
       mtime: hoursAgo(30),
     },
     {
       id: "s-x3",
       title: "Fix the OAuth callback after sign-in",
+      project: SIKEMUX,
       mtime: hoursAgo(73),
       said: "The callback port was taken by a stale listener, so the redirect never landed.",
+    },
+    {
+      id: "s-x4",
+      title: "Export a board as a print-ready PDF",
+      project: MOODBOARD,
+      mtime: hoursAgo(9),
+    },
+    {
+      id: "s-x5",
+      title: "Drop the unused fonts from the board editor",
+      project: MOODBOARD,
+      mtime: hoursAgo(60),
+    },
+    {
+      id: "s-x6",
+      title: "Cache the release lookup at build time",
+      project: FRONT,
+      mtime: hoursAgo(28),
     },
   ],
 };
