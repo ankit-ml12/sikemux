@@ -53,11 +53,20 @@ function token() {
   return `${unsigned}.${signature}`;
 }
 
+const TRANSIENT_RETRIES = 4;
+
 async function call(path, init = {}) {
-  const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${token()}`, 'content-type': 'application/json', ...init.headers },
-  });
+  let response;
+  for (let attempt = 0; ; attempt++) {
+    response = await fetch(`${API}${path}`, {
+      ...init,
+      headers: { authorization: `Bearer ${token()}`, 'content-type': 'application/json', ...init.headers },
+    });
+    const transient = response.status === 429 || response.status >= 500;
+    if (!transient || attempt === TRANSIENT_RETRIES) break;
+    console.log(`App Store Connect answered ${response.status}; asking again in ${10 * (attempt + 1)} seconds`);
+    await sleep(10_000 * (attempt + 1));
+  }
   const answer = response.status === 204 ? {} : await response.json().catch(() => ({}));
   if (!response.ok) {
     const details = answer.errors?.map((error) => error.detail ?? error.title).join('; ') ?? response.statusText;
