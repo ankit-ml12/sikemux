@@ -384,7 +384,7 @@
       "name": "browser_dialog",
       "row": {"verb": "answer", "kind": "edit", "icon": "message", "target": ["“{text}”", "the dialog"]},
       "method": "browser.dialog",
-      "description": "Answer the page's open alert, confirm or prompt.",
+      "description": "Answer the page's alert, confirm or prompt.",
       "properties": {
         "accept": {
           "type": "boolean"
@@ -409,7 +409,7 @@
       "name": "browser_viewport",
       "row": {"verb": "resize", "kind": "edit", "icon": "resize", "target": ["{width}×{height}", "{preset}"]},
       "method": "browser.viewport",
-      "description": "Hold this tab at a set viewport size or preset.",
+      "description": "Set this tab's viewport size or preset.",
       "properties": {
         "width": {
           "type": "integer",
@@ -581,7 +581,7 @@
       "name": "browser_annotate",
       "row": {"verb": "mark", "kind": "edit", "icon": "highlighter", "target": ["element {index}", "{x}, {y}", "clear"], "detail": ["{text}"]},
       "method": "browser.annotate",
-      "description": "Draw a labelled box or a caption over the page.",
+      "description": "Draw a labelled box or caption over the page.",
       "properties": {
         "index": {
           "type": "integer",
@@ -614,7 +614,7 @@
       "name": "browser_record",
       "row": {"verb": "record", "kind": "execute", "icon": "record", "target": ["{action}"], "detail": ["{path}"]},
       "method": "browser.record",
-      "description": "Start or stop recording this tab to an MP4 video.",
+      "description": "Record this tab to MP4, or stop recording.",
       "properties": {
         "action": {
           "enum": [
@@ -1206,7 +1206,7 @@
       "name": "task_restart",
       "row": {"verb": "restart", "kind": "execute", "icon": "refresh", "target": ["{taskId}"]},
       "method": "task.restart",
-      "description": "Stop a task's latest run and start it again.",
+      "description": "Restart a task's latest run.",
       "properties": {
         "taskId": {
           "type": "string"
@@ -1470,7 +1470,7 @@
       "name": "who_wrote",
       "row": {"verb": "find", "kind": "search", "icon": "search", "target": ["who wrote {target}"]},
       "method": "agent.wrote",
-      "description": "Who wrote a change.",
+      "description": "Who broke CI, a test or a commit, and how to reach them.",
       "properties": {
         "target": {
           "type": "string",

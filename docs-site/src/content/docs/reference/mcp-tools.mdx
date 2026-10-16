@@ -20,15 +20,15 @@ Every agent Sikemux starts gets these tools through the `sikemux-tools` MCP serv
 | `browser_act` | Run clicks, typing and keys in one call. |
 | `browser_drag` | Drag from one element or point to another. |
 | `browser_upload` | Give files to a file input. |
-| `browser_dialog` | Answer the page's open alert, confirm or prompt. |
-| `browser_viewport` | Hold this tab at a set viewport size or preset. |
+| `browser_dialog` | Answer the page's alert, confirm or prompt. |
+| `browser_viewport` | Set this tab's viewport size or preset. |
 | `browser_scroll` | Scroll to an element, by deltaY, or to an end. |
 | `browser_evaluate` | Run a script in the page; returns JSON. |
 | `browser_network` | List the page's requests with status and body. |
 | `browser_console` | List the page's console messages and errors. |
 | `browser_screenshot` | Capture the tab or the whole page. |
-| `browser_annotate` | Draw a labelled box or a caption over the page. |
-| `browser_record` | Start or stop recording this tab to an MP4 video. |
+| `browser_annotate` | Draw a labelled box or caption over the page. |
+| `browser_record` | Record this tab to MP4, or stop recording. |
 | `browser_wait` | Wait for text, a selector, a url or a quiet network. |
 | `browser_switch_tab` | Make one of this agent's tabs the current one. |
 | `browser_close_tab` | Close one of this agent's tabs. |
@@ -66,7 +66,7 @@ Every agent Sikemux starts gets these tools through the `sikemux-tools` MCP serv
 | Tool | What it does |
 |---|---|
 | `task_start` | Start a sikemux.json task or any shell command. |
-| `task_restart` | Stop a task's latest run and start it again. |
+| `task_restart` | Restart a task's latest run. |
 | `task_read` | Read a task's output by cursor, tail or search. |
 | `task_stop` | Stop a task's run and its process tree. |
 
@@ -104,7 +104,7 @@ Every agent Sikemux starts gets these tools through the `sikemux-tools` MCP serv
 
 | Tool | What it does |
 |---|---|
-| `who_wrote` | Who wrote a change. |
+| `who_wrote` | Who broke CI, a test or a commit, and how to reach them. |
 
 ## ask
 

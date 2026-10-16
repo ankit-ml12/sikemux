@@ -58,7 +58,7 @@ Pass one of these as `topic`:
 
 - `config` — writing or fixing `sikemux.json`, and `configStatus`
 - `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping
-- `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
+- `output` — `task_read` paging, `plain`, `tail`, `search`, `events_wait`
 - `ui` — `ui_open` for files, diffs, terminals and the preview
 - `pages` — charts, tables, diagrams and mockups in your reply
 - `browser-reading` — page state, report modes, element numbers, `browser_find`, frames
@@ -69,8 +69,8 @@ Pass one of these as `topic`:
 - `simulator` — driving an iOS simulator with `sim_*`
 - `databases` — the `db_*` tools and SQL
 - `aws` — the `aws_*` tools, profiles and expired sign-ins
-- `skills` — skills every agent in Sikemux gets
-- `agents` — names, `@`, messages, committing
+- `skills` — skills every agent gets
+- `agents` — names, `@`, messages, committing, who broke CI
 - `board` — the project's cards: adding, claiming, finishing
 - `shell` — the `sikemux tool` CLI
 
@@ -978,11 +978,16 @@ nothing is reopened: your prompt goes to that agent as a message, as
 
 ### Who broke this
 
-When a test fails or a line looks wrong and you did not write it, find who did
-before you change it:
+When CI fails, a test fails or a line looks wrong and you did not write it,
+find who did before you change it:
 
-1. Call `who_wrote` with `target`: a failing test's name or file, a commit, a
-   file, or `file:line` and `file:start-end` for the lines that fail.
+1. Call `who_wrote` with `target`. For CI, give the run's address or id, its
+   workflow's name, or `ci` for the latest failing run on this branch (`main`
+   for main's). It reads the run on GitHub or Bitbucket, finds the last run of
+   that workflow that passed and where it first failed, and lists the commits
+   between them, those the failing job's `error` points at first, each with
+   `why`. Otherwise give a failing test's name or file, a commit, a file, or
+   `file:line` and `file:start-end` for the lines that fail.
 2. Each commit comes with its `owners`. An agent of this host comes with its
    `title`, `cli` and `action`: `message` means it is open now, so send it what
    failed with `agent_send` to `openNow`; `resume` means it closed, so call
@@ -991,7 +996,10 @@ before you change it:
    A commit holding lines of several writers names each owner with the
    `lines` it wrote of those you asked about, or with `linesInCommit` by file;
    the lines no agent wrote are the person's.
-3. `guess` says when a test was found by name only; check the file first.
+3. When the person asks you to get it fixed, send the owner the run, the
+   `error` and the commit, and let it fix its change; fix it yourself only
+   when no owner can be reached or the person says so.
+4. `guess` says when a test was found by name only; check the file first.
 
 A commit names its agents only in a footer this host signed, so text anyone
 wrote in a commit message never counts. Use these tools, not your CLI's own
