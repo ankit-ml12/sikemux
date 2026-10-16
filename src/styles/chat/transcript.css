@@ -356,6 +356,7 @@
     overflow-x: auto;
     border: 1px solid var(--border, var(--line));
     border-radius: var(--radius-2);
+    background: color-mix(in srgb, var(--void) 72%, transparent);
 }
 
 .chat-table table {
@@ -384,12 +385,10 @@
     border-bottom: 0;
 }
 
-/* The band is an ink tint, not a dark wash: the pane is transparent, and a
-   wash only reads as a header on the nights the wallpaper is dark. The label
-   keeps a step below the cells — the uppercase tracking costs legibility, so
-   it stays a size the reader can still take in. */
+/* The label keeps a step below the cells: the uppercase tracking costs
+   legibility, so it stays a size the reader can still take in. */
 .chat-table th {
-    background: color-mix(in oklab, var(--ink) 6%, transparent);
+    background: color-mix(in srgb, var(--void) 88%, transparent);
     border-bottom-color: color-mix(in oklab, var(--ink) 18%, transparent);
     color: var(--text-secondary, var(--ink));
     font-size: var(--text-xs);
