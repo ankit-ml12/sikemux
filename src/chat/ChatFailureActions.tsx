@@ -1,5 +1,7 @@
 import { agentApi } from "../api/agents";
 import { AccountSignIn } from "../agents/AccountSignIn";
+import { signInAgent } from "../agents/AgentInstall";
+import { agentLabel, loginArgs } from "../agents/catalog";
 import { accountsOf, isAccountProvider, moveChat } from "../agents/accounts";
 import { useResource } from "../state/resources";
 import { agentAccountR } from "../state/resources.defs";
@@ -10,8 +12,19 @@ import type { ChatFailure } from "./types";
 import { useState } from "react";
 
 /** What the person can do about a turn that failed because of its account. */
-export function ChatFailureActions({ agent, profile, failure }: { agent: Agent; profile: ProviderProfile; failure: ChatFailure }) {
-    if (!isAccountProvider(profile.provider)) return null;
+export function ChatFailureActions({ agent, profile, failure }: { agent: Agent; profile: ProviderProfile | undefined; failure: ChatFailure }) {
+    if (!profile || !isAccountProvider(profile.provider)) {
+        if (failure.kind !== "signIn" || !loginArgs(agent.type)) return null;
+        return (
+            <span className="chat-error-actions">
+                <button
+                    type="button"
+                    onClick={() => signInAgent({ type: agent.type, command: agent.executablePath ?? agent.type, configPath: null })}>
+                    Sign in to {agentLabel(agent.type)}
+                </button>
+            </span>
+        );
+    }
     if (failure.kind === "signIn") {
         return (
             <span className="chat-error-actions">
