@@ -136,6 +136,11 @@
     margin-left: -6px;
 }
 
+/* Buddies fill their box edge to edge, so they need a deeper pull to stack the same way. */
+.proj-pip + .proj-pip.buddy-mark {
+    margin-left: -10px;
+}
+
 .side-rail .proj-child:hover .proj-child-kbd {
     opacity: 1;
     color: var(--ink);
