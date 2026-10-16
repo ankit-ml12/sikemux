@@ -8,12 +8,22 @@ import { basename } from '@mac/lib/paths';
 import { rateLabel, sentLabel, type RowMeta } from '@mac/chat/messageMeta';
 import { cutLongText, showRestLabel } from '@mac/chat/longText';
 import { contextChip, type SentContext } from '@mac/chat/promptContext';
-import { groupParts, sentParts, shownParts, SUBAGENT_MARKS, SUBAGENT_WORDS, subagentTask, type SubagentMark } from '@mac/chat/transcript';
-import { callCount, callsLabel, workedLabel } from '@mac/chat/toolView';
+import {
+  groupParts,
+  sentParts,
+  shownParts,
+  SUBAGENT_MARKS,
+  SUBAGENT_WORDS,
+  subagentCost,
+  subagentTask,
+  type SubagentMark,
+} from '@mac/chat/transcript';
+import { callsLabel, workedLabel } from '@mac/chat/toolView';
 import type { PageRef } from '@mac/api/pages';
 import type { AccountMove, AcpContentBlock, AcpSubagent, AcpTaskNotice, AgentNotice, ChatMessage, ChatPart } from '@mac/chat/types';
 import { CopyButton } from '@/ui/CopyButton';
 import { haptics } from '@/ui/haptics';
+import { AgentFace } from '@/ui/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Working } from '@/ui/status';
 import { fonts, italic, mixed, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
@@ -29,6 +39,9 @@ import { AnsweredQuestion } from './Question';
 
 /** The chat's agent, whose mark its subagents carry. */
 export const ProviderContext = createContext('agent');
+
+/** Every subagent in the chat by its session, so a notice that names one can show its card. */
+export const SubagentsContext = createContext<ReadonlyMap<string, AcpSubagent>>(new Map());
 
 /** How long a press is held before it opens a message's actions. */
 
@@ -72,7 +85,7 @@ function Subagent({ subagent, untimed }: { subagent: AcpSubagent; untimed: boole
   const provider = useContext(ProviderContext);
   const [open, setOpen] = useFold(`subagent/${subagent.sessionId}`, false);
   const parts = subagent.messages.flatMap((message) => message.parts);
-  const calls = parts.filter((part) => part.kind === 'tool').length;
+  const cost = subagentCost(subagent);
   const running = subagent.state === 'running';
   return (
     <View style={styles.subagent}>
@@ -80,7 +93,7 @@ function Subagent({ subagent, untimed }: { subagent: AcpSubagent; untimed: boole
         onPress={() => setOpen(!open)}
         style={({ pressed }) => [styles.subagentHead, pressed && { backgroundColor: colors.active }]}
         accessibilityRole="button"
-        accessibilityLabel={`Subagent ${subagent.name}, ${SUBAGENT_WORDS[subagent.state]}${calls ? `, ${callCount(calls)}` : ''}`}
+        accessibilityLabel={`Subagent ${subagent.name}, ${SUBAGENT_WORDS[subagent.state]}${cost ? `, ${cost}` : ''}`}
         accessibilityState={{ expanded: open }}>
         <View style={[styles.chevron, open && { transform: [{ rotate: '90deg' }] }]}>
           <Icon name="IconChevron" size={10} color={colors.inkDim} />
@@ -98,7 +111,7 @@ function Subagent({ subagent, untimed }: { subagent: AcpSubagent; untimed: boole
             {subagentTask(subagent.task)}
           </Text>
         )}
-        {calls ? <Text style={styles.subagentCalls}>{callCount(calls)}</Text> : null}
+        {cost ? <Text style={styles.subagentCalls}>{cost}</Text> : null}
         <View style={styles.subagentMark}>
           <SubagentMarkView state={subagent.state} />
         </View>
@@ -117,7 +130,13 @@ function Subagent({ subagent, untimed }: { subagent: AcpSubagent; untimed: boole
 }
 
 /** A background task that reached its end, and what it said of how it went. */
-function Notice({ id, notice }: { id: string; notice: AcpTaskNotice }) {
+function Notice({ id, notice, untimed }: { id: string; notice: AcpTaskNotice; untimed: boolean }) {
+  const subagent = useContext(SubagentsContext).get(notice.subagent ?? '');
+  if (subagent) return <Subagent subagent={subagent} untimed={untimed} />;
+  return <TaskNotice id={id} notice={notice} />;
+}
+
+function TaskNotice({ id, notice }: { id: string; notice: AcpTaskNotice }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const [open, setOpen] = useFold(`notice/${id}`, false);
@@ -131,7 +150,11 @@ function Notice({ id, notice }: { id: string; notice: AcpTaskNotice }) {
       accessibilityLabel={`${notice.name} ${notice.state}${summary ? `. ${summary}` : ''}`}
       accessibilityState={summary ? { expanded: open } : undefined}>
       <View style={styles.noticeHead}>
-        <Icon name="IconTimer" size={12} color={notice.state === 'failed' ? colors.danger : colors.inkFaint} />
+        <Icon
+          name={notice.taskType === 'workflow' ? 'IconWorkflow' : 'IconTimer'}
+          size={12}
+          color={notice.state === 'failed' ? colors.danger : colors.inkFaint}
+        />
         <Text style={styles.noticeName} numberOfLines={1}>
           {notice.name}
         </Text>
@@ -251,7 +274,7 @@ function Parts({ id, parts, untimed, live }: { id: string; parts: ChatPart[]; un
           case 'subagent':
             return <Subagent key={run.id} subagent={run.subagent} untimed={untimed} />;
           case 'notice':
-            return <Notice key={run.id} id={run.id} notice={run.notice} />;
+            return <Notice key={run.id} id={run.id} notice={run.notice} untimed={untimed} />;
           case 'content':
             return <Content key={run.id} block={run.content} />;
           case 'agent_notice':
@@ -367,7 +390,7 @@ export function Message({
             <View key={index}>
               <View style={styles.letterFrom}>
                 <View style={styles.letterRule} />
-                <AgentIcon provider={letter.cli} size={13} />
+                <AgentFace agentId={letter.agentId} provider={letter.cli} size={13} />
                 <Text style={styles.letterLabel}>
                   Message from <Text style={styles.letterName}>{letter.name}</Text>
                 </Text>
