@@ -20,8 +20,8 @@ vi.mock("../state/resources", () => ({
     }),
 }));
 vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
-const { installAgent } = vi.hoisted(() => ({ installAgent: vi.fn() }));
-vi.mock("../agents/AgentInstall", () => ({ installAgent }));
+const { installAgent, signInAgent } = vi.hoisted(() => ({ installAgent: vi.fn(), signInAgent: vi.fn() }));
+vi.mock("../agents/AgentInstall", () => ({ installAgent, signInAgent }));
 
 import { keybindingLabel } from "../commands/keybindings";
 import { flushPersist, resetPersistenceForTests } from "../state/persist";
@@ -57,7 +57,7 @@ afterEach(() => {
 });
 
 describe("Onboarding", () => {
-    it("offers to install every agent that is not on this Mac", async () => {
+    it("offers Install for agents not on this Mac and Sign in for those signed out", async () => {
         openOnboarding();
         const hermes = (await screen.findByText("Hermes")).closest("li")!;
         expect(hermes).toHaveTextContent("Not installed");
@@ -70,6 +70,9 @@ describe("Onboarding", () => {
 
         const claude = screen.getByText("Claude").closest("li")!;
         expect(within(claude).queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
+        fireEvent.click(within(claude).getByRole("button", { name: "Sign in" }));
+        expect(signInAgent).toHaveBeenCalledWith(expect.objectContaining({ type: "claude" }));
+        expect(within(hermes).queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
         expect(screen.queryByText("Muse")).toBeNull();
     });
 
@@ -94,7 +97,7 @@ describe("Onboarding", () => {
         expect(screen.getByRole("button", { name: /Connect to a host/ })).toHaveFocus();
 
         await user.tab();
-        expect(screen.getAllByRole("button", { name: "Install" })[0]).toHaveFocus();
+        expect(screen.getByRole("button", { name: "Sign in" })).toHaveFocus();
         await user.tab({ shift: true });
         expect(screen.getByRole("button", { name: /Connect to a host/ })).toHaveFocus();
     });
