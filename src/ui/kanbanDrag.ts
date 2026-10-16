@@ -17,6 +17,7 @@ export function useCardDrag(onDrop: (card: string, column: string) => void) {
 
     const startDrag = (event: ReactPointerEvent, card: string) => {
         if (event.button !== 0) return;
+        event.preventDefault();
         const start = { x: event.clientX, y: event.clientY };
         let moved = false;
         const onMove = (next: PointerEvent) => {
@@ -24,10 +25,16 @@ export function useCardDrag(onDrop: (card: string, column: string) => void) {
             moved = true;
             setDragging({ card, over: columnAt(next.clientX, next.clientY) });
         };
-        const onUp = (next: PointerEvent) => {
+        const blockNativeDrag = (next: Event) => next.preventDefault();
+        const stop = () => {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("pointercancel", stop);
+            window.removeEventListener("dragstart", blockNativeDrag);
             setDragging(null);
+        };
+        const onUp = (next: PointerEvent) => {
+            stop();
             if (!moved) return;
             justDragged.current = true;
             setTimeout(() => (justDragged.current = false), 0);
@@ -36,6 +43,8 @@ export function useCardDrag(onDrop: (card: string, column: string) => void) {
         };
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
+        window.addEventListener("pointercancel", stop);
+        window.addEventListener("dragstart", blockNativeDrag);
     };
 
     return { dragging, startDrag, wasDragged: () => justDragged.current };
