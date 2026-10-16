@@ -9,7 +9,7 @@ import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { activeAgentId, agentDisplayOf, agentIdsOf } from "../state/selectors";
+import { activeAgentId, agentDisplayOf, agentIdsOf, openAgents } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -23,11 +23,10 @@ import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { usagePeak } from "./usageFormat";
-import { AgentRailStats } from "./AgentRailStats";
 import { InboxPanel, itemSessionId } from "./InboxPanel";
 import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
-import { ScopeTrack } from "./ScopeTrack";
+import { ScopeTabs } from "./ScopeTabs";
 import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inInboxOrder, useInbox } from "./useInbox";
@@ -122,6 +121,10 @@ export function AgentRailBody() {
     const scope = useStore((s) => s.agentRailScope);
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
+    const openEverywhere = useMemo(
+        () => [...openAgents({ sessionOrder, sessions, windows: windowsById, windowsBySession, agents: agentsById })].length,
+        [sessionOrder, sessions, windowsById, windowsBySession, agentsById],
+    );
     const { inbox } = useInbox();
     // Recent chats live here and nowhere else, so the search for them does too.
     const [query, setQuery] = useState("");
@@ -325,7 +328,6 @@ export function AgentRailBody() {
     return (
         <>
             {header}
-            <ScopeTrack scope={scope} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
             {searchOpen && (
                 <div className="rail-search">
                     <IconSearch size={12} />
@@ -363,8 +365,15 @@ export function AgentRailBody() {
                     <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
                 </div>
+                <ScopeTabs
+                    scope={scope}
+                    projectName={session.name}
+                    counts={{ project: opens.length, all: openEverywhere }}
+                    waitingElsewhere={waitingElsewhere}
+                    onChange={cmd.setAgentRailScope}
+                />
                 <InboxPanel />
-                {scope === "all" && <AllProjectsAgents stats={<AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />} />}
+                {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
                         {catalog.status === "loading"
@@ -379,7 +388,7 @@ export function AgentRailBody() {
 
                 {scope === "project" && opens.length > 0 && (
                     <Panel variant="group" className="agent-group">
-                        <PanelHeader label="Open" rule extra={<AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />} />
+                        <PanelHeader label="Open" rule />
                         {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
                             isRemoteWorker(a) ? (
                                 <RemoteAgentRow key={a.id} agent={a.remote} link={link} />

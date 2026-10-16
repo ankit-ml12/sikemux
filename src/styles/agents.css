@@ -397,51 +397,41 @@
     gap: 2px;
 }
 
-/* This project or all projects: a hairline track with a neutral thumb that
-   slides to the chosen side. */
-.scope-track-row {
-    flex: 0 0 auto;
-    padding: var(--space-2) var(--space-1h) var(--space-1) var(--gutter-rail);
+/* This project, by name, or all projects: two words at the right of the rail,
+   the chosen one in ink, each followed by how many agents it has open. */
+.scope-tabs {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    padding-right: var(--row-inset);
 }
-.scope-track {
-    position: relative;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    height: 30px;
-    padding: 3px;
-    border-radius: calc(var(--radius-2) + 3px);
-    box-shadow: inset 0 0 0 1px var(--border);
-}
-.scope-thumb {
-    position: absolute;
-    top: 3px;
-    bottom: 3px;
-    left: 3px;
-    width: calc(50% - 3px);
-    border-radius: var(--radius-2);
-    background: var(--surface-active);
-    transition: transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1);
-}
-.scope-track.is-all .scope-thumb {
-    transform: translateX(100%);
-}
-.scope-track button {
-    position: relative;
+.scope-tabs button {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 7px;
-    height: 100%;
+    gap: var(--space-1h);
+    min-width: 0;
+    height: 22px;
     background: transparent;
     color: var(--text-tertiary);
     font-family: var(--ui);
-    font-size: 11px;
-    letter-spacing: 0.01em;
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
     transition: color 100ms;
 }
-.scope-track button:hover,
-.scope-track button[aria-selected="true"] {
+.scope-tabs button:hover,
+.scope-tabs button[aria-selected="true"] {
     color: var(--text-primary);
+}
+.scope-name {
+    min-width: 0;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.scope-n {
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
 }
 .scope-count {
     display: inline-grid;
@@ -455,11 +445,6 @@
     font-size: 10px;
     font-weight: var(--weight-medium);
     font-variant-numeric: tabular-nums;
-}
-@media (prefers-reduced-motion: reduce) {
-    .scope-thumb {
-        transition: none;
-    }
 }
 /* Provider plan telemetry — a branded readout that borrows the rail's
    group-head grammar, then answers “how much is left?” with a big tabular
@@ -1092,60 +1077,4 @@
 .agent-tree .agent-tree-mono {
     font-family: var(--mono);
     font-size: var(--text-2xs);
-}
-
-/* What is running in the rail's scope, at the right of the Open header. Each
-   stat keeps the mark its rows use, so the line reads as their sum. */
-.agent-stats {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--text-tertiary);
-}
-.agent-stat {
-    display: inline-flex;
-    align-items: center;
-    flex: none;
-}
-.agent-stat b {
-    display: grid;
-    place-items: center;
-    box-sizing: border-box;
-    align-self: flex-start;
-    min-width: 14px;
-    height: 14px;
-    margin: -6px 0 0 -3px;
-    padding: 0 3px;
-    border-radius: 7px;
-    background: color-mix(in srgb, var(--ink) 12%, transparent);
-    color: var(--ink);
-    font-size: var(--text-3xs);
-    font-weight: var(--weight-medium);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-}
-.agent-stat.is-empty > svg,
-.agent-stat.is-empty .proj-child-icons {
-    opacity: 0.35;
-    filter: grayscale(1);
-}
-.agent-stat-all svg {
-    color: var(--acc);
-}
-.agent-stat-subagents svg {
-    color: var(--live);
-    fill: currentColor;
-    stroke: none;
-}
-.agent-stat-shells svg {
-    color: var(--warn);
-}
-/* The side rail's stack of agent marks, at the line's size. */
-.agent-stat .proj-pip {
-    width: 14px;
-    height: 14px;
-}
-.agent-stat .proj-pip + .proj-pip {
-    margin-left: -4px;
 }

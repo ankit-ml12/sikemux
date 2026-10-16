@@ -27,7 +27,7 @@ interface OpenAgentRow {
 }
 
 /** Every agent open in any project, in the order the inbox wants them. */
-export function AllProjectsAgents({ stats }: { stats: ReactNode }) {
+export function AllProjectsAgents() {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
     const windows = useStore((s) => s.windows);
@@ -68,7 +68,7 @@ export function AllProjectsAgents({ stats }: { stats: ReactNode }) {
     return (
         <div ref={root} className="agent-all-projects">
             <Panel variant="group" className="agent-group">
-                <PanelHeader label="Open" rule extra={stats} />
+                <PanelHeader label="Open" rule />
                 {teams.map(({ agent: row, link }) =>
                     isRemoteWorker(row) ? (
                         <RemoteAgentRow key={row.id} agent={row.remote} link={link} />
