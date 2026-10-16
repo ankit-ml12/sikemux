@@ -9,7 +9,8 @@
             "usage": true,
             "deletableChats": true,
             "bypass": true,
-            "install": "curl -fsSL https://claude.ai/install.sh | bash"
+            "install": "curl -fsSL https://claude.ai/install.sh | bash",
+            "login": ["auth", "login"]
         },
         {
             "type": "codex",
@@ -20,7 +21,8 @@
             "usage": true,
             "deletableChats": true,
             "bypass": true,
-            "install": "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+            "install": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+            "login": ["login"]
         },
         {
             "type": "hermes",
@@ -31,7 +33,8 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
-            "install": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
+            "install": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+            "login": ["model"]
         },
         {
             "type": "pi",
@@ -42,7 +45,8 @@
             "usage": false,
             "deletableChats": false,
             "bypass": false,
-            "install": "curl -fsSL https://pi.dev/install.sh | sh"
+            "install": "curl -fsSL https://pi.dev/install.sh | sh",
+            "login": ["--terminal-login"]
         },
         {
             "type": "opencode",
@@ -53,7 +57,8 @@
             "usage": false,
             "deletableChats": false,
             "bypass": false,
-            "install": "curl -fsSL https://opencode.ai/install | bash"
+            "install": "curl -fsSL https://opencode.ai/install | bash",
+            "login": ["auth", "login"]
         },
         {
             "type": "omp",
@@ -64,7 +69,8 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
-            "install": "curl -fsSL https://omp.sh/install | sh"
+            "install": "curl -fsSL https://omp.sh/install | sh",
+            "login": ["login"]
         },
         {
             "type": "grok",
@@ -75,7 +81,8 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
-            "install": "curl -fsSL https://x.ai/cli/install.sh | bash"
+            "install": "curl -fsSL https://x.ai/cli/install.sh | bash",
+            "login": ["login"]
         },
         {
             "type": "muse",
@@ -86,7 +93,8 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
-            "install": null
+            "install": null,
+            "login": null
         }
     ]
 }

@@ -63,6 +63,17 @@ for (const agent of agents) {
     throw new Error(
       `${agent.type} install must be null or "curl -fsSL https://… | sh"`,
     );
+  if (
+    agent.login !== null &&
+    !(
+      Array.isArray(agent.login) &&
+      agent.login.length > 0 &&
+      agent.login.every((arg) => /^[a-z-]+$/.test(arg))
+    )
+  )
+    throw new Error(
+      `${agent.type} login must be null or its sign-in arguments`,
+    );
 }
 if (new Set(agents.map((agent) => agent.type)).size !== agents.length)
   throw new Error("src/agents/catalog.json lists an agent twice");
@@ -91,6 +102,7 @@ const entries = agents.map((agent) => ({
   brand: agent.brand,
   ...Object.fromEntries(FLAGS.map((flag) => [flag, agent[flag]])),
   install: agent.install,
+  login: agent.login,
 }));
 
 await emit(
