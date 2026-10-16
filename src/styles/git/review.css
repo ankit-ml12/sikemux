@@ -74,6 +74,15 @@
     left: 0;
     right: 0;
 }
+/* Each file is a card of its own, with a gap between them; the gap sits inside the measured row so the list stays in step. */
+.merge-review-virtual-item > div {
+    padding: 0 var(--space-2) var(--space-2);
+}
+.merge-review-item {
+    overflow: clip;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+}
 .merge-review-item.focused > .merge-file-header {
     background: color-mix(in srgb, var(--surface) var(--surface-solidity, 100%), transparent)
         linear-gradient(var(--surface-chosen), var(--surface-chosen));
