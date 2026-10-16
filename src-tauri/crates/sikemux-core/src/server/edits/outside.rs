@@ -15,7 +15,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use super::prior::{text_of, Before, Priors, MAX_FILE_BYTES};
 use super::{changed, line_count, owners::run, Edit, Store};
 use crate::protocol::AgentStatus;
-use crate::server::collisions::{exact_ms, Written, GRACE_MS};
+use crate::server::collisions::{Written, GRACE_MS};
 use crate::server::messages::{listed, Listed};
 use crate::server::names::project_of;
 use crate::server::remote::unix_ms;
@@ -447,10 +447,10 @@ fn reconcile(store: &Store, top: &Path, project: &str, seen: &Mutex<Seen>, look:
                 continue;
             };
             if let Some(at) = meta.modified().ok().filter(|at| *at >= since) {
-                let changed = Written {
+                let changed = Written::exact(&meta, unix_ms()).unwrap_or(Written {
                     at: unix_ms_of(at),
-                    exact: exact_ms(&meta).is_some(),
-                };
+                    exact: false,
+                });
                 recent.push((PathBuf::from(path), changed));
                 continue;
             }
@@ -660,7 +660,7 @@ fn told(
         }
     };
     priors.keep(&key, Some((&text, &meta)));
-    let last = exact_ms(&meta).map(|at| Written { at, exact: true });
+    let last = Written::exact(&meta, unix_ms());
     let edit = (before != text).then(|| Edit {
         at: unix_ms(),
         agent_id: String::new(),

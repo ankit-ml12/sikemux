@@ -68,25 +68,27 @@ impl Written {
     pub(crate) fn of(path: &Path, seen: u64) -> Self {
         let written = std::fs::metadata(path)
             .ok()
-            .and_then(|meta| exact_ms(&meta));
-        match written.filter(|at| *at + GRACE_MS >= seen && *at <= seen + GRACE_MS) {
-            Some(at) => Self { at, exact: true },
+            .and_then(|meta| Self::exact(&meta, seen));
+        match written.filter(|written| written.at + GRACE_MS >= seen) {
+            Some(written) => written,
             None => Self {
                 at: seen,
                 exact: false,
             },
         }
     }
-}
 
-/// When a file last changed, if its file system keeps it finer than a second.
-pub(crate) fn exact_ms(meta: &std::fs::Metadata) -> Option<u64> {
-    let since = meta
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?;
-    (since.subsec_nanos() != 0).then_some(since.as_millis() as u64)
+    /// When the file `meta` describes last changed, if its file system keeps
+    /// it finer than a second and it is not after `seen`, give or take the grace.
+    pub(crate) fn exact(meta: &std::fs::Metadata, seen: u64) -> Option<Self> {
+        let since = meta
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?;
+        let at = since.as_millis() as u64;
+        (since.subsec_nanos() != 0 && at <= seen + GRACE_MS).then_some(Self { at, exact: true })
+    }
 }
 
 /// A copy of a file as one agent last saw it.
@@ -105,6 +107,15 @@ struct Version {
     by: Option<String>,
     /// Looked at for a change no edit tool reported.
     settled: bool,
+}
+
+impl Version {
+    fn written(&self) -> Written {
+        Written {
+            at: self.at,
+            exact: self.exact,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -860,6 +871,19 @@ impl Collisions {
     }
 }
 
+fn in_project(core: &Core, project: &str, agent: &str) -> bool {
+    core.names
+        .get(agent)
+        .is_some_and(|named| named.project == project)
+}
+
+/// Whether `agent` works in the checkout that holds `place`.
+fn holds(core: &Core, place: &Path, agent: &str) -> bool {
+    core.edits
+        .checkout_of(core, agent)
+        .is_none_or(|top| place.starts_with(&top))
+}
+
 /// Lets go of the least recently used files until what is kept fits.
 fn fit(state: &mut State) {
     while state.bytes > MAX_KEPT_BYTES || state.files.len() > MAX_FILES {
@@ -1108,10 +1132,7 @@ pub(crate) fn settle(core: &Arc<Core>) {
                         path: path.clone(),
                         before: before.clone(),
                         after: version.text.clone(),
-                        written: Written {
-                            at: version.at,
-                            exact: version.exact,
-                        },
+                        written: version.written(),
                     });
                 }
             } else if !version.settled {
@@ -1342,10 +1363,7 @@ impl Collisions {
                 match &version.by {
                     Some(by) if by == agent_id => {}
                     Some(_) => return true,
-                    None => unclaimed.push(Written {
-                        at: version.at,
-                        exact: version.exact,
-                    }),
+                    None => unclaimed.push(version.written()),
                 }
             }
             unclaimed
@@ -1361,9 +1379,10 @@ impl Collisions {
         })
     }
 
-    /// The agents that could have written `place` when it changed: those at
-    /// work at that very time when it is the file's own and one was, else
-    /// those at work then or up to the grace before, as [`Self::at_work`].
+    /// The agents that could have written `place` when it changed: when the
+    /// time is the file's own and a command ran at that very time, those at
+    /// work then, else those at work then or up to the grace before, as
+    /// [`Self::at_work`].
     pub(crate) fn writers(
         &self,
         core: &Core,
@@ -1372,13 +1391,12 @@ impl Collisions {
         place: &Path,
         written: Written,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
-        if written.exact {
-            let exact = self.at_work(core, listed, project, place, written.at, 0);
-            if !exact.0.is_empty() || !exact.1.is_empty() {
-                return exact;
-            }
-        }
-        self.at_work(core, listed, project, place, written.at, GRACE_MS)
+        let exact = written.exact
+            && !self
+                .commands(core, project, place, written.at, 0)
+                .is_empty();
+        let grace = if exact { 0 } else { GRACE_MS };
+        self.at_work(core, listed, project, place, written.at, grace)
     }
 
     /// Whether an agent's edit tool is changing `path` now.
@@ -1403,12 +1421,39 @@ impl Collisions {
         at: u64,
         grace: u64,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
-        let in_project = |agent: &str| {
-            core.names
-                .get(agent)
-                .is_some_and(|named| named.project == project)
-        };
-        let shells: BTreeSet<String> = {
+        let mut shells = self.commands(core, project, place, at, grace);
+        shells.extend(
+            core.chats
+                .list()
+                .into_iter()
+                .filter(|chat| chat.subagents > 0 || chat.tasks > 0)
+                .map(|chat| chat.agent_id)
+                .filter(|agent| in_project(core, project, agent) && holds(core, place, agent)),
+        );
+        let terminals = listed
+            .iter()
+            .filter(|agent| {
+                agent.reach == super::messages::Reach::Terminal
+                    && agent.project == project
+                    && agent.status == crate::protocol::AgentStatus::Working
+            })
+            .map(|agent| agent.agent_id.clone())
+            .filter(|agent| holds(core, place, agent))
+            .collect();
+        (shells, terminals)
+    }
+
+    /// The chat agents in `project` that were running a shell command at
+    /// `at`, or ended one up to `grace` before, in the checkout holding `place`.
+    fn commands(
+        &self,
+        core: &Core,
+        project: &str,
+        place: &Path,
+        at: u64,
+        grace: u64,
+    ) -> BTreeSet<String> {
+        let found: BTreeSet<String> = {
             let state = self.lock();
             state
                 .calls
@@ -1425,32 +1470,11 @@ impl Collisions {
                         })
                         .map(|(agent, _)| agent.clone()),
                 )
-                .chain(
-                    core.chats
-                        .list()
-                        .into_iter()
-                        .filter(|chat| chat.subagents > 0 || chat.tasks > 0)
-                        .map(|chat| chat.agent_id),
-                )
-                .filter(|agent| in_project(agent))
                 .collect()
         };
-        let terminals: BTreeSet<String> = listed
-            .iter()
-            .filter(|agent| {
-                agent.reach == super::messages::Reach::Terminal
-                    && agent.project == project
-                    && agent.status == crate::protocol::AgentStatus::Working
-            })
-            .map(|agent| agent.agent_id.clone())
-            .collect();
-        let holds = |agent: &String| {
-            core.edits
-                .checkout_of(core, agent)
-                .is_none_or(|top| place.starts_with(&top))
-        };
-        let shells = shells.into_iter().filter(holds).collect();
-        let terminals = terminals.into_iter().filter(holds).collect();
-        (shells, terminals)
+        found
+            .into_iter()
+            .filter(|agent| in_project(core, project, agent) && holds(core, place, agent))
+            .collect()
     }
 }
