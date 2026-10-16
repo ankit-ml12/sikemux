@@ -19,16 +19,14 @@
     color: var(--text-primary);
     font-size: 12.5px;
 }
+.commit-review > .merge-review {
+    flex: 1;
+    height: auto;
+}
 .commit-empty {
     padding: 12px;
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
-}
-
-.commit-stack {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
 }
 
 .acc-header {

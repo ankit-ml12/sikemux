@@ -21,14 +21,16 @@ export interface FileReviewListProps {
     actions?: (path: string) => ReactNode;
     /** The diff under a file's header, drawn only while that file is open and near the view. */
     body: (path: string, focused: boolean) => ReactNode;
+    /** Folds every file whenever a new set of files arrives, as a commit's list does. */
+    startCollapsed?: boolean;
 }
 
 /**
  * Changed files in one collapsible, virtualized stream: a header per file with its icon, path and status, and its diff
  * under it. Local changes, commits and pull requests are all reviewed through it.
  */
-export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status, actions, body }: FileReviewListProps) {
-    const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status, actions, body, startCollapsed = false }: FileReviewListProps) {
+    const [collapsed, setCollapsed] = useState<Set<string>>(() => (startCollapsed ? new Set(paths) : new Set()));
     const itemRefs = useRef(new Map<string, HTMLDivElement>());
     const listRef = useRef<HTMLDivElement>(null);
     const pathSet = useMemo(() => new Set(paths), [paths]);
@@ -52,10 +54,11 @@ export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status,
 
     useEffect(() => {
         setCollapsed((current) => {
+            if (startCollapsed) return new Set(pathSet);
             const next = new Set([...current].filter((path) => pathSet.has(path)));
             return next.size === current.size ? current : next;
         });
-    }, [pathSet]);
+    }, [pathSet, startCollapsed]);
 
     const scrollTargets = useRef({ pathIndex, virtualizer });
     scrollTargets.current = { pathIndex, virtualizer };
