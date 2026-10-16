@@ -1,38 +1,32 @@
 import type { AgentRailScope } from "../state/types";
+import { IconFolder, IconStack } from "../ui/Icons";
 
-/** This project, by name, or every open project, each with how many agents it has open. */
+/** This project, by name, or every open project. */
 export function ScopeTabs({
     scope,
     projectName,
-    counts,
     waitingElsewhere,
     onChange,
 }: {
     scope: AgentRailScope;
     projectName: string;
-    counts: { project: number; all: number };
     waitingElsewhere: number;
     onChange: (scope: AgentRailScope) => void;
 }) {
     return (
         <div className="scope-tabs" role="tablist" aria-label="Which projects">
-            <button
-                type="button"
-                role="tab"
-                aria-selected={scope === "project"}
-                aria-label={`${projectName}, ${counts.project} open`}
-                onClick={() => onChange("project")}>
+            <button type="button" role="tab" aria-selected={scope === "project"} aria-label={projectName} onClick={() => onChange("project")}>
+                <IconFolder size={13} />
                 <span className="scope-name">{projectName}</span>
-                <span className="scope-n">{counts.project}</span>
             </button>
             <button
                 type="button"
                 role="tab"
                 aria-selected={scope === "all"}
-                aria-label={`All projects, ${counts.all} open${waitingElsewhere > 0 ? `, ${waitingElsewhere} waiting` : ""}`}
+                aria-label={waitingElsewhere > 0 ? `All projects, ${waitingElsewhere} waiting` : "All projects"}
                 onClick={() => onChange("all")}>
+                <IconStack size={13} />
                 All projects
-                <span className="scope-n">{counts.all}</span>
                 {waitingElsewhere > 0 && <span className="scope-count">{waitingElsewhere}</span>}
             </button>
         </div>

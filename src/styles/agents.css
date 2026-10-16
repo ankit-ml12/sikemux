@@ -397,8 +397,8 @@
     gap: 2px;
 }
 
-/* This project, by name, or all projects: two words over the open agents, the
-   chosen one in ink, each followed by how many agents it has open. */
+/* This project, by name, or all projects: two marked words over the open
+   agents, the chosen one in ink. */
 .workspace-rail.agent-rail .agent-actions + .scope-tabs {
     margin-top: var(--space-2);
 }
@@ -434,9 +434,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.scope-n {
-    color: var(--text-tertiary);
-    font-variant-numeric: tabular-nums;
+.scope-tabs svg {
+    flex: none;
 }
 .scope-count {
     display: inline-grid;

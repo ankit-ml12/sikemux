@@ -9,7 +9,7 @@ import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { activeAgentId, agentDisplayOf, agentIdsOf, openAgents } from "../state/selectors";
+import { activeAgentId, agentDisplayOf, agentIdsOf } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -120,10 +120,6 @@ export function AgentRailBody() {
     const scope = useStore((s) => s.agentRailScope);
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const openEverywhere = useMemo(
-        () => [...openAgents({ sessionOrder, sessions, windows: windowsById, windowsBySession, agents: agentsById })].length,
-        [sessionOrder, sessions, windowsById, windowsBySession, agentsById],
-    );
     const { inbox } = useInbox();
     // Recent chats live here and nowhere else, so the search for them does too.
     const [query, setQuery] = useState("");
@@ -364,13 +360,7 @@ export function AgentRailBody() {
                     <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
                 </div>
-                <ScopeTabs
-                    scope={scope}
-                    projectName={session.name}
-                    counts={{ project: opens.length, all: openEverywhere }}
-                    waitingElsewhere={waitingElsewhere}
-                    onChange={cmd.setAgentRailScope}
-                />
+                <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
