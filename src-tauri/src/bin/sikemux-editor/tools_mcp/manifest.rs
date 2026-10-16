@@ -123,6 +123,21 @@ impl Manifest {
         }
     }
 
+    /// The parts of the guide that read differently from `before`: `None`
+    /// for the opening, else a topic by name.
+    pub fn guide_changes(&self, before: &str) -> Vec<Option<String>> {
+        let earlier = guide_parts(before);
+        guide_parts(&self.guide_text)
+            .into_iter()
+            .filter(|(name, text)| earlier.get(name) != Some(text))
+            .map(|(name, _)| name.map(str::to_owned))
+            .collect()
+    }
+
+    pub fn guide_source(&self) -> &str {
+        &self.guide_text
+    }
+
     pub fn instructions(&self) -> String {
         let mut instructions = format!(
             "Sikemux drives the person's open project and this agent's browser tabs. Call {} before the first task launch or browser click. \
@@ -189,6 +204,21 @@ fn guide_topics(guide: &str) -> Vec<(&str, usize)> {
         start += line.len();
     }
     topics
+}
+
+/// The guide's opening, under `None`, and each topic by name, with its text.
+fn guide_parts(guide: &str) -> std::collections::BTreeMap<Option<&str>, &str> {
+    let topics = guide_topics(guide);
+    let mut parts = std::collections::BTreeMap::new();
+    parts.insert(
+        None,
+        &guide[..topics.first().map_or(guide.len(), |(_, start)| *start)],
+    );
+    for (index, (name, start)) in topics.iter().enumerate() {
+        let end = topics.get(index + 1).map_or(guide.len(), |(_, next)| *next);
+        parts.insert(Some(*name), guide[*start..end].trim_end());
+    }
+    parts
 }
 
 fn guide_properties(guide: &str) -> Map<String, Value> {

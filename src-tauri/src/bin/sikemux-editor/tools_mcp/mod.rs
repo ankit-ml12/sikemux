@@ -113,17 +113,25 @@ struct Offer {
     plugins: Mutex<Option<Arc<Vec<Tool>>>>,
     /// What the agent was last given by `tools/list`.
     given: Mutex<Option<Vec<Value>>>,
+    /// The guide as the agent was last told it reads.
+    told_guide: Mutex<String>,
+    /// Parts of the guide that changed since, to tell the agent with its
+    /// next tool answer: `None` for the opening, else a topic.
+    guide_news: Mutex<Vec<Option<String>>>,
 }
 
 impl Offer {
     fn new(simulator: bool, reviewer: bool) -> Self {
+        let built = Manifest::load().offering(simulator, reviewer);
         Self {
             simulator,
             reviewer,
-            built: Arc::new(Manifest::load().offering(simulator, reviewer)),
+            told_guide: Mutex::new(built.guide_source().to_owned()),
+            built: Arc::new(built),
             served: Mutex::default(),
             plugins: Mutex::default(),
             given: Mutex::default(),
+            guide_news: Mutex::default(),
         }
     }
 
@@ -133,15 +141,17 @@ impl Offer {
             simulator: true,
             reviewer: false,
             built: Arc::new(Manifest::load()),
+            told_guide: Mutex::new(manifest.guide_source().to_owned()),
             served: Mutex::new(Some(Arc::new(manifest))),
             plugins: Mutex::new(plugins.map(Arc::new)),
             given: Mutex::default(),
+            guide_news: Mutex::default(),
         }
     }
 
     fn built_in(&self, relay: &Relay<'_>) -> Arc<Manifest> {
         held(&self.served)
-            .or_else(|| Some(keep(&self.served, self.ask_manifest(relay)?)))
+            .or_else(|| Some(self.hold(self.ask_manifest(relay)?)))
             .unwrap_or_else(|| Arc::clone(&self.built))
     }
 
@@ -156,6 +166,47 @@ impl Offer {
         Some(Manifest::served(&answer)?.offering(self.simulator, self.reviewer))
     }
 
+    /// Holds what the app serves, noting the parts of its guide that changed
+    /// since the agent was last told.
+    fn hold(&self, manifest: Manifest) -> Arc<Manifest> {
+        let mut told = lock(&self.told_guide);
+        let changed = manifest.guide_changes(&told);
+        if !changed.is_empty() {
+            manifest.guide_source().clone_into(&mut told);
+            let mut news = lock(&self.guide_news);
+            for part in changed {
+                if !news.contains(&part) {
+                    news.push(part);
+                }
+            }
+        }
+        drop(told);
+        keep(&self.served, manifest)
+    }
+
+    /// Tells the agent once which parts of the guide to read again.
+    fn take_guide_news(&self) -> Option<String> {
+        let news = std::mem::take(&mut *lock(&self.guide_news));
+        if news.is_empty() {
+            return None;
+        }
+        let topics: Vec<&str> = news.iter().flatten().map(String::as_str).collect();
+        let mut parts = Vec::new();
+        if news.iter().any(Option::is_none) {
+            parts.push("its opening".to_owned());
+        }
+        match topics.as_slice() {
+            [] => {}
+            [topic] => parts.push(format!("the {topic} topic")),
+            [rest @ .., last] => parts.push(format!("the {} and {last} topics", rest.join(", "))),
+        }
+        Some(format!(
+            "Sikemux was updated since you started and its {guide} changed: read {} again with {guide}.",
+            parts.join(" and "),
+            guide = self.manifest().guide_name(),
+        ))
+    }
+
     fn ask_plugins(&self, relay: &Relay<'_>) -> Option<Vec<Tool>> {
         relay("plugins.tools", &json!({})).ok().map(plugin_tools)
     }
@@ -167,7 +218,7 @@ impl Offer {
         let manifest = self.ask_manifest(relay);
         let served = manifest.is_some();
         if let Some(manifest) = manifest {
-            keep(&self.served, manifest);
+            self.hold(manifest);
         }
         if let Some(tools) = self.ask_plugins(relay) {
             keep(&self.plugins, tools);
@@ -327,8 +378,14 @@ fn serve(offer: Arc<Offer>, agent_id: String) {
                 // A call waits on the app, so it runs off the read loop; a host
                 // that pipelines a ping behind a navigation still gets answered.
                 std::thread::spawn(move || {
-                    let answer = call(&offer, &*relays.quick, &*relays.patient, &name, &arguments);
+                    let mut answer =
+                        call(&offer, &*relays.quick, &*relays.patient, &name, &arguments);
                     if calls.finish(&id) {
+                        if let Some(news) = offer.take_guide_news() {
+                            if let Some(blocks) = answer["content"].as_array_mut() {
+                                blocks.push(text(&news));
+                            }
+                        }
                         emit(&reply(id, answer));
                     }
                 });
