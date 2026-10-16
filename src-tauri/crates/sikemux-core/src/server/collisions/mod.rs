@@ -1302,7 +1302,7 @@ impl Collisions {
         let project = project_of(path, &core.workspaces.project_paths());
         let listed = super::messages::listed(core);
         unclaimed.into_iter().any(|at| {
-            let (shells, terminals) = self.at_work(core, &listed, &project, path, at);
+            let (shells, terminals) = self.at_work(core, &listed, &project, path, at, GRACE_MS);
             !shells.contains(agent_id) && !terminals.contains(agent_id)
         })
     }
@@ -1320,7 +1320,7 @@ impl Collisions {
         at: u64,
     ) -> (Option<(String, bool)>, BTreeMap<String, String>) {
         let listed = super::messages::listed(core);
-        let (shells, terminals) = self.at_work(core, &listed, project, path, at);
+        let (shells, terminals) = self.at_work(core, &listed, project, path, at, GRACE_MS);
         let label = |id: &String| {
             let agent = listed.iter().find(|agent| agent.agent_id == *id);
             let name = agent
@@ -1355,8 +1355,9 @@ impl Collisions {
 
     /// The agents that could have changed `place`, a file or folder in
     /// `project`, at `at` with no edit tool: the chat agents then running a
-    /// command, a subagent or a background task, and the terminal agents then
-    /// working, each in the checkout that holds `place`.
+    /// command, or one that ended up to `grace` before, a subagent or a
+    /// background task, and the terminal agents then working, each in the
+    /// checkout that holds `place`.
     pub(crate) fn at_work(
         &self,
         core: &Core,
@@ -1364,6 +1365,7 @@ impl Collisions {
         project: &str,
         place: &Path,
         at: u64,
+        grace: u64,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
         let in_project = |agent: &str| {
             core.names
@@ -1383,7 +1385,7 @@ impl Collisions {
                         .iter()
                         .filter(|(_, runs)| {
                             runs.iter()
-                                .any(|(started, ended)| *started <= at && at <= ended + GRACE_MS)
+                                .any(|(started, ended)| *started <= at && at <= ended + grace)
                         })
                         .map(|(agent, _)| agent.clone()),
                 )
