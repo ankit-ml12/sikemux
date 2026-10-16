@@ -12,8 +12,8 @@ import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { actionForEvent, keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
 import { AgentIcon, IconAgent, IconFolder, IconSearch, IconServer, Logo } from "../ui/Icons";
 import { agentStatusLabel } from "../agents/agentStatus";
-import { installAgent } from "../agents/AgentInstall";
-import { AGENT_TYPES, agentLabel, installCommand } from "../agents/catalog";
+import { installAgent, signInAgent } from "../agents/AgentInstall";
+import { AGENT_TYPES, agentLabel, installCommand, loginArgs } from "../agents/catalog";
 import { Kbd } from "../ui/Kbd";
 import { ShaderField } from "../ui/ShaderField";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -262,6 +262,11 @@ export function Onboarding() {
                                         {agent.status?.state === "missing" && installCommand(agent.type) && (
                                             <button type="button" className="welcome-agent-install" onClick={() => installAgent(agent.type)}>
                                                 Install
+                                            </button>
+                                        )}
+                                        {agent.status?.state === "signedOut" && loginArgs(agent.type) && (
+                                            <button type="button" className="welcome-agent-install" onClick={() => signInAgent(agent)}>
+                                                Sign in
                                             </button>
                                         )}
                                     </li>
