@@ -120,6 +120,7 @@
    counting the rest; FittedIcons in SideRail.tsx measures it. */
 .side-rail .proj-child .proj-child-icons {
     flex: 1 1 0;
+    justify-content: flex-end;
     min-width: 0;
     overflow: hidden;
 }
