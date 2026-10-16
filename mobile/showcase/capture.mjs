@@ -8,15 +8,15 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium } from '../../node_modules/playwright-core/index.mjs';
 
+import { PANE_IMAGE_FILE } from '../../showcase/world/paneImage.ts';
+
 const here = import.meta.dirname;
 const app = resolve(here, '../app');
 const CORE = 'showcase0000000000000000000000000000000000000000000000000000core';
-const PANE_SOURCE = join(homedir(), 'wallpaper/midnight-garden.jpeg');
 const PANE = '/tmp/sikemux-phone-pane.jpg';
 
 const { values: options, positionals: only } = parseArgs({
@@ -41,7 +41,7 @@ const SCENES = [
   { name: 'new-chat', route: `/device/${CORE}/new` },
 ].filter((scene) => only.length === 0 || only.includes(scene.name));
 
-if (existsSync(PANE_SOURCE)) execFileSync('sips', ['-Z', '1600', PANE_SOURCE, '--out', PANE], { stdio: 'ignore' });
+if (existsSync(PANE_IMAGE_FILE)) execFileSync('sips', ['-Z', '1600', PANE_IMAGE_FILE, '--out', PANE], { stdio: 'ignore' });
 
 /** The status bar, Dynamic Island and home indicator iOS draws over an app. */
 function drawPhoneChrome() {

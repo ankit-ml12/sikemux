@@ -736,7 +736,6 @@
   .backdrop-pick button { height: 28px; padding: 0 11px; border-radius: 7px; border: 1px solid transparent; background: none; color: var(--text-secondary); font: inherit; cursor: pointer; }
   .backdrop-pick button:hover { background: var(--surface-hover); color: var(--text-primary); }
   .backdrop-pick button.on { background: var(--surface-selected); border-color: var(--border-selected); color: var(--text-primary); }
-  .backdrop-pick input { display: none; }
 
   /* what is still going, docked on the composer: the Mac's live stack in one line */
   .live-strip { display: flex; align-items: center; gap: 10px; height: 34px; margin: 0 14px -1px; padding: 0 10px 0 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 12px 12px 0 0; background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
@@ -837,7 +836,7 @@
 </head>
 <body>
 
-<div class="backdrop-pick"><span>Host backdrop</span><button data-mode="none">None</button><button data-mode="grain">Grain</button><button data-mode="picture">Picture</button><button class="choose">Choose…</button><input type="file" accept="image/*"></div>
+<div class="backdrop-pick"><span>Host backdrop</span><button data-mode="none">None</button><button data-mode="grain">Grain</button><button data-mode="picture">Picture</button></div>
 
 <header class="page-head">
   <h1>{{Logo:30}} Sikemux for iPhone</h1>

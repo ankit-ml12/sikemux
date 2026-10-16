@@ -13,17 +13,13 @@ import {
 } from "vite";
 import base from "../vite.config.ts";
 import { DEMO_PROJECTS, PANE_IMAGE } from "./world/projects.ts";
+import { PANE_IMAGE_FILE } from "./world/paneImage.ts";
 
 const LOCAL_ROOTS: Record<string, string> = {
   sikemux: resolve(import.meta.dirname, ".."),
   "sikemux-front": join(homedir(), "projects/personal/sikemux-front"),
   "moodboard-studio": join(homedir(), "projects/personal/moodboard-studio"),
 };
-
-const PANE_IMAGE_FILE = join(
-  homedir(),
-  "wallpaper/midnight-garden.jpeg",
-);
 
 const WALLPAPER_FILE = join(
   homedir(),
