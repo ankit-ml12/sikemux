@@ -24,9 +24,9 @@ pub(crate) fn needs(method: &str) -> Needs {
     match method {
         "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" | "inbox"
         | "digest" | "agentMessages" => Needs::Watch,
-        "answerQuestion" | "answerQuestions" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
-        | "boardRetry" | "renameAgent" | "shares" | "agentAccounts" | "agentStatus"
-        | "agentAccountStatus" | "agentUsage" | "cancelResume" => Needs::Full,
+        "answerQuestion" | "answerQuestions" | "boardAdd" | "boardUpdate" | "boardRemove"
+        | "boardSettings" | "boardRetry" | "renameAgent" | "shares" | "agentAccounts"
+        | "agentStatus" | "agentAccountStatus" | "agentUsage" | "cancelResume" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" | "linkHost" | "shareChat" | "stopShare"
         | "commitStaged" | "setAgentAccounts" | "addAgentAccount" | "forgetAgentStatus"
         | "markAgentSignedOut" | "addProject" | "removeProject" => Needs::Person,

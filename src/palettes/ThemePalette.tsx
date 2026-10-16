@@ -15,7 +15,12 @@ export function ThemePalette() {
     const themes = useMemo(() => [...customThemes, ...THEMES], [customThemes]);
     const [query, setQuery] = useState("");
     const entries = useMemo(() => rankBy(query, themes, (theme) => theme.name), [query, themes]);
-    const [selected, setSelected] = useState(() => Math.max(0, themes.findIndex((theme) => theme.id === keptId)));
+    const [selected, setSelected] = useState(() =>
+        Math.max(
+            0,
+            themes.findIndex((theme) => theme.id === keptId),
+        ),
+    );
     const modalRef = useRef<HTMLDivElement>(null);
     useModalFocus(modalRef);
     const inputRef = useRef<HTMLInputElement>(null);
