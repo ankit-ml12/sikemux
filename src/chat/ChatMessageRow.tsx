@@ -17,6 +17,8 @@ import {
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentMark } from "../agents/AgentMark";
+import { AgentBuddy } from "../buddies/Buddy";
+import { useStore } from "../state/store";
 import { messageLetters, type AgentLetter } from "./agentLetters";
 import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
@@ -266,6 +268,12 @@ function SentTime({ at, took }: { at: number; took: number | null }) {
     );
 }
 
+function LetterSenderMark({ agentId, cli }: { agentId: string; cli: string }) {
+    const buddies = useStore((s) => s.buddies);
+    const sender = useStore((s) => s.agents[agentId]);
+    return buddies && sender ? <AgentBuddy agent={sender} size={14} className="agent-glyph" /> : <AgentMark cli={cli} />;
+}
+
 function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[]; at: number | null }) {
     return (
         <article className="chat-message agent-letter">
@@ -279,7 +287,7 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
                         <Fragment key={index}>
                             <div className="chat-letter-from" title={letter.agentId}>
                                 <span className="chat-letter-rule" />
-                                <AgentMark cli={letter.cli} />
+                                <LetterSenderMark agentId={letter.agentId} cli={letter.cli} />
                                 <span>
                                     Message from <b>{letter.name}</b>
                                 </span>
