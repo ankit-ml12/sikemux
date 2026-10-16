@@ -99,10 +99,10 @@ export default function NewChat() {
   const blocked =
     live.status !== 'open'
       ? live.snapshot
-        ? 'Reconnecting to the host… The chat starts once it answers.'
+        ? 'Reconnecting to the host…'
         : 'Not connected to the host yet.'
       : workspace && !project
-        ? 'Open a project in Sikemux on the host to start a chat in it.'
+        ? 'No open projects on the host.'
         : undefined;
   const busy = useRef(false);
 
@@ -171,7 +171,7 @@ export default function NewChat() {
           {launcher ? <AgentFace agentId={project?.id} provider={launcher.provider} size={38} logoSize={40} /> : null}
           <Text style={styles.welcomeTitle}>{project?.name ?? 'New chat'}</Text>
           {workspace && !workspace.launchers.length ? (
-            <Text style={[type.meta, { textAlign: 'center' }]}>Open Sikemux on the host so it can offer its agents.</Text>
+            <Text style={[type.meta, { textAlign: 'center' }]}>No agents on the host.</Text>
           ) : null}
           {problem ? <Text style={styles.problem}>{problem}</Text> : null}
           {!problem && blocked ? (

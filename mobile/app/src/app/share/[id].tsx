@@ -39,10 +39,10 @@ function problemOf(snapshot: ShareSnapshot): string | undefined {
 
 function endsIn(expiresAt: number, now: number): string {
   const minutes = Math.max(1, Math.round((expiresAt - now) / 60_000));
-  if (minutes < 60) return `${minutes} more min`;
+  if (minutes < 60) return `${minutes} min`;
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return hours === 1 ? '1 more hour' : `${hours} more hours`;
-  return `${Math.round(hours / 24)} more days`;
+  if (hours < 48) return hours === 1 ? '1 hour' : `${hours} hours`;
+  return `${Math.round(hours / 24)} days`;
 }
 
 /** The key is after `#`, which a link that opened the app keeps; a link opened from inside it passes the key along. */
@@ -62,7 +62,7 @@ export default function SharedChatScreen() {
     return (
       <Screen>
         <Nav title={<Text>Shared chat</Text>} />
-        <Missing text="This link is missing part of itself. Ask for it again, and copy the whole of it." />
+        <Missing text="This link is incomplete. Copy the whole link." />
       </Screen>
     );
   return <Watching key={link.id} link={link} />;
@@ -141,8 +141,8 @@ function SharedChat({ session }: { session: ShareSession }) {
   const emptyUnsent = useMemo(() => new Map(), []);
   const footer = !problem
     ? snapshot.hostOnline
-      ? `Read-only. Shared from someone's computer${snapshot.expiresAt ? `; the link works for ${endsIn(snapshot.expiresAt, now)}` : ''}.`
-      : "Read-only. The sharer's computer is offline, so this is the chat as it last was."
+      ? `Read-only${snapshot.expiresAt ? ` · link ends in ${endsIn(snapshot.expiresAt, now)}` : ''}`
+      : 'Read-only · the sharer is offline'
     : problem;
 
   return (

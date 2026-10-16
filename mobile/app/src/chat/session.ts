@@ -93,7 +93,7 @@ type Cursor = { feed: string; before: bigint };
 /** Earlier pages a fallen-back replay left a gap above, kept until the turns between are fetched. */
 type Bridge = { until: bigint; pages: EarlierPage[]; cursor: Cursor | null };
 
-const TOO_LONG = 'This chat is longer than the host keeps for the phone. Open it on the host to carry on.';
+const TOO_LONG = 'This chat is too long for the phone. Open it on the host.';
 
 /**
  * A permission request that just arrived is shown before the host's list of waiting requests,

@@ -481,9 +481,7 @@ export const Composer = memo(function Composer({
         {dock ?? strip}
         <View style={[styles.composer, styles.watch]}>
           <Icon name="IconEye" size={17} color={colors.inkDim} />
-          <Text style={styles.watchText}>
-            Watching. This phone can answer permission requests on {hostName}; the host can give it full access.
-          </Text>
+          <Text style={styles.watchText}>Watching</Text>
         </View>
       </SafeAreaView>
     );
