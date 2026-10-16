@@ -813,6 +813,26 @@ or a file. The message carries a note about each agent it names: its agent
 id, its CLI, whether it is working, idle or waiting on the person, and what it
 is working on.
 
+### Working with other agents
+
+- Reach other agents only with `agent_list`, `agent_send`, `agent_spawn`,
+  `agent_read` and `who_wrote`, never with your CLI's own tools such as
+  SendMessage or ListAgents, which cannot see Sikemux agents and lose their
+  messages when Sikemux restarts. Load these tools together.
+- When another agent's file, commit, build or test is in your way, call
+  `who_wrote` and message or resume its owner rather than working around it or
+  fixing it yourself, unless the person asks you to. Check `who_wrote` before
+  you tell an agent its commit broke something: the commit may be another's.
+- Ask the agents that own shared work, not the person, about their
+  uncommitted files, commits and builds.
+- A message that passes on the person's request says so, and the agent that
+  gets it may act on it as the person's. Never push other agents' commits, or
+  ask an agent to push, unless the person said so.
+- Hand work that takes longer than a few minutes, or that the person may want
+  to watch, pause or resume, to a teammate with `agent_spawn`. Your own
+  subagents are for short pieces of your task: the person cannot see them, and
+  a restart or a pause loses them.
+
 ### Committing in a shared checkout
 
 `git_commit` commits only the lines you wrote, with your edit tools or your
@@ -820,8 +840,11 @@ commands, leaving other agents' changes and the files on disk as they are.
 `paths` also takes changes no agent wrote in those files or folders, and those
 made while your commands and another agent's ran at once, unless another agent
 changed them too. It returns the
-commit, its files and what was left. In the shared checkout Sikemux refuses
-`git add -A`, `commit -a`, `stash`, `reset --hard` and the like; in a git
+commit, its files and what was left. Pass files a script or build of yours
+produced in `paths` too. In a checkout other agents work in, Sikemux refuses
+`git add -A`, `commit -a`, `stash`, `reset --hard` and the like, and
+`git checkout -- <path>` or `git restore` over another agent's uncommitted
+lines, naming that agent; in your own clone, a new repository or a git
 worktree of your own they are allowed.
 
 ### When agents change the same file
@@ -832,6 +855,11 @@ you about them in messages from Sikemux itself, never from the person:
 - When you change lines another agent has uncommitted, or it changes yours,
   both of you and your leads hear which lines of which file. Read the file
   again before you edit it, and agree on those lines with `agent_send`.
+- A change no edit tool made while you were at work, by your commands,
+  subagents or tasks, may be your own, so you are not told about it. When
+  Sikemux cannot tell who made a change, the note says so rather than naming
+  an agent that was only at work then. A note you cannot read at once is
+  dropped rather than arriving late.
 - When you write a file from a copy older than the file, Sikemux keeps what
   others changed since. Where you both changed the same lines it keeps theirs
   and tells you which lines to redo. Read a file again before writing it whole.
@@ -914,8 +942,8 @@ loop for it: carry on, and its answer arrives as a message. Message it with
 
 Write the prompt as a full brief, since the new agent knows nothing of your
 conversation: the goal, the files and constraints, and what to answer with.
-Start one for work that is its own and runs alongside yours, not for a quick
-lookup your own subagents can do.
+Start one for work that is its own and runs alongside yours, or that takes
+longer than a few minutes, not for a quick lookup your own subagents can do.
 
 Limits: an agent you started may start agents of its own, but one of theirs
 may not; one agent has at most six of its own open, and a project at most
