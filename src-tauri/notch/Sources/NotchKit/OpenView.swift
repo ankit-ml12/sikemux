@@ -184,7 +184,7 @@ struct RowLine: View {
                 Text(attempt > 0 ? "Reconnecting… \(attempt)" : "Reconnecting…")
                     .font(Theme.ui(11.5))
                     .foregroundStyle(Theme.inkFaint)
-            } else {
+            } else if entry.since != nil {
                 SinceText(mark: entry.mark, since: entry.since).frame(minWidth: 44, alignment: .trailing)
             }
             StateMark(mark: entry.mark)
