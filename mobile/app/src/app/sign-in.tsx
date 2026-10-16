@@ -147,7 +147,7 @@ export default function SignIn() {
   return (
     <Screen>
       <Nav back="Back" onBack={back} />
-      <Prompt icon={step.kind === 'code' ? 'IconInbox' : 'IconUser'} title={TITLES[step.kind]} detail={detail}>
+      <Prompt icon="Logo" title={TITLES[step.kind]} detail={detail}>
         {step.kind === 'code' ? (
           <>
             <View style={styles.tiles}>
