@@ -13,7 +13,7 @@ import {
   MODEL_OPTIONS,
   SAVED_SESSIONS,
 } from "./world/agents";
-import { BRANCHES, GIT_STATUS } from "./world/git";
+import { BRANCHES, FILE_DIFFS, GIT_STATUS } from "./world/git";
 import { RUNDECK, rundeckStream } from "./world/rundeck";
 import { GITHUB } from "./world/github";
 import { JIRA } from "./world/jira";
@@ -413,7 +413,7 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("git_file_at", async ({ repo, path }) =>
       server("read_file", { path: `${repo}/${path}` }).catch(() => ""),
     );
-    this.on("git_file_diff", constant([]));
+    this.on("git_file_diff", ({ path }) => FILE_DIFFS[path as string] ?? []);
     this.on("git_blame", constant({ commits: [], lines: [] }));
 
     this.on("git_overview", async ({ repo }) => {
