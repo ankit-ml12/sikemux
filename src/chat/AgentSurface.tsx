@@ -25,7 +25,7 @@ import { showingChat } from "./chatViews";
 import { YoloToggle } from "./YoloToggle";
 import { ShareButton } from "../share/ShareControls";
 import { agentCwd, agentPtyContext } from "../agents/agentPtyContext";
-import { clearTuiRecovery, relaunchTuiAgent, useTuiResume } from "../agents/tuiResume";
+import { claimAgentTerminal, clearTuiRecovery, relaunchTuiAgent, useTuiResume } from "../agents/tuiResume";
 import "../styles/chat.css";
 
 type AgentView = "gui" | "tui";
@@ -230,7 +230,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             visible={visible}
                             spawnWhen={visible}
                             resumePtyId={agent.ptyId}
-                            onPtySession={(id) => cmd.setAgentPty(agent.id, id)}
+                            onPtySession={(id) => claimAgentTerminal(agent.id, id)}
                             context={agentPtyContext(agent, session)}
                         />
                         {recovery?.phase === "failed" && <TuiRecoveryNotice agent={agent} profile={profile} cwd={cwd} detail={recovery.detail} />}

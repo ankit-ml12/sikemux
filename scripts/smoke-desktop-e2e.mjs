@@ -1239,6 +1239,11 @@ async function expectTuiAgentResumed(core, previous, runs) {
     "the terminal agent to come back in a new terminal",
     READY_TIMEOUT_MS,
     async () => Boolean((resumed = await tuiAgentSession(core, previous))),
+  ).catch((error) =>
+    fail(
+      error.message.replace("desktop E2E smoke failed: ", ""),
+      desktopLog,
+    ),
   );
   if (await coreSession(core, previous))
     fail("the crashed agent's old terminal was left behind", desktopLog);
