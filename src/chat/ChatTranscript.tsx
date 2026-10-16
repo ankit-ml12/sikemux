@@ -106,6 +106,7 @@ export function ChatTranscript({
                         const folded = fold !== undefined && !unfolded && !openWork.has(workId);
                         const summary = fold && index === Math.max(fold.start, firstRow) && (
                             <WorkSummary
+                                agent={agentType}
                                 took={fold.took}
                                 calls={fold.calls}
                                 thought={fold.thought}
