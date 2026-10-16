@@ -37,7 +37,7 @@ export function Row({
   under,
 }: {
   mark?: ReactNode;
-  /** The agent's name, small and dim at the end of its title as the Mac's rail sets it. */
+  /** The agent's name, small and dim with the row's counts and state at its end, as the Mac's rail sets it. */
   name?: string;
   /** The linked host the agent runs on, set after its name. */
   host?: string;
@@ -55,7 +55,8 @@ export function Row({
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const where = host ? `on ${host}` : undefined;
-  const after = title && name ? [name, where].filter(Boolean).join(' ') : where;
+  const label = title ?? name;
+  const named = title && name ? [name, where].filter(Boolean).join(' ') : undefined;
   return (
     <Pressable
       onPress={onPress}
@@ -65,11 +66,12 @@ export function Row({
       <View style={styles.rowBody}>
         <View style={styles.rowLabel}>
           <Text style={[styles.rowTitle, { color: dim ? colors.tertiary : colors.ink }]} numberOfLines={1}>
-            {title ?? name}
+            {label}
           </Text>
-          {after ? (
-            <Text style={styles.rowName} numberOfLines={1}>
-              {after}
+          {where && !named ? (
+            <Text style={styles.rowWhere} numberOfLines={1}>
+              {' '}
+              {where}
             </Text>
           ) : null}
         </View>
@@ -92,7 +94,16 @@ export function Row({
           </Text>
         ) : null}
       </View>
-      {end ? <View style={styles.rowEnd}>{end}</View> : null}
+      {named || end ? (
+        <View style={styles.rowEnd}>
+          {named ? (
+            <Text style={styles.rowName} numberOfLines={1}>
+              {named}
+            </Text>
+          ) : null}
+          {end}
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -123,7 +134,8 @@ const makeStyles = (colors: Palette) => {
     rowBody: { flex: 1, minWidth: 0 },
     rowLabel: { flexDirection: 'row', alignItems: 'baseline' },
     rowTitle: { ...type.row, fontSize: 14.5, flexShrink: 1 },
-    rowName: { marginLeft: 'auto', paddingLeft: 8, fontFamily: fonts.ui, fontSize: 11.5, color: colors.tertiary },
+    rowWhere: { flexShrink: 0, fontFamily: fonts.ui, color: colors.tertiary },
+    rowName: { maxWidth: 110, fontFamily: fonts.ui, fontSize: 11.5, color: colors.tertiary },
     rowDetail: { ...type.meta, fontSize: 12, marginTop: 1 },
     rowPlace: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
     rowPlaceText: { flexShrink: 1, marginTop: 0 },
