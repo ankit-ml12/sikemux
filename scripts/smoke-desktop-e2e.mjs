@@ -574,12 +574,15 @@ async function driveBrowser(relay, env) {
     const title = await evaluate("document.title");
     if (title !== FIXTURE_TITLE) fail(`evaluate returned ${title}`, desktopLog);
 
+    const clicked = Date.now();
     await tool("browser.click", { selector: "#later" });
+    const clickTook = Date.now() - clicked;
     const waited = await tool("browser.wait", {
       text: "Loaded late",
       timeoutMs: 5000,
     });
-    if (!waited.met || waited.waitedMs < 100)
+    // On a slow runner the click can return after the text's 800 ms delay, leaving nothing to wait for.
+    if (!waited.met || (waited.waitedMs < 100 && clickTook < 700))
       fail(`wait for text returned ${JSON.stringify(waited)}`, desktopLog);
     const missing = await tool("browser.wait", {
       selector: "#never",
