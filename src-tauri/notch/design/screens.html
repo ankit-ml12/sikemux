@@ -838,7 +838,7 @@ class Island {
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
                             <span class="title">${a.title}</span>${agentName(a)}${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
-                            ${a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : `<span class="time">${a.time ?? ""}</span>`}${stateMark(a.state)}
+                            ${a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : a.time ? `<span class="time">${a.time}</span>` : ""}${stateMark(a.state)}
                         </div>`}`).join("");
             }
         } else {
