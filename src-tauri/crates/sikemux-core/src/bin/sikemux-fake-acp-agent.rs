@@ -405,16 +405,21 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
                     std::thread::sleep(Duration::from_millis(20));
                 }
             }
-            agent.reply(
-                &id,
-                json!({
-                    "protocolVersion": 1,
-                    "agentCapabilities": {
-                        "loadSession": true,
-                        "promptCapabilities": { "embeddedContext": true },
-                    },
-                }),
-            );
+            let mut answer = json!({
+                "protocolVersion": 1,
+                "agentCapabilities": {
+                    "loadSession": true,
+                    "promptCapabilities": { "embeddedContext": true },
+                },
+            });
+            if params["clientCapabilities"]["auth"]["terminal"] == true {
+                answer["authMethods"] = json!([
+                    { "type": "terminal", "id": "fake-login", "name": "Log in", "args": ["login"] },
+                    { "id": "fake-key", "name": "API key", "description": "Use a key from the environment" },
+                    { "id": "elsewhere", "name": "Elsewhere", "_meta": { "terminal-auth": { "command": "/bin/elsewhere", "args": [] } } },
+                ]);
+            }
+            agent.reply(&id, answer);
         }
         ("session/new", Some(id)) => {
             let session_id = format!(
