@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
     sessions: vi.fn(),
 }));
 
+const { installAgent } = vi.hoisted(() => ({ installAgent: vi.fn() }));
+vi.mock("./AgentInstall", () => ({ installAgent }));
 vi.mock("../api/agents", () => ({
     agentApi: {
         available: mocks.available,
@@ -200,6 +202,22 @@ describe("AgentPalette", () => {
         await user.click(screen.getByRole("button", { name: "+ new Codex in Normal mode" }));
         expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
         expect(getState().agentPaletteOpen).toBe(true);
+    });
+
+    it("offers to install an agent that is not on this machine", async () => {
+        const user = userEvent.setup();
+        openTerminal();
+        render(<AgentPalette />);
+
+        const grok = await screen.findByRole("button", { name: "Install Grok" });
+        expect(grok).toHaveTextContent("xAI's coding agent");
+        expect(screen.queryByRole("button", { name: /Install Codex/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /Muse/ })).not.toBeInTheDocument();
+
+        await user.click(grok);
+        expect(installAgent).toHaveBeenCalledWith("grok");
+        expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
+        expect(getState().agentPaletteOpen).toBe(false);
     });
 
     it("says a signed-out agent will ask to sign in, and still starts it", async () => {
