@@ -10,7 +10,6 @@ import { AgentFace } from "../buddies/Buddy";
 import { IconClose, IconMerge } from "../ui/Icons";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
-import { AgentLabel } from "../agents/AgentLabel";
 import { collisionLabel, type CollisionMark } from "../agents/collisions";
 import { AgentRowProject, AgentRowTree } from "./AgentRowTree";
 import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
@@ -137,11 +136,10 @@ export function OpenAgentRow({
                     onContextMenu={onContextMenu}>
                     {glyph}
                     <span className="agent-row-text">
-                        <span className="agent-title">
-                            <AgentLabel agent={agent} />
-                        </span>
+                        <span className="agent-title">{agent.title}</span>
                         {project && <AgentRowProject name={project.name} />}
                     </span>
+                    {agent.name && <span className="agent-row-name">{agent.name}</span>}
                     <BackgroundCounts display={display} />
                     <Collided agentId={agent.id} />
                 </button>

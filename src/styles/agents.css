@@ -97,9 +97,19 @@
     font-size: var(--text-2xs);
     font-weight: var(--weight-normal);
 }
-.agent-row .agent-label-name {
-    margin-left: auto;
-    padding-left: var(--space-2);
+/* A rail row's name sits with its counts and state at the row's end, centred on the same line as them. */
+.agent-row-name {
+    flex: none;
+    padding-inline: var(--space-2) var(--space-1);
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-normal);
+    line-height: 18px;
+}
+.agent-row.two-line > .agent-row-name,
+.agent-row.two-line > .work-counts,
+.agent-row.two-line > .collision-mark {
+    height: 18px;
 }
 .tab.active .tab-note {
     color: color-mix(in srgb, currentColor 62%, transparent);
