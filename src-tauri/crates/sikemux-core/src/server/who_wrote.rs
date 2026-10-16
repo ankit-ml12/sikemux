@@ -20,6 +20,8 @@ use super::edits::{self, footer};
 use super::messages::{self, Listed, Reach};
 use super::{saved, Core, CoreResult};
 
+mod ci;
+
 /// Commits whose footers are remembered, and sessions whose titles are.
 const MAX_REMEMBERED: usize = 4096;
 /// Commits the app may ask about at once.
@@ -254,6 +256,11 @@ struct Found {
     uncommitted: Lines,
     /// Picked by matching a test's name, which may have found the wrong file.
     guess: Option<String>,
+    /// Why a commit was picked, by commit, when it is not plain.
+    why: HashMap<String, String>,
+    /// How many commits there were to pick from, when more than were picked.
+    total: Option<usize>,
+    notes: Vec<String>,
 }
 
 impl Found {
@@ -264,6 +271,9 @@ impl Found {
             path: None,
             uncommitted: Vec::new(),
             guess: None,
+            why: HashMap::new(),
+            total: None,
+            notes: Vec::new(),
         }
     }
 }
@@ -583,6 +593,13 @@ fn split(
     answered
 }
 
+/// What a `who_wrote` target names: commits found here, or a CI run to read
+/// from the code host first.
+enum Asked {
+    Found(Found),
+    Ci(ci::Asked),
+}
+
 /// What `who_wrote` answers.
 pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let target = request
@@ -591,12 +608,37 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|target| !target.is_empty())
-        .ok_or("target must be a commit, a file, file:line, file:start-end, or a test")?
+        .ok_or("target must be a CI run, a commit, a file, file:line, file:start-end, or a test")?
         .to_owned();
-    let (core, dir) = (core.clone(), PathBuf::from(&request.project));
-    let (found, mut commits, origin) = blocking(move || {
+    let dir = PathBuf::from(&request.project);
+    let (top, origin, asked) = blocking(move || {
         let top = PathBuf::from(git(&dir, &["rev-parse", "--show-toplevel"])?.trim());
-        let found = resolve(&dir, &top, &target)?;
+        let origin = git(&top, &["remote", "get-url", "origin"])
+            .ok()
+            .map(|url| url.trim().to_owned());
+        let asked = match ci::asked(&top, &target)? {
+            Some(run) => Asked::Ci(run),
+            None => Asked::Found(resolve(&dir, &top, &target)?),
+        };
+        Ok((top, origin, asked))
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    let (found, ci) = match asked {
+        Asked::Found(found) => (found, None),
+        Asked::Ci(run) => {
+            let origin = origin
+                .as_deref()
+                .ok_or("this project has no origin remote to find its CI runs on")?;
+            let ci = ci::find(origin, run).await?;
+            let top = top.clone();
+            blocking(move || Ok((ci::commits(&top, &ci)?, Some(ci))))
+                .await
+                .map_err(|error| error.to_string())?
+        }
+    };
+    let core = core.clone();
+    let (found, mut commits) = blocking(move || {
         let hashes: Vec<&str> = found
             .commits
             .iter()
@@ -633,10 +675,7 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                 (commit, owners)
             })
             .collect();
-        let origin = git(&top, &["remote", "get-url", "origin"])
-            .ok()
-            .map(|url| url.trim().to_owned());
-        Ok((found, commits, origin))
+        Ok((found, commits))
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -712,16 +751,24 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                 "subject": commit.subject,
                 "date": commit.date,
                 "lines": lines,
+                "why": found.why.get(&commit.hash),
                 "owners": owners,
             })
         })
         .collect();
     let mut note = String::new();
-    if found.commits.len() > MAX_COMMITS {
-        note.push_str(&format!(
-            "Showing {MAX_COMMITS} of {} commits; ask about fewer lines for the rest. ",
-            found.commits.len()
-        ));
+    for line in ci.iter().flat_map(|ci| ci.notes()).chain(&found.notes) {
+        note.push_str(line);
+        note.push(' ');
+    }
+    let total = found.total.unwrap_or(found.commits.len());
+    if total > MAX_COMMITS {
+        note.push_str(&match ci {
+            Some(_) => format!(
+                "Showing {MAX_COMMITS} of the {total} commits since the run that passed, those the error points at first. "
+            ),
+            None => format!("Showing {MAX_COMMITS} of {total} commits; ask about fewer lines for the rest. "),
+        });
     }
     if !found.uncommitted.is_empty() {
         note.push_str(&format!(
@@ -732,11 +779,15 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     if answered.is_empty() && found.uncommitted.is_empty() {
         note.push_str("No commit touched it. ");
     }
-    Ok(json!({
+    let mut answer = json!({
         "target": found.kind,
         "path": found.path,
         "guess": found.guess,
         "commits": answered,
         "note": note.trim_end(),
-    }))
+    });
+    if let Some(ci) = &ci {
+        ci.describe(&mut answer);
+    }
+    Ok(answer)
 }

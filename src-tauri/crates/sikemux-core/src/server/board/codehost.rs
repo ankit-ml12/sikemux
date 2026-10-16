@@ -13,7 +13,7 @@ const HOSTS: [(&str, &str); 2] = [("github", "GitHub"), ("bitbucket", "Bitbucket
 const PASSING: [&str; 3] = ["success", "skipped", "neutral"];
 
 /// A repository on a code host, and the account that reaches it.
-pub(super) struct Repo {
+pub(crate) struct Repo {
     host: &'static str,
     owner: String,
     name: String,
@@ -58,8 +58,15 @@ fn text(value: &Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+impl Repo {
+    /// `owner/name`, as the code host writes it in its addresses.
+    pub(crate) fn slug(&self) -> String {
+        format!("{}/{}", self.owner, self.name)
+    }
+}
+
 /// The code host the remote `url` is on, with an account signed in to it.
-pub(super) async fn find(url: &str) -> Result<Repo, String> {
+pub(crate) async fn find(url: &str) -> Result<Repo, String> {
     for (host, label) in HOSTS {
         let Ok(found) = plugins::call(&plugin(host), "resolveRemote", json!({ "url": url })).await
         else {
@@ -82,7 +89,7 @@ pub(super) async fn find(url: &str) -> Result<Repo, String> {
         .and_then(|account| account.as_str().map(str::to_owned));
         if account.is_none() {
             return Err(format!(
-                "sign in to {label} in Sikemux with an account that can reach {owner}/{name}, so Auto can open the pull request"
+                "sign in to {label} in Sikemux with an account that can reach {owner}/{name}"
             ));
         }
         return Ok(Repo {
@@ -92,10 +99,7 @@ pub(super) async fn find(url: &str) -> Result<Repo, String> {
             account,
         });
     }
-    Err(
-        "Auto opens pull requests on GitHub and Bitbucket, and this project's origin is on neither"
-            .into(),
-    )
+    Err("this project's origin is on neither GitHub nor Bitbucket".into())
 }
 
 /// The pull requests the commit `sha` came in through, the merged one first,
@@ -188,11 +192,7 @@ pub(super) async fn checks(pull: &Pull, branch: &str, sha: &str) -> Result<Check
     }
     let failed: Vec<String> = runs
         .iter()
-        .filter(|run| {
-            !run["conclusion"]
-                .as_str()
-                .is_some_and(|conclusion| PASSING.contains(&conclusion))
-        })
+        .filter(|run| !run["conclusion"].as_str().is_some_and(passed))
         .map(|run| {
             format!(
                 "{}: {} {}",
@@ -209,6 +209,91 @@ pub(super) async fn checks(pull: &Pull, branch: &str, sha: &str) -> Result<Check
     } else {
         Checks::Failed(failed.join("\n"))
     })
+}
+
+/// Whether a finished run or job's `conclusion` means it broke, rather than
+/// passed or was stopped.
+pub(crate) fn failed(conclusion: &str) -> bool {
+    matches!(conclusion, "failure" | "timed_out" | "startup_failure")
+}
+
+pub(crate) fn passed(conclusion: &str) -> bool {
+    PASSING.contains(&conclusion)
+}
+
+/// The latest CI runs on `branch`, newest first: of one workflow when
+/// `workflow` is given, and only those that passed when `passing`.
+pub(crate) async fn runs(
+    repo: &Repo,
+    branch: &str,
+    workflow: Option<&Value>,
+    passing: bool,
+) -> Result<Vec<Value>, String> {
+    let params = json!({
+        "branch": branch,
+        "workflowId": workflow,
+        "status": passing.then_some("success"),
+        "perPage": 50,
+    });
+    let page = plugins::call(&plugin(repo.host), "runs", repo.params(params)).await?;
+    Ok(page["runs"].as_array().cloned().unwrap_or_default())
+}
+
+/// One run, `{ run, jobs }`.
+pub(crate) async fn run(repo: &Repo, id: &Value) -> Result<Value, String> {
+    plugins::call(
+        &plugin(repo.host),
+        "run",
+        repo.params(json!({ "runId": id })),
+    )
+    .await
+}
+
+/// The last `lines` lines of a job's log.
+pub(crate) async fn log_tail(
+    repo: &Repo,
+    run: &Value,
+    job: &Value,
+    lines: usize,
+) -> Result<Vec<String>, String> {
+    let params = json!({ "runId": run, "jobId": job, "tail": lines });
+    let found = plugins::call(&plugin(repo.host), "jobLogExcerpt", repo.params(params)).await?;
+    Ok(found["lines"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|line| line["text"].as_str().map(str::to_owned))
+        .collect())
+}
+
+/// A run's id as its code host takes it from an address on it: GitHub's
+/// `/actions/runs/<id>`, or Bitbucket's `/pipelines/results/<number>`.
+pub(crate) fn run_in(address: &str) -> Option<Value> {
+    let number = |rest: &str| -> Option<String> {
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        (!digits.is_empty()).then_some(digits)
+    };
+    if let Some((_, rest)) = address.split_once("/actions/runs/") {
+        return number(rest)?.parse::<u64>().ok().map(Value::from);
+    }
+    let (_, rest) = address.split_once("/pipelines/results/")?;
+    number(rest).map(Value::from)
+}
+
+/// The job an address on a GitHub run points at, `/job/<id>`.
+pub(crate) fn job_in(address: &str) -> Option<Value> {
+    let (_, rest) = address.split_once("/job/")?;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse::<u64>().ok().map(Value::from)
+}
+
+/// A run id as typed, for the code host `repo` is on: GitHub's are numbers,
+/// Bitbucket's build numbers are sent as text.
+pub(crate) fn run_id(repo: &Repo, typed: &str) -> Value {
+    match (repo.host, typed.parse::<u64>()) {
+        ("github", Ok(number)) => number.into(),
+        _ => typed.into(),
+    }
 }
 
 /// Where a pull request stands.
