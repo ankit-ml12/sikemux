@@ -41,7 +41,11 @@ export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status,
             if (path === undefined || collapsed.has(path)) return REVIEW_HEADER_HEIGHT;
             return estimate(path);
         },
-        getItemKey: (index) => paths[index] ?? index,
+        // A file folded and the same file open are told apart, so either is measured afresh rather than keeping the other's height.
+        getItemKey: (index) => {
+            const path = paths[index];
+            return path === undefined ? index : `${collapsed.has(path) ? "folded" : "open"}:${path}`;
+        },
         overscan: 2,
         initialRect: { width: 1000, height: 800 },
     });
@@ -52,10 +56,6 @@ export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status,
             return next.size === current.size ? current : next;
         });
     }, [pathSet]);
-
-    useEffect(() => {
-        virtualizer.measure();
-    }, [collapsed, paths, virtualizer]);
 
     const scrollTargets = useRef({ pathIndex, virtualizer });
     scrollTargets.current = { pathIndex, virtualizer };
