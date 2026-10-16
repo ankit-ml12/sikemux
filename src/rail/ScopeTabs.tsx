@@ -1,7 +1,7 @@
 import type { AgentRailScope } from "../state/types";
 import { IconFolder, IconStack } from "../ui/Icons";
 
-/** This project, by name, or every open project. */
+/** This project, by name, or every open project, as one track the choice slides along. */
 export function ScopeTabs({
     scope,
     projectName,
@@ -14,7 +14,8 @@ export function ScopeTabs({
     onChange: (scope: AgentRailScope) => void;
 }) {
     return (
-        <div className="scope-tabs" role="tablist" aria-label="Which projects">
+        <div className={`scope-track${scope === "all" ? " is-all" : ""}`} role="tablist" aria-label="Which projects">
+            <span className="scope-thumb" aria-hidden="true" />
             <button type="button" role="tab" aria-selected={scope === "project"} aria-label={projectName} onClick={() => onChange("project")}>
                 <IconFolder size={13} />
                 <span className="scope-name">{projectName}</span>
