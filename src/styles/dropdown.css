@@ -188,6 +188,9 @@
     flex: 0 0 auto;
     color: var(--acc);
 }
+.dd-menu.check-at-end .dd-check {
+    order: 1;
+}
 .dd-item-label {
     flex: 1 1 auto;
     min-width: 0;

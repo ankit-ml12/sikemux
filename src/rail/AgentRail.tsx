@@ -508,6 +508,7 @@ function AgentHeader({
                             })),
                         ]}
                         menuWidth={200}
+                        checkAtEnd
                         onChange={(value) => {
                             if (value === ALL_AGENTS) return cmd.setAgentRailAllAgents(true);
                             setType(value as AgentType);
