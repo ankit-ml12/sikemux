@@ -104,6 +104,8 @@
      * hovered row is what made the rails read as decorated rather than dense. */
     --surface-hover: color-mix(in oklab, var(--ink) 6%, transparent);
     --surface-active: color-mix(in oklab, var(--ink) 10%, transparent);
+    /* The row or tab you are on: a step above hover, in the same neutral ink. */
+    --surface-chosen: color-mix(in oklab, var(--ink) 9%, transparent);
     /* The one place a row is allowed to take the accent: current selection. */
     --surface-selected: color-mix(in oklab, var(--acc) 14%, transparent);
 
