@@ -147,6 +147,17 @@
     cursor: auto;
 }
 
+/* The row's own padding is the gap between messages, so a thought or tool line
+   at either end of one does not add its margin to it. */
+.chat-message-content > .chat-thought:first-child,
+.chat-message-content > .chat-tools:first-child {
+    margin-top: 0;
+}
+.chat-message-content > .chat-thought:last-child,
+.chat-message-content > .chat-tools:last-child {
+    margin-bottom: 0;
+}
+
 /* A strip that appeared on hover would resize the row under the pointer, so
    it always holds its height and only fades, and the whole turn is the thing
    you point at. */
