@@ -1124,7 +1124,10 @@ impl Reader {
                 let summary = text(message, "summary");
                 // Work started outside any tracked task still wakes the agent.
                 if !self.data.tasks.contains_key(&id) && !self.data.subagents.contains_key(&id) {
-                    if self.data.foreground.contains_key(&id) {
+                    // A resumed session reports every task its last process left behind as stopped.
+                    if self.data.foreground.contains_key(&id)
+                        || states::outcome(&status) == Some(states::Outcome::Stopped)
+                    {
                         return;
                     }
                     let name = summary
