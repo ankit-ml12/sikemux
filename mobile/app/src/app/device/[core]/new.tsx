@@ -7,12 +7,14 @@ import type { ConnectionLike } from '@sikemux/native';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
 import { ComposerAttachments } from '@/chat/Attachments';
+import { ChatTitle } from '@/chat/ChatTitle';
 import { AttachSheet, YoloToggle, type Source } from '@/chat/Composer';
 import { ComposerInput } from '@/chat/ComposerInput';
 import { pickFiles, pickPhotos } from '@/chat/pick';
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type Attachment } from '@/chat/session';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf, useLive } from '@/devices/hub';
+import { chatTitle } from '@/devices/words';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
@@ -163,7 +165,7 @@ export default function NewChat() {
         setStarted(agentId);
       }
       await live.connection.prompt(agentId, text, await upload(live.connection, agentId));
-      router.replace(`/device/${core}/chat/${agentId}`);
+      router.replace({ pathname: '/device/[core]/chat/[agent]', params: { core, agent: agentId, started: '1' } });
     } catch (error) {
       busy.current = false;
       haptics.failure();
@@ -174,7 +176,7 @@ export default function NewChat() {
 
   return (
     <Screen>
-      <Nav back="Cancel" title="New chat" />
+      <Nav title={launcher ? <ChatTitle provider={launcher.provider} title={chatTitle({ provider: launcher.provider })} /> : undefined} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={styles.welcome}>
           {launcher ? <AgentIcon provider={launcher.provider} size={40} /> : null}
@@ -295,8 +297,6 @@ const makeStyles = (colors: Palette) => {
       justifyContent: 'center',
       gap: 12,
       paddingHorizontal: 28,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
     },
     welcomeTitle: { fontFamily: fonts.uiSemibold, fontSize: 20, letterSpacing: -0.55, color: colors.ink },
     problem: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, textAlign: 'center' },

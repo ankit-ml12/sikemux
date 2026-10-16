@@ -12,6 +12,7 @@ import { activeToolLabel } from '@mac/chat/toolLabels';
 import { outlivesFold, workFolds, type WorkFold } from '@mac/chat/transcript';
 import type { ChatMessage } from '@mac/chat/types';
 import { ChatMenu } from '@/chat/ChatMenu';
+import { ChatTitle } from '@/chat/ChatTitle';
 import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext } from '@/chat/folds';
 import { useTranscriptScroll } from '@/chat/transcriptScroll';
@@ -29,7 +30,7 @@ import { deviceName } from '@/devices/paired';
 import { agentLabel } from '@mac/agents/catalog';
 import { chatTitle } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
-import { AgentIcon, Icon } from '@/ui/Icon';
+import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/controls';
 import { pauseBackdrop } from '@/ui/motion';
 import { goBack } from '@/ui/navigate';
@@ -249,22 +250,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   return (
     <Screen>
       <Nav
-        title={
-          <>
-            <AgentIcon provider={provider} size={17} />
-            <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
-              {info?.name ? (
-                <>
-                  {info.name}
-                  <Text style={styles.titleDot}> · </Text>
-                  <Text style={styles.titleAfterName}>{title}</Text>
-                </>
-              ) : (
-                title
-              )}
-            </Text>
-          </>
-        }
+        title={<ChatTitle provider={provider} name={info?.name} title={title} />}
         end={
           <Pressable
             onPress={() => setMenu(true)}
@@ -499,9 +485,6 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    title: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink, flexShrink: 1 },
-    titleDot: { color: colors.inkFaint },
-    titleAfterName: { fontFamily: fonts.uiMedium, color: colors.tertiary },
     more: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     transcript: { flex: 1 },
     alone: { justifyContent: 'flex-end' },

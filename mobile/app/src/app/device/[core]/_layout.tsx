@@ -32,7 +32,12 @@ export default function DeviceLayout() {
     <PaletteProvider value={palette}>
       <BackdropContext.Provider value={backdrop}>
         <StatusBar style={isLight(palette) ? 'dark' : 'light'} />
-        <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: palette.ground } }} />
+        <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: palette.ground } }}>
+          <Stack.Screen
+            name="chat/[agent]"
+            options={({ route }) => ({ animation: (route.params as { started?: string } | undefined)?.started ? 'none' : 'default' })}
+          />
+        </Stack>
       </BackdropContext.Provider>
     </PaletteProvider>
   );
