@@ -425,7 +425,7 @@ function UnderBar({ height, open, bottom }: { height: number; open: Animated.Ani
         <Rect x="0" y="0" width="100%" height="100%" fill="url(#over-home)" />
       </Svg>
       <Animated.View
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: height + FADE, backgroundColor: '#000', opacity: open }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom, backgroundColor: '#000', opacity: open }}
       />
     </View>
   );
