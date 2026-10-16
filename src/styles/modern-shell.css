@@ -1343,14 +1343,28 @@ textarea,
  * the bottom edge — it collided with the button's rounded corner.
  */
 .agent-header-btn {
-    /* Each provider keeps its full mark colour; the tile's border and tint mark the selected one. */
+    /* Only the selected provider shows its colour and border, so a long row stays quiet. */
     color: var(--agent-provider);
     background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 55%), transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 66%, transparent);
+    box-shadow: none;
+}
+
+.agent-header-btn > * {
+    opacity: 0.45;
+    filter: grayscale(1);
+    transition:
+        opacity 90ms,
+        filter 90ms;
 }
 
 .agent-header-btn:hover:not(:disabled) {
     color: var(--agent-provider);
+}
+
+.agent-header-btn:hover:not(:disabled) > *,
+.agent-header-btn.active > * {
+    opacity: 1;
+    filter: none;
 }
 
 .agent-header-btn.active {
