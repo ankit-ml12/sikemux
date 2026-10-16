@@ -2,7 +2,6 @@
 
 .git-compose {
     flex: 0 0 auto;
-    border-bottom: 1px solid var(--border);
 }
 .git-compose-message {
     display: block;

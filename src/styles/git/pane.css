@@ -6,11 +6,15 @@
     outline: none;
 }
 
+/* The changes view is panels on the pane's picture: the commit box, the files, the history and the review,
+   each with its own edge and corner and a gap between them, never a shared line. */
 .git-body {
     display: flex;
     flex: 1;
+    gap: var(--space-2);
     min-height: 0;
     width: 100%;
+    padding: 0 var(--space-2) var(--space-2);
 }
 
 .git-left {
@@ -20,29 +24,48 @@
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
+    gap: var(--space-2);
     min-height: 0;
-    overflow: hidden;
 }
-/* The hairline between the columns is also the handle that resizes them; it reaches a few pixels past the line so it is easy to grab. */
+.git-left > .git-compose,
+.git-left > .git-list,
+.git-left > .git-history,
+.git-body > .git-right {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: color-mix(in oklab, var(--surface) 45%, transparent);
+}
+.git-left > .git-list {
+    padding-top: 6px;
+}
+/* The gap between the columns is the handle that resizes them; a line shows in it only while it is in hand. */
 .git-split {
     position: relative;
     z-index: 3;
     flex: 0 0 auto;
-    width: 1px;
-    background: var(--border);
+    width: var(--space-2);
+    margin: 0 calc(-1 * var(--space-2));
     cursor: col-resize;
     outline: none;
     touch-action: none;
+}
+.git-split::before,
+.git-left > .git-history-split::before {
+    content: "";
+    position: absolute;
+    background: transparent;
     transition: background var(--dur-1);
 }
 .git-split::before {
-    content: "";
-    position: absolute;
-    inset: 0 -4px;
+    inset: 8px calc(50% - 0.5px);
 }
-.git-split:hover,
-.git-split:active,
-.git-split:focus-visible {
+.git-left > .git-history-split {
+    position: relative;
+}
+.git-left > .git-history-split::before {
+    inset: calc(50% - 0.5px) 8px;
+}
+.git-split:is(:hover, :active, :focus-visible)::before,
+.git-left > .git-history-split:is(:hover, :active, :focus-visible)::before {
     background: var(--acc-line);
-    box-shadow: 0 0 0 1px var(--acc-line);
 }

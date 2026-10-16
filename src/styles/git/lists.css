@@ -80,33 +80,15 @@
     flex: 0 0 auto;
     min-height: 33px;
     overflow: hidden;
-    border-top: 1px solid var(--border);
 }
-/* Open, the history's top hairline is the handle that resizes it against the files. */
-.git-history-split + .git-history {
-    border-top: 0;
-}
-.git-history-split {
-    position: relative;
-    z-index: 3;
+/* Open, the gap between the files and the history is the handle that resizes them. */
+.git-left > .git-history-split {
     flex: 0 0 auto;
-    height: 1px;
-    background: var(--border);
+    height: var(--space-2);
+    margin: calc(-1 * var(--space-2)) 0;
     cursor: row-resize;
     outline: none;
     touch-action: none;
-    transition: background var(--dur-1);
-}
-.git-history-split::before {
-    content: "";
-    position: absolute;
-    inset: -4px 0;
-}
-.git-history-split:hover,
-.git-history-split:active,
-.git-history-split:focus-visible {
-    background: var(--acc-line);
-    box-shadow: 0 0 0 1px var(--acc-line);
 }
 /* A long file list above grows to fit its rows and would squeeze an open panel out, so an open panel keeps a usable
    share of the column. One dragged to a height of its own keeps only the handle's floor. */
