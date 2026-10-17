@@ -179,6 +179,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: src-tauri
+          # zip 4 only reaches us through tauri-plugin-updater on Windows, which we do not ship;
+          # no updater release takes zip 9 yet. Drop these once one does.
+          ignore: RUSTSEC-2026-0367,RUSTSEC-2026-0368,RUSTSEC-2026-0369
 
       - name: Prepare Tauri resource placeholder
         run: mkdir -p src-tauri/icons/build && touch src-tauri/icons/build/Assets.car
