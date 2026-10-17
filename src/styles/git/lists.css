@@ -272,7 +272,7 @@
     position: absolute;
     top: -1px;
     bottom: -1px;
-    left: 10.5px;
+    left: 10px;
     width: 1px;
     background: var(--tree-spine);
 }
@@ -280,8 +280,8 @@
     content: "";
     position: absolute;
     top: 50%;
-    left: 11.5px;
-    width: 5px;
+    left: 11px;
+    width: 6px;
     height: 1px;
     background: var(--tree-tick);
 }
@@ -299,10 +299,10 @@
     display: none;
 }
 .git-file-row[data-first]::before {
-    top: -7px;
+    top: -11px;
 }
 .git-file-row[data-first][data-last]::before {
-    height: calc(50% + 7.5px);
+    height: calc(50% + 11.5px);
 }
 .git-file-group.follows {
     margin-top: var(--space-1h);
