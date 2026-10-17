@@ -101,6 +101,12 @@
         display: none;
       }
 
+      /* The window drops below the closed island, leaving a gap. */
+      .has-notch iframe {
+        top: 54px;
+        height: calc(100% - 81px);
+      }
+
       .app-view {
         display: none;
       }
@@ -150,6 +156,7 @@
         const state = NOTCH_STATES[notch];
         if (state) image.src = `/__showcase/notch/${state}.png`;
         else image.removeAttribute("src");
+        document.documentElement.classList.toggle("has-notch", Boolean(state));
         notchButton.textContent = `Notch: ${notch}`;
       }
       notchButton.addEventListener("click", () => {
