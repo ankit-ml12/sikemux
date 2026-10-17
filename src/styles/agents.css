@@ -521,6 +521,9 @@
 }
 /* Open files lead the project tree in the same scroll, and the tree's head
    below them pins to the top once they have scrolled away. */
+.ed-tree-scroll:has(> .ed-tree-lead) {
+    padding-top: 0;
+}
 .ed-tree-lead + .ed-tree-head {
     position: sticky;
     top: 0;
