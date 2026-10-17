@@ -36,6 +36,7 @@ import type {
     ProviderProfileSelection,
     RecentEntry,
     RailDensity,
+    MidTurnSend,
     AgentRailScope,
     PinnedChat,
     DiffTarget,
@@ -106,6 +107,7 @@ export interface DomainState {
     /** The person was told once that terminals keep running after Sikemux quits. */
     keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
+    midTurnSend: MidTurnSend;
     /** The agent rail shows every CLI's chats instead of one provider's. */
     agentRailAllAgents: boolean;
     /** Providers whose chats move to the next signed-in account when one runs out of usage. */
@@ -170,6 +172,8 @@ export interface ViewState {
 
     pickerOpen: boolean;
     pickerMode: PickerMode;
+    /** The agent the project picker is choosing a new project for, or null when it opens projects. */
+    pickerMovingAgentId: string | null;
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     newTabPaletteOpen: boolean;
@@ -307,6 +311,7 @@ export const useStore = create<StoreState>(() => {
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
         railDensity: "comfortable",
+        midTurnSend: "steer",
         agentRailAllAgents: false,
         accountAutoSwitch: {},
         agentRailScope: "project",
@@ -329,6 +334,7 @@ export const useStore = create<StoreState>(() => {
         pluginManifests: [],
         pickerOpen: false,
         pickerMode: "all",
+        pickerMovingAgentId: null,
         agentPaletteOpen: false,
         filePaletteOpen: false,
         newTabPaletteOpen: false,
