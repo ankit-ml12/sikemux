@@ -1,5 +1,5 @@
 import { agentApi, type AgentSession } from "../../api/agents";
-import type { AcpChat } from "../../api/acp";
+import { acpApi, type AcpChat } from "../../api/acp";
 import { agentNamesApi } from "../../api/agentNames";
 import { runOfAgent } from "../../agents/agentBoard";
 import { waitsOnPerson, type AgentQuestion } from "../../agents/agentQuestions";
@@ -443,13 +443,57 @@ export function setAgentWorktree(id: string, cwd: string, worktree: AgentWorktre
     });
 }
 
-/** Moves a chat that has not started yet into another project, opening the project if it is not open. */
-export function moveAgentToProject(id: string, cwd: string): void {
+/** Providers whose saved chat can be filed under another project once it has started. */
+const RELOCATABLE_SESSIONS: ReadonlySet<AgentType> = new Set(["claude", "codex"]);
+
+/** Whether the agent can move to another project now: before its first message, or while a Claude or Codex chat sits idle. */
+export function canMoveAgentToProject(state: StoreState, agent: Agent): boolean {
+    if (agent.worktree) return false;
+    if (!agent.resumeId) return true;
+    if (!RELOCATABLE_SESSIONS.has(agent.type)) return false;
+    if (agent.launchState === "dormant") return true;
+    const backend = state.agentActivity[agent.id]?.backendState;
+    return backend !== "working" && backend !== "blocked" && !agentHasBackgroundWork(state, agent.id);
+}
+
+/**
+ * Moves an agent into another project, opening the project if it is not open.
+ * A started chat is stopped, its saved session filed under the new folder, then resumed there.
+ */
+export async function moveAgentToProject(id: string, cwd: string): Promise<void> {
+    const state = getState();
+    const agent = state.agents[id];
+    const winId = agentWindowId(state, id);
+    const fromId = winId ? ownerSessionId(state, winId) : null;
+    if (!agent || !fromId || !canMoveAgentToProject(state, agent)) return;
+    const fromCwd = agent.cwd || state.sessions[fromId].cwd;
+    if (fromCwd === cwd) return;
+    const resumeId = agent.resumeId;
+    const awake = agent.launchState !== "dormant";
+    if (resumeId) {
+        sleepAgents([id]);
+        try {
+            await acpApi.stop(id).catch(swallow("stop chat"));
+            await agentApi.relocateSession(agent.type, fromCwd, cwd, resumeId, profileOf(state, agent)?.configPath);
+        } catch (error) {
+            if (awake) resumeAgent(id);
+            reportError("move chat")(error);
+            return;
+        }
+    }
+    placeAgentInProject(id, cwd);
+    if (resumeId) {
+        invalidate((kind) => kind === "agents.sessions");
+        if (awake) resumeAgent(id);
+    }
+}
+
+function placeAgentInProject(id: string, cwd: string): void {
     mutate((d) => {
         const agent = d.agents[id];
         const winId = agentWindowId(d, id);
         const fromId = winId ? ownerSessionId(d, winId) : null;
-        if (!agent || !winId || !fromId || agent.resumeId || agent.worktree) return;
+        if (!agent || !winId || !fromId) return;
         keepOpenedProjectInView(cwd);
         const toId = openProjectSession(d as unknown as StoreState, cwd);
         if (toId === fromId) return;
@@ -462,6 +506,7 @@ export function moveAgentToProject(id: string, cwd: string): void {
         agent.cwd = cwd;
         const root = d.windows[winId].root;
         if (root.type === "pane") root.cwd = cwd;
+        if (agent.resumeId) return;
         const configPath = profileOf(d, agent)?.configPath;
         const known = peekResource(agentSessionsR, agent.type, cwd, configPath)?.map((row) => row.id);
         if (known) agent.baselineSessionIds = [...new Set(known)];

@@ -39,7 +39,7 @@ pub async fn delete(
 
 /// The session's transcript and the provider's folder it sits in, refusing any
 /// path that would lead outside that folder.
-fn saved_transcript(
+pub(super) fn saved_transcript(
     agent: AgentKind,
     cwd: &str,
     session_id: &str,

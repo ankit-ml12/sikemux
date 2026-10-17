@@ -10,7 +10,19 @@ import { openShareDialog } from "../share/macShares";
 import { openBuddyPicker } from "../buddies/commands";
 import { getState } from "../state/store";
 import { AgentBuddy } from "../buddies/Buddy";
-import { IconClose, IconCopy, IconPencil, IconPin, IconPower, IconRotate, IconShare, IconShield, IconShieldBolt, IconTrash } from "../ui/Icons";
+import {
+    IconClose,
+    IconCopy,
+    IconFolder,
+    IconPencil,
+    IconPin,
+    IconPower,
+    IconRotate,
+    IconShare,
+    IconShield,
+    IconShieldBolt,
+    IconTrash,
+} from "../ui/Icons";
 
 /**
  * The menu an agent's tab, its header and its rail row open. `others` are the agents "Close Others" closes.
@@ -57,6 +69,12 @@ export function agentMenu(
                   },
               ]
             : []),
+        {
+            label: "Move to Project…",
+            icon: menuIcon(IconFolder),
+            disabled: !cmd.canMoveAgentToProject(getState(), agent),
+            run: () => cmd.openMoveToProject(agent.id),
+        },
         ...(agent.worktree
             ? [
                   { sep: true },

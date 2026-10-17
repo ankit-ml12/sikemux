@@ -9,7 +9,8 @@ export const setHome = (home: string): void => setState({ home });
 export const setLastSessionId = (id: string): void => setState({ lastSessionId: id });
 export const setTerminalTitle = (paneId: string, title: string): void =>
     setState((s) => ({ terminalTitles: { ...s.terminalTitles, [paneId]: title } }));
-export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode });
+export const openPicker = (mode: PickerMode = "all"): void => setState({ pickerOpen: true, pickerMode: mode, pickerMovingAgentId: null });
+export const openMoveToProject = (agentId: string): void => setState({ pickerOpen: true, pickerMode: "projects", pickerMovingAgentId: agentId });
 export const closePicker = (): void => setState({ pickerOpen: false });
 // The agent picker is project-scoped and opens over the agent view.
 export const openAgentPalette = (): void => {

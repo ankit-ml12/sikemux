@@ -184,6 +184,8 @@ export const agentApi = {
         invoke<void>("agent_session_rename", { agent, cwd, sessionId, title, executablePath, configPath }),
     deleteSession: (agent: AgentType, cwd: string, sessionId: string, executablePath?: string, configPath?: string): Promise<void> =>
         invoke<void>("agent_session_delete", { agent, cwd, sessionId, executablePath, configPath }),
+    relocateSession: (agent: AgentType, fromCwd: string, toCwd: string, sessionId: string, configPath?: string): Promise<void> =>
+        invoke<void>("agent_session_relocate", { agent, fromCwd, toCwd, sessionId, configPath }),
     watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
         invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),
     watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),

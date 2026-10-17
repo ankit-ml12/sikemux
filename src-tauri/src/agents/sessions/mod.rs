@@ -1,6 +1,7 @@
 pub(crate) mod context;
 pub(crate) mod delete;
 pub(crate) mod recent;
+pub(crate) mod relocate;
 pub(crate) mod rename;
 
 use std::time::Duration;

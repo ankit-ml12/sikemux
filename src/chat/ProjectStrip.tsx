@@ -55,7 +55,7 @@ function ProjectSwitcher({ agentId, cwd, onClose }: { agentId: string; cwd: stri
     const pick = (choice: Choice | undefined) => {
         if (!choice) return;
         onClose();
-        if (choice.path !== cwd) cmd.moveAgentToProject(agentId, choice.path);
+        if (choice.path !== cwd) void cmd.moveAgentToProject(agentId, choice.path);
     };
 
     const grouped = !query.trim();

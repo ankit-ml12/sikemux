@@ -1,5 +1,5 @@
 //! The sessions each agent CLI saves on disk: listing them, their titles,
-//! paging them for the Recent list, searching them, renaming and deleting them.
+//! paging them for the Recent list, searching them, renaming, moving and deleting them.
 
 mod claude;
 mod codex;
@@ -12,6 +12,7 @@ mod omp;
 mod opencode;
 mod pi;
 pub mod recent;
+pub mod relocate;
 pub mod rename;
 pub mod roots;
 pub mod search;
