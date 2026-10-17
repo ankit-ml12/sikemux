@@ -314,6 +314,9 @@
 }
 .tb-run-menu {
     min-width: 260px;
+    max-height: min(440px, calc(100vh - 96px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 .tb-run-menu .env-dd-item {
     border: 1px solid transparent;
