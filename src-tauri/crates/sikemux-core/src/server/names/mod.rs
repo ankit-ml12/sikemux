@@ -23,7 +23,7 @@ const MAX_NAME_CHARS: usize = 24;
 /// How many agents below one the person started may start agents of their own.
 const MAX_DEPTH: usize = 2;
 const MAX_CHILDREN: usize = 6;
-const MAX_SPAWNED_PER_PROJECT: usize = 8;
+const MAX_SPAWNED_PER_PROJECT: usize = 20;
 /// How many closed agents' sessions are kept, newest first.
 const MAX_CLOSED_SESSIONS: usize = 512;
 
