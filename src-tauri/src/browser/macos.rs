@@ -8,11 +8,13 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Once, OnceLock};
 use std::time::{Duration, Instant};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Bool, Imp, ProtocolObject, Sel};
+use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
 use objc2::{
     define_class, msg_send, sel, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly,
 };
@@ -1387,6 +1389,12 @@ define_class!(
                 handler.call((Retained::as_ptr(&chosen),));
                 return;
             }
+            // The file chooser blocks the whole app and brings it to the front, so
+            // an agent uploads through `browser_upload` instead.
+            if super::input::agent_input_is_latest() {
+                handler.call((std::ptr::null(),));
+                return;
+            }
             match self.ivars().inner.as_ref().filter(|inner| {
                 inner.respondsToSelector(sel!(
                     webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:
@@ -1726,6 +1734,74 @@ pub fn install_shortcuts(app: AppHandle) {
     };
     SHORTCUT_MONITOR.with(|slot| *slot.borrow_mut() = monitor);
     watch_the_person();
+}
+
+static TABS_BEING_MADE: AtomicUsize = AtomicUsize::new(0);
+static ORIGINAL_ACTIVATE: OnceLock<Imp> = OnceLock::new();
+static ORIGINAL_ACTIVATE_IGNORING: OnceLock<Imp> = OnceLock::new();
+
+type Activate = unsafe extern "C-unwind" fn(*mut AnyObject, Sel);
+type ActivateIgnoring = unsafe extern "C-unwind" fn(*mut AnyObject, Sel, Bool);
+
+/// Runs `make` without letting it bring Sikemux to the front. Making a
+/// webview activates the whole app, which would take the keyboard from
+/// whatever other app the person is typing in.
+pub fn without_activating<T>(make: impl FnOnce() -> T) -> T {
+    static GUARD: Once = Once::new();
+    GUARD.call_once(guard_activation);
+    TABS_BEING_MADE.fetch_add(1, Ordering::AcqRel);
+    let made = make();
+    TABS_BEING_MADE.fetch_sub(1, Ordering::AcqRel);
+    made
+}
+
+// SAFETY: only the Objective-C runtime calls this, as NSApplication's `activate`.
+unsafe extern "C-unwind" fn activate(app: *mut AnyObject, selector: Sel) {
+    if TABS_BEING_MADE.load(Ordering::Acquire) > 0 {
+        return;
+    }
+    if let Some(original) = ORIGINAL_ACTIVATE.get() {
+        // SAFETY: `original` is the implementation this function replaced, so it
+        // takes the same arguments.
+        unsafe { std::mem::transmute::<Imp, Activate>(*original)(app, selector) };
+    }
+}
+
+// SAFETY: only the Objective-C runtime calls this, as NSApplication's
+// `activateIgnoringOtherApps:`.
+unsafe extern "C-unwind" fn activate_ignoring(app: *mut AnyObject, selector: Sel, ignoring: Bool) {
+    if TABS_BEING_MADE.load(Ordering::Acquire) > 0 {
+        return;
+    }
+    if let Some(original) = ORIGINAL_ACTIVATE_IGNORING.get() {
+        // SAFETY: `original` is the implementation this function replaced, so it
+        // takes the same arguments.
+        unsafe { std::mem::transmute::<Imp, ActivateIgnoring>(*original)(app, selector, ignoring) };
+    }
+}
+
+fn guard_activation() {
+    let Some(class) = AnyClass::get(c"NSApplication") else {
+        return;
+    };
+    if let Some(method) = class.instance_method(sel!(activate)) {
+        let replacement: Activate = activate;
+        // SAFETY: `activate` has the signature of `-[NSApplication activate]` and
+        // calls the implementation it replaces, which is stored before anything
+        // can call it.
+        let original =
+            unsafe { method.set_implementation(std::mem::transmute::<Activate, Imp>(replacement)) };
+        let _ = ORIGINAL_ACTIVATE.set(original);
+    }
+    if let Some(method) = class.instance_method(sel!(activateIgnoringOtherApps:)) {
+        let replacement: ActivateIgnoring = activate_ignoring;
+        // SAFETY: `activate_ignoring` has the signature of `-[NSApplication
+        // activateIgnoringOtherApps:]` and calls the implementation it replaces.
+        let original = unsafe {
+            method.set_implementation(std::mem::transmute::<ActivateIgnoring, Imp>(replacement))
+        };
+        let _ = ORIGINAL_ACTIVATE_IGNORING.set(original);
+    }
 }
 
 /// The person's own pointer and modifier keys, which AppKit delivers through

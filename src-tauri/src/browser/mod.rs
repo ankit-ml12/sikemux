@@ -478,13 +478,18 @@ impl BrowserManager {
             .unwrap_or(PARKED_SIZE);
 
         let builder = self.tab_builder(app, agent_id, tab_id, url, user_agent);
-        let webview = window
-            .add_child(
+        let add = || {
+            window.add_child(
                 builder,
                 LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN),
                 LogicalSize::new(width, height),
             )
-            .map_err(window_error)?;
+        };
+        #[cfg(target_os = "macos")]
+        let webview = macos::without_activating(add);
+        #[cfg(not(target_os = "macos"))]
+        let webview = add();
+        let webview = webview.map_err(window_error)?;
         let _ = webview.hide();
         #[cfg(target_os = "macos")]
         {
