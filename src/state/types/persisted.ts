@@ -11,6 +11,7 @@ import type {
     ProviderProfile,
     ProviderProfileSelection,
     RailDensity,
+    MidTurnSend,
     AgentRailScope,
     PinnedChat,
     RecentEntry,
@@ -102,6 +103,7 @@ export interface PersistedPrefs {
     notificationsIntroduced?: boolean;
     keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;
+    midTurnSend?: MidTurnSend;
     agentRailAllAgents?: boolean;
     agentRailScope?: AgentRailScope;
     pinnedChats?: PinnedChat[];

@@ -10,6 +10,7 @@ import { registerPathDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
+import { useStore } from "../state/store";
 import { IconArrowUp, IconClose, IconPlus } from "../ui/Icons";
 import { FileTypeIcon } from "../ui/FileIcon";
 import { usePathRoots } from "./FileRef";
@@ -459,6 +460,7 @@ export function ChatComposer({
     }, [stopping]);
 
     const canSteerQueued = running && steerable && queuedCount > 0;
+    const steersByDefault = useStore((s) => s.midTurnSend) === "steer";
 
     const clear = () => {
         setDraft("");
@@ -678,7 +680,7 @@ export function ChatComposer({
                                 return;
                             }
                             if (finishDictationInto(paneRef.current)) return;
-                            send(hasPrimaryModifier(event.nativeEvent));
+                            send(hasPrimaryModifier(event.nativeEvent) !== steersByDefault);
                         }
                     }}
                 />
@@ -734,11 +736,13 @@ export function ChatComposer({
                             canSteerQueued
                                 ? `${PRIMARY_SHORTCUT}↵ steers ${queuedCount === 1 ? "the queued message" : "every queued message"} into this turn`
                                 : running && steerable
-                                  ? `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it`
+                                  ? steersByDefault
+                                      ? `Steers into this turn — ${PRIMARY_SHORTCUT}↵ queues behind it`
+                                      : `Queues behind this turn — ${PRIMARY_SHORTCUT}↵ steers into it`
                                   : undefined
                         }
                         disabled={blocked || reading || (!drafted && !dictating)}
-                        onClick={() => send()}>
+                        onClick={() => send(steersByDefault)}>
                         <IconArrowUp size={15} />
                     </button>
                 )}

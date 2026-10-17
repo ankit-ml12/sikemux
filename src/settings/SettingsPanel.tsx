@@ -512,6 +512,7 @@ function AgentsPage() {
     const restore = useStore((s) => s.restoreAgentTabs);
     const notifications = useStore((s) => s.agentNotifications);
     const density = useStore((s) => s.railDensity);
+    const midTurnSend = useStore((s) => s.midTurnSend);
     const profiles = useStore((s) => s.providerProfiles);
     const defaultPermissionMode = useStore((s) => s.defaultAgentPermissionMode);
     const [draft, setDraft] = useState<ProviderProfile>(
@@ -681,6 +682,21 @@ function AgentsPage() {
                             </button>
                         }
                     />
+                    <SettingsRow
+                        label="Sending while an agent works"
+                        desc={`What ↵ does mid-turn. ${PRIMARY_SHORTCUT}↵ does the other.`}
+                        wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="sending while an agent works"
+                            value={midTurnSend}
+                            options={[
+                                { value: "steer", label: "Steer", detail: "The agent reads it in the running turn" },
+                                { value: "queue", label: "Queue", detail: "It waits until the turn ends" },
+                            ]}
+                            onChange={(value) => cmd.setMidTurnSend(value as "steer" | "queue")}
+                        />
+                    </SettingsRow>
                     <SettingsRow label="Rail density" desc="Compact fits more sessions while keeping every state symbol visible." wide>
                         <Dropdown
                             className="settings-dd"

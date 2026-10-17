@@ -657,7 +657,7 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
         typeDraft(editor, "Actually, check the other file");
-        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
         expect(mocks.steer).not.toHaveBeenCalled();
 
         fireEvent.click(await screen.findByRole("button", { name: "Steer the running turn with Actually, check the other file" }));
@@ -667,7 +667,7 @@ describe("AgentChatPane", () => {
         expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
     });
 
-    it("steers straight from the composer on the shortcut", async () => {
+    it("steers straight from the composer on Enter", async () => {
         mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
@@ -675,7 +675,7 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
         typeDraft(editor, "Stop, wrong file");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
+        fireEvent.keyDown(editor, { key: "Enter" });
 
         await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Stop, wrong file", []));
         expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
@@ -689,9 +689,9 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
         typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
         typeDraft(editor, "And the rail");
-        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
         await screen.findByLabelText("2 queued");
 
         fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
@@ -701,7 +701,7 @@ describe("AgentChatPane", () => {
         expect(screen.queryByLabelText("2 queued")).not.toBeInTheDocument();
     });
 
-    it("steers the queue along with a message sent on the shortcut", async () => {
+    it("steers the queue along with a message sent mid-turn", async () => {
         mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
@@ -709,11 +709,11 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
         typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
         await screen.findByLabelText("1 queued");
 
         typeDraft(editor, "And the rail");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
+        fireEvent.keyDown(editor, { key: "Enter" });
 
         await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Then the tests\n\nAnd the rail", []));
         expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
@@ -727,9 +727,9 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
         typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
         typeDraft(editor, "And the rail");
-        fireEvent.keyDown(editor, { key: "Enter" });
+        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
 
         fireEvent.click(await screen.findByRole("button", { name: "Steer the running turn with every queued message" }));
 
@@ -783,7 +783,7 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
         typeDraft(editor, "Carry on");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
+        fireEvent.keyDown(editor, { key: "Enter" });
 
         await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Carry on", []));
     });

@@ -206,6 +206,8 @@ export interface PtyContext {
 }
 
 export type RailDensity = "comfortable" | "compact";
+/** What a message sent while the agent works does: goes into the running turn, or waits for it to end. */
+export type MidTurnSend = "steer" | "queue";
 /** Whether the agent rail lists the open project or every open project. */
 export type AgentRailScope = "project" | "all";
 

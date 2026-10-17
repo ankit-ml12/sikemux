@@ -25,6 +25,7 @@ export const setPaneStrength = (value: number): void => setState({ paneStrength:
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
+export const setMidTurnSend = (value: import("../types").MidTurnSend): void => setState({ midTurnSend: value });
 export const setAgentRailAllAgents = (value: boolean): void => setState({ agentRailAllAgents: value });
 export const setAccountAutoSwitch = (provider: AccountAgentType, on: boolean): void =>
     setState((s) => ({ accountAutoSwitch: { ...s.accountAutoSwitch, [provider]: on } }));

@@ -112,7 +112,7 @@ describe("ChatComposer + picker", () => {
         expect(draftOf(editor)).toBe("look at +main.ts please");
 
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(mocks.onSend).toHaveBeenCalledWith({ text: "look at +main.ts please", paths: ["/repo/src/main.ts"], context: [] }, false);
+        expect(mocks.onSend).toHaveBeenCalledWith({ text: "look at +main.ts please", paths: ["/repo/src/main.ts"], context: [] }, true);
     });
 
     it("leaves the + in place when Escape dismisses the picker", async () => {
@@ -163,7 +163,7 @@ describe("ChatComposer # and ! pickers", () => {
                     paths: [],
                     context: [{ uri: "https://github.com/o/r/issues/12", title: "#12 Login crashes", text: "Issue #12: Login crashes" }],
                 },
-                false,
+                true,
             ),
         );
         expect(mocks.load).toHaveBeenCalledWith(repo, "issue", 12);
@@ -177,7 +177,7 @@ describe("ChatComposer deliveries", () => {
         act(() => deliverToAgent("composer-agent", { context: [issue] }));
         expect(screen.getByTitle(issue.uri)).toHaveTextContent("#4 Flaky test");
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(mocks.onSend).toHaveBeenCalledWith({ text: "", paths: [], context: [issue] }, false);
+        expect(mocks.onSend).toHaveBeenCalledWith({ text: "", paths: [], context: [issue] }, true);
         expect(mocks.load).not.toHaveBeenCalled();
     });
 });
@@ -216,7 +216,7 @@ describe("sending while dictating", () => {
         expect(mocks.onSend).not.toHaveBeenCalled();
 
         act(() => handleVoiceEvent({ type: "transcript", text: "login redirect" }));
-        await waitFor(() => expect(mocks.onSend).toHaveBeenCalledWith({ text: "fix the login redirect", paths: [], context: [] }, false));
+        await waitFor(() => expect(mocks.onSend).toHaveBeenCalledWith({ text: "fix the login redirect", paths: [], context: [] }, true));
         pane.remove();
     });
 
