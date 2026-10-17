@@ -1635,7 +1635,6 @@ function GitWorkbench({
                     <IconChevron size={9} className="git-switch-chev" />
                 </button>
             </Tooltip>
-            <span className="git-tb-grow" />
             {overviewError && <span className="git-tb-chip error">git error</span>}
             {busy && (
                 <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
@@ -1675,6 +1674,7 @@ function GitWorkbench({
                 </button>
             </Tooltip>
             <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
+            <span className="git-tb-grow" />
         </div>
     );
 
