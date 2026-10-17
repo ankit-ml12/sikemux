@@ -53,6 +53,11 @@ const SUBAGENT_WAKE_GRACE: Duration = Duration::from_secs(3);
 /// How long a chat has to let go of its agent for an update before it is
 /// stopped and started again on its session instead.
 const RELEASE_WAIT: Duration = Duration::from_secs(5);
+/// An agent that stops by itself is started again, after a wait that doubles
+/// each time, until it has stopped this often within the window.
+const RESTART_WAIT: Duration = Duration::from_secs(1);
+const MAX_RESTARTS: usize = 3;
+const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
 
 pub(crate) enum ChatCommand {
     Prompt {
@@ -217,6 +222,8 @@ pub(crate) struct Chat {
     keeper: Keeper,
     /// The agent's process now.
     agent: Mutex<Option<KeptAgent>>,
+    /// When the agent was lately started again after it stopped by itself.
+    restarts: Mutex<std::collections::VecDeque<std::time::Instant>>,
 }
 
 impl Chat {
@@ -399,6 +406,31 @@ impl Chat {
     pub(crate) fn note_cli_version(&self, version: &str) {
         if let Ok(mut known) = self.cli_version.lock() {
             *known = Some(version.to_owned()).filter(|version| !version.is_empty());
+        }
+    }
+
+    /// How long to wait before starting the agent again after it stopped by
+    /// itself, or none once it has stopped too often lately.
+    pub(crate) fn restart_after(&self) -> Option<Duration> {
+        let now = std::time::Instant::now();
+        let mut restarts = self.restarts.lock().ok()?;
+        restarts.retain(|at| now.duration_since(*at) < RESTART_WINDOW);
+        if restarts.len() >= MAX_RESTARTS {
+            return None;
+        }
+        let wait = RESTART_WAIT * (1 << restarts.len());
+        restarts.push_back(now);
+        Some(wait)
+    }
+
+    /// Ends in the transcript the turn the agent was cut off in, so the one
+    /// that carries it on starts clean.
+    pub(crate) fn end_cut_turn(&self) {
+        if self.feed.in_turn() {
+            self.feed.emit(
+                ChatEventKind::TurnCompleted,
+                serde_json::json!({ "stopReason": "cancelled" }),
+            );
         }
     }
 
@@ -1253,6 +1285,7 @@ impl Chats {
             cli_version: Mutex::new(None),
             keeper,
             agent: Mutex::new(None),
+            restarts: Mutex::new(Default::default()),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1493,17 +1526,28 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
     }
 }
 
-/// What a chat whose turn a restart cut short is sent, to carry on.
-const CARRY_ON: &str = "Sikemux restarted while you were working on your last turn, so the turn stopped part-way. Check what got done, since a step that was cut off may not have finished, then carry on where you left off.";
+/// What an agent whose turn was cut short is sent to carry it on, `what`
+/// saying what cut it short.
+pub(crate) fn carry_on_prompt(what: &str) -> rebind::Replay {
+    rebind::Replay {
+        announce: None,
+        message_id: None,
+        text: format!("{what}, so your last turn stopped part-way. Check what got done, since a step that was cut off may not have finished, then carry on where you left off."),
+        paths: Vec::new(),
+        context: Vec::new(),
+    }
+}
 
-fn restart_notice(description: &str) -> Value {
+pub(crate) fn restart_notice(title: &str, description: &str) -> Value {
     serde_json::json!({
         "sessionUpdate": "notice",
         "severity": "warning",
-        "title": "Sikemux restarted while this agent was working",
+        "title": title,
         "description": description,
     })
 }
+
+const RESTARTED: &str = "Sikemux restarted while this agent was working";
 
 /// Takes up again every chat an earlier core was running when it stopped,
 /// but for those this core already runs. Each is listed at once, and starts
@@ -1596,29 +1640,20 @@ fn carry_on(
     kept: &KeptChat,
 ) {
     chat.feed.agent_gone();
-    if chat.feed.in_turn() {
-        chat.feed.emit(
-            ChatEventKind::TurnCompleted,
-            serde_json::json!({ "stopReason": "cancelled" }),
-        );
-    }
+    chat.end_cut_turn();
     let resumes = kept.reloadable && launch_spec.resume_id.is_some();
     let (replay, notice) = match (kept.working, resumes) {
         (true, true) => (
-            Some(rebind::Replay {
-                announce: None,
-                message_id: None,
-                text: CARRY_ON.to_owned(),
-                paths: Vec::new(),
-                context: Vec::new(),
-            }),
+            Some(carry_on_prompt("Sikemux restarted while you were working")),
             Some(restart_notice(
+                RESTARTED,
                 "It was asked to check what got done and carry on.",
             )),
         ),
         (true, false) => (
             kept.prompt.clone(),
             Some(restart_notice(
+                RESTARTED,
                 "This agent cannot load its saved conversation, so it started a new one on your last message.",
             )),
         ),

@@ -587,6 +587,16 @@ pub(crate) async fn run<B: Backend>(
             Woke::Command(Some(command)) => command,
             Woke::Command(None) => break Outcome::Ended(SessionEnd::Requested),
             Woke::Closed(reason) => {
+                let working = chat.turn_running() || chat.held.load(Ordering::Acquire);
+                let title = if working {
+                    "This agent stopped while it was working, and was started again"
+                } else {
+                    "This agent stopped, and was started again"
+                };
+                if let Some(rebind) = restart(&chat, &launch, &state, working, title, &reason).await
+                {
+                    break Outcome::Rebind(rebind);
+                }
                 if chat.running.load(Ordering::Acquire) {
                     let failure = error_message(&reason);
                     chat.turn_failing(&failure);
@@ -595,6 +605,10 @@ pub(crate) async fn run<B: Backend>(
                 break Outcome::Ended(SessionEnd::Exited);
             }
             Woke::Broken(reason) => {
+                let title = "This agent's session broke, and it was started again";
+                if let Some(rebind) = restart(&chat, &launch, &state, false, title, &reason).await {
+                    break Outcome::Rebind(rebind);
+                }
                 let failure = error_message(reason);
                 chat.turn_failing(&failure);
                 chat.emit(ChatEventKind::Error, failure);
@@ -687,8 +701,19 @@ pub(crate) async fn run<B: Backend>(
                         }
                         continue;
                     }
-                    let failure =
-                        error_message("The agent did not stop, so its session was restarted");
+                    let why = "It was still at work a while after it was asked to stop.";
+                    if state.reloadable {
+                        chat.running.store(false, Ordering::Release);
+                        chat.emit(
+                            ChatEventKind::TurnCompleted,
+                            json!({ "stopReason": "cancelled" }),
+                        );
+                    }
+                    let title = "This agent did not stop, so it was started again";
+                    if let Some(rebind) = restart(&chat, &launch, &state, false, title, why).await {
+                        break Outcome::Rebind(rebind);
+                    }
+                    let failure = error_message("The agent did not stop, so its session was ended");
                     chat.turn_failing(&failure);
                     chat.emit(ChatEventKind::Error, failure);
                     break Outcome::Ended(SessionEnd::Exited);
@@ -1102,6 +1127,40 @@ fn not_taken_over(chat: &Chat, launch: &ChatLaunch, error: &str) -> Outcome {
             Outcome::Ended(SessionEnd::Exited)
         }
     }
+}
+
+/// Starts the agent again on the chat's session after it stopped by itself,
+/// saying so in the chat, and carrying on the turn it was cut off in when
+/// `carry_on`. None when it cannot load its session, or has stopped too often
+/// lately.
+async fn restart(
+    chat: &Arc<Chat>,
+    launch: &ChatLaunch,
+    state: &SessionState,
+    carry_on: bool,
+    title: &str,
+    why: &str,
+) -> Option<Box<Rebind>> {
+    if !state.reloadable {
+        return None;
+    }
+    let launch = chat.relaunch(launch)?;
+    let wait = chat.restart_after()?;
+    chat.running.store(false, Ordering::Release);
+    chat.cancel_permissions();
+    chat.end_cut_turn();
+    tokio::time::sleep(wait).await;
+    Some(Box::new(Rebind {
+        launch,
+        replay: carry_on.then(|| {
+            super::super::carry_on_prompt(
+                "Your process stopped while you were working and Sikemux started you again",
+            )
+        }),
+        exhausted: Vec::new(),
+        signed_in_again: false,
+        notice: Some(super::super::restart_notice(title, why)),
+    }))
 }
 
 /// Starts turn `turn`, or says why it could not start.

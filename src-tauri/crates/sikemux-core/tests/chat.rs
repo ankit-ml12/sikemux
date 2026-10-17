@@ -542,23 +542,48 @@ async fn stopping_a_chat_ends_it() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_that_dies_says_it_exited() {
+async fn an_agent_that_dies_carries_on_until_it_has_died_too_often() {
     let core = TestCore::start();
     let (client, mut chat) = core.connect().await;
-    client
-        .acp_start(chat_launch("agent-h", "workspace-write"))
-        .await
-        .expect("start");
-    client
-        .acp_prompt(
-            "agent-h".into(),
-            None,
-            "exit 3".into(),
-            Vec::new(),
-            Vec::new(),
-        )
-        .await
-        .expect("prompt");
+    let history = tempfile::tempdir().expect("history");
+    let mut launch = chat_launch("agent-h", "workspace-write");
+    launch.env.insert(
+        "FAKE_ACP_DIR".into(),
+        history.path().to_string_lossy().into_owned(),
+    );
+    client.acp_start(launch).await.expect("start");
+    for restart in 0..4 {
+        client
+            .acp_prompt(
+                "agent-h".into(),
+                None,
+                "exit 3".into(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .await
+            .expect("prompt");
+        if restart == 3 {
+            break;
+        }
+        chat.until(|event| {
+            updates(std::slice::from_ref(event)).iter().any(|update| {
+                update["update"]["title"]
+                    == "This agent stopped while it was working, and was started again"
+            })
+        })
+        .await;
+        chat.until(|event| {
+            event.kind == ChatEventKind::TurnCompleted && event.payload["stopReason"] == "end_turn"
+        })
+        .await;
+        assert!(
+            chat.text()
+                .contains("Your process stopped while you were working"),
+            "{}",
+            chat.text()
+        );
+    }
     let ended = chat
         .until(|event| {
             event.kind == ChatEventKind::Status

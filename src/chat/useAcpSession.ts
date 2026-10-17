@@ -45,7 +45,6 @@ export function useAcpSession({
     const [restartKey, setRestartKey] = useState(0);
     const [recovery, setRecovery] = useState<Recovery | null>(null);
     const recoveryRef = useRef<Recovery | null>(null);
-    const lastResumeAtRef = useRef<number | null>(null);
     const queuedUpdatesRef = useRef<[string, Record<string, unknown>][]>([]);
     const updateFrameRef = useRef<number | null>(null);
     const updateTimerRef = useRef<number | null>(null);
@@ -78,7 +77,6 @@ export function useAcpSession({
     }, [connection, updateRecovery]);
 
     const retry = useCallback(() => {
-        lastResumeAtRef.current = Date.now();
         updateRecovery(agentRef.current.resumeId ? { phase: "resuming" } : null);
         setRestartKey((value) => value + 1);
     }, [updateRecovery]);
@@ -125,26 +123,10 @@ export function useAcpSession({
             if (!document.hidden && updateFrameRef.current === null) updateFrameRef.current = window.requestAnimationFrame(flushUpdates);
         };
 
-        /* An agent that dies under the chat — a crash, a rate limit, a laptop
-           waking up — comes back on its saved session. */
         const noteEnd = (event: AcpEvent) => {
             const end = sessionEndOf(event);
-            if (!end) return;
-            const now = Date.now();
-            const next = afterSessionEnd({
-                end,
-                resumeId: agentRef.current.resumeId,
-                resuming: recoveryRef.current?.phase === "resuming",
-                lastResumeAt: lastResumeAtRef.current,
-                now,
-            });
-            if (next === "resume") {
-                lastResumeAtRef.current = now;
-                updateRecovery({ phase: "resuming" });
-                setRestartKey((value) => value + 1);
-            } else if (next === "give-up") {
+            if (end && afterSessionEnd(end) === "give-up")
                 updateRecovery({ phase: "failed", detail: typeof event.payload.message === "string" ? event.payload.message : null });
-            }
         };
 
         /* The chat already runs on the new account, so the agent is taken up

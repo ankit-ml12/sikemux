@@ -1286,7 +1286,7 @@ describe("AgentChatPane", () => {
             emit("ready", { capabilities: {}, setup: {} });
         }
 
-        it("resumes on its saved session and says so quietly", async () => {
+        it("shows one the core gave up starting again, with the detail and a retry", async () => {
             let resumed!: () => void;
             mocks.start.mockImplementationOnce(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} }));
             mocks.start.mockImplementationOnce(
@@ -1296,52 +1296,40 @@ describe("AgentChatPane", () => {
                     }),
             );
             await openReady(saved);
-            emit("status", { state: "stopped", reason: "exited" });
+            emit("status", { state: "error", reason: "exited", message: "Process exited with 1: out of memory" });
+            expect(screen.getByText("Couldn't resume this chat")).toBeInTheDocument();
+            expect(screen.getByText("Process exited with 1: out of memory")).toHaveClass("chat-recovery-detail");
+            await act(async () => {});
+            expect(mocks.start).toHaveBeenCalledTimes(1);
 
+            fireEvent.click(screen.getByRole("button", { name: "Retry" }));
             await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
             expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeId: "session-1" }));
             expect(screen.getByText("Resuming…")).toBeInTheDocument();
-            expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
             await act(async () => resumed());
             await waitFor(() => expect(screen.queryByText("Resuming…")).not.toBeInTheDocument());
         });
 
-        it("never resumes a stop that was asked for", async () => {
+        it("never offers to resume a stop that was asked for", async () => {
             await openReady(saved);
             emit("status", { state: "stopped", reason: "requested" });
             await act(async () => {});
             expect(mocks.start).toHaveBeenCalledTimes(1);
-            expect(screen.queryByText("Resuming…")).not.toBeInTheDocument();
+            expect(screen.queryByText("Couldn't resume this chat")).not.toBeInTheDocument();
         });
 
-        it("gives up on a second death soon after, with the detail and a retry", async () => {
-            await openReady(saved);
-            emit("status", { state: "stopped", reason: "exited" });
-            await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
-            await waitFor(() => expect(screen.queryByText("Resuming…")).not.toBeInTheDocument());
-
-            emit("status", { state: "error", reason: "exited", message: "Process exited with 1: out of memory" });
-            expect(screen.getByText("Couldn't resume this chat")).toBeInTheDocument();
-            expect(screen.getByText("Process exited with 1: out of memory")).toHaveClass("chat-recovery-detail");
-            await act(async () => {});
-            expect(mocks.start).toHaveBeenCalledTimes(2);
-
-            fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-            await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(3));
-            expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeId: "session-1" }));
-        });
-
-        it("gives up when the resume itself fails to start", async () => {
+        it("says so when a retry fails to start", async () => {
             mocks.start.mockImplementationOnce(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} }));
             mocks.start.mockImplementationOnce(async () => {
                 throw new Error("session not found");
             });
             await openReady(saved);
             emit("status", { state: "stopped", reason: "exited" });
+            fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-            expect(await screen.findByText("Couldn't resume this chat")).toBeInTheDocument();
-            expect(screen.getByText("session not found")).toBeInTheDocument();
+            expect(await screen.findByText("session not found")).toBeInTheDocument();
+            expect(screen.getByText("Couldn't resume this chat")).toBeInTheDocument();
             expect(mocks.start).toHaveBeenCalledTimes(2);
         });
 
@@ -1360,6 +1348,7 @@ describe("AgentChatPane", () => {
         it("sends a message written while it resumes once it is back", async () => {
             await openReady(saved);
             emit("status", { state: "stopped", reason: "exited" });
+            fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
             const editor = screen.getByRole("textbox", { name: "Message agent" });
             typeDraft(editor, "carry on");
