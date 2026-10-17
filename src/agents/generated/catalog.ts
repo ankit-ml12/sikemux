@@ -50,7 +50,7 @@ export const AGENT_CATALOG = [
         deletableChats: false,
         bypass: false,
         install: "curl -fsSL https://pi.dev/install.sh | sh",
-        login: ["--terminal-login"],
+        login: null,
     },
     {
         type: "opencode",
