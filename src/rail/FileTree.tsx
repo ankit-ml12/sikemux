@@ -131,6 +131,7 @@ export const FileTree = memo(function FileTree({
     const [menu, setMenu] = useState<MenuState | null>(null);
     const rootScrollRef = useRef<HTMLDivElement>(null);
     const rowsRef = useRef<HTMLDivElement>(null);
+    const leadRef = useRef<HTMLDivElement>(null);
     const [rowsTop, setRowsTop] = useState(0);
     const hasLead = lead !== undefined;
     const rowButtonRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -193,7 +194,7 @@ export const FileTree = memo(function FileTree({
         const measure = () => setRowsTop(rows.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop);
         measure();
         const observer = new ResizeObserver(measure);
-        if (rows.previousElementSibling) observer.observe(rows.previousElementSibling);
+        if (leadRef.current) observer.observe(leadRef.current);
         observer.observe(scroll);
         return () => observer.disconnect();
     }, [hasLead]);
@@ -912,17 +913,17 @@ export const FileTree = memo(function FileTree({
                     data-root-path={cwd}
                     onContextMenu={(ev) => openMenu(ev, null)}>
                     {hasLead && (
-                        <div className="ed-tree-lead">
-                            <div
-                                onContextMenu={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                }}>
-                                {lead}
-                            </div>
-                            {head}
+                        <div
+                            ref={leadRef}
+                            className="ed-tree-lead"
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                            }}>
+                            {lead}
                         </div>
                     )}
+                    {hasLead && head}
                     <div
                         ref={rowsRef}
                         style={virtualized ? { position: "relative", width: "100%", height: treeVirtualizer.getTotalSize() } : undefined}>

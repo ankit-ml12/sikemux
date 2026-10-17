@@ -519,18 +519,15 @@
     background: var(--surface-chosen);
     color: var(--text-primary);
 }
-/* Open files lead the project tree in the same scroll and stay pinned over it,
-   with the tree's own head dividing the two. */
-.ed-tree-lead {
+/* Open files lead the project tree in the same scroll, and the tree's head
+   below them pins to the top once they have scrolled away. */
+.ed-tree-lead + .ed-tree-head {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
-}
-.ed-tree-lead > .ed-tree-head {
-    margin-top: var(--space-2);
+    margin: var(--space-2) -6px 0;
     border-top: 1px solid var(--border);
-    padding-top: var(--space-2);
+    background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 .rail-tab .agent-title {
     flex: 0 1 auto;
