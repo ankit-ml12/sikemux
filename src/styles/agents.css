@@ -524,6 +524,10 @@
 .ed-tree-scroll:has(> .ed-tree-lead) {
     padding-top: 0;
 }
+.ed-tree-lead {
+    margin-inline: -6px;
+    padding: var(--space-1) var(--gutter-rail) 0;
+}
 .ed-tree-lead + .ed-tree-head {
     position: sticky;
     top: 0;
