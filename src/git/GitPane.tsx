@@ -31,6 +31,7 @@ import {
     AgentIcon,
     IconCheckout,
     IconChevron,
+    IconCommit,
     IconCopy,
     IconDiscard,
     IconFetch,
@@ -64,7 +65,6 @@ import { gitStatusDecoration } from "./gitFileStatus";
 import { fileAgentNames, ownedFile, useChangeOwners } from "./changeOwners";
 import { CommitAgents, useCommitOwners } from "./CommitAgents";
 import { GitColumns } from "./GitColumns";
-import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./ResizeHandle";
 import { SkeletonRows } from "../ui/Skeleton";
 import { EmptyState } from "../ui/Panel";
 import { AI_MODELS, AI_PROVIDER_LABEL, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPaneConstants";
@@ -86,6 +86,16 @@ type BranchEntry =
 
 const branchEntryKey = (entry: BranchEntry) =>
     entry.kind === "local" ? `l:${entry.branch.name}` : entry.kind === "remote" ? `r:${entry.remote.name}` : `rb:${entry.branch.full_ref}`;
+
+function movedTo(file: GitFile, side: Side | undefined): GitFile {
+    if (side === "staged" && hasUnstaged(file))
+        return { ...file, index: isStaged(file) ? file.index : file.worktree === "?" ? "A" : file.worktree, worktree: " " };
+    if (side === "unstaged" && isStaged(file)) {
+        const worktree = hasUnstaged(file) ? file.worktree : file.index === "A" ? "?" : file.index;
+        return { ...file, index: worktree === "?" ? "?" : " ", worktree };
+    }
+    return file;
+}
 
 const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
 
@@ -121,7 +131,6 @@ function GitWorkbench({
     onLeaveRepo: (() => void) | null;
 }) {
     const paneRootRef = useRef<HTMLDivElement>(null);
-    const historyRef = useRef<HTMLDivElement>(null);
     const storedView = useStore((s) => s.gitViews[paneId]);
     const view = {
         ...DEFAULT_GIT_VIEW,
@@ -149,7 +158,11 @@ function GitWorkbench({
     const status = repo ? (overview.data?.status ?? null) : null;
     const branches = useMemo(() => (repo ? (overview.data?.branches ?? []) : []), [repo, overview.data?.branches]);
     const commits = useMemo(() => (repo ? (overview.data?.log ?? []) : []), [repo, overview.data?.log]);
-    const files = useMemo(() => status?.files ?? [], [status?.files]);
+    const [pendingSides, setPendingSides] = useState<ReadonlyMap<string, Side>>(new Map());
+    const files = useMemo(() => {
+        const listed = status?.files ?? [];
+        return pendingSides.size ? listed.map((file) => movedTo(file, pendingSides.get(file.path))) : listed;
+    }, [status?.files, pendingSides]);
     const owners = useChangeOwners(repo, false, fetching && panel !== "branches");
     const stagedOwners = useChangeOwners(repo, true, fetching && panel !== "branches" && files.some((file) => isStaged(file) && hasUnstaged(file)));
     const remotes = useMemo(() => (repo ? (remotesRes.data ?? []) : []), [repo, remotesRes.data]);
@@ -168,7 +181,6 @@ function GitWorkbench({
     const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; alignRight: boolean } | null>(null);
     const [queries, setQueries] = useState<Record<GitPanel, string>>({ files: "", commits: "", branches: "" });
     const [fileFilterOpen, setFileFilterOpen] = useState(false);
-    const [commitSearchOpen, setCommitSearchOpen] = useState(false);
     const filterInputs = useRef<Record<GitPanel, HTMLInputElement | null>>({ files: null, commits: null, branches: null });
     const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
 
@@ -185,10 +197,6 @@ function GitWorkbench({
     useEffect(() => {
         if (fileFilterOpen) filterInputs.current.files?.focus();
     }, [fileFilterOpen]);
-
-    useEffect(() => {
-        if (commitSearchOpen) filterInputs.current.commits?.focus();
-    }, [commitSearchOpen]);
 
     const filteredFiles = useMemo(() => filterByQuery(files, queries.files, (f) => [f.path]), [files, queries.files]);
     const filteredCommits = useMemo(() => filterByQuery(commits, queries.commits, (c) => [c.subject, c.hash, c.author]), [commits, queries.commits]);
@@ -228,9 +236,6 @@ function GitWorkbench({
 
     const setPanel = (p: GitPanel) => cmd.setGitView(paneId, { panel: p });
     const setSel = (p: GitPanel, index: number) => cmd.setGitView(paneId, { panel: p, selected: { ...sel, [p]: index } });
-    const historyOpen = view.historyOpen;
-    const setHistoryOpen = (open: boolean) =>
-        cmd.setGitView(paneId, open ? { historyOpen: true } : { historyOpen: false, panel: panel === "commits" ? "files" : panel });
     const setOpenRemote = (name: string | null) => cmd.setGitView(paneId, { openRemote: name });
 
     const errorTimerRef = useRef<number | undefined>(undefined);
@@ -275,10 +280,34 @@ function GitWorkbench({
 
     // ---- Changes ----
 
-    const stageFile = (file: GitFile) => void run("", () => git.stage(repo, file.path));
-    const unstageFile = (file: GitFile) => void run("", () => git.unstage(repo, file.path));
-    const stageAll = () => void run("", () => git.stageAll(repo));
-    const unstageAll = () => void run("", () => git.unstageAll(repo));
+    // The rows move at once; the next status read either confirms the move or puts them back.
+    const moveFiles = async (paths: string[], side: Side, label: string, fn: () => Promise<void>) => {
+        const withSide = (sides: ReadonlyMap<string, Side>, value: Side | null) => {
+            const next = new Map(sides);
+            for (const path of paths) value ? next.set(path, value) : next.delete(path);
+            return next;
+        };
+        setPendingSides((sides) => withSide(sides, side));
+        await run(label, fn);
+        await overview.refresh().catch(() => {});
+        setPendingSides((sides) => withSide(sides, null));
+    };
+    const stageFile = (file: GitFile) => void moveFiles([file.path], "staged", "", () => git.stage(repo, file.path));
+    const unstageFile = (file: GitFile) => void moveFiles([file.path], "unstaged", "", () => git.unstage(repo, file.path));
+    const stageAll = () =>
+        void moveFiles(
+            files.filter(hasUnstaged).map((f) => f.path),
+            "staged",
+            "",
+            () => git.stageAll(repo),
+        );
+    const unstageAll = () =>
+        void moveFiles(
+            files.filter(isStaged).map((f) => f.path),
+            "unstaged",
+            "",
+            () => git.unstageAll(repo),
+        );
     const discardFile = (file: GitFile) =>
         openGitConfirm({
             title: `Discard changes to ${basenameOf(file.path)}?`,
@@ -324,7 +353,7 @@ function GitWorkbench({
         if (range) {
             const paths = [...new Set(range.flatMap((e) => (e.kind === "file" && e.side === "unstaged" ? [e.file.path] : [])))];
             setRangeAnchor(null);
-            if (paths.length) void run("staging range", () => git.stagePaths(repo, paths));
+            if (paths.length) void moveFiles(paths, "staged", "staging range", () => git.stagePaths(repo, paths));
             return;
         }
         if (!selectedFile) return;
@@ -846,7 +875,6 @@ function GitWorkbench({
 
     const focusFilter = () => {
         if (panel === "files") setFileFilterOpen(true);
-        else if (panel === "commits") setCommitSearchOpen(true);
         else filterInputs.current[panel]?.focus();
     };
 
@@ -883,10 +911,8 @@ function GitWorkbench({
             else if (queries[panel]) setQueries((q) => ({ ...q, [panel]: "" }));
             else handled = false;
         } else if (GIT_PANEL_BY_KEY[k]) setPanel(GIT_PANEL_BY_KEY[k]!);
-        else if (k === "h" && panel !== "branches") {
-            if (historyOpen && panel === "commits") setHistoryOpen(false);
-            else cmd.setGitView(paneId, { historyOpen: true, panel: "commits" });
-        } else if (k === "j" || k === "ArrowDown") moveSel(1);
+        else if (k === "h" && panel !== "branches") setPanel(panel === "commits" ? "files" : "commits");
+        else if (k === "j" || k === "ArrowDown") moveSel(1);
         else if (k === "k" || k === "ArrowUp") moveSel(-1);
         else if (k === "r" && panel === "commits" && selectedCommit) openCommitResetMenu(selectedCommit);
         else if (k === "r") refreshRepoState();
@@ -951,11 +977,17 @@ function GitWorkbench({
         root.focus({ preventScroll: true });
     }, [active]);
 
+    // Switching screens unmounts the row that had focus; the pane takes it back so its keys keep working.
     const focusKey = `${panel}:${sel[panel]}`;
     useEffect(() => {
-        if (!document.activeElement?.closest(".git-row, .gg-row")) return;
-        paneRootRef.current?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel")?.focus();
-    }, [focusKey]);
+        const held = document.activeElement;
+        const lost = !held || held === document.body;
+        if (!lost && !held.closest(".git-row, .gg-row")) return;
+        const root = paneRootRef.current;
+        const row = root?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel");
+        if (row) row.focus();
+        else if (lost && active) root?.focus({ preventScroll: true });
+    }, [focusKey, active]);
 
     const graphHandlers = useRef({ select: (_i: number) => {}, activate: () => {} });
     graphHandlers.current = {
@@ -1371,7 +1403,6 @@ function GitWorkbench({
                     if (event.key === "Escape" || event.key === "Enter") {
                         if (event.key === "Escape") setQueries((q) => ({ ...q, [p]: "" }));
                         if (p === "files") setFileFilterOpen(false);
-                        if (p === "commits") setCommitSearchOpen(false);
                         window.requestAnimationFrame(() =>
                             paneRootRef.current
                                 ?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel, .git-list .git-row")
@@ -1385,21 +1416,22 @@ function GitWorkbench({
 
     let left: ReactNode;
     let right: ReactNode;
-    if (panel !== "branches") {
-        const latest = commits[0];
+    const latest = commits[0];
+    const commitReview = (commit: (typeof commits)[number]) => (
+        <CommitReview
+            key={commit.hash}
+            repo={repo}
+            rev={commit.hash}
+            title={commit.hash}
+            subtitle={commit.subject}
+            head={commitHead(commit)}
+            owners={commitOwners?.[commit.full_hash]}
+            onOpenFile={cmd.requestOpenFile}
+        />
+    );
+    if (panel === "files") {
         left = (
-            <>
-                <GitComposer
-                    repo={repo}
-                    busy={!!busy}
-                    generating={generating}
-                    stagedCount={files.filter(isStaged).length}
-                    agentLabel={`${AI_PROVIDER_LABEL[aiProvider]} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
-                    messageRef={messageRef}
-                    onCommit={doCommit}
-                    onGenerate={generateCommitMessage}
-                    onPickAgent={openAgentMenu}
-                />
+            <div className="git-changes">
                 {(fileFilterOpen || queries.files) && filterInput("files", "Filter files")}
                 <div className="git-list">
                     {fileEntries.length === 0 &&
@@ -1413,139 +1445,27 @@ function GitWorkbench({
                     <VirtualPanelRows
                         items={fileEntries}
                         selectedIndex={selectedFileIndex}
-                        focused={panel === "files"}
+                        focused
                         estimateSize={ROW_HEIGHT}
                         getKey={(entry) => (entry.kind === "group" ? `g:${entry.side}` : `${entry.side}:${entry.file.path}`)}
                         renderRow={fileRow}
                     />
                 </div>
-                {historyOpen && (
-                    <ResizeHandle
-                        targetRef={historyRef}
-                        axis="y"
-                        grows={-1}
-                        min={HISTORY_MIN}
-                        max={() => (historyRef.current?.parentElement?.clientHeight ?? HISTORY_MIN + HISTORY_CLEARANCE) - HISTORY_CLEARANCE}
-                        size={view.historyHeight}
-                        label="Resize the history"
-                        className="git-history-split"
-                        onResize={(height) => cmd.setGitView(paneId, { historyHeight: height })}
-                    />
-                )}
-                <div
-                    ref={historyRef}
-                    className={`git-history${historyOpen ? " open" : ""}`}
-                    style={historyOpen && view.historyHeight ? { flex: `0 0 ${view.historyHeight}px`, minHeight: HISTORY_MIN } : undefined}>
-                    <div className="git-history-head">
-                        <button
-                            type="button"
-                            className="git-history-toggle"
-                            aria-expanded={historyOpen}
-                            onClick={() => {
-                                if (historyOpen) {
-                                    setCommitSearchOpen(false);
-                                    setHistoryOpen(false);
-                                } else cmd.setGitView(paneId, { historyOpen: true, panel: "commits" });
-                            }}>
-                            <span className="git-history-chev">
-                                <IconChevron size={10} />
-                            </span>
-                            <span className="git-label">History</span>
-                            {commits.length > 0 && <span className="git-count">{commits.length}</span>}
-                            {!historyOpen && latest && <span className="git-history-latest">{latest.subject}</span>}
-                            {!historyOpen && <kbd>h</kbd>}
-                        </button>
-                        {historyOpen &&
-                            (commitSearchOpen || queries.commits ? (
-                                <label className="git-history-search">
-                                    <IconSearch size={11} />
-                                    <input
-                                        ref={(input) => {
-                                            filterInputs.current.commits = input;
-                                        }}
-                                        value={queries.commits}
-                                        placeholder="Search commits"
-                                        aria-label="Search commits"
-                                        spellCheck={false}
-                                        autoCapitalize="off"
-                                        autoCorrect="off"
-                                        onChange={(event) => {
-                                            const value = event.target.value;
-                                            setQueries((q) => ({ ...q, commits: value }));
-                                            setSel("commits", 0);
-                                        }}
-                                        onBlur={() => {
-                                            if (!queries.commits) setCommitSearchOpen(false);
-                                        }}
-                                        onKeyDown={(event) => {
-                                            event.stopPropagation();
-                                            if (event.key !== "Escape" && event.key !== "Enter") return;
-                                            if (event.key === "Escape") setQueries((q) => ({ ...q, commits: "" }));
-                                            setCommitSearchOpen(false);
-                                            window.requestAnimationFrame(() =>
-                                                paneRootRef.current
-                                                    ?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")
-                                                    ?.focus(),
-                                            );
-                                        }}
-                                    />
-                                </label>
-                            ) : (
-                                <Tooltip label="Search commits (/)">
-                                    <button
-                                        type="button"
-                                        className="git-row-act"
-                                        aria-label="Search commits"
-                                        onClick={() => {
-                                            cmd.setGitView(paneId, { panel: "commits" });
-                                            setCommitSearchOpen(true);
-                                        }}>
-                                        <IconSearch size={12} />
-                                    </button>
-                                </Tooltip>
-                            ))}
-                    </div>
-                    {historyOpen && (
-                        <>
-                            <div className="git-list">
-                                {filteredCommits.length === 0 ? (
-                                    (loadingOrError(8, "Loading commits") ?? (
-                                        <EmptyState
-                                            title={queries.commits ? "No matches" : "No commits"}
-                                            message={queries.commits ? `Nothing matches "${queries.commits}".` : "No commits on this branch yet."}
-                                        />
-                                    ))
-                                ) : (
-                                    <GitGraph
-                                        commits={filteredCommits}
-                                        selectedIndex={clampSel("commits")}
-                                        focused={panel === "commits"}
-                                        range={null}
-                                        onSelect={onGraphSelect}
-                                        onActivate={onGraphActivate}
-                                        repo={repo}
-                                        owners={commitOwners}
-                                    />
-                                )}
-                            </div>
-                        </>
-                    )}
-                </div>
-            </>
+                <GitComposer
+                    repo={repo}
+                    busy={!!busy}
+                    generating={generating}
+                    stagedCount={files.filter(isStaged).length}
+                    agentLabel={`${AI_PROVIDER_LABEL[aiProvider]} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
+                    messageRef={messageRef}
+                    onCommit={doCommit}
+                    onGenerate={generateCommitMessage}
+                    onPickAgent={openAgentMenu}
+                />
+            </div>
         );
         right =
-            panel === "commits" && selectedCommit ? (
-                <CommitReview
-                    key={selectedCommit.hash}
-                    repo={repo}
-                    rev={selectedCommit.hash}
-                    title={selectedCommit.hash}
-                    subtitle={selectedCommit.subject}
-                    head={commitHead(selectedCommit)}
-                    owners={commitOwners?.[selectedCommit.full_hash]}
-                    onOpenFile={cmd.requestOpenFile}
-                />
-            ) : filteredFiles.length > 0 ? (
+            filteredFiles.length > 0 ? (
                 <MergeReview
                     repo={repo}
                     files={filteredFiles}
@@ -1557,19 +1477,67 @@ function GitWorkbench({
                     stagedOwners={stagedOwners}
                 />
             ) : latest ? (
-                <CommitReview
-                    key={latest.hash}
-                    repo={repo}
-                    rev={latest.hash}
-                    title={latest.hash}
-                    subtitle={latest.subject}
-                    head={commitHead(latest)}
-                    owners={commitOwners?.[latest.full_hash]}
-                    onOpenFile={cmd.requestOpenFile}
-                />
+                commitReview(latest)
             ) : (
                 <EmptyState message="Nothing to review." />
             );
+    } else if (panel === "commits") {
+        left = (
+            <div className="git-history open">
+                <div className="git-history-head">
+                    <label className="git-history-search">
+                        <IconSearch size={11} />
+                        <input
+                            ref={(input) => {
+                                filterInputs.current.commits = input;
+                            }}
+                            value={queries.commits}
+                            placeholder="Search commits"
+                            aria-label="Search commits"
+                            spellCheck={false}
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            onChange={(event) => {
+                                const value = event.target.value;
+                                setQueries((q) => ({ ...q, commits: value }));
+                                setSel("commits", 0);
+                            }}
+                            onKeyDown={(event) => {
+                                event.stopPropagation();
+                                if (event.key !== "Escape" && event.key !== "Enter") return;
+                                if (event.key === "Escape") setQueries((q) => ({ ...q, commits: "" }));
+                                window.requestAnimationFrame(() =>
+                                    paneRootRef.current?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")?.focus(),
+                                );
+                            }}
+                        />
+                    </label>
+                    {commits.length > 0 && <span className="git-count">{commits.length}</span>}
+                </div>
+                <div className="git-list">
+                    {filteredCommits.length === 0 ? (
+                        (loadingOrError(8, "Loading commits") ?? (
+                            <EmptyState
+                                title={queries.commits ? "No matches" : "No commits"}
+                                message={queries.commits ? `Nothing matches "${queries.commits}".` : "No commits on this branch yet."}
+                            />
+                        ))
+                    ) : (
+                        <GitGraph
+                            commits={filteredCommits}
+                            selectedIndex={clampSel("commits")}
+                            focused
+                            range={null}
+                            onSelect={onGraphSelect}
+                            onActivate={onGraphActivate}
+                            repo={repo}
+                            owners={commitOwners}
+                        />
+                    )}
+                </div>
+            </div>
+        );
+        right = selectedCommit ? commitReview(selectedCommit) : latest ? commitReview(latest) : <EmptyState message="No commits yet." />;
     } else {
         const localCount = branchEntries.filter((e) => e.kind === "local").length;
         left = (
@@ -1699,13 +1667,21 @@ function GitWorkbench({
                         shortcut: "1",
                         icon: <IconFile size={14} />,
                         count: files.length,
-                        on: view.area === "local" && panel !== "branches",
-                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: panel === "branches" ? "files" : panel }),
+                        on: view.area === "local" && panel === "files",
+                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "files" }),
+                    },
+                    {
+                        id: "history",
+                        label: "History",
+                        shortcut: "2",
+                        icon: <IconCommit size={14} />,
+                        on: view.area === "local" && panel === "commits",
+                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "commits" }),
                     },
                     {
                         id: "branches",
                         label: "Branches",
-                        shortcut: "2",
+                        shortcut: "3",
                         icon: <IconGit size={14} />,
                         on: view.area === "local" && panel === "branches",
                         onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "branches" }),
