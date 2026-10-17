@@ -194,24 +194,7 @@ pub(super) fn install_gopls() -> AppResult<String> {
 }
 
 pub(super) fn install_jdtls() -> AppResult<String> {
-    let output = sikemux_process::user_environment::command("brew")
-        .args(["install", "jdtls"])
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                AppError::Lsp(
-                    "Homebrew not found on PATH. Install Homebrew first: https://brew.sh".into(),
-                )
-            } else {
-                AppError::Lsp(format!("run brew install jdtls: {e}"))
-            }
-        })?;
-    if !output.status.success() {
-        return Err(AppError::Lsp(format!(
-            "brew install jdtls failed: {}",
-            install_output_message(&output.stdout, &output.stderr)
-        )));
-    }
+    crate::system::brew_install("jdtls").map_err(AppError::Lsp)?;
     executable_in_path("jdtls").map(path_string).ok_or_else(|| {
         AppError::Lsp("jdtls installed, but Sikemux could not locate it in PATH".into())
     })

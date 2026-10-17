@@ -137,26 +137,7 @@ pub async fn install_java(major: u32) -> AppResult<JavaRuntime> {
     }
     spawn_blocking(move || {
         let formula = format!("openjdk@{major}");
-        let output = sikemux_process::user_environment::command("brew")
-            .args(["install", &formula])
-            .output()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    AppError::Other(
-                        "Homebrew not found on PATH. Install Homebrew first: https://brew.sh"
-                            .into(),
-                    )
-                } else {
-                    AppError::Other(format!("run brew install {formula}: {e}"))
-                }
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::Other(format!(
-                "brew install {formula} failed: {}",
-                stderr.trim()
-            )));
-        }
+        crate::system::brew_install(&formula).map_err(AppError::Other)?;
         installed_java()
             .into_iter()
             .find(|runtime| runtime.major == major)

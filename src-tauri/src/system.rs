@@ -71,6 +71,25 @@ fn build_tool_formula(program: &str) -> AppResult<&'static str> {
         .ok_or(AppError::BadArg("unknown build tool"))
 }
 
+/// Runs `brew install`, failing with a reason a person can act on.
+pub(crate) fn brew_install(formula: &str) -> Result<(), String> {
+    let output = sikemux_process::user_environment::command("brew")
+        .args(["install", formula])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "Homebrew not found on PATH. Install Homebrew first: https://brew.sh".to_string()
+            } else {
+                format!("run brew install {formula}: {e}")
+            }
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(format!("brew install {formula} failed: {}", stderr.trim()))
+}
+
 #[tauri::command]
 pub async fn build_tool_installed(program: String) -> AppResult<bool> {
     build_tool_formula(&program)?;
@@ -83,26 +102,7 @@ pub async fn build_tool_installed(program: String) -> AppResult<bool> {
 pub async fn install_build_tool(program: String) -> AppResult<String> {
     let formula = build_tool_formula(&program)?;
     spawn_blocking(move || {
-        let output = sikemux_process::user_environment::command("brew")
-            .args(["install", formula])
-            .output()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    AppError::Other(
-                        "Homebrew not found on PATH. Install Homebrew first: https://brew.sh"
-                            .into(),
-                    )
-                } else {
-                    AppError::Other(format!("run brew install {formula}: {e}"))
-                }
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::Other(format!(
-                "brew install {formula} failed: {}",
-                stderr.trim()
-            )));
-        }
+        brew_install(formula).map_err(AppError::Other)?;
         sikemux_process::user_environment::find_executable(&program)
             .map(|path| path.to_string_lossy().into_owned())
             .ok_or_else(|| {
