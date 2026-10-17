@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentUsage } from "../api/agents";
-import { accountName, accountsOf, openAccountDialog, signOut, type AccountProvider } from "../agents/accounts";
+import { accountName, accountsOf, openAccountDialog, signOut, switchAccount, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import { agentLabel } from "../agents/catalog";
 import * as cmd from "../state/commands";
@@ -148,7 +148,7 @@ function accountMenu(
                     {name.trim().charAt(0).toUpperCase() || "?"}
                 </span>
             ),
-            run: selected ? undefined : () => cmd.selectProviderProfile(provider, account.id),
+            run: selected ? undefined : () => void switchAccount(provider, account).catch(reportError("Switch account")),
             actions: [
                 signedOut
                     ? { label: `Sign in to ${name}`, icon: <IconUser size={13} />, run: () => openAccountDialog({ provider, profileId: account.id }) }

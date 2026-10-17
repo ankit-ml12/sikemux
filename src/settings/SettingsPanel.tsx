@@ -57,7 +57,7 @@ import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../c
 import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";
 import { providerAccent } from "../agents/agentProfiles";
-import { ACCOUNT_AGENT_TYPES, agentLabel, hasAccounts } from "../agents/catalog";
+import { hasAccounts } from "../agents/catalog";
 import {
     searchSettings,
     SETTINGS_GROUPS,
@@ -513,7 +513,6 @@ function AgentsPage() {
     const notifications = useStore((s) => s.agentNotifications);
     const density = useStore((s) => s.railDensity);
     const profiles = useStore((s) => s.providerProfiles);
-    const selectedProfiles = useStore((s) => s.selectedProviderProfileIds);
     const defaultPermissionMode = useStore((s) => s.defaultAgentPermissionMode);
     const [draft, setDraft] = useState<ProviderProfile>(
         () =>
@@ -653,25 +652,6 @@ function AgentsPage() {
                         </div>
                     </div>
                 </div>
-
-                <SettingsRows>
-                    {ACCOUNT_AGENT_TYPES.map((type) => (
-                        <SettingsRow key={type} label={`${agentLabel(type)} default`} desc={`The profile a new ${type} session launches with.`} wide>
-                            <Dropdown
-                                className="settings-dd"
-                                label={`${type} default`}
-                                value={selectedProfiles[type] ?? ""}
-                                options={profiles
-                                    .filter((profile) => profile.provider === type)
-                                    .map((profile) => ({
-                                        value: profile.id,
-                                        label: profile.name,
-                                    }))}
-                                onChange={(value) => cmd.selectProviderProfile(type, value)}
-                            />
-                        </SettingsRow>
-                    ))}
-                </SettingsRows>
             </SettingsSection>
 
             <ModelProvidersSection />

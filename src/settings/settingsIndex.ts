@@ -108,8 +108,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("agents", "Provider profiles", "Provider", "claude codex gemini"),
     row("agents", "Provider profiles", "Executable path", "binary cli path"),
     row("agents", "Provider profiles", "Profile directory", "config account home"),
-    row("agents", "Provider profiles", "Claude default", "profile"),
-    row("agents", "Provider profiles", "Codex default", "profile"),
     section("agents", "Coding plans", "zai glm minimax kimi code opencode go synthetic ollama subscription plan key claude codex"),
     section(
         "agents",
