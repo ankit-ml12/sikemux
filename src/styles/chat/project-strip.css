@@ -36,6 +36,7 @@
         background-color 200ms var(--ease-out),
         border-color 200ms var(--ease-out),
         color 200ms var(--ease-out);
+    border-radius: var(--radius-full);
 }
 
 .chat-project-trigger > span {
@@ -120,6 +121,7 @@
         background-color 200ms var(--ease-out),
         border-color 200ms var(--ease-out),
         color 200ms var(--ease-out);
+    border-radius: var(--radius-full);
 }
 
 .chat-project-strip .worktree-toggle:hover {

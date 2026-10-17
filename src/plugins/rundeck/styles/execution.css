@@ -250,12 +250,14 @@
     background: color-mix(in oklab, var(--live) 8%, transparent);
     color: var(--live);
     white-space: nowrap;
+    border-radius: var(--radius-full);
 }
 .rnd-live i {
     width: 6px;
     height: 6px;
     background: currentColor;
     animation: rnd-pulse 1.4s ease-in-out infinite;
+    border-radius: var(--radius-full);
 }
 .rnd-live.ended {
     border-color: var(--border);

@@ -115,6 +115,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    border-radius: var(--radius-2);
 }
 .gg-ref-text {
     min-width: 0;

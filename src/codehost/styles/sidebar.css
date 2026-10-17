@@ -25,6 +25,10 @@
         border-color var(--dur-1) linear,
         color var(--dur-1) linear;
 }
+
+button.gha-chip {
+    border-radius: var(--radius-2);
+}
 .gha-chip:hover {
     color: var(--text-primary);
     border-color: var(--border-strong);

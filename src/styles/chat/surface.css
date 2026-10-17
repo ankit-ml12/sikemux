@@ -31,6 +31,10 @@
     pointer-events: none;
 }
 
+.agent-surface-header button {
+    border-radius: var(--radius-full);
+}
+
 .agent-surface-name,
 .agent-surface-controls {
     display: flex;
@@ -126,6 +130,7 @@
     transition:
         color 100ms,
         background 100ms;
+    border-radius: var(--radius-full);
 }
 
 .agent-view-switch button:hover:not(:disabled) {

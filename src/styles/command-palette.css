@@ -1,6 +1,7 @@
 .command-palette {
     width: min(680px, 90vw);
     max-height: min(680px, 72vh);
+    border-radius: var(--radius-4);
 }
 
 .command-palette-list {
@@ -36,6 +37,7 @@
     text-align: center;
     border: 1px solid var(--border);
     background: var(--surface-sunken);
+    border-radius: var(--radius-1);
 }
 
 .command-palette-item.sel .command-palette-shortcut {

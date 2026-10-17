@@ -26,6 +26,7 @@
     color: var(--text-primary);
     font-size: 13px;
     letter-spacing: 0.02em;
+    border-radius: var(--radius-3);
 }
 .git-busy-spinner {
     width: 16px;

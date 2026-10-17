@@ -19,6 +19,7 @@
         background var(--dur-1),
         border-color var(--dur-1),
         color var(--dur-1);
+    border-radius: var(--radius-3);
 }
 .agent-mode-settings button:hover {
     background: var(--surface-hover);

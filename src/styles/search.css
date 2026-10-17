@@ -417,6 +417,10 @@
         color 0.08s;
     align-items: center;
 }
+
+button.sp-msg {
+    border-radius: var(--radius-2);
+}
 .sp-msg:hover {
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-primary);

@@ -21,7 +21,7 @@
     height: 22px;
     margin-left: -6px;
     padding: 0 6px;
-    border-radius: var(--radius-1);
+    border-radius: var(--radius-2);
     color: var(--ink-dim);
 }
 

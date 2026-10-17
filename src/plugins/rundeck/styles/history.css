@@ -138,6 +138,10 @@
     background: none;
     cursor: pointer;
 }
+
+button.rnd-chart-col {
+    border-radius: var(--radius-2);
+}
 .rnd-chart-col:hover {
     background: var(--surface-hover);
 }
@@ -226,7 +230,7 @@
     padding: 0 14px;
     border: 0;
     border-top: 1px solid var(--rnd-rule);
-    border-radius: 0;
+    border-radius: var(--radius-2);
     background: none;
     font: inherit;
     font-size: var(--text-xs);

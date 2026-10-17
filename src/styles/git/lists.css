@@ -116,7 +116,7 @@
     text-align: left;
 }
 .shell .git-history-toggle {
-    border-radius: 0 !important;
+    border-radius: var(--radius-2);
 }
 .git-history-head:hover {
     background: var(--surface-hover);
@@ -148,7 +148,7 @@
     font-size: var(--text-xs);
 }
 .shell .git-history-search input {
-    border-radius: 0 !important;
+    border-radius: 0;
 }
 .git-history-search input::placeholder {
     color: var(--text-tertiary);

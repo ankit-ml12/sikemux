@@ -304,6 +304,7 @@ body.bruno-resizing {
     letter-spacing: 0.02em;
     cursor: pointer;
     transition: background 0.12s;
+    border-radius: var(--radius-2);
 }
 .bruno-send-kbd {
     display: inline-flex;
@@ -350,6 +351,7 @@ body.bruno-resizing {
     transition:
         color 0.12s,
         border-color 0.12s;
+    border-radius: var(--radius-2);
 }
 .bruno-save:disabled {
     opacity: 0.45;
@@ -465,6 +467,7 @@ body.bruno-resizing {
     color: var(--ink);
     font-family: var(--mono);
     font-size: var(--text-xs);
+    border-radius: var(--radius-2);
 }
 .bruno-input:focus {
     outline: none;
@@ -553,6 +556,7 @@ body.bruno-resizing {
     font-weight: 700;
     font-size: var(--text-xs);
     padding: 2px 8px;
+    border-radius: var(--radius-2);
 }
 .bruno-resp-status.ok {
     color: var(--live);
@@ -632,6 +636,7 @@ body.bruno-resizing {
     transition:
         color 0.12s,
         border-color 0.12s;
+    border-radius: var(--radius-2);
 }
 .bruno-secrets-btn:hover,
 .bruno-icon-btn:hover {
@@ -648,6 +653,7 @@ body.bruno-resizing {
     height: 24px;
     padding: 0;
     justify-content: center;
+    border-radius: var(--radius-2);
 }
 .bruno-secrets-pop {
     position: absolute;
@@ -658,6 +664,7 @@ body.bruno-resizing {
     background: var(--rail-2);
     border: 1px solid var(--line);
     padding: 10px;
+    border-radius: var(--radius-4);
 }
 .bruno-secrets-head {
     font-size: var(--text-2xs);
@@ -819,6 +826,10 @@ body.bruno-resizing {
         background 0.12s,
         border-color 0.12s;
 }
+
+button.bruno-check {
+    border-radius: var(--radius-2);
+}
 .bruno-check:hover {
     border-color: var(--acc-line);
 }
@@ -884,6 +895,7 @@ body.bruno-resizing {
     font-size: 9px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    border-radius: var(--radius-1);
 }
 .bruno-tab-dot {
     width: 5px;

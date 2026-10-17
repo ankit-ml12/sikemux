@@ -130,6 +130,7 @@
 }
 .settings-list-row .settings-depth {
     justify-self: start;
+    border-radius: var(--radius-2);
 }
 /* The box sits under its column heading, not off to one side of it. */
 .settings-list-head > span:nth-child(2),

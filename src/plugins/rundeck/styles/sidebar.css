@@ -208,6 +208,7 @@ button.rnd-tree-twist:hover {
     transition:
         background var(--dur-1) linear,
         border-color var(--dur-1) linear;
+    border-radius: var(--radius-3);
 }
 .rnd-conn:hover,
 .rnd-conn.open {

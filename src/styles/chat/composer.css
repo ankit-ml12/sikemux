@@ -255,6 +255,7 @@
     width: 31px;
     height: 31px;
     color: var(--ink-dim);
+    border-radius: var(--radius-2);
 }
 
 .chat-composer-icon:hover {
@@ -283,6 +284,7 @@
         background-color 200ms var(--ease-out),
         border-color 200ms var(--ease-out),
         color 200ms var(--ease-out);
+    border-radius: var(--radius-full);
 }
 
 .chat-composer-bar .yolo-toggle:hover:not(:disabled) {

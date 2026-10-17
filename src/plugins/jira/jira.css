@@ -260,7 +260,7 @@
     gap: 6px;
     padding: 10px 12px;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: var(--radius-2);
     text-align: left;
     color: var(--text-secondary);
     background: var(--gray-200);
@@ -831,6 +831,10 @@
     color: var(--text-primary);
 }
 
+button.jira-avatar:not(.jira-avatar-pick) {
+    border-radius: var(--radius-2);
+}
+
 .jira-avatar.large {
     width: 24px;
     height: 24px;
@@ -931,6 +935,7 @@
     border: 2px solid var(--void);
     font-size: 10px;
     cursor: pointer;
+    border-radius: var(--radius-full);
 }
 
 .jira-avatar-pick:first-child {
@@ -1016,7 +1021,7 @@
     height: 30px;
     padding: 0 10px 0 6px;
     border: 1px solid transparent;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-2);
     font-size: var(--text-sm);
     color: var(--text-secondary);
     background: none;

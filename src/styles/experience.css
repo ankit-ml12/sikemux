@@ -328,7 +328,7 @@
     margin-left: 4px;
     padding: 0 8px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-1);
+    border-radius: var(--radius-2);
     color: var(--text-primary);
     font-size: var(--text-2xs);
 }
@@ -825,6 +825,7 @@
     background: var(--surface-sunken);
     box-shadow: var(--shadow-4);
     overflow: hidden;
+    border-radius: var(--radius-4);
 }
 .command-popup > header {
     display: flex;

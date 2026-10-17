@@ -1,5 +1,5 @@
 /* Stuck to the composer from above like the live stack: the same fill and border, stepped in narrower,
-   ending on the composer's top border. Its corners beat the rounding every listbox gets as a float. */
+   ending on the composer's top border. */
 .chat-slash-menu {
     position: absolute;
     right: calc(var(--chat-step) - 1px);
@@ -9,7 +9,7 @@
     overflow: hidden;
     border: 1px solid var(--border);
     border-bottom: 0;
-    border-radius: var(--radius-3) var(--radius-3) 0 0 !important;
+    border-radius: var(--radius-3) var(--radius-3) 0 0;
     background: var(--chat-composer-fill);
     backdrop-filter: blur(20px) saturate(1.3);
 }
@@ -36,9 +36,9 @@
     text-align: left;
 }
 
-/* A row runs edge to edge in the docked menu, so it drops the corner every button gets. */
+/* A row runs edge to edge in the docked menu. */
 .chat-slash-menu button[role="option"] {
-    border-radius: 0 !important;
+    border-radius: 0;
 }
 
 .chat-slash-menu button[role="option"]:hover {

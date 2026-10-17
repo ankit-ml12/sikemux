@@ -18,9 +18,7 @@
     font-size: var(--text-sm);
     line-height: 1.5;
     overflow-y: auto;
-}
-.shell .git-compose-message {
-    border-radius: 0 !important;
+    border-radius: 0;
 }
 .git-compose-message::placeholder {
     color: var(--text-disabled);

@@ -12,6 +12,7 @@
     cursor: pointer;
     -webkit-app-region: no-drag;
     transition: color var(--dur-1) linear;
+    border-radius: var(--radius-1);
 }
 .gha-topbar:hover {
     color: var(--text-primary);

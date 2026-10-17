@@ -61,7 +61,7 @@
     text-decoration: underline;
 }
 .sgz-link:focus-visible {
-    border-radius: var(--radius-1);
+    border-radius: var(--radius-2);
     outline: 0;
     box-shadow: var(--focus-ring);
 }
@@ -542,7 +542,7 @@
     width: 20px;
     height: 20px;
     border: 0;
-    border-radius: var(--radius-1);
+    border-radius: var(--radius-2);
     background: none;
     color: var(--text-tertiary);
     cursor: pointer;

@@ -246,7 +246,7 @@
 
 .chat-markdown :not(pre) > code {
     padding: 1px 4px;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-1);
     background: var(--acc-soft);
     color: color-mix(in srgb, var(--acc) 74%, var(--ink));
     font-size: 0.88em;

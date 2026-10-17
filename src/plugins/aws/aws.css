@@ -135,6 +135,7 @@
     transition:
         background var(--dur-1) linear,
         border-color var(--dur-1) linear;
+    border-radius: var(--radius-3);
 }
 .aws-account:hover,
 .aws-account.open {
@@ -975,12 +976,14 @@
     border: 1px solid color-mix(in oklab, var(--live) 30%, transparent);
     background: color-mix(in oklab, var(--live) 8%, transparent);
     color: var(--live);
+    border-radius: var(--radius-full);
 }
 .aws-live i {
     width: 6px;
     height: 6px;
     background: currentColor;
     animation: aws-pulse 1.4s ease-in-out infinite;
+    border-radius: var(--radius-full);
 }
 .aws-live.ended {
     border-color: var(--border);

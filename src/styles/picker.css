@@ -21,6 +21,7 @@
 
 .agent-palette-stage .picker {
     max-width: calc(100% - 32px);
+    border-radius: var(--radius-4);
 }
 
 .session-switcher-backdrop {
@@ -44,6 +45,7 @@
     border: 1px solid var(--border);
     box-shadow: var(--shadow-4);
     backdrop-filter: blur(20px) saturate(1.4);
+    border-radius: var(--radius-4);
 }
 
 .session-switcher-head,
@@ -336,6 +338,7 @@
     color: var(--text-secondary);
     white-space: nowrap;
     text-transform: lowercase;
+    border-radius: var(--radius-1);
 }
 .picker-tag.proj {
     grid-column: 1;

@@ -133,6 +133,7 @@
     min-width: 190px;
     padding: 5px;
     font-family: var(--mono);
+    border-radius: var(--radius-4);
 }
 
 .terminal-menu button {

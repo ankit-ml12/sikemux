@@ -37,7 +37,7 @@
 .chat-image-button {
     display: block;
     max-width: 100%;
-    border-radius: var(--radius-panel);
+    border-radius: var(--radius-2);
     cursor: zoom-in;
 }
 

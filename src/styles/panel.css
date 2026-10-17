@@ -136,6 +136,7 @@
     font-family: var(--kbd);
     font-size: 8px;
     color: var(--text-tertiary);
+    border-radius: var(--radius-1);
 }
 .panel-abtn:hover:not(:disabled) .panel-akbd {
     color: var(--text-secondary);

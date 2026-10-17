@@ -25,6 +25,10 @@
     border-radius: var(--radius-3);
     background: var(--rnd-tint);
 }
+
+button.rnd-card {
+    border-radius: var(--radius-2);
+}
 .rnd-card-head {
     display: flex;
     align-items: center;

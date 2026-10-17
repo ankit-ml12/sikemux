@@ -394,7 +394,7 @@
     height: 26px;
     place-items: center;
     border: 1px solid var(--line);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-2);
     background: var(--chat-composer-fill);
     color: var(--ink-dim);
     box-shadow: 0 6px 18px color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 52%), transparent);
