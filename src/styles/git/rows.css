@@ -46,9 +46,8 @@
     color: var(--text-tertiary);
 }
 .git-row-agents {
-    max-width: 45%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
 }
 .git-row-hint.behind {
     color: var(--git-renamed);

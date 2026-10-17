@@ -66,7 +66,8 @@ import { GitGraph } from "./GitGraph";
 import { GitModalRenderer } from "./GitModalRenderer";
 import { VirtualPanelRows } from "./VirtualPanelRows";
 import { gitStatusDecoration } from "./gitFileStatus";
-import { fileAgentNames, ownedFile, useChangeOwners } from "./changeOwners";
+import { fileAuthors, useChangeOwners } from "./changeOwners";
+import { FileAgentFaces } from "./FileAgentFaces";
 import { CommitAgents, useCommitOwners } from "./CommitAgents";
 import { GitColumns } from "./GitColumns";
 import { SkeletonRows } from "../ui/Skeleton";
@@ -1102,7 +1103,7 @@ function GitWorkbench({
         const selected = panel === "files" && selectedFileIndex === i;
         const dir = dirname(file.path);
         const status = gitStatusDecoration(side === "staged" ? file.index : file.worktree);
-        const agents = fileAgentNames(ownedFile(owners, file.path)).join(", ");
+        const authors = fileAuthors(owners, file.path);
         return (
             <div
                 role="button"
@@ -1121,11 +1122,7 @@ function GitWorkbench({
                     {basenameOf(file.path)}
                     {dir && <span className="git-row-dir">{dir}</span>}
                 </span>
-                {agents && (
-                    <span className="git-row-hint git-row-agents" title={`Written by ${agents}`}>
-                        {agents}
-                    </span>
-                )}
+                <FileAgentFaces authors={authors} />
                 <span className="git-row-actions">
                     <RowButton label={`Open ${file.path}`} onClick={() => cmd.requestOpenFile(joinPath(repo, file.path))}>
                         <IconFile size={12} />

@@ -1,4 +1,4 @@
-import { DIFF_ROW, type ChangeOwners, type CommitOwner, type DiffRow, type FileOwners, type OwnedLines } from "../api/git";
+import { DIFF_ROW, type ChangeAuthor, type ChangeOwners, type CommitOwner, type DiffRow, type FileOwners, type OwnedLines } from "../api/git";
 import { useCachedResourceEnabled } from "../state/resources";
 import { gitChangeOwnersR } from "../state/resources.defs";
 
@@ -66,11 +66,12 @@ export function commitOwnedFile(owners: readonly CommitOwner[] | undefined, path
     return { file: { path, lines, removed: [] }, names };
 }
 
-/** The names of the agents that wrote some of a file's changes, in the order they first appear. */
-export function fileAgentNames(owned: OwnedFile | undefined): string[] {
-    if (!owned) return [];
+/** The agents that wrote some of a file's uncommitted changes, in the order they first appear. */
+export function fileAuthors(owners: ChangeOwners | undefined, path: string): ChangeAuthor[] {
+    const owned = ownedFile(owners, path);
+    if (!owners || !owned) return [];
     const authors = new Set([...owned.file.lines.map((run) => run.author), ...owned.file.removed.map((gap) => gap.author)]);
-    return [...authors].map((author) => owned.names[author]);
+    return [...authors].map((author) => owners.authors[author]);
 }
 
 function ownerAt(runs: readonly OwnedLines[], line: number): OwnedLines | undefined {
