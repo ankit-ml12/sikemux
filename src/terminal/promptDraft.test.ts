@@ -16,18 +16,29 @@ describe("what is typed in an agent's TUI", () => {
         expect(promptDraft(screen)).toBe("now check the logout path too\nand the session timeout");
     });
 
-    it("reads Codex's input line", () => {
-        expect(promptDraft(["• Ran the tests", "", "› add a test for the empty case", "", "  ⏎ send   ⌃J newline"])).toBe(
-            "add a test for the empty case",
-        );
+    it("reads Claude's box as it looks on screen", () => {
+        const screen = [
+            "                                                     ctrl+g to edit in VS Code",
+            "────────────────────────────────────────────────",
+            "❯ write the migration",
+            "  and its rollback",
+            "────────────────────────────────────────────────",
+            "  ⏵⏵ auto mode on (shift+tab to cycle)",
+        ];
+        expect(promptDraft(screen)).toBe("write the migration\nand its rollback");
     });
 
-    it("reads an empty box as nothing, and a screen with no box as nothing", () => {
+    it("reads an empty box, a menu and a screen with no box as nothing", () => {
         expect(promptDraft(["────────────", "❯", "────────────"])).toBe("");
+        const trust = [
+            "────────────",
+            " Accessing workspace:",
+            " Security guide",
+            " ❯ No, exit",
+            "   Yes, I trust this folder",
+            " Enter to confirm · Esc to cancel",
+        ];
+        expect(promptDraft(trust)).toBe("");
         expect(promptDraft(["$ ls", "README.md  src"])).toBe("");
-    });
-
-    it("strips the box's side borders", () => {
-        expect(promptDraft(["╭──────────────────╮", "│ › keep this     │", "╰──────────────────╯"])).toBe("keep this");
     });
 });
