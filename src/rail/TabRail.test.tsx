@@ -164,7 +164,7 @@ describe("tab rail", () => {
         const user = userEvent.setup();
         render(<TabRailBody />);
 
-        await user.click(await screen.findByRole("button", { name: "No agents yet. Set one up" }));
+        await user.click(await screen.findByRole("button", { name: "Set one up" }));
         expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents", settingsTarget: "Agents on this machine" });
     });
 

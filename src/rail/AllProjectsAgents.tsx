@@ -8,7 +8,8 @@ import type { AgentDisplay } from "../state/agentStatus";
 import { activeAgentId, agentDisplayOf, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
-import { IconClose } from "../ui/Icons";
+import { IconAgent, IconClose } from "../ui/Icons";
+import { RailEmpty } from "./RailEmpty";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentRowProject, AgentRowTree } from "./AgentRowTree";
@@ -62,7 +63,7 @@ export function AllProjectsAgents() {
         if (root.current) drawTeamLines(root.current);
     });
 
-    if (open.length === 0) return <div className="agent-empty">no agents open in any project</div>;
+    if (open.length === 0) return <RailEmpty icon={<IconAgent size={20} />} title="No agents open" shortcut="agent.new" doing="start one" />;
 
     return (
         <div ref={root} className="agent-all-projects">

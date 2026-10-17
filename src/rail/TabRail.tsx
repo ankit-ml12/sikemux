@@ -10,7 +10,7 @@ import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { activeAgentId, agentDisplayOf, agentIdsOf } from "../state/selectors";
 import { type Agent, type AgentType, type PinnedChat } from "../state/types";
-import { AgentIcon, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { inTeams, type TeamLink } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
@@ -22,6 +22,7 @@ import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef }
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
+import { RailEmpty } from "./RailEmpty";
 import { AGENT_SETUP_SECTION } from "../settings/AgentSetupSection";
 import { usagePeak } from "./usageFormat";
 import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
@@ -341,7 +342,7 @@ export function TabRailBody() {
         return (
             <>
                 {header}
-                <div className="agent-empty">agents are project-scoped</div>
+                <RailEmpty icon={<IconAgent size={20} />} title="No project open" shortcut="project.open" doing="open one" />
                 {accounts}
             </>
         );
@@ -394,19 +395,19 @@ export function TabRailBody() {
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
-                    <div className="agent-empty">
-                        {catalog.status === "loading" ? (
-                            "detecting agent CLIs..."
-                        ) : availableAgents.length === 0 ? (
-                            <button type="button" className="agent-empty-setup" onClick={() => cmd.openSettings("agents", AGENT_SETUP_SECTION)}>
-                                No agents yet. Set one up
-                            </button>
-                        ) : needle ? (
-                            "no recent chats match this filter"
-                        ) : (
-                            "no agents yet — start one above"
-                        )}
-                    </div>
+                    <RailEmpty
+                        icon={catalog.status === "loading" || !needle ? <IconAgent size={20} /> : <IconSearch size={20} />}
+                        {...(catalog.status === "loading"
+                            ? { title: "Looking for agents…" }
+                            : availableAgents.length === 0
+                              ? {
+                                    title: "No agents set up",
+                                    action: { label: "Set one up", onClick: () => cmd.openSettings("agents", AGENT_SETUP_SECTION) },
+                                }
+                              : needle
+                                ? { title: "No chats match", message: "Try another filter" }
+                                : { title: "No agents yet", shortcut: "agent.new" as const, doing: "start one" })}
+                    />
                 )}
 
                 {scope === "project" && opens.length > 0 && (

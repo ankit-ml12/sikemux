@@ -844,14 +844,6 @@ textarea:focus,
     font-size: var(--text-2xs);
 }
 
-.agent-empty {
-    margin: 12px;
-    padding: 16px;
-    border: 1px dashed var(--line);
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--rail-2) calc(var(--window-opacity, 1) * 36%), transparent);
-}
-
 .workspace-rail .rail-scroll::-webkit-scrollbar {
     width: 9px;
 }

@@ -7,11 +7,12 @@ import { activeTabRef, documentsOf, terminalLabel } from "../state/selectors";
 import { getState, useStore } from "../state/store";
 import type { Session, TabRef } from "../state/types";
 import { FileIcon } from "../ui/FileIcon";
-import { IconClose, IconPlus, IconTerminal } from "../ui/Icons";
+import { IconClose, IconFile, IconPlus, IconTerminal } from "../ui/Icons";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { fileTabMenu, windowTabMenu } from "../workspace/tabMenus";
 import { type CtxItem, FileTree, TreeContextMenu } from "./FileTree";
+import { RailEmpty } from "./RailEmpty";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
 
@@ -113,7 +114,7 @@ export function TerminalsPage() {
         <>
             <PageHeader label="Terminals" />
             {!session ? (
-                <div className="agent-empty">terminals are project-scoped</div>
+                <RailEmpty icon={<IconTerminal size={20} />} title="No project open" shortcut="project.open" doing="open one" />
             ) : (
                 <>
                     <div className="tab-rail-top">
@@ -123,7 +124,7 @@ export function TerminalsPage() {
                     </div>
                     <div className="rail-scroll">
                         {tabs.length === 0 ? (
-                            <div className="agent-empty">no terminals open</div>
+                            <RailEmpty icon={<IconTerminal size={20} />} title="No terminals open" shortcut="terminal.new" doing="start one" />
                         ) : (
                             <Panel variant="group" className="agent-group">
                                 {tabs.map(({ win, label }) => (
@@ -163,7 +164,7 @@ export function FilesPage() {
         return (
             <>
                 <PageHeader label="Files" />
-                <div className="agent-empty">files are project-scoped</div>
+                <RailEmpty icon={<IconFile size={20} />} title="No project open" shortcut="project.open" doing="open one" />
             </>
         );
     }
