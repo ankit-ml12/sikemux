@@ -407,6 +407,14 @@ export function AgentRailBody() {
                     </div>
                 )}
 
+                {scope === "project" && opens.length > 0 && (
+                    <Panel variant="group" className="agent-group">
+                        {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
+                            isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link),
+                        )}
+                    </Panel>
+                )}
+
                 {scope === "project" && pins.length > 0 && (
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Pinned" rule />
@@ -438,14 +446,6 @@ export function AgentRailBody() {
                                     </button>
                                 </div>
                             ),
-                        )}
-                    </Panel>
-                )}
-
-                {scope === "project" && opens.length > 0 && (
-                    <Panel variant="group" className="agent-group">
-                        {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
-                            isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link),
                         )}
                     </Panel>
                 )}
