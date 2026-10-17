@@ -56,7 +56,6 @@ hex = "0.4"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 notify = "8"
-dashmap = "6"
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"

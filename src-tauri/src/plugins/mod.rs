@@ -2,11 +2,11 @@
 //! commands take the panes' calls to the core, and their streams over its
 //! tool endpoint.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
-use dashmap::DashMap;
 use serde_json::{json, Value};
 use sikemux_core::cli::protocol::{CliServerResponse, MAX_CLI_RESPONSE_BYTES};
 use sikemux_core::server::plugins::{Failure, Outcome, StreamEvent};
@@ -23,24 +23,33 @@ use crate::pty::PtyManager;
 #[derive(Default)]
 pub struct PluginStreams {
     next: AtomicU32,
-    open: Arc<DashMap<u32, AbortHandle>>,
+    open: Arc<Mutex<HashMap<u32, AbortHandle>>>,
+}
+
+fn lock_open(open: &Mutex<HashMap<u32, AbortHandle>>) -> MutexGuard<'_, HashMap<u32, AbortHandle>> {
+    open.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl PluginStreams {
     pub fn count(&self) -> usize {
-        self.open.len()
+        lock_open(&self.open).len()
     }
 
     pub fn stop(&self, stream_id: u32) {
-        if let Some((_, stream)) = self.open.remove(&stream_id) {
+        let stream = lock_open(&self.open).remove(&stream_id);
+        if let Some(stream) = stream {
             stream.abort();
         }
     }
 
     pub fn drain(&self) {
-        let ids: Vec<u32> = self.open.iter().map(|entry| *entry.key()).collect();
-        for stream_id in ids {
-            self.stop(stream_id);
+        let streams: Vec<AbortHandle> = lock_open(&self.open)
+            .drain()
+            .map(|(_, stream)| stream)
+            .collect();
+        for stream in streams {
+            stream.abort();
         }
     }
 }
@@ -133,9 +142,9 @@ pub async fn plugin_stream_start(
             let last = relay(connection, &on_event, &plugin).await;
             let _ = on_event.send(last);
         }
-        open.remove(&stream_id);
+        lock_open(&open).remove(&stream_id);
     });
-    streams.open.insert(stream_id, task.inner().abort_handle());
+    lock_open(&streams.open).insert(stream_id, task.inner().abort_handle());
     let _ = registered.send(());
     Ok(stream_id)
 }

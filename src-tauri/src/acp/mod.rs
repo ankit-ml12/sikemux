@@ -61,12 +61,29 @@ impl StreamMark {
 pub struct AcpManager {
     /// Launches being prepared, which a stop cancels. The id tells a launch
     /// from a later one for the same agent.
-    preparing: dashmap::DashMap<String, uuid::Uuid>,
+    preparing: Mutex<HashMap<String, uuid::Uuid>>,
     /// The chats this app shows, which hear the core's events for them.
     shown: Mutex<HashMap<String, StreamMark>>,
 }
 
 impl AcpManager {
+    fn preparing(&self) -> std::sync::MutexGuard<'_, HashMap<String, uuid::Uuid>> {
+        self.preparing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Ends `launch_id`'s preparation, and says whether it was still going,
+    /// that is, whether no stop came for it.
+    fn finish_preparing(&self, agent_id: &str, launch_id: uuid::Uuid) -> bool {
+        let mut preparing = self.preparing();
+        let current = preparing.get(agent_id) == Some(&launch_id);
+        if current {
+            preparing.remove(agent_id);
+        }
+        current
+    }
+
     fn show(&self, agent_id: &str, mark: StreamMark, streaming: bool) {
         mark.set(streaming);
         if let Ok(mut shown) = self.shown.lock() {
@@ -303,7 +320,7 @@ pub async fn acp_start(
     bounded_text("provider", &provider, 64)?;
     bounded_text("working directory", &cwd, 4_096)?;
     let launch_id = uuid::Uuid::new_v4();
-    manager.preparing.insert(agent_id.clone(), launch_id);
+    manager.preparing().insert(agent_id.clone(), launch_id);
     let spec = AgentSpec {
         provider: provider.clone(),
         executable_path,
@@ -314,9 +331,7 @@ pub async fn acp_start(
     let prepared = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
-            manager
-                .preparing
-                .remove_if(&agent_id, |_, id| *id == launch_id);
+            manager.finish_preparing(&agent_id, launch_id);
             return Err(error);
         }
     };
@@ -361,10 +376,7 @@ pub async fn acp_start(
         .map_err(failure)?;
     // A stop that came while the launch was prepared reaches the core after
     // the start, whichever of the two it raced.
-    let stopped = manager
-        .preparing
-        .remove_if(&agent_id, |_, id| *id == launch_id)
-        .is_none();
+    let stopped = !manager.finish_preparing(&agent_id, launch_id);
     if stopped {
         let _ = client.acp_stop(agent_id).await;
         return Err("ACP session stopped before initialization completed".into());
@@ -662,7 +674,7 @@ pub async fn acp_stop(
     pty: State<'_, PtyManager>,
     agent_id: String,
 ) -> Result<(), String> {
-    manager.preparing.remove(&agent_id);
+    manager.preparing().remove(&agent_id);
     manager.forget(&agent_id);
     core(&pty).await?.acp_stop(agent_id).await.map_err(failure)
 }
