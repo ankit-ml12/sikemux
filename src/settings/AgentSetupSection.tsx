@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { installAgent } from "../agents/AgentInstall";
+import { installAgent, signInAgent } from "../agents/AgentInstall";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { agentStatusLabel } from "../agents/agentStatus";
-import { agentAbout, installCommand } from "../agents/catalog";
+import { agentAbout, installCommand, loginArgs } from "../agents/catalog";
 import { setupOrder, withMissingAgents } from "../agents/setupList";
 import type { AgentInfo } from "../api/agents";
 import { useResource } from "../state/resources";
@@ -53,6 +53,11 @@ function AgentSetupRow({ agent }: { agent: AgentInfo }) {
                 <small className={state ? `is-${state}` : undefined}>{agentStatusLabel(agent.status) ?? "Found"}</small>
                 {detail && <small className="agent-setup-detail">{detail}</small>}
             </span>
+            {state === "signedOut" && loginArgs(agent.type) && (
+                <button type="button" className="settings-btn" onClick={() => signInAgent(agent)}>
+                    Sign in
+                </button>
+            )}
             {installable && (state === "missing" || state === "broken") && (
                 <button type="button" className="settings-btn" onClick={() => installAgent(agent.type)}>
                     {state === "broken" ? "Reinstall" : "Install"}

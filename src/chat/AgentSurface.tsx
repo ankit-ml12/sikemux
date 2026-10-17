@@ -7,6 +7,9 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { putDraft, takeDraft } from "./draftHandoff";
+import { promptDraft } from "../terminal/promptDraft";
+import { screenWithin } from "../state/terminalScreens";
 import { isResumableSession } from "../terminal/sessionResume";
 import { AgentBuddy } from "../buddies/Buddy";
 import { openBuddyPicker } from "../buddies/commands";
@@ -92,6 +95,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     /* A terminal agent that kept running while the app was closed comes back in its terminal. */
     const [view, setView] = useState<AgentView>(supportsGui && !isResumableSession(agent.ptyId) ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
+    /* What was typed in the chat when the agent moved to its TUI, left at the TUI's prompt. */
+    const [carried, setCarried] = useState("");
     const [chatBusy, setChatBusy] = useState(false);
     const working = useStore((state) => agentDisplay(state.agentActivity[agent.id]?.state).group === "working");
     const busy = chatBusy || working;
@@ -100,10 +105,13 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const { recovery, generation } = useTuiResume(agent.id);
     const cwd = agentCwd(agent, session);
 
+    const tuiLayer = useRef<HTMLDivElement>(null);
     const switchView = useCallback(
         async (next: AgentView) => {
             if (next === view || switching || busy) return;
             setSwitching(true);
+            setCarried(next === "tui" ? takeDraft(agent.id) : "");
+            if (next === "gui" && tuiLayer.current) putDraft(agent.id, promptDraft(screenWithin(tuiLayer.current)));
             if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
             clearTuiRecovery(agent.id);
             setView(next);
@@ -120,7 +128,6 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     useEffect(() => (guiActive ? showingChat(agent.id) : undefined), [agent.id, guiActive]);
 
     /* A terminal agent takes deliveries as typed text, the way a paste would arrive. */
-    const tuiLayer = useRef<HTMLDivElement>(null);
     const tuiShown = visible && view === "tui" && !switching;
     useEffect(() => {
         if (!tuiShown) return;
@@ -226,6 +233,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             cwd={cwd}
                             startup={agent.startup}
                             directCommand={agent.directCommand}
+                            initialDraft={carried || undefined}
+                            onInitialInputDelivered={() => setCarried("")}
                             active={visible}
                             visible={visible}
                             spawnWhen={visible}

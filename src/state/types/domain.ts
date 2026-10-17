@@ -209,6 +209,16 @@ export type RailDensity = "comfortable" | "compact";
 /** Whether the agent rail lists the open project or every open project. */
 export type AgentRailScope = "project" | "all";
 
+/** A saved chat kept at the top of the agent rail, open or closed. */
+export interface PinnedChat {
+    agent: AgentType;
+    /** The agent's own id for the conversation, which resumes it. */
+    id: string;
+    title: string;
+    /** The project folder the chat ran in. */
+    project: string;
+}
+
 /** What the diff tab is reviewing: a changed file, or a whole commit. */
 export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; rev: string; subject: string };
 

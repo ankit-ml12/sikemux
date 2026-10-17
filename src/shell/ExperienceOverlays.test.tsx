@@ -12,6 +12,7 @@ vi.mock("../state/resources", () => ({
             ? [
                   { type: "codex", label: "Codex", available: false, status: { state: "missing" } },
                   { type: "claude", label: "Claude", status: { state: "signedOut" } },
+                  { type: "grok", label: "Grok", available: false, status: { state: "broken", reason: "grok --version exited 1" } },
               ]
             : undefined,
         status: enabled ? ("ok" as const) : ("idle" as const),
@@ -74,6 +75,10 @@ describe("Onboarding", () => {
         expect(signInAgent).toHaveBeenCalledWith(expect.objectContaining({ type: "claude" }));
         expect(within(hermes).queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
         expect(screen.queryByText("Muse")).toBeNull();
+
+        const grok = screen.getByText("Grok").closest("li")!;
+        fireEvent.click(within(grok).getByRole("button", { name: "Reinstall" }));
+        expect(installAgent).toHaveBeenLastCalledWith("grok");
     });
 
     it("focuses the first move and shows custom shortcuts", async () => {

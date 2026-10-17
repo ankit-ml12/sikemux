@@ -27,6 +27,7 @@ import { AgentMark } from "../agents/AgentMark";
 import { receiveForAgent } from "../agents/agentInbox";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
 import type { OutgoingMessage } from "./queuedMessages";
+import { registerComposer } from "./draftHandoff";
 import type { PromptContext } from "../api/acp";
 import type { RepoRef } from "../codehost/types";
 import type { TrackedItem, TrackedKind } from "../codehost/tracked";
@@ -227,6 +228,21 @@ export function ChatComposer({
     onQuestionKey?: (key: string, primary: boolean) => boolean;
 }) {
     const [draft, setDraft] = useState("");
+    const draftNow = useRef(draft);
+    draftNow.current = draft;
+    useEffect(
+        () =>
+            registerComposer(agent.id, {
+                take: () => {
+                    const taken = draftNow.current;
+                    draftNow.current = "";
+                    setDraft("");
+                    return taken;
+                },
+                put: (text) => setDraft((now) => (now.trim() ? `${now}\n${text}` : text)),
+            }),
+        [agent.id],
+    );
     const [historyPosition, setHistoryPosition] = useState<HistoryPosition | null>(null);
     const recalledCaret = useRef<"start" | "end" | null>(null);
     const [caret, setCaret] = useState(0);

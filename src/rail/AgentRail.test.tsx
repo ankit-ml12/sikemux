@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -74,6 +74,7 @@ vi.stubGlobal(
 import type { RecentChatsPage, RecentChatsRequest } from "../api/agents";
 import { acceptDialog, dismissDialog, useDialogs } from "../state/dialog";
 import { invalidate } from "../state/resources";
+import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { AccountDialogHost } from "../agents/AccountDialog";
 import { AgentRailBody } from "./AgentRail";
@@ -335,6 +336,32 @@ describe("agent rail", () => {
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
         expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeInTheDocument();
         expect(screen.queryByRole("menuitem", { name: "Delete…" })).not.toBeInTheDocument();
+    });
+
+    it("keeps a pinned chat at the top, open or closed, until it is unpinned", async () => {
+        const user = userEvent.setup();
+        render(<AgentRailBody />);
+        const pinned = () => within(screen.getByText("Pinned").closest<HTMLElement>(".agent-group")!);
+
+        await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
+        await user.click(screen.getByRole("menuitem", { name: "Pin" }));
+        await waitFor(() => expect(screen.getAllByRole("button", { name: /Fix terminal focus/ })).toHaveLength(1));
+        expect(pinned().getByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
+
+        await user.click(pinned().getByRole("button", { name: /Fix terminal focus/ }));
+        await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(1));
+        const [id] = agentIdsOf(getState(), "sess-project");
+        expect(pinned().getByRole("button", { name: "Fix terminal focus" })).toBeInTheDocument();
+
+        act(() => cmd.renameAgent(id, "Terminal focus bug"));
+        act(() => cmd.closeAgent(id));
+        await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(0));
+        expect(pinned().getByRole("button", { name: /Terminal focus bug/ })).toBeInTheDocument();
+
+        await user.pointer({ keys: "[MouseRight]", target: pinned().getByRole("button", { name: /Terminal focus bug/ }) });
+        await user.click(screen.getByRole("menuitem", { name: "Unpin" }));
+        expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
     });
 
     it("opens a recent chat from the row's menu", async () => {
