@@ -9,7 +9,7 @@ description: "Install Sikemux on a Mac or on Linux, or just its core on a server
 curl -fsSL https://sikemux.com/install | sh
 ```
 
-On a Mac this puts Sikemux in `/Applications`. On x86_64 Linux it installs the `.deb` or `.rpm`, or the AppImage in `~/Applications`.
+On a Mac this puts Sikemux in `/Applications`. On Linux it asks whether you want the desktop app or just the core, and suggests the core on a machine with no desktop. The app comes as the `.deb` or `.rpm`, or the AppImage in `~/Applications`, on x86_64 only.
 
 For the nightly build, set the channel before `sh`:
 
@@ -19,13 +19,17 @@ curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL=nightly sh
 
 ## On a server
 
-A Linux machine with no screen, such as a VPS or a spare box, can run just the core, which keeps agents working with nobody watching:
+A Linux machine with no screen, such as a VPS or a spare box, can run just the core, which keeps agents working with nobody watching. Run the same line there and pick the core, or skip the question:
 
 ```bash
 curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL=nightly sh -s -- --host
 ```
 
-It works on x86_64 and arm64 and needs no WebKit. The `sikemux` command goes in `/usr/local/bin`, or in `~/.local/bin` when you are not root. With systemd, the core then starts at boot and restarts if it crashes. Last, the installer prints a code: approve it at app.sikemux.com or in Sikemux on your phone to add the host to your account.
+`--app` picks the desktop app instead, and `--yes` takes every default without asking, as cloud-init and other scripts need. With no terminal attached, the installer asks nothing and installs the core on a machine with no desktop.
+
+The core works on x86_64 and arm64 and needs no WebKit. The `sikemux` command goes in `/usr/local/bin`, or in `~/.local/bin` when you are not root. With systemd, the core then starts at boot and restarts if it crashes. Last, it offers to sign the host in and prints a code: approve it at app.sikemux.com or in Sikemux on your phone to add the host to your account. Then link it from your Mac under Settings → Devices → Computers.
+
+The host needs no open ports: it connects out to Sikemux's relays over HTTPS and to your devices over UDP, so a firewall or security group can block all inbound traffic.
 
 Later:
 
