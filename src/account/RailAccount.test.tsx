@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACCOUNT_CHANGED_EVENT, type AccountStatus } from "../api/account";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { initials, useAccount } from "./account";
-import { AccountButton } from "./AccountButton";
+import { RailAccount } from "./RailAccount";
 
 const PICTURE = "data:image/png;base64,iVBORw0KGgo=";
 const SIGNED_OUT: AccountStatus = { signedIn: false, userId: null, email: null, name: null, picture: null };
@@ -39,19 +39,18 @@ describe("initials", () => {
     });
 });
 
-describe("AccountButton", () => {
+describe("RailAccount", () => {
     it("shows initials until a picture arrives, then the picture", async () => {
         serve(SIGNED_IN, { ...SIGNED_IN, picture: PICTURE });
-        const { container } = render(<AccountButton />);
+        const { container } = render(<RailAccount />);
 
-        const button = await screen.findByRole("button", { name: "Account: ada@example.com" });
         await vi.waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe(PICTURE));
-        expect(button.textContent).toBe("");
+        expect(screen.queryByText("AL")).toBeNull();
     });
 
     it("falls back to initials when the picture cannot be drawn", async () => {
         serve({ ...SIGNED_IN, picture: PICTURE });
-        const { container } = render(<AccountButton />);
+        const { container } = render(<RailAccount />);
 
         const image = await vi.waitFor(() => {
             const found = container.querySelector("img");
@@ -64,10 +63,10 @@ describe("AccountButton", () => {
 
     it("shows the host signed out once the account lets it go", async () => {
         serve(SIGNED_IN);
-        render(<AccountButton />);
+        render(<RailAccount />);
 
         expect(await screen.findByRole("button", { name: "Account: ada@example.com" })).toBeInTheDocument();
         transport.emit(ACCOUNT_CHANGED_EVENT, SIGNED_OUT);
-        expect(await screen.findByRole("button", { name: "Account: not signed in" })).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
     });
 });

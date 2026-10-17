@@ -30,6 +30,7 @@ import { collectPanes } from "../state/layout";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
+import { RailAccount } from "../account/RailAccount";
 import { UpdateChip } from "./UpdateChip";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { agentDisplayOf, agentIdsOf } from "../state/selectors";
@@ -826,6 +827,7 @@ export const SideRail = memo(function SideRail() {
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
                 </div>
                 <UpdateChip />
+                <RailAccount />
             </aside>
             {projectDragVisual &&
                 createPortal(

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { accountApi, type AccountHost, type AccountStatus } from "../api/account";
 import { portsApi } from "../api/ports";
 import { AccountAvatar } from "../account/AccountAvatar";
-import { loadAccount, offerAccountPhones, setAccount, useAccount } from "../account/account";
+import { loadAccount, signInToAccount, signOutOfAccount, useAccount } from "../account/account";
 import { formatAgo } from "../lib/format";
 import {
     remoteApi,
@@ -14,7 +14,6 @@ import {
     type RemoteStatus,
 } from "../api/remote";
 import { ACCESS_OPTIONS, platformName } from "../remote/access";
-import * as cmd from "../state/commands";
 import { reportError, swallow } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
@@ -204,13 +203,8 @@ function AccountRow({ account, link }: { account: AccountStatus; link: AccountLi
     const [leaving, setLeaving] = useState(false);
     const signOut = async () => {
         setLeaving(true);
-        try {
-            setAccount(await accountApi.signOut());
-        } catch (error) {
-            reportError("Sign out")(error);
-        } finally {
-            setLeaving(false);
-        }
+        await signOutOfAccount();
+        setLeaving(false);
     };
     return (
         <DevicesRow
@@ -235,19 +229,7 @@ function AccountRow({ account, link }: { account: AccountStatus; link: AccountLi
 }
 
 function SignInCall({ removed }: { removed: string | null }) {
-    const [waiting, setWaiting] = useState(false);
-    const signIn = async () => {
-        setWaiting(true);
-        try {
-            setAccount(await accountApi.signIn());
-            cmd.openSettings("devices");
-            offerAccountPhones().catch(swallow("phones on the account"));
-        } catch (error) {
-            if (!String(error).includes("cancelled")) reportError("Sign in")(error);
-        } finally {
-            setWaiting(false);
-        }
-    };
+    const waiting = useAccount((s) => s.signingIn);
     return (
         <section className="devices-panel devices-sign-in" data-settings-target="Your account">
             <div className="devices-panel-copy">
@@ -263,7 +245,7 @@ function SignInCall({ removed }: { removed: string | null }) {
                             Cancel
                         </button>
                     ) : (
-                        <button className="settings-btn primary" type="button" onClick={() => void signIn()}>
+                        <button className="settings-btn primary" type="button" onClick={() => void signInToAccount()}>
                             Sign in
                         </button>
                     )}

@@ -20,7 +20,6 @@ import { RollingText } from "../ui/RollingText";
 import { remoteRepoR } from "../codehost/project";
 import { codeHost } from "../codehost/registry";
 import { PortsChip } from "../ports/PortsChip";
-import { AccountButton } from "../account/AccountButton";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -104,24 +103,6 @@ function GitChip({ repo }: { repo: string }) {
     );
 }
 
-function CogIcon({ size = 15 }: { size?: number }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-    );
-}
-
 function VoicePill() {
     const phase = useVoice((s) => s.phase);
     if (phase !== "listening" && phase !== "transcribing") return null;
@@ -169,7 +150,6 @@ export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const zen = useStore(selectFocusMode);
     const focusShortcut = useShortcutLabel("view.focusMode");
-    const settingsShortcut = useShortcutLabel("settings.toggle");
     const [stripHovered, setStripHovered] = useState(false);
     const plugins = useInstalledPlugins();
 
@@ -200,13 +180,7 @@ export const TopBar = memo(function TopBar() {
                             <IconFocus size={15} />
                         </button>
                     </Tooltip>
-                    <Tooltip label={withShortcut("Settings", settingsShortcut)}>
-                        <button className="tb-btn" onClick={cmd.toggleSettings} aria-label="Settings">
-                            <CogIcon size={15} />
-                        </button>
-                    </Tooltip>
                 </div>
-                <AccountButton />
             </div>
         </header>
     );
