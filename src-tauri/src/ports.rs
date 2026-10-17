@@ -154,14 +154,19 @@ fn scan(_app_pid: u32, _core_pid: Option<u32>, _ptys: Vec<PtyProcess>) -> Vec<Li
 }
 
 /// Whether something on this Mac, not only what Sikemux started, already
-/// listens on `port`. Binding and dropping a socket is the one test that sees
-/// every program; an address the Mac does not have counts as free.
+/// listens on `port`. Connecting reaches servers on loopback or on every
+/// address, and unlike listening it never raises the macOS firewall prompt.
 fn in_use(port: u16) -> bool {
-    ["0.0.0.0", "127.0.0.1", "::1"].iter().any(|host| {
-        matches!(
-            std::net::TcpListener::bind((*host, port)),
-            Err(error) if error.kind() != std::io::ErrorKind::AddrNotAvailable
+    let loopback = [
+        std::net::IpAddr::from([127, 0, 0, 1]),
+        std::net::IpAddr::from(std::net::Ipv6Addr::LOCALHOST),
+    ];
+    loopback.into_iter().any(|ip| {
+        std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::new(ip, port),
+            std::time::Duration::from_millis(200),
         )
+        .is_ok()
     })
 }
 
