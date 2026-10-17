@@ -143,8 +143,8 @@
 
 .chat-questions-choices {
     display: grid;
-    gap: 2px;
-    padding: 4px 6px 8px;
+    gap: 4px;
+    padding: 6px 12px 12px;
 }
 
 .chat-questions-choice {
@@ -153,6 +153,7 @@
     width: 100%;
     padding: 7px 8px 8px 4px;
     border-radius: var(--radius-2);
+    background: var(--surface-hover);
     color: var(--text-secondary);
     text-align: left;
     transition: background 90ms;
@@ -160,11 +161,11 @@
 
 .chat-questions-choice:hover:not(:disabled),
 .chat-questions-choice.cursor {
-    background: var(--surface-hover);
+    background: var(--surface-chosen);
 }
 
 .chat-questions-choice.chosen {
-    background: var(--surface-chosen);
+    background: color-mix(in oklab, var(--ink) 14%, transparent);
     color: var(--text-primary);
 }
 
