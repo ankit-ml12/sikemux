@@ -308,7 +308,7 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                             label,
                             command,
                             cwd: relativeTo(project, cwd),
-                            foundIn: id.startsWith(PERSONAL_TASK_PREFIX) ? "added by the person" : "build files",
+                            foundIn: id.startsWith(PERSONAL_TASK_PREFIX) ? ".sikemux/tasks.json" : "build files",
                             ...(java ? { java: { required: java.required, runsOn: java.runtime?.major ?? null } } : {}),
                         };
                     }),

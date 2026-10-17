@@ -5,7 +5,7 @@ import type { ProjectConfigLoadResult } from "../projects/projectConfig";
 import { whenTrusted } from "../projects/projectTrust";
 import { notify, reportError } from "../state/toast";
 import { activeProjectTaskInventoryMatches, appTaskRuntime, javaChoiceOf, refreshDetectedTasks, setPortOverride } from "./application";
-import { PERSONAL_TASK_PREFIX } from "./addedTasks";
+import { PERSONAL_TASK_PREFIX, trustPersonalTask } from "./addedTasks";
 import { isDetectedRunTask } from "./detectedTasks";
 import { checkTask, type CheckItem } from "./environmentCheck";
 import { taskTerminalKey } from "./runtime";
@@ -99,9 +99,13 @@ function whenEnvironmentReady(task: ResolvedTaskDefinition, run: () => void): vo
         .catch(reportError(`check ${task.label}`));
 }
 
-// Detected tasks run fixed commands Sikemux wrote, so only sikemux.json tasks need the trust prompt.
+// Tasks found in build files run commands Sikemux wrote; sikemux.json and .sikemux/tasks.json hold commands anyone could have written.
 function whenTaskAllowed(project: string, config: ProjectConfigLoadResult | null, task: ResolvedTaskDefinition, run: () => void): void {
-    if (task.source === "built-in") whenEnvironmentReady(task, run);
+    if (task.id.startsWith(PERSONAL_TASK_PREFIX))
+        void trustPersonalTask(task)
+            .then((ok) => ok && whenEnvironmentReady(task, run))
+            .catch(reportError(`check ${task.label}`));
+    else if (task.source === "built-in") whenEnvironmentReady(task, run);
     else if (config?.status === "valid") whenTrusted(project, config, true, () => whenEnvironmentReady(task, run));
 }
 

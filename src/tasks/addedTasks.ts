@@ -1,6 +1,7 @@
 import { fsapi } from "../api/fs";
 import { joinPath } from "../lib/paths";
 import { PROJECT_CONFIG_FILE } from "../projects/projectConfig";
+import { confirmDialog, type ConfirmRequest } from "../state/dialog";
 import type { TaskDefinitionInput } from "./taskRegistry";
 
 /** Tasks one person added for themselves, in a folder that keeps itself out of Git. */
@@ -49,6 +50,34 @@ function withTask(existing: unknown, task: Partial<StoredTask>): unknown[] {
     return [...tasks.filter((candidate) => (candidate as { id?: unknown } | null)?.id !== task.id), task];
 }
 
+interface PersonalTaskRun {
+    readonly project: string;
+    readonly label: string;
+    readonly command: string;
+    readonly cwd: string;
+}
+
+/** Personal tasks this person saved or approved since Sikemux opened. */
+const trustedPersonalTasks = new Set<string>();
+
+const trustKey = (task: Omit<PersonalTaskRun, "label">) => `${task.project}\0${task.cwd}\0${task.command}`;
+
+const absoluteCwd = (project: string, cwd: string) => (cwd === "." ? project : joinPath(project, cwd));
+
+/** A cloned repository can ship its own .sikemux/tasks.json, so a task saved there runs only once the person has seen its command. */
+export async function trustPersonalTask(task: PersonalTaskRun, ask: (request: ConfirmRequest) => Promise<boolean> = confirmDialog): Promise<boolean> {
+    const key = trustKey(task);
+    if (trustedPersonalTasks.has(key)) return true;
+    const approved = await ask({
+        title: `Run ${task.label}?`,
+        body: "This task comes from the project's .sikemux/tasks.json. Trust lasts until Sikemux closes or the task changes.",
+        commands: [{ label: task.label, command: task.cwd === task.project ? task.command : `cd ${task.cwd} && ${task.command}` }],
+        confirmLabel: "Run task",
+    });
+    if (approved) trustedPersonalTasks.add(key);
+    return approved;
+}
+
 export async function readPersonalTasks(project: string): Promise<TaskDefinitionInput[]> {
     const stored = await readJson(joinPath(project, PERSONAL_TASKS)).catch(() => null);
     const tasks = Array.isArray(stored?.tasks) ? stored.tasks.filter(isStoredTask) : [];
@@ -57,7 +86,7 @@ export async function readPersonalTasks(project: string): Promise<TaskDefinition
         label: task.label,
         command: task.command,
         project,
-        cwd: task.cwd === "." ? project : joinPath(project, task.cwd),
+        cwd: absoluteCwd(project, task.cwd),
     }));
 }
 
@@ -71,6 +100,7 @@ export async function savePersonalTask(project: string, task: AddedTask): Promis
     const stored = (await readJson(path)) ?? {};
     const id = taskIdFor(task.label);
     await fsapi.writeFile(path, `${JSON.stringify({ ...stored, tasks: withTask(stored.tasks, { id, ...task }) }, null, 2)}\n`);
+    trustedPersonalTasks.add(trustKey({ project, cwd: absoluteCwd(project, task.cwd), command: task.command }));
     return `${PERSONAL_TASK_PREFIX}${id}`;
 }
 
