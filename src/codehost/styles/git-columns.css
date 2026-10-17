@@ -9,11 +9,21 @@
 }
 .git-left .pr-list,
 .gha-full-page > .pr-list {
-    padding: 0 6px var(--space-3);
+    margin: var(--space-2) 10px var(--space-3);
+    padding: 0 6px var(--space-1h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: var(--gha-tint);
 }
 .git-left .pr-list .gha-list-head,
 .gha-full-page > .pr-list .gha-list-head {
     padding: var(--space-2) 4px var(--space-1);
+}
+.git-left .gha-labels {
+    flex-shrink: 0;
+}
+.git-left .gha-label + .gha-label {
+    display: none;
 }
 .git-left .gha-item-row {
     padding: 7px 8px 7px 6px;

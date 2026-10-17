@@ -144,8 +144,7 @@
     overflow: hidden;
 }
 .gha-label {
-    display: inline-flex;
-    align-items: center;
+    display: inline-block;
     flex: 0 0 auto;
     height: 17px;
     max-width: 18ch;
@@ -156,7 +155,7 @@
     color: var(--text-secondary);
     font-size: var(--text-3xs);
     font-weight: var(--weight-medium);
-    line-height: 1;
+    line-height: 15px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
