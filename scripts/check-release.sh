@@ -69,6 +69,8 @@ if (!pkg.scripts?.["build:linux"]?.includes("build:sidecar")) fail("Linux build 
 if (!pkg.scripts?.["build:linux"]?.includes("tauri.sidecar.conf.json")) fail("Linux build does not bundle the CLI sidecar");
 if (!releaseWorkflow.includes("run: pnpm build:linux")) fail("the Release workflow does not build the Linux packages");
 if (!publish.includes('"$DEB" "$RPM" "$APPIMAGE"')) fail("releases do not publish the Linux packages");
+if (!releaseWorkflow.includes("scripts/package-host.sh")) fail("the Release workflow does not build the Linux host core");
+if (!publish.includes('"$APPIMAGE" "${HOSTS[@]}"')) fail("releases do not publish the Linux host core");
 if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor"])) fail("sidecar bundle mapping is incomplete");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
 if (!macBuild.includes("build-notch-helper.mjs")) fail("macOS build does not build the notch helper");

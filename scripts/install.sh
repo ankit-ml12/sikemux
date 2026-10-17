@@ -1,10 +1,18 @@
 #!/bin/sh
 # Installs Sikemux: curl -fsSL https://sikemux.com/install | sh
+# On a Linux server, `| sh -s -- --host` installs only the core, with no window.
 # Set SIKEMUX_CHANNEL=nightly for the nightly build.
 set -eu
 
 REPO="https://github.com/nodelike/sikemux"
 CHANNEL="${SIKEMUX_CHANNEL:-stable}"
+HOST=false
+for arg in "$@"; do
+  case "$arg" in
+    --host) HOST=true ;;
+    *) printf 'sikemux install: unknown option %s\n' "$arg" >&2; exit 2 ;;
+  esac
+done
 
 say() { printf '%s\n' "$*"; }
 fail() { printf 'sikemux install: %s\n' "$*" >&2; exit 1; }
@@ -78,6 +86,55 @@ install_linux() {
   fi
   say "Installed Sikemux $VERSION"
 }
+
+install_host() {
+  case "$(uname -m)" in
+    x86_64 | amd64) arch=x86_64 ;;
+    aarch64 | arm64) arch=aarch64 ;;
+    *) fail "a Sikemux host needs an x86_64 or arm64 machine" ;;
+  esac
+  asset="sikemux-host-${VERSION}-linux-${arch}.tar.gz"
+  download "$asset" "Hosts ship in nightlies first; try SIKEMUX_CHANNEL=nightly"
+  tar -xzf "$TMP/$asset" -C "$TMP"
+  if [ "$(id -u)" -eq 0 ]; then bin=/usr/local/bin; else bin="$HOME/.local/bin"; fi
+  mkdir -p "$bin"
+  updating=false
+  [ -e "$bin/sikemux-editor" ] && updating=true
+  cp "$TMP/sikemux-editor" "$bin/.sikemux-editor.new"
+  chmod 755 "$bin/.sikemux-editor.new"
+  mv -f "$bin/.sikemux-editor.new" "$bin/sikemux-editor"
+  ln -sf sikemux-editor "$bin/sikemux"
+  say "Installed the Sikemux $VERSION core in $bin"
+  case ":$PATH:" in
+    *":$bin:"*) ;;
+    *) say "Add $bin to your PATH to run sikemux from a shell." ;;
+  esac
+
+  if systemctl --user show-environment >/dev/null 2>&1; then
+    if ! loginctl enable-linger "$(id -un)" 2>/dev/null; then
+      as_root loginctl enable-linger "$(id -un)" || say "Could not keep the core running after you log out; run: loginctl enable-linger"
+    fi
+    "$bin/sikemux-editor" core install
+    if $updating; then
+      say "A core already running keeps its old version until it restarts:"
+      say "  systemctl --user restart com.nodelike.sikemux.core"
+    fi
+  else
+    say "No systemd user session here, so the core starts on demand and not at boot."
+  fi
+
+  if (: </dev/tty) 2>/dev/null; then
+    "$bin/sikemux-editor" core sign-in </dev/tty >/dev/tty 2>&1 || true
+  else
+    say "Sign this host in to your account with: sikemux core sign-in"
+  fi
+}
+
+if $HOST; then
+  [ "$(uname -s)" = Linux ] || fail "--host installs the core on Linux; on a Mac, install the app"
+  install_host
+  exit 0
+fi
 
 case "$(uname -s)" in
   Darwin) install_mac ;;

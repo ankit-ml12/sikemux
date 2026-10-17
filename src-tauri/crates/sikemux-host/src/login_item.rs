@@ -127,6 +127,10 @@ pub fn path(identifier: &str) -> Option<PathBuf> {
 pub fn install(identifier: &str, launch: &CoreLaunch) -> std::io::Result<PathBuf> {
     let label = label(identifier);
     let path = service::path(&label).ok_or_else(|| std::io::Error::other("HOME is not set"))?;
+    // systemd and launchd open the log themselves and never create its folder.
+    if let Some(logs) = launch.log.parent() {
+        std::fs::create_dir_all(logs)?;
+    }
     let path_env = crate::environment::child_path();
     let contents = service::render(&label, launch, path_env.as_deref());
     if write_if_changed(&path, &contents)? {

@@ -34,6 +34,12 @@ chmod +x Sikemux_<version>_amd64.AppImage           # any other distribution
 
 The Linux build does not update itself yet, so install each new release the same way.
 
+On a Linux server with no screen, install just the core, for x86_64 or arm64, and sign it in to your account:
+
+```bash
+curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL=nightly sh -s -- --host
+```
+
 ## What's inside
 
 - **Projects** with a code editor, terminals, Git, and search, all in one working directory
