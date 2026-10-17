@@ -522,6 +522,27 @@ textarea:focus,
     opacity: 0;
 }
 
+/* An agent tab with no status lets its name reach the end, and gives that end to the close on hover. */
+.tab-wrap:has(.tab-note):not(:has(.tab-status)) {
+    position: relative;
+}
+
+.tab-wrap:has(.tab-note):not(:has(.tab-status)) > .tab-tail {
+    position: absolute;
+    top: 50%;
+    right: var(--space-1);
+    margin: 0;
+    transform: translateY(-50%);
+}
+
+.tab-wrap:has(.tab-note):not(:has(.tab-status)) .tab-note {
+    transition: opacity var(--dur-1) linear;
+}
+
+.tab-wrap:has(.tab-note):not(:has(.tab-status)):is(:hover, :has(.tab-x:focus-visible)) .tab-note {
+    opacity: 0;
+}
+
 /* With no status to show, a row's subagent and shell counts take the trailing
    slot themselves and give it to the close on hover, as the spinner does. */
 .agent-row-wrap:not(:has(> .row-status)) > .agent-row {
