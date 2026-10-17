@@ -564,7 +564,7 @@ function timeLeft(device) {
 
 /** The agent's name, small and dim with the row's counts and state at its end, as the app's rail reads. */
 function agentName(a) {
-    return a.name ? `<span class="agent-name">${a.name}</span>` : "";
+    return a.name ? `<span class="agent-name">@${a.name}</span>` : "";
 }
 
 /** Laid out as the app's agent rail row: the task with how long ago, the project, then the name, counts and state together at the end. */

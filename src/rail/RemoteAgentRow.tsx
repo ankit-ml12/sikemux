@@ -1,3 +1,4 @@
+import { agentHandle } from "../agents/AgentLabel";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { isAgentType } from "../agents/catalog";
 import type { TeamLink, TeamMember } from "../agents/teams";
@@ -42,7 +43,7 @@ export function RemoteAgentRow({ agent, link }: { agent: RemoteAgent; link?: Tea
                     {isAgentType(agent.cli) ? <AgentIcon type={agent.cli} size={20} /> : <IconAgent size={20} />}
                 </span>
                 <span className="agent-title">
-                    <span className="agent-name">{agent.name}</span>{" "}
+                    <span className="agent-name">{agentHandle(agent.name)}</span>{" "}
                     <span className="agent-name-title">
                         on {agent.host}
                         {!agent.reachable && ", out of reach"}

@@ -187,7 +187,7 @@ struct RowLine: View {
             if entry.item.name != nil || entry.subagents > 0 || entry.tasks > 0 || entry.mark != .idle {
                 HStack(spacing: 8) {
                     if let name = entry.item.name {
-                        Text(name).font(Theme.ui(11)).foregroundStyle(Theme.inkFaint).lineLimit(1).fixedSize()
+                        Text("@\(name)").font(Theme.ui(11)).foregroundStyle(Theme.inkFaint).lineLimit(1).fixedSize()
                     }
                     if entry.subagents > 0 { SubagentCount(count: entry.subagents) }
                     if entry.tasks > 0 { ShellCount(count: entry.tasks) }

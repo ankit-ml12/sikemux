@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react";
+import { agentHandle } from "../agents/AgentLabel";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -126,7 +127,7 @@ export function OpenAgentRow({
                         <span className="agent-title">{agent.title}</span>
                         {project && <AgentRowProject name={project.name} />}
                     </span>
-                    {agent.name && <span className="agent-row-name">{agent.name}</span>}
+                    {agent.name && <span className="agent-row-name">{agentHandle(agent.name)}</span>}
                     <BackgroundCounts display={display} />
                 </button>
             )}

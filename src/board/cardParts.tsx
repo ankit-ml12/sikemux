@@ -1,4 +1,5 @@
 import { AgentMark } from "../agents/AgentMark";
+import { agentHandle } from "../agents/AgentLabel";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 import { agentDisplay } from "../state/agentStatus";
 import { useStore } from "../state/store";
@@ -11,7 +12,7 @@ export function Owner({ id, name, cli, paidBy }: { id: string; name: string | nu
     return (
         <span className="board-owner">
             <AgentMark cli={agent?.type ?? cli} />
-            <b>{agent?.name ?? name ?? "An agent"}</b>
+            <b>{agent?.name ? agentHandle(agent.name) : name ? agentHandle(name) : "An agent"}</b>
             {paidBy && (
                 <span className="board-owner-paid" title={`Paid with ${paidBy}`}>
                     {paidBy}

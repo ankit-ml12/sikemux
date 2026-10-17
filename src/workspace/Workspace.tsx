@@ -34,6 +34,7 @@ import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentFace } from "../buddies/Buddy";
 import { IconArrowUp, IconClose, IconCopy, IconFolder, IconMove, IconPencil, IconPlus, IconRotate, IconSquarePlus, WindowIcon } from "../ui/Icons";
+import { agentHandle } from "../agents/AgentLabel";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { PROJECT_SURFACES } from "../workbench/surfaces";
@@ -426,7 +427,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 return {
                     label: title,
                     title,
-                    note: agent?.name,
+                    note: agent?.name && agentHandle(agent.name),
                     icon: agent ? (
                         <AgentFace
                             agent={agent}
@@ -484,7 +485,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                         label: agent.title,
                         title: agent.title,
                         active: key === activeKey,
-                        note: agent.name,
+                        note: agent.name && agentHandle(agent.name),
                         icon: (
                             <AgentFace
                                 agent={agent}
