@@ -64,7 +64,7 @@ function answerMeta(messages: ChatMessage[], endIndex: number): RowMeta {
 
 /* A prompt carries its own copy. An answer carries one only where it ends, so
    a turn gets a single row rather than one after every tool call. */
-const NO_META: RowMeta = { text: "", rate: null, at: null, took: null };
+export const NO_META: RowMeta = { text: "", rate: null, at: null, took: null };
 
 /* Every row asks on every update, and a finished message never changes, so
    each one is worked out once. An answer's run ends at the message asked about,

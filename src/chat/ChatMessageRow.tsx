@@ -318,6 +318,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     took,
     onEdit,
     from = 0,
+    to,
+    folded = false,
 }: {
     message: ChatMessage;
     live: boolean;
@@ -327,12 +329,16 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     took: number | null;
     /** Given when the person may write this message again. */
     onEdit?: (message: ChatMessage, text: string) => void;
-    /** Where the shown parts start, when the work before them is folded away. */
+    /** Where the shown parts start. */
     from?: number;
+    /** Where the shown parts end, when the rest of the message is drawn on another row. */
+    to?: number;
+    /** Shows only the reply from `from` on, and what outlives the fold, with the work before it folded away. */
+    folded?: boolean;
 }) {
     const letters = useMemo(() => messageLetters(message), [message]);
     const { parts, context } = useMemo(() => sentParts(message), [message]);
-    const shown = useMemo(() => shownParts(parts, from), [parts, from]);
+    const shown = useMemo(() => (folded ? shownParts(parts, from) : parts.slice(from, to)), [parts, from, to, folded]);
     const [editing, setEditing] = useState(false);
     const attachments = message.attachments ?? [];
     if (letters) return <AgentLetters id={message.id} letters={letters} at={at} />;

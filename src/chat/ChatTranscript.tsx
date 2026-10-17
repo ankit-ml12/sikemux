@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode, type RefObject, type UIEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useState, type ReactNode, type RefObject, type UIEvent } from "react";
 import type { Agent } from "../state/types";
 import { ChatActivity } from "./ChatActivity";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { EARLIER_LOST } from "./earlier";
 import { FoldMemoryContext, type FoldMemory } from "./longText";
-import { rowMeta } from "./messageMeta";
+import { NO_META, rowMeta } from "./messageMeta";
 import { PermissionRequest } from "./PermissionRequest";
 import { formatDetail, outlivesFold, workFolds } from "./transcript";
 import type { AcpPermissionRequest, ChatMessage, ChatState } from "./types";
@@ -88,6 +88,76 @@ export function ChatTranscript({
         });
     const plan = useMemo(() => (state.plan === null ? null : formatDetail(state.plan)), [state.plan]);
 
+    useLayoutEffect(() => {
+        const scroller = scrollRef.current;
+        if (!scroller || typeof ResizeObserver === "undefined") return;
+        const observer = new ResizeObserver(() => scroller.style.setProperty("--chat-view-h", `${scroller.clientHeight}px`));
+        observer.observe(scroller);
+        return () => observer.disconnect();
+    }, [scrollRef]);
+
+    const messageRow = (index: number, shown: { from?: number; to?: number; folded?: boolean } = {}, summary?: ReactNode) => {
+        const message = state.messages[index];
+        const meta = shown.to === undefined ? rowMeta(state.messages, index) : NO_META;
+        return (
+            <div key={message.id} data-index={index} className="chat-row">
+                {summary}
+                <ChatMessageRow
+                    {...shown}
+                    message={message}
+                    live={state.running && index === state.messages.length - 1}
+                    copyable={meta.text}
+                    rate={meta.rate}
+                    at={meta.at}
+                    took={meta.took}
+                    onEdit={onEdit && message.role === "user" && message.promptId ? onEdit : undefined}
+                />
+            </div>
+        );
+    };
+
+    const rows: ReactNode[] = [];
+    for (let index = firstRow; index < state.messages.length; index += 1) {
+        const message = state.messages[index];
+        const fold = folds.get(index);
+        if (!fold) {
+            rows.push(messageRow(index));
+            continue;
+        }
+        const folded = !unfolded && !openWork.has(fold.id);
+        const summary = index === Math.max(fold.start, firstRow) && (
+            <WorkSummary
+                agent={agentType}
+                took={fold.took}
+                calls={fold.calls}
+                thought={fold.thought}
+                open={!folded}
+                onToggle={() => toggleWork(fold.id)}
+            />
+        );
+        if (!folded) {
+            const steps: ReactNode[] = [];
+            for (let step = index; step < fold.end; step += 1) steps.push(messageRow(step));
+            if (fold.from > 0) steps.push(messageRow(fold.end, { to: fold.from }));
+            rows.push(
+                <Fragment key={`work-${fold.id}`}>
+                    {summary}
+                    <div className="chat-work-steps">
+                        <div className="chat-work-scroll">{steps}</div>
+                    </div>
+                </Fragment>,
+            );
+            rows.push(messageRow(fold.end, { from: fold.from }));
+            index = fold.end;
+        } else if (index < fold.end && !message.parts.some(outlivesFold))
+            rows.push(
+                <div key={message.id} data-index={index} className="chat-row">
+                    {summary}
+                </div>,
+            );
+        else rows.push(messageRow(index, { from: index < fold.end ? message.parts.length : fold.from, folded: true }, summary));
+    }
+
     return (
         <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
             <div className="chat-scroll-content" ref={contentRef}>
@@ -97,46 +167,7 @@ export function ChatTranscript({
                     </div>
                 )}
                 {before}
-                <FoldMemoryContext value={foldMemory}>
-                    {state.messages.slice(firstRow).map((message, offset) => {
-                        const index = firstRow + offset;
-                        const meta = rowMeta(state.messages, index);
-                        const fold = folds.get(index);
-                        const workId = fold ? fold.id : "";
-                        const folded = fold !== undefined && !unfolded && !openWork.has(workId);
-                        const summary = fold && index === Math.max(fold.start, firstRow) && (
-                            <WorkSummary
-                                agent={agentType}
-                                took={fold.took}
-                                calls={fold.calls}
-                                thought={fold.thought}
-                                open={!folded}
-                                onToggle={() => toggleWork(workId)}
-                            />
-                        );
-                        if (fold && folded && index < fold.end && !message.parts.some(outlivesFold))
-                            return (
-                                <div key={message.id} data-index={index} className="chat-row">
-                                    {summary}
-                                </div>
-                            );
-                        return (
-                            <div key={message.id} data-index={index} className="chat-row">
-                                {summary}
-                                <ChatMessageRow
-                                    from={fold && folded ? (index < fold.end ? message.parts.length : fold.from) : 0}
-                                    message={message}
-                                    live={state.running && index === state.messages.length - 1}
-                                    copyable={meta.text}
-                                    rate={meta.rate}
-                                    at={meta.at}
-                                    took={meta.took}
-                                    onEdit={onEdit && message.role === "user" && message.promptId ? onEdit : undefined}
-                                />
-                            </div>
-                        );
-                    })}
-                </FoldMemoryContext>
+                <FoldMemoryContext value={foldMemory}>{rows}</FoldMemoryContext>
                 {activity &&
                     (state.running ? (
                         <ChatActivity label={activity} agentType={agentType} />

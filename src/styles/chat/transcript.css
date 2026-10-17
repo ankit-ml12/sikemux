@@ -496,12 +496,28 @@
     font-size: calc(12.5px * var(--chat-text-em, 1));
 }
 
-.chat-work::after {
+.chat-work::after,
+.chat-work-steps::after {
     content: "";
     display: block;
     height: 1px;
     margin-top: 4px;
     background: color-mix(in oklab, var(--ink) 14%, transparent);
+}
+
+.chat-work-steps {
+    width: min(100%, 800px);
+    margin: 0 auto 4px;
+}
+
+.chat-work-steps::after {
+    margin-inline: 22px;
+}
+
+/* An opened turn of a long run scrolls on its own, so the reply after it stays a short scroll away. */
+.chat-work-scroll {
+    max-height: calc(var(--chat-view-h, 100vh) * 0.6);
+    overflow-y: auto;
 }
 
 .chat-work-mark {
