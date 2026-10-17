@@ -8,4 +8,4 @@ export interface BuddyStyle {
     shape: string;
 }
 
-export const DEFAULT_BUDDY_STYLE: BuddyStyle = { pack: "buddies", shape: EVERY_SHAPE };
+export const DEFAULT_BUDDY_STYLE: BuddyStyle = { pack: EVERY_PACK, shape: EVERY_SHAPE };
