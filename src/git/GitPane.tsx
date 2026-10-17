@@ -59,6 +59,8 @@ import {
     IconWarning,
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
+import { SwipePages } from "../ui/SwipePages";
+import { withShortcut } from "../commands/useShortcutLabel";
 import { GitCmdLogBar } from "./GitCmdLogBar";
 import { GitComposer } from "./GitComposer";
 import { AuthorAvatar } from "./AuthorAvatar";
@@ -1013,7 +1015,7 @@ function GitWorkbench({
         const lost = !held || held === document.body;
         if (!lost && !held.closest(".git-row, .gg-row")) return;
         const root = paneRootRef.current;
-        const row = root?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel");
+        const row = root?.querySelector<HTMLElement>(".swipe-page.is-current .git-list :is(.git-row, .gg-row).sel");
         if (row) row.focus();
         else if (lost && active) root?.focus({ preventScroll: true });
     }, [focusKey, active]);
@@ -1453,7 +1455,7 @@ function GitWorkbench({
                         if (p === "files") setFileFilterOpen(false);
                         window.requestAnimationFrame(() =>
                             paneRootRef.current
-                                ?.querySelector<HTMLElement>(".git-list .git-row.sel, .git-list .gg-row.sel, .git-list .git-row")
+                                ?.querySelector<HTMLElement>(".swipe-page.is-current .git-list :is(.git-row.sel, .gg-row.sel, .git-row)")
                                 ?.focus(),
                         );
                     }
@@ -1462,7 +1464,6 @@ function GitWorkbench({
         </label>
     );
 
-    let left: ReactNode;
     let right: ReactNode;
     const latest = commits[0];
     const commitReview = (commit: (typeof commits)[number]) => (
@@ -1477,153 +1478,153 @@ function GitWorkbench({
             onOpenFile={cmd.requestOpenFile}
         />
     );
-    if (panel === "files") {
-        left = (
-            <div className="git-changes">
-                <GitComposer
-                    repo={repo}
-                    busy={!!busy}
-                    generating={generating}
-                    stagedCount={files.filter(isStaged).length}
-                    agentLabel={`${AI_PROVIDER_LABEL[aiProvider]} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
-                    messageRef={messageRef}
-                    onCommit={doCommit}
-                    onGenerate={generateCommitMessage}
-                    onPickAgent={openAgentMenu}
+    const filesLeft = (
+        <div className="git-changes">
+            <GitComposer
+                repo={repo}
+                busy={!!busy}
+                generating={generating}
+                stagedCount={files.filter(isStaged).length}
+                agentLabel={`${AI_PROVIDER_LABEL[aiProvider]} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
+                messageRef={messageRef}
+                onCommit={doCommit}
+                onGenerate={generateCommitMessage}
+                onPickAgent={openAgentMenu}
+            />
+            {(fileFilterOpen || queries.files) && filterInput("files", "Filter files")}
+            <div className="git-list">
+                {fileEntries.length === 0 &&
+                    (loadingOrError(5, "Loading changed files") ?? (
+                        <EmptyState
+                            icon={<IconGit size={14} />}
+                            title={queries.files ? "No matches" : "Nothing to commit"}
+                            message={queries.files ? `Nothing matches "${queries.files}".` : "The working tree is clean."}
+                        />
+                    ))}
+                <VirtualPanelRows
+                    items={fileEntries}
+                    selectedIndex={selectedFileIndex}
+                    focused={panel === "files"}
+                    estimateSize={ROW_HEIGHT}
+                    getKey={(entry) => (entry.kind === "group" ? `g:${entry.side}` : `${entry.side}:${entry.file.path}`)}
+                    renderRow={fileRow}
                 />
-                {(fileFilterOpen || queries.files) && filterInput("files", "Filter files")}
-                <div className="git-list">
-                    {fileEntries.length === 0 &&
-                        (loadingOrError(5, "Loading changed files") ?? (
-                            <EmptyState
-                                icon={<IconGit size={14} />}
-                                title={queries.files ? "No matches" : "Nothing to commit"}
-                                message={queries.files ? `Nothing matches "${queries.files}".` : "The working tree is clean."}
-                            />
-                        ))}
-                    <VirtualPanelRows
-                        items={fileEntries}
-                        selectedIndex={selectedFileIndex}
-                        focused
-                        estimateSize={ROW_HEIGHT}
-                        getKey={(entry) => (entry.kind === "group" ? `g:${entry.side}` : `${entry.side}:${entry.file.path}`)}
-                        renderRow={fileRow}
+            </div>
+        </div>
+    );
+    const filesRight = () =>
+        filteredFiles.length > 0 ? (
+            <MergeReview
+                repo={repo}
+                files={filteredFiles}
+                focusPath={reviewFocus}
+                onOpenFile={cmd.requestOpenFile}
+                onSaved={onReviewSaved}
+                fileActions={reviewActions}
+                owners={owners}
+                stagedOwners={stagedOwners}
+                foldAll={reviewFold}
+            />
+        ) : latest ? (
+            commitReview(latest)
+        ) : (
+            <EmptyState message="Nothing to review." />
+        );
+    const commitsLeft = (
+        <div className="git-history open">
+            <div className="git-history-head">
+                <label className="git-history-search">
+                    <IconSearch size={11} />
+                    <input
+                        ref={(input) => {
+                            filterInputs.current.commits = input;
+                        }}
+                        value={queries.commits}
+                        placeholder="Search commits"
+                        aria-label="Search commits"
+                        spellCheck={false}
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        onChange={(event) => {
+                            const value = event.target.value;
+                            setQueries((q) => ({ ...q, commits: value }));
+                            setSel("commits", 0);
+                        }}
+                        onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.key !== "Escape" && event.key !== "Enter") return;
+                            if (event.key === "Escape") setQueries((q) => ({ ...q, commits: "" }));
+                            window.requestAnimationFrame(() =>
+                                paneRootRef.current?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")?.focus(),
+                            );
+                        }}
                     />
-                </div>
+                </label>
+                {commits.length > 0 && <span className="git-count">{commits.length}</span>}
             </div>
-        );
-        right =
-            filteredFiles.length > 0 ? (
-                <MergeReview
-                    repo={repo}
-                    files={filteredFiles}
-                    focusPath={reviewFocus}
-                    onOpenFile={cmd.requestOpenFile}
-                    onSaved={onReviewSaved}
-                    fileActions={reviewActions}
-                    owners={owners}
-                    stagedOwners={stagedOwners}
-                    foldAll={reviewFold}
+            <div className="git-list">
+                {filteredCommits.length === 0 ? (
+                    (loadingOrError(8, "Loading commits") ?? (
+                        <EmptyState
+                            title={queries.commits ? "No matches" : "No commits"}
+                            message={queries.commits ? `Nothing matches "${queries.commits}".` : "No commits on this branch yet."}
+                        />
+                    ))
+                ) : (
+                    <GitGraph
+                        commits={filteredCommits}
+                        selectedIndex={clampSel("commits")}
+                        focused={panel === "commits"}
+                        range={null}
+                        onSelect={onGraphSelect}
+                        onActivate={onGraphActivate}
+                        repo={repo}
+                        owners={commitOwners}
+                    />
+                )}
+            </div>
+        </div>
+    );
+    const localCount = branchEntries.filter((e) => e.kind === "local").length;
+    const branchesLeft = (
+        <>
+            {filterInput("branches", "Filter branches")}
+            <div className="git-list">
+                {branchEntries.length === 0 &&
+                    (loadingOrError(5, "Loading branches") ?? (
+                        <EmptyState
+                            title={queries.branches ? "No matches" : "No branches"}
+                            message={queries.branches ? `Nothing matches "${queries.branches}".` : "This repository has no branches yet."}
+                        />
+                    ))}
+                {localCount > 0 && (
+                    <div className="git-group">
+                        <span>Local</span>
+                        <span className="git-count">{localCount}</span>
+                    </div>
+                )}
+                <VirtualPanelRows
+                    items={branchEntries}
+                    selectedIndex={clampSel("branches")}
+                    focused={panel === "branches"}
+                    estimateSize={ROW_HEIGHT}
+                    getKey={branchEntryKey}
+                    renderRow={branchRow}
                 />
-            ) : latest ? (
-                commitReview(latest)
-            ) : (
-                <EmptyState message="Nothing to review." />
-            );
-    } else if (panel === "commits") {
-        left = (
-            <div className="git-history open">
-                <div className="git-history-head">
-                    <label className="git-history-search">
-                        <IconSearch size={11} />
-                        <input
-                            ref={(input) => {
-                                filterInputs.current.commits = input;
-                            }}
-                            value={queries.commits}
-                            placeholder="Search commits"
-                            aria-label="Search commits"
-                            spellCheck={false}
-                            autoCapitalize="off"
-                            autoCorrect="off"
-                            onChange={(event) => {
-                                const value = event.target.value;
-                                setQueries((q) => ({ ...q, commits: value }));
-                                setSel("commits", 0);
-                            }}
-                            onKeyDown={(event) => {
-                                event.stopPropagation();
-                                if (event.key !== "Escape" && event.key !== "Enter") return;
-                                if (event.key === "Escape") setQueries((q) => ({ ...q, commits: "" }));
-                                window.requestAnimationFrame(() =>
-                                    paneRootRef.current?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")?.focus(),
-                                );
-                            }}
-                        />
-                    </label>
-                    {commits.length > 0 && <span className="git-count">{commits.length}</span>}
-                </div>
-                <div className="git-list">
-                    {filteredCommits.length === 0 ? (
-                        (loadingOrError(8, "Loading commits") ?? (
-                            <EmptyState
-                                title={queries.commits ? "No matches" : "No commits"}
-                                message={queries.commits ? `Nothing matches "${queries.commits}".` : "No commits on this branch yet."}
-                            />
-                        ))
-                    ) : (
-                        <GitGraph
-                            commits={filteredCommits}
-                            selectedIndex={clampSel("commits")}
-                            focused
-                            range={null}
-                            onSelect={onGraphSelect}
-                            onActivate={onGraphActivate}
-                            repo={repo}
-                            owners={commitOwners}
-                        />
-                    )}
-                </div>
             </div>
-        );
+            <div className="git-left-foot">
+                <button type="button" className="git-btn wide" onClick={() => openNewBranchPrompt()}>
+                    <IconPlus size={12} />
+                    New branch
+                    <kbd>N</kbd>
+                </button>
+            </div>
+        </>
+    );
+    if (panel === "files") right = filesRight();
+    else if (panel === "commits")
         right = selectedCommit ? commitReview(selectedCommit) : latest ? commitReview(latest) : <EmptyState message="No commits yet." />;
-    } else {
-        const localCount = branchEntries.filter((e) => e.kind === "local").length;
-        left = (
-            <>
-                {filterInput("branches", "Filter branches")}
-                <div className="git-list">
-                    {branchEntries.length === 0 &&
-                        (loadingOrError(5, "Loading branches") ?? (
-                            <EmptyState
-                                title={queries.branches ? "No matches" : "No branches"}
-                                message={queries.branches ? `Nothing matches "${queries.branches}".` : "This repository has no branches yet."}
-                            />
-                        ))}
-                    {localCount > 0 && (
-                        <div className="git-group">
-                            <span>Local</span>
-                            <span className="git-count">{localCount}</span>
-                        </div>
-                    )}
-                    <VirtualPanelRows
-                        items={branchEntries}
-                        selectedIndex={clampSel("branches")}
-                        focused={panel === "branches"}
-                        estimateSize={ROW_HEIGHT}
-                        getKey={branchEntryKey}
-                        renderRow={branchRow}
-                    />
-                </div>
-                <div className="git-left-foot">
-                    <button type="button" className="git-btn wide" onClick={() => openNewBranchPrompt()}>
-                        <IconPlus size={12} />
-                        New branch
-                        <kbd>N</kbd>
-                    </button>
-                </div>
-            </>
-        );
+    else {
         const entry = selectedBranchEntry;
         right = !entry ? (
             <EmptyState message="Select a branch to see its details." />
@@ -1711,39 +1712,35 @@ function GitWorkbench({
                 active={active}
                 fetching={fetching}
                 onArea={(area) => cmd.setGitView(paneId, { area })}
-                local={[
-                    {
-                        id: "changes",
-                        label: "Changes",
-                        shortcut: "1",
-                        icon: <IconFile size={14} />,
-                        count: files.length,
-                        on: view.area === "local" && panel === "files",
-                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "files" }),
-                    },
-                    {
-                        id: "history",
-                        label: "History",
-                        shortcut: "2",
-                        icon: <IconCommit size={14} />,
-                        on: view.area === "local" && panel === "commits",
-                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "commits" }),
-                    },
-                    {
-                        id: "branches",
-                        label: "Branches",
-                        shortcut: "3",
-                        icon: <IconGit size={14} />,
-                        on: view.area === "local" && panel === "branches",
-                        onSelect: () => cmd.setGitView(paneId, { area: "local", panel: "branches" }),
-                    },
-                ]}
+                local={
+                    hostRepo.repo
+                        ? [
+                              {
+                                  id: "local",
+                                  label: "Local",
+                                  icon: <IconGit size={14} />,
+                                  count: files.length,
+                                  on: view.area === "local",
+                                  onSelect: () => cmd.setGitView(paneId, { area: "local" }),
+                              },
+                          ]
+                        : []
+                }
                 tools={toolbar}>
                 <GitColumns
                     paneId={paneId}
                     left={
                         <>
-                            {left}
+                            <SwipePages
+                                label="Git lists"
+                                current={panel}
+                                onChange={(id) => setPanel(id as GitPanel)}
+                                pages={[
+                                    { id: "files", label: withShortcut("Changes", "1"), icon: <IconFile size={14} />, content: filesLeft },
+                                    { id: "commits", label: withShortcut("History", "2"), icon: <IconCommit size={14} />, content: commitsLeft },
+                                    { id: "branches", label: withShortcut("Branches", "3"), icon: <IconGit size={14} />, content: branchesLeft },
+                                ]}
+                            />
                             {cmdLogOpen && <GitCmdLogBar />}
                         </>
                     }
