@@ -81,7 +81,9 @@ const helpLiteral = cliSource.match(
   /fn print_help\(\) \{\s*println!\(\s*"((?:[^"\\]|\\.)*)"/,
 )?.[1];
 if (!helpLiteral)
-  throw new Error("could not find the CLI help in src-tauri/crates/sikemux-host/src/cli_client.rs");
+  throw new Error(
+    "could not find the CLI help in src-tauri/crates/sikemux-host/src/cli_client.rs",
+  );
 const help = JSON.parse(`"${helpLiteral}"`).replace(
   /^Sikemux CLI \{\}\n\n/,
   "",
