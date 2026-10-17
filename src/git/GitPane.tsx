@@ -1628,7 +1628,6 @@ function GitWorkbench({
                     </button>
                 </Tooltip>
             )}
-            <span className="git-tb-grow" />
             <Tooltip label="Switch branch">
                 <button type="button" className="git-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
                     <IconGit size={13} />
@@ -1636,6 +1635,7 @@ function GitWorkbench({
                     <IconChevron size={9} className="git-switch-chev" />
                 </button>
             </Tooltip>
+            <span className="git-tb-grow" />
             {overviewError && <span className="git-tb-chip error">git error</span>}
             {busy && (
                 <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
