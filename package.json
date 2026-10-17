@@ -129,7 +129,6 @@
     "material-icon-theme": "5.39.0",
     "playwright-core": "^1.63.0",
     "prettier": "^3.9.9",
-    "terser": "^5.51.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.70.1",
     "vite": "^8.3.1",

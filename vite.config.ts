@@ -128,11 +128,6 @@ export default defineConfig({
     WorkerGlobalScope: "globalThis.WorkerGlobalScope",
   },
   build: {
-    // esbuild 0.25 syntax minification can remove xterm's local const-enum
-    // declaration while retaining an assignment to it. The resulting production
-    // bundle throws on terminal mode queries and permanently stalls xterm's write
-    // queue. Terser preserves the declaration and keeps the bundle fully minified.
-    minify: "terser",
     chunkSizeWarningLimit: 900,
     rolldownOptions: {
       output: {
@@ -149,9 +144,6 @@ export default defineConfig({
   },
   worker: {
     format: "es",
-    // With build.minify set to terser, Vite 8 leaves the worker bundle's
-    // whitespace in. The worker never loads xterm, so Oxc is safe for it.
-    rolldownOptions: { output: { minify: true } },
   },
   server: {
     port: 1420,
