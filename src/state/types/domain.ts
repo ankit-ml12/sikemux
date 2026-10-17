@@ -210,6 +210,8 @@ export type RailDensity = "comfortable" | "compact";
 export type MidTurnSend = "steer" | "queue";
 /** Whether the agent rail lists the open project or every open project. */
 export type AgentRailScope = "project" | "all";
+/** Which of its pages the agent rail shows: the project's agents, its terminals or its open files. */
+export type AgentRailPage = "agents" | "terminals" | "files";
 
 /** A saved chat kept at the top of the agent rail, open or closed. */
 export interface PinnedChat {

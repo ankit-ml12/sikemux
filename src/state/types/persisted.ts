@@ -13,6 +13,7 @@ import type {
     RailDensity,
     MidTurnSend,
     AgentRailScope,
+    AgentRailPage,
     PinnedChat,
     RecentEntry,
     Session,
@@ -106,6 +107,8 @@ export interface PersistedPrefs {
     midTurnSend?: MidTurnSend;
     agentRailAllAgents?: boolean;
     agentRailScope?: AgentRailScope;
+    agentRailPage?: AgentRailPage;
+    recentFiles?: string[];
     pinnedChats?: PinnedChat[];
     onboardingComplete?: boolean;
     lastSeenVersion?: string;

@@ -1,10 +1,9 @@
-import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import { hasUsage, type UsageAgentType } from "../agents/catalog";
 import * as cmd from "../state/commands";
-import type { KeybindingActionId } from "../commands/keybindings";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
@@ -28,6 +27,9 @@ import { usagePeak } from "./usageFormat";
 import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTabs } from "./ScopeTabs";
+import { NewRow } from "./RailNewRow";
+import { RailPages } from "./RailPages";
+import { FilesPage, TerminalsPage } from "./ProjectPages";
 import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inInboxOrder, itemSessionId, useInbox } from "./useInbox";
@@ -84,7 +86,7 @@ export const AgentRail = memo(function AgentRail() {
     const density = useStore((s) => s.railDensity);
     return (
         <aside ref={leavingRail} className="workspace-rail agent-rail" aria-label="Agents" data-density={density} {...LEAVES_SETTINGS}>
-            <AgentRailBody />
+            <RailPages pages={{ agents: <AgentRailBody />, terminals: <TerminalsPage />, files: <FilesPage /> }} />
         </aside>
     );
 });
@@ -474,17 +476,6 @@ export function AgentRailBody() {
             </div>
             {accounts}
         </>
-    );
-}
-
-function NewRow({ icon, title, shortcut, onClick }: { icon: ReactNode; title: string; shortcut: KeybindingActionId; onClick: () => void }) {
-    const label = useShortcutLabel(shortcut);
-    return (
-        <button type="button" className="agent-row agent-new" onClick={onClick}>
-            <span className="agent-glyph">{icon}</span>
-            <span className="agent-title">{title}</span>
-            {label && <span className="agent-new-kbd">{label}</span>}
-        </button>
     );
 }
 

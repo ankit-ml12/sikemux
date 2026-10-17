@@ -38,6 +38,7 @@ import type {
     RailDensity,
     MidTurnSend,
     AgentRailScope,
+    AgentRailPage,
     PinnedChat,
     DiffTarget,
     Session,
@@ -113,6 +114,9 @@ export interface DomainState {
     /** Providers whose chats move to the next signed-in account when one runs out of usage. */
     accountAutoSwitch: Partial<Record<AccountAgentType, boolean>>;
     agentRailScope: AgentRailScope;
+    agentRailPage: AgentRailPage;
+    /** Files closed in an editor, newest first, so the rail can offer them again. */
+    recentFiles: string[];
     pinnedChats: PinnedChat[];
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -315,6 +319,8 @@ export const useStore = create<StoreState>(() => {
         agentRailAllAgents: false,
         accountAutoSwitch: {},
         agentRailScope: "project",
+        agentRailPage: "agents",
+        recentFiles: [],
         pinnedChats: [],
         onboardingComplete: false,
         lastSeenVersion: "",

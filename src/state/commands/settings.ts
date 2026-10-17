@@ -30,6 +30,7 @@ export const setAgentRailAllAgents = (value: boolean): void => setState({ agentR
 export const setAccountAutoSwitch = (provider: AccountAgentType, on: boolean): void =>
     setState((s) => ({ accountAutoSwitch: { ...s.accountAutoSwitch, [provider]: on } }));
 export const setAgentRailScope = (value: import("../types").AgentRailScope): void => setState({ agentRailScope: value });
+export const setAgentRailPage = (value: import("../types").AgentRailPage): void => setState({ agentRailPage: value });
 export const setDefaultAgentPermissionMode = (value: import("../types").AgentPermissionMode): void =>
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });
 export function selectProviderProfile(type: AgentType, profileId: string): void {
