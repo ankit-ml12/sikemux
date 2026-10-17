@@ -5827,6 +5827,7 @@ dependencies = [
  "sikemux-plugin-rundeck",
  "sikemux-plugin-signoz",
  "sikemux-plugin-slack",
+ "sikemux-plugin-vercel",
  "sikemux-process",
  "sikemux-pty",
  "tempfile",

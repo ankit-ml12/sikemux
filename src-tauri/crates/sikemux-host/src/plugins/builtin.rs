@@ -26,6 +26,8 @@ pub fn plugins() -> Vec<Arc<dyn Plugin>> {
         sikemux_plugin_signoz::plugin(),
         #[cfg(feature = "slack")]
         sikemux_plugin_slack::plugin(),
+        #[cfg(feature = "vercel")]
+        sikemux_plugin_vercel::plugin(),
     ];
     compiled_in
         .into_iter()
