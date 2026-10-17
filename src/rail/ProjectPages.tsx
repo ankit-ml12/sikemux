@@ -116,7 +116,7 @@ export function TerminalsPage() {
                 <div className="agent-empty">terminals are project-scoped</div>
             ) : (
                 <>
-                    <div className="agent-rail-top">
+                    <div className="tab-rail-top">
                         <div className="agent-actions">
                             <NewRow icon={<IconPlus size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                         </div>
@@ -152,7 +152,7 @@ export function TerminalsPage() {
 /** The files open in the project's editor, then the project's tree, as one list. */
 export function FilesPage() {
     const session = useProjectSession();
-    const showing = useStore((s) => s.agentRailPage === "files" && s.agentRailOpen);
+    const showing = useStore((s) => s.tabRailPage === "files" && s.tabRailOpen);
     const windowIds = useStore((s) => (session ? s.windowsBySession[session.id] : undefined) ?? EMPTY_IDS);
     const windows = useStore((s) => s.windows);
     const editorViews = useStore((s) => s.editorViews);

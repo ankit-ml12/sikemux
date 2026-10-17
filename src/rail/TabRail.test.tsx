@@ -77,7 +77,7 @@ import { invalidate } from "../state/resources";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { AccountDialogHost } from "../agents/AccountDialog";
-import { AgentRailBody } from "./AgentRail";
+import { TabRailBody } from "./TabRail";
 import { agentIdsOf } from "../state/selectors";
 import { withAgents } from "../test/agents";
 
@@ -139,10 +139,10 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describe("agent rail", () => {
+describe("tab rail", () => {
     it("owns recent chats and filters them in place", async () => {
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         expect(await screen.findByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
 
@@ -162,7 +162,7 @@ describe("agent rail", () => {
         mocks.available.mockResolvedValue([]);
         mocks.saved.mockReturnValue([]);
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.click(await screen.findByRole("button", { name: "No agents yet. Set one up" }));
         expect(getState()).toMatchObject({ settingsOpen: true, settingsPage: "agents", settingsTarget: "Agents on this machine" });
@@ -170,7 +170,7 @@ describe("agent rail", () => {
 
     it("starts a fresh chat for the selected provider from the new chat row", async () => {
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.click(await screen.findByRole("button", { name: /^New chat/ }));
         await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(1));
@@ -201,7 +201,7 @@ describe("agent rail", () => {
         invalidate((kind) => kind === "agents.catalog" || kind === "agents.usage");
 
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         expect(await screen.findByRole("region", { name: "Codex plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "5h usage" })).toHaveAttribute("aria-valuenow", "37");
@@ -224,7 +224,7 @@ describe("agent rail", () => {
         });
         invalidate((kind) => kind === "agents.catalog" || kind === "agents.usage");
 
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         expect(await screen.findByText("API-key accounts do not provide plan usage.")).toBeInTheDocument();
         expect(screen.queryByRole("meter")).not.toBeInTheDocument();
@@ -234,7 +234,7 @@ describe("agent rail", () => {
         mocks.available.mockResolvedValue([{ type: "hermes", label: "Hermes", command: "hermes", defaultModel: null, defaultEffort: null }]);
         invalidate((kind) => kind === "agents.catalog" || kind === "agents.usage");
 
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         expect(await screen.findByText("Hermes")).toBeInTheDocument();
         expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
@@ -244,7 +244,7 @@ describe("agent rail", () => {
     it("renames an open chat in place on double-click", async () => {
         openAgent("Fix terminal focus");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.dblClick(await screen.findByRole("button", { name: "Fix terminal focus" }));
         const field = screen.getByRole("textbox", { name: "Title" });
@@ -258,7 +258,7 @@ describe("agent rail", () => {
     it("keeps the old name when a rename is cancelled with Escape", async () => {
         openAgent("Fix terminal focus");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.dblClick(await screen.findByRole("button", { name: "Fix terminal focus" }));
         await user.type(screen.getByRole("textbox", { name: "Title" }), " draft{Escape}");
@@ -270,7 +270,7 @@ describe("agent rail", () => {
     it("opens the agent menu on right-click and renames from it", async () => {
         openAgent("Fix terminal focus");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: "Fix terminal focus" }) });
         expect(screen.getByRole("menuitem", { name: /Close Others/ })).toBeInTheDocument();
@@ -284,7 +284,7 @@ describe("agent rail", () => {
         mocks.available.mockResolvedValue([{ type: "claude", label: "Claude", command: "claude", defaultModel: null, defaultEffort: null }]);
         invalidate((kind) => kind === "agents.catalog");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
         await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
@@ -300,7 +300,7 @@ describe("agent rail", () => {
         mocks.available.mockResolvedValue([{ type: "claude", label: "Claude", command: "claude", defaultModel: null, defaultEffort: null }]);
         invalidate((kind) => kind === "agents.catalog");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
         await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
@@ -316,7 +316,7 @@ describe("agent rail", () => {
 
     it("keeps a recent chat when the delete is cancelled", async () => {
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
         await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
@@ -331,7 +331,7 @@ describe("agent rail", () => {
         mocks.available.mockResolvedValue([{ type: "opencode", label: "OpenCode", command: "opencode", defaultModel: null, defaultEffort: null }]);
         invalidate((kind) => kind === "agents.catalog");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
         expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeInTheDocument();
@@ -340,7 +340,7 @@ describe("agent rail", () => {
 
     it("keeps a pinned chat at the top, open or closed, until it is unpinned", async () => {
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
         const pinned = () => within(screen.getByText("Pinned").closest<HTMLElement>(".agent-group")!);
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
@@ -366,7 +366,7 @@ describe("agent rail", () => {
 
     it("opens a recent chat from the row's menu", async () => {
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
         expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeInTheDocument();
@@ -386,7 +386,7 @@ describe("agent rail", () => {
         ]);
         invalidate((kind) => kind === "agents.catalog");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         expect(await screen.findByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: /Claude chat/ })).not.toBeInTheDocument();
@@ -395,12 +395,12 @@ describe("agent rail", () => {
         await user.click(screen.getByRole("option", { name: "All harnesses" }));
         expect(await screen.findByRole("button", { name: /Claude chat/ })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: /Codex chat/ })).toBeInTheDocument();
-        expect(getState().agentRailAllAgents).toBe(true);
+        expect(getState().tabRailAllAgents).toBe(true);
         expect(screen.queryByRole("region", { name: /plan limits/i })).not.toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Agent provider" }));
         await user.click(screen.getByRole("option", { name: /^Claude/ }));
-        expect(getState().agentRailAllAgents).toBe(false);
+        expect(getState().tabRailAllAgents).toBe(false);
         await waitFor(() => expect(screen.queryByRole("button", { name: /Codex chat/ })).not.toBeInTheDocument());
     });
 
@@ -459,7 +459,7 @@ describe("agent rail", () => {
             { id: "there", title: "Hero image", mtime: 300, project: "/code/website" },
         ]);
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         expect(await screen.findByRole("button", { name: /Fix terminal focus/ })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: /Hero image/ })).not.toBeInTheDocument();
@@ -476,7 +476,7 @@ describe("agent rail", () => {
     it("closes an open agent from the all projects list", async () => {
         openAgent("Ship the fix");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.click(await screen.findByRole("tab", { name: /All projects/ }));
         await user.click(screen.getByRole("button", { name: "Close Ship the fix" }));
@@ -500,7 +500,7 @@ describe("agent rail", () => {
             ],
         }));
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await user.click(await screen.findByRole("button", { name: "Codex account: Kishore" }));
         expect(await screen.findByRole("menuitem", { name: /^Work/ })).toBeInTheDocument();
@@ -525,7 +525,7 @@ describe("agent rail", () => {
         }));
         invalidate((kind) => kind === "agents.catalog" || kind === "agents.usage");
         const user = userEvent.setup();
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", undefined));
         await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
@@ -553,7 +553,7 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(
             <>
-                <AgentRailBody />
+                <TabRailBody />
                 <AccountDialogHost />
             </>,
         );
@@ -567,7 +567,7 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(
             <>
-                <AgentRailBody />
+                <TabRailBody />
                 <AccountDialogHost />
             </>,
         );
@@ -581,7 +581,7 @@ describe("agent rail", () => {
 
     it("asks for the next page as the list scrolls to its end", async () => {
         mocks.saved.mockReturnValue(Array.from({ length: 30 }, (_, index) => ({ id: `s${index}`, title: `Chat ${index}`, mtime: 1000 - index })));
-        render(<AgentRailBody />);
+        render(<TabRailBody />);
 
         expect(await screen.findByText("Chat 0")).toBeInTheDocument();
         await waitFor(() => expect(mocks.recent.mock.calls.length).toBeGreaterThan(1));

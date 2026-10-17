@@ -182,7 +182,7 @@ function openAgents(snapshot: Snapshot, scope: ProjectInfo | undefined, provider
   return [...chats, ...terminals].sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
 }
 
-/** The host's agent rail: its open agents in one list, each with its own state, then its recent chats. */
+/** The host's agents: its open agents in one list, each with its own state, then its recent chats. */
 function Agents({
   core,
   snapshot,

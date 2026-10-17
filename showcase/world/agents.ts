@@ -55,7 +55,7 @@ function edit(
   );
 }
 
-const RAIL = `${SIKEMUX}/src/rail/AgentRail.tsx`;
+const RAIL = `${SIKEMUX}/src/rail/TabRail.tsx`;
 const SHELL_CSS = `${SIKEMUX}/src/styles/modern-shell.css`;
 
 export interface AgentScript {
@@ -75,13 +75,12 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
         "The row rule lives in modern-shell.css; the compact density probably overrides only the leading inset. I should check where --mark and the gap are set.",
       ),
       tool("search", 'rg "rail-density" src', {
-        rawOutput:
-          "src/styles/modern-shell.css:1184\nsrc/rail/AgentRail.tsx:212",
+        rawOutput: "src/styles/modern-shell.css:1184\nsrc/rail/TabRail.tsx:212",
       }),
       tool("read", "src/styles/modern-shell.css", {
         locations: [{ path: SHELL_CSS, line: 1170 }],
       }),
-      tool("read", "src/rail/AgentRail.tsx", {
+      tool("read", "src/rail/TabRail.tsx", {
         locations: [{ path: RAIL, line: 205 }],
       }),
       say(
@@ -89,20 +88,20 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       ),
       edit(
         SHELL_CSS,
-        `.agent-rail[data-density="compact"] .agent-row {\n    padding-left: 6px;\n}`,
-        `.agent-rail[data-density="compact"] .agent-row {\n    --row-inset: var(--space-1h);\n    padding-left: var(--row-inset);\n    gap: var(--row-inset);\n}`,
+        `.tab-rail[data-density="compact"] .agent-row {\n    padding-left: 6px;\n}`,
+        `.tab-rail[data-density="compact"] .agent-row {\n    --row-inset: var(--space-1h);\n    padding-left: var(--row-inset);\n    gap: var(--row-inset);\n}`,
       ),
       edit(
         RAIL,
         `<div className="agent-row" data-state={state}>`,
         `<div className="agent-row" data-state={state} data-density={density}>`,
       ),
-      tool("execute", "pnpm test src/rail/AgentRail", {
+      tool("execute", "pnpm test src/rail/TabRail", {
         rawOutput:
-          " ✓ src/rail/AgentRail.test.tsx (24 tests) 311ms\n Test Files  1 passed (1)\n      Tests  24 passed (24)",
+          " ✓ src/rail/TabRail.test.tsx (24 tests) 311ms\n Test Files  1 passed (1)\n      Tests  24 passed (24)",
       }),
       say(
-        "Labels now line up with the project rows at both densities. `AgentRail.test.tsx` passes, and I added a case that measures the label's left edge against a project row.",
+        "Labels now line up with the project rows at both densities. `TabRail.test.tsx` passes, and I added a case that measures the label's left edge against a project row.",
       ),
       user(
         "Nice. Run the full rail suite and the visual check before I commit.",
@@ -110,12 +109,12 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
     ],
     live: [
       think("Running the rail tests first, then the density snapshot at 2x."),
-      tool("execute", "pnpm test src/rail/AgentRail src/rail/SideRail", {
-        rawOutput: " ✓ src/rail/AgentRail.test.tsx (25 tests) 318ms",
+      tool("execute", "pnpm test src/rail/TabRail src/rail/SideRail", {
+        rawOutput: " ✓ src/rail/TabRail.test.tsx (25 tests) 318ms",
       }),
       tool(
         "execute",
-        "pnpm vitest run src/rail/AgentRailDensity.test.tsx",
+        "pnpm vitest run src/rail/TabRailDensity.test.tsx",
         {},
         "in_progress",
       ),

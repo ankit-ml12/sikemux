@@ -86,12 +86,12 @@ textarea:focus,
     width: var(--side-rail-w);
 }
 
-/* Agent rail: a little wider so titles, provider identity, and timestamps do
+/* Tab rail: a little wider so titles, provider identity, and timestamps do
  * not compete for the same 250px. The 34px icon gutter is added to that, not
  * taken out of it — a rail that pays for its own chrome by truncating agent
  * titles is a worse rail. */
 .workspace-rail {
-    width: var(--agent-rail-w);
+    width: var(--tab-rail-w);
 }
 
 /* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
@@ -1086,7 +1086,7 @@ textarea:focus,
     left: calc(var(--shell-gap) * 1.5 + var(--side-rail-w));
 }
 .rail-resizer--end {
-    right: calc(var(--shell-gap) * 1.5 + var(--agent-rail-w));
+    right: calc(var(--shell-gap) * 1.5 + var(--tab-rail-w));
     transform: translateX(50%);
 }
 
@@ -1111,7 +1111,7 @@ textarea:focus,
 }
 
 .rail-peek--end {
-    --rail-peek-width: var(--agent-rail-w);
+    --rail-peek-width: var(--tab-rail-w);
     --rail-peek-offset: calc(100% + var(--shell-gap));
     right: 0;
 }
@@ -1248,7 +1248,7 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
     border-radius: var(--radius-4);
 }
 
-/* ---- Agent rail header ---------------------------------------------------
+/* ---- Tab rail header ---------------------------------------------------
  * The chosen provider's name is the picker for the others: bare until hovered,
  * so it reads as the title it replaces.
  */

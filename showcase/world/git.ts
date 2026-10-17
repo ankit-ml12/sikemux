@@ -25,11 +25,11 @@ export const GIT_STATUS: Record<string, GitStatus> = {
     behind: 0,
     files: [
       staged("src/styles/modern-shell.css"),
-      staged("src/rail/AgentRailDensity.test.tsx", "A"),
-      modified("src/rail/AgentRail.tsx"),
+      staged("src/rail/TabRailDensity.test.tsx", "A"),
+      modified("src/rail/TabRail.tsx"),
       modified("src/styles/tokens.css"),
       modified("DESIGN.md"),
-      untracked("src/rail/AgentRailDensity.tsx"),
+      untracked("src/rail/TabRailDensity.tsx"),
     ],
   },
   [FRONT]: {
@@ -83,16 +83,16 @@ export const FILE_DIFFS: Record<string, DiffRow[]> = {
     context(409, "    gap: var(--space-2);"),
     context(410, "}"),
   ],
-  "src/rail/AgentRailDensity.test.tsx": [
+  "src/rail/TabRailDensity.test.tsx": [
     added(1, 'import { render } from "@testing-library/react";'),
     added(2, 'import { describe, expect, it } from "vitest";'),
-    added(3, 'import { AgentRailDensity } from "./AgentRailDensity";'),
+    added(3, 'import { TabRailDensity } from "./TabRailDensity";'),
     added(4, ""),
     added(5, 'describe("compact rail", () => {'),
     added(6, '    it("lines agent names up with project names", () => {'),
     added(
       7,
-      "        const { container } = render(<AgentRailDensity compact />);",
+      "        const { container } = render(<TabRailDensity compact />);",
     ),
     added(
       8,
@@ -101,18 +101,18 @@ export const FILE_DIFFS: Record<string, DiffRow[]> = {
     added(9, "    });"),
     added(10, "});"),
   ],
-  "src/rail/AgentRail.tsx": [
+  "src/rail/TabRail.tsx": [
     hidden(82),
     context(83, "    return ("),
     deleted(
       84,
-      '        <aside className="workspace-rail agent-rail" data-density={density}>',
+      '        <aside className="workspace-rail tab-rail" data-density={density}>',
     ),
-    added(84, '        <AgentRailDensity compact={density === "compact"}>'),
+    added(84, '        <TabRailDensity compact={density === "compact"}>'),
     context(85, "            {header}"),
     context(86, "            {list}"),
     deleted(87, "        </aside>"),
-    added(87, "        </AgentRailDensity>"),
+    added(87, "        </TabRailDensity>"),
     context(88, "    );"),
   ],
   "src/styles/tokens.css": [
@@ -136,18 +136,18 @@ export const FILE_DIFFS: Record<string, DiffRow[]> = {
     ),
     context(122, ""),
   ],
-  "src/rail/AgentRailDensity.tsx": [
+  "src/rail/TabRailDensity.tsx": [
     added(1, 'import type { ReactNode } from "react";'),
     added(2, ""),
-    added(3, "/** The agent rail, at the density the person chose. */"),
+    added(3, "/** The tab rail, at the density the person chose. */"),
     added(
       4,
-      "export function AgentRailDensity({ compact, children }: { compact?: boolean; children?: ReactNode }) {",
+      "export function TabRailDensity({ compact, children }: { compact?: boolean; children?: ReactNode }) {",
     ),
     added(5, "    return ("),
     added(
       6,
-      '        <aside className="workspace-rail agent-rail" data-density={compact ? "compact" : "comfortable"}>',
+      '        <aside className="workspace-rail tab-rail" data-density={compact ? "compact" : "comfortable"}>',
     ),
     added(7, "            {children}"),
     added(8, "        </aside>"),

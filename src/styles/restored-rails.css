@@ -1,10 +1,10 @@
-.workspace-rail.agent-rail {
+.workspace-rail.tab-rail {
     flex-direction: column;
     min-width: 240px;
 }
 /* The scrollbar's room is kept even with nothing to scroll, so the rows never
    change width when a list grows past it. */
-.agent-rail .swipe-page > .rail-scroll {
+.tab-rail .swipe-page > .rail-scroll {
     flex: 1;
     min-height: 0;
     overflow-y: scroll;
@@ -18,7 +18,7 @@
  * at this depth reads as a peer of the project rather than a part of it.
  */
 .side-rail .proj-children,
-.agent-rail .agent-tree {
+.tab-rail .agent-tree {
     padding: 2px 6px 2px 0;
     margin-left: 20px;
     border-left: 0;
@@ -28,7 +28,7 @@
    container instead would run the line past the last child, with nothing to
    say the tree had ended. */
 .side-rail .proj-child::before,
-.agent-rail .agent-tree .proj-child::before {
+.tab-rail .agent-tree .proj-child::before {
     content: "";
     position: absolute;
     top: 0;
@@ -38,7 +38,7 @@
     background: var(--tree-spine);
 }
 .side-rail .proj-child:last-child::before,
-.agent-rail .agent-tree .proj-child:last-child::before {
+.tab-rail .agent-tree .proj-child:last-child::before {
     bottom: auto;
     box-sizing: border-box;
     width: 9px;
@@ -49,11 +49,11 @@
     border-bottom-left-radius: 4px;
 }
 .side-rail .proj-child:last-child .proj-child-tick,
-.agent-rail .agent-tree .proj-child:last-child .proj-child-tick {
+.tab-rail .agent-tree .proj-child:last-child .proj-child-tick {
     background: none;
 }
 .side-rail .proj-child,
-.agent-rail .agent-tree .proj-child {
+.tab-rail .agent-tree .proj-child {
     position: relative;
     width: 100%;
     min-height: 25px;
@@ -68,7 +68,7 @@
     cursor: pointer;
 }
 .side-rail .proj-child:hover,
-.agent-rail .agent-tree .proj-child:hover {
+.tab-rail .agent-tree .proj-child:hover {
     background: transparent;
     color: var(--ink);
 }
@@ -87,7 +87,7 @@
     background: var(--tree-tick);
 }
 .side-rail .proj-child .proj-child-ic,
-.agent-rail .agent-tree .proj-child .proj-child-ic {
+.tab-rail .agent-tree .proj-child .proj-child-ic {
     display: inline-flex;
     align-items: center;
     justify-content: center;

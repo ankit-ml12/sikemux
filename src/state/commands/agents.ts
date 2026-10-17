@@ -867,7 +867,7 @@ export function focusAgents(): void {
     if (getState().sessions[getState().activeSessionId]?.kind !== "project") return;
     withActiveSession((d, session) => {
         const sess = d.sessions[session.id];
-        d.agentRailOpen = true;
+        d.tabRailOpen = true;
         d.zoomedPaneId = null;
         if (d.windows[sess.activeWindowId]?.role === "agent") return;
         const first = (d.windowsBySession[session.id] ?? []).find((id) => d.windows[id]?.role === "agent");

@@ -18,7 +18,7 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const activeSessionId = useStore((s) => s.activeSessionId);
-    const allProjects = useStore((s) => s.agentRailScope === "all");
+    const allProjects = useStore((s) => s.tabRailScope === "all");
     const [renaming, setRenaming] = useState<string | null>(null);
     const [menu, setMenu] = useState<{ chat: RecentChat; x: number; y: number } | null>(null);
 

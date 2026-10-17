@@ -12,7 +12,7 @@ const openWindow = (page, sessionId, windowId) =>
 
 /* The composer's tag menu over the demo repo's open issues and pull requests. `loading` holds them back. */
 const composerScene = async (page, write, { loading = false } = {}) => {
-  await openWindow(page, "s-sikemux", "w-agent-rail");
+  await openWindow(page, "s-sikemux", "w-tab-rail");
   await run(
     page,
     ({ loading }) => {
@@ -123,7 +123,7 @@ export const SCENES = [
     name: "agents-all-projects",
     settle: 1200,
     setup: async (page) => {
-      await openWindow(page, "s-sikemux", "w-agent-rail");
+      await openWindow(page, "s-sikemux", "w-tab-rail");
       await run(page, () => {
         const state = (kind, minutesAgo) => ({
           state: kind,
@@ -136,11 +136,11 @@ export const SCENES = [
           confidence: "high",
           reason: "",
         });
-        showcase.cmd.setAgentRailAllAgents(true);
-        showcase.cmd.setAgentRailScope("all");
+        showcase.cmd.setTabRailAllAgents(true);
+        showcase.cmd.setTabRailScope("all");
         showcase.store.setState({
           agentActivity: {
-            "agent-rail": state("working", 0),
+            "tab-rail": state("working", 0),
             "agent-replay": state("blocked", 3),
             "agent-hero": state("done", 12),
             "agent-palette": state("working", 1),
@@ -198,7 +198,7 @@ export const SCENES = [
   {
     name: "command-deck",
     setup: async (page) => {
-      await openWindow(page, "s-sikemux", "w-agent-rail");
+      await openWindow(page, "s-sikemux", "w-tab-rail");
       await run(page, () => showcase.cmd.openCommandPalette());
     },
     crops: { deck: "[role=dialog]" },
@@ -463,7 +463,7 @@ export const SCENES = [
   {
     name: "accounts",
     setup: async (page) => {
-      await openWindow(page, "s-sikemux", "w-agent-rail");
+      await openWindow(page, "s-sikemux", "w-tab-rail");
       await page.click(".agent-account-switch");
       await page.waitForTimeout(600);
     },
@@ -475,13 +475,13 @@ export const SCENES = [
   },
   {
     name: "projects-rail",
-    setup: (page) => openWindow(page, "s-sikemux", "w-agent-rail"),
+    setup: (page) => openWindow(page, "s-sikemux", "w-tab-rail"),
     crops: { rail: ".side-rail" },
   },
   ...["available", "downloading", "error"].map((state) => ({
     name: `update-${state}`,
     setup: async (page) => {
-      await openWindow(page, "s-sikemux", "w-agent-rail");
+      await openWindow(page, "s-sikemux", "w-tab-rail");
       await run(
         page,
         (state) =>

@@ -37,7 +37,7 @@ const agentWindow = (agent: PersistedAgent): Window => ({
 
 export const AGENTS = {
   rail: {
-    id: "agent-rail",
+    id: "tab-rail",
     name: "Otter",
     type: "claude",
     title: "Line up the sidebar labels",
@@ -127,7 +127,7 @@ const agents: PersistedAgent[] = Object.values(AGENTS).map((agent) => ({
   keepAlive: true,
 }));
 
-export const EDITOR_TABS = [`${SIKEMUX}/src/rail/AgentRail.tsx`];
+export const EDITOR_TABS = [`${SIKEMUX}/src/rail/TabRail.tsx`];
 
 export function demoSnapshot(): PersistedSnapshot {
   return {
@@ -524,12 +524,12 @@ export function demoSnapshot(): PersistedSnapshot {
       windowOpacity: 0.81,
       paneShader: true,
       sideRailWidth: 258,
-      agentRailWidth: 256,
+      tabRailWidth: 256,
       windowBlur: 0,
       cloudBrowser: "",
       cloudBrowserShortcut: "",
       sideRailOpen: true,
-      agentRailOpen: true,
+      tabRailOpen: true,
       onboardingComplete: true,
       notificationsIntroduced: true,
       agentNotifications: false,

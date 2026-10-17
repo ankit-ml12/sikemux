@@ -8,7 +8,7 @@ import { checkForUpdate, UPDATES_IN_APP } from "./api/updater";
 import { reportActive } from "./api/usage";
 import { TopBar } from "./shell/TopBar";
 import { SideRail } from "./rail/SideRail";
-import { AgentRail } from "./rail/AgentRail";
+import { TabRail } from "./rail/TabRail";
 import { RailPeek } from "./rail/RailPeek";
 import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
@@ -669,10 +669,10 @@ export default function App() {
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
     const sideRailVisible = useStore((s) => s.sideRailOpen);
-    const agentRailVisible = useStore((s) => s.agentRailOpen);
+    const tabRailVisible = useStore((s) => s.tabRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
     useRailDock(sideRailVisible, true, ".side-rail", bootReady);
-    useRailDock(agentRailVisible, activeSessionIsProject, ".agent-rail", bootReady);
+    useRailDock(tabRailVisible, activeSessionIsProject, ".tab-rail", bootReady);
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
@@ -988,11 +988,11 @@ export default function App() {
                         </Suspense>
                     )}
                 </main>
-                {activeSessionIsProject && <AgentRail />}
-                {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
-                {!agentRailVisible && activeSessionIsProject && (
+                {activeSessionIsProject && <TabRail />}
+                {tabRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
+                {!tabRailVisible && activeSessionIsProject && (
                     <RailPeek edge="end">
-                        <AgentRail />
+                        <TabRail />
                     </RailPeek>
                 )}
             </div>

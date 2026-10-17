@@ -208,12 +208,12 @@ export interface PtyContext {
 export type RailDensity = "comfortable" | "compact";
 /** What a message sent while the agent works does: goes into the running turn, or waits for it to end. */
 export type MidTurnSend = "steer" | "queue";
-/** Whether the agent rail lists the open project or every open project. */
-export type AgentRailScope = "project" | "all";
-/** Which of its pages the agent rail shows: the project's agents, its terminals or its open files. */
-export type AgentRailPage = "agents" | "terminals" | "files";
+/** Whether the tab rail lists the open project or every open project. */
+export type TabRailScope = "project" | "all";
+/** Which of its pages the tab rail shows: the project's agents, its terminals or its open files. */
+export type TabRailPage = "agents" | "terminals" | "files";
 
-/** A saved chat kept at the top of the agent rail, open or closed. */
+/** A saved chat kept at the top of the tab rail, open or closed. */
 export interface PinnedChat {
     agent: AgentType;
     /** The agent's own id for the conversation, which resumes it. */

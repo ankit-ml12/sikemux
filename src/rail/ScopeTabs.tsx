@@ -1,4 +1,4 @@
-import type { AgentRailScope } from "../state/types";
+import type { TabRailScope } from "../state/types";
 import { IconFolder, IconStack } from "../ui/Icons";
 
 /** This project, by name, or every open project, as one track the choice slides along. */
@@ -8,10 +8,10 @@ export function ScopeTabs({
     waitingElsewhere,
     onChange,
 }: {
-    scope: AgentRailScope;
+    scope: TabRailScope;
     projectName: string;
     waitingElsewhere: number;
-    onChange: (scope: AgentRailScope) => void;
+    onChange: (scope: TabRailScope) => void;
 }) {
     return (
         <div className={`scope-track${scope === "all" ? " is-all" : ""}`} role="tablist" aria-label="Which projects">

@@ -134,7 +134,7 @@ go through the harness, described under [Agents](#agents).
 | `chat/`                              | The chat view for agents, native and on ACP                                                      |
 | `agents/`                            | Agent launching, the agent picker, lifecycle and saved-session sync                              |
 | `harness/`                           | The window half of the agent harness: inspecting, launching tasks and `ui.open`                  |
-| `rail/`                              | Side rail, file tree and agent rail                                                              |
+| `rail/`                              | Side rail, file tree and tab rail                                                                |
 | `palettes/`                          | Command, file and new-tab palettes and the session switcher                                      |
 | `settings/`                          | The settings page                                                                                |
 | `shell/`                             | App-level bridges and overlays: CLI opens, harness requests, dialogs, toasts                     |

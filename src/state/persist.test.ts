@@ -125,7 +125,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 21,
+                    version: 22,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -197,18 +197,18 @@ describe("frontend persistence", () => {
     });
 
     it("persists rail visibility by role", async () => {
-        setState({ sideRailOpen: false, agentRailOpen: true });
+        setState({ sideRailOpen: false, tabRailOpen: true });
         invoke.mockResolvedValue(undefined);
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.prefs).toMatchObject({ sideRailOpen: false, agentRailOpen: true });
+        expect(saved.prefs).toMatchObject({ sideRailOpen: false, tabRailOpen: true });
         expect(saved.prefs).not.toHaveProperty("leftRailOpen");
         expect(saved.prefs).not.toHaveProperty("rightRailOpen");
 
-        setState({ sideRailOpen: true, agentRailOpen: false });
+        setState({ sideRailOpen: true, tabRailOpen: false });
         applyHydrate(JSON.stringify(saved));
-        expect(getState()).toMatchObject({ sideRailOpen: false, agentRailOpen: true });
+        expect(getState()).toMatchObject({ sideRailOpen: false, tabRailOpen: true });
     });
 
     it("remembers which projects may start language servers", async () => {
@@ -283,17 +283,17 @@ describe("frontend persistence", () => {
     });
 
     it("persists rail widths and pulls stored ones back inside their bounds", async () => {
-        setState({ sideRailWidth: 320, agentRailWidth: 400 });
+        setState({ sideRailWidth: 320, tabRailWidth: 400 });
         invoke.mockResolvedValue(undefined);
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.prefs).toMatchObject({ sideRailWidth: 320, agentRailWidth: 400 });
+        expect(saved.prefs).toMatchObject({ sideRailWidth: 320, tabRailWidth: 400 });
 
         saved.prefs.sideRailWidth = 20;
-        saved.prefs.agentRailWidth = 9000;
+        saved.prefs.tabRailWidth = 9000;
         applyHydrate(JSON.stringify(saved));
-        expect(getState()).toMatchObject({ sideRailWidth: 180, agentRailWidth: 560 });
+        expect(getState()).toMatchObject({ sideRailWidth: 180, tabRailWidth: 560 });
     });
 
     it("never persists or hydrates live agent commands", async () => {
@@ -779,7 +779,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(20);
+        expect(saved.version).toBe(21);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -919,7 +919,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(20);
+        expect(JSON.parse(migrated).version).toBe(21);
     });
 
     /*
@@ -952,7 +952,7 @@ describe("frontend persistence", () => {
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(20);
+        expect(saved.version).toBe(21);
         expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
         expect(saved).not.toHaveProperty("agentsBySession");
         expect(saved.sessions[0]).not.toHaveProperty("view");

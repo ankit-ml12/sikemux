@@ -72,7 +72,7 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 20;
+export const VERSION = 21;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
@@ -87,6 +87,7 @@ const GITHUB_IN_GIT_PANE_MIGRATION_VERSION = 17;
 const CORE_SESSION_MIGRATION_VERSION = 18;
 const SPACE_ICON_MIGRATION_VERSION = 19;
 const PANE_TITLE_MIGRATION_VERSION = 20;
+const TAB_RAIL_MIGRATION_VERSION = 21;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -128,9 +129,9 @@ const PERSISTED_KEYS = [
     "cloudBrowserShortcut",
     "keybindingOverrides",
     "sideRailOpen",
-    "agentRailOpen",
+    "tabRailOpen",
     "sideRailWidth",
-    "agentRailWidth",
+    "tabRailWidth",
     "pluginSettings",
     "disabledPlugins",
     "restoreAgentTabs",
@@ -146,9 +147,9 @@ const PERSISTED_KEYS = [
     "keptRunningNoticeShown",
     "railDensity",
     "midTurnSend",
-    "agentRailAllAgents",
-    "agentRailScope",
-    "agentRailPage",
+    "tabRailAllAgents",
+    "tabRailScope",
+    "tabRailPage",
     "pinnedChats",
     "onboardingComplete",
     "lastSeenVersion",
@@ -199,9 +200,9 @@ function packPrefs(s: StoreState): PersistedPrefs {
         cloudBrowserShortcut: s.cloudBrowserShortcut,
         keybindingOverrides: s.keybindingOverrides,
         sideRailOpen: s.sideRailOpen,
-        agentRailOpen: s.agentRailOpen,
+        tabRailOpen: s.tabRailOpen,
         sideRailWidth: s.sideRailWidth,
-        agentRailWidth: s.agentRailWidth,
+        tabRailWidth: s.tabRailWidth,
         pluginSettings: s.pluginSettings,
         disabledPlugins: [...s.disabledPlugins],
         restoreAgentTabs: s.restoreAgentTabs,
@@ -217,9 +218,9 @@ function packPrefs(s: StoreState): PersistedPrefs {
         keptRunningNoticeShown: s.keptRunningNoticeShown,
         railDensity: s.railDensity,
         midTurnSend: s.midTurnSend,
-        agentRailAllAgents: s.agentRailAllAgents,
-        agentRailScope: s.agentRailScope,
-        agentRailPage: s.agentRailPage,
+        tabRailAllAgents: s.tabRailAllAgents,
+        tabRailScope: s.tabRailScope,
+        tabRailPage: s.tabRailPage,
         pinnedChats: s.pinnedChats,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
@@ -780,6 +781,16 @@ function capitalisePaneTitles(decoded: Record<string, unknown>): void {
     }
 }
 
+function renameAgentRailPrefs(decoded: Record<string, unknown>): void {
+    if (!isRecord(decoded.prefs)) return;
+    const prefs = decoded.prefs;
+    for (const key of Object.keys(prefs)) {
+        if (!key.startsWith("agentRail")) continue;
+        prefs[`tabRail${key.slice("agentRail".length)}`] = prefs[key];
+        delete prefs[key];
+    }
+}
+
 function closeGithubSessions(decoded: Record<string, unknown>): void {
     const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
     const closed = new Set(sessions.flatMap((row) => (isRecord(row) && row.kind === "sikemux.github:hub" ? [row.id] : [])));
@@ -1009,6 +1020,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
     if (decoded.version < CORE_SESSION_MIGRATION_VERSION) forgetCoreSessions(decoded);
     if (decoded.version < SPACE_ICON_MIGRATION_VERSION) swapSpaceEmojiForIcons(decoded);
     if (decoded.version < PANE_TITLE_MIGRATION_VERSION) capitalisePaneTitles(decoded);
+    if (decoded.version < TAB_RAIL_MIGRATION_VERSION) renameAgentRailPrefs(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
@@ -1212,15 +1224,15 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         cloudBrowserShortcut: typeof prefs.cloudBrowserShortcut === "string" ? prefs.cloudBrowserShortcut : cur.cloudBrowserShortcut,
         keybindingOverrides: normaliseKeybindingOverrides(prefs.keybindingOverrides),
         sideRailOpen: typeof prefs.sideRailOpen === "boolean" ? prefs.sideRailOpen : cur.sideRailOpen,
-        agentRailOpen: typeof prefs.agentRailOpen === "boolean" ? prefs.agentRailOpen : cur.agentRailOpen,
+        tabRailOpen: typeof prefs.tabRailOpen === "boolean" ? prefs.tabRailOpen : cur.tabRailOpen,
         sideRailWidth:
             typeof prefs.sideRailWidth === "number" && Number.isFinite(prefs.sideRailWidth)
                 ? clampRailWidth("start", prefs.sideRailWidth)
                 : cur.sideRailWidth,
-        agentRailWidth:
-            typeof prefs.agentRailWidth === "number" && Number.isFinite(prefs.agentRailWidth)
-                ? clampRailWidth("end", prefs.agentRailWidth)
-                : cur.agentRailWidth,
+        tabRailWidth:
+            typeof prefs.tabRailWidth === "number" && Number.isFinite(prefs.tabRailWidth)
+                ? clampRailWidth("end", prefs.tabRailWidth)
+                : cur.tabRailWidth,
         pluginSettings: normalisePluginSettings(prefs.pluginSettings),
         disabledPlugins: Array.isArray(prefs.disabledPlugins) ? [...new Set(prefs.disabledPlugins.filter(isPluginId))] : [],
         restoreAgentTabs,
@@ -1236,9 +1248,9 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         keptRunningNoticeShown: prefs.keptRunningNoticeShown === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         midTurnSend: prefs.midTurnSend === "queue" ? "queue" : "steer",
-        agentRailAllAgents: prefs.agentRailAllAgents === true,
-        agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",
-        agentRailPage: prefs.agentRailPage === "terminals" || prefs.agentRailPage === "files" ? prefs.agentRailPage : "agents",
+        tabRailAllAgents: prefs.tabRailAllAgents === true,
+        tabRailScope: prefs.tabRailScope === "all" ? "all" : "project",
+        tabRailPage: prefs.tabRailPage === "terminals" || prefs.tabRailPage === "files" ? prefs.tabRailPage : "agents",
         pinnedChats: Array.isArray(prefs.pinnedChats) ? prefs.pinnedChats.filter(isPinnedChat) : [],
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"

@@ -82,16 +82,16 @@ function arriveRow(wrap: HTMLElement): void {
     animate(wrap.querySelector(".agent-row"), [{ transform: "translateX(-6px)" }, { transform: "none" }], { duration: 190 });
 }
 
-export const AgentRail = memo(function AgentRail() {
+export const TabRail = memo(function TabRail() {
     const density = useStore((s) => s.railDensity);
     return (
-        <aside ref={leavingRail} className="workspace-rail agent-rail" aria-label="Agents" data-density={density} {...LEAVES_SETTINGS}>
-            <RailPages pages={{ agents: <AgentRailBody />, terminals: <TerminalsPage />, files: <FilesPage /> }} />
+        <aside ref={leavingRail} className="workspace-rail tab-rail" aria-label="Agents" data-density={density} {...LEAVES_SETTINGS}>
+            <RailPages pages={{ agents: <TabRailBody />, terminals: <TerminalsPage />, files: <FilesPage /> }} />
         </aside>
     );
 });
 
-export function AgentRailBody() {
+export function TabRailBody() {
     const pageVisible = usePageVisible();
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const activityById = useStore((s) => s.agentActivity);
@@ -121,8 +121,8 @@ export function AgentRailBody() {
     usageRefreshRef.current = { claude: claudeUsage.refresh, codex: codexUsage.refresh };
 
     const [type, setType] = useState<AgentType | null>(null);
-    const allAgents = useStore((s) => s.agentRailAllAgents);
-    const scope = useStore((s) => s.agentRailScope);
+    const allAgents = useStore((s) => s.tabRailAllAgents);
+    const scope = useStore((s) => s.tabRailScope);
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const { inbox } = useInbox();
@@ -369,7 +369,7 @@ export function AgentRailBody() {
                     />
                 </div>
             )}
-            <div className="agent-rail-top">
+            <div className="tab-rail-top">
                 <div className="agent-actions">
                     {selectedType && (
                         <NewRow
@@ -389,7 +389,7 @@ export function AgentRailBody() {
                     <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
                 </div>
-                <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
+                <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 {scope === "all" && <AllProjectsAgents />}
@@ -545,9 +545,9 @@ function AgentHeader({
                         menuWidth={200}
                         checkAtEnd
                         onChange={(value) => {
-                            if (value === ALL_AGENTS) return cmd.setAgentRailAllAgents(true);
+                            if (value === ALL_AGENTS) return cmd.setTabRailAllAgents(true);
                             setType(value as AgentType);
-                            cmd.setAgentRailAllAgents(false);
+                            cmd.setTabRailAllAgents(false);
                         }}
                     />
                 ) : type ? (

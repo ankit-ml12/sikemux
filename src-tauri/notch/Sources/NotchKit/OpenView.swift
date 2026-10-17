@@ -163,7 +163,7 @@ struct EntryRow: View {
     }
 }
 
-/// Laid out as the app's agent rail row: mark, task with how long ago, project, then the name, counts and state together at the end.
+/// Laid out as the app's tab rail row: mark, task with how long ago, project, then the name, counts and state together at the end.
 struct RowLine: View {
     let entry: Entry
     let marks: Namespace.ID

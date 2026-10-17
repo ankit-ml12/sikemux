@@ -6,7 +6,7 @@ import { collectPanes, openSides } from "./layout";
 import { relativePath } from "../lib/paths";
 
 export const selectSessionIds = (state: StoreState): readonly string[] => state.sessionOrder;
-export const selectFocusMode = (state: Pick<StoreState, "sideRailOpen" | "agentRailOpen">): boolean => !state.sideRailOpen && !state.agentRailOpen;
+export const selectFocusMode = (state: Pick<StoreState, "sideRailOpen" | "tabRailOpen">): boolean => !state.sideRailOpen && !state.tabRailOpen;
 
 export const selectSession =
     (sessionId: string) =>

@@ -26,11 +26,11 @@ export const setUiTextScale = (value: number): void => setState({ uiTextScale: [
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
 export const setMidTurnSend = (value: import("../types").MidTurnSend): void => setState({ midTurnSend: value });
-export const setAgentRailAllAgents = (value: boolean): void => setState({ agentRailAllAgents: value });
+export const setTabRailAllAgents = (value: boolean): void => setState({ tabRailAllAgents: value });
 export const setAccountAutoSwitch = (provider: AccountAgentType, on: boolean): void =>
     setState((s) => ({ accountAutoSwitch: { ...s.accountAutoSwitch, [provider]: on } }));
-export const setAgentRailScope = (value: import("../types").AgentRailScope): void => setState({ agentRailScope: value });
-export const setAgentRailPage = (value: import("../types").AgentRailPage): void => setState({ agentRailPage: value });
+export const setTabRailScope = (value: import("../types").TabRailScope): void => setState({ tabRailScope: value });
+export const setTabRailPage = (value: import("../types").TabRailPage): void => setState({ tabRailPage: value });
 export const setDefaultAgentPermissionMode = (value: import("../types").AgentPermissionMode): void =>
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });
 export function selectProviderProfile(type: AgentType, profileId: string): void {
@@ -123,7 +123,7 @@ export function setProjectRootDepth(path: string, depth: number): void {
 
 const samePin = (pin: import("../types").PinnedChat, agent: string, id: string) => pin.agent === agent && pin.id === id;
 
-/** Keeps the chat at the top of the agent rail, open or closed. */
+/** Keeps the chat at the top of the tab rail, open or closed. */
 export const pinChat = (chat: import("../types").PinnedChat): void =>
     setState((state) => (state.pinnedChats.some((pin) => samePin(pin, chat.agent, chat.id)) ? {} : { pinnedChats: [...state.pinnedChats, chat] }));
 

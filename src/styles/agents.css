@@ -390,7 +390,7 @@
 
 /* This project, by name, or all projects: a hairline track over the open
    agents with a neutral thumb that slides to the chosen side. */
-.workspace-rail.agent-rail .agent-actions + .scope-track {
+.workspace-rail.tab-rail .agent-actions + .scope-track {
     margin-top: var(--space-2);
 }
 .scope-track {
@@ -462,7 +462,7 @@
         transition: none;
     }
 }
-.agent-rail .swipe-page .agent-header-top {
+.tab-rail .swipe-page .agent-header-top {
     min-height: 28px;
 }
 /* Open files lead the project tree in the same scroll, and the tree's head
@@ -913,18 +913,18 @@
 /* New chat, terminal and browser sit right under the scope track, a short step above the first group. */
 /* New chat, terminal and browser and the scope track stay put; only the list
    under them scrolls, starting a short step below the track. */
-.agent-rail-top {
+.tab-rail-top {
     flex: none;
     padding: var(--space-1) var(--gutter-rail) 0;
 }
-.agent-rail .swipe-page > .rail-scroll {
+.tab-rail .swipe-page > .rail-scroll {
     padding-top: var(--space-2);
 }
-.agent-rail .swipe-page > .rail-scroll[data-revealing="true"] {
+.tab-rail .swipe-page > .rail-scroll[data-revealing="true"] {
     opacity: 0;
 }
-.workspace-rail.agent-rail .swipe-page > .rail-scroll > :first-child,
-.workspace-rail.agent-rail .swipe-page > .rail-scroll > .agent-all-projects > :first-child {
+.workspace-rail.tab-rail .swipe-page > .rail-scroll > :first-child,
+.workspace-rail.tab-rail .swipe-page > .rail-scroll > .agent-all-projects > :first-child {
     margin-top: 0;
 }
 .agent-new-kbd {
@@ -933,23 +933,23 @@
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
-.workspace-rail.agent-rail .agent-actions + * {
+.workspace-rail.tab-rail .agent-actions + * {
     margin-top: var(--space-4);
 }
 
 /* What an agent is tied to hangs off its row on the side rail's tree. The
    tree's spine runs down from the agent's mark. */
-.agent-rail .agent-tree {
+.tab-rail .agent-tree {
     margin-left: 14px;
     padding: 0 6px 2px 0;
 }
 /* A lead's workers sit flat right after it, and its tree line runs on through
    each worker's mark, stopping short of the mark and of a selected row's box.
    drawTeamLines in src/rail/teams.ts measures where. */
-.agent-rail .agent-tree.runs-on {
+.tab-rail .agent-tree.runs-on {
     padding-bottom: 0;
 }
-.agent-rail .agent-tree.runs-on .proj-child:last-child::before {
+.tab-rail .agent-tree.runs-on .proj-child:last-child::before {
     bottom: 0;
     width: 1px;
     height: auto;
@@ -957,7 +957,7 @@
     border-radius: 0;
     background: var(--tree-spine);
 }
-.agent-rail .agent-tree.runs-on .proj-child:last-child .proj-child-tick {
+.tab-rail .agent-tree.runs-on .proj-child:last-child .proj-child-tick {
     background: var(--tree-tick);
 }
 .agent-all-projects {
@@ -1038,7 +1038,7 @@
     top: 13px;
 }
 /* Joins the agent's mark to its tree; a team's line already does this through drawTeamLines. */
-.agent-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-tree):not(:has(> .agent-row.active))::before {
+.tab-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-tree):not(:has(> .agent-row.active))::before {
     content: "";
     position: absolute;
     top: 26px;
@@ -1047,7 +1047,7 @@
     height: 2px;
     background: var(--tree-spine);
 }
-.agent-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-row.two-line):has(> .agent-tree)::before {
+.tab-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-row.two-line):has(> .agent-tree)::before {
     top: 25px;
     height: 15px;
 }

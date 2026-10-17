@@ -114,12 +114,12 @@
   .title-block h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.028em; color: var(--text-primary); }
   .title-block p { margin-top: 3px; font-size: 13px; color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; }
 
-  /* section labels with the hairline, from the agent rail */
+  /* section labels with the hairline, from the tab rail */
   .label { display: flex; align-items: center; gap: 10px; padding: 18px 4px 8px; font-size: 11px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-tertiary); }
   .label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
   .label .pill { order: 2; letter-spacing: 0; text-transform: none; font-size: 11px; color: var(--ink); background: var(--surface-active); border-radius: 999px; padding: 1px 8px; }
 
-  /* the agent rail's provider tiles */
+  /* the tab rail's provider tiles */
   .tiles { display: flex; gap: 4px; padding: 0 16px; }
   .tile { width: 46px; height: 38px; border-radius: 8px; display: grid; place-items: center; color: var(--text-tertiary); border: 1px solid transparent; }
   .tile.inbox { margin-right: 8px; }
@@ -873,7 +873,7 @@
 
 <header class="page-head">
   <h1>{{Logo:30}} Sikemux for iPhone</h1>
-  <p>Every screen, drawn with the Mac app's own parts: the icons are rendered from <code>src/ui/Icons.tsx</code>, and the chat, the composer and the agent list use the same structure, words and values as the Mac's chat pane and agent rail, sized up for a thumb. The colours are Aura Noir, the default theme. The little squares, the shimmer and the amber ping are animated here as they are on the Mac.</p>
+  <p>Every screen, drawn with the Mac app's own parts: the icons are rendered from <code>src/ui/Icons.tsx</code>, and the chat, the composer and the agent list use the same structure, words and values as the Mac's chat pane and tab rail, sized up for a thumb. The colours are Aura Noir, the default theme. The little squares, the shimmer and the amber ping are animated here as they are on the Mac.</p>
 </header>
 
 <!-- ================================================================ -->
@@ -913,7 +913,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Welcome</b><div class="note">The hero is the Mac's own agent rail drifting past and fading into the dark: the first thing the app shows is what it is for. The app needs an account, so the first choice is how to sign in, and all of it stays in the app: Apple with the iPhone's own sheet, Google with the phone's own account picker, GitHub in a sheet over the app (it has no native sign-in), and email on the next screens, the quiet last. Apple is offered only on iPhones.</div></figcaption>
+      <figcaption><b>Welcome</b><div class="note">The hero is the Mac's own tab rail drifting past and fading into the dark: the first thing the app shows is what it is for. The app needs an account, so the first choice is how to sign in, and all of it stays in the app: Apple with the iPhone's own sheet, Google with the phone's own account picker, GitHub in a sheet over the app (it has no native sign-in), and email on the next screens, the quiet last. Apple is offered only on iPhones.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

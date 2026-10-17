@@ -37,8 +37,8 @@ import type {
     RecentEntry,
     RailDensity,
     MidTurnSend,
-    AgentRailScope,
-    AgentRailPage,
+    TabRailScope,
+    TabRailPage,
     PinnedChat,
     DiffTarget,
     Session,
@@ -83,9 +83,9 @@ export interface DomainState {
     cloudBrowserShortcut: string;
     keybindingOverrides: KeybindingOverrides;
     sideRailOpen: boolean;
-    agentRailOpen: boolean;
+    tabRailOpen: boolean;
     sideRailWidth: number;
-    agentRailWidth: number;
+    tabRailWidth: number;
     diffTarget: Record<string, DiffTarget | null>;
     /** Each plugin's own settings, by plugin id, in whatever shape the plugin decodes. */
     pluginSettings: Readonly<Record<string, unknown>>;
@@ -109,12 +109,12 @@ export interface DomainState {
     keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
     midTurnSend: MidTurnSend;
-    /** The agent rail shows every CLI's chats instead of one provider's. */
-    agentRailAllAgents: boolean;
+    /** The tab rail shows every CLI's chats instead of one provider's. */
+    tabRailAllAgents: boolean;
     /** Providers whose chats move to the next signed-in account when one runs out of usage. */
     accountAutoSwitch: Partial<Record<AccountAgentType, boolean>>;
-    agentRailScope: AgentRailScope;
-    agentRailPage: AgentRailPage;
+    tabRailScope: TabRailScope;
+    tabRailPage: TabRailPage;
     pinnedChats: PinnedChat[];
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -295,9 +295,9 @@ export const useStore = create<StoreState>(() => {
         cloudBrowserShortcut: "",
         keybindingOverrides: {},
         sideRailOpen: true,
-        agentRailOpen: true,
+        tabRailOpen: true,
         sideRailWidth: RAIL_WIDTH.start.initial,
-        agentRailWidth: RAIL_WIDTH.end.initial,
+        tabRailWidth: RAIL_WIDTH.end.initial,
         diffTarget: {},
         pluginSettings: {},
         disabledPlugins: [],
@@ -314,10 +314,10 @@ export const useStore = create<StoreState>(() => {
         keptRunningNoticeShown: false,
         railDensity: "comfortable",
         midTurnSend: "steer",
-        agentRailAllAgents: false,
+        tabRailAllAgents: false,
         accountAutoSwitch: {},
-        agentRailScope: "project",
-        agentRailPage: "agents",
+        tabRailScope: "project",
+        tabRailPage: "agents",
         pinnedChats: [],
         onboardingComplete: false,
         lastSeenVersion: "",

@@ -56,11 +56,11 @@ export const closeSettings = (): void => setState({ settingsOpen: false });
 export const toggleSettings = (): void => setState((s) => ({ settingsOpen: !s.settingsOpen }));
 
 export const toggleSideRail = (): void => setState((s) => ({ sideRailOpen: !s.sideRailOpen }));
-export const toggleAgentRail = (): void => setState((s) => ({ agentRailOpen: !s.agentRailOpen }));
+export const toggleTabRail = (): void => setState((s) => ({ tabRailOpen: !s.tabRailOpen }));
 export const setRailWidth = (edge: RailEdge, px: number): void =>
-    setState(edge === "start" ? { sideRailWidth: clampRailWidth(edge, px) } : { agentRailWidth: clampRailWidth(edge, px) });
+    setState(edge === "start" ? { sideRailWidth: clampRailWidth(edge, px) } : { tabRailWidth: clampRailWidth(edge, px) });
 export const toggleZen = (): void =>
     setState((s) => {
         const showRails = selectFocusMode(s);
-        return { sideRailOpen: showRails, agentRailOpen: showRails };
+        return { sideRailOpen: showRails, tabRailOpen: showRails };
     });

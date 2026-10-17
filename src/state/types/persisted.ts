@@ -12,8 +12,8 @@ import type {
     ProviderProfileSelection,
     RailDensity,
     MidTurnSend,
-    AgentRailScope,
-    AgentRailPage,
+    TabRailScope,
+    TabRailPage,
     PinnedChat,
     RecentEntry,
     Session,
@@ -87,9 +87,9 @@ export interface PersistedPrefs {
     cloudBrowserShortcut: string;
     keybindingOverrides?: KeybindingOverrides;
     sideRailOpen: boolean;
-    agentRailOpen: boolean;
+    tabRailOpen: boolean;
     sideRailWidth?: number;
-    agentRailWidth?: number;
+    tabRailWidth?: number;
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
@@ -105,9 +105,9 @@ export interface PersistedPrefs {
     keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;
     midTurnSend?: MidTurnSend;
-    agentRailAllAgents?: boolean;
-    agentRailScope?: AgentRailScope;
-    agentRailPage?: AgentRailPage;
+    tabRailAllAgents?: boolean;
+    tabRailScope?: TabRailScope;
+    tabRailPage?: TabRailPage;
     pinnedChats?: PinnedChat[];
     onboardingComplete?: boolean;
     lastSeenVersion?: string;
