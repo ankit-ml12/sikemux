@@ -1112,6 +1112,7 @@ function GitWorkbench({
                 data-side={side}
                 data-last={fileEntries[i + 1]?.kind === "file" ? undefined : ""}
                 className={`git-row git-file-row${selected ? " sel" : ""}${isInRange(fileRowRange, i) ? " ranged" : ""}`}
+                data-first={fileEntries[i - 1]?.kind === "file" ? undefined : ""}
                 onFocus={() => setSel("files", i)}
                 onClick={(event) => {
                     event.currentTarget.focus();
