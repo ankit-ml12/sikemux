@@ -20,7 +20,22 @@ import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingR
 import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
 import { AgentFace } from "../buddies/Buddy";
-import { IconAgent, IconClose, IconFolder, IconMove, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
+import {
+    IconAgent,
+    IconClose,
+    IconFolder,
+    IconIssue,
+    IconMove,
+    IconPencil,
+    IconPlus,
+    IconPullRequest,
+    IconServer,
+    IconTerminal,
+    WindowIcon,
+} from "../ui/Icons";
+import { useHostRepo } from "../codehost/project";
+import { codeHost } from "../codehost/registry";
+import { collectPanes } from "../state/layout";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
@@ -227,6 +242,16 @@ function ProjectBlock({ s }: { s: Session }) {
     // Active or not, a project is one tree root holding its row, so the row survives the switch and its tint cross-fades.
     const treeRef = useRef<HTMLDivElement>(null);
     useProjectUnfold(treeRef, active);
+    const host = useHostRepo(active ? s.cwd : null, active).repo;
+    const hostCaps = host ? codeHost(host.provider)?.capabilities : undefined;
+    const gitArea = useStore((st) => {
+        for (const id of st.windowsBySession[s.id] ?? []) {
+            const win = st.windows[id];
+            const pane = win?.role === "git" ? collectPanes(win.root).find((candidate) => candidate.kind === "git") : undefined;
+            if (pane) return st.gitViews[pane.id]?.area ?? "local";
+        }
+        return null;
+    });
     const winIds = windowsBySession[s.id] ?? [];
     const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
     const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
@@ -304,10 +329,25 @@ function ProjectBlock({ s }: { s: Session }) {
             kbd: kb(shortcut),
             title: `${label} — ${kb(shortcut)}`,
             open,
-            active: activeRole === role,
+            active: activeRole === role && !(role === "git" && (gitArea === "pulls" || gitArea === "issues")),
             icons: [],
         };
     };
+    const hostRow = (area: "pulls" | "issues", label: string, icon: ReactNode): SubRow => ({
+        key: area,
+        icon,
+        label,
+        title: label,
+        open: () => cmd.openGitArea(area),
+        active: activeRole === "git" && gitArea === area,
+        icons: [],
+    });
+    const hostRows: SubRow[] = hostCaps
+        ? [
+              hostRow("pulls", "Pull requests", <IconPullRequest size={13} />),
+              ...(hostCaps.issues ? [hostRow("issues", "Issues", <IconIssue size={13} />)] : []),
+          ]
+        : [];
     const terminalRow: SubRow = {
         key: "term",
         icon: <WindowIcon role="term" size={13} />,
@@ -331,7 +371,7 @@ function ProjectBlock({ s }: { s: Session }) {
     const children: SubRow[] = PROJECT_SURFACE_ORDER.flatMap((role) => {
         const row = surfaceRow(role);
         if (role === "files") return [row, terminalRow];
-        if (role === "git") return [row, agentsRow];
+        if (role === "git") return [row, ...hostRows, agentsRow];
         return [row];
     });
     return (

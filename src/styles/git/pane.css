@@ -37,6 +37,38 @@
 .git-left > .git-list {
     padding-top: 2px;
 }
+/* Changes is one card: the files, then the commit box at its foot where reading them ends. */
+.git-left > .git-changes {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 2px 0 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: color-mix(in oklab, var(--surface) 45%, transparent);
+}
+.git-changes > .git-compose {
+    margin: var(--space-1) 6px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: color-mix(in oklab, var(--ink) 4%, transparent);
+}
+/* History is a screen of its own, so the graph takes the whole column under its search. */
+.git-left > .git-history.open {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.git-left > .git-history > .git-history-head {
+    height: auto;
+    padding: 6px;
+}
+.git-left > .git-history > .git-history-head:hover {
+    background: none;
+}
+.git-left > .git-history .git-history-search {
+    flex: 1 1 auto;
+}
 /* The gap between the columns is the handle that resizes them; a line shows in it only while it is in hand. */
 .git-split {
     position: relative;

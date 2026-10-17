@@ -53,24 +53,18 @@ it("offers to stash from the toolbar menu when there are no stashes yet", async 
     expect(getState().gitModal).toMatchObject({ kind: "menu", title: "Stash" });
 });
 
-it("switches between Changes and Branches from the rail, with History folded under the changes", async () => {
+it("switches between Changes, History and Branches from the rail", async () => {
     const user = userEvent.setup();
     render(<GitPane paneId="git-test" cwd="/repo" active visible />);
     const rail = screen.getByRole("navigation", { name: "Git" });
     const changes = within(rail).getByRole("button", { name: "Changes (1)" });
     expect(changes).toHaveAttribute("aria-current", "page");
 
-    const history = screen.getByRole("button", { name: /History/ });
-    expect(history).toHaveAttribute("aria-expanded", "true");
+    await user.click(within(rail).getByRole("button", { name: "History (2)" }));
+    expect(getState().gitViews["git-test"].panel).toBe("commits");
+    expect(within(rail).getByRole("button", { name: "History (2)" })).toHaveAttribute("aria-current", "page");
 
-    await user.click(history);
-    expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: false, panel: "files" });
-
-    await user.click(screen.getByRole("button", { name: /History/ }));
-    expect(getState().gitViews["git-test"]).toMatchObject({ historyOpen: true, panel: "commits" });
-    expect(changes).toHaveAttribute("aria-current", "page");
-
-    await user.click(within(rail).getByRole("button", { name: "Branches (2)" }));
+    await user.click(within(rail).getByRole("button", { name: "Branches (3)" }));
     expect(getState().gitViews["git-test"].panel).toBe("branches");
     expect(screen.getByRole("button", { name: /New branch/ })).toBeInTheDocument();
 });
@@ -93,7 +87,7 @@ it("takes keyboard focus when it becomes the active pane", () => {
     const { rerender } = render(<GitPane paneId="git-test" cwd="/repo" active={false} visible={false} />);
     document.body.focus();
     rerender(<GitPane paneId="git-test" cwd="/repo" active visible />);
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: "2" });
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "3" });
     expect(getState().gitViews["git-test"].panel).toBe("branches");
 });
 

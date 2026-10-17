@@ -123,11 +123,13 @@ export function HostNavItems({ area, onArea }: { area: string; onArea: (section:
     return (
         <>
             <span className="git-nav-sep" />
-            {sectionsOf(host).map((section) => (
-                <NavTab key={section} label={sectionLabel(host, section)} on={area === section} onClick={() => onArea(section)}>
-                    <SectionIcon section={section} size={14} />
-                </NavTab>
-            ))}
+            {sectionsOf(host)
+                .filter((section) => section !== "pulls" && section !== "issues")
+                .map((section) => (
+                    <NavTab key={section} label={sectionLabel(host, section)} on={area === section} onClick={() => onArea(section)}>
+                        <SectionIcon section={section} size={14} />
+                    </NavTab>
+                ))}
         </>
     );
 }

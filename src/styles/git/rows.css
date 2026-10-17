@@ -21,10 +21,6 @@
     background: var(--surface-chosen);
     color: var(--text-primary);
 }
-/* A modified file is the ordinary case, so its letter stays grey; added, new and deleted keep their colour. */
-.git-pane :is(.git-status, .git-status-symbol).git-m {
-    color: var(--text-tertiary);
-}
 .git-row:focus-visible {
     box-shadow: var(--focus-ring);
 }
