@@ -77,8 +77,8 @@ pub(crate) struct Shared {
     /// Claude Code's permission mode for the chat, which an approved plan
     /// goes back to.
     pub mode: String,
-    /// What the chat's first message said, until Claude has named the chat
-    /// from it.
+    /// Set until the chat's first message is sent, which Claude names the
+    /// chat from.
     pub untitled: Option<String>,
 }
 
@@ -1049,28 +1049,6 @@ impl Reader {
         };
         self.data.offline_retries = false;
         self.sink.end_turn(turn.number, end);
-        self.name_chat();
-    }
-
-    /// Asks Claude for a short name for a new chat once its first turn is
-    /// over, as Claude Code names its own.
-    fn name_chat(&self) {
-        let Some(first) = self
-            .shared
-            .lock()
-            .ok()
-            .and_then(|mut shared| shared.untitled.take())
-        else {
-            return;
-        };
-        let description: String = first.chars().take(1_000).collect();
-        if description.trim().chars().count() < 10 {
-            return;
-        }
-        let _ = self.control.send_for(
-            json!({ "subtype": "generate_session_title", "description": description, "persist": true }),
-            json!({ "title": true }),
-        );
     }
 
     fn window_of(&self, usage: &Map<String, Value>) -> Option<u64> {

@@ -260,6 +260,19 @@ impl Claude {
         self.running.control.writer()
     }
 
+    /// Asks Claude for a short name for a new chat from its first message, as
+    /// Claude Code names its own, while the first turn runs.
+    fn name_chat(&self, first: &str) {
+        let description: String = first.chars().take(1_000).collect();
+        if description.trim().chars().count() < 10 {
+            return;
+        }
+        let _ = self.running.control.send_for(
+            json!({ "subtype": "generate_session_title", "description": description, "persist": true }),
+            json!({ "title": true }),
+        );
+    }
+
     fn options(&self) -> Value {
         config::options(&self.models, &self.model, &self.effort)
     }
@@ -485,10 +498,9 @@ impl Backend for Claude {
     async fn prompt(&mut self, turn: u64, prompt: Prompt) -> Result<(), String> {
         let content = content(&prompt)?;
         let uuid = self.uuid_for(prompt.message_id.as_deref());
+        let mut first = false;
         if let Ok(mut shared) = self.shared.lock() {
-            if let Some(untitled) = shared.untitled.as_mut().filter(|said| said.is_empty()) {
-                untitled.push_str(&prompt.text);
-            }
+            first = shared.untitled.take().is_some();
             shared.sent.insert(uuid.clone());
             shared.turn = Some(Turn {
                 number: turn,
@@ -504,6 +516,8 @@ impl Backend for Claude {
             if let Ok(mut shared) = self.shared.lock() {
                 shared.turn = None;
             }
+        } else if first {
+            self.name_chat(&prompt.text);
         }
         sent
     }
