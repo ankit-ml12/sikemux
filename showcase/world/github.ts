@@ -42,6 +42,229 @@ const PULL = {
   url: "https://github.com/nodelike/sikemux/pull/31",
 };
 
+const pull = (number: number, overrides: Record<string, unknown>) => ({
+  ...PULL,
+  number,
+  url: `https://github.com/nodelike/sikemux/pull/${number}`,
+  ...overrides,
+});
+
+const PULLS = [
+  PULL,
+  pull(34, {
+    title: "fix(rail): the update chip reads as the one thing to press",
+    author: "nodelike",
+    authorAssociation: "OWNER",
+    head: "fix/update-chip",
+    headLabel: "nodelike:fix/update-chip",
+    createdAt: iso(95),
+    updatedAt: iso(12),
+    comments: 0,
+    additions: 21,
+    deletions: 19,
+    changedFiles: 1,
+    labels: [{ name: "design", color: "c5def5" }],
+    reviewers: [],
+  }),
+  pull(33, {
+    title: "feat(chat): tags in the composer are chips",
+    author: "edonramos",
+    authorAssociation: "MEMBER",
+    head: "feat/composer-chips",
+    headLabel: "edonramos:feat/composer-chips",
+    draft: true,
+    createdAt: iso(1440),
+    updatedAt: iso(180),
+    comments: 4,
+    additions: 512,
+    deletions: 120,
+    changedFiles: 14,
+    labels: [{ name: "enhancement", color: "a2eeef" }, { name: "chat", color: "d4c5f9" }],
+    reviewers: ["nodelike", "mayachen"],
+  }),
+  pull(29, {
+    title: "perf(terminal): batch PTY output into one frame",
+    author: "mayachen",
+    authorAssociation: "MEMBER",
+    head: "perf/pty-batch",
+    headLabel: "mayachen:perf/pty-batch",
+    createdAt: iso(4320),
+    updatedAt: iso(2600),
+    comments: 9,
+    additions: 230,
+    deletions: 88,
+    changedFiles: 6,
+    labels: [{ name: "performance", color: "fbca04" }],
+    reviewers: ["nodelike"],
+  }),
+  pull(27, {
+    title: "docs: how phones reach a host",
+    author: "sam-k",
+    authorAssociation: "CONTRIBUTOR",
+    head: "docs/remote-access",
+    headLabel: "sam-k:docs/remote-access",
+    createdAt: iso(7200),
+    updatedAt: iso(5000),
+    comments: 2,
+    additions: 64,
+    deletions: 3,
+    changedFiles: 2,
+    labels: [{ name: "docs", color: "0075ca" }],
+    reviewers: [],
+  }),
+];
+
+const CLOSED_PULLS = [
+  pull(30, {
+    title: "feat(git): review a commit before pushing it",
+    author: "nodelike",
+    state: "closed",
+    mergedAt: iso(1500),
+    mergedBy: "nodelike",
+    updatedAt: iso(1500),
+    labels: [{ name: "enhancement", color: "a2eeef" }],
+  }),
+  pull(28, {
+    title: "chore: try a second rail for agents",
+    author: "edonramos",
+    state: "closed",
+    updatedAt: iso(6000),
+    labels: [],
+  }),
+  pull(26, {
+    title: "fix(browser): keep a parked tab awake while it loads",
+    author: "mayachen",
+    state: "closed",
+    mergedAt: iso(9000),
+    mergedBy: "nodelike",
+    updatedAt: iso(9000),
+    labels: [{ name: "bug", color: "d73a4a" }],
+  }),
+];
+
+const issue = (
+  number: number,
+  title: string,
+  minutes: number,
+  overrides: Record<string, unknown> = {},
+) => ({
+  number,
+  title,
+  body: "Steps to reproduce:\n\n1. Open a chat with an agent.\n2. Switch the pane to its terminal and back.\n\nWhat happens: the draft is gone.\nWhat should happen: the draft is still there.",
+  state: "open",
+  stateReason: null,
+  author: "edonramos",
+  avatarUrl: null,
+  createdAt: iso(minutes),
+  updatedAt: iso(Math.max(5, minutes / 3)),
+  closedAt: null,
+  comments: 0,
+  labels: [],
+  assignees: [],
+  url: `https://github.com/nodelike/sikemux/issues/${number}`,
+  ...overrides,
+});
+
+const ISSUES = [
+  issue(35, "Agents: a draft survives switching between GUI and TUI", 40, {
+    comments: 3,
+    labels: [{ name: "bug", color: "d73a4a" }, { name: "chat", color: "d4c5f9" }],
+    assignees: ["nodelike"],
+  }),
+  issue(32, "Composer: tag issues, pull requests, agents and files inline", 300, {
+    author: "nodelike",
+    comments: 6,
+    labels: [{ name: "enhancement", color: "a2eeef" }, { name: "design", color: "c5def5" }],
+    assignees: ["nodelike", "edonramos"],
+  }),
+  issue(25, "Epic: desktop UI on GPUI for speed and memory", 4300, {
+    author: "nodelike",
+    comments: 14,
+    labels: [{ name: "epic", color: "3e4b9e" }],
+  }),
+  issue(24, "Phone: hold sends while disconnected and say when the phone is the one offline", 5200, {
+    author: "mayachen",
+    comments: 2,
+    labels: [{ name: "mobile", color: "bfdadc" }],
+    assignees: ["mayachen"],
+  }),
+  issue(22, "Agents keep working through Wi-Fi drops and network changes", 8000, {
+    comments: 8,
+    labels: [{ name: "epic", color: "3e4b9e" }, { name: "reliability", color: "e99695" }],
+  }),
+  issue(19, "Documentation site at docs.sikemux.com", 12000, {
+    author: "sam-k",
+    comments: 1,
+    labels: [{ name: "docs", color: "0075ca" }],
+  }),
+  issue(17, "Welcome screen: offer install and sign in for every agent", 15000, {
+    comments: 5,
+    labels: [{ name: "onboarding", color: "f9d0c4" }],
+    assignees: ["edonramos"],
+  }),
+];
+
+const CLOSED_ISSUES = [
+  issue(21, "Rail rows sit 2px right of the project rows", 7000, {
+    state: "closed",
+    stateReason: "completed",
+    closedAt: iso(6800),
+    labels: [{ name: "bug", color: "d73a4a" }],
+  }),
+  issue(16, "Two rails for agents and projects", 20000, {
+    state: "closed",
+    stateReason: "not_planned",
+    closedAt: iso(15000),
+    labels: [{ name: "design", color: "c5def5" }],
+  }),
+];
+
+const release = (id: number, tag: string, minutes: number, overrides: Record<string, unknown> = {}) => ({
+  id,
+  tag,
+  name: tag,
+  body: "## What's new\n\n- Tags in the composer are chips you can delete in one go.\n- The update chip reads as the thing to press.\n\n## Fixes\n\n- A draft survives switching an agent between chat and terminal.",
+  draft: false,
+  prerelease: tag.includes("nightly"),
+  publishedAt: iso(minutes),
+  author: "github-actions",
+  assets: [
+    { id: id * 10 + 1, name: `Sikemux_${tag.replace(/^v/, "")}_aarch64.dmg`, sizeBytes: 16_400_000, downloads: tag.includes("nightly") ? 41 : 1280 },
+    { id: id * 10 + 2, name: "latest.json", sizeBytes: 1_900, downloads: tag.includes("nightly") ? 310 : 9800 },
+  ],
+  url: `https://github.com/nodelike/sikemux/releases/tag/${tag}`,
+  ...overrides,
+});
+
+const RELEASES = [
+  release(9, "v0.5.3-nightly.6", 330),
+  release(8, "v0.5.3-nightly.5", 1800),
+  release(7, "v0.5.2", 5800),
+  release(6, "v0.5.1", 14000),
+  release(5, "v0.5.0", 26000),
+];
+
+const note = (id: number, title: string, kind: string, reason: string, number: number | null, minutes: number, unread: boolean) => ({
+  id: String(id),
+  title,
+  kind,
+  reason,
+  repo: "nodelike/sikemux",
+  number,
+  unread,
+  updatedAt: iso(minutes),
+  url: number ? `https://github.com/nodelike/sikemux/${kind === "Issue" ? "issues" : "pull"}/${number}` : null,
+});
+
+const INBOX = [
+  note(1, "feat(github): the run page, pull request reviews and checks", "PullRequest", "review_requested", 31, 25, true),
+  note(2, "Agents: a draft survives switching between GUI and TUI", "Issue", "assign", 35, 40, true),
+  note(3, "feat(chat): tags in the composer are chips", "PullRequest", "mention", 33, 180, true),
+  note(4, "Release v0.5.3-nightly.6", "CheckSuite", "ci_activity", null, 330, false),
+  note(5, "perf(terminal): batch PTY output into one frame", "PullRequest", "comment", 29, 2600, false),
+  note(6, "Epic: desktop UI on GPUI for speed and memory", "Issue", "subscribed", 25, 4300, false),
+];
+
 const run = (id: number, overrides: Record<string, unknown>) => ({
   id,
   name: "Release",
@@ -334,8 +557,8 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     },
   ],
   pendingApprovals: () => [],
-  pulls: ({ state }) => (state === "closed" ? [] : [PULL]),
-  pull: () => PULL,
+  pulls: ({ state }) => (state === "closed" ? CLOSED_PULLS : state === "all" ? [...PULLS, ...CLOSED_PULLS] : PULLS),
+  pull: ({ number }) => [...PULLS, ...CLOSED_PULLS].find((item) => item.number === number) ?? PULL,
   pullFiles: () => [
     {
       path: "src/plugins/github/jobGraph.ts",
@@ -462,7 +685,11 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     },
   ],
   branches: () => ["main", "feat/github-actions-plugin", "release/0.4"],
-  issues: () => [],
-  releases: () => [],
-  inbox: () => [],
+  issues: ({ state }) => {
+    const issues = state === "closed" ? CLOSED_ISSUES : state === "all" ? [...ISSUES, ...CLOSED_ISSUES] : ISSUES;
+    return { issues, total: issues.length, nextPage: null };
+  },
+  issue: ({ number }) => [...ISSUES, ...CLOSED_ISSUES].find((item) => item.number === number) ?? ISSUES[0],
+  releases: () => RELEASES,
+  inbox: ({ all }) => (all ? INBOX : INBOX.filter((item) => item.unread)),
 };
