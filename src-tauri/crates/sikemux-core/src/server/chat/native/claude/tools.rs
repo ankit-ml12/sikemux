@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 use crate::server::edits;
 
 use super::super::json::{
-    is_js_whitespace, js_join_item, js_number, js_str, non_nullish, texts, truthy,
+    is_js_whitespace, js_join_item, js_number, js_str, non_nullish, str_field, texts, truthy,
 };
 
 pub struct ToolInfo {
@@ -269,7 +269,7 @@ pub fn tool_result(
         } else {
             exit_plan_mode_raw_output(name, content)
         };
-        update.insert("rawOutput".into(), raw_output);
+        update.insert("rawOutput".into(), without_pictures(raw_output));
     }
     if !is_plan_tool(name) {
         let fields = result_fields(name, input, result, tool_use_result);
@@ -278,6 +278,20 @@ pub fn tool_result(
         }
     }
     Value::Object(update)
+}
+
+/// `content` already carries the result's pictures, and they are most of a
+/// long chat's bytes.
+pub(super) fn without_pictures(raw_output: Value) -> Value {
+    match raw_output {
+        Value::Array(blocks) => Value::Array(
+            blocks
+                .into_iter()
+                .filter(|block| str_field(block, "type") != Some("image"))
+                .collect(),
+        ),
+        other => other,
+    }
 }
 
 fn exit_plan_mode_raw_output(name: &str, content: &Value) -> Value {
@@ -1483,6 +1497,6 @@ fn is_line_terminator(ch: char) -> bool {
 }
 
 #[cfg(test)]
-mod matches_adapter;
+pub(super) mod matches_adapter;
 #[cfg(test)]
 mod tests;

@@ -12,7 +12,7 @@ use crate::protocol::{ChatEvent, ChatEventKind};
 
 /// Past this the oldest half of the file goes, so a chat that never ends
 /// cannot fill the disk. Its earliest turns are then out of reach.
-pub(crate) const MAX_HISTORY_BYTES: u64 = 256 * 1024 * 1024;
+pub(crate) const MAX_HISTORY_BYTES: u64 = 512 * 1024 * 1024;
 
 /// An event a page can start from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

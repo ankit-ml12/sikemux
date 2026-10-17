@@ -368,7 +368,7 @@ impl Backend for Claude {
                     loaded();
                     return Ok(None);
                 };
-                let records = replay::with_subagents(&path, replay::read_chain(&path)?);
+                let records = replay::with_subagents(&path, replay::read_history(&path)?);
                 // Claude Code drops a message under an id its transcript already
                 // has, so a prompt sent again after a restart needs a new one.
                 if let Ok(mut shared) = shared.lock() {
