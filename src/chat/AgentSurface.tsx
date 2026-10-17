@@ -234,6 +234,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             startup={agent.startup}
                             directCommand={agent.directCommand}
                             initialDraft={carried || undefined}
+                            onInitialInputDelivered={() => setCarried("")}
                             active={visible}
                             visible={visible}
                             spawnWhen={visible}
