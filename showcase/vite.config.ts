@@ -21,10 +21,7 @@ const LOCAL_ROOTS: Record<string, string> = {
   "moodboard-studio": join(homedir(), "projects/personal/moodboard-studio"),
 };
 
-const WALLPAPER_FILE = join(
-  homedir(),
-  "wallpaper/butterfly-neon-glowing-dark-background-amoled-3840x2160-2171.png",
-);
+const WALLPAPER_FILE = join(homedir(), "wallpaper/midnight-garden.jpeg");
 
 const MAX_FILE_BYTES = 400_000;
 const HIDDEN_FOLDERS = new Set([
