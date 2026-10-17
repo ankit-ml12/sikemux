@@ -55,12 +55,13 @@ function NavTab({
 }
 
 /**
- * The git pane's header: the local screens, then the code host's sections, then the local screen's own controls
- * and, at the far end, who is signed in.
+ * The git pane's header: the local screen's own controls, then the local screens and the code host's sections and,
+ * at the far end, who is signed in.
  */
 export function GitNav({ local, host, tools, account }: { local: readonly NavItem[]; host?: ReactNode; tools?: ReactNode; account?: ReactNode }) {
     return (
         <div className="git-nav-bar">
+            <div className="git-nav-tools">{tools}</div>
             <nav className="git-nav" aria-label="Git">
                 {local.map((item) => (
                     <NavTab key={item.id} label={item.label} shortcut={item.shortcut} on={item.on} count={item.count} onClick={item.onSelect}>
@@ -69,7 +70,6 @@ export function GitNav({ local, host, tools, account }: { local: readonly NavIte
                 ))}
                 {host}
             </nav>
-            <div className="git-nav-tools">{tools}</div>
             {account}
         </div>
     );
