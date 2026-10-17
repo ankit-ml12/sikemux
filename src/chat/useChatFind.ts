@@ -5,12 +5,6 @@ import type { ChatMessage } from "./types";
 const MATCHES = "chat-find";
 const CURRENT = "chat-find-current";
 
-function centre(range: Range, scroller: Element) {
-    const box = range.getBoundingClientRect();
-    const view = scroller.getBoundingClientRect();
-    if (box.top < view.top || box.bottom > view.bottom) scroller.scrollTop += box.top - view.top - view.height / 2;
-}
-
 const canHighlight = (): boolean => typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined";
 
 /**
@@ -55,7 +49,7 @@ export function useChatFind({
         const paint = () => {
             frame = 0;
             const all: Range[] = [];
-            const targetRanges: Range[] = [];
+            let focus: Range | undefined;
             if (reveal.current === "row") {
                 const row = scroller.querySelector(`.chat-row[data-index="${targetMessage}"]`);
                 if (!row) return;
@@ -72,9 +66,8 @@ export function useChatFind({
                 if (!target && (box.bottom < view.top - view.height || box.top > view.bottom + view.height)) continue;
                 const ranges = rangesIn(row, pattern);
                 all.push(...ranges);
-                if (target) targetRanges.push(...ranges);
+                if (target && targetOccurrence !== undefined) focus = ranges[Math.min(targetOccurrence, ranges.length - 1)];
             }
-            const focus = targetOccurrence === undefined ? undefined : targetRanges[Math.min(targetOccurrence, targetRanges.length - 1)];
             CSS.highlights.set(MATCHES, new Highlight(...all));
             if (!focus) {
                 CSS.highlights.delete(CURRENT);
@@ -84,20 +77,19 @@ export function useChatFind({
             // A long message can hold the match well outside the view even once its row is centred.
             if (reveal.current !== "match") return;
             reveal.current = null;
-            const steps = focus.startContainer.parentElement?.closest(".chat-work-scroll");
-            if (steps) centre(focus, steps);
-            centre(focus, scroller);
+            const box = focus.getBoundingClientRect();
+            if (box.top < view.top || box.bottom > view.bottom) scroller.scrollTop += box.top - view.top - view.height / 2;
         };
         const schedule = () => {
             if (!frame) frame = requestAnimationFrame(paint);
         };
         schedule();
-        scroller.addEventListener("scroll", schedule, true);
+        scroller.addEventListener("scroll", schedule);
         const observer = new MutationObserver(schedule);
         observer.observe(scroller, { childList: true, subtree: true, characterData: true });
         return () => {
             cancelAnimationFrame(frame);
-            scroller.removeEventListener("scroll", schedule, true);
+            scroller.removeEventListener("scroll", schedule);
             observer.disconnect();
             CSS.highlights.delete(MATCHES);
             CSS.highlights.delete(CURRENT);

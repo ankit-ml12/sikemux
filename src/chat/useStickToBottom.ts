@@ -40,9 +40,7 @@ export function useStickToBottom({
         if (!scroller || atBottomRef.current) return;
         const view = scroller.getBoundingClientRect();
         for (const offset of [1, 24, 64]) {
-            const hit = document.elementFromPoint?.(view.left + view.width / 2, view.top + offset);
-            // An opened turn scrolls on its own, so its rows move without the transcript moving.
-            const row = hit?.closest(".chat-work-steps") ?? hit?.closest(".chat-row");
+            const row = document.elementFromPoint?.(view.left + view.width / 2, view.top + offset)?.closest(".chat-row");
             if (row && scroller.contains(row)) {
                 const edge = Array.from(scroller.querySelectorAll(".chat-row")).at(-1) === row ? "top" : "bottom";
                 anchorRef.current = { row, edge, offset: row.getBoundingClientRect()[edge] - view.top };
