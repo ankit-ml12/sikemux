@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { errorText } from "../lib/format";
-import { open } from "@tauri-apps/plugin-dialog";
+import { dialogsApi } from "../api/dialogs";
 import { ComposerPickers } from "./ComposerPickers";
 import type { SessionConfig } from "./sessionConfig";
 import { basename, joinPath } from "../lib/paths";
@@ -508,9 +508,9 @@ export function ChatComposer({
 
     const chooseFiles = async () => {
         try {
-            const selection = await open({ multiple: true, directory: false });
-            if (!selection) return;
-            setAttachments((current) => mergePaths(current, Array.isArray(selection) ? selection : [selection]));
+            const selection = await dialogsApi.pickFiles();
+            if (selection.length === 0) return;
+            setAttachments((current) => mergePaths(current, selection));
             window.requestAnimationFrame(() => editorRef.current?.focus());
         } catch (failure) {
             onError(errorText(failure));

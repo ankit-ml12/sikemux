@@ -1,4 +1,4 @@
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { dialogsApi } from "../api/dialogs";
 import { invokeCommand } from "../api/invoke";
 import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
@@ -155,15 +155,13 @@ export function activeSurfacePane(kind: PluginKind): string | null {
 }
 
 /** Asks the person for a folder; null when they cancel. */
-export async function pickFolder(title: string): Promise<string | null> {
-    const picked = await openDialog({ directory: true, multiple: false, title });
-    return typeof picked === "string" ? picked : null;
+export function pickFolder(title: string): Promise<string | null> {
+    return dialogsApi.pickFolder({ title });
 }
 
 /** Asks the person for a file, offering only these extensions when any are given; null when they cancel. */
-export async function pickFile(title: string, filter?: { name: string; extensions: string[] }): Promise<string | null> {
-    const picked = await openDialog({ directory: false, multiple: false, title, filters: filter ? [filter] : undefined });
-    return typeof picked === "string" ? picked : null;
+export function pickFile(title: string, filter?: { name: string; extensions: string[] }): Promise<string | null> {
+    return dialogsApi.pickFile({ title, filters: filter ? [filter] : undefined });
 }
 
 /** Runs a program in a terminal over the window, settling once the person closes it. */

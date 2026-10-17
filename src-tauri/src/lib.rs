@@ -13,6 +13,7 @@ mod browser;
 mod cli_install;
 mod cli_open;
 mod deep_link;
+mod dialogs;
 mod diff;
 mod document_preview;
 mod error;
@@ -56,7 +57,6 @@ mod voice;
 mod voice_models;
 mod wallpaper;
 mod wheel;
-mod without_page_script;
 
 use sikemux_host::{build_identity, cli_client, cli_paths, install_tls_crypto, login_item};
 
@@ -136,9 +136,6 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(without_page_script::without_page_script(
-            tauri_plugin_dialog::init(),
-        ))
         .plugin(main_window_navigation_guard())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -484,6 +481,8 @@ pub fn run() {
             settings::is_directory,
             wallpaper::wallpaper_image,
             agent_notification::post_notification,
+            dialogs::pick_paths,
+            dialogs::pick_save_path,
             search::project_search,
             search::project_search_cancel,
             search::project_search_replace,

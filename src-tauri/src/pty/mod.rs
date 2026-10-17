@@ -383,30 +383,23 @@ impl PtyManager {
         if self.noticed.swap(pid, Ordering::AcqRel) == pid {
             return;
         }
-        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-        let app = settings.app.clone();
         let socket = settings.socket.clone();
-        settings
-            .app
-            .dialog()
-            .message(format!(
+        let app = settings.app.clone();
+        crate::dialogs::warn(
+            &settings.app,
+            "Terminals are unavailable",
+            format!(
                 "Sikemux's background process (pid {pid}) belongs to another version of Sikemux and could not be updated, so terminals, agents and tasks cannot open in this window.\n\nQuit and Stop Everything ends that process and everything running in it. Sikemux starts a new one when you open it again."
-            ))
-            .title("Terminals are unavailable")
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Quit and Stop Everything".into(),
-                "Not Now".into(),
-            ))
-            .show(move |stop| {
-                if !stop {
-                    return;
-                }
+            ),
+            "Quit and Stop Everything",
+            "Not Now",
+            move || {
                 std::thread::spawn(move || {
                     stop_core_process(&socket, pid);
                     app.exit(0);
                 });
-            });
+            },
+        );
     }
 
     fn block_on_core<F>(&self, work: impl FnOnce(Arc<CoreClient>) -> F)

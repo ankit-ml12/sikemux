@@ -30,7 +30,6 @@ vi.mock("../codehost/tracked", async (importOriginal) => ({
     useTrackedItems: mocks.tracked,
     loadTrackedContext: mocks.load,
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 const voice = vi.hoisted(() => ({
     status: vi.fn(async () => ({ supported: true, installed: true, reason: null })),
     prepare: vi.fn(async () => {}),

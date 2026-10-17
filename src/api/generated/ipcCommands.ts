@@ -222,6 +222,8 @@ export const IPC_COMMANDS = [
     "is_directory",
     "wallpaper_image",
     "post_notification",
+    "pick_paths",
+    "pick_save_path",
     "project_search",
     "project_search_cancel",
     "project_search_replace",

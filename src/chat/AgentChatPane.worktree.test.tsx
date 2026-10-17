@@ -47,7 +47,6 @@ vi.mock("../state/commands", () => ({
     noteAgentBackgroundWork: vi.fn(),
     toggleAgentSkipPermissions: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 
 const agent: Agent = {
     id: "agent-wt",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorText } from "../lib/format";
-import { open } from "@tauri-apps/plugin-dialog";
+import { dialogsApi } from "../api/dialogs";
 import { fsapi } from "../api/fs";
 import { skillsApi, type Skill, type SkillsOverview } from "../api/skills";
 import { reportError } from "../state/toast";
@@ -52,8 +52,8 @@ export function SkillsSection() {
     const failed = (at: string) => (failure?.at === at ? <span className="skills-failure">{failure.message}</span> : null);
 
     const chooseFolder = async () => {
-        const picked = await open({ directory: true, multiple: false });
-        if (typeof picked === "string") setSource(picked);
+        const picked = await dialogsApi.pickFolder();
+        if (picked) setSource(picked);
     };
 
     const skills = overview?.skills ?? [];

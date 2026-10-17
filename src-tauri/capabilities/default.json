@@ -8,7 +8,6 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "dialog:default",
     "process:allow-restart",
     "process:allow-exit",
     "core:window:allow-show",
@@ -240,6 +239,8 @@
     "allow-is-directory",
     "allow-wallpaper-image",
     "allow-post-notification",
+    "allow-pick-paths",
+    "allow-pick-save-path",
     "allow-project-search",
     "allow-project-search-cancel",
     "allow-project-search-replace",

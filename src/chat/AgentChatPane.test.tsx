@@ -83,7 +83,6 @@ vi.mock("../state/commands", () => ({
     toggleAgentSkipPermissions: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 
 const agent: Agent = {
     id: "agent-1",

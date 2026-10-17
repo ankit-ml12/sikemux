@@ -54,7 +54,6 @@ vi.mock("../state/commands", () => ({
     setAgentWorktree: vi.fn(),
     setAgentWorktreeDefault: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 
 const agent: Agent = {
     id: "agent-kept",

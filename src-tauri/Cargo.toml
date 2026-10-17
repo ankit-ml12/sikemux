@@ -42,7 +42,7 @@ hex = "0.4"
 
 [dependencies]
 tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable", "compression"] }
-tauri-plugin-dialog = "2"
+rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
@@ -259,8 +259,6 @@ opt-level = "s"
 [profile.release.package.minisign-verify]
 opt-level = "s"
 [profile.release.package.mac-notification-sys]
-opt-level = "s"
-[profile.release.package.tauri-plugin-dialog]
 opt-level = "s"
 [profile.release.package.rfd]
 opt-level = "s"
