@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { installAgent } = vi.hoisted(() => ({ installAgent: vi.fn() }));
-vi.mock("../agents/AgentInstall", () => ({ installAgent }));
+const { installAgent, signInAgent } = vi.hoisted(() => ({ installAgent: vi.fn(), signInAgent: vi.fn() }));
+vi.mock("../agents/AgentInstall", () => ({ installAgent, signInAgent }));
 vi.mock("../state/resources", () => ({
     useResource: () => ({
         status: "ok",
@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("Agents on this machine", () => {
-    it("lists every agent, ready ones first, and installs the missing", () => {
+    it("lists every agent, ready ones first, installs the missing and signs in the signed out", () => {
         render(<AgentSetupSection />);
         const rows = screen.getAllByRole("listitem");
         expect(rows.map((row) => row.querySelector("b")?.textContent)).toEqual(["OpenCode", "Claude", "Codex", "Hermes", "Pi", "OMP", "Grok"]);
@@ -36,7 +36,8 @@ describe("Agents on this machine", () => {
         expect(installAgent).toHaveBeenCalledWith("claude");
 
         expect(within(rows[0]).queryByRole("button")).not.toBeInTheDocument();
-        expect(within(rows[2]).queryByRole("button")).not.toBeInTheDocument();
+        fireEvent.click(within(rows[2]).getByRole("button", { name: "Sign in" }));
+        expect(signInAgent).toHaveBeenCalledWith(expect.objectContaining({ type: "codex" }));
     });
 
     it("offers to reinstall an agent that is broken, and says why", () => {
