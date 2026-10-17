@@ -71,9 +71,7 @@ export function playBip(): void {
 }
 
 export async function postNotification(title: string, body: string, agentId?: string): Promise<void> {
-    if ((await invoke<string>("plugin:notification|request_permission")) !== "granted") return;
-    if (agentId) await invoke("notify_agent", { agentId, title, body });
-    else await invoke("plugin:notification|notify", { options: { title, body } });
+    await invoke("post_notification", { title, body, agentId });
     playBip();
 }
 

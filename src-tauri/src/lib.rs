@@ -139,9 +139,6 @@ pub fn run() {
         .plugin(without_page_script::without_page_script(
             tauri_plugin_dialog::init(),
         ))
-        .plugin(without_page_script::without_page_script(
-            tauri_plugin_notification::init(),
-        ))
         .plugin(main_window_navigation_guard())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -486,7 +483,7 @@ pub fn run() {
             settings::expand_path,
             settings::is_directory,
             wallpaper::wallpaper_image,
-            agent_notification::notify_agent,
+            agent_notification::post_notification,
             search::project_search,
             search::project_search_cancel,
             search::project_search_replace,

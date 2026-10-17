@@ -221,7 +221,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "expand_path",
     "is_directory",
     "wallpaper_image",
-    "notify_agent",
+    "post_notification",
     "project_search",
     "project_search_cancel",
     "project_search_replace",

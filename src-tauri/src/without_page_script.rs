@@ -62,8 +62,5 @@ mod tests {
         let dialog = without_page_script::<tauri::Wry>(tauri_plugin_dialog::init());
         assert_eq!(dialog.name(), "dialog");
         assert!(dialog.initialization_script_2().is_none());
-        let notification = without_page_script::<tauri::Wry>(tauri_plugin_notification::init());
-        assert_eq!(notification.name(), "notification");
-        assert!(notification.initialization_script_2().is_none());
     }
 }

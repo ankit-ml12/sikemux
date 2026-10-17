@@ -47,7 +47,6 @@ const capability = {
     "core:default",
     "core:window:allow-start-dragging",
     "dialog:default",
-    "notification:default",
     "process:allow-restart",
     "process:allow-exit",
     "core:window:allow-show",

@@ -18,7 +18,6 @@ publish = false
 aho-corasick = { version = "1" }
 crc32fast = { version = "1" }
 crossbeam-utils = { version = "0.8" }
-deranged = { version = "0.5", features = ["serde"] }
 derive_more = { version = "2", features = ["display", "from"] }
 digest = { version = "0.11", features = ["alloc", "mac", "oid"] }
 fastrand = { version = "2" }
@@ -51,7 +50,7 @@ serde_core = { version = "1", default-features = false, features = ["alloc", "rc
 serde_json = { version = "1", features = ["alloc", "preserve_order", "raw_value"] }
 serde_with = { version = "3", features = ["json", "schemars_1"] }
 tauri-utils = { version = "2", default-features = false, features = ["compression", "resources"] }
-time = { version = "0.3", features = ["formatting", "macros", "parsing", "serde"] }
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4", "v7"] }
@@ -60,7 +59,6 @@ uuid = { version = "1", features = ["serde", "v4", "v7"] }
 aho-corasick = { version = "1", default-features = false, features = ["perf-literal", "std"] }
 cc = { version = "1", default-features = false, features = ["parallel"] }
 crc32fast = { version = "1" }
-deranged = { version = "0.5" }
 derive_more = { version = "2", features = ["add", "add_assign"] }
 derive_more-impl = { version = "2", features = ["add", "add_assign", "display", "from"] }
 digest = { version = "0.11", features = ["alloc", "oid"] }
@@ -89,7 +87,7 @@ syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-trai
 tauri-build = { version = "2" }
 tauri-utils = { version = "2", default-features = false, features = ["build-2", "compression", "resources"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
-time-macros = { version = "0.2", default-features = false, features = ["formatting", "parsing", "serde"] }
+time-macros = { version = "0.2", default-features = false, features = ["formatting", "parsing"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }

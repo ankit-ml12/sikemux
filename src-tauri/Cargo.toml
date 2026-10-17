@@ -43,7 +43,6 @@ hex = "0.4"
 [dependencies]
 tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable", "compression"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
@@ -88,6 +87,9 @@ trash = "5"
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["fs"] }
 libc = "0.2"
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+notify-rust = "4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 workspace-hack = { version = "0.1", path = "crates/workspace-hack" }
@@ -255,8 +257,6 @@ opt-level = "s"
 [profile.release.package.serde_with]
 opt-level = "s"
 [profile.release.package.minisign-verify]
-opt-level = "s"
-[profile.release.package.tauri-plugin-notification]
 opt-level = "s"
 [profile.release.package.mac-notification-sys]
 opt-level = "s"
