@@ -231,6 +231,12 @@
 .git-group-toggle[aria-expanded="false"] .git-group-chev {
     transform: none;
 }
+.git-group-icon {
+    display: inline-flex;
+    flex: none;
+    width: 13px;
+    color: var(--text-tertiary);
+}
 .git-file-group .git-section-actions {
     display: none;
     margin-left: 0;
@@ -255,19 +261,42 @@
 .git-file-row[data-side="unstaged"] .git-status.git-m {
     color: var(--git-renamed);
 }
-/* A group's files hang off a guide under its chevron. */
+/* A group's files hang off its chevron like the project tree's children: a spine down the group, a tick to each file,
+   and an elbow at the last. The segments run through each row's border so the spine has no breaks. */
 .git-row.git-file-row {
     position: relative;
-    padding-left: 22px;
+    padding-left: 36px;
 }
 .git-file-row::before {
     content: "";
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 11px;
+    top: -1px;
+    bottom: -1px;
+    left: 25px;
     width: 1px;
-    background: var(--border-strong);
+    background: var(--tree-spine);
+}
+.git-file-row::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 26px;
+    width: 7px;
+    height: 1px;
+    background: var(--tree-tick);
+}
+.git-file-row[data-last]::before {
+    bottom: auto;
+    box-sizing: border-box;
+    width: 8px;
+    height: calc(50% + 1.5px);
+    background: none;
+    border-left: 1px solid var(--tree-spine);
+    border-bottom: 1px solid var(--tree-tick);
+    border-bottom-left-radius: 4px;
+}
+.git-file-row[data-last]::after {
+    display: none;
 }
 .git-file-group.follows {
     margin-top: var(--space-1h);

@@ -34,6 +34,7 @@ import {
     IconCollapseAll,
     IconCommit,
     IconExpandAll,
+    IconFilePlus,
     IconStash,
     IconCopy,
     IconDiscard,
@@ -1056,6 +1057,7 @@ function GitWorkbench({
                 <div className={`git-group git-file-group${i > 0 ? " follows" : ""}`}>
                     <button type="button" className="git-group-toggle" aria-expanded={!entry.folded} onClick={() => toggleSide(entry.side)}>
                         <IconChevron size={10} className="git-group-chev" />
+                        <span className="git-group-icon">{staged ? <IconFilePlus size={13} /> : <IconFile size={13} />}</span>
                         <span className="git-group-name">{staged ? "Staged Changes" : "Changes"}</span>
                     </button>
                     <span className="git-section-actions">
@@ -1101,6 +1103,7 @@ function GitWorkbench({
                 tabIndex={selected ? 0 : -1}
                 aria-label={`${file.path}, ${side}`}
                 data-side={side}
+                data-last={fileEntries[i + 1]?.kind === "file" ? undefined : ""}
                 className={`git-row git-file-row${selected ? " sel" : ""}${isInRange(fileRowRange, i) ? " ranged" : ""}`}
                 onFocus={() => setSel("files", i)}
                 onClick={(event) => {

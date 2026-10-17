@@ -17,7 +17,8 @@
     background: var(--surface-hover);
     color: var(--text-primary);
 }
-.git-row.sel {
+/* The selection is where the keys act, so it shows while the keyboard is in the list; a pointer only lights the row it is on. */
+.git-list:has(.git-row:focus-visible) .git-row.sel {
     background: var(--surface-chosen);
     color: var(--text-primary);
 }
