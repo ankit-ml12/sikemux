@@ -79,7 +79,10 @@ const PULLS = [
     additions: 512,
     deletions: 120,
     changedFiles: 14,
-    labels: [{ name: "enhancement", color: "a2eeef" }, { name: "chat", color: "d4c5f9" }],
+    labels: [
+      { name: "enhancement", color: "a2eeef" },
+      { name: "chat", color: "d4c5f9" },
+    ],
     reviewers: ["nodelike", "mayachen"],
   }),
   pull(29, {
@@ -168,40 +171,69 @@ const issue = (
 const ISSUES = [
   issue(35, "Agents: a draft survives switching between GUI and TUI", 40, {
     comments: 3,
-    labels: [{ name: "bug", color: "d73a4a" }, { name: "chat", color: "d4c5f9" }],
+    labels: [
+      { name: "bug", color: "d73a4a" },
+      { name: "chat", color: "d4c5f9" },
+    ],
     assignees: ["nodelike"],
   }),
-  issue(32, "Composer: tag issues, pull requests, agents and files inline", 300, {
-    author: "nodelike",
-    comments: 6,
-    labels: [{ name: "enhancement", color: "a2eeef" }, { name: "design", color: "c5def5" }],
-    assignees: ["nodelike", "edonramos"],
-  }),
+  issue(
+    32,
+    "Composer: tag issues, pull requests, agents and files inline",
+    300,
+    {
+      author: "nodelike",
+      comments: 6,
+      labels: [
+        { name: "enhancement", color: "a2eeef" },
+        { name: "design", color: "c5def5" },
+      ],
+      assignees: ["nodelike", "edonramos"],
+    },
+  ),
   issue(25, "Epic: desktop UI on GPUI for speed and memory", 4300, {
     author: "nodelike",
     comments: 14,
     labels: [{ name: "epic", color: "3e4b9e" }],
   }),
-  issue(24, "Phone: hold sends while disconnected and say when the phone is the one offline", 5200, {
-    author: "mayachen",
-    comments: 2,
-    labels: [{ name: "mobile", color: "bfdadc" }],
-    assignees: ["mayachen"],
-  }),
-  issue(22, "Agents keep working through Wi-Fi drops and network changes", 8000, {
-    comments: 8,
-    labels: [{ name: "epic", color: "3e4b9e" }, { name: "reliability", color: "e99695" }],
-  }),
+  issue(
+    24,
+    "Phone: hold sends while disconnected and say when the phone is the one offline",
+    5200,
+    {
+      author: "mayachen",
+      comments: 2,
+      labels: [{ name: "mobile", color: "bfdadc" }],
+      assignees: ["mayachen"],
+    },
+  ),
+  issue(
+    22,
+    "Agents keep working through Wi-Fi drops and network changes",
+    8000,
+    {
+      comments: 8,
+      labels: [
+        { name: "epic", color: "3e4b9e" },
+        { name: "reliability", color: "e99695" },
+      ],
+    },
+  ),
   issue(19, "Documentation site at docs.sikemux.com", 12000, {
     author: "sam-k",
     comments: 1,
     labels: [{ name: "docs", color: "0075ca" }],
   }),
-  issue(17, "Welcome screen: offer install and sign in for every agent", 15000, {
-    comments: 5,
-    labels: [{ name: "onboarding", color: "f9d0c4" }],
-    assignees: ["edonramos"],
-  }),
+  issue(
+    17,
+    "Welcome screen: offer install and sign in for every agent",
+    15000,
+    {
+      comments: 5,
+      labels: [{ name: "onboarding", color: "f9d0c4" }],
+      assignees: ["edonramos"],
+    },
+  ),
 ];
 
 const CLOSED_ISSUES = [
@@ -219,7 +251,12 @@ const CLOSED_ISSUES = [
   }),
 ];
 
-const release = (id: number, tag: string, minutes: number, overrides: Record<string, unknown> = {}) => ({
+const release = (
+  id: number,
+  tag: string,
+  minutes: number,
+  overrides: Record<string, unknown> = {},
+) => ({
   id,
   tag,
   name: tag,
@@ -229,8 +266,18 @@ const release = (id: number, tag: string, minutes: number, overrides: Record<str
   publishedAt: iso(minutes),
   author: "github-actions",
   assets: [
-    { id: id * 10 + 1, name: `Sikemux_${tag.replace(/^v/, "")}_aarch64.dmg`, sizeBytes: 16_400_000, downloads: tag.includes("nightly") ? 41 : 1280 },
-    { id: id * 10 + 2, name: "latest.json", sizeBytes: 1_900, downloads: tag.includes("nightly") ? 310 : 9800 },
+    {
+      id: id * 10 + 1,
+      name: `Sikemux_${tag.replace(/^v/, "")}_aarch64.dmg`,
+      sizeBytes: 16_400_000,
+      downloads: tag.includes("nightly") ? 41 : 1280,
+    },
+    {
+      id: id * 10 + 2,
+      name: "latest.json",
+      sizeBytes: 1_900,
+      downloads: tag.includes("nightly") ? 310 : 9800,
+    },
   ],
   url: `https://github.com/nodelike/sikemux/releases/tag/${tag}`,
   ...overrides,
@@ -244,7 +291,15 @@ const RELEASES = [
   release(5, "v0.5.0", 26000),
 ];
 
-const note = (id: number, title: string, kind: string, reason: string, number: number | null, minutes: number, unread: boolean) => ({
+const note = (
+  id: number,
+  title: string,
+  kind: string,
+  reason: string,
+  number: number | null,
+  minutes: number,
+  unread: boolean,
+) => ({
   id: String(id),
   title,
   kind,
@@ -253,16 +308,66 @@ const note = (id: number, title: string, kind: string, reason: string, number: n
   number,
   unread,
   updatedAt: iso(minutes),
-  url: number ? `https://github.com/nodelike/sikemux/${kind === "Issue" ? "issues" : "pull"}/${number}` : null,
+  url: number
+    ? `https://github.com/nodelike/sikemux/${kind === "Issue" ? "issues" : "pull"}/${number}`
+    : null,
 });
 
 const INBOX = [
-  note(1, "feat(github): the run page, pull request reviews and checks", "PullRequest", "review_requested", 31, 25, true),
-  note(2, "Agents: a draft survives switching between GUI and TUI", "Issue", "assign", 35, 40, true),
-  note(3, "feat(chat): tags in the composer are chips", "PullRequest", "mention", 33, 180, true),
-  note(4, "Release v0.5.3-nightly.6", "CheckSuite", "ci_activity", null, 330, false),
-  note(5, "perf(terminal): batch PTY output into one frame", "PullRequest", "comment", 29, 2600, false),
-  note(6, "Epic: desktop UI on GPUI for speed and memory", "Issue", "subscribed", 25, 4300, false),
+  note(
+    1,
+    "feat(github): the run page, pull request reviews and checks",
+    "PullRequest",
+    "review_requested",
+    31,
+    25,
+    true,
+  ),
+  note(
+    2,
+    "Agents: a draft survives switching between GUI and TUI",
+    "Issue",
+    "assign",
+    35,
+    40,
+    true,
+  ),
+  note(
+    3,
+    "feat(chat): tags in the composer are chips",
+    "PullRequest",
+    "mention",
+    33,
+    180,
+    true,
+  ),
+  note(
+    4,
+    "Release v0.5.3-nightly.6",
+    "CheckSuite",
+    "ci_activity",
+    null,
+    330,
+    false,
+  ),
+  note(
+    5,
+    "perf(terminal): batch PTY output into one frame",
+    "PullRequest",
+    "comment",
+    29,
+    2600,
+    false,
+  ),
+  note(
+    6,
+    "Epic: desktop UI on GPUI for speed and memory",
+    "Issue",
+    "subscribed",
+    25,
+    4300,
+    false,
+  ),
 ];
 
 const run = (id: number, overrides: Record<string, unknown>) => ({
@@ -426,6 +531,133 @@ function jobsFor(runId: number) {
   return runId === 36316470001 ? CI_JOBS : RELEASE_JOBS;
 }
 
+const PULL_TIMELINE = [
+  ...[
+    ["c1f2023a8d1b", "feat(github): a job graph for a run", 290],
+    ["775060ae44c2", "feat(github): checks on a pull request", 240],
+    ["bff33fa90b17", "feat(github): approve or request changes", 200],
+  ].map(([sha, message, minutes]) => ({
+    kind: "committed",
+    id: null,
+    actor: "Sujalxcode",
+    avatarUrl: null,
+    association: null,
+    at: iso(minutes as number),
+    body: null,
+    state: null,
+    sha,
+    message,
+    subject: null,
+  })),
+  {
+    kind: "review_requested",
+    id: 11,
+    actor: "Sujalxcode",
+    avatarUrl: null,
+    association: null,
+    at: iso(190),
+    body: null,
+    state: null,
+    sha: null,
+    message: null,
+    subject: "nodelike",
+  },
+  {
+    kind: "labeled",
+    id: 12,
+    actor: "nodelike",
+    avatarUrl: null,
+    association: null,
+    at: iso(150),
+    body: null,
+    state: null,
+    sha: null,
+    message: null,
+    subject: "enhancement",
+  },
+  {
+    kind: "reviewed",
+    id: 13,
+    actor: "nodelike",
+    avatarUrl: null,
+    association: "OWNER",
+    at: iso(120),
+    body: "The graph should keep a called workflow's jobs in one box.",
+    state: "changes_requested",
+    sha: null,
+    message: null,
+    subject: null,
+  },
+  {
+    kind: "commented",
+    id: 14,
+    actor: "nodelike",
+    avatarUrl: null,
+    association: "OWNER",
+    at: iso(90),
+    body: "Nice, this saves a trip to GitHub.",
+    state: null,
+    sha: null,
+    message: null,
+    subject: null,
+  },
+];
+
+const ISSUE_TIMELINE = [
+  {
+    kind: "assigned",
+    id: 21,
+    actor: "edonramos",
+    avatarUrl: null,
+    association: null,
+    at: iso(38),
+    body: null,
+    state: null,
+    sha: null,
+    message: null,
+    subject: "nodelike",
+  },
+  {
+    kind: "labeled",
+    id: 22,
+    actor: "nodelike",
+    avatarUrl: null,
+    association: null,
+    at: iso(30),
+    body: null,
+    state: null,
+    sha: null,
+    message: null,
+    subject: "bug",
+  },
+  {
+    kind: "commented",
+    id: 23,
+    actor: "nodelike",
+    avatarUrl: null,
+    association: "OWNER",
+    at: iso(20),
+    body: "Reproduced. The draft lives in the chat view, so the terminal view never sees it.",
+    state: null,
+    sha: null,
+    message: null,
+    subject: null,
+  },
+  {
+    kind: "commented",
+    id: 24,
+    actor: "mayachen",
+    avatarUrl: null,
+    association: "MEMBER",
+    at: iso(8),
+    body: "Same on the phone when it reconnects.",
+    state: null,
+    sha: null,
+    message: null,
+    subject: null,
+  },
+];
+
 export const GITHUB: Record<string, (params: Params) => unknown> = {
   status: () => ({
     configured: true,
@@ -557,8 +789,14 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     },
   ],
   pendingApprovals: () => [],
-  pulls: ({ state }) => (state === "closed" ? CLOSED_PULLS : state === "all" ? [...PULLS, ...CLOSED_PULLS] : PULLS),
-  pull: ({ number }) => [...PULLS, ...CLOSED_PULLS].find((item) => item.number === number) ?? PULL,
+  pulls: ({ state }) =>
+    state === "closed"
+      ? CLOSED_PULLS
+      : state === "all"
+        ? [...PULLS, ...CLOSED_PULLS]
+        : PULLS,
+  pull: ({ number }) =>
+    [...PULLS, ...CLOSED_PULLS].find((item) => item.number === number) ?? PULL,
   pullFiles: () => [
     {
       path: "src/plugins/github/jobGraph.ts",
@@ -593,77 +831,10 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
       date: iso(200),
     },
   ],
-  timeline: () => [
-    ...[
-      ["c1f2023a8d1b", "feat(github): a job graph for a run", 290],
-      ["775060ae44c2", "feat(github): checks on a pull request", 240],
-      ["bff33fa90b17", "feat(github): approve or request changes", 200],
-    ].map(([sha, message, minutes]) => ({
-      kind: "committed",
-      id: null,
-      actor: "Sujalxcode",
-      avatarUrl: null,
-      association: null,
-      at: iso(minutes as number),
-      body: null,
-      state: null,
-      sha,
-      message,
-      subject: null,
-    })),
-    {
-      kind: "review_requested",
-      id: 11,
-      actor: "Sujalxcode",
-      avatarUrl: null,
-      association: null,
-      at: iso(190),
-      body: null,
-      state: null,
-      sha: null,
-      message: null,
-      subject: "nodelike",
-    },
-    {
-      kind: "labeled",
-      id: 12,
-      actor: "nodelike",
-      avatarUrl: null,
-      association: null,
-      at: iso(150),
-      body: null,
-      state: null,
-      sha: null,
-      message: null,
-      subject: "enhancement",
-    },
-    {
-      kind: "reviewed",
-      id: 13,
-      actor: "nodelike",
-      avatarUrl: null,
-      association: "OWNER",
-      at: iso(120),
-      body: "The graph should keep a called workflow's jobs in one box.",
-      state: "changes_requested",
-      sha: null,
-      message: null,
-      subject: null,
-    },
-    {
-      kind: "commented",
-      id: 14,
-      actor: "nodelike",
-      avatarUrl: null,
-      association: "OWNER",
-      at: iso(90),
-      body: "Nice, this saves a trip to GitHub.",
-      state: null,
-      sha: null,
-      message: null,
-      subject: null,
-    },
-  ],
+  timeline: ({ number }) =>
+    [...ISSUES, ...CLOSED_ISSUES].some((item) => item.number === number)
+      ? ISSUE_TIMELINE
+      : PULL_TIMELINE,
   pullReviews: () => [
     {
       author: "nodelike",
@@ -686,10 +857,17 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
   ],
   branches: () => ["main", "feat/github-actions-plugin", "release/0.4"],
   issues: ({ state }) => {
-    const issues = state === "closed" ? CLOSED_ISSUES : state === "all" ? [...ISSUES, ...CLOSED_ISSUES] : ISSUES;
+    const issues =
+      state === "closed"
+        ? CLOSED_ISSUES
+        : state === "all"
+          ? [...ISSUES, ...CLOSED_ISSUES]
+          : ISSUES;
     return { issues, total: issues.length, nextPage: null };
   },
-  issue: ({ number }) => [...ISSUES, ...CLOSED_ISSUES].find((item) => item.number === number) ?? ISSUES[0],
+  issue: ({ number }) =>
+    [...ISSUES, ...CLOSED_ISSUES].find((item) => item.number === number) ??
+    ISSUES[0],
   releases: () => RELEASES,
   inbox: ({ all }) => (all ? INBOX : INBOX.filter((item) => item.unread)),
 };
