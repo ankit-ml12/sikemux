@@ -38,8 +38,8 @@ export function useWheelPan(areaRef: RefObject<HTMLElement | null>, pan: WindowP
         let finishLanding: (() => void) | null = null;
 
         const start = (event: WheelEvent): SwipeHandle | null => {
-            // A stack's strip sits on the stage and scrolls itself.
-            if (event.target instanceof Element && event.target.closest(".tabbar")) return null;
+            // A stack's strip scrolls itself, and pages inside a pane swipe themselves.
+            if (event.target instanceof Element && event.target.closest(".tabbar, .swipe-pages")) return null;
             finishLanding?.();
             const { order, on } = session();
             const stride = area.clientWidth + cardGap(area);
