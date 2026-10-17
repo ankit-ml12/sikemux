@@ -4,15 +4,17 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { planLabel } from "../rail/usageFormat";
 import * as cmd from "../state/commands";
 import { useOccludeNativeViews } from "../state/nativeViews";
-import { useResource } from "../state/resources";
+import { fetchResource, useResource } from "../state/resources";
 import { agentAccountR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import type { ProviderProfile } from "../state/types";
-import { AgentIcon } from "../ui/Icons";
+import { AgentIcon, IconTrash } from "../ui/Icons";
+import { Tooltip } from "../ui/Tooltip";
 import { SignInError, SignInScreen, SignInWaiting } from "../plugin-api/SignIn";
 import {
     accountName,
+    accountsOf,
     addAccount,
     cancelSignIn,
     closeAccountDialog,
@@ -50,6 +52,7 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
     const [name, setName] = useState("");
     const [busy, setBusy] = useState(false);
     const [started, setStarted] = useState(false);
+    const [created, setCreated] = useState<string | null>(null);
 
     const start = (account: ProviderProfile) => {
         dismissSignIn(account.id);
@@ -66,7 +69,7 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
 
     const close = () => {
         if (profile && signing?.phase === "waiting") cancelSignIn(profile);
-        if (profile && !request.profileId && step !== "done") cmd.deleteProviderProfile(profile.id);
+        if (profile && profile.id === created && step !== "done") cmd.deleteProviderProfile(profile.id);
         closeAccountDialog();
     };
 
@@ -87,6 +90,7 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
         setBusy(true);
         try {
             const account = await addAccount(provider, trimmed, providerAccent(provider));
+            setCreated(account.id);
             setProfileId(account.id);
             start(account);
         } catch (error) {
@@ -147,6 +151,15 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
                                 </button>
                             </form>
                         )}
+                        {step === "name" && (
+                            <SignedOutAccounts
+                                provider={provider}
+                                onSignIn={(account) => {
+                                    setProfileId(account.id);
+                                    start(account);
+                                }}
+                            />
+                        )}
                         {step === "waiting" && profile && (
                             <>
                                 <SignInWaiting onCancel={close}>Finish signing in in your browser</SignInWaiting>
@@ -172,6 +185,54 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
                 )}
             </div>
         </div>
+    );
+}
+
+/** Accounts signed out of, to sign in to again or remove. */
+function SignedOutAccounts({ provider, onSignIn }: { provider: AccountProvider; onSignIn: (account: ProviderProfile) => void }) {
+    const profiles = useStore((s) => s.providerProfiles);
+    const [signedOut, setSignedOut] = useState<string[]>([]);
+    useEffect(() => {
+        void Promise.all(
+            accountsOf(provider, profiles).map((account) =>
+                fetchResource(agentAccountR, provider, account.configPath).then(
+                    (status) => (status.signedIn ? null : account.id),
+                    () => null,
+                ),
+            ),
+        ).then((ids) => setSignedOut(ids.filter((id) => id !== null)));
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const accounts = accountsOf(provider, profiles).filter((account) => signedOut.includes(account.id));
+    if (accounts.length === 0) return null;
+    return (
+        <>
+            <div className="signin-or">or sign in again</div>
+            <div className="signin-choices">
+                {accounts.map((account) => (
+                    <div key={account.id} className="account-signed-out">
+                        <button type="button" className="signin-choice" onClick={() => onSignIn(account)}>
+                            <span className="agent-account-mark" style={{ background: account.accent }} aria-hidden="true">
+                                {account.name.trim().charAt(0).toUpperCase() || "?"}
+                            </span>
+                            <span className="signin-choice-name">{account.name}</span>
+                            <span className="signin-choice-meta">Signed out</span>
+                        </button>
+                        {!account.id.startsWith("builtin-") && (
+                            <Tooltip label={`Remove ${account.name}`}>
+                                <button
+                                    type="button"
+                                    className="signin-choice account-remove"
+                                    aria-label={`Remove ${account.name}`}
+                                    onClick={() => cmd.deleteProviderProfile(account.id)}>
+                                    <IconTrash size={13} />
+                                </button>
+                            </Tooltip>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </>
     );
 }
 

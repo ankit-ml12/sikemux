@@ -3,12 +3,11 @@ import type { AgentUsage } from "../api/agents";
 import { accountName, accountsOf, openAccountDialog, signOut, switchAccount, type AccountProvider } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
 import { agentLabel } from "../agents/catalog";
-import * as cmd from "../state/commands";
 import { fetchResource, invalidate, peekResource, type ResourceHandle, useResource } from "../state/resources";
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { ProviderProfile } from "../state/types";
-import { IconChevron, IconLogOut, IconPlus, IconRefresh, IconTrash, IconUser } from "../ui/Icons";
+import { IconChevron, IconLogOut, IconPlus, IconRefresh, IconUser } from "../ui/Icons";
 import { reportError } from "../state/toast";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
@@ -124,15 +123,18 @@ export function AgentAccountsPanel({
     );
 }
 
-/* Which account new chats use, and a new one to sign in; everything else done
-   to an account happens in Settings. */
+/* Which signed-in account new chats use, and a new one to sign in. Accounts
+   signed out of wait in the sign-in dialog, where they can be removed. */
 function accountMenu(
     provider: AccountProvider,
     accounts: ProviderProfile[],
     current: ProviderProfile,
     currentUsage: AgentUsage | undefined,
 ): CtxItem[] {
-    const items: CtxItem[] = accounts.map((account) => {
+    const shown = accounts.filter(
+        (account) => account.id === current.id || peekResource(agentAccountR, provider, account.configPath)?.signedIn !== false,
+    );
+    const items: CtxItem[] = shown.map((account) => {
         const selected = account.id === current.id;
         const status = peekResource(agentAccountR, provider, account.configPath);
         const peak = usagePeak(selected ? currentUsage : peekResource(agentUsageR, provider, account.configPath));
@@ -157,9 +159,6 @@ function accountMenu(
                           icon: <IconLogOut size={13} />,
                           run: () => void signOut(account).catch(reportError("Sign out")),
                       },
-                ...(account.id.startsWith("builtin-")
-                    ? []
-                    : [{ label: `Remove ${name}`, icon: <IconTrash size={13} />, danger: true, run: () => cmd.deleteProviderProfile(account.id) }]),
             ],
         };
     });

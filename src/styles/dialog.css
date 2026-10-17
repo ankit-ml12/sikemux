@@ -206,6 +206,24 @@
 .account-dlg .signin-screen {
     padding: var(--space-6) var(--space-5) var(--space-5);
 }
+.account-signed-out {
+    display: flex;
+    gap: var(--space-1h);
+}
+.account-signed-out > .signin-choice:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.account-remove {
+    flex: none;
+    justify-content: center;
+    width: 40px;
+    padding: 0;
+    color: var(--text-tertiary);
+}
+.account-remove:hover {
+    color: var(--danger);
+}
 
 @keyframes dlgScrimIn {
     from {
