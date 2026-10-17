@@ -119,14 +119,15 @@ you mean.
 
 ### State
 
-| Token                | What it is                                         |
-| -------------------- | -------------------------------------------------- |
-| `--surface-hover`    | neutral ink tint, 6% — every hover in the app      |
-| `--surface-active`   | neutral ink tint, 10% — pressed, expanded, open    |
-| `--surface-selected` | accent, 14% — **the current thing, and only that** |
-| `--border-selected`  | accent, 42% — the edge that goes with it           |
-| `--tree-spine`       | accent over `--line`, 52% — the tree's vertical    |
-| `--tree-tick`        | accent, 72% — the stub joining a row to the spine  |
+| Token                | What it is                                        |
+| -------------------- | ------------------------------------------------- |
+| `--surface-hover`    | neutral ink tint, 6% — every hover in the app     |
+| `--surface-chosen`   | neutral ink tint, 9% — **the current thing**      |
+| `--surface-active`   | neutral ink tint, 10% — pressed, expanded, open   |
+| `--surface-selected` | accent, 14% — a checked item, never a chosen row  |
+| `--border-selected`  | accent, 42% — the focused field's edge            |
+| `--tree-spine`       | accent over `--line`, 52% — the tree's vertical   |
+| `--tree-tick`        | accent, 72% — the stub joining a row to the spine |
 
 Body copy sits at `--text-secondary`, not full ink. A pane where every row is
 `--gray-1000` glares, and again leaves selection nowhere to go.
@@ -147,23 +148,23 @@ and a diff's meaning should not change because you switched to Ayu.
 The single rule the chrome is built on, stated plainly because it is the one
 that gets broken:
 
-> **Hover is neutral. The accent means selected or focused. Nothing else.**
+> **Rows and tabs are neutral, chosen or not. The accent means focused or checked.**
 
-| State                     | Surface                                    | Text               |
-| ------------------------- | ------------------------------------------ | ------------------ |
-| rest                      | transparent                                | `--text-secondary` |
-| hover                     | `--surface-hover`                          | `--text-primary`   |
-| selected / open / current | `--surface-selected` + `--border-selected` | `--text-primary`   |
-| focused (keyboard)        | `var(--focus-ring)`                        | unchanged          |
+| State                     | Surface             | Text               |
+| ------------------------- | ------------------- | ------------------ |
+| rest                      | transparent         | `--text-secondary` |
+| hover                     | `--surface-hover`   | `--text-primary`   |
+| selected / open / current | `--surface-chosen`  | `--text-primary`   |
+| focused (keyboard)        | `var(--focus-ring)` | unchanged          |
 
-Hover and selection have to differ in **hue**, not just in strength. When they
-were the same colour at two weights, resting the pointer on a row was
-indistinguishable from having selected it — which is what the rails, the tabs
-and the agent list all did before this rule existed.
+The chosen tab, rail row, menu row or chip is lifted by a soft grey fill alone,
+with no colour and no edge. It reads as chosen because its fill is a step past
+hover and its text is full ink; a purple fill and edge on every chosen thing
+made the chrome loud, and selection stood out less, not more.
 
-**Allowed to be accent:** the selected row, the open menu button, the current
-tab, the checked item, the focus ring, the HEAD ref badge, a link, a resize
-handle under the pointer, and exactly one filled primary action per surface.
+**Allowed to be accent:** the focus ring and a focused field's edge, the checked
+item, the HEAD ref badge, a link, a resize handle under the pointer, and exactly
+one filled primary action per surface.
 
 The resize handle is the one hover in the app that keeps the accent, because
 there it is not decoration: a splitter has no other way to say it is draggable,
