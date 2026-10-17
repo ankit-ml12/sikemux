@@ -95,6 +95,26 @@ describe("frontend persistence", () => {
         expect(raw).not.toContain("externalPty");
     });
 
+    it("keeps pinned chats across a restart, and drops ones it cannot read", async () => {
+        invoke.mockResolvedValue(undefined);
+        cmd.pinChat({ agent: "claude", id: "s-1", title: "Release checklist", project: "/work/demo" });
+        cmd.pinChat({ agent: "claude", id: "s-1", title: "Again", project: "/work/demo" });
+        await expect(flushPersist()).resolves.toBe(true);
+        const saved = JSON.parse(invoke.mock.calls.at(-1)![1].data as string);
+        expect(saved.prefs.pinnedChats).toEqual([{ agent: "claude", id: "s-1", title: "Release checklist", project: "/work/demo" }]);
+
+        setState({ pinnedChats: [] });
+        saved.prefs.pinnedChats.push({ agent: "nobody", id: "x", title: "x", project: "/x" }, { agent: "codex", id: "", title: "y", project: "/y" });
+        expect(applyHydrate(JSON.stringify(saved))).toBe("applied");
+        expect(getState().pinnedChats).toEqual([{ agent: "claude", id: "s-1", title: "Release checklist", project: "/work/demo" }]);
+
+        cmd.retitlePinnedChat("claude", "s-1", "Release");
+        cmd.unpinChat("claude", "missing");
+        expect(getState().pinnedChats.map((pin) => pin.title)).toEqual(["Release"]);
+        cmd.unpinChat("claude", "s-1");
+        expect(getState().pinnedChats).toEqual([]);
+    });
+
     it("classifies hydration before persistence can overwrite protected state", () => {
         setState({ themeId: "unchanged" });
 

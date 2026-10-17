@@ -42,6 +42,7 @@ import type {
     PersistedPrefs,
     PersistedSession,
     PersistedSnapshot,
+    PinnedChat,
     ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
@@ -50,6 +51,18 @@ import type {
     Window,
     WindowRole,
 } from "./types";
+
+function isPinnedChat(value: unknown): value is PinnedChat {
+    return (
+        isRecord(value) &&
+        isAgentType(value.agent) &&
+        typeof value.id === "string" &&
+        value.id.length > 0 &&
+        typeof value.title === "string" &&
+        typeof value.project === "string" &&
+        value.project.length > 0
+    );
+}
 
 function deriveRole(w: Window): WindowRole {
     if (WINDOW_ROLES.has(w.role) || isPluginKind(w.role)) return w.role;
@@ -134,6 +147,7 @@ const PERSISTED_KEYS = [
     "railDensity",
     "agentRailAllAgents",
     "agentRailScope",
+    "pinnedChats",
     "onboardingComplete",
     "lastSeenVersion",
     "customCommands",
@@ -202,6 +216,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
         railDensity: s.railDensity,
         agentRailAllAgents: s.agentRailAllAgents,
         agentRailScope: s.agentRailScope,
+        pinnedChats: s.pinnedChats,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
         customCommands: s.customCommands,
@@ -1218,6 +1233,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         agentRailAllAgents: prefs.agentRailAllAgents === true,
         agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",
+        pinnedChats: Array.isArray(prefs.pinnedChats) ? prefs.pinnedChats.filter(isPinnedChat) : [],
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"
                 ? prefs.onboardingComplete

@@ -118,3 +118,20 @@ export function setProjectRootDepth(path: string, depth: number): void {
     }));
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
+
+const samePin = (pin: import("../types").PinnedChat, agent: string, id: string) => pin.agent === agent && pin.id === id;
+
+/** Keeps the chat at the top of the agent rail, open or closed. */
+export const pinChat = (chat: import("../types").PinnedChat): void =>
+    setState((state) => (state.pinnedChats.some((pin) => samePin(pin, chat.agent, chat.id)) ? {} : { pinnedChats: [...state.pinnedChats, chat] }));
+
+export const unpinChat = (agent: string, id: string): void =>
+    setState((state) => ({ pinnedChats: state.pinnedChats.filter((pin) => !samePin(pin, agent, id)) }));
+
+/** A pinned chat keeps the name it was last given. */
+export const retitlePinnedChat = (agent: string, id: string, title: string): void =>
+    setState((state) =>
+        state.pinnedChats.some((pin) => samePin(pin, agent, id))
+            ? { pinnedChats: state.pinnedChats.map((pin) => (samePin(pin, agent, id) ? { ...pin, title } : pin)) }
+            : {},
+    );

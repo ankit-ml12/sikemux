@@ -12,6 +12,7 @@ import type {
     ProviderProfileSelection,
     RailDensity,
     AgentRailScope,
+    PinnedChat,
     RecentEntry,
     Session,
     Window,
@@ -103,6 +104,7 @@ export interface PersistedPrefs {
     railDensity?: RailDensity;
     agentRailAllAgents?: boolean;
     agentRailScope?: AgentRailScope;
+    pinnedChats?: PinnedChat[];
     onboardingComplete?: boolean;
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];
