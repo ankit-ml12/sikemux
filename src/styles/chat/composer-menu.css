@@ -31,9 +31,14 @@
     align-items: center;
     gap: var(--space-2);
     width: 100%;
-    min-height: 34px;
-    padding: 5px 10px;
+    min-height: 30px;
+    padding: 3px 10px;
     text-align: left;
+}
+
+/* A row runs edge to edge in the docked menu, so it drops the corner every button gets. */
+.chat-slash-menu button[role="option"] {
+    border-radius: 0 !important;
 }
 
 .chat-slash-menu button[role="option"]:hover {
@@ -85,8 +90,8 @@
     grid-template-columns: 16px 34px minmax(0, 1fr);
     align-items: center;
     gap: var(--space-2);
-    min-height: 34px;
-    padding: 5px 10px;
+    min-height: 30px;
+    padding: 3px 10px;
 }
 
 .chat-menu-loading i {
