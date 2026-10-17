@@ -32,6 +32,7 @@ import {
     IconCheckout,
     IconChevron,
     IconCommit,
+    IconStash,
     IconCopy,
     IconDiscard,
     IconFetch,
@@ -70,7 +71,7 @@ import { EmptyState } from "../ui/Panel";
 import { AI_MODELS, AI_PROVIDER_LABEL, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPaneConstants";
 import { filterByQuery, isInRange } from "./gitPaneLogic";
 import type { GitAiProvider } from "./gitPaneTypes";
-import { basename as basenameOf, dirname } from "../lib/paths";
+import { basename as basenameOf, dirname, joinPath } from "../lib/paths";
 
 const CommitReview = lazy(() => import("./CommitReview").then((module) => ({ default: memo(module.CommitReview) })));
 const MergeReview = lazy(() => import("./MergeReview").then((module) => ({ default: memo(module.MergeReview) })));
@@ -78,7 +79,7 @@ const MergeReview = lazy(() => import("./MergeReview").then((module) => ({ defau
 const ROW_HEIGHT = 26;
 
 type Side = "staged" | "unstaged";
-type FileEntry = { kind: "group"; side: Side; count: number } | { kind: "file"; side: Side; file: GitFile };
+type FileEntry = { kind: "group"; side: Side; count: number; folded: boolean } | { kind: "file"; side: Side; file: GitFile };
 type BranchEntry =
     | { kind: "local"; branch: GitBranch }
     | { kind: "remote"; remote: GitRemote; open: boolean }
@@ -204,13 +205,22 @@ function GitWorkbench({
     const stagedFiles = useMemo(() => filteredFiles.filter(isStaged), [filteredFiles]);
     const unstagedFiles = useMemo(() => filteredFiles.filter(hasUnstaged), [filteredFiles]);
 
+    const [foldedSides, setFoldedSides] = useState<ReadonlySet<Side>>(new Set());
+    const toggleSide = (side: Side) =>
+        setFoldedSides((current) => {
+            const next = new Set(current);
+            if (!next.delete(side)) next.add(side);
+            return next;
+        });
     const fileEntries = useMemo<FileEntry[]>(() => {
-        const side = (name: Side, list: GitFile[]): FileEntry[] =>
-            list.length
-                ? [{ kind: "group", side: name, count: list.length }, ...list.map((file) => ({ kind: "file" as const, side: name, file }))]
-                : [];
+        const side = (name: Side, list: GitFile[]): FileEntry[] => {
+            if (!list.length) return [];
+            const folded = foldedSides.has(name);
+            const group: FileEntry = { kind: "group", side: name, count: list.length, folded };
+            return folded ? [group] : [group, ...list.map((file) => ({ kind: "file" as const, side: name, file }))];
+        };
         return [...side("staged", stagedFiles), ...side("unstaged", unstagedFiles)];
-    }, [stagedFiles, unstagedFiles]);
+    }, [stagedFiles, unstagedFiles, foldedSides]);
 
     const branchEntries = useMemo<BranchEntry[]>(() => {
         const q = queries.branches.toLowerCase();
@@ -1033,23 +1043,32 @@ function GitWorkbench({
             const staged = entry.side === "staged";
             return (
                 <div className={`git-group git-file-group${i > 0 ? " follows" : ""}`}>
-                    <span className="git-label">{staged ? "Staged" : "Unstaged"}</span>
-                    <span className="git-count">{entry.count}</span>
+                    <button type="button" className="git-group-toggle" aria-expanded={!entry.folded} onClick={() => toggleSide(entry.side)}>
+                        <IconChevron size={10} className="git-group-chev" />
+                        <span className="git-group-name">{staged ? "Staged Changes" : "Changes"}</span>
+                    </button>
                     <span className="git-section-actions">
                         {i === 0 && (
-                            <button type="button" className="git-text-btn" onClick={openFilesStashMenu}>
-                                Stash
-                            </button>
+                            <RowButton label="Stash" onClick={openFilesStashMenu}>
+                                <IconStash size={13} />
+                            </RowButton>
                         )}
                         {!staged && (
-                            <button type="button" className="git-text-btn danger" onClick={discardAllUnstaged}>
-                                Discard all
-                            </button>
+                            <RowButton label="Discard all" onClick={discardAllUnstaged}>
+                                <IconDiscard size={13} />
+                            </RowButton>
                         )}
-                        <button type="button" className="git-text-btn" onClick={staged ? unstageAll : stageAll}>
-                            {staged ? "Unstage all" : "Stage all"}
-                        </button>
+                        {staged ? (
+                            <RowButton label="Unstage all" onClick={unstageAll}>
+                                <IconMinus size={13} />
+                            </RowButton>
+                        ) : (
+                            <RowButton label="Stage all" onClick={stageAll}>
+                                <IconPlus size={13} />
+                            </RowButton>
+                        )}
                     </span>
+                    <span className="git-group-count">{entry.count}</span>
                 </div>
             );
         }
@@ -1080,6 +1099,9 @@ function GitWorkbench({
                     </span>
                 )}
                 <span className="git-row-actions">
+                    <RowButton label={`Open ${file.path}`} onClick={() => cmd.requestOpenFile(joinPath(repo, file.path))}>
+                        <IconFile size={12} />
+                    </RowButton>
                     {side === "unstaged" && (
                         <RowButton label="Discard changes" onClick={() => discardFile(file)}>
                             <IconDiscard size={12} />

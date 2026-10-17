@@ -197,10 +197,73 @@
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
 }
-/* The Staged and Unstaged groups are the column's headings in the Changes tab. */
+/* Staged Changes and Changes fold like a tree: a chevron and name, tools that show on hover, and a count. */
 .git-file-group {
     height: 26px;
-    padding: 0 2px 0 8px;
+    padding: 0 4px 0 2px;
+    border-radius: var(--radius-2);
+}
+.git-file-group:hover {
+    background: var(--surface-hover);
+}
+.git-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    padding: 0 4px;
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    text-align: left;
+    cursor: pointer;
+}
+.git-group-chev {
+    flex: none;
+    color: var(--text-tertiary);
+    transform: rotate(90deg);
+    transition: transform var(--dur-1);
+}
+.git-group-toggle[aria-expanded="false"] .git-group-chev {
+    transform: none;
+}
+.git-file-group .git-section-actions {
+    display: none;
+    margin-left: 0;
+}
+.git-file-group:hover .git-section-actions {
+    display: flex;
+}
+.git-group-count {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--radius-full);
+    background: var(--surface-chosen);
+    color: var(--text-secondary);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+}
+/* A group's files hang off a guide under its chevron. */
+.git-row.git-file-row {
+    position: relative;
+    padding-left: 22px;
+}
+.git-file-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 11px;
+    width: 1px;
+    background: var(--border-strong);
 }
 .git-file-group.follows {
     margin-top: var(--space-1h);

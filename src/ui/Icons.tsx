@@ -109,6 +109,13 @@ export const IconDiscard = makeSvgIcon(
         <path d="M2.5 6.5h7a4 4 0 0 1 0 8h-2" />
     </>,
 );
+export const IconStash = makeSvgIcon(
+    <>
+        <rect x="2.5" y="2.5" width="11" height="3.5" rx="1" />
+        <path d="M3.5 6v6.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6" />
+        <path d="M6.5 9h3" />
+    </>,
+);
 export const IconMerge = makeSvgIcon(
     <>
         <circle cx="4.5" cy="3.5" r="1.6" />
