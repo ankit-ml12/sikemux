@@ -35,6 +35,7 @@ export function MergeReview({
     fileActions,
     owners,
     stagedOwners,
+    foldAll,
 }: {
     repo: string;
     files: GitFile[];
@@ -46,6 +47,7 @@ export function MergeReview({
     /** Who wrote each changed line, against the index and against HEAD. */
     owners?: ChangeOwners;
     stagedOwners?: ChangeOwners;
+    foldAll?: { folded: boolean; seq: number };
 }) {
     const files = useStableFileList(incomingFiles);
     const byPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
@@ -54,6 +56,7 @@ export function MergeReview({
         <FileReviewList
             paths={paths}
             focusPath={focusPath}
+            foldAll={foldAll}
             estimate={(path) => {
                 const file = byPath.get(path);
                 return file && isStaged(file) && hasUnstaged(file) ? REVIEW_DOUBLE_ROW_ESTIMATE : REVIEW_ROW_ESTIMATE;

@@ -23,13 +23,25 @@ export interface FileReviewListProps {
     body: (path: string, focused: boolean) => ReactNode;
     /** Folds every file whenever a new set of files arrives, as a commit's list does. */
     startCollapsed?: boolean;
+    /** Folding every file from outside, by a control that lives elsewhere; the list then shows no toolbar of its own. */
+    foldAll?: { folded: boolean; seq: number };
 }
 
 /**
  * Changed files in one collapsible, virtualized stream: a header per file with its icon, path and status, and its diff
  * under it. Local changes, commits and pull requests are all reviewed through it.
  */
-export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status, actions, body, startCollapsed = false }: FileReviewListProps) {
+export function FileReviewList({
+    paths,
+    focusPath,
+    estimate,
+    onOpenFile,
+    status,
+    actions,
+    body,
+    startCollapsed = false,
+    foldAll,
+}: FileReviewListProps) {
     const [collapsed, setCollapsed] = useState<Set<string>>(() => (startCollapsed ? new Set(paths) : new Set()));
     const itemRefs = useRef(new Map<string, HTMLDivElement>());
     const listRef = useRef<HTMLDivElement>(null);
@@ -59,6 +71,16 @@ export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status,
             return next.size === current.size ? current : next;
         });
     }, [pathSet, startCollapsed]);
+
+    // Only a new request folds; a changed file list keeps what the reader opened.
+    const listed = useRef(pathSet);
+    listed.current = pathSet;
+    const foldSeq = foldAll?.seq ?? 0;
+    const foldedAll = foldAll?.folded ?? false;
+    useEffect(() => {
+        if (foldSeq === 0) return;
+        setCollapsed(foldedAll ? new Set(listed.current) : new Set());
+    }, [foldSeq, foldedAll]);
 
     const scrollTargets = useRef({ pathIndex, virtualizer });
     scrollTargets.current = { pathIndex, virtualizer };
@@ -94,23 +116,25 @@ export function FileReviewList({ paths, focusPath, estimate, onOpenFile, status,
 
     return (
         <div className="merge-review">
-            <div className="merge-review-toolbar">
-                <span className="merge-review-count">
-                    {paths.length} {paths.length === 1 ? "file" : "files"}
-                </span>
-                <button
-                    type="button"
-                    className="merge-review-action"
-                    onClick={() => setCollapsed(new Set())}
-                    disabled={expandedCount === paths.length}>
-                    <IconExpandAll size={12} />
-                    Expand all
-                </button>
-                <button type="button" className="merge-review-action" onClick={() => setCollapsed(new Set(paths))} disabled={expandedCount === 0}>
-                    <IconCollapseAll size={12} />
-                    Collapse all
-                </button>
-            </div>
+            {!foldAll && (
+                <div className="merge-review-toolbar">
+                    <span className="merge-review-count">
+                        {paths.length} {paths.length === 1 ? "file" : "files"}
+                    </span>
+                    <button
+                        type="button"
+                        className="merge-review-action"
+                        onClick={() => setCollapsed(new Set())}
+                        disabled={expandedCount === paths.length}>
+                        <IconExpandAll size={12} />
+                        Expand all
+                    </button>
+                    <button type="button" className="merge-review-action" onClick={() => setCollapsed(new Set(paths))} disabled={expandedCount === 0}>
+                        <IconCollapseAll size={12} />
+                        Collapse all
+                    </button>
+                </div>
+            )}
             <div className="merge-review-list" ref={listRef}>
                 <div className="merge-review-virtual" style={{ height: virtualizer.getTotalSize() }}>
                     {virtualizer.getVirtualItems().map((row) => {

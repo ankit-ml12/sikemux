@@ -31,7 +31,9 @@ import {
     AgentIcon,
     IconCheckout,
     IconChevron,
+    IconCollapseAll,
     IconCommit,
+    IconExpandAll,
     IconStash,
     IconCopy,
     IconDiscard,
@@ -206,6 +208,7 @@ function GitWorkbench({
     const unstagedFiles = useMemo(() => filteredFiles.filter(hasUnstaged), [filteredFiles]);
 
     const [foldedSides, setFoldedSides] = useState<ReadonlySet<Side>>(new Set());
+    const [reviewFold, setReviewFold] = useState({ folded: false, seq: 0 });
     const toggleSide = (side: Side) =>
         setFoldedSides((current) => {
             const next = new Set(current);
@@ -1057,6 +1060,13 @@ function GitWorkbench({
                     </button>
                     <span className="git-section-actions">
                         {i === 0 && (
+                            <RowButton
+                                label={reviewFold.folded ? "Expand all diffs" : "Collapse all diffs"}
+                                onClick={() => setReviewFold((fold) => ({ folded: !fold.folded, seq: fold.seq + 1 }))}>
+                                {reviewFold.folded ? <IconExpandAll size={13} /> : <IconCollapseAll size={13} />}
+                            </RowButton>
+                        )}
+                        {i === 0 && (
                             <RowButton label="Stash" onClick={openFilesStashMenu}>
                                 <IconStash size={13} />
                             </RowButton>
@@ -1506,6 +1516,7 @@ function GitWorkbench({
                     fileActions={reviewActions}
                     owners={owners}
                     stagedOwners={stagedOwners}
+                    foldAll={reviewFold}
                 />
             ) : latest ? (
                 commitReview(latest)
