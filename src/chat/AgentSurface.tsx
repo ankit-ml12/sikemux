@@ -7,6 +7,7 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { takeDraft } from "./draftHandoff";
 import { isResumableSession } from "../terminal/sessionResume";
 import { AgentBuddy } from "../buddies/Buddy";
 import { openBuddyPicker } from "../buddies/commands";
@@ -92,6 +93,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     /* A terminal agent that kept running while the app was closed comes back in its terminal. */
     const [view, setView] = useState<AgentView>(supportsGui && !isResumableSession(agent.ptyId) ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
+    /* What was typed in the chat when the agent moved to its TUI, left at the TUI's prompt. */
+    const [carried, setCarried] = useState("");
     const [chatBusy, setChatBusy] = useState(false);
     const working = useStore((state) => agentDisplay(state.agentActivity[agent.id]?.state).group === "working");
     const busy = chatBusy || working;
@@ -104,6 +107,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
         async (next: AgentView) => {
             if (next === view || switching || busy) return;
             setSwitching(true);
+            setCarried(next === "tui" ? takeDraft(agent.id) : "");
             if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
             clearTuiRecovery(agent.id);
             setView(next);
@@ -226,6 +230,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             cwd={cwd}
                             startup={agent.startup}
                             directCommand={agent.directCommand}
+                            initialDraft={carried || undefined}
                             active={visible}
                             visible={visible}
                             spawnWhen={visible}

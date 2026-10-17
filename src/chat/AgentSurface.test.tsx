@@ -3,12 +3,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Agent, Session } from "../state/types";
 import { AgentSurface } from "./AgentSurface";
 import { deliverToAgent } from "../agents/agentInbox";
+import { registerComposer } from "./draftHandoff";
 
 const mocks = vi.hoisted(() => ({
     chatPane: vi.fn(() => null),
     toggleDesk: vi.fn(),
     renameAgent: vi.fn(),
     typed: vi.fn(),
+    terminalProps: vi.fn(),
     addAgent: vi.fn(),
     relaunch: vi.fn(async () => {}),
     clearRecovery: vi.fn(),
@@ -19,7 +21,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./AgentChatPane", () => ({ AgentChatPane: mocks.chatPane }));
 vi.mock("../terminal/TerminalPane", async () => {
     const { registerTextInsert } = await import("../state/textInsertRegistry");
-    return { TerminalPane: () => <div ref={(element) => (element ? registerTextInsert(element, mocks.typed) : undefined)} /> };
+    return {
+        TerminalPane: (props: object) => {
+            mocks.terminalProps(props);
+            return <div ref={(element) => (element ? registerTextInsert(element, mocks.typed) : undefined)} />;
+        },
+    };
 });
 vi.mock("../state/store", () => ({
     useStore: (select: (state: typeof mocks.state) => unknown) => select(mocks.state),
@@ -101,6 +108,26 @@ it("shows the desk toggle as on while the agent's desk is in the layout", () => 
     render(<AgentSurface agent={agent} session={session} visible />);
 
     expect(screen.getByRole("button", { name: "Hide desk" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("takes what was typed in the chat to the TUI's prompt, without sending it", async () => {
+    let draft = "ten lines\nwritten in the chat";
+    const stop = registerComposer("agent-1", {
+        take: () => {
+            const taken = draft;
+            draft = "";
+            return taken;
+        },
+        put: () => {},
+    });
+    render(<AgentSurface agent={agent} session={session} visible />);
+    fireEvent.click(screen.getByRole("button", { name: /TUI/ }));
+
+    await vi.waitFor(() =>
+        expect(mocks.terminalProps).toHaveBeenLastCalledWith(expect.objectContaining({ initialDraft: "ten lines\nwritten in the chat" })),
+    );
+    expect(draft).toBe("");
+    stop();
 });
 
 it("keeps Pi in its terminal, since it has no ACP mode", () => {
