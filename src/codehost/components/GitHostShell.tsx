@@ -9,7 +9,8 @@ import { useHostRepo } from "../project";
 import { commitAuthorsR, hostStatusR } from "../resources";
 import { AccountProvider, codeHost, HostProvider, type CodeHost } from "../registry";
 import { sameRepo, setProjectAccount, setProjectRepo, slugOf } from "../state";
-import { GitNav, HostAccountButton, HostNavItems, type NavItem } from "./HostRail";
+import { SectionIcon } from "./ActionsIcon";
+import { GitNav, HostAccountButton, HostNavItems, sectionLabel, type NavItem } from "./HostRail";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
 const RepoPicker = lazy(() => import("./RepoPicker").then((module) => ({ default: module.RepoPicker })));
@@ -67,27 +68,41 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
         invalidate((kind) => kind.startsWith("host."));
     };
 
+    const account =
+        host && repo ? (
+            <HostAccountButton
+                slug={slugOf(repo)}
+                cwd={cwd}
+                active={active}
+                onSignIn={() => onArea("pulls")}
+                onPickRepo={() => setPicking(true)}
+                onAddAccount={() => setAdding(true)}
+            />
+        ) : undefined;
+    // Pull requests and issues open from the project tree as screens of their own, so the git screens stay out of their header.
+    const standalone = host && repo && (area === "pulls" || area === "issues") ? area : null;
+
     return (
         <HostProvider value={host && repo ? host : null}>
             <AccountProvider value={repo?.account ?? null}>
                 <div className="git-shell">
-                    <GitNav
-                        local={local}
-                        host={host && repo ? <HostNavItems area={area} onArea={onArea} /> : undefined}
-                        tools={!repo || (area === "local" && !adding) ? tools : null}
-                        account={
-                            host && repo ? (
-                                <HostAccountButton
-                                    slug={slugOf(repo)}
-                                    cwd={cwd}
-                                    active={active}
-                                    onSignIn={() => onArea("pulls")}
-                                    onPickRepo={() => setPicking(true)}
-                                    onAddAccount={() => setAdding(true)}
-                                />
-                            ) : undefined
-                        }
-                    />
+                    {standalone && host ? (
+                        <div className="git-nav-bar">
+                            <h2 className="git-standalone-title">
+                                <SectionIcon section={standalone} size={14} />
+                                {sectionLabel(host, standalone)}
+                            </h2>
+                            <div className="git-nav-tools" />
+                            {account}
+                        </div>
+                    ) : (
+                        <GitNav
+                            local={local}
+                            host={host && repo ? <HostNavItems area={area} onArea={onArea} /> : undefined}
+                            tools={!repo || (area === "local" && !adding) ? tools : null}
+                            account={account}
+                        />
+                    )}
                     <div className="git-shell-main">
                         {host && repo && adding ? (
                             <div className="gha-pane" data-active={active ? "1" : "0"}>

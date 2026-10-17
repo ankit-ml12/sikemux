@@ -328,7 +328,7 @@ function ProjectBlock({ s }: { s: Session }) {
             label,
             kbd: kb(shortcut),
             title: `${label} — ${kb(shortcut)}`,
-            open,
+            open: role === "git" && (gitArea === "pulls" || gitArea === "issues") ? () => cmd.openGitArea("local") : open,
             active: activeRole === role && !(role === "git" && (gitArea === "pulls" || gitArea === "issues")),
             icons: [],
         };
