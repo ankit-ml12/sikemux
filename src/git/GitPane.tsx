@@ -1455,6 +1455,17 @@ function GitWorkbench({
     if (panel === "files") {
         left = (
             <div className="git-changes">
+                <GitComposer
+                    repo={repo}
+                    busy={!!busy}
+                    generating={generating}
+                    stagedCount={files.filter(isStaged).length}
+                    agentLabel={`${AI_PROVIDER_LABEL[aiProvider]} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
+                    messageRef={messageRef}
+                    onCommit={doCommit}
+                    onGenerate={generateCommitMessage}
+                    onPickAgent={openAgentMenu}
+                />
                 {(fileFilterOpen || queries.files) && filterInput("files", "Filter files")}
                 <div className="git-list">
                     {fileEntries.length === 0 &&
@@ -1474,17 +1485,6 @@ function GitWorkbench({
                         renderRow={fileRow}
                     />
                 </div>
-                <GitComposer
-                    repo={repo}
-                    busy={!!busy}
-                    generating={generating}
-                    stagedCount={files.filter(isStaged).length}
-                    agentLabel={`${AI_PROVIDER_LABEL[aiProvider]} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
-                    messageRef={messageRef}
-                    onCommit={doCommit}
-                    onGenerate={generateCommitMessage}
-                    onPickAgent={openAgentMenu}
-                />
             </div>
         );
         right =
