@@ -26,31 +26,25 @@ import {
     type SplitSide,
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
-import { promptDialog } from "../state/dialog";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { PaneField, PanePaintedContext } from "../ui/ShaderField";
 import { agentMenu, renameAgentNamePrompt, renameAgentPrompt } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentFace } from "../buddies/Buddy";
-import { IconArrowUp, IconClose, IconCopy, IconFolder, IconMove, IconPencil, IconPlus, IconRotate, IconSquarePlus, WindowIcon } from "../ui/Icons";
+import { IconArrowUp, IconClose, IconMove, IconPlus, WindowIcon } from "../ui/Icons";
 import { agentHandle } from "../agents/AgentLabel";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { PROJECT_SURFACES } from "../workbench/surfaces";
 import { FileIcon } from "../ui/FileIcon";
-import { fsapi } from "../api/fs";
 import { useStageMotion } from "../state/nativeViews";
-import { basename, relativePath } from "../lib/paths";
-import { FILE_MANAGER_NAME } from "../lib/platform";
+import { basename } from "../lib/paths";
 import { useShortcutLabel } from "../commands/useShortcutLabel";
-import { notify, reportError } from "../state/toast";
-import { copyText } from "../lib/clipboard";
 import { PAN_MS, panTransform, useWindowPan } from "./useWindowPan";
 import { useWheelPan } from "./useWheelPan";
 import { useDocumentSlide } from "./useDocumentSlide";
-
-const copyPath = (_path: string, text: string, label: string) => copyText(text).then(() => notify("success", `copied ${label}`), reportError("copy"));
+import { fileTabMenu, renameTerminalTab, windowTabMenu } from "./tabMenus";
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -211,17 +205,6 @@ const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
     board: PROJECT_SURFACES.board.label,
 };
 
-async function renameTerminalTab(win: WindowT, titles: Readonly<Record<string, string>>): Promise<void> {
-    const home = collectPanes(win.root).find((pane) => pane.kind === "terminal");
-    const name = await promptDialog({
-        title: "Rename tab",
-        label: "Name",
-        initial: home ? terminalLabel(win, home, titles) : win.customName || win.name,
-        confirmLabel: "Rename",
-    });
-    if (name !== null) cmd.renameWindow(win.id, name);
-}
-
 const roleLabel = (role: WindowRole): string => (isPluginKind(role) ? (pluginSurface(role)?.title ?? role) : CORE_ROLE_LABEL[role]);
 
 /** A workspace tab, already carrying the ids the strip and the live layer pair up with. */
@@ -335,64 +318,6 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
 
     const closeShortcut = useShortcutLabel("pane.close");
     const permissionsShortcut = useShortcutLabel("agent.permissions");
-
-    const windowMenu = (win: WindowT): CtxItem[] => {
-        const siblings = refs.flatMap((ref) => (ref.doc === undefined ? [windowsById[ref.id]] : [])).filter(Boolean) as WindowT[];
-        const others = siblings.filter((t) => t.id !== win.id && !t.fixed && t.role !== "agent");
-        const naming: CtxItem[] =
-            win.role === "term"
-                ? [
-                      { label: "Rename…", icon: <IconPencil size={13} />, run: () => void renameTerminalTab(win, termTitles) },
-                      ...(win.customName
-                          ? [{ label: "Use Automatic Name", icon: <IconRotate size={13} />, run: () => cmd.renameWindow(win.id, "") }]
-                          : []),
-                      { sep: true },
-                  ]
-                : [];
-        return [
-            ...naming,
-            { label: "Duplicate", icon: <IconSquarePlus size={13} />, run: () => cmd.duplicateWindow(win.id) },
-            { label: "Close", icon: <IconClose size={13} />, hint: closeShortcut, disabled: win.fixed, run: () => cmd.closeWindowById(win.id) },
-            {
-                label: "Close Others",
-                icon: <IconClose size={13} />,
-                disabled: others.length === 0,
-                run: () => cmd.closeWindowsById(others.map((t) => t.id)),
-            },
-        ];
-    };
-
-    const fileMenu = (win: WindowT, doc: string): CtxItem[] => {
-        const open = editorViews[editorPaneOf(win, editorViews)]?.openTabs ?? [];
-        const dirty = new Set(dirtyEditorPaths[editorPaneOf(win, editorViews)] ?? []);
-        const index = open.indexOf(doc);
-        const close = (paths: string[]) => paths.forEach((path) => cmd.closeTab({ id: win.id, doc: path }));
-        const others = open.filter((path) => path !== doc);
-        const toLeft = index > 0 ? open.slice(0, index) : [];
-        const toRight = index >= 0 ? open.slice(index + 1) : [];
-        const saved = open.filter((path) => !dirty.has(path));
-        return [
-            { label: "Close", icon: <IconClose size={13} />, hint: closeShortcut, run: () => close([doc]) },
-            { label: "Close Others", icon: <IconClose size={13} />, disabled: others.length === 0, run: () => close(others) },
-            { label: "Close to the Left", icon: <IconClose size={13} />, disabled: toLeft.length === 0, run: () => close(toLeft) },
-            { label: "Close to the Right", icon: <IconClose size={13} />, disabled: toRight.length === 0, run: () => close(toRight) },
-            { label: "Close Saved", icon: <IconClose size={13} />, disabled: saved.length === 0, run: () => close(saved) },
-            { label: "Close All", icon: <IconClose size={13} />, run: () => close(open) },
-            { sep: true },
-            { label: "Copy Path", icon: <IconCopy size={13} />, run: () => void copyPath(doc, doc, "path") },
-            {
-                label: "Copy Relative Path",
-                icon: <IconCopy size={13} />,
-                run: () => void copyPath(doc, relativePath(doc, session.cwd) ?? basename(doc), "relative path"),
-            },
-            { sep: true },
-            {
-                label: `Reveal in ${FILE_MANAGER_NAME}`,
-                icon: <IconFolder size={13} />,
-                run: () => void fsapi.revealInFinder(doc).catch(reportError("reveal")),
-            },
-        ];
-    };
 
     const agentTabMenu = (agent: Agent): CtxItem[] => {
         const others = refs
@@ -665,12 +590,12 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                             ? [...pluginDocs.menu(win.activePaneId, doc)]
                             : [{ label: "Close", icon: <IconClose size={13} />, run: () => cmd.closeTab(ref) }];
                     }
-                    if (ref.doc !== undefined) return fileMenu(win, ref.doc);
+                    if (ref.doc !== undefined) return fileTabMenu(session.cwd, win, ref.doc, closeShortcut);
                     if (win.role === "agent") {
                         const agent = agentInWindow(agentsById, win);
                         return agent ? withSeparate(win, agentTabMenu(agent)) : [];
                     }
-                    return withSeparate(win, windowMenu(win));
+                    return withSeparate(win, windowTabMenu(session.id, win, closeShortcut));
                 }}
                 onAdd={() => cmd.openNewTabPalette()}
                 addIcon={<IconPlus size={13} />}

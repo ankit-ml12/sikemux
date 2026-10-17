@@ -519,15 +519,14 @@
     background: var(--surface-chosen);
     color: var(--text-primary);
 }
-/* Open files sit above the project tree and give it the rest of the page. */
-.workspace-rail.agent-rail .rail-page > .rail-open-files {
-    flex: 0 1 auto;
-    max-height: 40%;
-    overflow-y: auto;
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border);
+/* Open files lead the project tree in the same scroll, and the tree's own head
+   divides the two. */
+.ed-tree-lead > .ed-tree-head {
+    margin-top: var(--space-2);
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-2);
 }
-.rail-file .agent-title {
+.rail-tab .agent-title {
     flex: 0 1 auto;
 }
 .rail-file-folder {

@@ -45,6 +45,8 @@ interface FileTreeProps {
     onResize?: (w: number) => void;
     active: boolean;
     revealPath?: string | null;
+    /** Rows above the tree that scroll with it, so the two read as one list. */
+    lead?: ReactNode;
 }
 
 interface NewEntryRequest {
@@ -100,7 +102,17 @@ function reshapesIgnores(changed: string, dir: string): boolean {
     return basename(changed) === ".gitignore" && isPathWithin(dir, dirname(changed));
 }
 
-export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, onKeepFile, width, onResize, active, revealPath }: FileTreeProps) {
+export const FileTree = memo(function FileTree({
+    cwd,
+    activePath,
+    onOpenFile,
+    onKeepFile,
+    width,
+    onResize,
+    active,
+    revealPath,
+    lead,
+}: FileTreeProps) {
     const resizable = width !== undefined && onResize !== undefined;
     const [dirs, setDirs] = useState<Record<string, DirEntry[]>>({});
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -118,6 +130,9 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     const [focusedPath, setFocusedPath] = useState<string | null>(null);
     const [menu, setMenu] = useState<MenuState | null>(null);
     const rootScrollRef = useRef<HTMLDivElement>(null);
+    const rowsRef = useRef<HTMLDivElement>(null);
+    const [rowsTop, setRowsTop] = useState(0);
+    const hasLead = lead !== undefined;
     const rowButtonRefs = useRef(new Map<string, HTMLButtonElement>());
 
     const expandedRef = useRef(expanded);
@@ -168,7 +183,20 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         getItemKey: (index) => visibleRows[index]?.key ?? index,
         overscan: 20,
         enabled: virtualized,
+        scrollMargin: rowsTop,
     });
+
+    useLayoutEffect(() => {
+        const scroll = rootScrollRef.current;
+        const rows = rowsRef.current;
+        if (!hasLead || !scroll || !rows) return setRowsTop(0);
+        const measure = () => setRowsTop(rows.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop);
+        measure();
+        const observer = new ResizeObserver(measure);
+        if (rows.previousElementSibling) observer.observe(rows.previousElementSibling);
+        observer.observe(scroll);
+        return () => observer.disconnect();
+    }, [hasLead]);
 
     const loadDirs = useCallback(async (paths: readonly string[]) => {
         if (paths.length === 0) return;
@@ -797,43 +825,54 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
               return (
                   <div
                       key={row.key}
-                      style={{ position: "absolute", top: 0, left: 0, width: "100%", height: item.size, transform: `translateY(${item.start}px)` }}>
+                      style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: item.size,
+                          transform: `translateY(${item.start - rowsTop}px)`,
+                      }}>
                       {renderRow(row)}
                   </div>
               );
           })
         : visibleRows.map((row) => <div key={row.key}>{renderRow(row)}</div>);
 
+    const head = (
+        <div className="ed-tree-head">
+            <div className="ed-tree-title">
+                <span className="ed-tree-name">{basename(cwd) || "files"}</span>
+                <span className="ed-tree-actions">
+                    <Tooltip label="Find a file">
+                        <button type="button" className="ed-tree-act" aria-label="Find a file" onClick={() => openFilePalette()}>
+                            <IconSearch size={13} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="New file">
+                        <button type="button" className="ed-tree-act" aria-label="New file" onClick={() => startNew("file")}>
+                            <IconFilePlus size={13} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="New folder">
+                        <button type="button" className="ed-tree-act" aria-label="New folder" onClick={() => startNew("folder")}>
+                            <IconFolderPlus size={13} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip label="Collapse folders">
+                        <button type="button" className="ed-tree-act" aria-label="Collapse folders" onClick={() => setExpanded(new Set())}>
+                            <IconCollapseAll size={13} />
+                        </button>
+                    </Tooltip>
+                </span>
+            </div>
+        </div>
+    );
+
     return (
         <>
             <div className={`ed-tree${resizable ? "" : " fill"}`} style={resizable ? { width } : undefined}>
-                <div className="ed-tree-head">
-                    <div className="ed-tree-title">
-                        <span className="ed-tree-name">{basename(cwd) || "files"}</span>
-                        <span className="ed-tree-actions">
-                            <Tooltip label="Find a file">
-                                <button type="button" className="ed-tree-act" aria-label="Find a file" onClick={() => openFilePalette()}>
-                                    <IconSearch size={13} />
-                                </button>
-                            </Tooltip>
-                            <Tooltip label="New file">
-                                <button type="button" className="ed-tree-act" aria-label="New file" onClick={() => startNew("file")}>
-                                    <IconFilePlus size={13} />
-                                </button>
-                            </Tooltip>
-                            <Tooltip label="New folder">
-                                <button type="button" className="ed-tree-act" aria-label="New folder" onClick={() => startNew("folder")}>
-                                    <IconFolderPlus size={13} />
-                                </button>
-                            </Tooltip>
-                            <Tooltip label="Collapse folders">
-                                <button type="button" className="ed-tree-act" aria-label="Collapse folders" onClick={() => setExpanded(new Set())}>
-                                    <IconCollapseAll size={13} />
-                                </button>
-                            </Tooltip>
-                        </span>
-                    </div>
-                </div>
+                {!hasLead && head}
                 <div
                     ref={rootScrollRef}
                     className={`ed-tree-scroll${rootDragOver ? " drag-over-root" : ""}`}
@@ -872,7 +911,21 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                     }}
                     data-root-path={cwd}
                     onContextMenu={(ev) => openMenu(ev, null)}>
-                    <div style={virtualized ? { position: "relative", width: "100%", height: treeVirtualizer.getTotalSize() } : undefined}>
+                    {hasLead && (
+                        <div className="ed-tree-lead">
+                            <div
+                                onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                }}>
+                                {lead}
+                            </div>
+                            {head}
+                        </div>
+                    )}
+                    <div
+                        ref={rowsRef}
+                        style={virtualized ? { position: "relative", width: "100%", height: treeVirtualizer.getTotalSize() } : undefined}>
                         {renderedRows}
                     </div>
                 </div>
