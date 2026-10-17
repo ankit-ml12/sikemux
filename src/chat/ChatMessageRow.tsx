@@ -250,11 +250,13 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
             </summary>
             {open && (
                 <div className="chat-subagent-body">
-                    {parts.length > 0 ? (
-                        <PartGroups parts={parts} live={subagent.state === "running"} />
-                    ) : (
-                        <span className="chat-subagent-empty">No output yet.</span>
-                    )}
+                    <div>
+                        {parts.length > 0 ? (
+                            <PartGroups parts={parts} live={subagent.state === "running"} />
+                        ) : (
+                            <span className="chat-subagent-empty">No output yet.</span>
+                        )}
+                    </div>
                 </div>
             )}
         </details>
