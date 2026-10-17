@@ -224,7 +224,7 @@
 }
 .git-group-chev {
     flex: none;
-    color: var(--text-tertiary);
+    color: var(--tree-spine);
     transform: rotate(90deg);
     transition: transform var(--dur-1);
 }
