@@ -1,0 +1,309 @@
+.vercel-pane {
+    display: grid;
+    grid-template-columns: minmax(240px, 0.7fr) minmax(380px, 1.3fr);
+    height: 100%;
+    min-height: 0;
+    color: var(--text-primary);
+}
+
+.vercel-list,
+.vercel-detail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.vercel-list {
+    gap: 8px;
+    padding: 12px 8px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+}
+
+.vercel-detail {
+    overflow: hidden;
+}
+
+.vercel-list-head,
+.vercel-detail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.vercel-detail-head {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.vercel-heading-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.vercel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.vercel-input {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--text-xs);
+}
+
+.vercel-tabs {
+    padding: 10px 16px 0;
+}
+
+.vercel-body {
+    flex: 1;
+    min-height: 0;
+    padding: 10px 8px;
+    overflow-y: auto;
+}
+
+.vercel-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.vercel-row {
+    display: grid;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: var(--radius-2);
+    font-size: var(--text-xs);
+    text-align: left;
+    color: var(--text-secondary);
+}
+
+.vercel-row.project {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.vercel-row.deployment {
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+}
+
+.vercel-row.domain {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.vercel-row.env {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+button.vercel-row:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+.vercel-row.active {
+    background: var(--surface-chosen);
+    color: var(--text-primary);
+}
+
+.vercel-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.vercel-row-title,
+.vercel-row-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vercel-row-title {
+    color: var(--text-primary);
+}
+
+.vercel-row-sub,
+.vercel-row-age,
+.vercel-row-state {
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
+
+.vercel-row-age {
+    white-space: nowrap;
+}
+
+.vercel-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+    background: var(--text-tertiary);
+}
+
+.vercel-dot.ready {
+    background: var(--live);
+}
+
+.vercel-dot.error {
+    background: var(--danger);
+}
+
+.vercel-dot.building,
+.vercel-dot.initializing,
+.vercel-dot.queued {
+    background: var(--warn);
+    animation: vercel-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes vercel-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+.vercel-target {
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.vercel-target.production {
+    color: var(--text-primary);
+    border-color: var(--border-selected);
+}
+
+.vercel-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 600;
+}
+
+.vercel-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.vercel-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.vercel-fact {
+    padding: 1px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+
+.vercel-pane .mono {
+    font-family: var(--font-mono, monospace);
+}
+
+.vercel-error {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--danger);
+}
+
+.vercel-heading {
+    margin: 0;
+    padding: 10px 16px 6px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.vercel-log {
+    flex: 1;
+    min-height: 0;
+    margin: 0 16px 16px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    overflow: auto;
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-2xs);
+    line-height: 1.55;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.vercel-log-line.command {
+    color: var(--text-primary);
+}
+
+.vercel-log-line.stderr,
+.vercel-log-line.fatal {
+    color: var(--danger);
+}
+
+.vercel-note {
+    margin: 0;
+    padding: 4px 8px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.vercel-signout {
+    margin-top: auto;
+    padding: 6px 8px;
+    font-size: var(--text-xs);
+    text-align: left;
+    color: var(--text-tertiary);
+}
+
+.vercel-signout:hover {
+    color: var(--text-primary);
+}
+
+.vercel-chip {
+    padding: 3px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.vercel-chip:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.vercel-chip.primary {
+    border-color: var(--border-selected);
+    color: var(--text-primary);
+    background: var(--surface-selected);
+}
+
+.vercel-chip:disabled {
+    opacity: 0.5;
+}

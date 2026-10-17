@@ -9,3 +9,4 @@ import "./linear";
 import "./rundeck";
 import "./signoz";
 import "./slack";
+import "./vercel";
