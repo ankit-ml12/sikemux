@@ -43,9 +43,16 @@
 }
 
 .chat-message-editor-actions button.primary {
-    border-color: var(--acc-line);
-    background: color-mix(in srgb, var(--acc) 18%, transparent);
-    color: var(--ink);
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
+}
+
+.chat-message-editor-actions button.primary:hover:not(:disabled) {
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
+    filter: brightness(1.08);
 }
 
 .chat-message-editor-actions button:disabled {

@@ -232,9 +232,16 @@
 }
 
 .linear-chip.primary {
-    border-color: var(--border-selected);
-    color: var(--text-primary);
-    background: var(--surface-selected);
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
+}
+
+.linear-chip.primary:hover:not(:disabled) {
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
+    filter: brightness(1.08);
 }
 
 .linear-chip:disabled {

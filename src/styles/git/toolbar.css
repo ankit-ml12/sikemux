@@ -106,16 +106,20 @@
     cursor: default;
 }
 .git-btn.primary {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
-    color: var(--text-primary);
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
 }
-.git-btn.primary svg,
 .git-btn-count {
     color: var(--acc);
 }
+.git-btn.primary svg,
+.git-btn.primary .git-btn-count {
+    color: inherit;
+}
 .git-btn.primary:hover:not(:disabled) {
-    border-color: var(--acc);
+    background: var(--acc);
+    filter: brightness(1.08);
 }
 .git-btn.warn {
     color: var(--warn);

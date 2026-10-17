@@ -76,8 +76,15 @@
 }
 .experience-frame footer button.primary {
     border-color: var(--acc);
-    color: var(--text-primary);
-    background: var(--surface-selected);
+    background: var(--acc);
+    color: var(--on-accent);
+}
+
+.experience-frame footer button.primary:hover:not(:disabled) {
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
+    filter: brightness(1.08);
 }
 
 /* Too old for the accounts server: nothing behind it answers until Sikemux updates or quits. */
@@ -130,8 +137,15 @@
 }
 .update-required-actions button.primary {
     border-color: var(--acc);
-    color: var(--text-primary);
-    background: var(--surface-selected);
+    background: var(--acc);
+    color: var(--on-accent);
+}
+
+.update-required-actions button.primary:hover:not(:disabled) {
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
+    filter: brightness(1.08);
 }
 
 /* First run: the whole window, since nothing is open yet to be covered. */
