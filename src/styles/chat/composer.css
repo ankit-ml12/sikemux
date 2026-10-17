@@ -169,7 +169,7 @@
 
 .chat-attachments > .file:hover,
 .chat-attachments > .image:hover {
-    border-color: var(--border-selected);
+    border-color: var(--border-strong);
 }
 
 .chat-attachments > .image {

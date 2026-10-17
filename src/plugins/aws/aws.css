@@ -63,8 +63,7 @@
     color: var(--text-primary);
 }
 .aws-nav-item.active {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .aws-nav-item:disabled {
@@ -81,7 +80,7 @@
     color: var(--text-tertiary);
 }
 .aws-nav-item.active .aws-nav-icon {
-    color: var(--acc);
+    color: var(--text-primary);
 }
 .aws-nav-name {
     flex: 1 1 auto;
@@ -229,8 +228,7 @@
     outline: none;
 }
 .aws-profile-item.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .aws-profile-item-text {
@@ -670,8 +668,7 @@
     color: var(--text-primary);
 }
 .aws-table tbody tr.sel td {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .aws-table tbody tr td:first-child {
@@ -684,7 +681,6 @@
 }
 .aws-table tbody tr.sel td:first-child,
 .aws-table tbody tr.sel td:last-child {
-    border-color: var(--border-selected);
 }
 .aws-table tbody tr:focus-visible td {
     background: var(--surface-active);
@@ -1222,8 +1218,7 @@
     background: var(--surface-hover);
 }
 .aws-chart-bar.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 .aws-chart-amount {
     font-size: var(--text-2xs);

@@ -143,8 +143,7 @@
     color: var(--text-primary);
 }
 .rnd-step.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .rnd-step-label {

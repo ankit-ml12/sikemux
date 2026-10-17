@@ -594,7 +594,7 @@
     font-size: var(--text-3xs);
 }
 .wn-wall button:hover .wn-avatar {
-    box-shadow: 0 0 0 2px var(--acc);
+    box-shadow: 0 0 0 2px var(--border-strong);
 }
 .wn-wall .wn-rest {
     height: 28px;
@@ -607,7 +607,7 @@
 }
 .wn-wall .wn-rest:hover {
     color: var(--text-primary);
-    background: color-mix(in oklab, var(--acc) 22%, transparent);
+    background: var(--surface-hover);
 }
 .wn-main {
     flex: 1;

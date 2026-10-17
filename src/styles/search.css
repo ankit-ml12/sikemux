@@ -83,7 +83,7 @@
 }
 .sp-chev.open {
     transform: rotate(90deg);
-    color: var(--acc);
+    color: var(--text-primary);
 }
 .sp-chev-spacer {
     flex: 0 0 14px;
@@ -211,8 +211,8 @@
     color: var(--text-primary);
 }
 .sp-toggle.on {
-    color: var(--acc);
-    border-bottom-color: var(--acc);
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
 }
 
 .sp-stats {
@@ -729,8 +729,8 @@ button.sp-msg {
     color: var(--text-primary);
 }
 .ed-findbar-toggle.on {
-    color: var(--acc);
-    border-bottom-color: var(--acc);
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
 }
 
 .ed-findbar-status {

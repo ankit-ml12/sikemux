@@ -737,7 +737,7 @@ textarea:focus,
 }
 
 .tabbar .tab-group.active {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 28%, var(--border));
+    box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 /* Registered so the tint can fade; a gradient on its own snaps between states. */
@@ -1160,8 +1160,7 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
 
 .agent-header-action[aria-pressed="true"] {
     color: var(--text-primary);
-    background: var(--surface-selected);
-    box-shadow: inset 0 0 0 1px var(--border-selected);
+    background: var(--surface-chosen);
 }
 
 .agent-header-action:disabled {

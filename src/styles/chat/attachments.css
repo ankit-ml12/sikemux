@@ -119,6 +119,6 @@
 }
 
 .chat-attachment-file:hover {
-    border-color: var(--border-selected);
-    background: color-mix(in srgb, var(--acc) 7%, var(--void));
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
 }

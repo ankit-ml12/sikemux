@@ -118,7 +118,7 @@
 }
 .panel-abtn:hover:not(:disabled) {
     color: var(--text-primary);
-    border-color: var(--border-selected);
+    border-color: var(--border-strong);
 }
 .panel-abtn:disabled {
     opacity: 0.45;

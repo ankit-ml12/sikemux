@@ -80,8 +80,7 @@
 
 .slack-channel.active {
     color: var(--text-primary);
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 
 .slack-channel-mark {
@@ -184,8 +183,7 @@
 }
 
 .slack-message.open {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 
 .slack-message-head {

@@ -38,7 +38,7 @@
 }
 
 .chat-message-editor-actions button:hover:not(:disabled) {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
     color: var(--ink);
 }
 

@@ -289,7 +289,7 @@
 }
 
 .board-under-row:hover {
-    border-color: var(--border-selected);
+    border-color: var(--border-strong);
 }
 
 .board-panel-foot {

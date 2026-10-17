@@ -42,7 +42,6 @@
 
 .command-palette-item.sel .command-palette-shortcut {
     color: var(--text-primary);
-    border-color: var(--border-selected);
 }
 
 @media (max-width: 620px) {

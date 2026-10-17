@@ -181,8 +181,8 @@
 }
 
 .agent-desk-open[aria-pressed="true"] {
-    background: linear-gradient(var(--surface-selected), var(--surface-selected)), color-mix(in srgb, var(--void) 62%, transparent);
-    color: var(--acc);
+    background: linear-gradient(var(--surface-chosen), var(--surface-chosen)), color-mix(in srgb, var(--void) 62%, transparent);
+    color: var(--text-primary);
 }
 
 .yolo-toggle {

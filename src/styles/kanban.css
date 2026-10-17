@@ -135,7 +135,7 @@
 }
 
 .kanban-card:hover {
-    border-color: var(--border-selected);
+    border-color: var(--border-strong);
 }
 
 .kanban-card.active {
@@ -207,7 +207,6 @@
 
 .kanban-pick[aria-pressed="true"] {
     position: relative;
-    border-color: var(--acc);
     color: var(--text-primary);
 }
 

@@ -97,9 +97,8 @@
     color: var(--ink);
 }
 .bruno-req-row.active {
-    background: var(--acc-soft);
+    background: var(--surface-chosen);
     color: var(--ink);
-    box-shadow: inset 0 0 0 1px var(--acc-line);
 }
 .bruno-chevron {
     display: inline-flex;
@@ -324,7 +323,7 @@ body.bruno-resizing {
     transform: translateY(-2px);
 }
 .bruno-send:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--acc) 88%, white);
+    background: var(--surface-hover);
 }
 .bruno-send svg {
     flex: 0 0 auto;
@@ -363,7 +362,7 @@ body.bruno-resizing {
 }
 .bruno-save.dirty:hover {
     color: var(--acc);
-    border-color: var(--acc);
+    border-color: var(--border-strong);
 }
 .bruno-url-preview {
     display: flex;
@@ -407,7 +406,7 @@ body.bruno-resizing {
 }
 .bruno-tab.active {
     color: var(--ink);
-    border-bottom-color: var(--acc);
+    border-bottom-color: var(--text-primary);
 }
 .bruno-tab-body {
     flex: 1 1 auto;
@@ -641,12 +640,11 @@ body.bruno-resizing {
 .bruno-secrets-btn:hover,
 .bruno-icon-btn:hover {
     color: var(--ink);
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
 }
 .bruno-secrets-btn.active {
-    color: var(--acc);
-    border-color: var(--acc-line);
-    background: var(--acc-soft);
+    color: var(--text-primary);
+    background: var(--surface-chosen);
 }
 .bruno-icon-btn {
     width: 24px;
@@ -831,7 +829,7 @@ button.bruno-check {
     border-radius: var(--radius-2);
 }
 .bruno-check:hover {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
 }
 .bruno-check.on {
     background: var(--acc);

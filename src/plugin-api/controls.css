@@ -22,8 +22,7 @@
     color: var(--text-primary);
 }
 .plugin-seg button.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .plugin-seg-count {

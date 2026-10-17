@@ -319,8 +319,7 @@
 }
 .buddy-pack.on {
     color: var(--text-primary);
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 
 .buddy-pack-dot {
@@ -355,8 +354,7 @@
     background: var(--surface-hover);
 }
 .buddy-tile.on {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 
 .buddy-dlg .dlg-foot {
@@ -390,8 +388,7 @@
 .buddy-card.on,
 .buddy-shape.on {
     color: var(--text-primary);
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 
 .buddy-card {

@@ -173,7 +173,7 @@
 
 .desk-kind.on {
     background: color-mix(in srgb, var(--ink) 7%, transparent);
-    color: var(--acc);
+    color: var(--text-primary);
 }
 
 .desk-kind.busy {

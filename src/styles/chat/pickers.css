@@ -130,7 +130,7 @@
 }
 
 .chat-picker-agents > button[aria-pressed="true"] {
-    background: color-mix(in srgb, var(--acc) 14%, transparent);
+    background: var(--surface-chosen);
     color: var(--ink);
 }
 
@@ -244,6 +244,6 @@
         border-color 100ms;
 }
 .chat-show-rest:hover {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
     color: var(--ink);
 }

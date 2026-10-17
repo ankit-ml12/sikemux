@@ -271,7 +271,7 @@
     background: var(--surface-raised);
 }
 .tb-btn.on {
-    color: var(--acc);
+    color: var(--text-primary);
 }
 
 .tb-account {
@@ -968,8 +968,7 @@
 }
 .space-icon-grid > button.active {
     color: var(--text-primary);
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 .space-icon-none {
     width: 100%;
@@ -985,8 +984,7 @@
 }
 .space-icon-none.active {
     color: var(--text-primary);
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 .space-editor {
     min-width: 220px;

@@ -237,7 +237,7 @@
 
 .chat-connection-state button:hover,
 .chat-reconnect button:hover {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
     color: var(--ink);
 }
 
@@ -323,7 +323,7 @@
 }
 
 .chat-error-actions button:hover {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
     color: var(--ink);
 }
 
@@ -402,6 +402,6 @@
 }
 
 .chat-jump-bottom:hover {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
     color: var(--ink);
 }

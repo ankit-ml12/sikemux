@@ -326,8 +326,7 @@
     color: var(--text-primary);
 }
 .signin-mode[aria-checked="true"] {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .signin-mode:focus-visible {

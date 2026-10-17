@@ -10,8 +10,11 @@ and builds it from those tokens.
 - **The chosen item is a grey lift.** A chosen row, tab, menu item or chip gets
   `--surface-chosen` across the whole item, with no colour and no edge. Hover is
   `--surface-hover`, one step lighter.
-- **Purple is rare.** The accent is for keyboard focus, a checked toggle, a link,
-  the HEAD badge and the one primary action on a surface. Nothing else.
+- **Purple is rare.** The accent is for keyboard focus, an on switch, a ticked
+  checkbox or radio, a link, the HEAD badge, resize handles under the pointer
+  and the one primary action on a surface. A choice from a set (a segmented
+  button, a filter, a nav item, a choice card) is chosen, so it gets the grey
+  lift; a chosen tab's underline is ink.
 - **Hairlines, not shadows.** Flat surfaces separate with `--border`. Only things
   that float (menus, palettes, dialogs) get a shadow and may blur what is behind
   them.

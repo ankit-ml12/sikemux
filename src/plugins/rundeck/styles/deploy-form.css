@@ -203,8 +203,7 @@ button.rnd-card {
     color: var(--text-primary);
 }
 .rnd-pick.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .rnd-pick small {
