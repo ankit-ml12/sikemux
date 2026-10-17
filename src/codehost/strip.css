@@ -113,18 +113,24 @@
     border: 0;
     background: none;
 }
-/* Beside the track the tools are plain until hovered, so only the call to action carries a fill. */
-.git-nav-tools > .git-toolbar .git-btn:not(.primary) {
-    border-color: transparent;
+.git-nav-tools > .git-toolbar .git-btn:not(.primary),
+.git-nav-signin {
+    border-color: var(--border-strong);
     background: none;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
 }
-.git-nav-tools > .git-toolbar .git-btn:not(.primary):hover:not(:disabled) {
+.git-nav-tools > .git-toolbar .git-btn:not(.primary):hover:not(:disabled),
+.git-nav-signin:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
 }
 .git-nav-tools > .git-toolbar .git-switch {
     color: var(--text-primary);
+}
+.git-nav-signin {
+    height: 24px;
+    padding: 0 var(--space-2);
+    gap: 5px;
 }
 .git-nav-account {
     position: relative;

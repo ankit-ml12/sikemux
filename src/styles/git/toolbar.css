@@ -177,8 +177,25 @@
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
 }
-.git-switch > svg:first-child {
-    color: var(--acc);
+.git-btn-group {
+    display: inline-flex;
+    flex: none;
+}
+.git-btn-group > .git-btn {
+    border-radius: 0;
+}
+.git-btn-group > .git-btn + .git-btn {
+    margin-left: -1px;
+}
+.git-btn-group > .git-btn:first-child {
+    border-radius: var(--radius-2) 0 0 var(--radius-2);
+}
+.git-btn-group > .git-btn:last-child {
+    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+}
+.git-btn-group > .git-btn:hover:not(:disabled),
+.git-btn-group > .git-btn.primary {
+    position: relative;
 }
 .git-btn .git-switch-chev {
     width: 9px;

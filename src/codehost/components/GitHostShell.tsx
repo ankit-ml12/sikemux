@@ -69,19 +69,19 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
         invalidate((kind) => kind.startsWith("host."));
     };
 
+    // The project tree opens these as screens of their own, so the git screens stay out of their header.
+    const standalone = host && repo && isTreeSection(area) ? area : null;
     const account =
         host && repo ? (
             <HostAccountButton
                 slug={slugOf(repo)}
                 cwd={cwd}
                 active={active}
-                onSignIn={() => onArea("pulls")}
+                onSignIn={standalone ? null : () => onArea("pulls")}
                 onPickRepo={() => setPicking(true)}
                 onAddAccount={() => setAdding(true)}
             />
         ) : undefined;
-    // The project tree opens these as screens of their own, so the git screens stay out of their header.
-    const standalone = host && repo && isTreeSection(area) ? area : null;
 
     return (
         <HostProvider value={host && repo ? host : null}>

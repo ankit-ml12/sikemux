@@ -1669,29 +1669,31 @@ function GitWorkbench({
                     <span>{busy}</span>
                 </span>
             )}
-            <Tooltip label="Fetch all remotes (F)">
-                <button type="button" className="git-btn" onClick={() => doFetch(null)}>
-                    <IconFetch size={13} />
-                    Fetch
-                </button>
-            </Tooltip>
-            <Tooltip label={behind > 0 ? `Pull ${behind} commit${behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
-                <button type="button" className="git-btn" onClick={pullRepo}>
-                    <IconPull size={13} />
-                    Pull
-                    {behind > 0 && <span className="git-btn-count">{behind}</span>}
-                </button>
-            </Tooltip>
-            <Tooltip
-                label={
-                    !upstream ? "Publish branch and set upstream (P)" : ahead > 0 ? `Push ${ahead} commit${ahead > 1 ? "s" : ""} (P)` : "Push (P)"
-                }>
-                <button type="button" className={`git-btn${ahead > 0 || !upstream ? " primary" : ""}`} onClick={pushRepo}>
-                    <IconPush size={13} />
-                    {upstream ? "Push" : "Publish"}
-                    {ahead > 0 && <span className="git-btn-count">{ahead}</span>}
-                </button>
-            </Tooltip>
+            <div className="git-btn-group" role="group" aria-label="Sync with the remote">
+                <Tooltip label="Fetch all remotes (F)">
+                    <button type="button" className="git-btn" onClick={() => doFetch(null)}>
+                        <IconFetch size={13} />
+                        Fetch
+                    </button>
+                </Tooltip>
+                <Tooltip label={behind > 0 ? `Pull ${behind} commit${behind > 1 ? "s" : ""} (p)` : "Pull (p)"}>
+                    <button type="button" className="git-btn" onClick={pullRepo}>
+                        <IconPull size={13} />
+                        Pull
+                        {behind > 0 && <span className="git-btn-count">{behind}</span>}
+                    </button>
+                </Tooltip>
+                <Tooltip
+                    label={
+                        !upstream ? "Publish branch and set upstream (P)" : ahead > 0 ? `Push ${ahead} commit${ahead > 1 ? "s" : ""} (P)` : "Push (P)"
+                    }>
+                    <button type="button" className={`git-btn${ahead > 0 || !upstream ? " primary" : ""}`} onClick={pushRepo}>
+                        <IconPush size={13} />
+                        {upstream ? "Push" : "Publish"}
+                        {ahead > 0 && <span className="git-btn-count">{ahead}</span>}
+                    </button>
+                </Tooltip>
+            </div>
             <Tooltip label="Open pull request (⌃P)">
                 <button type="button" className="git-btn" onClick={openPullRequest}>
                     <IconPullRequest size={13} />

@@ -125,7 +125,8 @@ export function HostAccountButton({
     /** The project folder, which remembers the account picked for it. */
     cwd: string;
     active: boolean;
-    onSignIn: () => void;
+    /** Absent where the screen below is already the sign-in form. */
+    onSignIn: (() => void) | null;
     onPickRepo: () => void;
     onAddAccount: () => void;
 }) {
@@ -178,11 +179,14 @@ export function HostAccountButton({
                     </button>
                 </Tooltip>
             ) : (
-                <Tooltip label={`Sign in to ${host.name}`}>
-                    <button type="button" className="git-nav-avatar" aria-label={`Sign in to ${host.name}`} onClick={onSignIn}>
-                        {host.icon(14)}
-                    </button>
-                </Tooltip>
+                onSignIn && (
+                    <Tooltip label={`Sign in to ${host.name}`}>
+                        <button type="button" className="git-btn git-nav-signin" aria-label={`Sign in to ${host.name}`} onClick={onSignIn}>
+                            {host.icon(12)}
+                            Sign in
+                        </button>
+                    </Tooltip>
+                )
             )}
             {menuOpen && account?.ok && (
                 <>
