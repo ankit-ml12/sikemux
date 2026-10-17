@@ -530,4 +530,5 @@ export const SCENES = [
         await box.press("Backspace");
       }),
     crops: composerCrop,
+  },
 ];
