@@ -26,10 +26,10 @@
     place-items: center;
     width: 42px;
     height: 42px;
-    border: 1px solid color-mix(in srgb, var(--acc) 52%, var(--border));
+    border: 1px solid var(--border);
     border-radius: var(--radius-panel);
-    background: color-mix(in srgb, var(--acc) 14%, var(--bg-raised, var(--surface-raised)));
-    color: var(--acc);
+    background: var(--surface-chosen);
+    color: var(--text-primary);
     font-weight: 800;
     letter-spacing: 0.04em;
 }
@@ -51,15 +51,15 @@
 .boot-state button {
     margin-top: 4px;
     padding: 8px 12px;
-    border: 1px solid color-mix(in srgb, var(--acc) 48%, var(--border));
+    border: 1px solid var(--acc);
     border-radius: var(--radius-control);
-    background: color-mix(in srgb, var(--acc) 12%, var(--bg-raised, var(--surface-raised)));
-    color: var(--text-primary);
+    background: var(--acc);
+    color: var(--on-accent);
     cursor: pointer;
 }
 
 .boot-state button:hover {
-    background: color-mix(in oklab, var(--ink) 6%, var(--bg-raised, var(--surface-raised)));
+    filter: brightness(1.08);
 }
 
 .body {
@@ -1086,9 +1086,9 @@
     background: var(--surface-hover);
 }
 .space-edit-foot > button.done {
-    color: var(--text-primary);
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    color: var(--on-accent);
+    background: var(--acc);
+    border-color: var(--acc);
 }
 
 /* A strip that scrolls sideways fades at whichever end has more; useSideScroll says which. */

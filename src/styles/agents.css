@@ -288,7 +288,7 @@
 }
 .agent-dormant-notch {
     grid-row: 1 / span 5;
-    background: var(--acc);
+    background: var(--border-strong);
 }
 .agent-dormant-kicker {
     color: var(--live);
@@ -306,8 +306,8 @@
     margin-top: 8px;
     padding: 7px 14px;
     border: 1px solid var(--acc);
-    color: var(--text-primary);
-    background: var(--surface-selected);
+    color: var(--on-accent);
+    background: var(--acc);
 }
 
 .env-dd-label {

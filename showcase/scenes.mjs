@@ -478,6 +478,31 @@ export const SCENES = [
     setup: (page) => openWindow(page, "s-sikemux", "w-agent-rail"),
     crops: { rail: ".side-rail" },
   },
+  ...["available", "downloading", "error"].map((state) => ({
+    name: `update-${state}`,
+    setup: async (page) => {
+      await openWindow(page, "s-sikemux", "w-agent-rail");
+      await run(
+        page,
+        (state) =>
+          showcase.store.setState({
+            pendingUpdate: {
+              version: "0.5.3-nightly.7",
+              currentVersion: "0.5.3-nightly.6",
+              notes: null,
+              date: null,
+              credits: null,
+              state,
+              error: state === "error" ? "the download was cut short" : null,
+              downloadedBytes: state === "downloading" ? 9_800_000 : 0,
+              totalBytes: state === "downloading" ? 16_000_000 : null,
+            },
+          }),
+        state,
+      );
+    },
+    crops: { rail: ".side-rail" },
+  })),
   {
     name: "composer-pulls",
     setup: (page) => composerScene(page, (box) => box.pressSequentially("Land !13")),

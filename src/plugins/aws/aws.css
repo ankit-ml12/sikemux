@@ -421,9 +421,9 @@
     gap: var(--space-2);
     height: 28px;
     padding: 0 var(--space-1) 0 10px;
-    border: 1px solid var(--border-selected);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
     font-size: var(--text-xs);
 }
 .aws-filter-chip button {

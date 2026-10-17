@@ -20,8 +20,7 @@
     column-gap: var(--space-2);
 }
 .gha-item-row[data-on="1"] {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 /* An open pull request's column: its card where Changes has the commit box, then its files, then the folding panels. */
 .pr-card {

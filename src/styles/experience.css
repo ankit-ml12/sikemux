@@ -719,7 +719,7 @@
 .wn-notes blockquote {
     margin: 16px 0;
     padding: 2px 0 2px 14px;
-    border-left: 2px solid var(--acc);
+    border-left: 2px solid var(--border-strong);
 }
 .wn-notes hr {
     margin: 22px 0;

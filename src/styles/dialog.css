@@ -48,8 +48,8 @@
     height: 26px;
     flex: none;
     border-radius: var(--radius-2);
-    color: var(--acc);
-    background: var(--surface-selected);
+    color: var(--text-primary);
+    background: var(--surface-chosen);
 }
 .dlg.danger .dlg-glyph {
     color: var(--danger);

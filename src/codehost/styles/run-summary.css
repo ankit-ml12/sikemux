@@ -46,7 +46,7 @@
 .gha-avatar-letter {
     display: inline-grid;
     place-items: center;
-    background: color-mix(in oklab, var(--acc) 22%, transparent);
+    background: var(--surface-raised);
     color: var(--text-primary);
     font-size: var(--text-3xs);
     font-weight: var(--weight-semibold);
@@ -147,8 +147,7 @@
     color: var(--text-primary);
 }
 .gha-graph-job[data-on="1"] {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .gha-graph-job:focus-visible {
@@ -228,8 +227,7 @@ button.gha-step:focus-visible {
     background: color-mix(in oklab, var(--warn) 12%, transparent);
 }
 .gha-log-line.anchor {
-    background: var(--surface-selected);
-    box-shadow: inset 0 0 0 1px var(--border-selected);
+    background: var(--surface-chosen);
 }
 .gha-log-line.hit.current {
     background: color-mix(in oklab, var(--warn) 26%, transparent);

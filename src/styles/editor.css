@@ -664,7 +664,7 @@ body.is-sorting-tabs * {
 }
 .ed-markdown-body blockquote {
     padding: 0.15em 1em;
-    border-left: 3px solid var(--border-selected);
+    border-left: 3px solid var(--border-strong);
     color: var(--text-tertiary);
 }
 .ed-markdown-body blockquote > :last-child {

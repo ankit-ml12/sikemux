@@ -248,7 +248,7 @@
 
 .sp-replace-btn {
     background: transparent;
-    color: var(--acc);
+    color: var(--text-primary);
     border: 0;
     padding: 2px 0;
     font-family: var(--mono);
@@ -257,7 +257,7 @@
     text-transform: lowercase;
     letter-spacing: 0.04em;
     cursor: pointer;
-    border-bottom: 1px solid var(--border-selected);
+    border-bottom: 1px solid var(--border);
     transition:
         color 0.12s,
         border-color 0.12s,

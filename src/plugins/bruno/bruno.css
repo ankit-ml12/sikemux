@@ -358,7 +358,7 @@ body.bruno-resizing {
 }
 .bruno-save.dirty {
     color: var(--warn);
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
 }
 .bruno-save.dirty:hover {
     color: var(--acc);
@@ -887,9 +887,9 @@ button.bruno-check {
     min-width: 15px;
     height: 14px;
     padding: 0 4px;
-    background: var(--acc-soft);
-    border: 1px solid var(--acc-line);
-    color: var(--acc);
+    background: var(--surface-chosen);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
     font-size: 9px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;

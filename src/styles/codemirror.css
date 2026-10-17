@@ -177,7 +177,7 @@
 }
 
 .cm-peek {
-    border: 1px solid var(--border-selected);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
     overflow: hidden;
     margin: 6px 0;

@@ -21,7 +21,7 @@
     gap: 14px;
     padding: 16px 22px;
     background: var(--surface-raised);
-    border: 1px solid var(--border-selected);
+    border: 1px solid var(--border);
     box-shadow: var(--shadow-3);
     color: var(--text-primary);
     font-size: 13px;
