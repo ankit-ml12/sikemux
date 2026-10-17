@@ -216,11 +216,7 @@ function Agents({
           {open.map((agent) =>
             agent.kind === 'chat' ? (
               <Fragment key={agent.chat.agentId}>
-                <ChatRow
-                  core={core}
-                  chat={agent.chat}
-                  place={placeOf(agent.chat.cwd)}
-                />
+                <ChatRow core={core} chat={agent.chat} place={placeOf(agent.chat.cwd)} />
                 {workersOf(workers, agent.chat.agentId).map((worker) => (
                   <WorkerRow key={worker.agentId} worker={worker} nested />
                 ))}
@@ -262,15 +258,7 @@ function terminalDetail(session: SessionInfo): string {
 
 /* A host sends its whole view several times a second while an agent works; each row redraws only when its own
    item changed, which the hub keeps as the same object otherwise. */
-const ChatRow = memo(function ChatRow({
-  core,
-  chat,
-  place,
-}: {
-  core: string;
-  chat: ChatInfo;
-  place?: string;
-}) {
+const ChatRow = memo(function ChatRow({ core, chat, place }: { core: string; chat: ChatInfo; place?: string }) {
   const display = chatDisplay(chat);
   return (
     <Row
