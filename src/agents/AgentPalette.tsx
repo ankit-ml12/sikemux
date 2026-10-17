@@ -11,13 +11,14 @@ import { useStore } from "../state/store";
 import type { AgentPermissionMode, AgentType } from "../state/types";
 import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../ui/Icons";
 import { formatAge } from "../lib/format";
-import { agentAbout, agentLabel, installCommand } from "./catalog";
-import { installAgent } from "./AgentInstall";
+import { agentAbout, agentLabel, installCommand, loginArgs } from "./catalog";
+import { installAgent, signInAgent } from "./AgentInstall";
 import { withMissingAgents } from "./setupList";
 import { leavingOverlay } from "../lib/motion";
 
 type Row = AgentSession & { type: AgentType };
-type NewAgentItem = { kind: "new"; type: AgentType };
+/** A new chat, or with `signIn`, the agent's own sign-in for one that reads as signed out. */
+type NewAgentItem = { kind: "new"; type: AgentType; signIn?: true };
 type ResumeAgentItem = { kind: "resume"; row: Row };
 type AgentItem = NewAgentItem | ResumeAgentItem;
 
@@ -120,15 +121,20 @@ export function AgentPalette() {
     }, []);
 
     const items = useMemo(() => {
-        const fresh = agents.map(({ type }): NewAgentItem => ({ kind: "new", type }));
+        const signIns = agents
+            .filter((agent) => agent.status?.state === "signedOut" && loginArgs(agent.type))
+            .map(({ type }): NewAgentItem => ({ kind: "new", type, signIn: true }));
+        const fresh = [...agents.map(({ type }): NewAgentItem => ({ kind: "new", type })), ...signIns];
         const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
         const rankedFresh = rankBy(query, fresh, (item) =>
-            installable(
-                item,
-                agents.find((agent) => agent.type === item.type),
-            )
-                ? `install ${agentLabel(item.type)} ${item.type}`
-                : `+ new ${agentLabel(item.type)} ${item.type}`,
+            item.signIn
+                ? `sign in to ${agentLabel(item.type)} ${item.type}`
+                : installable(
+                        item,
+                        agents.find((agent) => agent.type === item.type),
+                    )
+                  ? `install ${agentLabel(item.type)} ${item.type}`
+                  : `+ new ${agentLabel(item.type)} ${item.type}`,
         );
         const rankedResumable = rankBy(query, resumable, (item) => `${item.row.title} ${agentLabel(item.row.type)} ${item.row.type}`);
         return [...rankedFresh, ...rankedResumable];
@@ -175,6 +181,11 @@ export function AgentPalette() {
         if (installable(item, provider)) {
             cmd.closeAgentPalette();
             installAgent(type);
+            return;
+        }
+        if (item.kind === "new" && item.signIn && provider) {
+            cmd.closeAgentPalette();
+            signInAgent(provider);
             return;
         }
         if (!provider || provider.available === false) return;
@@ -272,8 +283,15 @@ export function AgentPalette() {
                         const provider = agents.find((agent) => agent.type === type);
                         const install = installable(item, provider);
                         const available = provider?.available !== false || install;
-                        const key = item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`;
-                        const name = install ? `Install ${agentLabel(type)}` : item.kind === "new" ? `+ new ${agentLabel(type)}` : item.row.title;
+                        const signIn = item.kind === "new" && !!item.signIn;
+                        const key = item.kind === "new" ? `${signIn ? "sign-in" : "new"}-${type}` : `${type}-${item.row.id}`;
+                        const name = signIn
+                            ? `Sign in to ${agentLabel(type)}`
+                            : install
+                              ? `Install ${agentLabel(type)}`
+                              : item.kind === "new"
+                                ? `+ new ${agentLabel(type)}`
+                                : item.row.title;
                         return (
                             <Fragment key={key}>
                                 {index === firstResumeIndex && firstResumeIndex > 0 && <div className="agent-palette-divider" />}
@@ -281,7 +299,7 @@ export function AgentPalette() {
                                     type="button"
                                     className={`picker-item${index === selected ? " sel" : ""}`}
                                     disabled={!available}
-                                    aria-label={install ? name : `${name} in ${launchMode(type) === YOLO ? "YOLO" : "Normal"} mode`}
+                                    aria-label={install || signIn ? name : `${name} in ${launchMode(type) === YOLO ? "YOLO" : "Normal"} mode`}
                                     onMouseEnter={() => {
                                         if (mouseActive.current && available) setSelected(index);
                                     }}
@@ -291,17 +309,19 @@ export function AgentPalette() {
                                     </span>
                                     <span className="picker-name">{name}</span>
                                     <span className="picker-sub">
-                                        {install
-                                            ? agentAbout(type)
-                                            : !available
-                                              ? provider?.error || "Agent executable is unavailable"
-                                              : launchMode(type) !== mode
-                                                ? "opens safe"
-                                                : item.kind === "new"
-                                                  ? provider?.status?.state === "signedOut"
-                                                      ? "signed out"
-                                                      : ""
-                                                  : `${agentLabel(type)} · ${formatAge(item.row.mtime * 1000)}`}
+                                        {signIn
+                                            ? "Signed out"
+                                            : install
+                                              ? agentAbout(type)
+                                              : !available
+                                                ? provider?.error || "Agent executable is unavailable"
+                                                : launchMode(type) !== mode
+                                                  ? "opens safe"
+                                                  : item.kind === "new"
+                                                    ? provider?.status?.state === "signedOut"
+                                                        ? "signed out"
+                                                        : ""
+                                                    : `${agentLabel(type)} · ${formatAge(item.row.mtime * 1000)}`}
                                     </span>
                                 </button>
                             </Fragment>
