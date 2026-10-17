@@ -10,14 +10,15 @@ import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { activeAgentId, agentDisplayOf, agentIdsOf } from "../state/selectors";
-import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
+import { type Agent, type AgentType, type PinnedChat } from "../state/types";
+import { AgentIcon, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
-import { inTeams } from "../agents/teams";
+import { inTeams, type TeamLink } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { Tooltip } from "../ui/Tooltip";
 import { Dropdown } from "../ui/Dropdown";
-import { Panel } from "../ui/Panel";
+import { Panel, PanelHeader } from "../ui/Panel";
+import { TreeContextMenu } from "./FileTree";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
@@ -97,6 +98,7 @@ export function AgentRailBody() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
+    const pinnedChats = useStore((s) => s.pinnedChats);
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
@@ -127,6 +129,7 @@ export function AgentRailBody() {
     const [searchOpen, setSearchOpen] = useState(false);
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+    const [pinMenu, setPinMenu] = useState<{ pin: PinnedChat; x: number; y: number } | null>(null);
     const searchRef = useRef<HTMLInputElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const selectedType = useMemo(() => {
@@ -174,7 +177,10 @@ export function AgentRailBody() {
                 .map((entry) => entry.cwd),
         [sessionOrder, sessions],
     );
-    const openChats = useMemo(() => Object.values(agentsById).map((agent) => ({ agent: agent.type, id: persistedSessionIdOf(agent) })), [agentsById]);
+    const openChats = useMemo(
+        () => [...Object.values(agentsById).map((agent) => ({ agent: agent.type, id: persistedSessionIdOf(agent) })), ...pinnedChats],
+        [agentsById, pinnedChats],
+    );
     const recentProviders = useMemo(
         () => (allAgents ? availableAgents : availableAgents.filter((agent) => agent.type === selectedType)),
         [allAgents, availableAgents, selectedType],
@@ -261,14 +267,43 @@ export function AgentRailBody() {
 
     if (!session) return null;
 
+    const sessionAgents = agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
+        .map((id) => agentsById[id])
+        .filter(Boolean) as Agent[];
+    const isPin = (a: Agent, pin: PinnedChat) => a.type === pin.agent && a.resumeId === pin.id;
+    const pins = pinnedChats.filter((pin) => pin.project === session.cwd).map((pin) => ({ pin, agent: sessionAgents.find((a) => isPin(a, pin)) }));
     const opens = inInboxOrder(
-        agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
-            .map((id) => agentsById[id])
-            .filter(Boolean) as Agent[],
+        sessionAgents.filter((a) => !pins.some(({ pin }) => isPin(a, pin))),
         inbox.items,
     );
 
     const menuAgent = menu ? agentsById[menu.agentId] : undefined;
+
+    const openRow = (a: Agent, link?: TeamLink) => (
+        <OpenAgentRow
+            key={a.id}
+            agent={a}
+            display={agentDisplayOf({ agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById }, a.id)}
+            link={link}
+            active={activeAgentId({ windows: windowsById }, session) === a.id}
+            wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
+            title={
+                renamingId === a.id && (
+                    <AgentTitleInput
+                        title={a.title}
+                        className="agent-title"
+                        onSave={(title) => cmd.renameAgent(a.id, title)}
+                        onDone={() => setRenamingId(null)}
+                    />
+                )
+            }
+            onDoubleClick={() => setRenamingId(a.id)}
+            onContextMenu={(event) => {
+                event.preventDefault();
+                setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
+            }}
+        />
+    );
 
     const onRailScroll = () => {
         if (!hasMoreRecents) return;
@@ -310,7 +345,7 @@ export function AgentRailBody() {
         );
     }
 
-    const noContent = opens.length === 0 && recent.chats.length === 0 && recent.status !== "loading";
+    const noContent = pins.length === 0 && opens.length === 0 && recent.chats.length === 0 && recent.status !== "loading";
 
     return (
         <>
@@ -372,41 +407,56 @@ export function AgentRailBody() {
                     </div>
                 )}
 
-                {scope === "project" && opens.length > 0 && (
+                {scope === "project" && pins.length > 0 && (
                     <Panel variant="group" className="agent-group">
-                        {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
-                            isRemoteWorker(a) ? (
-                                <RemoteAgentRow key={a.id} agent={a.remote} link={link} />
+                        <PanelHeader label="Pinned" rule />
+                        {pins.map(({ pin, agent: a }) =>
+                            a ? (
+                                openRow(a)
                             ) : (
-                                <OpenAgentRow
-                                    key={a.id}
-                                    agent={a}
-                                    display={agentDisplayOf(
-                                        { agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById },
-                                        a.id,
-                                    )}
-                                    link={link}
-                                    active={activeAgentId({ windows: windowsById }, session) === a.id}
-                                    wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
-                                    title={
-                                        renamingId === a.id && (
-                                            <AgentTitleInput
-                                                title={a.title}
-                                                className="agent-title"
-                                                onSave={(title) => cmd.renameAgent(a.id, title)}
-                                                onDone={() => setRenamingId(null)}
-                                            />
-                                        )
-                                    }
-                                    onDoubleClick={() => setRenamingId(a.id)}
-                                    onContextMenu={(event) => {
-                                        event.preventDefault();
-                                        setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
-                                    }}
-                                />
+                                <div key={`${pin.agent}:${pin.id}`} className="agent-recent">
+                                    <button
+                                        className="agent-row recent"
+                                        onClick={() =>
+                                            cmd.openSavedChat(pin, {
+                                                detectedExecutablePath: availableAgents.find((agent) => agent.type === pin.agent)?.command,
+                                            })
+                                        }
+                                        onContextMenu={(event) => {
+                                            event.preventDefault();
+                                            setPinMenu({ pin, x: event.clientX, y: event.clientY });
+                                        }}>
+                                        <span className={`agent-glyph ${pin.agent}`}>
+                                            <AgentIcon type={pin.agent} size={20} />
+                                        </span>
+                                        <span className="agent-row-text">
+                                            <span className="agent-title">{pin.title}</span>
+                                        </span>
+                                        <span className="agent-ago">
+                                            <IconPin size={11} filled />
+                                        </span>
+                                    </button>
+                                </div>
                             ),
                         )}
                     </Panel>
+                )}
+
+                {scope === "project" && opens.length > 0 && (
+                    <Panel variant="group" className="agent-group">
+                        {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
+                            isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link),
+                        )}
+                    </Panel>
+                )}
+
+                {pinMenu && (
+                    <TreeContextMenu
+                        x={pinMenu.x}
+                        y={pinMenu.y}
+                        items={[{ label: "Unpin", icon: <IconPin size={13} />, run: () => cmd.unpinChat(pinMenu.pin.agent, pinMenu.pin.id) }]}
+                        onClose={() => setPinMenu(null)}
+                    />
                 )}
 
                 {menu && menuAgent && (
