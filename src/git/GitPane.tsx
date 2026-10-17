@@ -245,6 +245,12 @@ function GitWorkbench({
     const selectedFileEntry = fileEntries[clampSel("files")];
     const selectedFile = selectedFileEntry?.kind === "file" ? selectedFileEntry : fileEntries.find((e) => e.kind === "file");
     const selectedFileIndex = selectedFile ? fileEntries.indexOf(selectedFile) : -1;
+    // Folding a group hides its rows, not the file the review is following.
+    const lastReviewed = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (selectedFile) lastReviewed.current = selectedFile.file.path;
+    }, [selectedFile]);
+    const reviewFocus = selectedFile?.file.path ?? (files.some((file) => file.path === lastReviewed.current) ? lastReviewed.current : undefined);
     const selectedCommit = filteredCommits[clampSel("commits")];
     const selectedBranchEntry = branchEntries[clampSel("branches")];
 
@@ -1513,7 +1519,7 @@ function GitWorkbench({
                 <MergeReview
                     repo={repo}
                     files={filteredFiles}
-                    focusPath={selectedFile?.file.path}
+                    focusPath={reviewFocus}
                     onOpenFile={cmd.requestOpenFile}
                     onSaved={onReviewSaved}
                     fileActions={reviewActions}
