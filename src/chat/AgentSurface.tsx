@@ -7,7 +7,9 @@ import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { takeDraft } from "./draftHandoff";
+import { putDraft, takeDraft } from "./draftHandoff";
+import { promptDraft } from "../terminal/promptDraft";
+import { screenWithin } from "../state/terminalScreens";
 import { isResumableSession } from "../terminal/sessionResume";
 import { AgentBuddy } from "../buddies/Buddy";
 import { openBuddyPicker } from "../buddies/commands";
@@ -103,11 +105,13 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const { recovery, generation } = useTuiResume(agent.id);
     const cwd = agentCwd(agent, session);
 
+    const tuiLayer = useRef<HTMLDivElement>(null);
     const switchView = useCallback(
         async (next: AgentView) => {
             if (next === view || switching || busy) return;
             setSwitching(true);
             setCarried(next === "tui" ? takeDraft(agent.id) : "");
+            if (next === "gui" && tuiLayer.current) putDraft(agent.id, promptDraft(screenWithin(tuiLayer.current)));
             if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
             clearTuiRecovery(agent.id);
             setView(next);
@@ -124,7 +128,6 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     useEffect(() => (guiActive ? showingChat(agent.id) : undefined), [agent.id, guiActive]);
 
     /* A terminal agent takes deliveries as typed text, the way a paste would arrive. */
-    const tuiLayer = useRef<HTMLDivElement>(null);
     const tuiShown = visible && view === "tui" && !switching;
     useEffect(() => {
         if (!tuiShown) return;

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     renameAgent: vi.fn(),
     typed: vi.fn(),
     terminalProps: vi.fn(),
+    screen: [] as string[],
     addAgent: vi.fn(),
     relaunch: vi.fn(async () => {}),
     clearRecovery: vi.fn(),
@@ -21,10 +22,19 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./AgentChatPane", () => ({ AgentChatPane: mocks.chatPane }));
 vi.mock("../terminal/TerminalPane", async () => {
     const { registerTextInsert } = await import("../state/textInsertRegistry");
+    const { registerScreen } = await import("../state/terminalScreens");
     return {
         TerminalPane: (props: object) => {
             mocks.terminalProps(props);
-            return <div ref={(element) => (element ? registerTextInsert(element, mocks.typed) : undefined)} />;
+            return (
+                <div
+                    ref={(element) => {
+                        if (!element) return;
+                        registerTextInsert(element, mocks.typed);
+                        registerScreen(element, () => mocks.screen);
+                    }}
+                />
+            );
         },
     };
 });
@@ -128,6 +138,25 @@ it("takes what was typed in the chat to the TUI's prompt, without sending it", a
     );
     expect(draft).toBe("");
     stop();
+});
+
+it("brings what was typed in the TUI's input box back to the chat", async () => {
+    let draft = "";
+    const stop = registerComposer("agent-1", {
+        take: () => "",
+        put: (text) => {
+            draft = text;
+        },
+    });
+    mocks.screen = ["⏺ Done.", "────────────────", "❯ write the migration", "  and its rollback", "────────────────", "  ⏵⏵ bypass permissions on"];
+    render(<AgentSurface agent={agent} session={session} visible />);
+    fireEvent.click(screen.getByRole("button", { name: /TUI/ }));
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: /GUI/ })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: /GUI/ }));
+
+    await vi.waitFor(() => expect(draft).toBe("write the migration\nand its rollback"));
+    stop();
+    mocks.screen = [];
 });
 
 it("keeps Pi in its terminal, since it has no ACP mode", () => {
