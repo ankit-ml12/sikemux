@@ -83,7 +83,7 @@
     overflow: clip;
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: var(--s-sunken);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 /* Pinned while its card scrolls under it, a header keeps the card's top corners, so it still reads as the card's top. */
 .merge-review-item > .merge-file-header {

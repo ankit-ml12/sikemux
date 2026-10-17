@@ -32,7 +32,7 @@
 .git-left > .git-history {
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: var(--s-sunken);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 .git-left > .git-list {
     padding-top: 2px;
@@ -43,16 +43,14 @@
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
-    padding: var(--space-1h) 0 6px;
+    padding: 0 0 6px;
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: var(--s-sunken);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 .git-changes > .git-compose {
-    margin: 0 6px var(--space-1h);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: color-mix(in oklab, var(--ink) 4%, transparent);
+    margin-bottom: var(--space-1h);
+    border-bottom: 1px solid var(--border);
 }
 /* History is a screen of its own, so the graph takes the whole column under its search. */
 .git-left > .git-history.open {
