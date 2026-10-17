@@ -511,6 +511,7 @@
 
 .chat-work .chat-tools-sum {
     color: color-mix(in oklab, var(--ink) 60%, var(--ink-dim));
+    font-weight: var(--weight-medium);
 }
 
 .chat-work-dot {
