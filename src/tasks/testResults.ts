@@ -1,5 +1,6 @@
 import { fsapi } from "../api/fs";
 import { joinPath } from "../lib/paths";
+import { shellQuote } from "../state/commands/agentLaunchCommand";
 import { CARGO_TEST_LOG, GO_TEST_LOG, JEST_REPORT, PYTEST_REPORT, VITEST_REPORT } from "./detectedTasks";
 
 export interface TestFailure {
@@ -247,16 +248,19 @@ export async function readTestResults(cwd: string): Promise<TestResults | null> 
 /** The same test command narrowed to the tests that failed, or null for a build tool it does not know. */
 export function rerunFailedCommand(command: string, failures: readonly TestFailure[]): string | null {
     if (command.includes(PYTEST_REPORT)) return `${command} --lf`;
+    // Go and Cargo commands sit inside `sh -c '…'`, where quoting cannot nest, so only plain identifiers go in.
     if (command.includes(GO_TEST_LOG)) {
-        const names = [...new Set(failures.map((failure) => failure.name.split("/")[0]))].join("|");
-        return command.replace("go test -v ./...", `go test -v -run "^(${names})\\$" ./...`);
+        const names = [...new Set(failures.map((failure) => failure.name.split("/")[0]))];
+        if (!names.every((name) => /^\w+$/.test(name))) return null;
+        return command.replace("go test -v ./...", `go test -v -run "^(${names.join("|")})\\$" ./...`);
     }
     if (command.includes(CARGO_TEST_LOG)) {
-        const names = failures.map((failure) => (failure.className ? `${failure.className}::${failure.name}` : failure.name)).join(" ");
-        return command.replace("cargo test", `cargo test -- --exact ${names}`);
+        const names = failures.map((failure) => (failure.className ? `${failure.className}::${failure.name}` : failure.name));
+        if (!names.every((name) => /^[\w:]+$/.test(name))) return null;
+        return command.replace("cargo test", `cargo test -- --exact ${names.join(" ")}`);
     }
     if (command.includes(VITEST_REPORT) || command.includes(JEST_REPORT)) {
-        const files = [...new Set(failures.map((failure) => failure.className))].map((file) => `'${file}'`);
+        const files = [...new Set(failures.map((failure) => failure.className))].map(shellQuote);
         return `${command} ${files.join(" ")}`;
     }
     const [tool] = command.split(" ");
@@ -268,10 +272,10 @@ export function rerunFailedCommand(command: string, failures: readonly TestFailu
             byClass.set(simple, [...(byClass.get(simple) ?? []), methodName(failure.name)]);
         }
         const selector = [...byClass].map(([cls, methods]) => `${cls}#${methods.join("+")}`).join(",");
-        return `${tool} test -Dtest='${selector}' -Dsurefire.failIfNoSpecifiedTests=false`;
+        return `${tool} test -Dtest=${shellQuote(selector)} -Dsurefire.failIfNoSpecifiedTests=false`;
     }
     if (/gradlew?$/.test(tool)) {
-        const filters = failures.map((failure) => `--tests '${failure.className}.${methodName(failure.name)}'`).join(" ");
+        const filters = failures.map((failure) => `--tests ${shellQuote(`${failure.className}.${methodName(failure.name)}`)}`).join(" ");
         return `${tool} test ${filters}`;
     }
     return null;
