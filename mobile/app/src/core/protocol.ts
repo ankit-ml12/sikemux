@@ -4,7 +4,6 @@
  * `DeviceView` and `HostInfo` in `src-tauri/crates/sikemux-wire/src/protocol.rs`.
  */
 
-import type { CollisionMark } from '@mac/agents/collisions';
 import type { PublishedBuddies } from '@mac/buddies/published';
 
 export type ProjectInfo = { id: string; name: string; path: string };
@@ -212,8 +211,6 @@ export type Inbox = {
   working: number;
   /** When each project, by its path, last logged a message between its agents. */
   agentMessages?: Record<string, number>;
-  /** Agents that just collided with another over a file, by agent id. */
-  collisions?: Record<string, CollisionMark>;
   /** Workers agents here started on linked hosts; hosts from before links leave it out. */
   remoteAgents?: RemoteAgent[];
   /** The characters the host's app draws for its agents; absent while buddies are off there. */
@@ -316,17 +313,15 @@ export function keepUnchanged(previous: Snapshot | undefined, next: Snapshot): S
 function keepInbox(previous: Inbox, next: Inbox): Inbox {
   const items = keepItems(previous.items, next.items, (item) => item.id);
   const agentMessages = same(previous.agentMessages, next.agentMessages) ? previous.agentMessages : next.agentMessages;
-  const collisions = same(previous.collisions, next.collisions) ? previous.collisions : next.collisions;
   const remoteAgents = next.remoteAgents && keepItems(previous.remoteAgents ?? [], next.remoteAgents, (agent) => agent.agentId);
   const buddies = same(previous.buddies, next.buddies) ? previous.buddies : next.buddies;
   return items === previous.items &&
     previous.working === next.working &&
     agentMessages === previous.agentMessages &&
-    collisions === previous.collisions &&
     remoteAgents === previous.remoteAgents &&
     buddies === previous.buddies
     ? previous
-    : { items, working: next.working, agentMessages, collisions, remoteAgents, buddies };
+    : { items, working: next.working, agentMessages, remoteAgents, buddies };
 }
 export const readHost = (json: string) => readCore<HostInfo>(json);
 export const readPairing = (json: string) => readCore<Pairing>(json);

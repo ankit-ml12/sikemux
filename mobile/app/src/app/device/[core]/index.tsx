@@ -5,7 +5,6 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { agentLabel } from '@mac/agents/catalog';
-import type { CollisionMark } from '@mac/agents/collisions';
 import { formatAge } from '@mac/lib/format';
 import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
@@ -24,7 +23,7 @@ import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { EmptyState, Prompt } from '@/ui/prompt';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { AgentState, Collided, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
+import { AgentState, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals' | 'board';
@@ -220,7 +219,6 @@ function Agents({
                 <ChatRow
                   core={core}
                   chat={agent.chat}
-                  collision={snapshot.inbox.collisions?.[agent.chat.agentId]}
                   place={placeOf(agent.chat.cwd)}
                 />
                 {workersOf(workers, agent.chat.agentId).map((worker) => (
@@ -267,12 +265,10 @@ function terminalDetail(session: SessionInfo): string {
 const ChatRow = memo(function ChatRow({
   core,
   chat,
-  collision,
   place,
 }: {
   core: string;
   chat: ChatInfo;
-  collision?: CollisionMark;
   place?: string;
 }) {
   const display = chatDisplay(chat);
@@ -286,7 +282,6 @@ const ChatRow = memo(function ChatRow({
         <>
           {display.subagents ? <SubagentCount count={display.subagents} /> : null}
           {display.tasks ? <ShellCount count={display.tasks} /> : null}
-          {collision ? <Collided mark={collision} /> : null}
           <AgentState group={display.group} />
         </>
       }

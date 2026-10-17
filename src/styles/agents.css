@@ -110,8 +110,7 @@
     line-height: 18px;
 }
 .agent-row.two-line > .agent-row-name,
-.agent-row.two-line > .work-counts,
-.agent-row.two-line > .collision-mark {
+.agent-row.two-line > .work-counts {
     height: 18px;
 }
 .tab.active .tab-note {
@@ -251,15 +250,6 @@
     color: var(--live);
 }
 .shell-count svg {
-    color: var(--warn);
-}
-.collision-mark {
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 auto;
-    color: var(--danger);
-}
-.collision-mark.claim {
     color: var(--warn);
 }
 .tab-wrap.active .work-count,

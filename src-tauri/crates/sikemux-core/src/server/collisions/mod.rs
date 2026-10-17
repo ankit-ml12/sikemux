@@ -12,11 +12,10 @@ mod fragile;
 mod merge;
 mod watch;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
-use serde::Serialize;
 use serde_json::Value;
 
 use super::edits::{self, authors, before, changed, line_count, replaced, Change, Changes, Edit};
@@ -43,8 +42,6 @@ pub(crate) const GRACE_MS: u64 = 1500;
 /// this long, or at the latest this long after it began.
 const QUIET_MS: u64 = 4000;
 const MAX_BURST_MS: u64 = 20_000;
-/// How long a collision stays marked on its agents.
-const MARK_MS: u64 = 10 * 60_000;
 /// Two agents colliding this often within the window are the person's to sort.
 const REPEAT_WINDOW_MS: u64 = 10 * 60_000;
 const REPEAT_LIMIT: usize = 3;
@@ -161,19 +158,6 @@ struct Hit {
     at: u64,
 }
 
-/// A collision shown on an agent in the rail and on phones.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Mark {
-    /// The agents it collided with, by name.
-    pub with: Vec<String>,
-    /// The file, from the project's folder.
-    pub path: String,
-    /// It edited a file another agent holds a claim on, or the other way round.
-    pub claim: bool,
-    pub at: u64,
-}
-
 /// Two agents that keep colliding.
 pub(crate) struct Pair {
     pub agents: (String, String),
@@ -198,7 +182,6 @@ pub(super) struct State {
     shell_runs: HashMap<String, VecDeque<(u64, u64)>>,
     overlaps: HashMap<(PathBuf, String, String), Overlap>,
     hits: VecDeque<Hit>,
-    marks: HashMap<String, Mark>,
     claims: HashMap<PathBuf, Claim>,
     claim_notes: HashMap<(PathBuf, String), u64>,
     commits: HashMap<(String, PathBuf), u64>,
@@ -206,7 +189,7 @@ pub(super) struct State {
     /// Whether each file is fragile, and why, once looked at.
     fragile: HashMap<PathBuf, Option<&'static str>>,
     checks: checks::Checks,
-    /// The marks or the inbox changed, so devices are sent the view again.
+    /// The inbox changed, so devices are sent the view again.
     publish: bool,
     bytes: usize,
     /// Files to start or stop watching once the lock is let go of.
@@ -586,10 +569,6 @@ impl Collisions {
         let mut state = self.lock();
         let note = mended_note(core, &state, agent_id, path, base, &merged.kept);
         tell(&mut state, agent_id, note);
-        let with = changed_by(core, &state, agent_id, path, base.at);
-        let project = project_of(path, &core.workspaces.project_paths());
-        mark(&mut state, agent_id, with, shown(path, &project), false);
-        state.publish = true;
         drop(state);
         self.wake.now();
         Some(result)
@@ -753,14 +732,6 @@ impl Collisions {
             &holder,
             format!("{agent_name} just edited {file}, {why} you hold a short claim on. Agree with {agent_name} with agent_send on which of you finishes it."),
         );
-        mark(
-            &mut state,
-            agent,
-            vec![holder_name.clone()],
-            file.clone(),
-            true,
-        );
-        mark(&mut state, &holder, vec![agent_name], file.clone(), true);
         hit(&mut state, agent, &holder, file, now);
         state.publish = true;
         drop(state);
@@ -797,14 +768,6 @@ impl Collisions {
             {
                 state.claims.remove(&path);
             }
-            let file = shown(&path, &project);
-            if state
-                .marks
-                .get(agent_id)
-                .is_some_and(|mark| mark.path == file)
-            {
-                state.marks.remove(agent_id);
-            }
         }
         if Path::new(&project).starts_with(top) {
             let mut agents: Vec<String> = crate::trailers::agents(message)
@@ -827,15 +790,6 @@ impl Collisions {
         state.publish = true;
         drop(state);
         self.wake.now();
-    }
-
-    /// The collision marks on agents, by agent id.
-    pub(crate) fn marks(&self) -> BTreeMap<String, Mark> {
-        self.lock()
-            .marks
-            .iter()
-            .map(|(agent, mark)| (agent.clone(), mark.clone()))
-            .collect()
     }
 
     /// The pairs of agents that keep colliding.
@@ -915,24 +869,6 @@ fn forget(state: &mut State, path: &Path) {
     });
     state.bytes = state.bytes.saturating_sub(freed);
     state.priors.retain(|(_, prior), _| prior != path);
-}
-
-fn mark(state: &mut State, agent: &str, with: Vec<String>, path: String, claim: bool) {
-    let at = unix_ms();
-    let mark = state.marks.entry(agent.to_owned()).or_insert_with(|| Mark {
-        with: Vec::new(),
-        path: path.clone(),
-        claim,
-        at,
-    });
-    for name in with {
-        if !mark.with.contains(&name) {
-            mark.with.push(name);
-        }
-    }
-    mark.path = path;
-    mark.claim = claim;
-    mark.at = at;
 }
 
 fn hit(state: &mut State, a: &str, b: &str, path: String, at: u64) {
@@ -1049,15 +985,6 @@ pub(crate) fn settle(core: &Arc<Core>) {
     let now = unix_ms();
     let mut next = None;
     let mut state = collisions.lock();
-    let before_marks = state.marks.len();
-    state.marks.retain(|agent, mark| {
-        now.saturating_sub(mark.at) < MARK_MS && core.names.get(agent).is_some()
-    });
-    next = sooner(
-        next,
-        state.marks.values().map(|mark| mark.at + MARK_MS).min(),
-    );
-    let changed = before_marks != state.marks.len();
     while state
         .hits
         .front()
@@ -1143,7 +1070,7 @@ pub(crate) fn settle(core: &Arc<Core>) {
     }
     checks::start(core, &mut state);
     let notes = std::mem::take(&mut state.notes);
-    let publish = std::mem::take(&mut state.publish) || flushed || changed;
+    let publish = std::mem::take(&mut state.publish) || flushed;
     drop(state);
     collisions.watch_files();
     if let Some(next) = next {
@@ -1174,7 +1101,7 @@ pub(crate) fn settle(core: &Arc<Core>) {
 }
 
 /// Sends the note for a burst of lines `writer` changed that `owner` had
-/// uncommitted, to both and to their leads, and marks both.
+/// uncommitted, to both and to their leads.
 fn warn(
     core: &Core,
     state: &mut State,
@@ -1193,7 +1120,6 @@ fn warn(
             owner,
             format!("{lines} of {file}, which you have uncommitted, were just changed outside the agents' edit tools, by a command or a person Sikemux could not tell. Read the file again before you edit it."),
         );
-        mark(state, owner, Vec::new(), file, false);
         return;
     }
     let writer_name = name(writer);
@@ -1221,8 +1147,6 @@ fn warn(
             format!("{writer_name} changed {lines} of {file}, which {owner_name} has uncommitted. Both have been told; step in if they keep working on the same lines."),
         );
     }
-    mark(state, writer, vec![owner_name], file.clone(), false);
-    mark(state, owner, vec![writer_name], file.clone(), false);
     hit(state, writer, owner, file, now);
 }
 

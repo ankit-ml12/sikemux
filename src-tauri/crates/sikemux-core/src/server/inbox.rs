@@ -160,9 +160,6 @@ pub(crate) struct View {
     /// When each project last logged a message between its agents, so a client
     /// showing that log reads it again.
     pub agent_messages: BTreeMap<String, u64>,
-    /// Agents that just changed lines another agent had uncommitted, or a file
-    /// another holds a claim on, by agent id.
-    pub collisions: BTreeMap<String, super::collisions::Mark>,
     /// Agents on linked hosts working with agents here, each shown under its
     /// lead.
     pub remote_agents: Vec<RemoteAgent>,
@@ -749,7 +746,6 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         working,
         away: core.notify.absence().1,
         agent_messages: core.harness.mailbox.log.latest(),
-        collisions: core.collisions.marks(),
         remote_agents: remote_agents(core),
         buddies: core.workspaces.buddies(),
     }
