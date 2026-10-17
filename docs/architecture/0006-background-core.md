@@ -35,6 +35,22 @@ an agent started should not depend on the window staying open.
   the process id, so shells survive updates. Chat connections cannot be carried across,
   so the core waits for running turns and then restarts chats on their saved
   conversation.
+- A chat's turn outlives the core. The core writes each chat down in its data folder as
+  it changes (its launch without keys or the person's shell variables, its session, its
+  agent's process and whether a turn is at work) and keeps its transcript on disk. A
+  core that starts after one that died, or after the host restarted, takes every chat
+  up again by itself: it stops what the dead core's agent left running, reads the
+  transcript back, resumes the provider's saved session and, for a turn the restart cut
+  short, asks the agent to check what got done and carry on. An agent that dies under
+  its chat is started again the same way, until it has died three times in five minutes.
+  We do not own Claude's or Codex's agent loop, so carrying on means reopening the
+  session the provider saved, which holds every tool call that finished.
+- Something has to start a core that died. While remote access is on, the login item
+  does (launchd's `KeepAlive` on an unsuccessful exit, systemd's `Restart=on-failure`);
+  while the app is open, it starts a new core as soon as its connection drops and
+  attaches to the chats that core took up. With remote access off and the app closed,
+  nothing starts it until the person opens Sikemux, and the turn carries on then;
+  nobody can reach that host meanwhile anyway.
 
 ## Consequences
 
@@ -48,8 +64,9 @@ an agent started should not depend on the window staying open.
 - The upgrade request is a frozen message every core understands, and the hand-over file
   has a format number with explicit migrations, so cores from different builds can always
   hand over to each other.
-- If the core itself dies, its shells die with it. Chats resume on their saved
-  conversation; terminal agents show that they exited.
+- If the core itself dies, its shells die with it, and terminal agents show that they
+  exited. Chats come back on their own, and a turn that was running carries on; a step
+  the crash cut off mid-way may be done twice.
 - The app still tells the core which projects are open and edits the accounts the core
   keeps, since the window is where people set those up. Provider keys stay in the
   Keychain on macOS and in files only the person can read elsewhere; the core reads them
