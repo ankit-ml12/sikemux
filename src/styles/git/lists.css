@@ -299,10 +299,10 @@
     display: none;
 }
 .git-file-row[data-first]::before {
-    top: -12px;
+    top: -13px;
 }
 .git-file-row[data-first][data-last]::before {
-    height: calc(50% + 12.5px);
+    height: calc(50% + 13.5px);
 }
 .git-file-group.follows {
     margin-top: var(--space-1h);
