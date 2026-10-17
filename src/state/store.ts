@@ -37,6 +37,7 @@ import type {
     RecentEntry,
     RailDensity,
     AgentRailScope,
+    PinnedChat,
     DiffTarget,
     Session,
     SessionSwitcherView,
@@ -110,6 +111,7 @@ export interface DomainState {
     /** Providers whose chats move to the next signed-in account when one runs out of usage. */
     accountAutoSwitch: Partial<Record<AccountAgentType, boolean>>;
     agentRailScope: AgentRailScope;
+    pinnedChats: PinnedChat[];
     onboardingComplete: boolean;
     lastSeenVersion: string;
     customCommands: CustomCommand[];
@@ -308,6 +310,7 @@ export const useStore = create<StoreState>(() => {
         agentRailAllAgents: false,
         accountAutoSwitch: {},
         agentRailScope: "project",
+        pinnedChats: [],
         onboardingComplete: false,
         lastSeenVersion: "",
         customCommands: [],
