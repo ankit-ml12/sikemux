@@ -1023,6 +1023,10 @@ impl Backend for Muse {
         self.host.process.ended().await
     }
 
+    fn pid(&self) -> u32 {
+        self.host.process.pid()
+    }
+
     async fn release(self) -> Result<(Value, Released), String> {
         let Self {
             host,

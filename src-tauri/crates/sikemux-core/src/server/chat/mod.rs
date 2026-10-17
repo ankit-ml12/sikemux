@@ -4,6 +4,7 @@
 
 pub(crate) mod feed;
 mod history;
+mod kept;
 mod native;
 mod rebind;
 pub(crate) mod reset;
@@ -32,6 +33,7 @@ use super::remote::unix_ms;
 use super::spawn::Ending;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
+use kept::{Keeper, KeptAgent, KeptChat};
 pub(crate) use native::claude_transcript;
 use native::Begin;
 
@@ -165,7 +167,7 @@ pub(crate) struct Asked {
 
 /// Who started a chat, a paired device or another agent, and with which of
 /// the app's launchers.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Origin {
     pub started_by: Option<String>,
@@ -211,6 +213,10 @@ pub(crate) struct Chat {
     edits: super::edits::Open,
     /// The version of the agent's CLI, once the agent has said it.
     cli_version: Mutex<Option<String>>,
+    /// Writes the chat down as it changes, for a core that starts after this one.
+    keeper: Keeper,
+    /// The agent's process now.
+    agent: Mutex<Option<KeptAgent>>,
 }
 
 impl Chat {
@@ -394,6 +400,32 @@ impl Chat {
         if let Ok(mut known) = self.cli_version.lock() {
             *known = Some(version.to_owned()).filter(|version| !version.is_empty());
         }
+    }
+
+    pub(crate) fn note_agent(&self, pid: u32) {
+        if let Ok(mut agent) = self.agent.lock() {
+            *agent = KeptAgent::of(pid);
+        }
+    }
+
+    /// Writes down where the chat stands, with how its loop says its turns go.
+    pub(crate) fn keep(&self, progress: kept::Progress<'_>) {
+        let running = self.running.load(Ordering::Acquire);
+        self.keeper.keep(KeptChat {
+            launch: self.current_now(),
+            from_shell: Vec::new(),
+            keys: Vec::new(),
+            origin: self.origin.clone(),
+            feed: self.feed.id().to_owned(),
+            agent: self.agent.lock().ok().and_then(|agent| *agent),
+            working: self.turn_running() || self.held.load(Ordering::Acquire),
+            prompt: progress.prompt.filter(|_| running).cloned(),
+            offline: progress
+                .failed
+                .filter(|_| self.offline_failed.load(Ordering::Acquire))
+                .cloned(),
+            reloadable: progress.reloadable,
+        });
     }
 
     pub(crate) fn cli_version(&self) -> Option<String> {
@@ -981,6 +1013,8 @@ pub(crate) struct Chats {
     next_generation: AtomicU64,
     /// Where each chat keeps everything it said, for phones to page back.
     history: Option<PathBuf>,
+    /// Where each chat is written down, for a core that starts after this one.
+    kept: Option<PathBuf>,
     pub(crate) resets: reset::Resets,
 }
 
@@ -988,6 +1022,7 @@ impl Chats {
     pub(crate) fn new(data_dir: Option<&std::path::Path>) -> Self {
         Self {
             history: data_dir.map(|dir| dir.join("chat-history")),
+            kept: data_dir.map(|dir| dir.join("chats")),
             resets: reset::Resets::new(data_dir),
             ..Self::default()
         }
@@ -1129,6 +1164,7 @@ impl Chats {
     /// Ends the chat at once, killing the agent and everything it started.
     /// Returns the task that ends with it.
     fn halt(chat: &Chat) -> Option<tokio::task::JoinHandle<()>> {
+        chat.keeper.forget();
         chat.feed.close();
         chat.cancel_permissions();
         chat.end(None);
@@ -1194,6 +1230,7 @@ impl Chats {
             };
             (feed, flags)
         });
+        let keeper = Keeper::new(self.kept.as_deref(), feed.id());
         let chat = Arc::new(Chat {
             generation: self.next_generation.fetch_add(1, Ordering::Relaxed),
             commands,
@@ -1214,6 +1251,8 @@ impl Chats {
             offline_failed: AtomicBool::new(false),
             edits: Default::default(),
             cli_version: Mutex::new(None),
+            keeper,
+            agent: Mutex::new(None),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1309,11 +1348,15 @@ fn launch(
                         notice: None,
                     };
                 }
-                Ok(rebind::Outcome::Released) => return,
+                Ok(rebind::Outcome::Released) => {
+                    ending.keeper.leave();
+                    return;
+                }
                 Ok(rebind::Outcome::Ended(end)) => break Ok(end),
                 Err(error) => break Err(error),
             }
         };
+        ending.keeper.forget();
         ending.feed.close();
         ending.report_end(&owner, &result);
         let started = ending.is_ready();
@@ -1392,6 +1435,7 @@ fn start(
         core.name_agent(&agent_id, &cwd, Some(&provider), resume_id.as_deref());
     });
     core.seen.active(chat.agent_id());
+    chat.keep(kept::Progress::STARTING);
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -1431,19 +1475,174 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
     }
     let notice = record.notice.as_deref().map(update_notice);
     match core.chats.insert(core, record.launch, record.origin, None) {
-        Ok((chat, queue)) => launch(
-            core,
-            &chat,
-            queue,
-            Begin::Start {
-                rebind: None,
-                notice,
-            },
-        ),
+        Ok((chat, queue)) => {
+            chat.keep(kept::Progress::STARTING);
+            launch(
+                core,
+                &chat,
+                queue,
+                Begin::Start {
+                    rebind: None,
+                    notice,
+                },
+            );
+        }
         Err(error) => {
             eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}")
         }
     }
+}
+
+/// What a chat whose turn a restart cut short is sent, to carry on.
+const CARRY_ON: &str = "Sikemux restarted while you were working on your last turn, so the turn stopped part-way. Check what got done, since a step that was cut off may not have finished, then carry on where you left off.";
+
+fn restart_notice(description: &str) -> Value {
+    serde_json::json!({
+        "sessionUpdate": "notice",
+        "severity": "warning",
+        "title": "Sikemux restarted while this agent was working",
+        "description": description,
+    })
+}
+
+/// Takes up again every chat an earlier core was running when it stopped,
+/// but for those this core already runs. Each is listed at once, and starts
+/// on its saved session in the background.
+pub(crate) fn restore(core: &Arc<Core>) {
+    let Some(dir) = core.chats.kept.clone() else {
+        return;
+    };
+    for kept in kept::read(&dir) {
+        let agent_id = kept.launch.agent_id.clone();
+        match core.chats.get(&agent_id) {
+            Some(chat) if chat.feed.id() == kept.feed => {}
+            Some(_) => kept::forget(&dir, &kept.feed),
+            None => {
+                if let Err(error) = take_up(core, &dir, kept) {
+                    eprintln!("sikemux core: chat {agent_id} was not taken up again: {error}");
+                }
+            }
+        }
+    }
+}
+
+fn take_up(core: &Arc<Core>, dir: &std::path::Path, kept: KeptChat) -> CoreResult<()> {
+    if let Err(error) = validate(&kept.launch) {
+        kept::forget(dir, &kept.feed);
+        return Err(error);
+    }
+    if let Some(agent) = kept.agent {
+        agent.stop();
+    }
+    let launch_spec = &kept.launch;
+    let feed = Feed::recovering(
+        launch_spec.agent_id.clone(),
+        launch_spec.permission_mode.clone(),
+        core.chats.history.as_deref(),
+        &kept.feed,
+    );
+    kept::moved(dir, &kept, feed.id());
+    let saved = launch_spec.resume_id.is_some();
+    let flags = Flags {
+        running: false,
+        unprompted: false,
+        turned: saved,
+        held: false,
+        answered: saved,
+        approving: crate::acp::approves_for_user(&launch_spec.permission_mode),
+    };
+    let (chat, queue) = core.chats.insert(
+        core,
+        launch_spec.clone(),
+        kept.origin.clone(),
+        Some((feed, flags)),
+    )?;
+    let core = core.clone();
+    tokio::spawn(async move {
+        let reading = (core.clone(), chat.clone());
+        let read = tokio::task::spawn_blocking(move || {
+            let (core, chat) = reading;
+            if let Some(history) = core.chats.history.as_deref() {
+                chat.feed.recover(history);
+            }
+            kept.unsealed(&core).map(|launch| (launch, kept))
+        })
+        .await
+        .map_err(|error| error.to_string())
+        .and_then(|read| read);
+        match read {
+            Ok((launch_spec, kept)) => carry_on(&core, &chat, queue, launch_spec, &kept),
+            Err(error) => {
+                chat.end(Some(error.clone()));
+                chat.feed
+                    .emit(ChatEventKind::Error, rebind::error_message(&error));
+                Chats::halt(&chat);
+                if core.chats.remove_if_current(&chat) {
+                    core.note_agent_gone(chat.agent_id());
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+/// Starts a chat taken up after a restart on its saved session, ending the
+/// turn the restart cut short and asking the agent to carry it on.
+fn carry_on(
+    core: &Arc<Core>,
+    chat: &Arc<Chat>,
+    queue: mpsc::UnboundedReceiver<ChatCommand>,
+    mut launch_spec: ChatLaunch,
+    kept: &KeptChat,
+) {
+    chat.feed.agent_gone();
+    if chat.feed.in_turn() {
+        chat.feed.emit(
+            ChatEventKind::TurnCompleted,
+            serde_json::json!({ "stopReason": "cancelled" }),
+        );
+    }
+    let resumes = kept.reloadable && launch_spec.resume_id.is_some();
+    let (replay, notice) = match (kept.working, resumes) {
+        (true, true) => (
+            Some(rebind::Replay {
+                announce: None,
+                message_id: None,
+                text: CARRY_ON.to_owned(),
+                paths: Vec::new(),
+                context: Vec::new(),
+            }),
+            Some(restart_notice(
+                "It was asked to check what got done and carry on.",
+            )),
+        ),
+        (true, false) => (
+            kept.prompt.clone(),
+            Some(restart_notice(
+                "This agent cannot load its saved conversation, so it started a new one on your last message.",
+            )),
+        ),
+        (false, _) => (kept.offline.clone(), None),
+    };
+    if !kept.reloadable {
+        launch_spec.resume_id = None;
+    }
+    chat.set_current(launch_spec.clone());
+    launch(
+        core,
+        chat,
+        queue,
+        Begin::Start {
+            rebind: Some(Box::new(rebind::Rebind {
+                launch: launch_spec,
+                replay,
+                exhausted: Vec::new(),
+                signed_in_again: false,
+                notice,
+            })),
+            notice: None,
+        },
+    );
 }
 
 /// Takes up a chat an earlier core handed over whole, its agent still

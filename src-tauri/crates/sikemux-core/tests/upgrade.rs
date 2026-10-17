@@ -50,15 +50,32 @@ impl CoreProcess {
             .expect("canonical")
             .join("project");
         std::fs::create_dir(&project).expect("project");
-        let log = std::fs::File::create(dir.path().join("core.log")).expect("log");
-        let child = sikemux_process::user_environment::command(CORE)
+        let child = Self::spawn(dir.path(), &socket, &endpoint, build);
+        let core = Self {
+            child,
+            dir,
+            socket,
+            endpoint,
+            project,
+        };
+        core.until_answering();
+        core
+    }
+
+    fn spawn(dir: &Path, socket: &Path, endpoint: &Path, build: &str) -> Child {
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("core.log"))
+            .expect("log");
+        sikemux_process::user_environment::command(CORE)
             .arg("core")
             .arg("--socket")
-            .arg(&socket)
+            .arg(socket)
             .arg("--cli-endpoint")
-            .arg(&endpoint)
+            .arg(endpoint)
             .arg("--data-dir")
-            .arg(dir.path().join("data"))
+            .arg(dir.join("data"))
             .arg("--idle-exit-secs")
             .arg("600")
             .env(BUILD_ID_OVERRIDE_ENV, build)
@@ -70,20 +87,24 @@ impl CoreProcess {
             .stdout(log.try_clone().expect("log"))
             .stderr(log)
             .spawn()
-            .expect("start the core");
-        let core = Self {
-            child,
-            dir,
-            socket,
-            endpoint,
-            project,
-        };
+            .expect("start the core")
+    }
+
+    fn until_answering(&self) {
         let deadline = Instant::now() + WAIT;
-        while probe(&core.socket, Duration::from_secs(1)).is_err() || !core.endpoint.exists() {
+        while probe(&self.socket, Duration::from_secs(1)).is_err() || !self.endpoint.exists() {
             assert!(Instant::now() < deadline, "the core never answered");
             std::thread::sleep(Duration::from_millis(10));
         }
-        core
+    }
+
+    /// Kills the core with no warning, as a crash does, and starts another on
+    /// the same socket and data folder, as launchd or the app would.
+    fn crash_and_start_again(&mut self) {
+        self.child.kill().expect("kill the core");
+        self.child.wait().expect("reap the core");
+        self.child = Self::spawn(self.dir.path(), &self.socket, &self.endpoint, "first");
+        self.until_answering();
     }
 
     fn pid(&self) -> u32 {
@@ -894,6 +915,114 @@ async fn an_upgrade_carries_running_chats_over_with_their_agents() {
         );
     }
     assert_eq!(children(core.pid()), agents);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_core_that_crashes_mid_turn_carries_the_turn_on_when_it_starts_again() {
+    let mut core = CoreProcess::start("first");
+    let (client, mut events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let mut chats = Vec::new();
+    for provider in ["opencode", "claude", "codex"] {
+        let agent_id = format!("{provider}-crash");
+        client
+            .acp_start(agent_launch(&core, provider, &agent_id))
+            .await
+            .unwrap_or_else(|error| panic!("start {agent_id}: {error}\n{}", core.log()));
+        chats.push(agent_id);
+    }
+    for agent_id in &chats {
+        client
+            .acp_prompt(
+                agent_id.clone(),
+                None,
+                "hold 600000".into(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .await
+            .expect("prompt");
+    }
+    until_chats(&mut events, chats.clone(), |_, event| {
+        said(std::slice::from_ref(event)).contains("holding")
+    })
+    .await;
+    let mut marks = HashMap::new();
+    for agent_id in &chats {
+        let ChatAttachment::Live { mark, .. } =
+            client.acp_attach(agent_id.clone()).await.expect("attach")
+        else {
+            panic!("{agent_id} is not running");
+        };
+        marks.insert(agent_id.clone(), mark);
+    }
+    drop(client);
+    drop(events);
+    // A crash loses what the chat said in its last second.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    core.crash_and_start_again();
+
+    let deadline = Instant::now() + WAIT * 2;
+    loop {
+        let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+        let listed = client.acp_list().await.expect("list");
+        let finished = chats.iter().all(|agent_id| {
+            listed.iter().any(|chat| {
+                chat.agent_id == *agent_id && chat.session_id.is_some() && !chat.running
+            })
+        });
+        if finished {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the turns never finished: {listed:?}\n{}",
+            core.log()
+        );
+        drop(client);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    for agent_id in &chats {
+        let ChatAttachment::Live {
+            running, replay, ..
+        } = client
+            .acp_attach_since(agent_id.clone(), marks.remove(agent_id))
+            .await
+            .expect("attach")
+        else {
+            panic!("{agent_id} was not taken up again\n{}", core.log());
+        };
+        assert!(!running, "{agent_id}");
+        let text = said(&replay);
+        assert_eq!(
+            text.matches("holding").count(),
+            1,
+            "{agent_id}: {replay:?}\n{}",
+            core.log()
+        );
+        assert!(text.contains("Sikemux restarted"), "{agent_id}: {text}");
+        let prompts = replay
+            .iter()
+            .filter(|event| event.kind == ChatEventKind::Prompt)
+            .count();
+        assert_eq!(prompts, 1, "{agent_id}: {replay:?}");
+        let ends: Vec<&Value> = replay
+            .iter()
+            .filter(|event| event.kind == ChatEventKind::TurnCompleted)
+            .map(|event| &event.payload["stopReason"])
+            .collect();
+        assert_eq!(ends, ["cancelled", "end_turn"], "{agent_id}");
+        let notice = serde_json::to_string(&replay).unwrap_or_default();
+        assert_eq!(
+            notice
+                .matches("Sikemux restarted while this agent was working")
+                .count(),
+            1,
+            "{agent_id}"
+        );
+    }
 }
 
 /// A chat whose agent does not finish starting while `gate` exists, started

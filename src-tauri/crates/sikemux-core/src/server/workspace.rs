@@ -423,6 +423,20 @@ impl Workspaces {
         }
     }
 
+    /// What `agent` starts with to run on `provider`, its keys read from the
+    /// Keychain. Blocks.
+    pub(crate) fn wiring(
+        &self,
+        agent: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<Wiring, String> {
+        self.providers
+            .as_ref()
+            .ok_or("Sikemux keeps no provider keys here")?
+            .wiring(agent, provider, model)
+    }
+
     /// What helpers run on, as the person set it in the app.
     pub(crate) fn helper(&self) -> Option<Helper> {
         self.providers.as_ref().and_then(Providers::helper)

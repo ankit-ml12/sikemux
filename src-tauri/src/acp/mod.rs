@@ -185,8 +185,8 @@ fn replay(app: &AppHandle, agent_id: &str, events: Vec<ChatEvent>) {
     flush(&mut updates);
 }
 
-/// The core went away and came back: the same core still runs every chat
-/// the page shows, which it attaches to again; a new core has none of them.
+/// The core went away and came back, still running the chats it lists or
+/// having taken them up again, which the page attaches to again.
 pub(crate) async fn reconnected(app: &AppHandle, client: Option<&Arc<CoreClient>>) {
     let Some(manager) = app.try_state::<AcpManager>() else {
         return;

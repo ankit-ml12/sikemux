@@ -548,6 +548,10 @@ impl Backend for Acp {
         self.process.ended().await
     }
 
+    fn pid(&self) -> u32 {
+        self.process.pid()
+    }
+
     fn reloadable(&self) -> bool {
         self.can_load
     }

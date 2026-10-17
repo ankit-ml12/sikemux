@@ -651,6 +651,10 @@ impl Backend for Claude {
         self.running.process.ended().await
     }
 
+    fn pid(&self) -> u32 {
+        self.running.process.pid()
+    }
+
     async fn release(self) -> Result<(Value, Released), String> {
         let Self {
             launch,

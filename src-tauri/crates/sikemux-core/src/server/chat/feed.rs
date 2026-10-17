@@ -17,13 +17,16 @@ use crate::protocol::{
 
 use super::super::access::Peer;
 use super::super::connection::{ClientConn, ClientId};
-use super::history::{History, HistoryState, Page, MAX_HISTORY_BYTES};
+use super::history::{History, HistoryState, Page, Recovered, MAX_HISTORY_BYTES};
 use super::states::{Subagent, Task};
 
 /// One frame's worth of streamed updates travels as a single event. Each
 /// notification on its own costs a script eval in the webview, and an adapter
 /// sends one per token.
 const FLUSH: Duration = Duration::from_millis(16);
+/// How long the newest event waits for more text to join it before it is
+/// written to the history, so a crash loses at most this much of the chat.
+const SETTLE: Duration = Duration::from_secs(1);
 /// Streamed updates go out early once a batch holds this much.
 const BATCH_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_REPLAY_BYTES: usize = 8 * 1024 * 1024;
@@ -458,6 +461,59 @@ impl Replay {
             standing: Vec::new(),
             work: Work::default(),
             spawns: Vec::new(),
+        }
+    }
+
+    /// The replay of a chat an earlier core left, read back from its history
+    /// file `name` in `dir`: the newest events it has room for, and what still
+    /// stands from all of them.
+    fn recovered(dir: &std::path::Path, name: &str) -> Self {
+        let mut replay = Self::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        let history = History::recover(dir, name, MAX_HISTORY_BYTES, |recovered| {
+            replay.restore(recovered);
+        });
+        replay.history = Some(history);
+        replay
+    }
+
+    fn restore(&mut self, recovered: Recovered) {
+        let Recovered {
+            index,
+            starts_turn,
+            point,
+            bytes,
+            event,
+        } = recovered;
+        let kind = event.kind;
+        self.note_standing(kind, index, &event);
+        self.note_spawn(kind, index, &event);
+        if kind == ChatEventKind::SessionUpdate {
+            self.work.note(&event.payload);
+        }
+        match kind {
+            ChatEventKind::TurnStarted => self.in_turn = true,
+            ChatEventKind::TurnCompleted | ChatEventKind::Error => self.in_turn = false,
+            _ => {}
+        }
+        self.last_from_user = kind == ChatEventKind::Prompt
+            || session_update_kind(&event.payload) == Some("user_message_chunk");
+        self.entries.push_back(Entry {
+            event,
+            bytes,
+            index,
+            starts_turn,
+            point,
+            on_disk: true,
+        });
+        self.bytes += bytes;
+        self.next_index = index + 1;
+        self.trim();
+    }
+
+    /// Writes the newest event to the history, which nothing joins after.
+    fn settle(&mut self) {
+        if let Some(last) = self.entries.back_mut() {
+            Self::write(&mut self.history, last);
         }
     }
 
@@ -1054,6 +1110,7 @@ struct Inner {
     pending: Vec<Value>,
     pending_bytes: usize,
     flush_scheduled: bool,
+    settle_scheduled: bool,
     start: Option<ChatStart>,
     permission_mode: String,
     title: Option<String>,
@@ -1109,6 +1166,7 @@ impl Feed {
                 pending: Vec::new(),
                 pending_bytes: 0,
                 flush_scheduled: false,
+                settle_scheduled: false,
                 start: None,
                 permission_mode,
                 title: None,
@@ -1116,6 +1174,44 @@ impl Feed {
                 holding: None,
             }),
         })
+    }
+
+    /// A feed for a chat an earlier core left when it stopped, whose history
+    /// file `from` in `dir` is taken over under this feed's name. Nothing in
+    /// it is read until [`Feed::recover`].
+    pub(crate) fn recovering(
+        agent_id: String,
+        permission_mode: String,
+        dir: Option<&std::path::Path>,
+        from: &str,
+    ) -> Arc<Self> {
+        let feed = Self::new(agent_id, permission_mode, None);
+        if let Some(dir) = dir {
+            let path = |name: &str| dir.join(format!("{name}.jsonl"));
+            if let Err(error) = std::fs::rename(path(from), path(&feed.id)) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!(
+                        "sikemux core: a chat's history was not kept through the restart: {error}"
+                    );
+                }
+            }
+        }
+        feed
+    }
+
+    /// Reads back the history [`Feed::recovering`] took over, and goes on
+    /// writing it. Reads the disk, so it blocks.
+    pub(crate) fn recover(&self, dir: &std::path::Path) {
+        let replay = Replay::recovered(dir, &self.id);
+        let title = replay
+            .standing
+            .iter()
+            .rev()
+            .find_map(|(_, _, event)| session_title(&event.payload));
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.replay = replay;
+            inner.title = title;
+        }
     }
 
     /// Takes up a feed an earlier core let go of.
@@ -1134,6 +1230,7 @@ impl Feed {
                 pending: Vec::new(),
                 pending_bytes: 0,
                 flush_scheduled: false,
+                settle_scheduled: false,
                 start: state.start,
                 permission_mode: state.permission_mode,
                 title: state.title,
@@ -1243,6 +1340,23 @@ impl Feed {
         );
     }
 
+    /// Writes the newest event to the history once it has had a while to
+    /// take in more.
+    fn settle_later(self: &Arc<Self>, inner: &mut Inner) {
+        if inner.settle_scheduled || !inner.replay.keeps_history() {
+            return;
+        }
+        inner.settle_scheduled = true;
+        let feed = self.clone();
+        self.runtime.spawn(async move {
+            tokio::time::sleep(SETTLE).await;
+            if let Ok(mut inner) = feed.inner.lock() {
+                inner.settle_scheduled = false;
+                inner.replay.settle();
+            }
+        });
+    }
+
     fn flush(&self) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.flush_scheduled = false;
@@ -1261,6 +1375,7 @@ impl Feed {
             stamp(&mut payload);
         }
         let bytes = inner.replay.push(kind, &payload);
+        self.settle_later(&mut inner);
         if let Some(title) = session_title(&payload) {
             inner.title = Some(title);
         }
@@ -1293,7 +1408,7 @@ impl Feed {
     /// The client that sent a prompt already shows it; everyone else, and every
     /// later replay, learns it here.
     pub(crate) fn prompted(
-        &self,
+        self: &Arc<Self>,
         from: ClientId,
         message_id: Option<&str>,
         text: &str,
@@ -1308,6 +1423,7 @@ impl Feed {
         }
         stamp(&mut payload);
         inner.replay.push(ChatEventKind::Prompt, &payload);
+        self.settle_later(&mut inner);
         self.flush_locked(&mut inner);
         self.broadcast_except(&mut inner, ChatEventKind::Prompt, payload, Some(from));
     }
@@ -1543,6 +1659,11 @@ impl Feed {
     /// What the agent wrote last in its latest turn.
     pub(crate) fn last_answer(&self) -> Option<String> {
         self.inner.lock().ok()?.replay.last_answer()
+    }
+
+    /// Whether the last turn it holds has not ended.
+    pub(crate) fn in_turn(&self) -> bool {
+        self.inner.lock().is_ok_and(|inner| inner.replay.in_turn)
     }
 
     pub(crate) fn reconnecting(&self) -> Option<u32> {

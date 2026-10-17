@@ -107,6 +107,16 @@ pub fn find(id: &str) -> Option<&'static Provider> {
     CATALOGUE.iter().find(|provider| provider.id == id)
 }
 
+/// Every variable a launch can carry a provider's key in.
+pub fn key_names() -> BTreeSet<&'static str> {
+    catalogue()
+        .iter()
+        .filter_map(|provider| provider.key.as_ref())
+        .flat_map(|key| key.env.iter().map(String::as_str))
+        .chain(["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"])
+        .collect()
+}
+
 fn is_keyed(id: &str) -> bool {
     find(id).is_some_and(|provider| provider.key.is_some())
 }

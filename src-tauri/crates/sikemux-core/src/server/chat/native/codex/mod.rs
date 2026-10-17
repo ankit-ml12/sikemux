@@ -749,6 +749,10 @@ impl Backend for Codex {
         self.process.ended().await
     }
 
+    fn pid(&self) -> u32 {
+        self.process.pid()
+    }
+
     async fn release(self) -> Result<(Value, Released), String> {
         let Self {
             process,

@@ -15,6 +15,7 @@ use crate::acp::account::{self, Failure, FailureKind, SignIn};
 use crate::acp::{permission, SessionEnd};
 use crate::protocol::{ChatAccount, ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 
+use super::super::kept::Progress;
 use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, switches_at_limit, Carried, Outcome,
     Rebind, Replay,
@@ -363,6 +364,9 @@ pub(crate) trait Backend: Sized + Send {
     /// Resolves once the agent is gone, with why.
     fn closed(&self) -> impl std::future::Future<Output = String> + Send;
 
+    /// The agent's process, which leads its own process group.
+    fn pid(&self) -> u32;
+
     /// Whether a new agent process can load this session, so the chat can go
     /// on in one after a sign-in or on another account.
     fn reloadable(&self) -> bool {
@@ -498,6 +502,7 @@ pub(crate) async fn run<B: Backend>(
                 stopping: None,
                 switching: None,
             };
+            chat.note_agent(backend.pid());
             let start = state.start();
             chat.mark_ready(start.clone());
             chat.emit(
@@ -523,6 +528,7 @@ pub(crate) async fn run<B: Backend>(
                 .and_then(|process| B::adopt(&launch, sink(false), kept, process));
             match adopted {
                 Ok(backend) => {
+                    chat.note_agent(backend.pid());
                     for asked in asked {
                         let respond = backend.responder(asked.reply.clone());
                         chat.hold_again(asked, respond);
@@ -562,6 +568,7 @@ pub(crate) async fn run<B: Backend>(
 
     let mut letter_turn = false;
     let end = loop {
+        chat.keep(state.progress());
         chat.at_rest.store(true, Ordering::Release);
         // What the agent already said is taken in before the next command,
         // so a turn's failure or end is never cut off by letting go of the
@@ -1045,6 +1052,14 @@ fn switch_to(
 }
 
 impl SessionState {
+    fn progress(&self) -> Progress<'_> {
+        Progress {
+            prompt: self.last_prompt.as_ref(),
+            failed: self.failed_prompt.as_ref(),
+            reloadable: self.reloadable,
+        }
+    }
+
     /// Forgets how the last turn failed, as a new one starts in its place.
     fn fresh_turn(&mut self, chat: &Chat) {
         self.exhausted.clear();

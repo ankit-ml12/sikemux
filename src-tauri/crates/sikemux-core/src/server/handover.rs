@@ -939,6 +939,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
     for record in chats {
         chat::resume(&core, record);
     }
+    chat::restore(&core);
     core.chats.clear_history();
     run_core(core, listener, lock, config).await
 }

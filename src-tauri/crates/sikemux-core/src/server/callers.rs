@@ -75,6 +75,12 @@ pub(crate) fn started(pid: u32, agent_id: &str) {
     );
 }
 
+/// When `pid` started, which tells it apart from a later process given the
+/// same pid.
+pub(crate) fn start_time(pid: u32) -> Option<u64> {
+    platform::started(pid)
+}
+
 /// Lets the `git commit` at `pid`, a child of this process not yet collected,
 /// ask for its footer once within `lasting`.
 pub(crate) fn grant_commit(

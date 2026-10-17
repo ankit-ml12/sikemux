@@ -24,7 +24,7 @@ pub(super) enum Outcome {
 }
 
 /// A prompt to send again once the agent is back.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Replay {
     /// Who sent it, while nobody else has been told it was sent.

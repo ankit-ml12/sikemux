@@ -249,7 +249,8 @@ impl PtyManager {
 
     /// The core went away. One that answers again from the same process was
     /// updated in place and still has every session, so the panes take theirs
-    /// back; otherwise every session the app knew is gone with it.
+    /// back; otherwise every terminal the app knew is gone with it, and the
+    /// chats the new core took up again are attached to again.
     fn disconnected(&self) {
         let settings = self.settings.get();
         if self.closing.load(Ordering::Acquire) || settings.is_none() {
@@ -270,9 +271,9 @@ impl PtyManager {
                     manager.reattach(&client).await;
                     crate::acp::reconnected(&app, Some(&client)).await;
                 }
-                Ok(_) => {
+                Ok(client) => {
                     sink::report_all_exited(&manager.streams);
-                    crate::acp::reconnected(&app, None).await;
+                    crate::acp::reconnected(&app, Some(&client)).await;
                 }
                 Err(error) => {
                     sink::report_all_exited(&manager.streams);

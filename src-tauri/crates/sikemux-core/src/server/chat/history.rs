@@ -14,6 +14,26 @@ use crate::protocol::{ChatEvent, ChatEventKind};
 /// cannot fill the disk. Its earliest turns are then out of reach.
 pub(crate) const MAX_HISTORY_BYTES: u64 = 512 * 1024 * 1024;
 
+/// One line of the file: an event and where it stands, so a core that
+/// starts after this one can read the file back.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Line<E> {
+    index: u64,
+    starts_turn: bool,
+    point: bool,
+    event: E,
+}
+
+/// An event read back from a file an earlier core left.
+pub(crate) struct Recovered {
+    pub index: u64,
+    pub starts_turn: bool,
+    pub point: bool,
+    pub bytes: usize,
+    pub event: ChatEvent,
+}
+
 /// An event a page can start from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Point {
@@ -104,6 +124,81 @@ impl History {
         }
     }
 
+    /// Goes on writing the file an earlier core left when it stopped, telling
+    /// `each` every event in it, oldest first. A line that core was cut off
+    /// writing is dropped.
+    pub(crate) fn recover(
+        dir: &Path,
+        name: &str,
+        max_bytes: u64,
+        mut each: impl FnMut(Recovered),
+    ) -> Self {
+        let path = dir.join(format!("{name}.jsonl"));
+        let file = match OpenOptions::new().read(true).write(true).open(&path) {
+            Ok(file) => file,
+            Err(error) => {
+                if error.kind() != io::ErrorKind::NotFound {
+                    eprintln!(
+                        "sikemux core: a chat's history at {} could not be read again: {error}",
+                        path.display()
+                    );
+                }
+                return Self::open(dir, name, max_bytes);
+            }
+        };
+        let mut history = Self {
+            path,
+            file: None,
+            bytes: 0,
+            max_bytes,
+            first: 0,
+            next: 0,
+            points: Vec::new(),
+        };
+        let mut reader = BufReader::new(&file);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let read = match reader.read_until(b'\n', &mut line) {
+                Ok(read) if line.last() == Some(&b'\n') => read,
+                _ => break,
+            };
+            let Ok(kept) = serde_json::from_slice::<Line<ChatEvent>>(&line) else {
+                break;
+            };
+            let offset = history.bytes;
+            if offset == 0 {
+                history.first = kept.index;
+            }
+            if kept.point || offset == 0 {
+                history.points.push(Point {
+                    index: kept.index,
+                    offset,
+                    starts_turn: kept.starts_turn || offset == 0,
+                });
+            }
+            history.bytes += read as u64;
+            history.next = kept.index + 1;
+            each(Recovered {
+                index: kept.index,
+                starts_turn: kept.starts_turn,
+                point: kept.point,
+                bytes: read,
+                event: kept.event,
+            });
+        }
+        drop(reader);
+        let mut file = file;
+        let cut = file
+            .set_len(history.bytes)
+            .and_then(|()| file.seek(SeekFrom::Start(history.bytes)).map(drop));
+        history.file = Some(file);
+        if let Err(error) = cut {
+            history.fail(&error);
+        }
+        history
+    }
+
     /// Lets go of the file without removing it.
     pub(crate) fn release(mut self) -> HistoryState {
         let file = self.file.take();
@@ -159,7 +254,12 @@ impl History {
         if self.bytes == 0 {
             self.first = index;
         }
-        let Ok(mut line) = serde_json::to_vec(event) else {
+        let Ok(mut line) = serde_json::to_vec(&Line {
+            index,
+            starts_turn,
+            point,
+            event,
+        }) else {
             return;
         };
         line.push(b'\n');
@@ -275,7 +375,8 @@ impl History {
             reader.seek(SeekFrom::Start(point.offset)).ok()?;
             line.clear();
             reader.read_until(b'\n', &mut line).ok()?;
-            if serde_json::from_slice::<ChatEvent>(&line).is_ok_and(|event| picks(&event)) {
+            if serde_json::from_slice::<Line<ChatEvent>>(&line).is_ok_and(|line| picks(&line.event))
+            {
                 return Some(point.index);
             }
         }
@@ -327,7 +428,8 @@ impl History {
         let events = text
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
-            .filter_map(|line| serde_json::from_slice::<ChatEvent>(line).ok())
+            .filter_map(|line| serde_json::from_slice::<Line<ChatEvent>>(line).ok())
+            .map(|line| line.event)
             .filter(|event| event.kind != ChatEventKind::PermissionRequest)
             .collect();
         Ok(Page {
