@@ -248,9 +248,9 @@ export function Onboarding() {
                                             <span>{agent.label}</span>
                                             {status && <small>{status}</small>}
                                         </span>
-                                        {agent.status?.state === "missing" && installCommand(agent.type) && (
+                                        {(agent.status?.state === "missing" || agent.status?.state === "broken") && installCommand(agent.type) && (
                                             <button type="button" className="welcome-agent-install" onClick={() => installAgent(agent.type)}>
-                                                Install
+                                                {agent.status.state === "broken" ? "Reinstall" : "Install"}
                                             </button>
                                         )}
                                         {agent.status?.state === "signedOut" && loginArgs(agent.type) && (
