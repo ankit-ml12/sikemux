@@ -360,7 +360,7 @@ function ProjectBlock({ s }: { s: Session }) {
     const children: SubRow[] = PROJECT_SURFACE_ORDER.flatMap((role) => {
         const row = surfaceRow(role);
         if (role === "files") return [row, terminalRow];
-        if (role === "git") return [row, ...hostRows, agentsRow];
+        if (role === "git") return [agentsRow, row, ...hostRows];
         return [row];
     });
     return (

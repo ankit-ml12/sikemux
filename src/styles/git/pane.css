@@ -67,7 +67,6 @@
 .git-left > .git-history .git-history-search {
     flex: 1 1 auto;
 }
-/* The gap between the columns is the handle that resizes them; a line shows in it only while it is in hand. */
 .git-split {
     position: relative;
     z-index: 3;
@@ -86,15 +85,15 @@
     transition: background var(--dur-1);
 }
 .git-split::before {
-    inset: 8px calc(50% - 0.5px);
+    inset: 0 calc(50% - 1px);
 }
 .git-left > .git-history-split {
     position: relative;
 }
 .git-left > .git-history-split::before {
-    inset: calc(50% - 0.5px) 8px;
+    inset: calc(50% - 1px) 0;
 }
 .git-split:is(:hover, :active, :focus-visible)::before,
 .git-left > .git-history-split:is(:hover, :active, :focus-visible)::before {
-    background: var(--acc-line);
+    background: var(--acc);
 }
