@@ -42,6 +42,7 @@ function useProjectSession(): Session | undefined {
 function TabRow({
     tab,
     icon,
+    glyph,
     label,
     detail,
     title,
@@ -50,6 +51,8 @@ function TabRow({
 }: {
     tab: TabRef;
     icon: ReactNode;
+    /** What colours the icon, the way the strip colours the same tab's. */
+    glyph?: string;
     label: string;
     detail?: string | null;
     title?: string;
@@ -67,7 +70,7 @@ function TabRow({
                     if (event.button === 1) cmd.closeTab(tab);
                 }}
                 onContextMenu={onMenu}>
-                <span className="agent-glyph">{icon}</span>
+                <span className={`agent-glyph${glyph ? ` ${glyph}` : ""}`}>{icon}</span>
                 <span className="agent-title">{label}</span>
                 {detail && <span className="rail-file-folder">{detail}</span>}
             </button>
@@ -128,6 +131,7 @@ export function TerminalsPage() {
                                         key={win.id}
                                         tab={{ id: win.id }}
                                         icon={<IconTerminal size={15} />}
+                                        glyph="term"
                                         label={label}
                                         active={session.activeWindowId === win.id}
                                         onMenu={(event) =>
