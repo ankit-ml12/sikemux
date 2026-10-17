@@ -56,10 +56,6 @@
     border-radius: var(--radius-3);
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
-/* Side by side mid-swipe, the pages part on a hairline. */
-.git-left .swipe-page + .swipe-page {
-    box-shadow: -1px 0 0 var(--border);
-}
 .git-left .swipe-page > :is(.git-compose, .git-list, .git-history, .git-changes) {
     border: 0;
     border-radius: 0;
