@@ -5,7 +5,7 @@
  * The one modal surface in the product, so it sets the pattern the palettes
  * follow: a scrim that dims without tinting, one raised card with a hairline
  * and real height, and a footer whose primary action is the only filled thing
- * on screen. See DESIGN.md § Overlays.
+ * on screen.
  */
 .dlg-scrim {
     position: fixed;

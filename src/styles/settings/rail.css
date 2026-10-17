@@ -38,7 +38,7 @@
     text-transform: uppercase;
 }
 
-/* The app's list row, at the app's list-row size. See DESIGN.md § Rows. */
+/* The app's list row, at the app's list-row size. */
 .settings-rail-item {
     display: flex;
     align-items: center;

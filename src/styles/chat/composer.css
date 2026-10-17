@@ -13,7 +13,7 @@
 /*
  * Two surfaces, one step apart. The box is the sunken tier and the field is
  * the raised one sitting in it, which is what separates the thing you write in
- * from the settings around it — a step, not a shadow (DESIGN.md §10).
+ * from the settings around it — a step, not a shadow.
  */
 .chat-composer {
     position: relative;

@@ -168,11 +168,5 @@
 
 ## UI rules
 
-- Never mark a selected, focused or active item with a coloured bar down its left
-  edge (an inset `box-shadow`, `border-left` or pseudo-element stripe). On a rounded
-  row the bar bends around the corner and looks broken. Show the chosen item with the
-  neutral `--surface-chosen` fill on the whole item instead: no accent, no edge.
-- Do not mix rounded and square shapes in one group. Every `<button>` gets
-  `--radius-2` from `modern-shell.css`, so never put buttons inside a square box
-  with dividers between them. Give each item its own border and corner, with a gap
-  between items.
+- Follow `DESIGN.md`. It is short on purpose: keep it to principles and tokens,
+  and change it in the same commit when the look moves on.

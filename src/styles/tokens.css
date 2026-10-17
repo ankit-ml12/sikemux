@@ -239,7 +239,7 @@
      *
      * The art layer behind the whole shell. `--backdrop-image` is `none` until
      * something sets it, so the shader alone is the default and an image is
-     * strictly additive. See DESIGN.md § Backdrop.
+     * strictly additive.
      */
     --layer-menu: 1200;
     --layer-tooltip: 1300;
