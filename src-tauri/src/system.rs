@@ -71,7 +71,7 @@ pub fn normalize_user_environment() {
 #[cfg(target_os = "linux")]
 pub fn keep_webkit_rendering_on_nvidia() {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some()
-        || !Path::new("/proc/driver/nvidia/version").exists()
+        || !std::path::Path::new("/proc/driver/nvidia/version").exists()
     {
         return;
     }
