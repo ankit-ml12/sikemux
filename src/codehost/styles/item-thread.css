@@ -23,12 +23,6 @@
     font-weight: var(--weight-medium);
     color: var(--text-primary);
 }
-.gha-comment[data-review="CHANGES_REQUESTED"] > .gha-comment-head {
-    background: color-mix(in oklab, var(--danger) 7%, transparent);
-}
-.gha-comment[data-review="APPROVED"] > .gha-comment-head {
-    background: color-mix(in oklab, var(--live) 7%, transparent);
-}
 .gha-comment-head {
     border-radius: var(--radius-2) var(--radius-2) 0 0;
 }
