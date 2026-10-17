@@ -215,20 +215,26 @@
 .tb-run-btn {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 22px;
+    gap: 5px;
     height: 22px;
-    padding: 0;
+    padding: 0 8px 0 6px;
     background: transparent;
-    border: none;
-    color: var(--live);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: var(--text-xs);
     cursor: pointer;
-    transition: background var(--dur-1);
+    transition:
+        background var(--dur-1),
+        border-color var(--dur-1);
 }
 .tb-run-btn:hover {
     background: var(--surface-hover);
+    border-color: var(--border-strong);
 }
-.tb-run-btn.running {
+.tb-run-btn svg {
+    color: var(--live);
+}
+.tb-run-btn.running svg {
     color: var(--danger);
 }
 .tb-run-chip {
