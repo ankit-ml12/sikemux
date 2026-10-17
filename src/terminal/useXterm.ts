@@ -23,6 +23,8 @@ import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 import { cellWidthCorrection, lineHeightCorrection, measureChar } from "./cellMetrics";
 import { safeWebUrl } from "../lib/urls";
 import { isTerminalFindShortcut, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
+import { screenRows } from "./promptDraft";
+import { registerScreen } from "../state/terminalScreens";
 import { scheduleNextFrame } from "../lib/instrumentation";
 import { stageMoving, whenStageStill } from "../state/nativeViews";
 import { performanceTelemetry } from "../lib/performance";
@@ -216,6 +218,7 @@ export function useXterm(opts: {
     useEffect(() => {
         if (!shouldMount) return;
         const host = hostRef.current!;
+        const unregisterScreen = registerScreen(host, () => (targetRef.current ? screenRows(targetRef.current.term) : []));
         let disposed = false;
         let cleanup = () => {};
         let restartTimer: number | null = null;
@@ -789,6 +792,7 @@ export function useXterm(opts: {
             restartTimer = null;
             stableTimer = null;
             delete host.dataset.terminalOutput;
+            unregisterScreen();
             cleanup();
         };
     }, [shouldMount, hostRef, ptyController]);
