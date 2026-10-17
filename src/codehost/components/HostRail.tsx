@@ -2,35 +2,13 @@ import { useState, type ReactNode } from "react";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { IconCheck, IconGit, IconLogOut, IconPlus, IconUser, Tooltip } from "../../plugin-api/ui";
-import { useAccount, useHost, type CodeHost, type HostAccountEntry } from "../registry";
+import { useAccount, useHost, type HostAccountEntry } from "../registry";
 import { accountsR, hostStatusR } from "../resources";
-import { forgetAccount, SECTIONS, setProjectAccount, type Section } from "../state";
+import { forgetAccount, setProjectAccount, type Section, isTreeSection } from "../state";
+import { sectionLabel, sectionsOf } from "../sections";
 import { SectionIcon } from "./ActionsIcon";
 import { Avatar, Initial } from "./Pictures";
 import "../strip.css";
-
-export function sectionLabel(host: CodeHost, section: Section): string {
-    switch (section) {
-        case "pulls":
-            return "Pull requests";
-        case "actions":
-            return host.ciName;
-        case "issues":
-            return "Issues";
-        case "releases":
-            return "Releases";
-        case "inbox":
-            return "Inbox";
-    }
-}
-
-/** The sections this host has, in the order they sit in the git pane's header. */
-export function sectionsOf(host: CodeHost): Section[] {
-    const { capabilities } = host;
-    return SECTIONS.filter((section) =>
-        section === "issues" ? capabilities.issues : section === "releases" ? capabilities.releases : section === "inbox" ? capabilities.inbox : true,
-    );
-}
 
 /** One of the local workbench's screens, handed to the navigation by the git pane. */
 export interface NavItem {
@@ -124,7 +102,7 @@ export function HostNavItems({ area, onArea }: { area: string; onArea: (section:
         <>
             <span className="git-nav-sep" />
             {sectionsOf(host)
-                .filter((section) => section !== "pulls" && section !== "issues")
+                .filter((section) => !isTreeSection(section))
                 .map((section) => (
                     <NavTab key={section} label={sectionLabel(host, section)} on={area === section} onClick={() => onArea(section)}>
                         <SectionIcon section={section} size={14} />

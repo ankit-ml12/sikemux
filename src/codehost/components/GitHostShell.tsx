@@ -8,9 +8,10 @@ import type { RepoRef } from "../types";
 import { useHostRepo } from "../project";
 import { commitAuthorsR, hostStatusR } from "../resources";
 import { AccountProvider, codeHost, HostProvider, type CodeHost } from "../registry";
-import { sameRepo, setProjectAccount, setProjectRepo, slugOf } from "../state";
+import { isTreeSection, sameRepo, setProjectAccount, setProjectRepo, slugOf } from "../state";
 import { SectionIcon } from "./ActionsIcon";
-import { GitNav, HostAccountButton, HostNavItems, sectionLabel, type NavItem } from "./HostRail";
+import { GitNav, HostAccountButton, HostNavItems, type NavItem } from "./HostRail";
+import { sectionLabel } from "../sections";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
 const RepoPicker = lazy(() => import("./RepoPicker").then((module) => ({ default: module.RepoPicker })));
@@ -79,8 +80,8 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
                 onAddAccount={() => setAdding(true)}
             />
         ) : undefined;
-    // Pull requests and issues open from the project tree as screens of their own, so the git screens stay out of their header.
-    const standalone = host && repo && (area === "pulls" || area === "issues") ? area : null;
+    // The project tree opens these as screens of their own, so the git screens stay out of their header.
+    const standalone = host && repo && isTreeSection(area) ? area : null;
 
     return (
         <HostProvider value={host && repo ? host : null}>

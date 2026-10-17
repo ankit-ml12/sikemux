@@ -16,7 +16,8 @@ import { useToasts } from "../../state/toast";
 import { AccountProvider, type CodeHost } from "../registry";
 import { hostSettings, setProjectAccount } from "../state";
 import { InHost, registerTestHost, TEST_HOST } from "../testHost";
-import { GitNav, HostAccountButton, HostNavItems, sectionLabel, sectionsOf } from "./HostRail";
+import { GitNav, HostAccountButton, HostNavItems } from "./HostRail";
+import { sectionLabel, sectionsOf } from "../sections";
 
 const host = registerTestHost(api);
 const CWD = "/work/sikemux";

@@ -20,21 +20,12 @@ import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingR
 import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
 import { AgentFace } from "../buddies/Buddy";
-import {
-    IconAgent,
-    IconClose,
-    IconFolder,
-    IconIssue,
-    IconMove,
-    IconPencil,
-    IconPlus,
-    IconPullRequest,
-    IconServer,
-    IconTerminal,
-    WindowIcon,
-} from "../ui/Icons";
+import { IconAgent, IconClose, IconFolder, IconMove, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
 import { useHostRepo } from "../codehost/project";
 import { codeHost } from "../codehost/registry";
+import { isTreeSection } from "../codehost/state";
+import { SectionIcon } from "../codehost/components/ActionsIcon";
+import { sectionLabel, sectionsOf } from "../codehost/sections";
 import { collectPanes } from "../state/layout";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
@@ -243,7 +234,7 @@ function ProjectBlock({ s }: { s: Session }) {
     const treeRef = useRef<HTMLDivElement>(null);
     useProjectUnfold(treeRef, active);
     const host = useHostRepo(active ? s.cwd : null, active).repo;
-    const hostCaps = host ? codeHost(host.provider)?.capabilities : undefined;
+    const hostDef = host ? codeHost(host.provider) : undefined;
     const gitArea = useStore((st) => {
         for (const id of st.windowsBySession[s.id] ?? []) {
             const win = st.windows[id];
@@ -328,25 +319,23 @@ function ProjectBlock({ s }: { s: Session }) {
             label,
             kbd: kb(shortcut),
             title: `${label} — ${kb(shortcut)}`,
-            open: role === "git" && (gitArea === "pulls" || gitArea === "issues") ? () => cmd.openGitArea("local") : open,
-            active: activeRole === role && !(role === "git" && (gitArea === "pulls" || gitArea === "issues")),
+            open: role === "git" && gitArea && isTreeSection(gitArea) ? () => cmd.openGitArea("local") : open,
+            active: activeRole === role && !(role === "git" && gitArea && isTreeSection(gitArea)),
             icons: [],
         };
     };
-    const hostRow = (area: "pulls" | "issues", label: string, icon: ReactNode): SubRow => ({
-        key: area,
-        icon,
-        label,
-        title: label,
-        open: () => cmd.openGitArea(area),
-        active: activeRole === "git" && gitArea === area,
-        icons: [],
-    });
-    const hostRows: SubRow[] = hostCaps
-        ? [
-              hostRow("pulls", "Pull requests", <IconPullRequest size={13} />),
-              ...(hostCaps.issues ? [hostRow("issues", "Issues", <IconIssue size={13} />)] : []),
-          ]
+    const hostRows: SubRow[] = hostDef
+        ? sectionsOf(hostDef)
+              .filter(isTreeSection)
+              .map((section) => ({
+                  key: section,
+                  icon: <SectionIcon section={section} size={13} />,
+                  label: sectionLabel(hostDef, section),
+                  title: sectionLabel(hostDef, section),
+                  open: () => cmd.openGitArea(section),
+                  active: activeRole === "git" && gitArea === section,
+                  icons: [],
+              }))
         : [];
     const terminalRow: SubRow = {
         key: "term",
