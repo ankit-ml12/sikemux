@@ -10,7 +10,7 @@ export default function DictationPreview({
     draft: string;
     caret: number;
     heard: string;
-    editor: RefObject<HTMLTextAreaElement | null>;
+    editor: RefObject<{ scrollTop: number } | null>;
 }) {
     const preview = useRef<HTMLDivElement>(null);
     const spoken = useRef<HTMLSpanElement>(null);

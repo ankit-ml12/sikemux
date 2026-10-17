@@ -30,13 +30,12 @@
     border-color: var(--border-selected);
 }
 
-.chat-composer textarea,
+.chat-draft,
 .chat-dictation-preview {
     display: block;
     width: 100%;
     max-height: min(320px, 40vh);
     overflow-y: auto;
-    resize: none;
     padding: 10px 12px;
     border: 0;
     outline: 0;
@@ -45,7 +44,22 @@
     font-family: var(--ui);
     font-size: calc(14.5px * var(--chat-text-em, 1));
     line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
     user-select: text;
+}
+
+.chat-draft {
+    position: relative;
+    min-height: calc(14.5px * var(--chat-text-em, 1) * 1.5 * 2 + 20px);
+    cursor: text;
+}
+
+.chat-draft[data-empty]::before {
+    position: absolute;
+    content: attr(data-placeholder);
+    color: var(--ink-faint);
+    pointer-events: none;
 }
 
 /* While dictating, the preview over the text box draws its text, so the two never show different scroll positions. */
@@ -54,19 +68,21 @@
     grid-template-columns: minmax(0, 1fr);
 }
 
-.chat-field > textarea,
+.chat-field > .chat-draft,
 .chat-dictation-preview {
     grid-area: 2 / 1;
 }
 
-.chat-field > textarea:has(+ .chat-dictation-preview) {
+.chat-field > .chat-draft:has(+ .chat-dictation-preview) {
     color: transparent;
+}
+
+.chat-field > .chat-draft:has(+ .chat-dictation-preview) .chat-chip {
+    visibility: hidden;
 }
 
 .chat-dictation-preview {
     overflow: hidden;
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
     pointer-events: none;
 }
 
@@ -74,12 +90,60 @@
     color: var(--ink-faint);
 }
 
-.chat-composer textarea::placeholder {
-    color: var(--ink-faint);
+/* A tag in the draft. It sits on the text's centre line rather than its baseline, so it reads as part of the sentence. */
+.chat-chip {
+    position: relative;
+    top: -1.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 260px;
+    height: 20px;
+    margin: 0 1px;
+    padding: 0 6px 0 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-1);
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    color: var(--ink);
+    font-size: calc(12px * var(--chat-text-em, 1));
+    line-height: 1;
+    vertical-align: middle;
+    white-space: nowrap;
+    user-select: none;
 }
 
-.chat-composer textarea:disabled {
-    opacity: 0.68;
+.chat-chip[data-selected] {
+    border-color: color-mix(in oklab, var(--ink) 30%, transparent);
+    background: var(--surface-chosen);
+}
+
+.chat-chip-mark {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-tertiary);
+}
+
+.chat-chip-mark[data-kind="issue"],
+.chat-chip-mark[data-kind="pull"] {
+    color: var(--live);
+}
+
+.chat-chip code {
+    flex: none;
+    color: var(--text-primary);
+    font-family: var(--mono);
+    font-size: calc(11px * var(--chat-text-em, 1));
+}
+
+.chat-chip-label,
+.chat-chip-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-chip-label {
+    color: var(--ink-dim);
 }
 
 .chat-attachments {
@@ -375,7 +439,8 @@
     .chat-activity-loader,
     .chat-activity-mark,
     .chat-tool.live .chat-tool-icon,
-    .chat-subagent-spinner {
+    .chat-subagent-spinner,
+    .chat-menu-loading i {
         animation: none;
     }
 

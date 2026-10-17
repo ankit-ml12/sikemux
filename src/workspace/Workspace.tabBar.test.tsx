@@ -9,6 +9,7 @@ import { Workspace, WorkspaceTabs } from "./Workspace";
 import { agentIdsOf, agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 import { acceptDialog, useDialogs } from "../state/dialog";
+import { draftOf, typeDraft } from "../test/draft";
 
 vi.mock("../api/acp", () => ({
     acpApi: {
@@ -166,7 +167,7 @@ describe("workspace tab bars", () => {
         render(<Stage />);
         const editor = await screen.findByRole("textbox", { name: "Message agent" });
         await waitFor(() => expect(editor).toBeEnabled());
-        fireEvent.change(editor, { target: { value: "Keep this draft" } });
+        typeDraft(editor, "Keep this draft");
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
         fireEvent.click(within(screen.getByRole("group", { name: "Agent" })).getByRole("button", { name: /Claude/ }));
         await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(2));
@@ -174,7 +175,7 @@ describe("workspace tab bars", () => {
         expect(acpApi.stop).toHaveBeenCalledWith("agent-only");
         expect(agentIdsOf(getState(), sessionId)).toEqual(["agent-only"]);
         expect(getState().agents["agent-only"]).toMatchObject({ type: "claude", title: "Claude" });
-        expect(editor).toHaveValue("Keep this draft");
+        expect(draftOf(editor)).toBe("Keep this draft");
         expect(within(screen.getByRole("group", { name: "Agent" })).getByRole("button", { name: /Claude/ })).toHaveAttribute("aria-pressed", "true");
         expect(screen.queryByText("only agent")).not.toBeInTheDocument();
         expect(screen.getAllByText("Claude").length).toBeGreaterThan(0);

@@ -831,7 +831,6 @@ textarea:focus,
 .tree-ctx-menu,
 .space-pop,
 .terminal-menu,
-.chat-slash-menu,
 .chat-picker-menu {
     border: 1px solid var(--border);
     /* Not scaled by --window-opacity. A translucent window is a choice about
@@ -1210,7 +1209,6 @@ textarea,
     .dd-menu,
     .tree-ctx-menu,
     .terminal-menu,
-    .chat-slash-menu,
     .chat-picker-menu,
     .bruno-secrets-pop,
     .dlg,

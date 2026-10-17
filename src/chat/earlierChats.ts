@@ -111,6 +111,6 @@ export async function wakeEarlier({ chat, sessionId }: EarlierChat): Promise<Pro
         cmd.setAgentName(agent.id, named.name, named.parent);
         name = named.name;
     }
-    const mate: Mate = { id: agent.id, name, type: agent.type, title: chat.title, display: null };
+    const mate: Mate = { id: agent.id, name, type: agent.type, title: chat.title, buddy: agent.buddy, display: null };
     return { uri: `${WOKEN_URI}${agent.id}`, title: `@${name} · ${chat.title}`, text: mateNote(mate, "Starting", chat.title) };
 }

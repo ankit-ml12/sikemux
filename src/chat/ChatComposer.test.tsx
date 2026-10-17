@@ -9,6 +9,7 @@ import { deliverToAgent } from "../agents/agentInbox";
 import type { WorktreeSwitchState } from "./worktreeSwitch";
 import { handleVoiceEvent, toggleDictation, useVoice } from "../voice/dictation";
 import { setState } from "../state/store";
+import { draftOf, typeDraft } from "../test/draft";
 
 const repo = { provider: "github", owner: "o", name: "r", account: null };
 
@@ -85,7 +86,7 @@ function renderComposer(worktree?: { state: WorktreeSwitchState; toggle: () => v
 }
 
 function type(editor: HTMLElement, value: string) {
-    fireEvent.change(editor, { target: { value, selectionStart: value.length } });
+    typeDraft(editor, value);
 }
 
 afterEach(() => {
@@ -93,72 +94,73 @@ afterEach(() => {
     mocks.onSend.mockClear();
 });
 
-describe("ChatComposer @ picker", () => {
-    it("lists project files and folders matching what follows the @", async () => {
+describe("ChatComposer + picker", () => {
+    it("lists project files and folders matching what follows the +", async () => {
         const editor = renderComposer();
-        type(editor, "look at @util");
+        type(editor, "look at +util");
         expect(await screen.findByRole("option", { name: /util\.ts/ })).toBeInTheDocument();
         expect(screen.queryByRole("option", { name: /README/ })).not.toBeInTheDocument();
-        type(editor, "look at @lib");
+        type(editor, "look at +lib");
         expect(await screen.findByRole("option", { name: /^lib/ })).toBeInTheDocument();
     });
 
-    it("takes the token out of the text and attaches the chosen path", async () => {
+    it("writes the chosen file into the text as a tag and attaches its path", async () => {
         const editor = renderComposer();
-        type(editor, "look at @main please");
-        fireEvent.change(editor, { target: { value: "look at @main please", selectionStart: 13 } });
+        type(editor, "look at +main please");
+        typeDraft(editor, "look at +main please", 13);
         await screen.findByRole("option", { name: /main\.ts/ });
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(editor).toHaveValue("look at please");
-        expect(screen.getByTitle("/repo/src/main.ts")).toBeInTheDocument();
+        expect(draftOf(editor)).toBe("look at +main.ts please");
 
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(mocks.onSend).toHaveBeenCalledWith({ text: "look at please", paths: ["/repo/src/main.ts"], context: [] }, false);
+        expect(mocks.onSend).toHaveBeenCalledWith({ text: "look at +main.ts please", paths: ["/repo/src/main.ts"], context: [] }, false);
     });
 
-    it("leaves the @ in place when Escape dismisses the picker", async () => {
+    it("leaves the + in place when Escape dismisses the picker", async () => {
         const editor = renderComposer();
-        type(editor, "@READ");
+        type(editor, "+READ");
         await screen.findByRole("option", { name: /README/ });
         fireEvent.keyDown(editor, { key: "Escape" });
         await act(async () => {});
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-        expect(editor).toHaveValue("@READ");
+        expect(draftOf(editor)).toBe("+READ");
     });
 });
 
-describe("ChatComposer # picker", () => {
+describe("ChatComposer # and ! pickers", () => {
     const items = [
         { kind: "issue" as const, number: 12, title: "Login crashes", createdAt: "2026-02-01", url: "https://github.com/o/r/issues/12" },
+        { kind: "issue" as const, number: 14, title: "Slow boot on Intel", createdAt: "2026-02-02", url: "https://github.com/o/r/issues/14" },
         { kind: "pull" as const, number: 9, title: "Faster boot", createdAt: "2026-01-01", url: "https://github.com/o/r/pull/9" },
     ];
 
-    it("lists open issues and pull requests, filtered by number or words", async () => {
+    it("lists open issues on # and pull requests on !, filtered by number or words", async () => {
         mocks.tracked.mockReturnValue({ state: "ready", repo, items });
         const editor = renderComposer();
         type(editor, "#");
         expect(await screen.findByRole("option", { name: /#12.*Login crashes/ })).toBeInTheDocument();
-        expect(screen.getByRole("option", { name: /#9.*Faster boot/ })).toBeInTheDocument();
+        expect(screen.queryByRole("option", { name: /Faster boot/ })).not.toBeInTheDocument();
         type(editor, "#boot");
+        expect(screen.getByRole("option", { name: /#14/ })).toBeInTheDocument();
         expect(screen.queryByRole("option", { name: /#12/ })).not.toBeInTheDocument();
-        type(editor, "#1");
-        expect(screen.getByRole("option", { name: /#12/ })).toBeInTheDocument();
-        expect(screen.queryByRole("option", { name: /#9/ })).not.toBeInTheDocument();
+        type(editor, "!");
+        expect(await screen.findByRole("option", { name: /!9.*Faster boot/ })).toBeInTheDocument();
+        expect(screen.queryByRole("option", { name: /Login crashes/ })).not.toBeInTheDocument();
     });
 
-    it("adds a chip, and reads the issue in full when the message is sent", async () => {
+    it("writes the issue into the text as a tag, and reads it in full when the message is sent", async () => {
         mocks.tracked.mockReturnValue({ state: "ready", repo, items });
         const editor = renderComposer();
         type(editor, "fix #12");
-        fireEvent.keyDown(await screen.findByRole("textbox", { name: "Message agent" }), { key: "Enter" });
-        expect(editor).toHaveValue("fix ");
-        expect(screen.getByTitle("https://github.com/o/r/issues/12")).toHaveTextContent("#12 Login crashes");
+        await screen.findByRole("option", { name: /#12/ });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(draftOf(editor)).toBe("fix #12 ");
 
         fireEvent.keyDown(editor, { key: "Enter" });
         await waitFor(() =>
             expect(mocks.onSend).toHaveBeenCalledWith(
                 {
-                    text: "fix",
+                    text: "fix #12",
                     paths: [],
                     context: [{ uri: "https://github.com/o/r/issues/12", title: "#12 Login crashes", text: "Issue #12: Login crashes" }],
                 },
@@ -166,7 +168,6 @@ describe("ChatComposer # picker", () => {
             ),
         );
         expect(mocks.load).toHaveBeenCalledWith(repo, "issue", 12);
-        await waitFor(() => expect(screen.queryByTitle("https://github.com/o/r/issues/12")).not.toBeInTheDocument());
     });
 });
 

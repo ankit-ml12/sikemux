@@ -5,7 +5,7 @@ import { MENTION_URI } from "./promptContext";
 import { agentDisplay, type AgentDisplay } from "../state/agentStatus";
 import { agentIdsOf, agentWindowId, ownerSessionId } from "../state/selectors";
 import { useStore } from "../state/store";
-import type { AgentType } from "../state/types";
+import type { Agent, AgentType } from "../state/types";
 
 /** Another agent of the project, as the composer offers it after `@`. */
 export interface Mate {
@@ -13,6 +13,7 @@ export interface Mate {
     name: string;
     type: AgentType;
     title: string;
+    buddy: Agent["buddy"];
     /** How it is shown beside its name; none while it sleeps. */
     display: AgentDisplay | null;
 }
@@ -32,7 +33,7 @@ export function useMates(agentId: string): Mate[] {
             const agent = agents[id];
             if (!agent?.name || id === agentId) return [];
             const display = agent.launchState === "dormant" ? null : agentDisplay(activity[id]?.state);
-            return [{ id, name: agent.name, type: agent.type, title: agent.title, display }];
+            return [{ id, name: agent.name, type: agent.type, title: agent.title, buddy: agent.buddy, display }];
         });
     }, [agentId, agents, windows, windowsBySession, sessionOrder, activity]);
 }

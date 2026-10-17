@@ -269,7 +269,7 @@ export function AgentChatPane({
     );
 
     const questions = useChatQuestions(agent.id, state.messages, setComposerError);
-    const focusComposer = () => paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
+    const focusComposer = () => paneRef.current?.querySelector<HTMLElement>(".chat-composer .chat-draft")?.focus();
     const writeAnswer = (question: AgentQuestion) => {
         questions.write(question);
         window.requestAnimationFrame(focusComposer);

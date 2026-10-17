@@ -21,7 +21,7 @@ import { finishDictationInto, useVoice, writesInto } from "../voice/dictation";
 import { ContextMeter } from "./ContextMeter";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { arrowsBrowse, recallPrompt, type HistoryPosition } from "./promptHistory";
-import { MAX_MENU_ENTRIES, mergePaths, removeToken, tokenAt, type ProjectEntry } from "./composerInput";
+import { hasTag, MAX_MENU_ENTRIES, mergePaths, removeToken, tagBefore, tokenAt, type ComposerTrigger, type ProjectEntry } from "./composerInput";
 import { canSwitchMode } from "../agents/agentLaunch";
 import { AgentMark } from "../agents/AgentMark";
 import { receiveForAgent } from "../agents/agentInbox";
@@ -37,13 +37,12 @@ import { mentionContext, useMates, type Mate } from "./agentMentions";
 import type { EarlierChat } from "./earlierChats";
 import ComposerMenu, { type MenuKeys, type MenuPick } from "./ComposerMenu";
 import DictationPreview from "./DictationPreview";
+import DraftEditor, { type DraftBox, type DraftChip } from "./DraftEditor";
 
-/** Puts the caret at `at` once the next frame has the new draft in the box. */
-function caretTo(editor: RefObject<HTMLTextAreaElement | null>, at: number) {
-    window.requestAnimationFrame(() => {
-        editor.current?.focus();
-        editor.current?.setSelectionRange(at, at);
-    });
+/** Puts the caret at `at`; the editor holds it until the new draft is laid out. */
+function caretTo(editor: RefObject<DraftBox | null>, at: number) {
+    editor.current?.focus();
+    editor.current?.setSelectionRange(at, at);
 }
 
 function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
@@ -68,6 +67,14 @@ interface ComposerContext {
     text: string | null;
     tracked: { repo: RepoRef; kind: TrackedKind; number: number } | null;
     earlier?: EarlierChat;
+    /** How it is written in the draft; it goes with the message only while that is still there. */
+    tag?: string;
+}
+
+/** A project file picked with `+`, attached while its tag is still in the draft. */
+interface FileTag {
+    tag: string;
+    path: string;
 }
 
 function mergeContext(current: ComposerContext[], incoming: readonly ComposerContext[]): ComposerContext[] {
@@ -225,26 +232,21 @@ export function ChatComposer({
     const [caret, setCaret] = useState(0);
     const [attachments, setAttachments] = useState<string[]>([]);
     const [contexts, setContexts] = useState<ComposerContext[]>([]);
+    const [fileTags, setFileTags] = useState<FileTag[]>([]);
     const [reading, setReading] = useState(false);
     const [menuSelection, setMenuSelection] = useState(0);
     const [menuDismissed, setMenuDismissed] = useState(false);
-    const editorRef = useRef<HTMLTextAreaElement>(null);
+    const editorRef = useRef<DraftBox>(null);
     const { cwd } = usePathRoots();
 
-    /* The field grows with what is typed until it reaches its CSS max-height,
-       and scrolls from there. */
+    // A recalled message opens with the caret where the next arrow press keeps browsing.
     useLayoutEffect(() => {
         const editor = editorRef.current;
-        if (!editor) return;
-        editor.style.height = "auto";
-        editor.style.height = `${editor.scrollHeight}px`;
-        // A recalled message opens with the caret where the next arrow press keeps browsing.
-        if (recalledCaret.current) {
-            const at = recalledCaret.current === "start" ? 0 : draft.length;
-            editor.setSelectionRange(at, at);
-            setCaret(at);
-            recalledCaret.current = null;
-        }
+        if (!editor || !recalledCaret.current) return;
+        const at = recalledCaret.current === "start" ? 0 : draft.length;
+        editor.setSelectionRange(at, at);
+        setCaret(at);
+        recalledCaret.current = null;
     }, [draft]);
 
     useEffect(() => {
@@ -311,7 +313,20 @@ export function ChatComposer({
         return () => window.cancelAnimationFrame(frame);
     }, [connection, paneRef, visible]);
 
-    const token = menuDismissed ? null : tokenAt(draft, caret);
+    const mates = useMates(agent.id);
+    const chips: DraftChip[] = [
+        ...contexts.flatMap((item) =>
+            item.tag && item.tracked ? [{ text: item.tag, kind: item.tracked.kind, label: contextChip(item).title }] : [],
+        ),
+        ...fileTags.map((file) => ({ text: file.tag, kind: "file" as const, label: basename(file.path) })),
+        ...mates.map((mate) => ({ text: `@${mate.name}`, kind: "agent" as const, agent: mate })),
+    ];
+    const tagTexts = chips.map((chip) => chip.text);
+    const typed = menuDismissed ? null : tokenAt(draft, caret);
+    // A finished tag is not a search: the menu stays shut when the caret lands right after one.
+    const token = typed && !tagTexts.includes(`${typed.trigger}${typed.needle}`) ? typed : null;
+    const sentContexts = contexts.filter((item) => !item.tag || hasTag(draft, item.tag));
+    const sentFiles = fileTags.filter((file) => hasTag(draft, file.tag));
 
     const placeCaret = (position: number) => {
         setCaret(position);
@@ -326,7 +341,6 @@ export function ChatComposer({
         placeCaret(next.caret);
     };
 
-    const mates = useMates(agent.id);
     const [trackedList, setTrackedList] = useState<TrackedMatches>({ state: "loading" });
     const menuKeys = useRef<MenuKeys | null>(null);
 
@@ -351,17 +365,42 @@ export function ChatComposer({
         onError(null);
     };
 
-    const selectEntry = (entry: ProjectEntry) => {
-        takeToken();
-        setAttachments((current) => mergePaths(current, [joinPath(cwd, entry.path)]));
+    /** Writes a picked item over the token being typed, as a tag followed by a space. */
+    const writeTag = (tag: string) => {
+        if (!token) return;
+        setDraft(`${draft.slice(0, token.start)}${tag} ${draft.slice(caret).replace(/^ /, "")}`);
+        placeCaret(token.start + tag.length + 1);
         onError(null);
     };
 
+    const selectEntry = (entry: ProjectEntry) => {
+        const path = joinPath(cwd, entry.path);
+        const named = `+${entry.path.replace(/\/$/, "").split("/").pop()}`;
+        const clash = fileTags.some((file) => file.tag === named && file.path !== path);
+        const tag = clash ? `+${entry.path.replace(/\/$/, "")}` : named;
+        writeTag(tag);
+        setFileTags((current) => [...current.filter((file) => file.tag !== tag), { tag, path }]);
+    };
+
     const selectTracked = (item: TrackedItem, repo: RepoRef) => {
-        takeToken();
-        const chosen = { uri: item.url, title: `#${item.number} ${item.title}`, text: null, tracked: { repo, kind: item.kind, number: item.number } };
+        const tag = `${item.kind === "pull" ? "!" : "#"}${item.number}`;
+        writeTag(tag);
+        const chosen = {
+            uri: item.url,
+            title: `#${item.number} ${item.title}`,
+            text: null,
+            tracked: { repo, kind: item.kind, number: item.number },
+            tag,
+        };
         setContexts((current) => mergeContext(current, [chosen]));
-        onError(null);
+    };
+
+    /** Moves the search to another prefix, keeping what was typed after it. */
+    const switchScope = (trigger: ComposerTrigger) => {
+        if (!token || token.trigger === trigger) return;
+        setDraft(`${draft.slice(0, token.start)}${trigger}${draft.slice(token.start + 1)}`);
+        setMenuSelection(0);
+        caretTo(editorRef, caret);
     };
 
     const pick = (choice: MenuPick) => {
@@ -373,7 +412,7 @@ export function ChatComposer({
     };
 
     const blocked = changingConfig || changingPermissions || !permissionApplied || worktree?.state.kind === "preparing";
-    const drafted = Boolean(draft.trim()) || attachments.length > 0 || contexts.length > 0;
+    const drafted = Boolean(draft.trim()) || attachments.length > 0 || sentContexts.length > 0;
 
     // Send and stop are one button: when it changes job, the new icon turns in rather than swapping in place.
     const dictating = useVoice(
@@ -411,6 +450,7 @@ export function ChatComposer({
         setMenuSelection(0);
         setAttachments([]);
         setContexts([]);
+        setFileTags([]);
         setMenuDismissed(false);
         setHistoryPosition(null);
     };
@@ -431,15 +471,18 @@ export function ChatComposer({
         }
         const text = draft.trim();
         if (!drafted || blocked || reading) return;
-        const paths = attachments;
+        const paths = mergePaths(
+            attachments,
+            sentFiles.map((file) => file.path),
+        );
         const mentioned = mentionContext(text, mates);
-        if (contexts.every((item) => item.text !== null)) {
-            const context = [...contexts.map((item) => ({ uri: item.uri, title: item.title, text: item.text ?? "" })), ...mentioned];
+        if (sentContexts.every((item) => item.text !== null)) {
+            const context = [...sentContexts.map((item) => ({ uri: item.uri, title: item.title, text: item.text ?? "" })), ...mentioned];
             if (onSend({ text, paths, context }, steerNow)) clear();
             return;
         }
         setReading(true);
-        void Promise.all(contexts.map(readContext))
+        void Promise.all(sentContexts.map(readContext))
             .then((context) => {
                 if (onSend({ text, paths, context: [...context, ...mentioned] }, steerNow)) clear();
             })
@@ -460,9 +503,15 @@ export function ChatComposer({
 
     return (
         <div className="chat-composer">
-            {token?.trigger === "#" && (
+            {(token?.trigger === "#" || token?.trigger === "!") && (
                 <Suspense fallback={null}>
-                    <TrackedSource cwd={cwd} needle={token.needle} limit={MAX_MENU_ENTRIES} onMatches={setTrackedList} />
+                    <TrackedSource
+                        cwd={cwd}
+                        kind={token.trigger === "#" ? "issue" : "pull"}
+                        needle={token.needle}
+                        limit={MAX_MENU_ENTRIES}
+                        onMatches={setTrackedList}
+                    />
                 </Suspense>
             )}
             {token && (
@@ -477,10 +526,11 @@ export function ChatComposer({
                     selected={menuSelection}
                     keys={menuKeys}
                     onPick={pick}
+                    onScope={switchScope}
                 />
             )}
             <div className="chat-field">
-                {(attachments.length > 0 || contexts.length > 0 || answering) && (
+                {(attachments.length > 0 || contexts.some((item) => !item.tag) || answering) && (
                     <div className="chat-attachments">
                         {answering && (
                             <Chip
@@ -499,29 +549,31 @@ export function ChatComposer({
                                 onRemove={() => setAttachments((current) => current.filter((candidate) => candidate !== path))}
                             />
                         ))}
-                        {contexts.map((item) => (
-                            <ComposerContextChip
-                                key={item.uri}
-                                item={item}
-                                onRemove={() => setContexts((current) => current.filter((candidate) => candidate.uri !== item.uri))}
-                            />
-                        ))}
+                        {contexts
+                            .filter((item) => !item.tag)
+                            .map((item) => (
+                                <ComposerContextChip
+                                    key={item.uri}
+                                    item={item}
+                                    onRemove={() => setContexts((current) => current.filter((candidate) => candidate.uri !== item.uri))}
+                                />
+                            ))}
                     </div>
                 )}
-                <textarea
-                    ref={editorRef}
+                <DraftEditor
+                    box={editorRef}
                     value={draft}
-                    aria-label="Message agent"
+                    chips={chips}
+                    label="Message agent"
                     placeholder={heard ? "" : placeholder}
-                    rows={2}
-                    onChange={(event) => {
-                        setDraft(event.target.value);
-                        setCaret(event.target.selectionStart);
+                    onChange={(value, at) => {
+                        setDraft(value);
+                        setCaret(at);
                         setMenuSelection(0);
                         setMenuDismissed(false);
                         onError(null);
                     }}
-                    onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                    onCaret={setCaret}
                     onPaste={(event) => {
                         if (imagesInClipboard(event.clipboardData).length > 0) event.preventDefault();
                         void savePastedClipboard(event.clipboardData)
@@ -533,6 +585,16 @@ export function ChatComposer({
                             .catch((failure) => onError(errorText(failure)));
                     }}
                     onKeyDown={(event) => {
+                        const box = editorRef.current;
+                        if (!box) return;
+                        if (event.key === "Backspace" && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+                            const start = box.selectionStart === box.selectionEnd ? tagBefore(box.value, box.selectionStart, tagTexts) : null;
+                            if (start !== null) {
+                                event.preventDefault();
+                                box.setSelectionRange(start, box.selectionStart);
+                                return;
+                            }
+                        }
                         const menu = token && menuKeys.current;
                         if (menu) {
                             if (event.key === "Escape") {
@@ -567,7 +629,6 @@ export function ChatComposer({
                         }
                         // Escape first lets go of a selection. It stops a running turn only from an empty box, so a half-written message never stops the agent.
                         if (event.key === "Escape" && plainKey) {
-                            const box = event.currentTarget;
                             if (box.selectionStart !== box.selectionEnd) {
                                 event.preventDefault();
                                 box.setSelectionRange(box.selectionEnd, box.selectionEnd);
@@ -581,7 +642,7 @@ export function ChatComposer({
                         }
                         const direction = event.key === "ArrowUp" ? "older" : event.key === "ArrowDown" ? "newer" : null;
                         if (direction && plainKey) {
-                            const { value } = event.currentTarget;
+                            const { value } = box;
                             const recalled = arrowsBrowse(value, history, historyPosition, direction)
                                 ? recallPrompt(history, historyPosition, value, direction)
                                 : null;
