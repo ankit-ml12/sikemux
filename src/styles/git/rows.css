@@ -121,18 +121,3 @@
 .git-sync-chip:hover {
     background: color-mix(in oklab, var(--warn) 12%, transparent);
 }
-.git-remote-row .git-row-name {
-    color: var(--text-tertiary);
-    font-size: var(--text-2xs);
-}
-.git-remote-chev {
-    display: flex;
-    flex: none;
-    width: 15px;
-    justify-content: center;
-    color: var(--text-tertiary);
-    transition: transform var(--dur-1);
-}
-.git-remote-chev.open {
-    transform: rotate(90deg);
-}

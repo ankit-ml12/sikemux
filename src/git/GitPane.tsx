@@ -35,6 +35,8 @@ import {
     IconCommit,
     IconExpandAll,
     IconFilePlus,
+    IconGlobe,
+    IconLaptop,
     IconStash,
     IconCopy,
     IconDiscard,
@@ -229,10 +231,12 @@ function GitWorkbench({
         return [...side("staged", stagedFiles), ...side("unstaged", unstagedFiles)];
     }, [stagedFiles, unstagedFiles, foldedSides]);
 
+    const [localFolded, setLocalFolded] = useState(false);
+    const branchQuery = queries.branches.toLowerCase();
+    const localBranches = useMemo(() => branches.filter((b) => !branchQuery || b.name.toLowerCase().includes(branchQuery)), [branches, branchQuery]);
     const branchEntries = useMemo<BranchEntry[]>(() => {
-        const q = queries.branches.toLowerCase();
-        const match = (name: string) => !q || name.toLowerCase().includes(q);
-        const entries: BranchEntry[] = branches.filter((b) => match(b.name)).map((branch) => ({ kind: "local", branch }));
+        const match = (name: string) => !branchQuery || name.toLowerCase().includes(branchQuery);
+        const entries: BranchEntry[] = localFolded ? [] : localBranches.map((branch) => ({ kind: "local", branch }));
         for (const remote of remotes) {
             const open = remote.name === openRemote;
             entries.push({ kind: "remote", remote, open });
@@ -241,7 +245,7 @@ function GitWorkbench({
                     if (!branch.is_head_pointer && match(branch.name)) entries.push({ kind: "remoteBranch", remote: remote.name, branch });
         }
         return entries;
-    }, [branches, remotes, remoteBranches, openRemote, queries.branches]);
+    }, [localBranches, localFolded, remotes, remoteBranches, openRemote, branchQuery]);
 
     const lenFor = (p: GitPanel) => (p === "files" ? fileEntries.length : p === "commits" ? filteredCommits.length : branchEntries.length);
     const clampSel = (p: GitPanel) => Math.max(0, Math.min(lenFor(p) - 1, sel[p]));
@@ -1114,7 +1118,7 @@ function GitWorkbench({
                 data-side={side}
                 data-first={fileEntries[i - 1]?.kind === "file" ? undefined : ""}
                 data-last={fileEntries[i + 1]?.kind === "file" ? undefined : ""}
-                className={`git-row git-file-row${selected ? " sel" : ""}${isInRange(fileRowRange, i) ? " ranged" : ""}`}
+                className={`git-row git-tree-row git-file-row${selected ? " sel" : ""}${isInRange(fileRowRange, i) ? " ranged" : ""}`}
                 onFocus={() => setSel("files", i)}
                 onClick={(event) => {
                     event.currentTarget.focus();
@@ -1170,17 +1174,20 @@ function GitWorkbench({
                 <div
                     {...common}
                     aria-expanded={entry.open}
-                    className={`git-row git-remote-row${selected ? " sel" : ""}`}
+                    className={`git-group git-file-group follows${selected ? " sel" : ""}`}
                     onClick={(event) => {
                         common.onClick(event);
                         setOpenRemote(entry.open ? null : entry.remote.name);
                     }}>
-                    <span className={`git-remote-chev${entry.open ? " open" : ""}`}>
-                        <IconChevron size={10} />
+                    <span className="git-group-toggle" aria-expanded={entry.open}>
+                        <IconChevron size={13} className="git-group-chev" />
+                        <span className="git-group-icon">
+                            <IconGlobe size={13} />
+                        </span>
+                        <span className="git-group-name">{entry.remote.name}</span>
+                        {entry.open && remoteBranchesRes.status === "loading" && <span className="git-panel-spinner" />}
                     </span>
-                    <span className="git-row-name">{entry.remote.name}</span>
-                    {entry.open && remoteBranchesRes.status === "loading" && <span className="git-panel-spinner" />}
-                    <span className="git-row-actions">
+                    <span className="git-section-actions">
                         <RowButton label={`Fetch ${entry.remote.name}`} onClick={() => doFetch(entry.remote.name)}>
                             <IconFetch size={12} />
                         </RowButton>
@@ -1192,7 +1199,12 @@ function GitWorkbench({
         if (entry.kind === "remoteBranch") {
             const rb = entry.branch;
             return (
-                <div {...common} className={`git-row git-branch-row remote${selected ? " sel" : ""}`} title={rb.full_ref}>
+                <div
+                    {...common}
+                    className={`git-row git-tree-row git-branch-row remote${selected ? " sel" : ""}`}
+                    data-first={branchEntries[i - 1]?.kind === "remoteBranch" ? undefined : ""}
+                    data-last={branchEntries[i + 1]?.kind === "remoteBranch" ? undefined : ""}
+                    title={rb.full_ref}>
                     <span className="git-dot remote" />
                     <span className="git-row-name">{rb.name}</span>
                     {rb.tracked_by && <span className="git-row-hint">tracked</span>}
@@ -1214,7 +1226,9 @@ function GitWorkbench({
         return (
             <div
                 {...common}
-                className={`git-row git-branch-row${b.current ? " current" : ""}${selected ? " sel" : ""}`}
+                className={`git-row git-tree-row git-branch-row${b.current ? " current" : ""}${selected ? " sel" : ""}`}
+                data-first={i === 0 ? "" : undefined}
+                data-last={branchEntries[i + 1]?.kind === "local" ? undefined : ""}
                 title={b.upstream ? `tracks ${b.upstream}` : b.name}>
                 <span className={`git-dot${b.current ? " current" : ""}`} />
                 <span className="git-row-name">{b.name}</span>
@@ -1560,7 +1574,6 @@ function GitWorkbench({
             </div>
         </div>
     );
-    const localCount = branchEntries.filter((e) => e.kind === "local").length;
     const branchesLeft = (
         <>
             {filterInput("branches", "Filter branches")}
@@ -1572,10 +1585,16 @@ function GitWorkbench({
                             message={queries.branches ? `Nothing matches "${queries.branches}".` : "This repository has no branches yet."}
                         />
                     ))}
-                {localCount > 0 && (
-                    <div className="git-group">
-                        <span>Local</span>
-                        <span className="git-count">{localCount}</span>
+                {localBranches.length > 0 && (
+                    <div className="git-group git-file-group">
+                        <button type="button" className="git-group-toggle" aria-expanded={!localFolded} onClick={() => setLocalFolded((was) => !was)}>
+                            <IconChevron size={13} className="git-group-chev" />
+                            <span className="git-group-icon">
+                                <IconLaptop size={13} />
+                            </span>
+                            <span className="git-group-name">Local</span>
+                        </button>
+                        <span className="git-group-count">{localBranches.length}</span>
                     </div>
                 )}
                 <VirtualPanelRows

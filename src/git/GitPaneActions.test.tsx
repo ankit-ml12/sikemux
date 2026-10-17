@@ -208,7 +208,8 @@ async function accept() {
     await flush();
 }
 
-const row = (name: string, nth = 0) => screen.getAllByText(name, { selector: ".git-row-name" })[nth].closest<HTMLElement>(".git-row")!;
+const row = (name: string, nth = 0) =>
+    screen.getAllByText(name, { selector: ".git-row-name, .git-group-name" })[nth].closest<HTMLElement>(".git-row, .git-group")!;
 const menuItem = (name: RegExp) => screen.getByRole("menuitem", { name });
 
 describe("changes", () => {
