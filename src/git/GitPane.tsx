@@ -291,16 +291,24 @@ function GitWorkbench({
     // ---- Changes ----
 
     // The rows move at once; the next status read either confirms the move or puts them back.
+    // Clicks in quick succession wait their turn rather than being refused as a clash.
+    const moveQueue = useRef<Promise<unknown>>(Promise.resolve());
+    const latestMove = useRef(new Map<string, object>());
     const moveFiles = async (paths: string[], side: Side, label: string, fn: () => Promise<void>) => {
-        const withSide = (sides: ReadonlyMap<string, Side>, value: Side | null) => {
-            const next = new Map(sides);
-            for (const path of paths) value ? next.set(path, value) : next.delete(path);
-            return next;
-        };
-        setPendingSides((sides) => withSide(sides, side));
-        await run(label, fn);
+        const move = {};
+        for (const path of paths) latestMove.current.set(path, move);
+        setPendingSides((sides) => new Map([...sides, ...paths.map((path) => [path, side] as const)]));
+        const turn = moveQueue.current.then(() => run(label, fn));
+        moveQueue.current = turn;
+        await turn;
         await overview.refresh().catch(() => {});
-        setPendingSides((sides) => withSide(sides, null));
+        const settled = paths.filter((path) => latestMove.current.get(path) === move);
+        for (const path of settled) latestMove.current.delete(path);
+        setPendingSides((sides) => {
+            const next = new Map(sides);
+            for (const path of settled) next.delete(path);
+            return next;
+        });
     };
     const stageFile = (file: GitFile) => void moveFiles([file.path], "staged", "", () => git.stage(repo, file.path));
     const unstageFile = (file: GitFile) => void moveFiles([file.path], "unstaged", "", () => git.unstage(repo, file.path));
