@@ -89,6 +89,7 @@ syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-trai
 tauri-build = { version = "2" }
 tauri-utils = { version = "2", default-features = false, features = ["build-2", "compression", "resources"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
+time-macros = { version = "0.2", default-features = false, features = ["formatting", "parsing", "serde"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
@@ -140,7 +141,6 @@ libc = { version = "0.2" }
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSProcessInfo", "std"] }
 smallvec = { version = "1", default-features = false, features = ["const_generics"] }
-time-macros = { version = "0.2", default-features = false, features = ["formatting", "parsing", "serde"] }
 toml_datetime = { version = "1", features = ["serde"] }
 toml_parser = { version = "1" }
 winnow = { version = "1" }

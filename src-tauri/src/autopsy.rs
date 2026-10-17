@@ -429,53 +429,15 @@ fn now_ms() -> u64 {
 
 /// `20260918-142233-471`, which sorts chronologically as a directory name.
 fn stamp(ms: u64) -> String {
-    let (year, month, day, hour, minute, second, millis) = utc_parts(ms);
-    format!("{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}-{millis:03}")
+    let at = time::OffsetDateTime::UNIX_EPOCH + time::Duration::milliseconds(ms as i64);
+    at.format(time::macros::format_description!(
+        "[year][month][day]-[hour][minute][second]-[subsecond digits:3]"
+    ))
+    .unwrap_or_default()
 }
 
 pub(crate) fn iso8601(ms: u64) -> String {
-    let (year, month, day, hour, minute, second, millis) = utc_parts(ms);
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z")
-}
-
-fn utc_parts(ms: u64) -> (i64, u32, u32, u64, u64, u64, u64) {
-    let seconds = ms / 1_000;
-    let millis = ms % 1_000;
-    let time_of_day = seconds % 86_400;
-    let (year, month, day) = civil_from_days((seconds / 86_400) as i64);
-    (
-        year,
-        month,
-        day,
-        time_of_day / 3_600,
-        (time_of_day % 3_600) / 60,
-        time_of_day % 60,
-        millis,
-    )
-}
-
-/// Days since 1970-01-01 to a calendar date, using Howard Hinnant's shift of
-/// the year start to March so leap days land at the end of the cycle.
-fn civil_from_days(days: i64) -> (i64, u32, u32) {
-    let shifted = days + 719_468;
-    let era = if shifted >= 0 {
-        shifted
-    } else {
-        shifted - 146_096
-    } / 146_097;
-    let day_of_era = (shifted - era * 146_097) as u64;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let shifted_month = (5 * day_of_year + 2) / 153;
-    let day = (day_of_year - (153 * shifted_month + 2) / 5 + 1) as u32;
-    let month = if shifted_month < 10 {
-        shifted_month + 3
-    } else {
-        shifted_month - 9
-    } as u32;
-    let year = year_of_era as i64 + era * 400;
-    (if month <= 2 { year + 1 } else { year }, month, day)
+    sikemux_core::accounts::live::rfc3339(ms)
 }
 
 #[cfg(test)]
@@ -664,13 +626,9 @@ mod tests {
     }
 
     #[test]
-    fn calendar_dates_survive_leap_years_and_century_boundaries() {
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-        assert_eq!(civil_from_days(59), (1970, 3, 1));
+    fn report_times_read_in_utc() {
         assert_eq!(iso8601(0), "1970-01-01T00:00:00.000Z");
-        // 2000-02-29 and 2024-02-29 are leap days; 1900 was not a leap year.
-        assert_eq!(civil_from_days(11_016), (2000, 2, 29));
-        assert_eq!(civil_from_days(19_782), (2024, 2, 29));
         assert_eq!(iso8601(1_789_000_000_123), "2026-09-10T00:26:40.123Z");
+        assert_eq!(stamp(1_789_000_000_123), "20260910-002640-123");
     }
 }

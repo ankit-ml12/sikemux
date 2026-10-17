@@ -15,6 +15,7 @@ sha2 = "0.11"
 sikemux-pty = { path = "../sikemux-pty" }
 sikemux-wire = { path = "../sikemux-wire" }
 thiserror = "1"
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "v7"] }
 

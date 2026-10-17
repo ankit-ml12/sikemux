@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
+use crate::accounts::live::parse_rfc3339;
+
 use super::super::super::states::{self, Subagent};
 use super::super::json::{text, text_or_empty};
 use super::items::{self, subagent_name, subagent_result, subagent_task};
@@ -15,40 +17,9 @@ pub(super) use super::super::super::feed::title;
 const MAX_DEPTH: usize = 4;
 
 /// An RFC 3339 time such as `2026-10-13T03:59:22.120239Z`, in Unix
-/// milliseconds.
+/// milliseconds. A time without a zone is read as UTC.
 fn unix_ms(stamp: &str) -> Option<u64> {
-    let (date, time) = stamp.split_once('T')?;
-    let mut date = date.splitn(3, '-').map(|part| part.parse::<i64>().ok());
-    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
-    let (time, offset) = match time.find(['Z', 'z', '+', '-']) {
-        Some(at) => time.split_at(at),
-        None => (time, "Z"),
-    };
-    let mut clock = time.splitn(3, ':');
-    let hours: i64 = clock.next()?.parse().ok()?;
-    let minutes: i64 = clock.next()?.parse().ok()?;
-    let seconds: f64 = clock.next()?.parse().ok()?;
-    let offset_minutes = match offset.chars().next() {
-        Some(sign @ ('+' | '-')) => {
-            let (h, m) = offset[1..].split_once(':')?;
-            let total = h.parse::<i64>().ok()? * 60 + m.parse::<i64>().ok()?;
-            if sign == '+' {
-                total
-            } else {
-                -total
-            }
-        }
-        _ => 0,
-    };
-    let shifted = if month <= 2 { year - 1 } else { year };
-    let era = shifted.div_euclid(400);
-    let year_of_era = shifted - era * 400;
-    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    let days = era * 146_097 + day_of_era - 719_468;
-    let seconds_total = days * 86_400 + hours * 3_600 + (minutes - offset_minutes) * 60;
-    let millis = seconds_total as f64 * 1_000.0 + seconds * 1_000.0;
-    (millis >= 0.0).then_some(millis as u64)
+    parse_rfc3339(stamp).or_else(|| parse_rfc3339(&format!("{stamp}Z")))
 }
 
 /// The session's name, or else its first words, as the chat's title.
