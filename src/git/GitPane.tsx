@@ -1431,7 +1431,7 @@ function GitWorkbench({
             <EmptyState tone="error" icon={<IconWarning size={14} />} title="Git error" message={overviewError} />
         ) : null;
 
-    const filterInput = (p: GitPanel, placeholder: string) => (
+    const filterInput = (p: GitPanel, placeholder: string, count?: number) => (
         <label className="git-filter">
             <IconSearch size={12} />
             <input
@@ -1440,6 +1440,7 @@ function GitWorkbench({
                 }}
                 value={queries[p]}
                 placeholder={placeholder}
+                aria-label={placeholder}
                 spellCheck={false}
                 autoCapitalize="off"
                 autoCorrect="off"
@@ -1453,14 +1454,17 @@ function GitWorkbench({
                     if (event.key === "Escape" || event.key === "Enter") {
                         if (event.key === "Escape") setQueries((q) => ({ ...q, [p]: "" }));
                         if (p === "files") setFileFilterOpen(false);
-                        window.requestAnimationFrame(() =>
-                            paneRootRef.current
-                                ?.querySelector<HTMLElement>(".swipe-page.is-current .git-list :is(.git-row.sel, .gg-row.sel, .git-row)")
-                                ?.focus(),
-                        );
+                        window.requestAnimationFrame(() => {
+                            const list = paneRootRef.current?.querySelector(".swipe-page.is-current .git-list");
+                            (
+                                list?.querySelector<HTMLElement>(":is(.git-row, .gg-row).sel") ??
+                                list?.querySelector<HTMLElement>(".git-row, .gg-row")
+                            )?.focus();
+                        });
                     }
                 }}
             />
+            {!!count && <span className="git-filter-count">{count}</span>}
         </label>
     );
 
@@ -1532,36 +1536,7 @@ function GitWorkbench({
         );
     const commitsLeft = (
         <div className="git-history open">
-            <div className="git-history-head">
-                <label className="git-history-search">
-                    <IconSearch size={11} />
-                    <input
-                        ref={(input) => {
-                            filterInputs.current.commits = input;
-                        }}
-                        value={queries.commits}
-                        placeholder="Search commits"
-                        aria-label="Search commits"
-                        spellCheck={false}
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                        onChange={(event) => {
-                            const value = event.target.value;
-                            setQueries((q) => ({ ...q, commits: value }));
-                            setSel("commits", 0);
-                        }}
-                        onKeyDown={(event) => {
-                            event.stopPropagation();
-                            if (event.key !== "Escape" && event.key !== "Enter") return;
-                            if (event.key === "Escape") setQueries((q) => ({ ...q, commits: "" }));
-                            window.requestAnimationFrame(() =>
-                                paneRootRef.current?.querySelector<HTMLElement>(".git-history .gg-row.sel, .git-history .gg-row")?.focus(),
-                            );
-                        }}
-                    />
-                </label>
-                {commits.length > 0 && <span className="git-count">{commits.length}</span>}
-            </div>
+            {filterInput("commits", "Search commits", commits.length)}
             <div className="git-list">
                 {filteredCommits.length === 0 ? (
                     (loadingOrError(8, "Loading commits") ?? (
