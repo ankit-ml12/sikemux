@@ -354,9 +354,9 @@
 
 .chat-table {
     overflow-x: auto;
-    border: 1px solid var(--border, var(--line));
+    border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
     border-radius: var(--radius-2);
-    background: color-mix(in srgb, var(--void) 72%, transparent);
+    background: color-mix(in srgb, var(--rail-2) 72%, transparent);
 }
 
 .chat-table table {
@@ -388,7 +388,7 @@
 /* The label keeps a step below the cells: the uppercase tracking costs
    legibility, so it stays a size the reader can still take in. */
 .chat-table th {
-    background: color-mix(in srgb, var(--void) 88%, transparent);
+    background: color-mix(in oklab, var(--ink) 4%, transparent);
     border-bottom-color: color-mix(in oklab, var(--ink) 18%, transparent);
     color: var(--text-secondary, var(--ink));
     font-size: var(--text-xs);
