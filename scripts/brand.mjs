@@ -29,13 +29,14 @@ const GROUNDS = {
 const markSvg = (fill) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="82 24 265 265"><g fill="${fill}">${shapes}</g></svg>\n`;
 
+// Places the mark as the Dock icon does: the wordmark's 420-point canvas at Icon Composer's 1.6 scale.
 const iconSvg = (ground, { rounded }) => {
   const [top, middle, bottom] = GROUNDS[ground];
   const corner = rounded ? ` rx="230" ry="230"` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
 <defs><linearGradient id="ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="0.55" stop-color="${middle}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>
 <rect width="1024" height="1024"${corner} fill="url(#ground)"/>
-<svg x="176" y="176" width="672" height="672" viewBox="82 24 265 265"><g fill="#ffffff">${shapes}</g></svg>
+<svg x="176" y="176" width="672" height="672" viewBox="0 0 420 420"><g transform="translate(0, 30)" fill="#ffffff">${shapes}</g></svg>
 </svg>
 `;
 };
