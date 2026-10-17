@@ -199,8 +199,9 @@ export function SeshPicker() {
     const firstSshIdx = items.findIndex((it) => it.kind === "ssh");
     const firstSessIdx = items.findIndex((it) => it.kind === "session");
 
+    const movingLabel = moving?.name ? `@${moving.name}` : moving?.title;
     const placeholder = moving
-        ? `move ${moving.title} to…`
+        ? `move ${movingLabel} to…`
         : mode === "projects"
           ? "find a project…"
           : mode === "ssh"
@@ -215,7 +216,7 @@ export function SeshPicker() {
                 className="picker"
                 role="dialog"
                 aria-modal="true"
-                aria-label={moving ? `Move ${moving.title} to a project` : "Open session or project"}
+                aria-label={moving ? `Move ${movingLabel} to a project` : "Open session or project"}
                 onMouseDown={(e) => e.stopPropagation()}>
                 <div className="picker-input-wrap">
                     <IconSearch size={15} className="picker-search-icon" />
