@@ -160,7 +160,7 @@ export async function joinTicket(token: TokenSource, host: string): Promise<Join
 
 const hostSignIn = (code: string) => `/v1/host-sign-ins/${encodeURIComponent(code)}`;
 
-/** The host waiting behind the code `sikemux core sign-in` shows, to check before approving it. */
+/** The host waiting behind the code `sikemux login` shows, to check before approving it. */
 export async function pendingHost(token: TokenSource, code: string): Promise<PendingHost> {
   return call<PendingHost>(token, hostSignIn(code));
 }

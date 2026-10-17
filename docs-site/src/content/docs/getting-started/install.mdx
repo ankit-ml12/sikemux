@@ -33,9 +33,10 @@ The host needs no open ports: it connects out to Sikemux's relays over HTTPS and
 
 Later:
 
-- `sikemux core status` shows whether the core runs and which account it is on.
-- `sikemux core sign-in` signs the host in, if you skipped it.
-- Running the same line again updates the core. A core already running keeps the old version until `systemctl --user restart com.nodelike.sikemux.core`.
+- `sikemux status` shows whether the core runs, whether it starts at boot, and which account it is on.
+- `sikemux login` signs the host in, if you skipped it, and `sikemux logout` takes it off your account.
+- Running the same line again updates the core; `sikemux restart` then switches the running core to it.
+- `sikemux help` lists every command.
 
 ## Download
 

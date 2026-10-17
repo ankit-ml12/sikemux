@@ -77,23 +77,17 @@ const cliSource = await readFile(
   resolve(root, "src-tauri/crates/sikemux-host/src/cli_client.rs"),
   "utf8",
 );
-const helpLiteral = cliSource.match(
-  /fn print_help\(\) \{\s*println!\(\s*"((?:[^"\\]|\\.)*)"/,
-)?.[1];
-if (!helpLiteral)
+const help = cliSource.match(/const HELP: &str = r#"([\s\S]*?)"#;/)?.[1];
+if (!help)
   throw new Error(
     "could not find the CLI help in src-tauri/crates/sikemux-host/src/cli_client.rs",
   );
-const help = JSON.parse(`"${helpLiteral}"`).replace(
-  /^Sikemux CLI \{\}\n\n/,
-  "",
-);
 await emit(
   "cli.mdx",
   page(
     "CLI",
-    "The sikemux command: open files and projects, check on the app, call its tools.",
-    `Install the \`sikemux\` command from **Settings → CLI**.\n\n\`\`\`text\n${help}\n\`\`\`\n\nAs \`$EDITOR\`, the \`sikemux-editor\` name waits until the file is closed:\n\n\`\`\`bash\nEDITOR=sikemux-editor git commit\n\`\`\``,
+    "The sikemux command: run this host's core, open files and projects, call Sikemux's tools.",
+    `On a Mac, install the \`sikemux\` command from **Settings → CLI**. On a server it comes with the core. \`sikemux help <command>\` explains each one.\n\n\`\`\`text\n${help}\`\`\`\n\nAs \`$EDITOR\`, the \`sikemux-editor\` name waits until the file is closed:\n\n\`\`\`bash\nEDITOR=sikemux-editor git commit\n\`\`\``,
   ),
 );
 

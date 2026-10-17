@@ -16,7 +16,7 @@ import { type Palette, typeFor, useStyles } from '@/ui/theme';
 
 type Step = { kind: 'enter' } | { kind: 'check'; code: string; host: PendingHost } | { kind: 'done'; name: string; added: boolean };
 
-/** Signs in a host with no browser: the person types the code `sikemux core sign-in` shows there, checks the host and adds it. */
+/** Signs in a host with no browser: the person types the code `sikemux login` shows there, checks the host and adds it. */
 export default function HostSignIn() {
   const styles = useStyles(makeStyles);
   const bottom = useBottomGap();
@@ -126,7 +126,7 @@ export default function HostSignIn() {
           title="Add a host with a code"
           detail={
             <>
-              Enter the code <Text style={styles.mono}>sikemux core sign-in</Text> shows on the computer.
+              Enter the code <Text style={styles.mono}>sikemux login</Text> shows on the computer.
             </>
           }
         />

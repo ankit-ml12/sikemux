@@ -7,6 +7,7 @@ pub mod cli_client;
 pub mod cli_paths;
 pub mod environment;
 pub mod hang_reports;
+#[cfg(unix)]
 pub mod headless;
 pub mod login_item;
 pub mod plugins;

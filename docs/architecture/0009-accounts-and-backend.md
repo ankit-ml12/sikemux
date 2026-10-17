@@ -84,7 +84,7 @@ not become a remote shell on someone's Mac. This decision keeps that rule.
   deleting an account deletes the user in Clerk; deleted accounts are erased 30 days later.
 
 - 2026-10-14: A host with no browser, such as a Linux box reached over SSH, signs in by code,
-  as in OAuth's device grant. `sikemux core sign-in` asks the API for a secret code and a short
+  as in OAuth's device grant. `sikemux login` asks the API for a secret code and a short
   user code, shows the user code and a link, and asks every five seconds for at most ten
   minutes. The person opens the link on app.sikemux.com, or enters the code in the phone app,
   checks the host's name and approves it. The host then gets the account and a fresh challenge,
@@ -102,7 +102,7 @@ not become a remote shell on someone's Mac. This decision keeps that rule.
   stops taking answers from the old one's phones. Such a device reaches the pairing requests
   and the paired devices through the core's `pairing`, `answerPairing` and `changeDevice`
   calls. The first device on a host with no window is answered in its terminal by
-  `sikemux core sign-in` or `sikemux core pair`.
+  `sikemux login` or `sikemux pair`.
 
 ## Alternatives considered
 

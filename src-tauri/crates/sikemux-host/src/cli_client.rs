@@ -52,41 +52,117 @@ fn run_inner() -> Result<i32, String> {
         if invoked_as_editor {
             return Err("editor invocation requires at least one file".into());
         }
-        print_help();
+        print!("{}", overview());
         return Ok(0);
     }
-    if matches!(args[0].as_str(), "--version" | "-V" | "version") {
-        println!("sikemux {}", env!("CARGO_PKG_VERSION"));
-        return Ok(0);
+    if invoked_as_editor {
+        let Some(open) = parse_open_args(args, true)? else {
+            return Ok(0);
+        };
+        return execute_open(open);
     }
-    if matches!(args[0].as_str(), "--help" | "-h" | "help") {
-        print_help();
-        return Ok(0);
+    let command = args[0].as_str();
+    let wants_help = args[1..].iter().any(|arg| arg == "-h" || arg == "--help");
+    match command {
+        "--version" | "-V" | "version" => {
+            println!("sikemux {}", env!("CARGO_PKG_VERSION"));
+            return Ok(0);
+        }
+        "--help" | "-h" | "help" => {
+            match args.get(1) {
+                Some(topic) => print!("{}", command_help(topic).ok_or_else(|| unknown(topic))?),
+                None => print!("{}", overview()),
+            }
+            return Ok(0);
+        }
+        _ if wants_help && command_help(command).is_some() => {
+            print!("{}", command_help(command).unwrap_or_default());
+            return Ok(0);
+        }
+        "tool" => return execute_tool(&args[1..]),
+        "doctor" => return doctor(),
+        #[cfg(unix)]
+        _ if crate::headless::COMMANDS.contains(&command) => {
+            return Ok(crate::headless::run(command, &args[1..]));
+        }
+        "open" => {
+            args.remove(0);
+        }
+        word if looks_like_command(word) => return Err(unknown_word(word)),
+        _ => {}
     }
-    if args[0] == "tool" {
-        return execute_tool(&args[1..]);
-    }
-    if args[0] == "status" {
-        return status();
-    }
-    if args[0] == "doctor" {
-        return doctor();
-    }
-
-    if args[0] == "open" {
-        args.remove(0);
-    }
-    let Some(open) = parse_open_args(args, invoked_as_editor)? else {
+    let Some(open) = parse_open_args(args, false)? else {
         return Ok(0);
     };
     execute_open(open)
 }
 
-fn print_help() {
-    println!(
-        "Sikemux CLI {}\n\nUSAGE:\n  sikemux open [--wait] [--project DIR] <PATH[:LINE[:COLUMN]]>...\n  sikemux <PATH[:LINE[:COLUMN]]>...\n  sikemux status\n  sikemux doctor\n  sikemux tool METHOD [JSON_PARAMS]\n  sikemux --version\n\nOPTIONS:\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Route unowned files into this project\n  -h, --help         Print help\n  -V, --version      Print version\n\nLINE and COLUMN are one-based. Existing directories open as projects.",
-        env!("CARGO_PKG_VERSION")
-    );
+/// What `sikemux help` prints. The docs' CLI page is generated from it.
+const HELP: &str = r#"Usage: sikemux <command> [options]
+       sikemux <path[:line[:column]]>...
+
+This host
+  status       Show the core, its account and devices      [--json]
+  login        Sign this host in to your Sikemux account
+  logout       Take this host off your account
+  pair         Let phones and computers join this host
+  start        Start the core
+  stop         Stop the core and everything it runs
+  restart      Restart the core, as an update needs
+  enable       Start the core at boot
+  disable      Stop starting the core at boot
+
+Files and projects
+  open         Open files, or folders as projects, in the app
+               (the same as `sikemux <path>`)
+
+Troubleshooting
+  doctor       Show the latest hang report
+  tool         Call one of Sikemux's agent tools
+  core         Run the core in the foreground, as the service does
+
+  help [command], -h, --help    Show help
+  version, -V, --version        Show the version
+
+To open a file named like a command, write ./name.
+"#;
+
+fn overview() -> String {
+    format!("Sikemux {}\n\n{HELP}", env!("CARGO_PKG_VERSION"))
+}
+
+fn command_help(command: &str) -> Option<&'static str> {
+    Some(match command {
+        "status" => "Usage: sikemux status [--json]\n\nShows whether the core is running, whether it starts at boot, the account this\nhost is signed in to and its devices. Exits with 3 while the core is not running.\n--json prints the same as one JSON object.\n",
+        "login" => "Usage: sikemux login\n\nSigns this host in to your Sikemux account without a browser: it prints a code to\napprove at app.sikemux.com or in Sikemux on your phone, then waits for devices to\njoin, as `sikemux pair` does. Nothing secret is kept on this host.\n",
+        "logout" => "Usage: sikemux logout\n\nTakes this host off your account. Devices already paired stay paired.\n",
+        "pair" => "Usage: sikemux pair\n\nWaits for phones and computers on your account to join this host, and asks here\nwhether each gets full control, watch only or nothing. Ctrl-C stops waiting.\n",
+        "start" => "Usage: sikemux start\n\nStarts the core, through the service that starts it at boot when there is one.\n",
+        "stop" => "Usage: sikemux stop\n\nStops the core and the terminals and agents it runs. A core set to start at boot\nstays stopped until `sikemux start` or the next boot.\n",
+        "restart" => "Usage: sikemux restart\n\nStops the core and starts it again, so an updated sikemux takes over. Its terminals\nend; chats pick up where they were.\n",
+        "enable" => "Usage: sikemux enable\n\nStarts the core at boot and again if it crashes: a systemd user service on Linux,\na LaunchAgent on macOS. On Linux, `loginctl enable-linger` keeps it running\nafter you log out.\n",
+        "disable" => "Usage: sikemux disable\n\nStops starting the core at boot. The core keeps running until `sikemux stop`.\n",
+        "open" => "Usage: sikemux open [--wait] [--project DIR] <path[:line[:column]]>...\n       sikemux <path[:line[:column]]>...\n\nOpens files, or folders as projects, in the app, starting it when needed.\nLINE and COLUMN are one-based.\n\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Open files that belong to no project in this one\n\nAs $EDITOR, the sikemux-editor name waits until the file is closed.\n",
+        "doctor" => "Usage: sikemux doctor\n\nShows the latest report the app wrote when its window stopped answering, and\nwhere the rest of it is. It reads them from disk, so it works while the app is stuck.\n",
+        "tool" => "Usage: sikemux tool METHOD [JSON_PARAMS]\n\nCalls one of the tools Sikemux gives agents, such as browser_navigate, as the\nagent in this terminal.\n",
+        "core" => "Usage: sikemux core [--socket PATH] [--cli-endpoint PATH] [--data-dir PATH]\n\nRuns the core in the foreground. The service and the app start it this way; to\nmanage it, use `sikemux start`, `stop` and `status` instead.\n",
+        _ => return None,
+    })
+}
+
+/// A bare lowercase word that is not a file here was meant as a command.
+fn looks_like_command(word: &str) -> bool {
+    !word.is_empty()
+        && word.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+        && !Path::new(word).exists()
+}
+
+fn unknown_word(word: &str) -> String {
+    format!("no command or file named {word}; run `sikemux help` for the commands")
+}
+
+fn unknown(word: &str) -> String {
+    format!("no command named {word}; run `sikemux help` for the list")
 }
 
 fn parse_open_args(args: Vec<String>, invoked_as_editor: bool) -> Result<Option<OpenArgs>, String> {
@@ -108,7 +184,7 @@ fn parse_open_args(args: Vec<String>, invoked_as_editor: bool) -> Result<Option<
                 project = Some(PathBuf::from(value));
             }
             "-h" | "--help" => {
-                print_help();
+                print!("{}", command_help("open").unwrap_or_default());
                 return Ok(None);
             }
             value if value.starts_with('-') => return Err(format!("unknown option: {value}")),
@@ -213,33 +289,10 @@ fn execute_open(args: OpenArgs) -> Result<i32, String> {
     Ok(i32::from(failed))
 }
 
-fn status() -> Result<i32, String> {
-    let endpoint_path = endpoint_path()?;
-    let descriptor = read_endpoint(&endpoint_path)?;
-    let mut reader = session(&descriptor)?;
-    write_command(
-        reader.get_mut(),
-        &CliClientCommand::Ping {
-            protocol: CLI_PROTOCOL_VERSION,
-            token: descriptor.token,
-        },
-    )?;
-    match read_response(&mut reader)? {
-        CliServerResponse::Pong {
-            version,
-            window: true,
-            ..
-        } => {
-            println!("Sikemux {version} is running");
-            Ok(0)
-        }
-        CliServerResponse::Pong { version, .. } => {
-            println!("Sikemux {version} is running in the background; its window is closed");
-            Ok(0)
-        }
-        CliServerResponse::Error { message } => Err(message),
-        _ => Err("unexpected response from Sikemux".into()),
-    }
+/// Whether the app's window is open, once the core's CLI endpoint answers.
+pub fn window_open() -> Option<bool> {
+    let descriptor = read_endpoint(&endpoint_path().ok()?).ok()?;
+    probe(&descriptor).ok()
 }
 
 /// Prints the most recent hang autopsy and where to read the rest of it.

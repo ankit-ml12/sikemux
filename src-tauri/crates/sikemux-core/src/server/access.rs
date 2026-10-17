@@ -130,8 +130,8 @@ pub(crate) struct Setup {
 
 /// Whether only Sikemux's own window or notch may send `request` from this
 /// host. A host with no window is set up from a terminal, which cannot be told
-/// from an agent's shell: `sikemux core sign-in` while no account owns it,
-/// `sign-out`, and `pair` until its first device is in.
+/// from an agent's shell: `sikemux login` while no account owns it,
+/// `logout`, and `pair` until its first device is in.
 pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
     match request {
         Request::Call { method, .. } => super::calls::for_person(method),

@@ -129,8 +129,8 @@ export function HostApproval() {
     <Panel>
       <h1>Add a host</h1>
       <p className="lede">
-        Enter the code that <span className="ink">sikemux core sign-in</span>{" "}
-        shows on the computer.
+        Enter the code that <span className="ink">sikemux login</span> shows on
+        the computer.
       </p>
       <form className="form" onSubmit={submit}>
         <input

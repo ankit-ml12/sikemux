@@ -15,7 +15,7 @@ dev: icons
 # Stops the dev build's core, the terminals and agents it runs, and its notch.
 dev-stop:
 	@test -x src-tauri/target/debug/sikemux-editor || { echo "No dev build yet; run make dev first."; exit 1; }
-	src-tauri/target/debug/sikemux-editor core stop
+	src-tauri/target/debug/sikemux-editor stop
 	@pid=$$(cat "$(HOME)/.config/sikemux/notch.dev.lock" 2>/dev/null); [ -z "$$pid" ] || kill "$$pid" 2>/dev/null || true
 
 showcase:

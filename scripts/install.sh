@@ -172,10 +172,9 @@ install_host() {
     if ! loginctl enable-linger "$(id -un)" 2>/dev/null; then
       as_root loginctl enable-linger "$(id -un)" || say "Could not keep the core running after you log out; run: loginctl enable-linger"
     fi
-    "$bin/sikemux-editor" core install
+    "$bin/sikemux" enable
     if $updating; then
-      say "A core already running keeps its old version until it restarts:"
-      say "  systemctl --user restart com.nodelike.sikemux.core"
+      say "A core already running keeps its old version until you run: sikemux restart"
     fi
   else
     say "No systemd user session here, so the core starts on demand and not at boot."
@@ -185,15 +184,15 @@ install_host() {
   say "To reach this host from your Mac, sign it in to your Sikemux account, then"
   say "link it in Sikemux under Settings → Devices → Computers."
   if ! (: </dev/tty) 2>/dev/null; then
-    say "Sign it in with: sikemux core sign-in"
+    say "Sign it in with: sikemux login"
     return 0
   fi
   if ! $YES; then
     case "$(ask "Sign in now? [Y/n] " y)" in
-      [Nn]*) say "Sign it in later with: sikemux core sign-in"; return 0 ;;
+      [Nn]*) say "Sign it in later with: sikemux login"; return 0 ;;
     esac
   fi
-  "$bin/sikemux-editor" core sign-in </dev/tty >/dev/tty 2>&1 || true
+  "$bin/sikemux" login </dev/tty >/dev/tty 2>&1 || true
 }
 
 case "$(uname -s)" in
