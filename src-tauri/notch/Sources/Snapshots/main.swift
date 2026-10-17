@@ -4,6 +4,7 @@ import SwiftUI
 
 // Renders each state of the island against demo agents, to compare with
 // src-tauri/notch/design/screens.html: `swift run notch-snapshots <dir>`.
+// `--bare` leaves out the backdrop, so the showcase can lay the island over its own wallpaper.
 
 let fixture = #"""
 {
@@ -75,7 +76,9 @@ let fixture = #"""
 """#
 
 let arguments = CommandLine.arguments
-let outputDir = URL(fileURLWithPath: arguments.count > 1 ? arguments[1] : "/tmp/notch-snapshots")
+let paths = arguments.dropFirst().filter { !$0.hasPrefix("--") }
+let outputDir = URL(fileURLWithPath: paths.first ?? "/tmp/notch-snapshots")
+let bare = arguments.contains("--bare")
 try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
 
 let fontsDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../Fonts").standardized.path
@@ -125,9 +128,11 @@ func render(_ name: String, agents: Set<String>? = nil, geometry: NotchGeometry 
     setup(island)
     let size = CGSize(width: 760, height: height)
     let root = ZStack(alignment: .top) {
-        LinearGradient(colors: [Color(hex: "#3b2a6e"), Color(hex: "#141024"), Color(hex: "#1f3b6b")], startPoint: .bottomLeading, endPoint: .topTrailing)
-        Color.black.frame(height: 10).frame(maxHeight: .infinity, alignment: .top)
-        IslandView(store: store, island: island).padding(.top, 10)
+        if !bare {
+            LinearGradient(colors: [Color(hex: "#3b2a6e"), Color(hex: "#141024"), Color(hex: "#1f3b6b")], startPoint: .bottomLeading, endPoint: .topTrailing)
+            Color.black.frame(height: 10).frame(maxHeight: .infinity, alignment: .top)
+        }
+        IslandView(store: store, island: island).padding(.top, bare ? 0 : 10)
     }
     .frame(width: size.width, height: size.height)
     let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)

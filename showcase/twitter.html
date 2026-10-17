@@ -87,6 +87,20 @@
         object-fit: contain;
       }
 
+      /* The island hangs from the top edge of the screen, as it does from a MacBook's notch. */
+      .notch {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: 760px;
+        transform: translateX(-50%);
+        pointer-events: none;
+      }
+
+      .notch:not([src]) {
+        display: none;
+      }
+
       .app-view {
         display: none;
       }
@@ -101,11 +115,13 @@
       <iframe src="/showcase/?play" title="Sikemux"></iframe>
       <img class="shot is-backdrop" alt="" />
       <img class="shot is-front" alt="" />
+      <img class="notch" alt="" />
     </div>
     <div class="controls">
       <button type="button" class="wallpaper">Wallpaper</button>
       <button type="button" class="screenshot">Screenshot</button>
       <button type="button" class="app-view">App</button>
+      <button type="button" class="notch-view">Notch</button>
       <button type="button" data-layout="landscape">Landscape</button>
       <button type="button" data-layout="thirds">Thirds</button>
       <input type="file" class="wallpaper-picker" accept="image/*" />
@@ -125,6 +141,23 @@
 
       const params = new URLSearchParams(location.search);
       if (params.has("screenshot")) showScreenshot();
+
+      const NOTCH_STATES = { closed: "C3-needs-you", open: "O1-inbox", off: null };
+      const notchButton = document.querySelector(".notch-view");
+      let notch = params.get("notch") ?? "closed";
+      function showNotch() {
+        const image = document.querySelector(".notch");
+        const state = NOTCH_STATES[notch];
+        if (state) image.src = `/__showcase/notch/${state}.png`;
+        else image.removeAttribute("src");
+        notchButton.textContent = `Notch: ${notch}`;
+      }
+      notchButton.addEventListener("click", () => {
+        const names = Object.keys(NOTCH_STATES);
+        notch = names[(names.indexOf(notch) + 1) % names.length];
+        showNotch();
+      });
+      showNotch();
 
       if (params.has("capture")) {
         document.documentElement.classList.add("is-capturing");
@@ -170,8 +203,8 @@
           method: "POST",
           body: JSON.stringify(
             document.documentElement.classList.contains("has-screenshot")
-              ? { screenshot: true, layout }
-              : { state: app.showcase.store.getState(), layout },
+              ? { screenshot: true, layout, notch }
+              : { state: app.showcase.store.getState(), layout, notch },
           ),
         });
         const saved = await response.json();

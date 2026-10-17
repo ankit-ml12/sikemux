@@ -273,9 +273,27 @@ let chosenScreenshot: Buffer | null = null;
 
 let snapshotBrowser: Promise<Browser> | null = null;
 
+const NOTCH_DIR = join(import.meta.dirname, "out/notch");
+let notchRender: Promise<void> | null = null;
+
+// The island is SwiftUI, so its own snapshot tool draws it once per server, on a clear background.
+function renderNotch(): Promise<void> {
+  notchRender ??= new Promise((done, fail) => {
+    const notchPackage = join(import.meta.dirname, "../src-tauri/notch");
+    spawn("swift", ["run", "--package-path", notchPackage, "notch-snapshots", NOTCH_DIR, "--bare"], {
+      stdio: "ignore",
+    }).on("exit", (code) => {
+      if (code === 0) return done();
+      notchRender = null;
+      fail(new Error(`notch-snapshots exited with ${code}`));
+    });
+  });
+  return notchRender;
+}
+
 async function snapshot(
   origin: string,
-  { state, layout, screenshot }: Record<string, unknown>,
+  { state, layout, screenshot, notch }: Record<string, unknown>,
 ): Promise<string[]> {
   snapshotBrowser ??= import("playwright-core").then(({ chromium }) =>
     chromium.launch({ channel: "chrome" }),
@@ -290,15 +308,16 @@ async function snapshot(
   try {
     await context.clock.setFixedTime(new Date("2026-09-26T09:41:00"));
     const page = await context.newPage();
+    const island = notch ? `&notch=${notch}` : "";
     if (screenshot) {
-      await page.goto(`${origin}/showcase/twitter.html?capture&screenshot`);
+      await page.goto(`${origin}/showcase/twitter.html?capture&screenshot${island}`);
       await page.waitForFunction(() =>
         [...document.querySelectorAll<HTMLImageElement>(".shot")].every(
           (image) => image.complete && image.naturalWidth > 0,
         ),
       );
     } else {
-      await page.goto(`${origin}/showcase/twitter.html?capture`);
+      await page.goto(`${origin}/showcase/twitter.html?capture${island}`);
       await page.frameLocator("iframe").locator(".shell").waitFor();
       const app = page.frames()[1];
       await app.waitForFunction(() => "showcase" in window);
@@ -314,6 +333,10 @@ async function snapshot(
       }, state);
       await page.waitForTimeout(1500);
     }
+    await page.waitForFunction(() => {
+      const image = document.querySelector<HTMLImageElement>(".notch");
+      return !image?.getAttribute("src") || (image.complete && image.naturalWidth > 0);
+    });
     const stamp = new Date().toLocaleString("sv").replace(/[ :]/g, "-");
     if (layout !== "thirds") {
       const name = `sikemux-${stamp}.png`;
@@ -356,6 +379,14 @@ function serveDemoFiles(server: ViteDevServer | PreviewServer, port: number) {
       if (!existsSync(frame)) return response.writeHead(404).end();
       response.setHeader("Content-Type", "image/png");
       return response.end(readFileSync(frame));
+    }
+    const notchState = request.url?.match(/^\/notch\/([\w-]+)\.png$/);
+    if (notchState) {
+      await renderNotch();
+      const file = join(NOTCH_DIR, `${notchState[1]}.png`);
+      if (!existsSync(file)) return response.writeHead(404).end();
+      response.setHeader("Content-Type", "image/png");
+      return response.end(readFileSync(file));
     }
     const shownPage = request.url?.match(/^\/page\/([0-9a-f]{32})$/);
     if (shownPage) {
