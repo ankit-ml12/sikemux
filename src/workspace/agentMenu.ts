@@ -24,11 +24,24 @@ export function agentMenu(
     retitle: () => void = () => void renameAgentPrompt(agent),
 ): CtxItem[] {
     const link = cmd.agentLink(agent, session);
+    const resumeId = agent.resumeId;
+    const pinned = !!resumeId && getState().pinnedChats.some((pin) => pin.agent === agent.type && pin.id === resumeId);
     const items: CtxItem[] = [
         { label: "Rename…", icon: menuIcon(IconPencil), run: () => void renameAgentNamePrompt(agent) },
         { label: "Edit Title…", icon: menuIcon(IconPencil), run: retitle },
         ...(getState().buddies
             ? [{ label: "Change Buddy…", icon: createElement(AgentBuddy, { agent, size: 13 }), run: () => openBuddyPicker(agent.id) }]
+            : []),
+        ...(resumeId
+            ? [
+                  pinned
+                      ? { label: "Unpin", icon: menuIcon(IconPin), run: () => cmd.unpinChat(agent.type, resumeId) }
+                      : {
+                            label: "Pin",
+                            icon: menuIcon(IconPin),
+                            run: () => cmd.pinChat({ agent: agent.type, id: resumeId, title: agent.title, project: agent.cwd || session.cwd }),
+                        },
+              ]
             : []),
         ...(agent.launchState === "dormant"
             ? [{ label: "Resume", icon: menuIcon(IconRotate), run: () => cmd.selectAgent(agent.id) }]
