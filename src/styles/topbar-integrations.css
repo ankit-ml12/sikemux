@@ -219,24 +219,17 @@
     width: 22px;
     height: 22px;
     padding: 0;
-    background: color-mix(in srgb, var(--live) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
+    background: transparent;
+    border: none;
     color: var(--live);
     cursor: pointer;
-    transition:
-        background var(--dur-1),
-        color var(--dur-1);
+    transition: background var(--dur-1);
 }
 .tb-run-btn:hover {
-    background: color-mix(in srgb, var(--live) 22%, transparent);
+    background: var(--surface-hover);
 }
 .tb-run-btn.running {
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-    border-color: color-mix(in srgb, var(--danger) 35%, transparent);
     color: var(--danger);
-}
-.tb-run-btn.running:hover {
-    background: color-mix(in srgb, var(--danger) 22%, transparent);
 }
 .tb-run-chip {
     display: inline-flex;
@@ -318,12 +311,8 @@
     overflow-y: auto;
     overscroll-behavior: contain;
 }
-.tb-run-menu .env-dd-item {
-    border: 1px solid transparent;
-}
 .tb-run-menu .env-dd-item.active {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 .tb-run-menu-head {
     display: flex;
