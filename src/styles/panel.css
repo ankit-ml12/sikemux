@@ -279,3 +279,58 @@
     color: var(--text-primary);
     background: var(--surface-hover);
 }
+
+/* Pages side by side in one track that a swipe or the icons at their foot
+   slide along. Pages off to the side are not painted until something moves
+   the track. */
+.swipe-pages {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+.swipe-pager {
+    flex: 1;
+    min-height: 0;
+    overflow: clip;
+}
+.swipe-track {
+    display: flex;
+    height: 100%;
+    will-change: transform;
+}
+.swipe-page {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 100%;
+    min-width: 0;
+    min-height: 0;
+}
+.swipe-pager:not([data-moving]) .swipe-page:not(.is-current) {
+    visibility: hidden;
+}
+.swipe-switch {
+    display: flex;
+    flex: none;
+    justify-content: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-top: 1px solid var(--border);
+}
+.swipe-switch button {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: var(--control-hit);
+    color: var(--text-tertiary);
+    transition:
+        color var(--dur-1) linear,
+        background-color var(--dur-1) linear;
+}
+.swipe-switch button:hover {
+    color: var(--text-primary);
+}
+.swipe-switch button[aria-selected="true"] {
+    background: var(--surface-chosen);
+    color: var(--text-primary);
+}

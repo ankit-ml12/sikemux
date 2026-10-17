@@ -657,7 +657,7 @@ describe("keyboard", () => {
         await user.type(filter, "x{Escape}");
         expect(filter).toHaveValue("");
 
-        await user.click(screen.getByRole("button", { name: "Changes (1)" }));
+        await user.click(screen.getByRole("tab", { name: "Changes — 1" }));
         expect(view()).toMatchObject({ area: "local", panel: "files" });
     });
 });

@@ -27,18 +27,21 @@
     gap: var(--space-2);
     min-height: 0;
 }
-.git-left > .git-compose,
-.git-left > .git-list,
-.git-left > .git-history {
+.git-left .swipe-page {
+    gap: var(--space-2);
+}
+:is(.git-left, .git-left .swipe-page) > .git-compose,
+:is(.git-left, .git-left .swipe-page) > .git-list,
+:is(.git-left, .git-left .swipe-page) > .git-history {
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
-.git-left > .git-list {
+:is(.git-left, .git-left .swipe-page) > .git-list {
     padding-top: 2px;
 }
 /* Changes is one card: the commit box, then the files it will commit. */
-.git-left > .git-changes {
+:is(.git-left, .git-left .swipe-page) > .git-changes {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
@@ -53,18 +56,18 @@
     border-bottom: 1px solid var(--border);
 }
 /* History is a screen of its own, so the graph takes the whole column under its search. */
-.git-left > .git-history.open {
+:is(.git-left, .git-left .swipe-page) > .git-history.open {
     flex: 1 1 auto;
     min-height: 0;
 }
-.git-left > .git-history > .git-history-head {
+:is(.git-left, .git-left .swipe-page) > .git-history > .git-history-head {
     height: auto;
     padding: 6px;
 }
-.git-left > .git-history > .git-history-head:hover {
+:is(.git-left, .git-left .swipe-page) > .git-history > .git-history-head:hover {
     background: none;
 }
-.git-left > .git-history .git-history-search {
+:is(.git-left, .git-left .swipe-page) > .git-history .git-history-search {
     flex: 1 1 auto;
 }
 .git-split {
@@ -78,7 +81,7 @@
     touch-action: none;
 }
 .git-split::before,
-.git-left > .git-history-split::before {
+:is(.git-left, .git-left .swipe-page) > .git-history-split::before {
     content: "";
     position: absolute;
     background: transparent;
@@ -87,13 +90,13 @@
 .git-split::before {
     inset: 0 calc(50% - 1px);
 }
-.git-left > .git-history-split {
+:is(.git-left, .git-left .swipe-page) > .git-history-split {
     position: relative;
 }
-.git-left > .git-history-split::before {
+:is(.git-left, .git-left .swipe-page) > .git-history-split::before {
     inset: calc(50% - 1px) 0;
 }
 .git-split:is(:hover, :active, :focus-visible)::before,
-.git-left > .git-history-split:is(:hover, :active, :focus-visible)::before {
+:is(.git-left, .git-left .swipe-page) > .git-history-split:is(:hover, :active, :focus-visible)::before {
     background: var(--acc);
 }

@@ -53,18 +53,17 @@ it("offers to stash from the toolbar menu when there are no stashes yet", async 
     expect(getState().gitModal).toMatchObject({ kind: "menu", title: "Stash" });
 });
 
-it("switches between Changes, History and Branches from the rail", async () => {
+it("switches between Changes, History and Branches from the side panel's foot", async () => {
     const user = userEvent.setup();
     render(<GitPane paneId="git-test" cwd="/repo" active visible />);
-    const rail = screen.getByRole("navigation", { name: "Git" });
-    const changes = within(rail).getByRole("button", { name: "Changes (1)" });
-    expect(changes).toHaveAttribute("aria-current", "page");
+    const foot = screen.getByRole("tablist", { name: "Git lists" });
+    expect(within(foot).getByRole("tab", { name: "Changes — 1" })).toHaveAttribute("aria-selected", "true");
 
-    await user.click(within(rail).getByRole("button", { name: "History (2)" }));
+    await user.click(within(foot).getByRole("tab", { name: "History — 2" }));
     expect(getState().gitViews["git-test"].panel).toBe("commits");
-    expect(within(rail).getByRole("button", { name: "History (2)" })).toHaveAttribute("aria-current", "page");
+    expect(within(foot).getByRole("tab", { name: "History — 2" })).toHaveAttribute("aria-selected", "true");
 
-    await user.click(within(rail).getByRole("button", { name: "Branches (3)" }));
+    await user.click(within(foot).getByRole("tab", { name: "Branches — 3" }));
     expect(getState().gitViews["git-test"].panel).toBe("branches");
     expect(screen.getByRole("button", { name: /New branch/ })).toBeInTheDocument();
 });
