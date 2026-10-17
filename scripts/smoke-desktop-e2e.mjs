@@ -779,9 +779,9 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
   const { cursor } = json(tool("workspace.inspect"), "harness inspect");
 
   await quitDesktop();
-  const status = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
-  if (!/its window is closed/u.test(status.stdout))
-    fail(`status did not say the window is closed: ${status.stdout}`);
+  const status = hostStatus();
+  if (status.running !== true || status.window !== false)
+    fail(`status did not say the window is closed: ${JSON.stringify(status)}`);
   const read = json(
     tool("task.read", { executionId: started.executionId, plain: true }),
     "task.read with the window closed",
@@ -1470,6 +1470,20 @@ function launchDesktop(environment = {}) {
   return child;
 }
 
+function hostStatus() {
+  const status = run(
+    cliExecutable,
+    ["status", "--json"],
+    isolatedEnvironment,
+    2_000,
+  );
+  try {
+    return JSON.parse(status.stdout);
+  } catch {
+    return { running: false, window: null };
+  }
+}
+
 async function waitForBroker(child) {
   await waitFor(
     "the desktop window behind the CLI endpoint",
@@ -1482,11 +1496,8 @@ async function waitForBroker(child) {
           desktopLog,
         );
       }
-      const status = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
-      return (
-        status.status === 0 &&
-        /^Sikemux \S+ is running\s*$/u.test(status.stdout)
-      );
+      const status = hostStatus();
+      return status.running === true && status.window === true;
     },
   );
 }
@@ -1761,10 +1772,10 @@ try {
 
   if (exerciseBrowser) await exerciseBrowserTools(harnessEnv);
 
-  const afterOpen = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
-  if (afterOpen.status !== 0) {
+  const afterOpen = hostStatus();
+  if (afterOpen.running !== true || afterOpen.window !== true) {
     fail(
-      `desktop stopped responding after the editor flow: ${afterOpen.stderr}`,
+      `desktop stopped responding after the editor flow: ${JSON.stringify(afterOpen)}`,
       desktopLog,
     );
   }
