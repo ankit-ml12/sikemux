@@ -5782,20 +5782,10 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sikemux-core",
+ "sikemux-host",
  "sikemux-keychain",
  "sikemux-markdown",
  "sikemux-plugin-api",
- "sikemux-plugin-aws",
- "sikemux-plugin-bitbucket",
- "sikemux-plugin-bruno",
- "sikemux-plugin-database",
- "sikemux-plugin-github",
- "sikemux-plugin-gitlab",
- "sikemux-plugin-jira",
- "sikemux-plugin-linear",
- "sikemux-plugin-rundeck",
- "sikemux-plugin-signoz",
- "sikemux-plugin-slack",
  "sikemux-process",
  "sikemux-pty",
  "tauri",
@@ -5872,6 +5862,39 @@ dependencies = [
  "uuid",
  "vt100",
  "webpki-roots",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-host"
+version = "0.5.3-nightly.6"
+dependencies = [
+ "hex",
+ "libc",
+ "reqwest",
+ "rustls",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sikemux-core",
+ "sikemux-plugin-api",
+ "sikemux-plugin-aws",
+ "sikemux-plugin-bitbucket",
+ "sikemux-plugin-bruno",
+ "sikemux-plugin-database",
+ "sikemux-plugin-github",
+ "sikemux-plugin-gitlab",
+ "sikemux-plugin-jira",
+ "sikemux-plugin-linear",
+ "sikemux-plugin-rundeck",
+ "sikemux-plugin-signoz",
+ "sikemux-plugin-slack",
+ "sikemux-process",
+ "sikemux-pty",
+ "tempfile",
+ "tokio",
+ "uuid",
  "workspace-hack",
 ]
 
@@ -6152,6 +6175,7 @@ name = "sikemux-pty"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "memchr",
  "portable-pty",
  "regex",
  "serde",
@@ -7531,7 +7555,7 @@ dependencies = [
  "serde",
  "tempfile",
  "textwrap",
- "toml 1.1.6+spec-1.1.0",
+ "toml 0.8.2",
  "uniffi_internal_macros",
  "uniffi_meta",
  "uniffi_pipeline",
@@ -7576,7 +7600,7 @@ dependencies = [
  "quote",
  "serde",
  "syn 2.0.119",
- "toml 1.1.6+spec-1.1.0",
+ "toml 0.8.2",
  "uniffi_meta",
 ]
 

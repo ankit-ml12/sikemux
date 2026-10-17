@@ -15,6 +15,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use sikemux_host::hang_reports::{autopsy_dir, is_bundle, DIRECTORY_PREFIX, REPORT_FILE};
+
 use crate::bounded_process;
 use crate::observability::{
     global_observability, HangListener, HangSignal, Metadata, ObservabilitySnapshot, ScalarValue,
@@ -22,8 +24,6 @@ use crate::observability::{
 };
 
 const REPORT_VERSION: u32 = 1;
-const REPORT_FILE: &str = "report.json";
-const DIRECTORY_PREFIX: &str = "hang-";
 const RETAINED_AUTOPSIES: usize = 5;
 const MIN_AUTOPSY_INTERVAL: Duration = Duration::from_secs(120);
 const SAMPLE_BINARY: &str = "/usr/bin/sample";
@@ -69,34 +69,6 @@ pub struct HangReport {
     pub activity_history: Vec<UiActivitySnapshot>,
     pub observability: ObservabilitySnapshot,
     pub samples: Vec<StackSample>,
-}
-
-/// One autopsy as listed by `sikemux doctor`.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HangReportSummary {
-    pub directory: String,
-    pub report: String,
-    pub captured_at: String,
-    pub captured_at_ms: u64,
-    pub delay_ms: u64,
-    pub summary: String,
-    pub stacks: Vec<String>,
-}
-
-/// The fields of a written report that listing needs. Everything else in the
-/// bundle is for a human reading the file.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ReportHeader {
-    captured_at: String,
-    captured_at_ms: u64,
-    watchdog: String,
-    delay_ms: u64,
-    #[serde(default)]
-    activity: Option<UiActivitySnapshot>,
-    #[serde(default)]
-    samples: Vec<StackSample>,
 }
 
 /// Captures native stacks of a process into a file.
@@ -356,94 +328,6 @@ pub fn prune(directory: &Path, keep: usize) -> io::Result<()> {
     Ok(())
 }
 
-fn is_bundle(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with(DIRECTORY_PREFIX))
-}
-
-/// Reads every autopsy bundle in `directory`, newest first.
-pub fn list_reports(directory: &Path) -> Vec<HangReportSummary> {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return Vec::new();
-    };
-    let mut summaries = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir() && is_bundle(path))
-        .filter_map(|path| read_summary(&path))
-        .collect::<Vec<_>>();
-    summaries.sort_by_key(|summary| std::cmp::Reverse(summary.captured_at_ms));
-    summaries
-}
-
-fn read_summary(directory: &Path) -> Option<HangReportSummary> {
-    let report = directory.join(REPORT_FILE);
-    let header: ReportHeader = serde_json::from_slice(&fs::read(&report).ok()?).ok()?;
-    let stacks = header
-        .samples
-        .iter()
-        .filter_map(|sample| sample.file.as_ref())
-        .map(|file| directory.join(file).to_string_lossy().into_owned())
-        .collect();
-    Some(HangReportSummary {
-        directory: directory.to_string_lossy().into_owned(),
-        report: report.to_string_lossy().into_owned(),
-        captured_at: header.captured_at.clone(),
-        captured_at_ms: header.captured_at_ms,
-        delay_ms: header.delay_ms,
-        summary: summarize(&header),
-        stacks,
-    })
-}
-
-fn summarize(header: &ReportHeader) -> String {
-    let mut parts = vec![format!(
-        "{} froze for {}",
-        header.watchdog,
-        human_duration(header.delay_ms)
-    )];
-    if let Some(activity) = &header.activity {
-        if let Some(pane) = &activity.focus_pane {
-            parts.push(format!("focus {pane}"));
-        }
-        if let Some(inflight) = activity.inflight.first() {
-            parts.push(format!(
-                "inflight {} ({})",
-                inflight.command,
-                human_duration(inflight.age_ms)
-            ));
-        }
-        let rejections: u64 = activity
-            .rejections
-            .iter()
-            .fold(0, |total, rejection| total.saturating_add(rejection.count));
-        if rejections == 1 {
-            parts.push("1 rejection".to_owned());
-        } else if rejections > 1 {
-            parts.push(format!("{rejections} rejections"));
-        }
-    }
-    if header.samples.iter().all(|sample| sample.file.is_none()) {
-        parts.push("no stacks captured".to_owned());
-    }
-    parts.join(" · ")
-}
-
-pub fn human_duration(ms: u64) -> String {
-    if ms < 1_000 {
-        format!("{ms}ms")
-    } else {
-        format!("{}.{}s", ms / 1_000, (ms % 1_000) / 100)
-    }
-}
-
-/// Where autopsies live. Debug and release stay separate so a development run
-/// cannot bury the evidence from an installed build.
-pub fn autopsy_dir() -> Option<PathBuf> {
-    sikemux_process::paths::config_file("autopsy", "")
-}
-
 /// Builds the listener the UI watchdog notifies. `None` when there is nowhere
 /// to write, which leaves hang detection working and evidence capture off.
 pub fn listener(activity: Arc<UiActivityLog>) -> Option<Arc<dyn HangListener>> {
@@ -598,6 +482,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 mod tests {
     use super::*;
     use crate::observability::{Observability, UiActivityRejection, UiInflightCommand};
+    use sikemux_host::hang_reports::list_reports;
 
     struct FakeCapturer {
         body: &'static str,
@@ -787,13 +672,5 @@ mod tests {
         assert_eq!(civil_from_days(11_016), (2000, 2, 29));
         assert_eq!(civil_from_days(19_782), (2024, 2, 29));
         assert_eq!(iso8601(1_789_000_000_123), "2026-09-10T00:26:40.123Z");
-    }
-
-    #[test]
-    fn durations_read_as_seconds_once_they_matter() {
-        assert_eq!(human_duration(0), "0ms");
-        assert_eq!(human_duration(999), "999ms");
-        assert_eq!(human_duration(1_000), "1.0s");
-        assert_eq!(human_duration(4_299), "4.2s");
     }
 }

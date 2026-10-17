@@ -2,12 +2,6 @@
 //! commands take the panes' calls to the core, and their streams over its
 //! tool endpoint.
 
-mod builtin;
-mod host;
-mod in_core;
-
-pub use in_core::provide_to_core;
-
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;

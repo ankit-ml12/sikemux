@@ -198,7 +198,7 @@ fn the_simulator_tools_are_listed_only_where_they_work_and_stay_within_budget() 
 /// but there they are paid on every request like the built-in ones.
 #[test]
 fn every_plugin_keeps_its_tools_within_budget() {
-    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins");
+    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
     let mut checked = 0;
     for entry in std::fs::read_dir(plugins).expect("the plugins directory") {
         let path = entry.expect("a plugin").path().join("manifest.json");

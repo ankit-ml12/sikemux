@@ -7,26 +7,13 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::{json, Value};
-use sikemux_core::server::plugins::{Answer, Failure, Listing, Plugins, Sink};
+use sikemux_core::server::plugins::{Answer, Listing, Plugins, Sink};
 use sikemux_plugin_api::{AgentTool, StreamSink};
 use sikemux_process::user_environment::UserEnvironment;
 
 use super::host::PluginHost;
-use crate::error::AppError;
 
 struct InCore(PluginHost);
-
-fn failure(plugin: &str, error: AppError) -> Failure {
-    match error {
-        AppError::Plugin { plugin, error } => Failure {
-            plugin,
-            category: error.category,
-            message: error.message,
-            status: error.status,
-        },
-        other => Failure::new(plugin, other.category(), other.to_string()),
-    }
-}
 
 impl Plugins for InCore {
     fn manifests(&self) -> Vec<Value> {
@@ -50,12 +37,7 @@ impl Plugins for InCore {
     }
 
     fn call<'a>(&'a self, plugin: &'a str, method: &'a str, params: Value) -> Answer<'a, Value> {
-        Box::pin(async move {
-            self.0
-                .call(plugin, method, params)
-                .await
-                .map_err(|error| failure(plugin, error))
-        })
+        Box::pin(async move { self.0.call(plugin, method, params).await })
     }
 
     fn stream<'a>(
@@ -69,7 +51,6 @@ impl Plugins for InCore {
             self.0
                 .stream(plugin, method, params, StreamSink::new(sink))
                 .await
-                .map_err(|error| failure(plugin, error))
         })
     }
 
@@ -78,12 +59,7 @@ impl Plugins for InCore {
     }
 
     fn call_agent_tool<'a>(&'a self, name: &'a str, arguments: Value) -> Answer<'a, Value> {
-        Box::pin(async move {
-            self.0
-                .call_agent_tool(name, arguments)
-                .await
-                .map_err(|error| failure("sikemux", error))
-        })
+        Box::pin(async move { self.0.call_agent_tool(name, arguments).await })
     }
 }
 
@@ -109,7 +85,7 @@ static SHELL_VARIABLES: OnceLock<Vec<String>> = OnceLock::new();
 /// window gives its children, plus every variable a plugin reads that the
 /// person's shell sets and the core was not started with.
 fn core_environment() -> UserEnvironment {
-    let mut environment = crate::system::user_environment();
+    let mut environment = crate::environment::user_environment();
     let shell = sikemux_pty::user_shell::login_shell_environment();
     for name in SHELL_VARIABLES.get().into_iter().flatten() {
         if std::env::var_os(name).is_some() {

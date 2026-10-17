@@ -7,7 +7,7 @@
 mod core_mode;
 mod tools_mcp;
 
-use sikemux_lib::cli_client;
+use sikemux_host::cli_client;
 
 fn main() {
     #[cfg(unix)]

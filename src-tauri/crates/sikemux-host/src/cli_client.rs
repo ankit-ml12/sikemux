@@ -247,15 +247,15 @@ fn status() -> Result<i32, String> {
 /// This reads the bundles straight off disk rather than asking the app, so it
 /// still answers while the app is the thing that is stuck.
 fn doctor() -> Result<i32, String> {
-    let directory = crate::autopsy::autopsy_dir().ok_or("home directory is unavailable")?;
+    let directory = crate::hang_reports::autopsy_dir().ok_or("home directory is unavailable")?;
     print!(
         "{}",
-        doctor_report(&directory, &crate::autopsy::list_reports(&directory))
+        doctor_report(&directory, &crate::hang_reports::list_reports(&directory))
     );
     Ok(0)
 }
 
-fn doctor_report(directory: &Path, reports: &[crate::autopsy::HangReportSummary]) -> String {
+fn doctor_report(directory: &Path, reports: &[crate::hang_reports::HangReportSummary]) -> String {
     let mut out = format!(
         "Sikemux {}\nAutopsies {}\n",
         env!("CARGO_PKG_VERSION"),
@@ -487,7 +487,7 @@ fn session(descriptor: &CliEndpointDescriptor) -> Result<BufReader<TcpStream>, S
 
 /// A connection to the core's tool endpoint at `endpoint` collecting the
 /// plugin stream `ticket` names, which carries the stream's events line by line.
-pub(crate) fn open_plugin_stream(endpoint: &Path, ticket: String) -> Result<TcpStream, String> {
+pub fn open_plugin_stream(endpoint: &Path, ticket: String) -> Result<TcpStream, String> {
     let descriptor = read_endpoint(endpoint)?;
     let mut reader = session(&descriptor)?;
     if !reader.buffer().is_empty() {
@@ -747,7 +747,7 @@ mod tests {
     #[test]
     fn doctor_names_the_latest_hang_and_where_its_stacks_are() {
         let reports = [
-            crate::autopsy::HangReportSummary {
+            crate::hang_reports::HangReportSummary {
                 directory: "/autopsy/hang-20260918-142233-471".to_owned(),
                 report: "/autopsy/hang-20260918-142233-471/report.json".to_owned(),
                 captured_at: "2026-09-18T14:22:33.471Z".to_owned(),
@@ -756,7 +756,7 @@ mod tests {
                 summary: "ui froze for 4.2s · focus editor".to_owned(),
                 stacks: vec!["/autopsy/hang-20260918-142233-471/webcontent.sample.txt".to_owned()],
             },
-            crate::autopsy::HangReportSummary {
+            crate::hang_reports::HangReportSummary {
                 directory: "/autopsy/hang-20260918-140000-000".to_owned(),
                 report: "/autopsy/hang-20260918-140000-000/report.json".to_owned(),
                 captured_at: "2026-09-18T14:00:00.000Z".to_owned(),

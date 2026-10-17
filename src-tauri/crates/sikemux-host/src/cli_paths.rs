@@ -39,7 +39,7 @@ pub fn link_cli_for_children() {
     let Some(executable) = cli_executable_path() else {
         return;
     };
-    let Some(directory) = crate::state::state_path().and_then(|path| {
+    let Some(directory) = sikemux_process::paths::config_file("state", "json").and_then(|path| {
         Some(path.parent()?.join(if cfg!(debug_assertions) {
             "bin-dev"
         } else {

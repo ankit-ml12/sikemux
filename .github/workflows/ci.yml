@@ -199,7 +199,7 @@ jobs:
         working-directory: src-tauri
 
       - name: Build without any plugins
-        run: cargo clippy -p sikemux --no-default-features --all-targets -- -D warnings
+        run: cargo clippy -p sikemux-host --no-default-features --all-targets -- -D warnings
         working-directory: src-tauri
 
   # Every release also ships Linux packages, so main must keep compiling there,
@@ -232,7 +232,7 @@ jobs:
         working-directory: src-tauri
 
       - name: Run the core's tests on Linux
-        run: cargo test --locked -p sikemux-core -p sikemux-pty -p sikemux-process -p sikemux-wire -p sikemux-client -p sikemux-keychain
+        run: cargo test --locked -p sikemux-core -p sikemux-pty -p sikemux-process -p sikemux-wire -p sikemux-client -p sikemux-keychain -p sikemux-host
         working-directory: src-tauri
 
   simulator-helper:

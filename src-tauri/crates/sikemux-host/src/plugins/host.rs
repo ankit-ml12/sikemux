@@ -12,7 +12,7 @@ use tokio::runtime::{Handle, Runtime};
 use tokio::task::JoinHandle;
 
 use super::builtin;
-use crate::error::{AppError, AppResult};
+use sikemux_core::server::plugins::Failure;
 
 struct Loaded {
     plugin: Arc<dyn Plugin>,
@@ -95,16 +95,18 @@ impl PluginHost {
         })
     }
 
-    fn get(&self, id: &str) -> AppResult<&Loaded> {
+    fn get(&self, id: &str) -> Result<&Loaded, Failure> {
         if !self.is_enabled(id) {
-            return Err(AppError::Plugin {
-                plugin: id.to_owned(),
-                error: PluginError::new("disabled", format!("`{id}` is switched off in Settings")),
-            });
+            return Err(failure(
+                id,
+                PluginError::new("disabled", format!("`{id}` is switched off in Settings")),
+            ));
         }
-        self.plugins.get(id).ok_or_else(|| AppError::Plugin {
-            plugin: id.to_owned(),
-            error: PluginError::new("not-installed", format!("no plugin named `{id}`")),
+        self.plugins.get(id).ok_or_else(|| {
+            failure(
+                id,
+                PluginError::new("not-installed", format!("no plugin named `{id}`")),
+            )
         })
     }
 
@@ -234,17 +236,23 @@ impl PluginHost {
 
     /// Runs a tool by the name an agent knows it by. A plugin method that no
     /// tool names cannot be reached this way.
-    pub async fn call_agent_tool(&self, name: &str, arguments: Value) -> AppResult<Value> {
+    pub async fn call_agent_tool(&self, name: &str, arguments: Value) -> Result<Value, Failure> {
         let (plugin, method) = self
             .agent_tools()
             .into_iter()
             .find(|(_, tool)| tool.name == name)
             .map(|(plugin, tool)| (plugin.to_owned(), tool.method.clone()))
-            .ok_or_else(|| AppError::Other(format!("no plugin offers the tool `{name}`")))?;
+            .ok_or_else(|| {
+                Failure::new(
+                    "sikemux",
+                    "other",
+                    format!("no plugin offers the tool `{name}`"),
+                )
+            })?;
         self.call(&plugin, &method, arguments).await
     }
 
-    pub async fn call(&self, id: &str, method: &str, params: Value) -> AppResult<Value> {
+    pub async fn call(&self, id: &str, method: &str, params: Value) -> Result<Value, Failure> {
         let loaded = self.get(id)?;
         let plugin = Arc::clone(&loaded.plugin);
         let context = Arc::clone(&loaded.context);
@@ -268,10 +276,7 @@ impl PluginHost {
                 ))
             }
         };
-        outcome.map_err(|error| AppError::Plugin {
-            plugin: id.to_owned(),
-            error,
-        })
+        outcome.map_err(|error| failure(id, error))
     }
 
     /// Runs a stream until it ends. Dropping the future stops it.
@@ -281,7 +286,7 @@ impl PluginHost {
         method: &str,
         params: Value,
         sink: StreamSink,
-    ) -> AppResult<()> {
+    ) -> Result<(), Failure> {
         let loaded = self.get(id)?;
         let plugin = Arc::clone(&loaded.plugin);
         let context = Arc::clone(&loaded.context);
@@ -295,10 +300,16 @@ impl PluginHost {
             Ok(result) => result,
             Err(stopped) => Err(PluginError::new("stopped", stopped.to_string())),
         };
-        outcome.map_err(|error| AppError::Plugin {
-            plugin: id.to_owned(),
-            error,
-        })
+        outcome.map_err(|error| failure(id, error))
+    }
+}
+
+fn failure(plugin: &str, error: PluginError) -> Failure {
+    Failure {
+        plugin: plugin.to_owned(),
+        category: error.category,
+        message: error.message,
+        status: error.status,
     }
 }
 
@@ -418,7 +429,7 @@ mod tests {
         let wire = serde_json::to_value(&error).expect("serializes");
         assert_eq!(
             wire,
-            json!({ "category": "unconfigured", "message": "test.echo: sign in first", "status": 401, "plugin": "test.echo" })
+            json!({ "category": "unconfigured", "message": "sign in first", "status": 401, "plugin": "test.echo" })
         );
 
         let missing = host
@@ -531,7 +542,9 @@ mod tests {
 
     fn offered_to(host: &PluginHost, remotes: &[&str]) -> Vec<String> {
         let remotes: Vec<String> = remotes.iter().map(|remote| (*remote).to_owned()).collect();
-        tauri::async_runtime::block_on(host.agent_tools_for(&remotes))
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(host.agent_tools_for(&remotes))
             .into_iter()
             .map(|(plugin, _)| plugin.to_owned())
             .collect()

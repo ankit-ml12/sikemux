@@ -10,10 +10,8 @@ mod agents;
 mod app_menu;
 mod autopsy;
 mod browser;
-pub mod cli_client;
 mod cli_install;
 mod cli_open;
-mod cli_paths;
 mod deep_link;
 mod diff;
 mod document_preview;
@@ -27,9 +25,7 @@ mod fs_watch;
 mod git;
 mod grammars;
 mod harness;
-pub mod headless;
 mod inbox;
-mod login_item;
 mod lsp;
 mod markdown;
 mod model_checks;
@@ -38,7 +34,6 @@ mod notch;
 pub mod observability;
 mod pages;
 mod plugins;
-pub use plugins::provide_to_core;
 mod ports;
 mod preview;
 mod pty;
@@ -63,6 +58,8 @@ mod wallpaper;
 mod wheel;
 mod without_page_script;
 
+use sikemux_host::{build_identity, cli_client, cli_paths, install_tls_crypto, login_item};
+
 use acp::AcpManager;
 use browser::BrowserManager;
 use observability::UiWatchdogState;
@@ -73,23 +70,6 @@ use sim::SimManager;
 use simulator::SimulatorManager;
 use tauri::Manager;
 use voice::VoiceManager;
-
-/// The build of this app and of the sidecar bundled with it, which runs the
-/// background core. Both are compiled with the same build script output.
-pub fn build_identity() -> sikemux_core::protocol::BuildIdentity {
-    sikemux_core::protocol::BuildIdentity::new(
-        env!("CARGO_PKG_VERSION"),
-        env!("SIKEMUX_BUILD_COMMIT"),
-        env!("SIKEMUX_BUILD_TIME").parse().unwrap_or(0),
-        env!("SIKEMUX_BUILD_SOURCE"),
-    )
-}
-
-// reqwest is built without a TLS crypto backend of its own, so every HTTP
-// client in the app and its plugins uses the one installed here.
-pub(crate) fn install_tls_crypto() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
 
 /// The app window only ever shows the app. A link that would load another
 /// page in it would replace the whole workspace and end every running shell.

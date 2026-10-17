@@ -9,26 +9,26 @@ covers setup and the checks you run before pushing.
 
 One word for each idea, in the interface, docs and the core's messages.
 
-| Word | Means |
-| --- | --- |
-| host | Anything running the core: a server, a Mac mini, a laptop. "This host", never "this computer". |
-| device | What the person holds to reach hosts: a phone, a laptop, a browser. |
-| app | The software on a device: the desktop app, phone app, web app and the notch. |
-| pair | A device joins a host, once the host's owner allows it. |
-| link | Two hosts on one account work for each other ([ADR 0013](./0013-hosts-link-to-run-agents-for-each-other.md)). |
-| you | Devices on the host's own account with full access, which act as the person. In code, "the person". |
-| full access | Can run any command on the host as the person. |
-| watch | Can read, answer questions and allow permissions, but not start or drive anything. |
-| shared device | Someone else's device paired with a host. It never acts as the person. |
-| agent, lead, worker, team | One running agent CLI; one that started others; one another started; all of them. |
-| board, card, Auto | Where work waits; one piece of work; what carries a card to merged. |
-| sandbox | Where one card's work runs: a worktree or a virtual machine. |
-| trigger, event | A rule that adds work when something happens; one time it happened. |
-| inbox, digest | What waits on the person; what happened while they were away. |
-| vault | The account's encrypted store of keys, plugin sign-ins and site sign-ins. |
-| agent sign-in | An agent CLI's own login, kept on each host and never in the vault. |
-| site sign-in | A website login the host's browser loads for agents allowed that site. |
-| take over | Drive a host's browser tab from any device, to sign in or pass a check. |
+| Word                      | Means                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| host                      | Anything running the core: a server, a Mac mini, a laptop. "This host", never "this computer".                |
+| device                    | What the person holds to reach hosts: a phone, a laptop, a browser.                                           |
+| app                       | The software on a device: the desktop app, phone app, web app and the notch.                                  |
+| pair                      | A device joins a host, once the host's owner allows it.                                                       |
+| link                      | Two hosts on one account work for each other ([ADR 0013](./0013-hosts-link-to-run-agents-for-each-other.md)). |
+| you                       | Devices on the host's own account with full access, which act as the person. In code, "the person".           |
+| full access               | Can run any command on the host as the person.                                                                |
+| watch                     | Can read, answer questions and allow permissions, but not start or drive anything.                            |
+| shared device             | Someone else's device paired with a host. It never acts as the person.                                        |
+| agent, lead, worker, team | One running agent CLI; one that started others; one another started; all of them.                             |
+| board, card, Auto         | Where work waits; one piece of work; what carries a card to merged.                                           |
+| sandbox                   | Where one card's work runs: a worktree or a virtual machine.                                                  |
+| trigger, event            | A rule that adds work when something happens; one time it happened.                                           |
+| inbox, digest             | What waits on the person; what happened while they were away.                                                 |
+| vault                     | The account's encrypted store of keys, plugin sign-ins and site sign-ins.                                     |
+| agent sign-in             | An agent CLI's own login, kept on each host and never in the vault.                                           |
+| site sign-in              | A website login the host's browser loads for agents allowed that site.                                        |
+| take over                 | Drive a host's browser tab from any device, to sign in or pass a check.                                       |
 
 Never "Mac", "computer", "machine" or "node" for a host, "client" for a device, or "session" for a
 website login, which would read as a chat or terminal session.
@@ -40,16 +40,16 @@ owns a window. Inside that window, a system web view (WKWebView on macOS) runs t
 React interface. The two talk over IPC: the page calls named Rust commands, and Rust
 sends events and byte streams back.
 
-| Process           | Where it lives                                        | What it does                                                                                                                                                                                                                          |
-| ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Main process      | `src-tauri/src/main.rs` → `lib.rs::run()`             | Owns the window, Git calls, language servers, watchers and browser tabs, and connects to the background core for terminals and agents. `lib.rs` registers the managed state and every IPC command.                                    |
-| Background core   | `sikemux core` → `crates/sikemux-core`                | Owns every shell, terminal agent, task and chat agent, the harness and the agents' tool endpoint. It outlives the window; see [The background core](#the-background-core).                                                            |
-| App web view      | `src/main.tsx`, window label `main`                   | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                         |
-| Browser tabs      | `src-tauri/src/browser/`                              | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                     |
-| `sikemux-editor`  | `src-tauri/src/bin/sikemux-editor/` → `cli_client.rs` | The `sikemux` and `sikemux-editor` launchers, which ask the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio; with `core` it is the background core. |
-| `sikemux-voice`   | `src-tauri/voice/` (Swift package)                    | Speech-to-text helper, downloaded with the speech model. `voice.rs` starts it, writes JSON lines to its stdin and relays its `voice` events.                                                                                          |
-| Shells and agents | spawned by the background core                        | Children of the core, not of the app, so reloading, closing or quitting the app leaves them running.                                                                                                                                  |
-| Language servers  | spawned by `lsp/`                                     | Children of the app. When the main web view reloads or the window closes, `lib.rs` drains them.                                                                                                                                       |
+| Process           | Where it lives                                     | What it does                                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Main process      | `src-tauri/src/main.rs` → `lib.rs::run()`          | Owns the window, Git calls, language servers, watchers and browser tabs, and connects to the background core for terminals and agents. `lib.rs` registers the managed state and every IPC command.                                                                                                                                                  |
+| Background core   | `sikemux core` → `crates/sikemux-core`             | Owns every shell, terminal agent, task and chat agent, the harness and the agents' tool endpoint. It outlives the window; see [The background core](#the-background-core).                                                                                                                                                                          |
+| App web view      | `src/main.tsx`, window label `main`                | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                                                                                                                                       |
+| Browser tabs      | `src-tauri/src/browser/`                           | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                                                                                                                                   |
+| `sikemux-editor`  | `src-tauri/crates/sikemux-host/` → `cli_client.rs` | The `sikemux` and `sikemux-editor` launchers, which ask the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio; with `core` it is the background core, with the built-in plugins. It never links the app's window code, so a host with no screen installs only this. |
+| `sikemux-voice`   | `src-tauri/voice/` (Swift package)                 | Speech-to-text helper, downloaded with the speech model. `voice.rs` starts it, writes JSON lines to its stdin and relays its `voice` events.                                                                                                                                                                                                        |
+| Shells and agents | spawned by the background core                     | Children of the core, not of the app, so reloading, closing or quitting the app leaves them running.                                                                                                                                                                                                                                                |
+| Language servers  | spawned by `lsp/`                                  | Children of the app. When the main web view reloads or the window closes, `lib.rs` drains them.                                                                                                                                                                                                                                                     |
 
 `sikemux-editor` ships as a Tauri sidecar, meaning an extra executable bundled next to
 the app. `scripts/build-cli-sidecar.mjs` builds it into `src-tauri/binaries/` and

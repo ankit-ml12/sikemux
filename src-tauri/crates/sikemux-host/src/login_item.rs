@@ -13,7 +13,7 @@ use launchd as service;
 use systemd as service;
 
 /// How the app starts the core, which the login item repeats.
-pub(crate) struct CoreLaunch {
+pub struct CoreLaunch {
     pub binary: PathBuf,
     pub socket: PathBuf,
     pub log: PathBuf,
@@ -34,19 +34,19 @@ impl CoreLaunch {
     }
 }
 
-pub(crate) fn label(identifier: &str) -> String {
+pub fn label(identifier: &str) -> String {
     format!("{identifier}.core")
 }
 
 /// The app's identifier in `tauri.conf.json`, or in `tauri.dev.conf.json` for dev builds.
-pub(crate) const IDENTIFIER: &str = if cfg!(debug_assertions) {
+pub const IDENTIFIER: &str = if cfg!(debug_assertions) {
     "com.nodelike.sikemux.dev"
 } else {
     "com.nodelike.sikemux"
 };
 
 /// What the core is started with after its socket, by the app or a login item.
-pub(crate) fn core_args(data_dir: Option<PathBuf>) -> Vec<OsString> {
+pub fn core_args(data_dir: Option<PathBuf>) -> Vec<OsString> {
     let mut args = Vec::new();
     if let Some(endpoint) = crate::cli_paths::cli_endpoint_path() {
         args.extend([OsString::from("--cli-endpoint"), endpoint.into()]);
@@ -59,7 +59,7 @@ pub(crate) fn core_args(data_dir: Option<PathBuf>) -> Vec<OsString> {
 
 /// How this binary starts the core on a host set up from a terminal, with the
 /// folders the app would give it.
-pub(crate) fn headless_launch() -> Option<CoreLaunch> {
+pub fn headless_launch() -> Option<CoreLaunch> {
     let home = sikemux_process::paths::home()?;
     let (data, logs) = if cfg!(target_os = "macos") {
         (
@@ -104,7 +104,7 @@ fn quiet(program: &str, args: &[&str]) {
 
 /// Installs or removes the login item to match `enabled`. Installing takes
 /// effect at the next login; the core already runs for this one.
-pub(crate) fn sync(identifier: &str, launch: Option<&CoreLaunch>, enabled: bool) {
+pub fn sync(identifier: &str, launch: Option<&CoreLaunch>, enabled: bool) {
     if !enabled {
         if let Err(error) = remove(identifier) {
             eprintln!("Sikemux could not stop starting its core at login: {error}");
@@ -120,14 +120,14 @@ pub(crate) fn sync(identifier: &str, launch: Option<&CoreLaunch>, enabled: bool)
 }
 
 /// Where the login item is, whether or not it is installed.
-pub(crate) fn path(identifier: &str) -> Option<PathBuf> {
+pub fn path(identifier: &str) -> Option<PathBuf> {
     service::path(&label(identifier))
 }
 
-pub(crate) fn install(identifier: &str, launch: &CoreLaunch) -> std::io::Result<PathBuf> {
+pub fn install(identifier: &str, launch: &CoreLaunch) -> std::io::Result<PathBuf> {
     let label = label(identifier);
     let path = service::path(&label).ok_or_else(|| std::io::Error::other("HOME is not set"))?;
-    let path_env = crate::system::child_path();
+    let path_env = crate::environment::child_path();
     let contents = service::render(&label, launch, path_env.as_deref());
     if write_if_changed(&path, &contents)? {
         service::installed(&label);
@@ -136,7 +136,7 @@ pub(crate) fn install(identifier: &str, launch: &CoreLaunch) -> std::io::Result<
 }
 
 /// Starts the installed login item now rather than at the next login.
-pub(crate) fn start(identifier: &str) {
+pub fn start(identifier: &str) {
     let label = label(identifier);
     if let Some(path) = service::path(&label) {
         service::start(&label, &path);
@@ -144,7 +144,7 @@ pub(crate) fn start(identifier: &str) {
 }
 
 /// Stops and removes the login item. False when there was none.
-pub(crate) fn remove(identifier: &str) -> std::io::Result<bool> {
+pub fn remove(identifier: &str) -> std::io::Result<bool> {
     let label = label(identifier);
     let Some(path) = service::path(&label).filter(|path| path.exists()) else {
         return Ok(false);

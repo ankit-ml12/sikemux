@@ -6,13 +6,13 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// `sikemux core …`: the background process that owns terminals. See
 /// [`sikemux_core::server::main`]. `sikemux core stop` ends a running one;
-/// [`sikemux_lib::headless`] has the rest a host with no window needs.
+/// [`sikemux_host::headless`] has the rest a host with no window needs.
 pub fn run() -> i32 {
     let mut args = std::env::args().skip(2).peekable();
     if args.peek().is_some_and(|arg| arg == "stop") {
         return stop(args.nth(1).map(PathBuf::from));
     }
-    if let Some(code) = args.peek().and_then(|arg| sikemux_lib::headless::run(arg)) {
+    if let Some(code) = args.peek().and_then(|arg| sikemux_host::headless::run(arg)) {
         return code;
     }
     let args: Vec<String> = args.collect();
@@ -21,9 +21,9 @@ pub fn run() -> i32 {
         .position(|arg| arg == "--data-dir")
         .and_then(|at| args.get(at + 1))
     {
-        sikemux_lib::provide_to_core(Path::new(data_dir));
+        sikemux_host::provide_to_core(Path::new(data_dir));
     }
-    sikemux_core::server::main(args.into_iter(), sikemux_lib::build_identity())
+    sikemux_core::server::main(args.into_iter(), sikemux_host::build_identity())
 }
 
 /// Stops the core on `socket`, or this build's own, and everything it runs.

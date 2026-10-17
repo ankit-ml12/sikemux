@@ -13,23 +13,20 @@ use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use reqwest::{Client, Response};
-use serde::de::DeserializeOwned;
+use reqwest::Response;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sikemux_core::accounts::host::{
-    HostSignIn, HostSignInFinish, HostSignInPoll, HostSignInStart, HostSignInState,
-    HostSignInStatus,
-};
 use sikemux_core::accounts::protocol::{
-    ApiError, Challenge, Channel, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
+    Challenge, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
 };
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{AccountLinkState, BuildChannel, DeviceInfo, RemoteStatus};
+use sikemux_core::protocol::{AccountLinkState, DeviceInfo, RemoteStatus};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
+
+use sikemux_host::account::{api, channel, http};
 
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
@@ -46,7 +43,6 @@ const CLERK: &str = "https://immense-llama-6668.clerk.accounts.dev";
 const CLIENT_ID: &str = "IfRz79s1n2WGOt3J";
 const SCOPES: &str = "email profile offline_access";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const PROFILE_RETRY: Duration = Duration::from_secs(15 * 60);
 
 #[cfg(not(test))]
@@ -63,27 +59,9 @@ fn key_account() -> &'static str {
     }
 }
 
-fn api(path: &str) -> String {
-    format!(
-        "{}{path}",
-        sikemux_core::accounts::api_base().trim_end_matches('/')
-    )
-}
-
 /// Emitted with the new [`AccountStatus`] when the account changes without
 /// the app asking, such as this host being removed from it elsewhere.
 pub const ACCOUNT_CHANGED_EVENT: &str = "account_changed";
-
-fn http() -> &'static Client {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(REQUEST_TIMEOUT)
-            .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .unwrap_or_default()
-    })
-}
 
 /// What the Keychain entry holds. Only the refresh token is secret, but
 /// keeping it all in one entry means there is never half an account.
@@ -779,22 +757,7 @@ async fn user_info(access_token: &str) -> Option<profile::UserInfo> {
 }
 
 async fn api_failure(response: Response) -> AppError {
-    let status = response.status();
-    match response.json::<ApiError>().await {
-        Ok(body) => AppError::Other(format!(
-            "the account server refused: {}",
-            body.error.message
-        )),
-        Err(_) => AppError::Other(format!("the account server answered {status}")),
-    }
-}
-
-fn channel(build: BuildChannel) -> Channel {
-    match build {
-        BuildChannel::Dev => Channel::Dev,
-        BuildChannel::Nightly => Channel::Nightly,
-        BuildChannel::Stable => Channel::Stable,
-    }
+    AppError::Other(sikemux_host::account::refusal(response).await)
 }
 
 async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> AppResult<Device> {
@@ -826,63 +789,6 @@ async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> 
         .json(&registration)
         .send()
         .await?;
-    if !response.status().is_success() {
-        return Err(api_failure(response).await);
-    }
-    Ok(response.json().await?)
-}
-
-/// Signs this host in without a browser. `show` gets the code its person
-/// approves on a device already signed in. Answers with the account.
-pub(crate) async fn sign_in_by_code(
-    core: &CoreClient,
-    show: impl FnOnce(&HostSignIn),
-) -> AppResult<String> {
-    let key = core.remote_status().await.map_err(core_error)?.core_id;
-    if key.is_empty() {
-        return Err(AppError::Other("the core's key has not loaded".into()));
-    }
-    let host = sikemux_core::server::host_info();
-    let start = HostSignInStart {
-        key,
-        name: host.name.chars().take(64).collect(),
-        platform: sikemux_core::server::HOST_PLATFORM,
-        channel: channel(host.channel),
-    };
-    let signing: HostSignIn = post("/v1/host-sign-ins", &start).await?;
-    show(&signing);
-    let poll = HostSignInPoll {
-        code: signing.code.clone(),
-    };
-    let interval = Duration::from_secs(signing.interval.max(1).unsigned_abs());
-    let (account, nonce) = loop {
-        tokio::time::sleep(interval).await;
-        let state: HostSignInState = post("/v1/host-sign-ins/poll", &poll).await?;
-        if let (HostSignInStatus::Approved, Some(account), Some(nonce)) =
-            (state.status, state.account, state.nonce)
-        {
-            break (account, nonce);
-        }
-    };
-    sikemux_core::accounts::check_user_id(&account).map_err(AppError::from)?;
-    let signed = core
-        .sign_registration(nonce.clone(), account.clone())
-        .await
-        .map_err(core_error)?;
-    let finish = HostSignInFinish {
-        code: signing.code,
-        nonce,
-        signature: signed.signature,
-    };
-    let _: Device = post("/v1/host-sign-ins/finish", &finish).await?;
-    core.set_owner(Some(account.clone()))
-        .await
-        .map_err(core_error)?;
-    Ok(account)
-}
-
-async fn post<T: DeserializeOwned>(path: &str, body: &impl Serialize) -> AppResult<T> {
-    let response = http().post(api(path)).json(body).send().await?;
     if !response.status().is_success() {
         return Err(api_failure(response).await);
     }
