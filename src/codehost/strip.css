@@ -116,12 +116,12 @@
 .git-nav-tools > .git-toolbar .git-btn:not(.primary),
 .git-nav-signin {
     border-color: var(--border-strong);
-    background: none;
+    background: var(--surface-hover);
     color: var(--text-secondary);
 }
 .git-nav-tools > .git-toolbar .git-btn:not(.primary):hover:not(:disabled),
 .git-nav-signin:hover {
-    background: var(--surface-hover);
+    background: var(--surface-active);
     color: var(--text-primary);
 }
 .git-nav-tools > .git-toolbar .git-switch {
