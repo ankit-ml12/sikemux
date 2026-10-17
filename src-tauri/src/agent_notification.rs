@@ -37,6 +37,9 @@ fn post_and_wait_for_click(app: &AppHandle, title: &str, body: &str) -> bool {
 
 #[cfg(not(target_os = "macos"))]
 fn post_and_wait_for_click(_app: &AppHandle, title: &str, body: &str) -> bool {
-    let _ = notify_rust::Notification::new().summary(title).body(body).show();
+    let _ = notify_rust::Notification::new()
+        .summary(title)
+        .body(body)
+        .show();
     false
 }

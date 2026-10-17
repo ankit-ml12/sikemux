@@ -83,7 +83,6 @@ vi.mock("../state/commands", () => ({
     toggleAgentSkipPermissions: vi.fn(),
 }));
 
-
 const agent: Agent = {
     id: "agent-1",
     type: "codex",

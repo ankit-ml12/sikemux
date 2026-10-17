@@ -682,10 +682,7 @@ function AgentsPage() {
                             </button>
                         }
                     />
-                    <SettingsRow
-                        label="Sending while an agent works"
-                        desc={`What ↵ does mid-turn. ${PRIMARY_SHORTCUT}↵ does the other.`}
-                        wide>
+                    <SettingsRow label="Sending while an agent works" desc={`What ↵ does mid-turn. ${PRIMARY_SHORTCUT}↵ does the other.`} wide>
                         <Dropdown
                             className="settings-dd"
                             label="sending while an agent works"

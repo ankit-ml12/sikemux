@@ -4,7 +4,10 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use rfd::{AsyncFileDialog, AsyncMessageDialog, FileHandle, MessageButtons, MessageDialogResult, MessageLevel};
+use rfd::{
+    AsyncFileDialog, AsyncMessageDialog, FileHandle, MessageButtons, MessageDialogResult,
+    MessageLevel,
+};
 use serde::Deserialize;
 use tauri::{AppHandle, Window};
 
@@ -67,7 +70,11 @@ fn paths(handles: Vec<FileHandle>) -> Vec<String> {
 
 /// The files or folders the person picks; `None` when they cancel.
 #[tauri::command]
-pub async fn pick_paths(app: AppHandle, window: Window, options: PickOptions) -> Option<Vec<String>> {
+pub async fn pick_paths(
+    app: AppHandle,
+    window: Window,
+    options: PickOptions,
+) -> Option<Vec<String>> {
     let picked = on_main(&app, move || {
         let mut dialog = file_dialog(&window, options.title, options.filters);
         if let Some(path) = options.default_path {
