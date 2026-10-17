@@ -32,7 +32,7 @@
 .git-left > .git-history {
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: color-mix(in oklab, var(--surface) 45%, transparent);
+    background: var(--s-sunken);
 }
 .git-left > .git-list {
     padding-top: 2px;
@@ -43,10 +43,10 @@
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
-    padding: 2px 0 6px;
+    padding: var(--space-1h) 0 6px;
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-    background: color-mix(in oklab, var(--surface) 45%, transparent);
+    background: var(--s-sunken);
 }
 .git-changes > .git-compose {
     margin: var(--space-1) 6px 0;

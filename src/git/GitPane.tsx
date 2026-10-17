@@ -1082,6 +1082,7 @@ function GitWorkbench({
                 role="button"
                 tabIndex={selected ? 0 : -1}
                 aria-label={`${file.path}, ${side}`}
+                data-side={side}
                 className={`git-row git-file-row${selected ? " sel" : ""}${isInRange(fileRowRange, i) ? " ranged" : ""}`}
                 onFocus={() => setSel("files", i)}
                 onClick={(event) => {

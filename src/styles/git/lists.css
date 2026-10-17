@@ -251,6 +251,10 @@
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
 }
+/* A modified file is tan once staged and blue while it is still only in the working tree, so the two groups read apart. */
+.git-file-row[data-side="unstaged"] .git-status.git-m {
+    color: var(--git-renamed);
+}
 /* A group's files hang off a guide under its chevron. */
 .git-row.git-file-row {
     position: relative;
