@@ -2,19 +2,18 @@ import { type MouseEvent, type ReactNode, useState } from "react";
 import { basename, dirname, relativePath } from "../lib/paths";
 import * as cmd from "../state/commands";
 import { collectPanes } from "../state/layout";
-import { forgetRecentFile } from "../state/recentFiles";
 import { activeTabRef, documentsOf, terminalLabel } from "../state/selectors";
 import { useStore } from "../state/store";
 import type { Session } from "../state/types";
 import { FileIcon } from "../ui/FileIcon";
-import { IconClose, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
-import { Panel, PanelHeader } from "../ui/Panel";
-import { TreeContextMenu } from "./FileTree";
+import { IconClose, IconPlus, IconTerminal } from "../ui/Icons";
+import { Panel } from "../ui/Panel";
+import { FileTree, TreeContextMenu } from "./FileTree";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
 
-const RECENT_SHOWN = 15;
 const EMPTY_IDS: readonly string[] = [];
+const openEntry = (entry: { path: string }) => cmd.requestOpenFile(entry.path);
 
 type Menu = { x: number; y: number; items: { label: string; icon: ReactNode; run: () => void }[] };
 
@@ -137,29 +136,26 @@ function FileRow({
     );
 }
 
-/** The files open in the project's editor, then the ones closed there lately. */
+/** The files open in the project's editor, then the project's tree. */
 export function FilesPage() {
     const session = useProjectSession();
+    const showing = useStore((s) => s.agentRailPage === "files" && s.agentRailOpen);
     const windowIds = useStore((s) => (session ? s.windowsBySession[session.id] : undefined) ?? EMPTY_IDS);
     const windows = useStore((s) => s.windows);
     const editorViews = useStore((s) => s.editorViews);
-    const recentFiles = useStore((s) => s.recentFiles);
     const [menu, setMenu] = useState<Menu | null>(null);
 
     const cwd = session?.cwd ?? "";
     const live = session ? activeTabRef(session, windows, editorViews) : null;
-    const open = windowIds.flatMap((id) => {
+    const open: { id: string; path: string }[] = [];
+    let activePath: string | null = null;
+    for (const id of windowIds) {
         const win = windows[id];
-        if (win?.role !== "files") return [];
-        return (documentsOf(win, editorViews)?.ids ?? EMPTY_IDS).map((path) => ({ id, path }));
-    });
-    const openPaths = new Set(open.map((file) => file.path));
-    const recent = cwd ? recentFiles.filter((path) => !openPaths.has(path) && relativePath(path, cwd)).slice(0, RECENT_SHOWN) : [];
-
-    const menuAt = (event: MouseEvent, items: Menu["items"]) => {
-        event.preventDefault();
-        setMenu({ x: event.clientX, y: event.clientY, items });
-    };
+        if (win?.role !== "files") continue;
+        const documents = documentsOf(win, editorViews);
+        activePath ??= documents?.activeId ?? null;
+        for (const path of documents?.ids ?? EMPTY_IDS) open.push({ id, path });
+    }
 
     return (
         <>
@@ -168,50 +164,32 @@ export function FilesPage() {
                 <div className="agent-empty">files are project-scoped</div>
             ) : (
                 <>
-                    <div className="agent-rail-top">
-                        <div className="agent-actions">
-                            <NewRow icon={<IconSearch size={15} />} title="Open file" shortcut="palette.files" onClick={cmd.openFilePalette} />
-                        </div>
-                    </div>
-                    <div className="rail-scroll">
-                        {open.length === 0 && recent.length === 0 && <div className="agent-empty">no files open</div>}
-                        {open.length > 0 && (
+                    {open.length > 0 && (
+                        <div className="rail-scroll rail-open-files">
                             <Panel variant="group" className="agent-group">
                                 {open.map(({ id, path }) => (
                                     <FileRow
                                         key={`${id}:${path}`}
                                         path={path}
                                         cwd={cwd}
-                                        active={live?.id === id && live.doc === path && session.activeWindowId === id}
+                                        active={live?.id === id && live.doc === path}
                                         onClick={() => cmd.selectTab({ id, doc: path })}
-                                        onContextMenu={(event) =>
-                                            menuAt(event, [
-                                                { label: "Close", icon: <IconClose size={13} />, run: () => cmd.closeTab({ id, doc: path }) },
-                                            ])
-                                        }
+                                        onContextMenu={(event) => {
+                                            event.preventDefault();
+                                            setMenu({
+                                                x: event.clientX,
+                                                y: event.clientY,
+                                                items: [
+                                                    { label: "Close", icon: <IconClose size={13} />, run: () => cmd.closeTab({ id, doc: path }) },
+                                                ],
+                                            });
+                                        }}
                                     />
                                 ))}
                             </Panel>
-                        )}
-                        {recent.length > 0 && (
-                            <Panel variant="group" className="agent-group">
-                                <PanelHeader label="Recent" rule />
-                                {recent.map((path) => (
-                                    <FileRow
-                                        key={path}
-                                        path={path}
-                                        cwd={cwd}
-                                        onClick={() => cmd.requestOpenFile(path)}
-                                        onContextMenu={(event) =>
-                                            menuAt(event, [
-                                                { label: "Remove from recent", icon: <IconClose size={13} />, run: () => forgetRecentFile(path) },
-                                            ])
-                                        }
-                                    />
-                                ))}
-                            </Panel>
-                        )}
-                    </div>
+                        </div>
+                    )}
+                    <FileTree cwd={cwd} activePath={activePath} onOpenFile={openEntry} onKeepFile={openEntry} active={showing} />
                 </>
             )}
             {menu && <TreeContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}

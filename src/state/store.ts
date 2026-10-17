@@ -115,8 +115,6 @@ export interface DomainState {
     accountAutoSwitch: Partial<Record<AccountAgentType, boolean>>;
     agentRailScope: AgentRailScope;
     agentRailPage: AgentRailPage;
-    /** Files closed in an editor, newest first, so the rail can offer them again. */
-    recentFiles: string[];
     pinnedChats: PinnedChat[];
     onboardingComplete: boolean;
     lastSeenVersion: string;
@@ -320,7 +318,6 @@ export const useStore = create<StoreState>(() => {
         accountAutoSwitch: {},
         agentRailScope: "project",
         agentRailPage: "agents",
-        recentFiles: [],
         pinnedChats: [],
         onboardingComplete: false,
         lastSeenVersion: "",

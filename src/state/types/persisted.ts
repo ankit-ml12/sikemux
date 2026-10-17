@@ -108,7 +108,6 @@ export interface PersistedPrefs {
     agentRailAllAgents?: boolean;
     agentRailScope?: AgentRailScope;
     agentRailPage?: AgentRailPage;
-    recentFiles?: string[];
     pinnedChats?: PinnedChat[];
     onboardingComplete?: boolean;
     lastSeenVersion?: string;

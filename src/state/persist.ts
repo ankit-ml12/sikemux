@@ -16,7 +16,6 @@ import { ACCOUNT_AGENT_TYPES, AGENT_TYPES, hasAccounts, isAgentType } from "../a
 import { clampRailWidth } from "../lib/railWidths";
 import { clampPaneStrength, mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentInWindow } from "./selectors";
-import { RECENT_FILES_LIMIT } from "./recentFiles";
 import { collectPanes, newId, removePane } from "./layout";
 import { BROWSER_ACTIVE, deskEditorId, deskView, fileKey, simulatorKey } from "./desks";
 import { agentExecutablePath, relaunchSpec } from "./commands/agentLaunchCommand";
@@ -150,7 +149,6 @@ const PERSISTED_KEYS = [
     "agentRailAllAgents",
     "agentRailScope",
     "agentRailPage",
-    "recentFiles",
     "pinnedChats",
     "onboardingComplete",
     "lastSeenVersion",
@@ -222,7 +220,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         agentRailAllAgents: s.agentRailAllAgents,
         agentRailScope: s.agentRailScope,
         agentRailPage: s.agentRailPage,
-        recentFiles: s.recentFiles,
         pinnedChats: s.pinnedChats,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
@@ -1242,9 +1239,6 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         agentRailAllAgents: prefs.agentRailAllAgents === true,
         agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",
         agentRailPage: prefs.agentRailPage === "terminals" || prefs.agentRailPage === "files" ? prefs.agentRailPage : "agents",
-        recentFiles: Array.isArray(prefs.recentFiles)
-            ? prefs.recentFiles.filter((value): value is string => typeof value === "string").slice(0, RECENT_FILES_LIMIT)
-            : [],
         pinnedChats: Array.isArray(prefs.pinnedChats) ? prefs.pinnedChats.filter(isPinnedChat) : [],
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"

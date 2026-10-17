@@ -519,6 +519,14 @@
     background: var(--surface-chosen);
     color: var(--text-primary);
 }
+/* Open files sit above the project tree and give it the rest of the page. */
+.workspace-rail.agent-rail .rail-page > .rail-open-files {
+    flex: 0 1 auto;
+    max-height: 40%;
+    overflow-y: auto;
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border);
+}
 .rail-file .agent-title {
     flex: 0 1 auto;
 }
