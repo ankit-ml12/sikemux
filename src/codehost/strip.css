@@ -24,7 +24,7 @@
     align-items: center;
     gap: var(--space-1h);
     flex: 0 0 auto;
-    height: 40px;
+    height: 44px;
     padding: 0 var(--space-2);
 }
 /* The screens sit in one track, and the open one is raised in it. */
@@ -43,8 +43,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 18px;
-    padding: 0 var(--space-2);
+    height: 22px;
+    padding: 0 10px;
     border: 0;
     border-radius: 4px;
     background: none;
@@ -117,9 +117,9 @@
     color: var(--text-primary);
 }
 .git-nav-signin {
-    height: 24px;
-    padding: 0 var(--space-2);
-    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    gap: var(--space-1h);
 }
 .git-nav-account {
     position: relative;
@@ -129,8 +129,8 @@
 .git-nav-avatar {
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     border: 1px solid transparent;
     border-radius: var(--radius-full);
@@ -147,8 +147,8 @@
     outline: none;
 }
 .git-nav-avatar .gha-avatar {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: var(--radius-full);
     background: var(--gray-400);
 }
