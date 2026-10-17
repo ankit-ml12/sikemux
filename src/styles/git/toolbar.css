@@ -77,8 +77,8 @@
     flex: 0 0 auto;
     height: 28px;
     padding: 0 10px;
-    border: 1px solid var(--border);
-    background: color-mix(in oklab, var(--ink) 5%, transparent);
+    border: 1px solid var(--border-strong);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
     color: var(--text-secondary);
     font-family: var(--ui);
     font-size: var(--text-xs);
@@ -97,8 +97,9 @@
     color: var(--text-tertiary);
 }
 .git-btn:hover:not(:disabled) {
-    border-color: var(--border-strong);
-    background: var(--surface-active);
+    background:
+        linear-gradient(var(--surface-hover), var(--surface-hover)),
+        color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
     color: var(--text-primary);
 }
 .git-btn:disabled {

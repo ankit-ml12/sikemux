@@ -41,16 +41,17 @@
     align-items: center;
     gap: var(--space-2);
     flex: 0 0 auto;
-    height: 28px;
-    margin: var(--space-2) var(--space-2) var(--space-1h);
-    padding: 0 var(--space-2) 0 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
+    height: 34px;
+    margin: 0 0 var(--space-1);
+    padding: 0 var(--space-3);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
     color: var(--text-tertiary);
     transition: border-color var(--dur-1);
 }
 .git-filter:focus-within {
-    border-color: var(--border-selected);
+    border-bottom-color: var(--border-selected);
 }
 .git-filter input {
     flex: 1;

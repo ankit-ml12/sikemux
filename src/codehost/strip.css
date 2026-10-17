@@ -113,19 +113,6 @@
     border: 0;
     background: none;
 }
-.git-nav-tools > .git-toolbar .git-btn:not(.primary),
-.git-nav-signin {
-    border-color: var(--border-strong);
-    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
-    color: var(--text-secondary);
-}
-.git-nav-tools > .git-toolbar .git-btn:not(.primary):hover:not(:disabled),
-.git-nav-signin:hover {
-    background:
-        linear-gradient(var(--surface-hover), var(--surface-hover)),
-        color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
-    color: var(--text-primary);
-}
 .git-nav-tools > .git-toolbar .git-switch {
     color: var(--text-primary);
 }
