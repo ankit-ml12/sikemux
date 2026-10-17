@@ -156,12 +156,16 @@ impl ShellProtocolParser {
 
     fn process(&mut self, bytes: &[u8]) -> ShellProtocolBatch {
         let mut batch = ShellProtocolBatch::default();
-        for &byte in bytes {
+        let mut rest = bytes;
+        while let Some((&byte, after)) = rest.split_first() {
             match self.scan_state {
                 ShellScanState::Ground => {
-                    if byte == b'\x1b' {
-                        self.scan_state = ShellScanState::Escape;
-                    }
+                    let Some(escape) = memchr::memchr(b'\x1b', rest) else {
+                        break;
+                    };
+                    self.scan_state = ShellScanState::Escape;
+                    rest = &rest[escape + 1..];
+                    continue;
                 }
                 ShellScanState::Escape => {
                     if byte == b']' {
@@ -172,23 +176,32 @@ impl ShellProtocolParser {
                         self.scan_state = ShellScanState::Ground;
                     }
                 }
-                ShellScanState::Osc => match byte {
-                    b'\x07' => self.finish_osc(&mut batch),
-                    b'\x1b' => self.scan_state = ShellScanState::OscEscape,
-                    _ => self.push_osc_byte(byte),
-                },
+                ShellScanState::Osc => {
+                    let Some(end) = memchr::memchr2(b'\x07', b'\x1b', rest) else {
+                        self.push_osc_bytes(rest);
+                        break;
+                    };
+                    self.push_osc_bytes(&rest[..end]);
+                    if rest[end] == b'\x07' {
+                        self.finish_osc(&mut batch);
+                    } else {
+                        self.scan_state = ShellScanState::OscEscape;
+                    }
+                    rest = &rest[end + 1..];
+                    continue;
+                }
                 ShellScanState::OscEscape => match byte {
                     b'\\' | b'\x07' => self.finish_osc(&mut batch),
                     b'\x1b' => {
-                        self.push_osc_byte(b'\x1b');
+                        self.push_osc_bytes(b"\x1b");
                     }
                     _ => {
-                        self.push_osc_byte(b'\x1b');
-                        self.push_osc_byte(byte);
+                        self.push_osc_bytes(&[b'\x1b', byte]);
                         self.scan_state = ShellScanState::Osc;
                     }
                 },
             }
+            rest = after;
         }
         batch
     }
@@ -218,12 +231,12 @@ impl ShellProtocolParser {
         self.events.take_due(now_ms)
     }
 
-    fn push_osc_byte(&mut self, byte: u8) {
-        if self.osc.len() < MAX_SHELL_OSC_BYTES {
-            self.osc.push(byte);
-        } else {
+    fn push_osc_bytes(&mut self, bytes: &[u8]) {
+        let room = MAX_SHELL_OSC_BYTES - self.osc.len();
+        if bytes.len() > room {
             self.osc_overflowed = true;
         }
+        self.osc.extend_from_slice(&bytes[..bytes.len().min(room)]);
     }
 
     fn finish_osc(&mut self, batch: &mut ShellProtocolBatch) {
