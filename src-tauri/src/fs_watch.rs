@@ -367,6 +367,14 @@ fn bump_scan_generation(repo_key: &str, paths: Option<&[String]>) {
     repo.recent.push_back((generation, paths.map(Arc::from)));
 }
 
+/// A change the app made itself, counted now so the next read sees it
+/// rather than waiting for the watcher to report it.
+pub fn note_own_change(repo_key: &str, paths: Option<&[String]>) {
+    if scan_generation(repo_key).is_some() {
+        bump_scan_generation(repo_key, paths);
+    }
+}
+
 fn forget_scan_generation(repo_key: &str) {
     lock_scan_generations().repos.remove(repo_key);
 }
