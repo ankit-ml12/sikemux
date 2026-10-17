@@ -47,7 +47,11 @@
     font: 10px var(--mono);
     cursor: pointer;
 }
-.chat-find button:hover:not(:disabled),
+.chat-find button:hover:not(:disabled) {
+    color: var(--ink);
+    background: var(--surface-hover);
+}
+
 .chat-find button.active {
     color: var(--ink);
     background: var(--acc-soft);

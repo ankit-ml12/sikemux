@@ -487,8 +487,7 @@
 }
 
 .address-suggestions li.selected {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 
 .address-suggestion-icon {

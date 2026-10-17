@@ -42,7 +42,7 @@
     text-align: left;
 }
 .git-menu-item:hover:not(:disabled) {
-    background: var(--surface-selected);
+    background: var(--surface-hover);
     color: var(--text-primary);
 }
 .git-menu-item:disabled {
@@ -105,7 +105,7 @@
     text-align: left;
 }
 .git-modal-suggestion:hover {
-    background: var(--surface-selected);
+    background: var(--surface-hover);
     color: var(--text-primary);
 }
 .git-modal-suggestion-hint {

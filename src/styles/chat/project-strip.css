@@ -60,8 +60,7 @@
 }
 
 .chat-project-trigger[aria-expanded="true"] {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 
 /* Cut from the start, so the folder the path ends in stays on screen. */
@@ -182,6 +181,5 @@
 }
 
 .project-switcher .chat-picker-options > div > button[aria-selected="true"] {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }

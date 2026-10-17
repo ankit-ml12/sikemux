@@ -422,7 +422,7 @@
     color: var(--text-primary);
 }
 .sp-msg.sel {
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .sp-msg-ln {
@@ -433,7 +433,7 @@
     font-size: 10px;
 }
 .sp-msg.sel .sp-msg-ln {
-    color: var(--acc);
+    color: var(--text-primary);
 }
 .sp-msg-tx {
     overflow: hidden;

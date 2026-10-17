@@ -139,8 +139,7 @@
 }
 
 .kanban-card.active {
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
 }
 
 .kanban-card.dragging {

@@ -142,8 +142,7 @@
     color: var(--text-primary);
 }
 .tree-row.file.active {
-    background: var(--surface-selected);
-    box-shadow: inset 0 0 0 1px var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .tree-chev {
@@ -368,8 +367,7 @@
     border-right: 1px solid var(--border);
 }
 .tab-wrap.active {
-    background: var(--surface-selected);
-    box-shadow: inset 0 -2px 0 var(--acc);
+    background: var(--surface-chosen);
 }
 /* While a tab is dragged it lifts and follows the pointer, and the others
    slide aside to open the gap it will drop into. */
@@ -380,7 +378,7 @@
     position: relative;
     z-index: 2;
     transition: none;
-    background-image: linear-gradient(var(--surface-selected), var(--surface-selected));
+    background-image: linear-gradient(var(--surface-chosen), var(--surface-chosen));
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .tabbar.is-reordering .tab-wrap.tab-lifted.tab-settling {

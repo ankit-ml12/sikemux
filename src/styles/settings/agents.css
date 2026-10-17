@@ -25,8 +25,7 @@
     border-color: var(--border-strong);
 }
 .agent-mode-settings button.active {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 .agent-mode-settings button.danger.active {
     border-color: color-mix(in oklab, var(--danger) 52%, transparent);
@@ -88,8 +87,7 @@
     color: var(--text-primary);
 }
 .provider-profile-list > button.active {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .provider-profile-list > button:focus-visible {

@@ -187,7 +187,7 @@
 }
 .theme-pick-row.active,
 .theme-pick-row.editing {
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .theme-pick-chip {

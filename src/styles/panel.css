@@ -194,8 +194,8 @@
 }
 .empty-state-action:hover {
     color: var(--text-primary);
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
 }
 
 .empty-stage {
@@ -232,8 +232,8 @@
 }
 .empty-stage-move:hover {
     color: var(--text-primary);
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
 }
 .empty-stage-move kbd {
     color: var(--text-tertiary);

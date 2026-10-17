@@ -68,8 +68,8 @@
 }
 .ed-viewer-actions button:hover:not(:disabled) {
     color: var(--text-primary);
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
 }
 .ed-viewer-actions button:disabled {
     opacity: 0.45;

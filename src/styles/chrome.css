@@ -911,11 +911,10 @@
 }
 .space-track > button.active {
     color: var(--text-primary);
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 .space-track > button.active svg {
-    color: var(--acc);
+    color: var(--text-primary);
 }
 .space-name {
     max-width: 140px;
