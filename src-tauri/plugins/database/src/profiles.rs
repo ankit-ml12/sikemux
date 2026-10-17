@@ -348,22 +348,11 @@ fn keychain_error(error: sikemux_keychain::KeychainError) -> DatabaseError {
 
 /// The Keychain helper takes only token-like text, and passwords can hold any character.
 fn to_hex(text: &str) -> String {
-    text.bytes().map(|byte| format!("{byte:02x}")).collect()
+    hex::encode(text)
 }
 
-fn from_hex(hex: &str) -> Option<String> {
-    let digits: Vec<u8> = hex
-        .chars()
-        .map(|c| c.to_digit(16).and_then(|digit| u8::try_from(digit).ok()))
-        .collect::<Option<_>>()?;
-    let bytes = digits
-        .chunks(2)
-        .map(|pair| match pair {
-            [high, low] => Some(high * 16 + low),
-            _ => None,
-        })
-        .collect::<Option<Vec<u8>>>()?;
-    String::from_utf8(bytes).ok()
+fn from_hex(text: &str) -> Option<String> {
+    String::from_utf8(hex::decode(text).ok()?).ok()
 }
 
 pub fn password_read(id: &str) -> DatabaseResult<Option<String>> {
