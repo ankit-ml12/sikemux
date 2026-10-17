@@ -1,9 +1,9 @@
 /** Linear's mark, the sloped stripes in its indigo. */
-export function LinearMark({ size = 16 }: { size?: number }) {
+export function LinearMark({ size = 16, mono }: { size?: number; mono?: boolean }) {
     return (
         <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
             <path
-                fill="#5E6AD2"
+                fill={mono ? "currentColor" : "#5E6AD2"}
                 d="M1.2 61.5c-.2-1 1-1.6 1.7-.9l36.5 36.5c.7.7.1 1.9-.9 1.7C20.6 95.3 4.7 79.4 1.2 61.5zM0 46.9c0 .3.1.6.3.9L52.2 99.7c.2.2.5.3.9.3 2.3-.1 4.6-.4 6.9-.8.9-.2 1.2-1.3.6-1.9L2.7 39.4c-.6-.6-1.7-.3-1.9.6-.4 2.3-.7 4.6-.8 6.9zM4.2 29.7c-.2.4-.1.9.2 1.3l64.6 64.6c.3.3.8.4 1.3.2 1.8-.8 3.5-1.7 5.2-2.7.6-.3.7-1.2.2-1.7L8.7 24.3c-.5-.5-1.3-.4-1.7.2-1 1.7-1.9 3.4-2.8 5.2zM12.6 18.1c-.4-.4-.4-1 0-1.4C21.7 6.4 35.1 0 50 0c27.6 0 50 22.4 50 50 0 14.9-6.4 28.3-16.7 37.4-.4.4-1 .4-1.4 0L12.6 18.1z"
             />
         </svg>

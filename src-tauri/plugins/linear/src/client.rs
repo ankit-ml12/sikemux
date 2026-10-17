@@ -1,5 +1,5 @@
-// Linear's GraphQL API: one warm client, the key each workspace uses, and
-// Linear's errors turned into ours.
+// Linear's GraphQL API: one warm client, the key or token each workspace uses,
+// and Linear's errors turned into ours.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -10,8 +10,9 @@ use futures::StreamExt;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
 
-use crate::config::{self, Workspace};
+use crate::config::{self, SignIn, Workspace};
 use crate::error::{LinearError, LinearResult};
+use crate::oauth;
 
 const API: &str = "https://api.linear.app/graphql";
 
@@ -22,7 +23,7 @@ pub fn at<'a>(value: &'a Value, path: &str) -> &'a Value {
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const KEY_TTL: Duration = Duration::from_secs(60);
 
-fn http() -> LinearResult<&'static Client> {
+pub fn http() -> LinearResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
@@ -53,7 +54,8 @@ pub fn forget(workspace: &str) {
 
 pub struct Session {
     pub workspace: Workspace,
-    key: String,
+    /// An API key, or a browser sign-in's access token.
+    credential: String,
 }
 
 impl Session {
@@ -63,12 +65,35 @@ impl Session {
             .workspace(workspace)
             .cloned()
             .ok_or(LinearError::Unconfigured)?;
-        let key = key_of(&workspace).await?;
-        Ok(Session { workspace, key })
+        let credential = match workspace.sign_in {
+            SignIn::Key => key_of(&workspace).await?,
+            SignIn::Browser => oauth::access_token(&workspace).await?,
+        };
+        Ok(Session {
+            workspace,
+            credential,
+        })
     }
 
     pub async fn query(&self, document: &str, variables: Value) -> LinearResult<Value> {
-        query_with(&self.key, document, variables).await
+        match self.workspace.sign_in {
+            SignIn::Key => query_with(&self.credential, document, variables).await,
+            SignIn::Browser => {
+                match query_with(
+                    &oauth::bearer(&self.credential),
+                    document,
+                    variables.clone(),
+                )
+                .await
+                {
+                    Err(LinearError::Auth(_)) => {
+                        let renewed = oauth::renew(&self.workspace, &self.credential).await?;
+                        query_with(&oauth::bearer(&renewed), document, variables).await
+                    }
+                    answered => answered,
+                }
+            }
+        }
     }
 }
 
@@ -97,7 +122,7 @@ async fn key_of(workspace: &Workspace) -> LinearResult<String> {
     Ok(key)
 }
 
-async fn read_body(response: Response) -> LinearResult<Vec<u8>> {
+pub async fn read_body(response: Response) -> LinearResult<Vec<u8>> {
     let mut stream = response.bytes_stream();
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
@@ -142,11 +167,15 @@ pub fn checked(status: u16, body: Value) -> LinearResult<Value> {
     }
 }
 
-/// Runs `document` with `key`, answering with its `data`.
-pub async fn query_with(key: &str, document: &str, variables: Value) -> LinearResult<Value> {
+/// Runs `document` with `authorization`, an API key or a bearer token, answering with its `data`.
+pub async fn query_with(
+    authorization: &str,
+    document: &str,
+    variables: Value,
+) -> LinearResult<Value> {
     let response = http()?
         .post(API)
-        .header("Authorization", key)
+        .header("Authorization", authorization)
         .json(&json!({ "query": document, "variables": variables }))
         .send()
         .await?;

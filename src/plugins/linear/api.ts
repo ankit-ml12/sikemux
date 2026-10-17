@@ -1,4 +1,4 @@
-import { createPluginBackend } from "../../plugin-api/backend";
+import { browserSignIn, createPluginBackend } from "../../plugin-api/backend";
 import { invalidate } from "../../plugin-api/resources";
 import { LINEAR_PLUGIN_ID } from "./kinds";
 
@@ -86,6 +86,7 @@ export const refreshLinear = () => invalidate((kind) => kind.startsWith("linear.
 export const linearApi = {
     status: () => backend.call<LinearStatus>("status"),
     signIn: (key: string) => backend.call<LinearStatus>("signIn", { key }),
+    signInWithBrowser: (openPage: (url: string) => void) => browserSignIn<LinearStatus>(backend, "signInWithBrowser", openPage),
     signOut: (workspace: string) => backend.call<void>("signOut", { workspace }),
     search: (workspace: string, query: string) => backend.call<LinearIssue[]>("search", { workspace, query, limit: 50 }),
     issue: (workspace: string, id: string) => backend.call<LinearIssueDetail>("issue", { workspace, id }),

@@ -1,19 +1,25 @@
-// Signing workspaces in and out with a personal API key, and saying who the
-// key belongs to.
+// Signing workspaces in and out, through the browser or with a personal API key,
+// and saying who the sign-in belongs to.
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use sikemux_plugin_api::StreamSink;
+
 use crate::client::{self, at, Session};
-use crate::config::{self, Workspace};
+use crate::config::{self, SignIn, Workspace};
 use crate::error::{LinearError, LinearResult};
+use crate::oauth;
+
+const BROWSER_WAIT: Duration = Duration::from_secs(300);
 
 const VIEWER: &str =
     "query Viewer { viewer { id name displayName email organization { id name urlKey } } }";
 
-/// Who a key belongs to, as `viewer` says.
+/// Who a sign-in belongs to, as `viewer` says.
 pub fn workspace_of(data: &Value) -> LinearResult<Workspace> {
     let viewer = &at(data, "/viewer");
     let organization = &at(viewer, "/organization");
@@ -28,6 +34,7 @@ pub fn workspace_of(data: &Value) -> LinearResult<Workspace> {
         user: text(at(viewer, "/displayName"))
             .or_else(|| text(at(viewer, "/name")))
             .unwrap_or_default(),
+        sign_in: SignIn::Key,
     })
 }
 
@@ -115,6 +122,40 @@ pub async fn sign_in(data_dir: &Path, input: KeySignIn) -> LinearResult<String> 
     Ok(id)
 }
 
+/// Opens Linear's sign-in in the browser, through the URL sent down the stream, and
+/// signs in to the workspace the person picks there. Stopping the stream stops the wait.
+pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> LinearResult<()> {
+    let callback = oauth::listen().await?;
+    let state = oauth::new_state()?;
+    let verifier = oauth::new_verifier()?;
+    sink.send(json!({ "url": oauth::authorize_url(&state, &verifier) }))
+        .map_err(|_| LinearError::Auth("the sign-in was closed".into()))?;
+    let code = tokio::time::timeout(BROWSER_WAIT, oauth::code(&callback, &state))
+        .await
+        .map_err(|_| LinearError::Auth("nobody finished signing in".into()))??;
+    drop(callback);
+    let tokens = oauth::exchange(&code, &verifier).await?;
+    let viewer =
+        client::query_with(&oauth::bearer(&tokens.access_token), VIEWER, json!({})).await?;
+    let workspace = Workspace {
+        sign_in: SignIn::Browser,
+        ..workspace_of(&viewer)?
+    };
+    let id = workspace.id.clone();
+    let refresh_token = tokens.refresh_token.clone();
+    let data_dir = data_dir.to_path_buf();
+    config::blocking(Box::new(move || {
+        config::keychain_write(&workspace, &refresh_token)?;
+        let mut config = config::load(&data_dir);
+        config.upsert(workspace);
+        config::save(&data_dir, &config)
+    }))
+    .await?;
+    oauth::remember(&id, &tokens).await;
+    client::forget(&id);
+    Ok(())
+}
+
 #[derive(Deserialize)]
 pub struct WorkspaceRef {
     #[serde(default)]
@@ -132,16 +173,24 @@ pub async fn sign_out(data_dir: &Path, input: WorkspaceRef) -> LinearResult<()> 
         else {
             return Ok(None);
         };
-        let removed = config.remove(&id);
-        if let Some(workspace) = &removed {
-            config::keychain_delete(workspace)?;
-        }
+        let Some(workspace) = config.remove(&id) else {
+            return Ok(None);
+        };
+        let refresh_token = match workspace.sign_in {
+            SignIn::Browser => config::keychain_read(&workspace)?,
+            SignIn::Key => None,
+        };
+        config::keychain_delete(&workspace)?;
         config::save(&data_dir, &config)?;
-        Ok(removed)
+        Ok(Some((workspace, refresh_token)))
     }))
     .await?;
-    if let Some(workspace) = removed {
+    if let Some((workspace, refresh_token)) = removed {
         client::forget(&workspace.id);
+        oauth::forget(&workspace.id).await;
+        if let Some(refresh_token) = refresh_token {
+            oauth::revoke(&refresh_token).await;
+        }
     }
     Ok(())
 }
@@ -175,7 +224,8 @@ mod tests {
                 name: "Acme".into(),
                 url_key: "acme".into(),
                 user_id: "u1".into(),
-                user: "ankit".into()
+                user: "ankit".into(),
+                sign_in: SignIn::Key,
             }
         );
         assert!(workspace_of(&json!({ "viewer": {} })).is_err());

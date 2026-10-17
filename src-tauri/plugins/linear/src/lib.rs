@@ -1,9 +1,10 @@
 // Linear: the person's issues and a search, one issue with its comments, and
 // the changes a person or their agents make, in a pane and as agent tools.
 //
-//   config — the workspaces signed in here, and their API keys in the Keychain
-//   client — the GraphQL client, the key, and Linear's errors in words
-//   auth   — signing in with a personal API key, and each workspace's status
+//   config — the workspaces signed in here, and their keys or tokens in the Keychain
+//   client — the GraphQL client, the key or token, and Linear's errors in words
+//   oauth  — signing in through the browser with a Linear account
+//   auth   — signing in with the browser or a personal API key, and each workspace's status
 //   issues — listing, reading, commenting on, changing and filing issues
 
 mod auth;
@@ -11,6 +12,7 @@ mod client;
 mod config;
 mod error;
 mod issues;
+mod oauth;
 
 use std::sync::Arc;
 
@@ -72,12 +74,21 @@ impl Plugin for Linear {
 
     fn stream<'a>(
         &'a self,
-        _ctx: &'a PluginContext,
+        ctx: &'a PluginContext,
         method: &'a str,
         _input: Value,
-        _sink: StreamSink,
+        sink: StreamSink,
     ) -> PluginFuture<'a, ()> {
-        Box::pin(async move { Err(PluginError::unknown_method(method)) })
+        Box::pin(async move {
+            let data_dir = ctx.data_dir();
+            match method {
+                "signInWithBrowser" => {
+                    auth::sign_in_with_browser(data_dir, &sink).await?;
+                    sink.send(reply(auth::status(data_dir).await)?)
+                }
+                _ => Err(PluginError::unknown_method(method)),
+            }
+        })
     }
 
     /// Linear is not tied to a repository, so its tools are offered wherever a workspace is signed in.

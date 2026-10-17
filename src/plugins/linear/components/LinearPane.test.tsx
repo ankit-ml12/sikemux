@@ -72,10 +72,12 @@ beforeEach(() => {
 });
 
 describe("the Linear pane", () => {
-    it("asks for an API key when no workspace is signed in", async () => {
+    it("offers the browser sign-in, and an API key instead, when no workspace is signed in", async () => {
         api.status.mockResolvedValue({ ...signedIn, configured: false, workspaces: [] });
         renderPane();
         expect(await screen.findByRole("heading", { name: "Connect Linear" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Continue with Linear" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Use an API key instead" }));
         expect(screen.getByPlaceholderText("lin_api_…")).toBeInTheDocument();
     });
 

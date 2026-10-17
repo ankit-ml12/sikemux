@@ -1,5 +1,5 @@
-// The Linear workspaces signed in here. Each one's API key lives in the
-// Keychain; the file beside it only says which workspaces there are, who is
+// The Linear workspaces signed in here. Each one's API key, or the refresh token
+// of a browser sign-in, lives in the Keychain; the file beside it only says which workspaces there are, who is
 // signed in to each, and which one a call uses when it names none.
 
 use std::path::{Path, PathBuf};
@@ -30,6 +30,16 @@ pub struct Workspace {
     pub url_key: String,
     pub user_id: String,
     pub user: String,
+    #[serde(default)]
+    pub sign_in: SignIn,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum SignIn {
+    #[default]
+    Key,
+    Browser,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Debug)]
@@ -156,6 +166,7 @@ mod tests {
             url_key: url_key.into(),
             user_id: "u1".into(),
             user: "ankit".into(),
+            sign_in: SignIn::Key,
         }
     }
 
