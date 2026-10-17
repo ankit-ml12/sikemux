@@ -22,6 +22,7 @@ import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
 import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, Session } from "../types";
 import { selectSession } from "./sessions";
+import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, projectSessionInBackground, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
 
@@ -543,6 +544,7 @@ export function renameAgent(id: string, title: string): void {
     });
     const state = getState();
     const agent = state.agents[id];
+    if (agent?.resumeId) retitlePinnedChat(agent.type, agent.resumeId, name);
     const winId = agentWindowId(state, id);
     const sessionId = winId ? ownerSessionId(state, winId) : null;
     const cwd = agent?.cwd || (sessionId ? state.sessions[sessionId]?.cwd : undefined);
