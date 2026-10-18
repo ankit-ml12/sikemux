@@ -950,3 +950,21 @@ button.gcp-project-row:hover {
 .gcp-panel .gcp-facts {
     grid-template-columns: 1fr;
 }
+
+.gcp-message {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--gcp-line);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.gcp-message pre {
+    margin: 0;
+    font-family: var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
