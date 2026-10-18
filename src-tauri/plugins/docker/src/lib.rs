@@ -7,11 +7,13 @@
 //   compose    — Compose stacks from their containers' labels, and acting on a whole stack
 //   logs       — a container's logs, read once or followed as they are written
 //   stats      — CPU, memory, network and disk of each running container
+//   disk       — how much disk the engine uses, and how much could be freed
 //   images     — images, the containers made from each, removing and pruning them
 //   volumes    — volumes, their sizes and the containers that mount them, removing and pruning them
 
 mod compose;
 mod containers;
+mod disk;
 mod engine;
 mod error;
 mod images;
@@ -101,6 +103,7 @@ impl Plugin for Docker {
                     let params = params(input)?;
                     answer(|engine| async move { compose::act(&engine, params).await }).await
                 }
+                "disk" => answer(|engine| async move { disk::read(&engine).await }).await,
                 "volumes" => answer(|engine| async move { volumes::list(&engine).await }).await,
                 "removeVolume" => {
                     let params = params(input)?;
