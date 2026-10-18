@@ -22,6 +22,8 @@ vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>(
 import { acceptDialog, useDialogs } from "../../../state/dialog";
 import { invalidate } from "../../../plugin-api/resources";
 import { deploymentForAgent } from "../state";
+import { CURATED_THEMES } from "../../../themes";
+import { previewTheme } from "../../../themes/bus";
 import { VercelPane } from "./VercelPane";
 
 const signedIn: VercelStatus = {
@@ -210,5 +212,15 @@ describe("the Vercel pane", () => {
         const handle = await screen.findByRole("separator", { name: "Resize the Vercel sidebar" });
         fireEvent.keyDown(handle, { key: "ArrowRight" });
         await waitFor(() => expect(screen.getByRole("complementary")).toHaveStyle({ width: "180px" }));
+    });
+
+    it("takes Vercel's light colours in a light theme and its dark ones in a dark theme", async () => {
+        const { container } = renderPane();
+        await screen.findByRole("separator", { name: "Resize the Vercel sidebar" });
+        const pane = container.querySelector(".vercel-pane")!;
+        act(() => previewTheme(CURATED_THEMES.find((theme) => !theme.dark)!));
+        expect(pane).toHaveAttribute("data-scheme", "light");
+        act(() => previewTheme(CURATED_THEMES.find((theme) => theme.dark)!));
+        expect(pane).toHaveAttribute("data-scheme", "dark");
     });
 });
