@@ -6,6 +6,7 @@
 //   containers — listing and reading containers, starting, stopping and removing them
 //   logs       — a container's logs, read once or followed as they are written
 //   images     — images, the containers made from each, removing and pruning them
+//   volumes    — volumes, their sizes and the containers that mount them, removing and pruning them
 
 mod containers;
 mod engine;
@@ -13,6 +14,7 @@ mod error;
 mod images;
 mod logs;
 mod status;
+mod volumes;
 
 use std::sync::Arc;
 
@@ -86,6 +88,14 @@ impl Plugin for Docker {
                     answer(|engine| async move { images::remove(&engine, params).await }).await
                 }
                 "pruneImages" => answer(|engine| async move { images::prune(&engine).await }).await,
+                "volumes" => answer(|engine| async move { volumes::list(&engine).await }).await,
+                "removeVolume" => {
+                    let params = params(input)?;
+                    answer(|engine| async move { volumes::remove(&engine, params).await }).await
+                }
+                "pruneVolumes" => {
+                    answer(|engine| async move { volumes::prune(&engine).await }).await
+                }
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -144,6 +154,11 @@ mod tests {
                 .expect("logs");
             println!("{logs:#}");
         }
+        let volumes = plugin
+            .call(&ctx, "volumes", Value::Null)
+            .await
+            .expect("volumes");
+        println!("volumes: {}", volumes.as_array().map_or(0, Vec::len));
     }
 
     #[test]
