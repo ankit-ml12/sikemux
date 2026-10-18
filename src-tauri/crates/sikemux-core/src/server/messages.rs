@@ -938,6 +938,40 @@ fn on_host(wanted: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// What `agent_send` takes as `to` for every other agent of the caller's team.
+const TEAM: &str = "team";
+
+/// Sends one message to every other agent of `from`'s team: the agent that
+/// leads it and every agent it started, each delivered as a message of its own.
+async fn send_team(
+    core: &Arc<Core>,
+    request: &HarnessRequest,
+    from: &str,
+) -> Result<Value, String> {
+    let top = core.names.team_of(from);
+    let members: Vec<String> = core
+        .names
+        .team(&top)
+        .into_iter()
+        .filter(|member| member != from)
+        .collect();
+    if members.is_empty() {
+        return Err("You have no team: no agent leads you and you started none".into());
+    }
+    let mut sent = Vec::new();
+    let mut failed = Vec::new();
+    for member in members {
+        let mut one = request.clone();
+        one.params["to"] = Value::String(member.clone());
+        let name = core.names.name(&member).unwrap_or_else(|| member.clone());
+        match send(core, &one).await {
+            Ok(answer) => sent.push(serde_json::json!({ "to": name, "delivery": answer["delivery"] })),
+            Err(why) => failed.push(serde_json::json!({ "to": name, "error": why })),
+        }
+    }
+    Ok(serde_json::json!({ "sent": sent, "failed": failed }))
+}
+
 pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let from = request
         .agent_id
@@ -953,6 +987,12 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         Some(Value::String(id)) if !id.trim().is_empty() => Some(id.trim().to_owned()),
         Some(_) => return Err("answers must be the id of the question this answers".into()),
     };
+    if to.trim().eq_ignore_ascii_case(TEAM) {
+        if answers.is_some() {
+            return Err("answers goes to one agent, not the team".into());
+        }
+        return Box::pin(send_team(core, request, &from)).await;
+    }
     let (target, letter) = {
         let (core, request, answers) = (core.clone(), request.clone(), answers.clone());
         blocking(move || {

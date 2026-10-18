@@ -913,8 +913,9 @@ another host, or an `agentId`, and `text`, at
 most 64 KB (65,536 bytes); put anything longer in a file and send its path. A name means the
 agent of that name in your project before one elsewhere. The message reaches
 the agent as text marked as yours, never as the person's, so it cannot approve
-a permission request or change a setting. The answer's `delivery` says what
-happened:
+a permission request or change a setting. `to: "team"` sends it to every other
+agent of your team, the lead and every agent started under it, and answers
+with each one's delivery. The answer's `delivery` says what happened:
 
 - `steered`: the agent was working and reads it at its next step, without
   stopping.
