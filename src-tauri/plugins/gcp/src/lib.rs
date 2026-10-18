@@ -12,8 +12,10 @@
 //   storage  — Cloud Storage buckets, folders, previews and downloads
 //   sql      — Cloud SQL instances, databases, users, backups and power
 //   pubsub   — Pub/Sub topics, subscriptions, publishing and peeking
+//   build    — Cloud Build builds, logs, triggers, retries and cancels
 
 mod auth;
+mod build;
 mod client;
 mod compute;
 mod error;
@@ -110,6 +112,11 @@ impl Plugin for Gcp {
                 "topics" => answer(pubsub::topics(params(input)?)).await,
                 "publish" => answer(pubsub::publish(params(input)?)).await,
                 "peek" => answer(pubsub::peek(params(input)?)).await,
+                "builds" => answer(build::builds(params(input)?)).await,
+                "build" => answer(build::build_detail(params(input)?)).await,
+                "buildChange" => answer(build::change(params(input)?)).await,
+                "triggers" => answer(build::triggers(params(input)?)).await,
+                "triggerRun" => answer(build::run_trigger(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
