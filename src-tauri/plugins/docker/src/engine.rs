@@ -187,6 +187,15 @@ impl Engine {
         Ok(serde_json::from_slice(&body)?)
     }
 
+    /// A POST whose answer, if any, is not needed.
+    pub async fn post(&self, path: &str, body: Option<Value>) -> DockerResult<()> {
+        self.send(Method::POST, path, body).await.map(drop)
+    }
+
+    pub async fn delete(&self, path: &str) -> DockerResult<()> {
+        self.send(Method::DELETE, path, None).await.map(drop)
+    }
+
     async fn send(&self, method: Method, path: &str, body: Option<Value>) -> DockerResult<Bytes> {
         let response = self.request(method, path, body).await?;
         let status = response.status();
@@ -264,6 +273,32 @@ fn refusal(status: StatusCode, body: &[u8]) -> DockerError {
             message,
         },
     }
+}
+
+/// Text put into a request path, such as a container's name, kept to one segment.
+pub fn segment(value: &str) -> DockerResult<&str> {
+    let value = value.trim();
+    let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':' | '@');
+    if value.is_empty() || !value.chars().all(allowed) {
+        return Err(DockerError::BadArg(format!(
+            "{value:?} is not a Docker name or id"
+        )));
+    }
+    Ok(value)
+}
+
+/// A query string value, with the few characters Docker's filters use escaped.
+pub fn query_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                escaped.push(char::from(byte));
+            }
+            _ => escaped.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    escaped
 }
 
 #[cfg(test)]
@@ -405,6 +440,19 @@ pub mod tests {
         assert_eq!(first_existing(&around(&home), &candidates[..1]), None);
     }
 
+    #[test]
+    fn names_put_into_a_path_stay_one_segment() {
+        assert_eq!(segment(" web-1 ").unwrap(), "web-1");
+        assert_eq!(segment("sha256:abc").unwrap(), "sha256:abc");
+        assert!(segment("../../info").is_err());
+        assert!(segment("a b").is_err());
+        assert!(segment("").is_err());
+        assert_eq!(
+            query_value(r#"{"label":["a=b"]}"#),
+            "%7B%22label%22%3A%5B%22a%3Db%22%5D%7D"
+        );
+    }
+
     #[tokio::test]
     async fn a_request_goes_over_the_socket_and_its_refusal_reads_in_the_engines_words() {
         let mut fake = fake_engine(vec![
@@ -414,9 +462,9 @@ pub mod tests {
                 r#"{"Version":"29.2.1"}"#.to_owned(),
             ),
             (
-                404,
+                409,
                 "application/json",
-                r#"{"message":"page not found"}"#.to_owned(),
+                r#"{"message":"container is running"}"#.to_owned(),
             ),
         ]);
         let version: Value = fake.engine.get("/version").await.unwrap();
@@ -427,8 +475,10 @@ pub mod tests {
             .await
             .unwrap()
             .starts_with("GET /version HTTP/1.1"));
-        let refused = fake.engine.get::<Value>("/nothing").await.unwrap_err();
-        assert!(matches!(refused, DockerError::NotFound(message) if message == "page not found"));
+        let refused = fake.engine.delete("/containers/web").await.unwrap_err();
+        assert!(
+            matches!(refused, DockerError::Conflict(message) if message == "container is running")
+        );
     }
 
     #[tokio::test]
