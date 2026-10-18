@@ -50,21 +50,73 @@
 .git-detail-actions .git-btn {
     height: 26px;
 }
-/* A card is wide enough to keep its actions at the right of the subject and its details. */
-.git-right-review .git-detail {
+.git-commit-card {
+    padding: 0;
+}
+.git-commit-card-body {
+    padding: 14px 16px 12px;
+}
+.git-detail-facts {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: var(--space-4);
+    grid-template-columns: 64px minmax(0, 1fr);
     align-items: center;
+    row-gap: var(--space-1h);
+    column-gap: var(--space-3);
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-2xs);
 }
-.git-right-review .git-detail > :not(.git-detail-actions) {
-    grid-column: 1;
+.git-detail-facts dt {
+    color: var(--text-tertiary);
 }
-.git-right-review .git-detail-actions {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    flex-wrap: nowrap;
-    margin-top: 0;
+.git-detail-facts dd {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1h);
+    min-width: 0;
+    margin: 0;
+    color: var(--text-secondary);
+}
+.git-detail-copy {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: var(--radius-1);
+    color: var(--text-tertiary);
+}
+.git-detail-copy:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.git-commit-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-1h) var(--space-2);
+    border-top: 1px solid var(--border);
+}
+.git-foot-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+    height: 26px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-2);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+}
+.git-foot-btn svg {
+    color: var(--text-tertiary);
+}
+.git-foot-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.git-foot-chev {
+    transform: rotate(90deg);
 }
 .git-chip {
     height: 18px;

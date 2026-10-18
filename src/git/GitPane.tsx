@@ -1269,41 +1269,57 @@ function GitWorkbench({
         );
     };
 
+    const openCommitUndoMenu = (anchor: HTMLElement, c: GitCommit) =>
+        openMenuAt(anchor, [
+            { label: "Reset to here…", hint: "r", icon: <IconDiscard size={13} />, run: () => openCommitResetMenu(c) },
+            { label: "Revert…", hint: "v", icon: <IconDiscard size={13} />, danger: true, run: () => openCommitRevertConfirm(c) },
+        ]);
+
     const commitHead = (c: GitCommit) => (
-        <div className="git-detail">
-            <h2 className="git-detail-title">{c.subject}</h2>
-            <div className="git-detail-meta">
-                <AuthorAvatar name={c.author} email={c.author_email} />
-                <span>{c.author}</span>
-                <CommitAgents owners={commitOwners?.[c.full_hash]} repo={repo} />
-                <span>·</span>
-                <span>{c.date}</span>
-                <span>·</span>
-                <span className="mono git-detail-hash">{c.hash}</span>
-                {c.unpushed ? <span className="git-chip warn">not pushed</span> : upstream && <span className="git-chip">pushed</span>}
-                {c.refs
-                    .filter((r) => r !== "HEAD")
-                    .map((r) => (
-                        <span key={r} className="git-chip">
-                            {r.replace(/^HEAD -> |^tag: /, "")}
-                        </span>
-                    ))}
+        <div className="git-detail git-commit-card">
+            <div className="git-commit-card-body">
+                <h2 className="git-detail-title">{c.subject}</h2>
+                <dl className="git-detail-facts">
+                    <dt>Author</dt>
+                    <dd>
+                        <AuthorAvatar name={c.author} email={c.author_email} />
+                        <span>{c.author}</span>
+                        <CommitAgents owners={commitOwners?.[c.full_hash]} repo={repo} />
+                    </dd>
+                    <dt>Date</dt>
+                    <dd>{c.date}</dd>
+                    <dt>Commit</dt>
+                    <dd>
+                        <span className="mono git-detail-hash">{c.hash}</span>
+                        <Tooltip label="Copy hash">
+                            <button
+                                type="button"
+                                className="git-detail-copy"
+                                aria-label="Copy hash"
+                                onClick={() => void copyValue(c.full_hash || c.hash, c.hash)}>
+                                <IconCopy size={12} />
+                            </button>
+                        </Tooltip>
+                        {c.unpushed ? <span className="git-chip warn">not pushed</span> : upstream && <span className="git-chip">pushed</span>}
+                        {c.refs
+                            .filter((r) => r !== "HEAD")
+                            .map((r) => (
+                                <span key={r} className="git-chip">
+                                    {r.replace(/^HEAD -> |^tag: /, "")}
+                                </span>
+                            ))}
+                    </dd>
+                </dl>
             </div>
-            <div className="git-detail-actions">
-                <button type="button" className="git-btn" onClick={() => void copyValue(c.full_hash || c.hash, c.hash)}>
-                    <IconCopy size={12} />
-                    Copy hash
-                </button>
-                <button type="button" className="git-btn" onClick={() => openCommitBranchPrompt(c)}>
+            <div className="git-commit-card-foot">
+                <button type="button" className="git-foot-btn" onClick={() => openCommitBranchPrompt(c)}>
                     <IconGit size={12} />
                     Branch from here
                 </button>
-                <button type="button" className="git-btn warn" onClick={() => openCommitResetMenu(c)}>
+                <button type="button" className="git-foot-btn" aria-haspopup="menu" onClick={(event) => openCommitUndoMenu(event.currentTarget, c)}>
                     <IconDiscard size={12} />
-                    Reset to here
-                </button>
-                <button type="button" className="git-btn danger" onClick={() => openCommitRevertConfirm(c)}>
-                    Revert
+                    Undo this commit
+                    <IconChevron size={9} className="git-foot-chev" />
                 </button>
             </div>
         </div>
