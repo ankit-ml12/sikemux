@@ -14,12 +14,14 @@ use super::{blind, change_card, git, send_notices, By, Card, Changes, Status};
 use crate::server::connection::blocking;
 use crate::server::remote::unix_ms;
 use crate::server::wake::sooner;
-use crate::server::{messages, Core};
+use crate::server::{ci, messages, Core};
 
 /// How long a pushed commit may go without a CI run before Auto takes it
 /// that the project has none.
 const CI_START_WAIT_MS: u64 = 3 * 60 * 1000;
-const CHECKS_EVERY_MS: u64 = 20_000;
+/// How long a run waiting on its checks goes without a look when the core's
+/// CI check sees nothing move on its repository.
+const CHECKS_FALLBACK_MS: u64 = 60_000;
 const REVIEW_EVERY_MS: u64 = 60_000;
 /// How many times the wait between looks at a pull request doubles while
 /// nothing on it changes.
@@ -461,6 +463,60 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
     Ok(())
 }
 
+/// The pull request of each run waiting on its checks, as the code-host
+/// repository the core's CI check watches for it.
+pub(crate) fn waiting_on_ci(core: &Core) -> Vec<ci::Shown> {
+    let state = core.boards.lock();
+    state
+        .boards
+        .values()
+        .flat_map(|board| &board.cards)
+        .filter_map(|card| {
+            let run = card
+                .auto
+                .as_ref()
+                .filter(|run| run.stage == Stage::Checking)?;
+            let pull = run.pull.as_ref()?;
+            Some(ci::Shown {
+                provider: format!("sikemux.{}", pull.host),
+                owner: pull.owner.clone(),
+                name: pull.name.clone(),
+                account: pull.account.clone(),
+                host: None,
+            })
+        })
+        .collect()
+}
+
+/// The runs on `repo` moved, so the runs waiting on their checks there look
+/// again now rather than at their next fallback.
+pub(crate) fn ci_moved(core: &Core, repo: &ci::Shown) {
+    let mut state = core.boards.lock();
+    let waiting: Vec<(String, u64)> = state
+        .boards
+        .iter()
+        .flat_map(|(project, board)| board.cards.iter().map(move |card| (project, card)))
+        .filter(|(_, card)| {
+            card.auto.as_ref().is_some_and(|run| {
+                run.stage == Stage::Checking
+                    && run.pull.as_ref().is_some_and(|pull| {
+                        format!("sikemux.{}", pull.host) == repo.provider
+                            && pull.owner == repo.owner
+                            && pull.name == repo.name
+                    })
+            })
+        })
+        .map(|(project, card)| (project.clone(), card.id))
+        .collect();
+    for (project, id) in &waiting {
+        state.polled.remove(&(project.clone(), *id, "pull"));
+    }
+    drop(state);
+    if !waiting.is_empty() {
+        core.boards.wake.now();
+    }
+}
+
 /// Looks at the checks of runs waiting on them, at pull requests waiting on
 /// the person, and takes up steps a restart cut short. Answers when a run is
 /// next due a look.
@@ -468,6 +524,7 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
     let now = unix_ms();
     let running = core.running_agents();
     let mut next = None;
+    let mut checking_any = false;
     let due: Vec<(String, u64, Stage)> = {
         let mut state = core.boards.lock();
         let mut due = Vec::new();
@@ -480,7 +537,10 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                     continue;
                 }
                 let every = match run.stage {
-                    Stage::Checking => CHECKS_EVERY_MS,
+                    Stage::Checking => {
+                        checking_any = true;
+                        CHECKS_FALLBACK_MS
+                    }
                     Stage::Review => {
                         let quiet = state.polled.get(&(project.clone(), card.id, QUIET));
                         REVIEW_EVERY_MS << quiet.copied().unwrap_or(0).min(MAX_QUIET_DOUBLINGS)
@@ -531,6 +591,9 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
         }
         due
     };
+    if checking_any {
+        ci::start(core);
+    }
     for (project, id, stage) in due {
         match stage {
             Stage::Checking | Stage::Merging => {

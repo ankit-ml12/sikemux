@@ -32,6 +32,7 @@ mod review;
 mod tickets;
 
 pub(crate) use auto::Settings;
+pub(crate) use finish::{ci_moved, waiting_on_ci};
 use auto::{Run, Stage};
 
 const FOLDER: &str = "boards";

@@ -1,6 +1,7 @@
-//! Checks the CI of every code-host repository a client has on screen, once
-//! however many clients show it, and tells them all when its runs move. A
-//! client says which repositories it shows; the list goes with its connection.
+//! Checks the CI of every code-host repository a client has on screen or an
+//! Auto card waits on, once however many look, and tells them all when its
+//! runs move. A client says which repositories it shows; the list goes with
+//! its connection.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
@@ -25,13 +26,13 @@ const RUNS_CHECKED: u32 = 20;
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Shown {
     /// The plugin that speaks for the host, such as `sikemux.github`.
-    provider: String,
-    owner: String,
-    name: String,
+    pub provider: String,
+    pub owner: String,
+    pub name: String,
     #[serde(default)]
-    account: Option<String>,
+    pub account: Option<String>,
     #[serde(default)]
-    host: Option<String>,
+    pub host: Option<String>,
 }
 
 impl Shown {
@@ -72,7 +73,7 @@ pub(crate) struct ShowParams {
 
 /// The repositories `client` shows now, in place of those it showed before.
 pub(crate) fn show(core: &Arc<Core>, client: ClientId, params: ShowParams) {
-    let start = {
+    {
         let mut state = core.ci.lock();
         if params.repos.is_empty() {
             state.shown.remove(&client);
@@ -81,9 +82,14 @@ pub(crate) fn show(core: &Arc<Core>, client: ClientId, params: ShowParams) {
                 .shown
                 .insert(client, params.repos.into_iter().collect());
         }
-        !std::mem::replace(&mut state.checking, true)
-    };
-    if start {
+    }
+    start(core);
+}
+
+/// Starts checking, unless it already runs; it stops by itself once nothing
+/// is looked at.
+pub(crate) fn start(core: &Arc<Core>) {
+    if !std::mem::replace(&mut core.ci.lock().checking, true) {
         tokio::spawn(serve(core.clone()));
     }
 }
@@ -93,9 +99,16 @@ async fn serve(core: Arc<Core>) {
         let due = {
             let connected: HashSet<ClientId> =
                 core.clients().iter().map(|client| client.id).collect();
+            let waiting = super::board::waiting_on_ci(&core);
             let mut state = core.ci.lock();
             state.shown.retain(|client, _| connected.contains(client));
-            let shown: HashSet<Shown> = state.shown.values().flatten().cloned().collect();
+            let shown: HashSet<Shown> = state
+                .shown
+                .values()
+                .flatten()
+                .cloned()
+                .chain(waiting)
+                .collect();
             if shown.is_empty() {
                 state.seen.clear();
                 state.checking = false;
@@ -151,5 +164,6 @@ async fn check(core: &Arc<Core>, repo: Shown) {
     };
     if moved {
         core.changes.changed("ci", None, Some(vec![repo.key()]));
+        super::board::ci_moved(core, &repo);
     }
 }
