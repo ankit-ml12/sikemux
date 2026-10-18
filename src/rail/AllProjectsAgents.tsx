@@ -34,9 +34,7 @@ export function AllProjectsAgents() {
     const windows = useStore((s) => s.windows);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agents = useStore((s) => s.agents);
-    const agentActivity = useStore((s) => s.agentActivity);
-    const agentTasks = useStore((s) => s.agentTasks);
-    const agentSubagents = useStore((s) => s.agentSubagents);
+    const agentStatus = useStore((s) => s.agentStatus);
     const { inbox } = useInbox();
     const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
 
@@ -47,17 +45,17 @@ export function AllProjectsAgents() {
                 id: agentId,
                 lead: agent.lead,
                 agent,
-                display: agentDisplayOf({ agentActivity, agentTasks, agentSubagents }, agentId),
+                display: agentDisplayOf({ agentStatus }, agentId),
                 sessionName: session.name,
                 sessionId: session.id,
                 sessionCwd: session.cwd,
             });
         return rows;
-    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity, agentTasks, agentSubagents]);
+    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentStatus]);
 
     const teams = useMemo(
-        () => inTeams(withRemoteWorkers(inCoreOrder(open, inbox.order), inbox.remoteAgents)),
-        [open, inbox.order, inbox.remoteAgents],
+        () => inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), inbox.remoteAgents)),
+        [open, inbox.agents, inbox.remoteAgents],
     );
 
     const root = useRef<HTMLDivElement>(null);

@@ -61,12 +61,7 @@ fn next_sequence() -> u64 {
 /// already notify, so its state stays out of the notices.
 pub(crate) fn publish_chat_state(core: &Core, agent_id: &str, state: &str) {
     core.agents_changed();
-    let event = Event::AgentState(chat_state(agent_id, state));
-    core.broadcast_to(&event, |client| client.peer.is_local());
-}
-
-pub(crate) fn chat_state(agent_id: &str, state: &str) -> AgentStateEvent {
-    AgentStateEvent {
+    let event = Event::AgentState(AgentStateEvent {
         agent_id: agent_id.to_owned(),
         state: state.to_owned(),
         sequence: next_sequence(),
@@ -74,7 +69,8 @@ pub(crate) fn chat_state(agent_id: &str, state: &str) -> AgentStateEvent {
         confidence: "high".into(),
         reason: "the chat's turn as the core runs it".into(),
         matched_rule: None,
-    }
+    });
+    core.broadcast_to(&event, |client| client.peer.is_local());
 }
 
 pub(crate) fn sequence_mark() -> u64 {

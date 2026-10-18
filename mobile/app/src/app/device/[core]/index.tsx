@@ -14,7 +14,8 @@ import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { WorkerRow, workersOf } from '@/devices/RemoteWorker';
 import { summary } from '@/devices/status';
-import { chatDisplay, chatTitle, folder, inProject, itemIn } from '@/devices/words';
+import { agentDisplay } from '@mac/state/agentStatus';
+import { chatTitle, folder, inProject, itemIn } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
 import { AgentFace } from '@/ui/Buddy';
@@ -259,7 +260,7 @@ function terminalDetail(session: SessionInfo): string {
 /* A host sends its whole view several times a second while an agent works; each row redraws only when its own
    item changed, which the hub keeps as the same object otherwise. */
 const ChatRow = memo(function ChatRow({ core, chat, place }: { core: string; chat: ChatInfo; place?: string }) {
-  const display = chatDisplay(chat);
+  const display = agentDisplay(chat);
   return (
     <Row
       mark={<AgentFace agentId={chat.agentId} provider={chat.provider} group={display.group} size={20} />}
@@ -288,7 +289,7 @@ const TerminalAgentRow = memo(function TerminalAgentRow({
   place?: string;
   onOpen: () => void;
 }) {
-  const group = session.group ?? (session.unread ? 'done' : 'idle');
+  const { group } = agentDisplay(session);
   return (
     <Row
       mark={<AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} group={group} size={20} />}

@@ -130,7 +130,7 @@ beforeEach(() => {
         sessions: "/home/me/.codex/sessions",
     }));
     mocks.signIn.mockResolvedValue(undefined);
-    mocks.inbox.mockReturnValue({ inbox: { items: [], working: 0, away: false, remoteAgents: [], order: [] }, digest: null });
+    mocks.inbox.mockReturnValue({ inbox: { items: [], working: 0, away: false, remoteAgents: [], agents: [] }, digest: null });
     invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions" || kind === "agents.usage" || kind === "agents.account");
 });
 
@@ -451,7 +451,7 @@ describe("tab rail", () => {
                 working: 0,
                 away: false,
                 remoteAgents: [],
-                order: [],
+                agents: [],
             },
             digest: null,
         });

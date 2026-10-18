@@ -121,6 +121,7 @@ import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
 import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
 import { recordAgentTurns } from "./state/activityRecorder";
+import { watchInbox } from "./rail/useInbox";
 import { useInstalledPlugins } from "./plugins/installed";
 import { useRailDock } from "./rail/railMotion";
 
@@ -812,6 +813,7 @@ export default function App() {
     );
 
     useEffect(() => recordAgentTurns(), []);
+    useEffect(watchInbox, []);
 
     useEffect(() => watchTerminalAgentExits(), []);
     useEffect(() => watchSshLinks(), []);

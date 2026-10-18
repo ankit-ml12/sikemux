@@ -59,7 +59,7 @@ describe("which agent's desk a port opens on", () => {
 
     it("is otherwise the running agent that worked last", () => {
         seedProjects();
-        setState({ agentActivity: { "agent-1": { updatedAt: 1 }, "agent-2": { updatedAt: 5 } } } as never);
+        setState({ agentStatus: { "agent-1": { activeAt: 1 }, "agent-2": { activeAt: 5 } } } as never);
         expect(deskAgentFor(getState(), "project")).toBe("agent-2");
     });
 

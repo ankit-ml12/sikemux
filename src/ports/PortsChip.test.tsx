@@ -48,7 +48,7 @@ describe("PortsChip", () => {
 
     it("opens a port on the desk of the agent that worked last, with the browser, copy and reveal beside it", async () => {
         seedProjects();
-        setState({ agentActivity: { "agent-2": { updatedAt: 9 } } } as never);
+        setState({ agentStatus: { "agent-2": { activeAt: 9 } } } as never);
         listening.mockResolvedValue([terminalPort(5173, { paneId: "pane-1", project: "/code" })]);
         await renderChip();
         await openMenu("1 listening port");

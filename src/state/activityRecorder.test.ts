@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { recordAgentTurns } from "./activityRecorder";
-import { closeAgent, noteAgentActivity } from "./commands";
-import { acceptDialog, useDialogs } from "./dialog";
+import { setAgentStatus } from "./commands";
 import { getState, setState } from "./store";
 import { withAgents } from "../test/agents";
 
@@ -33,6 +32,9 @@ afterEach(() => {
     resetIpcTransportForTests();
 });
 
+const noteAgentActivity = (agentId: string, state: "working" | "complete") =>
+    setAgentStatus([{ agentId, status: state === "working" ? "working" : "done", group: state === "working" ? "working" : "done", unread: false, subagents: 0, tasks: 0, activeAt: null }]);
+
 const recorded = () => calls.filter(([command]) => command.startsWith("activity_"));
 
 describe("agent turn recording", () => {
@@ -45,14 +47,5 @@ describe("agent turn recording", () => {
             ["activity_turn_started", { agentId: "agent-1", cwd: "/work/app" }],
             ["activity_turn_ended", { agentId: "agent-1", agent: "codex", cwd: "/work/app", sessionId: "s-1", configPath: null }],
         ]);
-    });
-
-    it("closes the turn of an agent closed mid-turn", async () => {
-        noteAgentActivity("agent-1", "working");
-        closeAgent("agent-1");
-        acceptDialog(useDialogs.getState().dialog!.id);
-        await Promise.resolve();
-        await Promise.resolve();
-        expect(recorded().map(([command]) => command)).toEqual(["activity_turn_started", "activity_turn_ended"]);
     });
 });

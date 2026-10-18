@@ -283,9 +283,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const [splitTarget, setSplitTarget] = useState<SplitTarget | null>(null);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
-    const activity = useStore((s) => s.agentActivity);
-    const agentTasks = useStore((s) => s.agentTasks);
-    const agentSubagents = useStore((s) => s.agentSubagents);
+    const agentStatus = useStore((s) => s.agentStatus);
     const windowIds = useStore((s) => s.windowsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
@@ -401,7 +399,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             if (win.role === "agent") {
                 const agent = agentInWindow(agentsById, win);
                 if (!agent) return [];
-                const display = agentDisplayOf({ agentActivity: activity, agentTasks, agentSubagents }, agent.id);
+                const display = agentDisplayOf({ agentStatus }, agent.id);
                 return [
                     {
                         id: key,
@@ -482,9 +480,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         refs,
         windowsById,
         agentsById,
-        activity,
-        agentTasks,
-        agentSubagents,
+        agentStatus,
         termTitles,
         dirtyEditorPaths,
         activeKey,

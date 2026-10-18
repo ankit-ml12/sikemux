@@ -53,25 +53,16 @@ function arrangeAgents(count: number) {
             ];
         }),
     );
-    const agentActivity = Object.fromEntries(
+    const agentStatus = Object.fromEntries(
         Object.keys(agents).map((id, index) => [
             id,
-            {
-                state: "idle" as const,
-                backendState: "idle" as const,
-                unread: false,
-                updatedAt: index,
-                sequence: 1,
-                source: "screen" as const,
-                confidence: "high" as const,
-                reason: "prompt visible",
-            },
+            { agentId: id, status: "idle" as const, group: "idle" as const, unread: false, subagents: 0, tasks: 0, activeAt: index },
         ]),
     );
     setState({
         sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], kind: "project" } },
         ...withAgents(state, sessionId, Object.values(agents)),
-        agentActivity,
+        agentStatus,
     });
 }
 
@@ -124,10 +115,10 @@ describe("agent sleep policy", () => {
                 "agent-1": { ...current.agents["agent-1"], keepAlive: true },
                 "agent-2": { ...current.agents["agent-2"], resumeId: undefined },
             },
-            agentActivity: {
-                ...current.agentActivity,
-                "agent-3": { ...current.agentActivity["agent-3"], backendState: "working", state: "working" },
-                "agent-4": { ...current.agentActivity["agent-4"], confidence: "low" },
+            agentStatus: {
+                ...current.agentStatus,
+                "agent-3": { ...current.agentStatus["agent-3"], status: "working", group: "working" },
+                "agent-4": { ...current.agentStatus["agent-4"], status: "starting", group: "working" },
             },
         }));
         const hiddenSince: HiddenAgentTimes = new Map(Object.keys(getState().agents).map((id) => [id, 0]));
@@ -159,7 +150,7 @@ describe("agent sleep policy", () => {
 
     it("keeps an agent that still has a shell, monitor or subagent running", () => {
         arrangeAgents(1);
-        setState({ agentTasks: { "agent-0": 1 } });
+        setState((state) => ({ agentStatus: { "agent-0": { ...state.agentStatus["agent-0"], tasks: 1 } } }));
         const hiddenSince: HiddenAgentTimes = new Map([["agent-0", 0]]);
         expect(agentIdsToAutoSleep(getState(), hiddenSince, AGENT_IDLE_SLEEP_MS * 2)).toEqual([]);
     });

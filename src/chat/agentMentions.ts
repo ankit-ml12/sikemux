@@ -27,7 +27,7 @@ export function useMates(agentId: string): Mate[] {
     const windows = useStore((s) => s.windows);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const activity = useStore((s) => s.agentActivity);
+    const status = useStore((s) => s.agentStatus);
     return useMemo(() => {
         const windowId = agentWindowId({ windows }, agentId);
         const sessionId = windowId ? ownerSessionId({ sessionOrder, windowsBySession }, windowId) : null;
@@ -37,11 +37,11 @@ export function useMates(agentId: string): Mate[] {
             return agentIdsOf({ windows, windowsBySession }, sid).flatMap((id) => {
                 const agent = agents[id];
                 if (!agent?.name || id === agentId) return [];
-                const display = agent.launchState === "dormant" ? null : agentDisplay(activity[id]?.state);
+                const display = agent.launchState === "dormant" ? null : agentDisplay(status[id]);
                 return [{ id, name: agent.name, project, type: agent.type, title: agent.title, buddy: agent.buddy, display }];
             });
         });
-    }, [agentId, agents, sessions, windows, windowsBySession, sessionOrder, activity]);
+    }, [agentId, agents, sessions, windows, windowsBySession, sessionOrder, status]);
 }
 
 export function mateNote(mate: Mate, status: string, earlier?: string): string {

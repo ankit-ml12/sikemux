@@ -13,7 +13,7 @@ import { retryHosts, useAccountHosts } from '@/account/session';
 import { reloadDevices, retry, useHostStatus, useLive } from '@/devices/hub';
 import { channelLabel, deviceKind, deviceName, type PairedDevice } from '@/devices/paired';
 import { summary } from '@/devices/status';
-import { chatDisplay } from '@/devices/words';
+import { agentDisplay } from '@mac/state/agentStatus';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
@@ -32,7 +32,7 @@ function DeviceCard({ device }: { device: PairedDevice }) {
   const away = !status.online && !(status.connecting && !status.problem);
   const snapshot = status.online ? live.snapshot : undefined;
   const needs = snapshot?.inbox.items[0]?.tier === 'needs' ? snapshot.inbox.items[0] : undefined;
-  const displays = (snapshot?.chats ?? []).map((chat) => ({ chat, display: chatDisplay(chat) }));
+  const displays = (snapshot?.chats ?? []).map((chat) => ({ chat, display: agentDisplay(chat) }));
   const working = snapshot?.inbox.working ?? 0;
   const background = displays.reduce((sum, { display }) => sum + display.subagents + display.tasks, 0);
   const busy = displays.filter(({ display }) => display.group === 'working' || display.subagents + display.tasks).map(({ chat }) => chat);

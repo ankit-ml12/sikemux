@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { useStore } from "../state/store";
 import { AgentIcon } from "../ui/Icons";
 import type { Agent } from "../state/types";
-import { buddyStateOf, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyState } from "./catalogue";
+import { buddyStateOfGroup, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyState } from "./catalogue";
 import { assignBuddyColors } from "./commands";
 import { buddyMarkup } from "./render";
 import "./buddies.css";
@@ -48,11 +48,11 @@ export const AgentBuddy = memo(function AgentBuddy({
     state?: BuddyState;
     className?: string;
 }) {
-    const live = useStore((s) => (state ? undefined : s.agentActivity[agent.id]?.state));
+    const live = useStore((s) => (state ? undefined : s.agentStatus[agent.id]?.group));
     const pack = useStore((s) => s.buddyPack);
     const shape = useStore((s) => s.buddyShape);
     const look = useMemo(() => resolveBuddy(agent, { pack, shape }), [agent, pack, shape]);
-    return <BuddyArt pack={look.pack} shape={look.shape} color={look.color} state={state ?? buddyStateOf(live)} size={size} className={className} />;
+    return <BuddyArt pack={look.pack} shape={look.shape} color={look.color} state={state ?? buddyStateOfGroup(live)} size={size} className={className} />;
 });
 
 /** The agent's buddy when buddies are on, otherwise its harness logo, each in its own wrapper. */

@@ -172,24 +172,6 @@ export interface PtyDirectCommand {
     };
 }
 
-export type AgentBackendState = "unknown" | "working" | "blocked" | "idle" | "stopped";
-export type AgentPresentationState = AgentBackendState | "done";
-
-export interface AgentRuntimeState {
-    state: AgentPresentationState;
-    backendState: AgentBackendState;
-    unread: boolean;
-    updatedAt: number;
-    lastWorkedAt?: number;
-    sequence: number;
-    source: "screen" | "activity" | "process" | "fallback" | "acp";
-    confidence: "high" | "medium" | "low";
-    reason: string;
-    matchedRule?: string;
-    /** What the agent itself last said it was doing, while a question it put to the person shows it as waiting. */
-    reported?: AgentBackendState;
-}
-
 /** Identity Sikemux attaches to every shell it owns. Runtime-only. */
 export interface PtyContext {
     sessionId: string;

@@ -5,7 +5,7 @@ import type { StoreState } from "../state/store";
 import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
 import { terminalKeyOfExecution } from "../tasks/runtime";
 
-type PortsState = Pick<StoreState, "sessions" | "windows" | "windowsBySession" | "agents" | "agentActivity" | "desks" | "terminalTitles">;
+type PortsState = Pick<StoreState, "sessions" | "windows" | "windowsBySession" | "agents" | "agentStatus" | "desks" | "terminalTitles">;
 
 export type PortReveal =
     | { kind: "agent"; agentId: string }
@@ -61,7 +61,7 @@ export function deskAgentFor(state: PortsState, sessionId: string): string | nul
     const live = agentIdsOf(state, sessionId).filter((id) => state.agents[id] && state.agents[id].launchState !== "dormant");
     const front = activeAgentId(state, state.sessions[sessionId]);
     if (front && live.includes(front)) return front;
-    const lastWorked = (id: string) => state.agentActivity[id]?.updatedAt ?? 0;
+    const lastWorked = (id: string) => state.agentStatus[id]?.activeAt ?? 0;
     return live.sort((left, right) => lastWorked(right) - lastWorked(left))[0] ?? null;
 }
 

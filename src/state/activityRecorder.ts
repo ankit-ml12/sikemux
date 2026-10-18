@@ -15,13 +15,13 @@ function agentConfigPath(state: StoreState, agent: Agent): string | undefined {
     return profileOf(state, agent)?.configPath;
 }
 
-const isWorking = (state: StoreState, id: string): boolean => state.agentActivity[id]?.backendState === "working";
+const isWorking = (state: StoreState, id: string): boolean => state.agentStatus[id]?.group === "working";
 
 /** Every stretch an agent spends working is one turn, whether it runs in a chat or a terminal. */
 export function recordAgentTurns(): () => void {
     return useStore.subscribe((state, previous) => {
-        if (state.agentActivity === previous.agentActivity) return;
-        const ids = new Set([...Object.keys(state.agentActivity), ...Object.keys(previous.agentActivity)]);
+        if (state.agentStatus === previous.agentStatus) return;
+        const ids = new Set([...Object.keys(state.agentStatus), ...Object.keys(previous.agentStatus)]);
         for (const id of ids) {
             const working = isWorking(state, id);
             if (working === isWorking(previous, id)) continue;

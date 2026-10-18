@@ -1,6 +1,6 @@
 import { pluginDocuments } from "../plugins/documents";
 import type { Agent, PaneNode, Session, TabRef, Window, WindowRole } from "./types";
-import { agentDisplay, lastWorkedAt, type AgentDisplay } from "./agentStatus";
+import { agentDisplay, type AgentDisplay } from "./agentStatus";
 import type { StoreState } from "./store";
 import { collectPanes, openSides } from "./layout";
 import { relativePath } from "../lib/paths";
@@ -39,8 +39,8 @@ export function* openAgents(state: OpenAgentsState): Generator<OpenAgent> {
 }
 
 /** How one agent is shown: its turn state plus the subagents and shells it still has going. */
-export function agentDisplayOf(state: Pick<StoreState, "agentActivity" | "agentSubagents" | "agentTasks">, agentId: string): AgentDisplay {
-    return agentDisplay(state.agentActivity[agentId]?.state, { subagents: state.agentSubagents[agentId], tasks: state.agentTasks[agentId] });
+export function agentDisplayOf(state: Pick<StoreState, "agentStatus">, agentId: string): AgentDisplay {
+    return agentDisplay(state.agentStatus[agentId]);
 }
 
 /**
@@ -112,13 +112,13 @@ export function activeAgentId(state: Pick<StoreState, "windows">, session: Pick<
 
 /** The agent in front, or else the one in this project that worked last: whose desk a browser tab goes on. */
 export function nearestAgentId(
-    state: Pick<StoreState, "sessions" | "activeSessionId" | "windows" | "windowsBySession" | "agentActivity">,
+    state: Pick<StoreState, "sessions" | "activeSessionId" | "windows" | "windowsBySession" | "agentStatus">,
 ): string | null {
     const session = state.sessions[state.activeSessionId];
     if (session?.kind !== "project") return null;
     const active = activeAgentId(state, session);
     if (active) return active;
-    const lastWorked = (id: string) => lastWorkedAt(state.agentActivity[id]);
+    const lastWorked = (id: string) => state.agentStatus[id]?.activeAt ?? 0;
     return [...agentIdsOf(state, session.id)].sort((left, right) => lastWorked(right) - lastWorked(left))[0] ?? null;
 }
 

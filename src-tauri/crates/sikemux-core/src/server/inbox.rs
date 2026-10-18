@@ -163,11 +163,24 @@ pub(crate) struct View {
     /// Agents on linked hosts working with agents here, each shown under its
     /// lead.
     pub remote_agents: Vec<RemoteAgent>,
-    /// Every open agent here, by id, in the order devices list them.
-    pub order: Vec<String>,
+    /// Every open agent here as devices show it, in the order they list them.
+    pub agents: Vec<Shown>,
     /// The characters the app draws for its agents, while buddies are on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buddies: Option<super::workspace::Buddies>,
+}
+
+/// How devices show an open agent here.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Shown {
+    pub agent_id: String,
+    pub status: AgentStatus,
+    pub group: AgentGroup,
+    pub unread: bool,
+    pub subagents: u32,
+    pub tasks: u32,
+    pub active_at: Option<u64>,
 }
 
 /// An agent on a linked host that works with agents here.
@@ -721,23 +734,49 @@ fn ranked(mut items: Vec<Item>) -> Vec<Item> {
 /// The inbox, from the chats and terminals the device view lists.
 pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> View {
     View {
-        order: order(chats, sessions),
+        agents: shown(chats, sessions),
         ..view_of(core, &agents(core, chats, sessions), sessions)
     }
 }
 
-fn order(chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<String> {
-    let mut ranked: Vec<(u32, &String)> = chats
+fn shown(chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown> {
+    let mut ranked: Vec<(u32, Shown)> = chats
         .iter()
-        .map(|chat| (chat.attention_rank, &chat.agent_id))
+        .map(|chat| {
+            (
+                chat.attention_rank,
+                Shown {
+                    agent_id: chat.agent_id.clone(),
+                    status: chat.status,
+                    group: chat.group,
+                    unread: chat.unread,
+                    subagents: chat.subagents,
+                    tasks: chat.tasks,
+                    active_at: chat.active_at,
+                },
+            )
+        })
         .collect();
-    ranked.extend(
-        sessions
-            .iter()
-            .filter_map(|session| Some((session.attention_rank?, session.agent_id.as_ref()?))),
-    );
-    ranked.sort();
-    ranked.into_iter().map(|(_, id)| id.clone()).collect()
+    ranked.extend(sessions.iter().filter_map(|session| {
+        let agent_id = session.agent_id.as_ref()?;
+        if chats.iter().any(|chat| &chat.agent_id == agent_id) {
+            return None;
+        }
+        Some((
+            session.attention_rank.unwrap_or(u32::MAX),
+            Shown {
+                agent_id: agent_id.clone(),
+                status: session.status?,
+                group: session.group?,
+                unread: session.unread,
+                subagents: 0,
+                tasks: 0,
+                active_at: session.active_at,
+            },
+        ))
+    }));
+    ranked.sort_by(|a, b| (a.0, &a.1.agent_id).cmp(&(b.0, &b.1.agent_id)));
+    ranked.into_iter().map(|(_, shown)| shown).collect()
 }
 
 fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
@@ -766,7 +805,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         away: core.notify.absence().1,
         agent_messages: core.harness.mailbox.log.latest(),
         remote_agents: remote_agents(core),
-        order: Vec::new(),
+        agents: Vec::new(),
         buddies: core.workspaces.buddies(),
     }
 }

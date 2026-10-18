@@ -246,10 +246,10 @@ function storeSnapshot() {
             keptAlive: Object.values(s.agents).filter((agent) => agent.keepAlive === true).length,
             resumable: Object.values(s.agents).filter((agent) => !!agent.resumeId).length,
         },
-        agentActivity: Object.fromEntries(
-            ["unknown", "working", "blocked", "done", "idle"].map((state) => [
-                state,
-                Object.values(s.agentActivity).filter((activity) => activity.state === state).length,
+        agentStatus: Object.fromEntries(
+            ["working", "blocked", "done", "idle", "asleep", "stopped", "starting"].map((status) => [
+                status,
+                Object.values(s.agentStatus).filter((shown) => shown.status === status).length,
             ]),
         ),
         editorViews: Object.keys(s.editorViews).length,

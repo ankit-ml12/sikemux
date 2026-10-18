@@ -125,7 +125,7 @@ export async function removeAgentWorktree(agentId: string, pullMerged = false): 
         notify("info", "Another agent or project still uses this worktree. Close it before removing the worktree.");
         return;
     }
-    if (isAgentBusy(state.agentActivity[agentId])) {
+    if (isAgentBusy(state.agentStatus[agentId])) {
         notify("info", "Stop the agent's turn before removing its worktree");
         return;
     }

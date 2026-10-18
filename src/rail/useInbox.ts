@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import { INBOX_EVENT, inboxApi, type Inbox, type InboxItem } from "../api/inbox";
 import { getIpcTransport } from "../api/transport";
 import { agentWindowId, ownerSessionId, projectSessionId } from "../state/selectors";
+import type { AgentShown } from "../state/agentStatus";
+import { setAgentStatus } from "../state/commands/agents";
 import type { StoreState } from "../state/store";
 import { swallow } from "../state/toast";
 
@@ -9,16 +11,19 @@ interface InboxState {
     inbox: Inbox;
 }
 
-let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, remoteAgents: [], order: [] } };
+let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, remoteAgents: [], agents: [] } };
 const listeners = new Set<() => void>();
 let started = false;
 
 function take(inbox: Inbox): void {
     state = { inbox };
+    setAgentStatus(inbox.agents);
     for (const listener of listeners) listener();
 }
 
-function start(): void {
+/** Follows the core's inbox for the whole app, and with it how every agent is shown. */
+export function watchInbox(): void {
+    if (started) return;
     started = true;
     void getIpcTransport()
         .subscribe<Inbox>(INBOX_EVENT, (event) => take(event.payload))
@@ -28,7 +33,7 @@ function start(): void {
 }
 
 function subscribe(listener: () => void): () => void {
-    if (!started) start();
+    watchInbox();
     listeners.add(listener);
     return () => listeners.delete(listener);
 }
@@ -39,10 +44,10 @@ export function useInbox(): InboxState {
 }
 
 /** Agents in the order the core lists them on every device; those it does not list keep their order after it. */
-export function inCoreOrder<T extends { id: string }>(agents: readonly T[], order: readonly string[]): T[] {
+export function inCoreOrder<T extends { id: string }>(agents: readonly T[], shown: readonly AgentShown[]): T[] {
     const rank = (agent: T) => {
-        const index = order.indexOf(agent.id);
-        return index < 0 ? order.length : index;
+        const index = shown.findIndex((one) => one.agentId === agent.id);
+        return index < 0 ? shown.length : index;
     };
     return [...agents].sort((a, b) => rank(a) - rank(b));
 }

@@ -4,7 +4,7 @@ import type { ChatInfo } from "../api/generated/wire";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { chatInfo } from "../test/wire";
 import { getState, setState } from "../state/store";
-import { AGENTS_SEEN_EVENT, FOCUS_AGENT_EVENT, REMOTE_CHAT_BEGUN_EVENT, RemoteChatBridge } from "./RemoteChatBridge";
+import { FOCUS_AGENT_EVENT, REMOTE_CHAT_BEGUN_EVENT, RemoteChatBridge } from "./RemoteChatBridge";
 
 const initial = getState();
 let transport: MemoryIpcTransport;
@@ -70,30 +70,5 @@ describe("RemoteChatBridge", () => {
         const session = state.sessions[state.activeSessionId];
         expect(session?.cwd).toBe("/Users/me/site");
         expect(state.windows[session?.activeWindowId ?? ""]?.activePaneId).toBe("agent-from-phone");
-    });
-
-    it("clears the unread mark of an agent a phone has open", async () => {
-        setState({
-            agentActivity: {
-                "agent-on-phone": {
-                    state: "done",
-                    backendState: "idle",
-                    unread: true,
-                    updatedAt: 1,
-                    sequence: 1,
-                    source: "acp",
-                    confidence: "high",
-                    reason: "turn ended",
-                },
-            },
-        });
-        render(<RemoteChatBridge />);
-        await act(async () => {
-            await Promise.resolve();
-        });
-        act(() => {
-            transport.emit(AGENTS_SEEN_EVENT, ["agent-on-phone"]);
-        });
-        expect(getState().agentActivity["agent-on-phone"]).toMatchObject({ state: "idle", unread: false });
     });
 });

@@ -555,9 +555,7 @@ export const SideRail = memo(function SideRail() {
     const windowsById = useStore((s) => s.windows);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agentsById = useStore((s) => s.agents);
-    const activityById = useStore((s) => s.agentActivity);
-    const tasksById = useStore((s) => s.agentTasks);
-    const subagentsById = useStore((s) => s.agentSubagents);
+    const agentStatus = useStore((s) => s.agentStatus);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
@@ -789,7 +787,7 @@ export const SideRail = memo(function SideRail() {
         windowsById,
         windowsBySession,
         agentsById,
-        displayOf: (agentId) => agentDisplayOf({ agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById }, agentId),
+        displayOf: (agentId) => agentDisplayOf({ agentStatus }, agentId),
         draggingProjectId,
         projectDragClass,
         onProjectPointerDown,

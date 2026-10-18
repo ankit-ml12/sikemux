@@ -1,51 +1,6 @@
-import type { AgentBackendState, AgentPresentationState, AgentRuntimeState } from "./types";
+import type { AgentGroup, AgentShown, AgentStatus } from "../api/generated/wire";
 
-export interface AgentStateEvent {
-    agentId: string;
-    state: AgentBackendState;
-    sequence: number;
-    source: AgentRuntimeState["source"];
-    confidence: AgentRuntimeState["confidence"];
-    reason: string;
-    matchedRule?: string;
-}
-
-export function reduceAgentState(
-    previous: AgentRuntimeState | undefined,
-    event: AgentStateEvent,
-    visible: boolean,
-    now = Date.now(),
-): AgentRuntimeState | undefined {
-    if (previous && event.sequence <= previous.sequence) return undefined;
-    let state: AgentPresentationState = event.state;
-    let unread = false;
-    if (event.state === "idle" && !visible && (previous?.backendState === "working" || previous?.backendState === "blocked")) {
-        state = "done";
-        unread = true;
-    } else if (event.state === "blocked") {
-        unread = !visible;
-    }
-    const worked = event.state === "working" || event.state === "blocked";
-    const lastWorkedAt = worked ? now : previous?.lastWorkedAt;
-    return {
-        state,
-        backendState: event.state,
-        unread,
-        updatedAt: now,
-        ...(lastWorkedAt != null ? { lastWorkedAt } : {}),
-        sequence: event.sequence,
-        source: event.source,
-        confidence: event.confidence,
-        reason: event.reason,
-        ...(event.matchedRule ? { matchedRule: event.matchedRule } : {}),
-    };
-}
-
-export function acknowledgeAgentState(value: AgentRuntimeState): AgentRuntimeState {
-    return { ...value, state: value.state === "done" ? "idle" : value.state, unread: false };
-}
-
-export type AgentGroup = "blocked" | "working" | "done" | "idle";
+export type { AgentGroup, AgentShown, AgentStatus };
 
 /** The groups in the order they want attention, and the one word each surface uses for them. */
 export const AGENT_GROUPS: readonly AgentGroup[] = ["blocked", "working", "done", "idle"];
@@ -59,13 +14,7 @@ export const AGENT_LABELS: Record<AgentGroup, string> = {
 
 const RANK: Record<AgentGroup, number> = { blocked: 3, working: 2, done: 1, idle: 0 };
 
-export interface AgentBackground {
-    subagents?: number;
-    tasks?: number;
-}
-
 export interface AgentDisplay {
-    state: AgentPresentationState;
     group: AgentGroup;
     subagents: number;
     tasks: number;
@@ -73,14 +22,16 @@ export interface AgentDisplay {
     rank: number;
 }
 
-/**
- * How an agent is shown everywhere. Its state counts subagents still at work
- * as Working; shells left running only show as counts.
- */
-export function agentDisplay(state: AgentPresentationState | undefined, background: AgentBackground = {}): AgentDisplay {
-    const shown = state ?? "idle";
-    const group: AgentGroup = shown === "blocked" || shown === "working" || shown === "done" ? shown : "idle";
-    return { state: shown, group, subagents: background.subagents ?? 0, tasks: background.tasks ?? 0, label: AGENT_LABELS[group], rank: RANK[group] };
+/** How an agent is shown everywhere, from the group the core put it in. Shells left running only show as counts. */
+export function agentDisplay(shown: Partial<Pick<AgentShown, "group" | "subagents" | "tasks">> = {}): AgentDisplay {
+    const group = shown.group ?? "idle";
+    return { group, subagents: shown.subagents ?? 0, tasks: shown.tasks ?? 0, label: AGENT_LABELS[group], rank: RANK[group] };
+}
+
+/** The group an agent's status puts it in; one starting up already counts as at work. */
+export function groupOfStatus(status: AgentStatus): AgentGroup {
+    if (status === "starting") return "working";
+    return status === "blocked" || status === "working" || status === "done" ? status : "idle";
 }
 
 /** A group of agents shown as the one that wants attention most, counting everything they still have going. */
@@ -97,7 +48,6 @@ export function rollupAgentDisplays(displays: readonly AgentDisplay[]): AgentDis
 }
 
 /** Mid-turn or waiting on an answer: stopping it now loses work, so closing it asks first. */
-export const isAgentBusy = (activity: AgentRuntimeState | undefined): boolean =>
-    activity?.backendState === "working" || activity?.backendState === "blocked";
+export const isAgentBusy = (shown: AgentShown | undefined): boolean => shown?.group === "working" || shown?.group === "blocked";
 
-export const lastWorkedAt = (activity: AgentRuntimeState | undefined): number => activity?.lastWorkedAt ?? 0;
+export const agentHasBackgroundWork = (shown: AgentShown | undefined): boolean => (shown?.tasks ?? 0) + (shown?.subagents ?? 0) > 0;

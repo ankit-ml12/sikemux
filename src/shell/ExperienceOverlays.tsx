@@ -346,7 +346,7 @@ export function DiagnosticsOverlay() {
     const [explain, setExplain] = useState<unknown>(null);
     const [uiReport, setUiReport] = useState<UiActivityReport | null>(null);
     const agents = useStore((s) => s.agents);
-    const activity = useStore((s) => s.agentActivity);
+    const status = useStore((s) => s.agentStatus);
     const refresh = async () => {
         setError("");
         try {
@@ -394,7 +394,7 @@ export function DiagnosticsOverlay() {
                                 .catch((value) => setError(String(value)))
                         }>
                         <b>{agent.title}</b>
-                        <span>{agent.launchState === "dormant" ? "dormant" : (activity[agent.id]?.state ?? "unknown")}</span>
+                        <span>{agent.launchState === "dormant" ? "dormant" : (status[agent.id]?.status ?? "unknown")}</span>
                         <small>explain</small>
                     </button>
                 ))}

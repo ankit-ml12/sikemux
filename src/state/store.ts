@@ -211,12 +211,8 @@ export interface ViewState {
 
     globalSearchBySession: Record<string, GlobalSearchView>;
 
-    /** Runtime-only PTY activity for live agents. Never persisted or hydrated. */
-    agentActivity: Record<string, import("./types").AgentRuntimeState>;
-    /** How many background shells and monitors each agent still has going. */
-    agentTasks: Record<string, number>;
-    /** How many subagents each agent still has going. */
-    agentSubagents: Record<string, number>;
+    /** How the core shows each open agent, by id, as its device view last said. Never persisted. */
+    agentStatus: Record<string, import("./agentStatus").AgentShown>;
     /** Questions agents asked that wait on an answer, as the core last sent them. */
     agentQuestions: import("../agents/agentQuestions").AgentQuestion[];
     /** Each project's board cards, by the project folder the core names, as the core last sent them. */
@@ -362,9 +358,7 @@ export const useStore = create<StoreState>(() => {
         gitCmdLog: [],
         gitCmdLogOpen: false,
         globalSearchBySession: {},
-        agentActivity: {},
-        agentTasks: {},
-        agentSubagents: {},
+        agentStatus: {},
         agentQuestions: [],
         agentBoards: {},
         agentBoardAuto: {},

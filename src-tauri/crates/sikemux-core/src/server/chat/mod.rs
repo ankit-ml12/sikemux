@@ -1268,14 +1268,6 @@ impl Chats {
         !busy && self.stop(agent_id)
     }
 
-    /// What every chat is doing now, for an app that has just started.
-    pub(crate) fn states(&self) -> Vec<crate::protocol::AgentStateEvent> {
-        self.all()
-            .iter()
-            .map(|chat| super::agent::chat_state(chat.agent_id(), chat.state_now()))
-            .collect()
-    }
-
     pub(crate) fn stop_all(&self) {
         for chat in self.take_all() {
             Self::halt(&chat);
@@ -1521,6 +1513,7 @@ fn start(
     validate(&launch_spec)?;
     let resume_id = launch_spec.resume_id.clone();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
+    core.workspaces.note_begun(&chat);
     let naming = (
         core.clone(),
         chat.agent_id().to_owned(),

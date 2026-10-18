@@ -10,7 +10,6 @@ import { swallow } from "../state/toast";
 export const REMOTE_CHAT_BEGUN_EVENT = "remote_chat_begun";
 export const REMOTE_CHAT_WAKE_EVENT = "remote_chat_wake";
 export const FOCUS_AGENT_EVENT = "focus_agent";
-export const AGENTS_SEEN_EVENT = "agents_seen";
 
 /** A chat the core starts for a board's Auto is placed by its card, which the board may not have brought yet. */
 async function adopt(chat: ChatInfo): Promise<void> {
@@ -28,8 +27,8 @@ function wake(agentId: string) {
 }
 
 /**
- * Shows a chat a paired phone or a board's Auto starts among its project's agents, wakes a sleeping one a phone opens, shows the agent the
- * notch asks for, and clears the unread mark of an agent a phone has open.
+ * Shows a chat a paired phone or a board's Auto starts among its project's agents, wakes a sleeping one a phone opens, and shows the agent the
+ * notch asks for.
  */
 export function RemoteChatBridge() {
     useEffect(() => {
@@ -39,9 +38,6 @@ export function RemoteChatBridge() {
             transport.subscribe<ChatInfo>(REMOTE_CHAT_BEGUN_EVENT, ({ payload }) => void adopt(payload), { signal: controller.signal }),
             transport.subscribe<string>(REMOTE_CHAT_WAKE_EVENT, (event) => wake(event.payload), { signal: controller.signal }),
             transport.subscribe<string>(FOCUS_AGENT_EVENT, (event) => cmd.revealAgent(event.payload), { signal: controller.signal }),
-            transport.subscribe<string[]>(AGENTS_SEEN_EVENT, (event) => event.payload.forEach(cmd.clearAgentUnread), {
-                signal: controller.signal,
-            }),
         ]).catch((error: unknown) => {
             if (!controller.signal.aborted) swallow("remote chat listener")(error);
         });

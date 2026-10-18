@@ -37,22 +37,10 @@ afterEach(() => {
 });
 
 describe("AgentSessionSync IPC events", () => {
-    it("routes both agent event streams and aborts their transport subscriptions", async () => {
+    it("routes agent session events and aborts its transport subscription", async () => {
         const view = render(<AgentSessionSync />);
-        await waitFor(() => expect(transport.eventListenerCount).toBe(2));
+        await waitFor(() => expect(transport.eventListenerCount).toBe(1));
         await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledOnce());
-
-        act(() => {
-            transport.emit("agent_state_changed", {
-                agentId: "agent-1",
-                state: "working",
-                sequence: 1,
-                source: "process",
-                confidence: "high",
-                reason: "process is running",
-            });
-        });
-        expect(getState().agentActivity["agent-1"]).toMatchObject({ backendState: "working", sequence: 1 });
 
         act(() => {
             transport.emit("agent_sessions_changed", { agent: "codex", cwd: "/repo" });
@@ -73,7 +61,7 @@ describe("AgentSessionSync IPC events", () => {
         }));
 
         render(<AgentSessionSync />);
-        await waitFor(() => expect(transport.eventListenerCount).toBe(2));
+        await waitFor(() => expect(transport.eventListenerCount).toBe(1));
         expect(resources.fetchResource).not.toHaveBeenCalled();
         expect(agentApi.watchStart).not.toHaveBeenCalled();
     });

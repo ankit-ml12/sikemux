@@ -143,7 +143,7 @@ describe("removeAgentWorktree", () => {
     const agent: Agent = { id: "agent-1", type: "claude", title: "fix", startup: "claude", cwd: worktree.path, worktree };
 
     beforeEach(() => {
-        setState({ agents: { [agent.id]: agent }, sessions: {}, agentActivity: {} });
+        setState({ agents: { [agent.id]: agent }, sessions: {}, agentStatus: {} });
         mocks.status.mockResolvedValue({ files: [] });
         mocks.compare.mockResolvedValue({ commits: [] });
     });

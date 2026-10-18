@@ -3,9 +3,8 @@ import { AgentMark } from "../agents/AgentMark";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { isAgentType } from "../agents/catalog";
 import type { TeamLink, TeamMember } from "../agents/teams";
-import type { RemoteAgent, RemoteAgentStatus } from "../api/inbox";
-import { agentDisplay } from "../state/agentStatus";
-import type { AgentPresentationState } from "../state/types";
+import type { RemoteAgent } from "../api/inbox";
+import { agentDisplay, groupOfStatus } from "../state/agentStatus";
 import { IconAgent } from "../ui/Icons";
 
 export interface RemoteWorker extends TeamMember {
@@ -29,14 +28,9 @@ export function teamWrapClass(link: TeamLink | undefined): string {
     return `agent-row-wrap${link === "head" ? " chain-head" : link ? ` chain${link === "last" ? " chain-last" : ""}` : ""}`;
 }
 
-function presentation(status: RemoteAgentStatus): AgentPresentationState {
-    if (status === "starting") return "working";
-    return status === "working" || status === "blocked" || status === "done" ? status : "idle";
-}
-
 /** A worker on a linked host, in its lead's team. It has no chat here to open. */
 export function RemoteAgentRow({ agent, link }: { agent: RemoteAgent; link?: TeamLink }) {
-    const display = agentDisplay(presentation(agent.status));
+    const display = agentDisplay({ group: groupOfStatus(agent.status) });
     return (
         <div className={teamWrapClass(link)}>
             <div className="agent-row remote" title={agent.reachable ? `Runs on ${agent.host}` : `${agent.host} is out of reach`}>

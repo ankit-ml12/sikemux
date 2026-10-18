@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentPresentationState, AgentRuntimeState } from "../state/types";
+import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
+import type { AgentGroup, AgentShown } from "../state/agentStatus";
 import { getState, setState } from "../state/store";
 import { withAgents } from "../test/agents";
 
@@ -33,14 +34,15 @@ const appWindow = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => appWindow, UserAttentionType: { Informational: 2 } }));
 
-const { agentsNeedingYou, installAgentNotifications, introduceNotifications, newAgentAlerts } = await import("./agentNotifications");
+const { installAgentNotifications, introduceNotifications } = await import("./agentNotifications");
 
 const initial = getState();
 
-function activity(state: AgentPresentationState): AgentRuntimeState {
-    const backendState = state === "done" ? "idle" : state;
-    return { state, backendState, unread: state === "done", updatedAt: 0, sequence: 1, source: "acp", confidence: "high", reason: "" };
+function shown(agentId: string, group: AgentGroup): Record<string, AgentShown> {
+    return { [agentId]: { agentId, status: group, group, unread: group === "done", subagents: 0, tasks: 0, activeAt: null } };
 }
+
+const notice = { title: "Codex needs your input", body: "openjob on studio", agentId: "a2" };
 
 beforeEach(() => {
     setState(initial, true);
@@ -58,73 +60,44 @@ beforeEach(() => {
     vi.clearAllMocks();
 });
 
-describe("which agents are waiting on you", () => {
-    it("counts agents asking for input and agents finished unseen", () => {
-        setState({ agentActivity: { a1: activity("blocked"), a2: activity("done") } });
-        expect(agentsNeedingYou(getState())).toBe(2);
-        setState({ agentActivity: { a1: activity("working"), a2: activity("idle") } });
-        expect(agentsNeedingYou(getState())).toBe(0);
-    });
-
-    it("alerts once as an agent starts waiting, naming its project", () => {
-        const before = getState();
-        setState({ agentActivity: { a1: activity("working"), a2: activity("blocked") } });
-        const after = getState();
-        expect(newAgentAlerts(before, after)).toEqual([{ agentId: "a2", title: "Codex needs your input", body: "openjob" }]);
-        expect(newAgentAlerts(after, after)).toEqual([]);
-    });
-
-    it("alerts when an agent finishes, even the one on screen", () => {
-        setState({ agentActivity: { a1: activity("working") } });
-        const before = getState();
-        setState({ agentActivity: { a1: activity("idle") } });
-        expect(newAgentAlerts(before, getState())).toEqual([{ agentId: "a1", title: "Claude finished", body: "api" }]);
-    });
-
-    it("does not call an agent that was never working finished", () => {
-        const before = getState();
-        setState({ agentActivity: { a1: activity("idle") } });
-        expect(newAgentAlerts(before, getState())).toEqual([]);
-    });
-});
-
 describe("notifying outside the app", () => {
     let focused = false;
+    let transport: MemoryIpcTransport;
     let uninstall: () => void;
-    beforeEach(() => {
+    beforeEach(async () => {
         focused = false;
+        transport = new MemoryIpcTransport();
+        installIpcTransportForTests(transport);
         uninstall = installAgentNotifications(() => focused);
+        await Promise.resolve();
     });
-    afterEach(() => uninstall());
+    afterEach(() => {
+        uninstall();
+        resetIpcTransportForTests();
+    });
 
-    it("notifies, bounces the dock and badges it while Sikemux is in the background", async () => {
-        setState({ agentActivity: { a2: activity("blocked") } });
-        await vi.waitFor(() => expect(notification.sent).toHaveBeenCalledWith({ agentId: "a2", title: "Codex needs your input", body: "openjob" }));
+    it("posts what the core says, with a bip and a bounce, while Sikemux is in the background", async () => {
+        transport.emit("agent_notice", notice);
+        await vi.waitFor(() => expect(notification.sent).toHaveBeenCalledWith(notice));
         expect(notification.bips).toHaveBeenCalledTimes(1);
         expect(appWindow.requestUserAttention).toHaveBeenCalledTimes(1);
-        expect(appWindow.setBadgeCount).toHaveBeenLastCalledWith(1);
     });
 
-    it("only badges while Sikemux has focus", () => {
+    it("stays quiet while Sikemux has focus, or with notifications switched off", () => {
         focused = true;
-        setState({ agentActivity: { a2: activity("blocked") } });
-        expect(appWindow.setBadgeCount).toHaveBeenLastCalledWith(1);
+        transport.emit("agent_notice", notice);
+        focused = false;
+        setState({ agentNotifications: false });
+        transport.emit("agent_notice", notice);
         expect(appWindow.requestUserAttention).not.toHaveBeenCalled();
         expect(notification.sent).not.toHaveBeenCalled();
     });
 
-    it("clears the badge once nothing is waiting", () => {
-        setState({ agentActivity: { a2: activity("blocked") } });
-        setState({ agentActivity: { a2: activity("working") } });
+    it("badges the Dock with the agents the core shows waiting or done, and clears it once none are", () => {
+        setState({ agentStatus: shown("a2", "blocked") });
+        expect(appWindow.setBadgeCount).toHaveBeenLastCalledWith(1);
+        setState({ agentStatus: shown("a2", "working") });
         expect(appWindow.setBadgeCount).toHaveBeenLastCalledWith(undefined);
-    });
-
-    it("stays quiet when notifications are switched off, but keeps the badge", () => {
-        setState({ agentNotifications: false, agentActivity: { a1: activity("working") } });
-        setState({ agentActivity: { a1: activity("done") } });
-        expect(appWindow.setBadgeCount).toHaveBeenLastCalledWith(1);
-        expect(appWindow.requestUserAttention).not.toHaveBeenCalled();
-        expect(notification.sent).not.toHaveBeenCalled();
     });
 });
 

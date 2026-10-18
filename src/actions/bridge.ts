@@ -97,14 +97,14 @@ export function applicationActionContext(state: StoreState, focusTarget: EventTa
     const pane = window ? findPane(window.root, window.activePaneId) : null;
     const agentId = activeAgentId(state, session ?? undefined);
     const agent = agentId ? (state.agents[agentId] ?? null) : null;
-    const activity = agent ? state.agentActivity[agent.id] : null;
+    const shown = agent ? state.agentStatus[agent.id] : null;
     return Object.freeze({
         focusedItem: pane ? { id: pane.id, kind: pane.kind } : null,
         session: session ? { id: session.id, kind: session.kind } : null,
         project: session?.kind === "project" && session.cwd ? { id: session.id, root: session.cwd } : null,
         focus: actionFocus(focusTarget) ?? { target: pane ? "workbench-item" : "application", editable: false },
         modal: null,
-        agent: agent ? { id: agent.id, kind: agent.type, status: activity?.state ?? "unknown" } : null,
+        agent: agent ? { id: agent.id, kind: agent.type, status: shown?.status ?? "unknown" } : null,
         capabilities: session ? [`session.${session.kind}`, ...(pane ? [`item.${pane.kind}`] : [])] : [],
     });
 }
@@ -116,6 +116,6 @@ export function applicationActionContextFingerprint(state: StoreState): string {
     const pane = window ? findPane(window.root, window.activePaneId) : null;
     const agentId = activeAgentId(state, session);
     const agent = agentId ? state.agents[agentId] : undefined;
-    const activity = agent ? state.agentActivity[agent.id] : undefined;
-    return JSON.stringify([session?.id, session?.kind, session?.cwd, window?.id, pane?.id, pane?.kind, agent?.id, agent?.type, activity?.state]);
+    const shown = agent ? state.agentStatus[agent.id] : undefined;
+    return JSON.stringify([session?.id, session?.kind, session?.cwd, window?.id, pane?.id, pane?.kind, agent?.id, agent?.type, shown?.status]);
 }

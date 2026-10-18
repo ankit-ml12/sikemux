@@ -199,9 +199,9 @@ export function guardDiscardDirty(paths: string[], action: string, proceed: () =
 
 /** Closing an agent's tab stops it, so it asks first when the agent is busy. */
 export function guardCloseAgents(agentIds: readonly string[], title: string, proceed: () => void): void {
-    const { agentActivity } = getState();
+    const { agentStatus } = getState();
     guardStopAgents(
-        agentIds.filter((id) => isAgentBusy(agentActivity[id])),
+        agentIds.filter((id) => isAgentBusy(agentStatus[id])),
         title,
         proceed,
     );
@@ -240,10 +240,10 @@ export function guardCloseLeads(agentIds: readonly string[], title: string, proc
         guardCloseAgents(agentIds, title, () => proceed([]));
         return;
     }
-    const { agents, agentActivity } = getState();
+    const { agents, agentStatus } = getState();
     const label = (id: string) => agents[id]?.name ?? agents[id]?.title ?? "agent";
     const leads = agentIds.filter((id) => workers.some((worker) => agents[worker]?.lead === id)).map(label);
-    const busy = agentIds.filter((id) => isAgentBusy(agentActivity[id])).map(label);
+    const busy = agentIds.filter((id) => isAgentBusy(agentStatus[id])).map(label);
     const one = workers.length === 1;
     const working =
         busy.length > 0 ? `${listed(busy)} ${busy.length === 1 ? "is" : "are"} working and ${busy.length === 1 ? "stops" : "stop"} with it. ` : "";
@@ -308,9 +308,6 @@ export function disposePaneState(d: StoreState, paneId: string): void {
     delete d.terminalTitles[paneId];
     delete d.agents[paneId];
     forgetAgentDeliveries(paneId);
-    delete d.agentActivity[paneId];
-    delete d.agentTasks[paneId];
-    delete d.agentSubagents[paneId];
 }
 
 export function pruneWindowViews(d: StoreState, win: Window): void {

@@ -6,6 +6,7 @@ import { insertText, textInsertTargetWithin } from "../state/textInsertRegistry"
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
+import { canBypassPermissions } from "../agents/catalog";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { putDraft, takeDraft } from "./draftHandoff";
 import { promptDraft } from "../terminal/promptDraft";
@@ -15,7 +16,6 @@ import { AgentBuddy } from "../buddies/Buddy";
 import { openBuddyPicker } from "../buddies/commands";
 import { AgentIcon, IconAgent, IconMoreVertical, IconPanelRight, IconPlug, IconTerminal } from "../ui/Icons";
 import { useStore } from "../state/store";
-import { agentDisplay } from "../state/agentStatus";
 import { shownDeskPaneId } from "../state/selectors";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentLabel } from "../agents/AgentLabel";
@@ -98,7 +98,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     /* What was typed in the chat when the agent moved to its TUI, left at the TUI's prompt. */
     const [carried, setCarried] = useState("");
     const [chatBusy, setChatBusy] = useState(false);
-    const working = useStore((state) => agentDisplay(state.agentActivity[agent.id]?.state).group === "working");
+    const working = useStore((state) => state.agentStatus[agent.id]?.group === "working");
     const busy = chatBusy || working;
     const [renaming, setRenaming] = useState(false);
     const buddies = useStore((state) => state.buddies);
@@ -187,7 +187,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                                 <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
                             </Suspense>
                         )}
-                        {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
+                        {view === "tui" && canBypassPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
                         <div className="agent-view-switch" role="group" aria-label="Agent view">
                             <button
                                 type="button"

@@ -35,9 +35,9 @@ export function agentIdsToAutoSleep(state: StoreState, hiddenSince: HiddenAgentT
     const eligible = Object.values(state.agents)
         .flatMap((agent) => {
             const hiddenAt = hiddenSince.get(agent.id);
-            const activity = state.agentActivity[agent.id];
-            if (hiddenAt === undefined || !activity || !cmd.isAgentSleepable(state, agent)) return [];
-            return [{ id: agent.id, hiddenAt, activityAt: activity.updatedAt }];
+            const shown = state.agentStatus[agent.id];
+            if (hiddenAt === undefined || !shown || !cmd.isAgentSleepable(state, agent)) return [];
+            return [{ id: agent.id, hiddenAt, activityAt: shown.activeAt ?? 0 }];
         })
         .sort((left, right) => left.hiddenAt - right.hiddenAt || left.activityAt - right.activityAt || left.id.localeCompare(right.id));
 
@@ -53,9 +53,7 @@ export function AgentLifecycleManager() {
     const sessions = useStore((state) => state.sessions);
     const agents = useStore((state) => state.agents);
     const windows = useStore((state) => state.windows);
-    const agentActivity = useStore((state) => state.agentActivity);
-    const tasks = useStore((state) => state.agentTasks);
-    const subagents = useStore((state) => state.agentSubagents);
+    const agentStatus = useStore((state) => state.agentStatus);
     const hiddenSinceRef = useRef<HiddenAgentTimes>(new Map());
     const focusedRef = useRef<string | null>(null);
     const askingRef = useRef(false);
@@ -97,7 +95,7 @@ export function AgentLifecycleManager() {
         if (live.size > 0) performanceTelemetry.incrementCounter("agent.sleep.held", live.size);
     }, []);
 
-    useEffect(() => void enforcePolicy(), [activeSessionId, sessions, windows, agents, agentActivity, tasks, subagents, enforcePolicy]);
+    useEffect(() => void enforcePolicy(), [activeSessionId, sessions, windows, agents, agentStatus, enforcePolicy]);
 
     useEffect(() => {
         const timer = window.setInterval(() => void enforcePolicy(), AGENT_SLEEP_POLICY_INTERVAL_MS);

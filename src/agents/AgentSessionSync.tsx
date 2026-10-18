@@ -1,11 +1,10 @@
 import { useEffect, useRef } from "react";
-import { acpApi } from "../api/acp";
 import { agentApi } from "../api/agents";
 import { getIpcTransport } from "../api/transport";
 import { fetchResource } from "../state/resources";
 import { agentSessionsR } from "../state/resources.defs";
 import { getState, useStore } from "../state/store";
-import { activeAgentId, agentIdsOf } from "../state/selectors";
+import { agentIdsOf } from "../state/selectors";
 import type { AgentType } from "../state/types";
 import * as cmd from "../state/commands";
 import { profileOf } from "../state/commands/agentLaunchCommand";
@@ -21,16 +20,6 @@ interface AgentSessionsChanged {
     agent: AgentType;
     cwd: string;
     configPath?: string;
-}
-
-interface AgentStateChanged {
-    agentId: string;
-    state: "unknown" | "working" | "blocked" | "idle" | "stopped";
-    sequence: number;
-    source: "screen" | "activity" | "process" | "fallback";
-    confidence: "high" | "medium" | "low";
-    reason: string;
-    matchedRule?: string;
 }
 
 interface AgentWatchRecord {
@@ -123,32 +112,6 @@ function useAgentSyncKey(): string {
 export function AgentSessionSync() {
     const syncKey = useAgentSyncKey();
     const watchesRef = useRef(new Map<string, AgentWatchRecord>());
-    const visibleAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
-
-    useEffect(() => {
-        const controller = new AbortController();
-        void getIpcTransport()
-            .subscribe<AgentStateChanged>(
-                "agent_state_changed",
-                (event) => {
-                    cmd.noteAgentActivity(event.payload.agentId, event.payload);
-                },
-                { signal: controller.signal },
-            )
-            /* Chats running from before this page say what they are doing only when it changes. */
-            .then(() => acpApi.states())
-            .then((states) => {
-                if (!controller.signal.aborted) for (const state of states) cmd.noteAgentActivity(state.agentId, state);
-            })
-            .catch((error: unknown) => {
-                if (!controller.signal.aborted) swallow("agent state listener")(error);
-            });
-        return () => controller.abort();
-    }, []);
-
-    useEffect(() => {
-        if (visibleAgentId) cmd.clearAgentUnread(visibleAgentId);
-    }, [visibleAgentId]);
 
     useEffect(() => {
         const controller = new AbortController();

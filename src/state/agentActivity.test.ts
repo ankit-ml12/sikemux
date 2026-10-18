@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
-import { clearAgentUnread, closeAgent, noteAgentActivity, selectAgent, sleepAgent } from "./commands";
+import { closeAgent, selectAgent, sleepAgent } from "./commands";
 import { getState, setState } from "./store";
 import { withAgents } from "../test/agents";
 
@@ -24,29 +24,6 @@ function installAgent() {
 }
 
 describe("agent activity", () => {
-    it("shows working immediately and marks a hidden completion unread", () => {
-        const id = installAgent();
-        noteAgentActivity(id, "working");
-        expect(getState().agentActivity[id]).toMatchObject({ state: "working", unread: false });
-
-        noteAgentActivity(id, "complete");
-        expect(getState().agentActivity[id]).toMatchObject({ state: "done", backendState: "idle", unread: true });
-    });
-
-    it("clears unread on selection and keeps visible completions read", () => {
-        const id = installAgent();
-        noteAgentActivity(id, "complete");
-        selectAgent(id);
-        expect(getState().agentActivity[id].unread).toBe(false);
-
-        noteAgentActivity(id, "working");
-        noteAgentActivity(id, "complete");
-        expect(getState().agentActivity[id]).toMatchObject({ state: "idle", unread: false });
-
-        clearAgentUnread(id);
-        expect(getState().agentActivity[id].unread).toBe(false);
-    });
-
     it("sleeps only resumable agents and resumes a sleeping agent on selection", () => {
         const id = installAgent();
         expect(sleepAgent(id)).toBe(false);

@@ -85,6 +85,7 @@ impl Core {
         self.harness.mailbox.wake.now();
         self.harness.questions.wake.now();
         self.boards.wake.now();
+        self.view_stale.notify_one();
     }
 
     fn journal_agent(&self, agent_id: &str, happened: Happened) {

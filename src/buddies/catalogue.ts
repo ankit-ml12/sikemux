@@ -3,8 +3,8 @@ import { buddies, personas } from "./packs/blobs";
 import { cyclops, glow, googly, matrix, peekers, soot } from "./packs/eyes";
 import { screens } from "./packs/screens";
 import type { BuddyPack, BuddyShape, BuddyState } from "./shared";
-import type { Agent, AgentPresentationState } from "../state/types";
-import { agentDisplay, type AgentGroup } from "../state/agentStatus";
+import type { Agent } from "../state/types";
+import type { AgentGroup } from "../state/agentStatus";
 import { EVERY_PACK, EVERY_SHAPE, type BuddyStyle } from "./style";
 
 export { DEFAULT_BUDDY_STYLE, EVERY_PACK, EVERY_SHAPE, type BuddyStyle } from "./style";
@@ -63,10 +63,6 @@ export function leastUsedColor(agents: Iterable<Pick<Agent, "buddy" | "cwd">>, c
         scores[color] += cwd !== undefined && agent.cwd === cwd ? 1000 : 1;
     }
     return scores.indexOf(Math.min(...scores));
-}
-
-export function buddyStateOf(state: AgentPresentationState | undefined): BuddyState {
-    return buddyStateOfGroup(agentDisplay(state).group);
 }
 
 export function buddyStateOfGroup(group: AgentGroup | undefined): BuddyState {

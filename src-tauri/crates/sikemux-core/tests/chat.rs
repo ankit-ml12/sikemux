@@ -559,8 +559,8 @@ async fn a_chat_at_work_is_not_stopped_by_a_stop_meant_for_idle_chats() {
         .expect("request id")
         .to_owned();
 
-    let states = client.call("chatStates", json!({})).await.expect("states");
-    assert_eq!(states[0]["state"], "blocked", "{states}");
+    let inbox = client.call("inbox", json!({})).await.expect("inbox");
+    assert_eq!(inbox["agents"][0]["status"], "blocked", "{inbox}");
     let refused = client
         .call("stopChatIfIdle", json!({ "agentId": "agent-s" }))
         .await
@@ -573,8 +573,8 @@ async fn a_chat_at_work_is_not_stopped_by_a_stop_meant_for_idle_chats() {
         .await
         .expect("reply");
     chat.until_kind(ChatEventKind::TurnCompleted).await;
-    let states = client.call("chatStates", json!({})).await.expect("states");
-    assert_eq!(states[0]["state"], "idle", "{states}");
+    let inbox = client.call("inbox", json!({})).await.expect("inbox");
+    assert_eq!(inbox["agents"][0]["status"], "done", "{inbox}");
     let stopped = client
         .call("stopChatIfIdle", json!({ "agentId": "agent-s" }))
         .await

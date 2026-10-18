@@ -1050,13 +1050,14 @@ pub(crate) async fn run_core(
         tokio::spawn(wake::serve(
             core.clone(),
             |core| &core.workspaces.wake,
-            |core| core.agents_changed(),
+            workspace::settle,
         )),
         tokio::spawn(wake::serve(
             core.clone(),
             |core| &core.hosts.wake,
             hosts::settle,
         )),
+        tokio::spawn(workspace::recents(core.clone())),
         tokio::spawn(notify::run(core.clone())),
         tokio::spawn(network_watch::run(core.clone())),
     ];

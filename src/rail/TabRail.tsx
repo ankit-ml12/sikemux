@@ -95,9 +95,7 @@ export const TabRail = memo(function TabRail() {
 export function TabRailBody() {
     const pageVisible = usePageVisible();
     const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const activityById = useStore((s) => s.agentActivity);
-    const tasksById = useStore((s) => s.agentTasks);
-    const subagentsById = useStore((s) => s.agentSubagents);
+    const agentStatus = useStore((s) => s.agentStatus);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
@@ -277,7 +275,7 @@ export function TabRailBody() {
     const pins = pinnedChats.filter((pin) => pin.project === session.cwd).map((pin) => ({ pin, agent: sessionAgents.find((a) => isPin(a, pin)) }));
     const opens = inCoreOrder(
         sessionAgents.filter((a) => !pins.some(({ pin }) => isPin(a, pin))),
-        inbox.order,
+        inbox.agents,
     );
 
     const menuAgent = menu ? agentsById[menu.agentId] : undefined;
@@ -286,7 +284,7 @@ export function TabRailBody() {
         <OpenAgentRow
             key={a.id}
             agent={a}
-            display={agentDisplayOf({ agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById }, a.id)}
+            display={agentDisplayOf({ agentStatus }, a.id)}
             link={link}
             active={activeAgentId({ windows: windowsById }, session) === a.id}
             sessionCwd={session.cwd}

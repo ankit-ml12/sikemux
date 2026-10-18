@@ -68,7 +68,7 @@ export function seedProjects(options: { terminal?: boolean; agentLaunch?: "live"
             "agent-2": { id: "agent-2", type: "codex", title: "Codex", launchState: agentLaunch },
             "agent-9": { id: "agent-9", type: "codex", title: "Elsewhere" },
         },
-        agentActivity: {},
+        agentStatus: {},
         terminalTitles: { "pane-1": "npm run dev" },
         desks: {},
         deskPanes: {},
