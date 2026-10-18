@@ -64,66 +64,26 @@ const TS_ROOTS = [
 
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
 const SWIFT_FIELDS = {
-  DeviceView: ["workspace", "chats", "sessions", "attentions", "inbox"],
-  Workspace: ["projects", "launchers"],
-  ProjectInfo: ["id", "name", "path"],
-  LauncherInfo: [
-    "id",
-    "provider",
-    "label",
-    "permissionMode",
-    "model",
-    "effort",
-  ],
-  ConfigPicker: ["id", "current", "choices"],
-  ConfigChoice: ["value", "label"],
-  ChatInfo: [
-    "agentId",
-    "name",
-    "provider",
-    "title",
-    "cwd",
-    "attentionRank",
-    "subagents",
-    "tasks",
-    "reconnecting",
-  ],
-  SessionInfo: [
-    "id",
-    "running",
-    "project",
-    "agentId",
-    "agentName",
-    "agentType",
-    "title",
-    "attentionRank",
-  ],
-  Attention: ["id", "agentId", "choices"],
-  PermissionChoices: ["allowOnce", "allowAlways", "reject", "command", "title"],
-  Inbox: ["items", "working", "buddies"],
-  InboxItem: [
-    "id",
-    "tier",
-    "kind",
-    "agentId",
-    "name",
-    "cli",
-    "project",
-    "title",
-    "what",
-    "detail",
-    "at",
-    "session",
-    "card",
-    "requestId",
-    "questionId",
-    "url",
-  ],
-  InboxCard: ["title"],
-  PublishedBuddies: ["pack", "shape", "motion", "agents", "boxes"],
-  BuddyLook: ["pack", "shape", "color"],
-  RemoteStatus: ["pending"],
-  PendingDevice: ["id", "name", "platform", "expiresAt"],
+  DeviceView: "workspace chats sessions attentions inbox",
+  Workspace: "projects launchers",
+  ProjectInfo: "id name path",
+  LauncherInfo: "id provider label permissionMode model effort",
+  ConfigPicker: "id current choices",
+  ConfigChoice: "value label",
+  ChatInfo:
+    "agentId name provider title cwd attentionRank subagents tasks reconnecting",
+  SessionInfo:
+    "id running project agentId agentName agentType title attentionRank",
+  Attention: "id agentId choices",
+  PermissionChoices: "allowOnce allowAlways reject command title",
+  Inbox: "items working buddies",
+  InboxItem:
+    "id tier kind agentId name cli project title what detail at session card requestId questionId url",
+  InboxCard: "title",
+  PublishedBuddies: "pack shape motion agents boxes",
+  BuddyLook: "pack shape color",
+  RemoteStatus: "pending",
+  PendingDevice: "id name platform expiresAt",
 };
 const SWIFT_ROOTS = ["DeviceView", "RemoteStatus", "DeviceAccess"];
 
@@ -216,7 +176,7 @@ function serde(attrs, where) {
 }
 
 const KNOWN = {
-  container: ["rename_all", "rename_all_fields", "tag"],
+  container: ["rename_all"],
   field: ["rename", "default", "skip_serializing_if", "alias"],
   variant: ["rename", "other", "alias"],
 };
@@ -321,18 +281,9 @@ const PRIMITIVES = {
   f64: "float",
   Value: "json",
   ...Object.fromEntries(
-    [
-      "u8",
-      "u16",
-      "u32",
-      "u64",
-      "usize",
-      "i8",
-      "i16",
-      "i32",
-      "i64",
-      "isize",
-    ].map((name) => [name, "int"]),
+    "u8 u16 u32 u64 usize i8 i16 i32 i64 isize"
+      .split(" ")
+      .map((name) => [name, "int"]),
   ),
 };
 
@@ -386,10 +337,6 @@ function renameAll(name, rule, where) {
       return parts.join("_");
     case "kebab-case":
       return parts.join("-");
-    case "lowercase":
-      return parts.join("");
-    case "SCREAMING_SNAKE_CASE":
-      return parts.join("_").toUpperCase();
     default:
       fail(`${where} renames all to ${rule}`);
   }
@@ -405,7 +352,6 @@ function parseFields(body, file, rule, where) {
     only(settings, KNOWN.field, `${where}.${match[1]}`);
     const type = parseType(match[2], file);
     return {
-      rust: match[1],
       name: settings.rename ?? renameAll(match[1], rule, where),
       docs,
       type,
@@ -444,47 +390,15 @@ function parse(item) {
   if (item.kind !== "enum") fail(`${where} is a ${item.kind}`);
   const variants = splitTop(item.body.slice(1, -1)).map((member) => {
     const { docs, attrs, rest } = readMember(member);
-    const match = /^(\w+)\s*(.*)$/s.exec(rest);
-    const variantSettings = serde(attrs, `${where}::${match[1]}`);
-    only(variantSettings, KNOWN.variant, `${where}::${match[1]}`);
-    const variant = {
-      name:
-        variantSettings.rename ??
-        renameAll(match[1], settings.rename_all, where),
-      docs,
-      other: variantSettings.other === true,
-    };
-    const shape = match[2].trim();
-    if (shape === "") return { ...variant, shape: "unit" };
-    if (shape.startsWith("{"))
-      return {
-        ...variant,
-        shape: "struct",
-        fields: parseFields(
-          shape,
-          item.file,
-          settings.rename_all_fields,
-          `${where}::${match[1]}`,
-        ),
-      };
-    if (shape.startsWith("("))
-      return {
-        ...variant,
-        shape: "newtype",
-        type: parseType(shape.slice(1, -1), item.file),
-      };
-    fail(`${where}::${match[1]} is ${shape}`);
-  });
-  if (settings.tag)
+    if (!/^\w+$/.test(rest)) fail(`${where}::${rest} carries data`);
+    const variant = serde(attrs, `${where}::${rest}`);
+    only(variant, KNOWN.variant, `${where}::${rest}`);
     return {
-      name,
-      docs: item.docs,
-      kind: "tagged",
-      tag: settings.tag,
-      variants,
+      name: variant.rename ?? renameAll(rest, settings.rename_all, where),
+      docs,
+      other: variant.other === true,
     };
-  if (variants.some((variant) => variant.shape !== "unit"))
-    fail(`${where} carries data without a tag`);
+  });
   return { name, docs: item.docs, kind: "strings", variants };
 }
 
@@ -513,17 +427,9 @@ function closure(roots, fieldsOf = () => undefined) {
       );
     }
     order.push(declaration);
-    const types =
-      declaration.kind === "struct"
-        ? declaration.fields.map((field) => field.type)
-        : (declaration.variants ?? []).flatMap((variant) =>
-            variant.fields
-              ? variant.fields.map((field) => field.type)
-              : variant.type
-                ? [variant.type]
-                : [],
-          );
-    types.flatMap(named).forEach(visit);
+    (declaration.fields ?? [])
+      .flatMap((field) => named(field.type))
+      .forEach(visit);
   };
   roots.forEach(visit);
   return order;
@@ -571,75 +477,17 @@ function typescript(phone) {
     const type = f.mayBeAbsent && f.type.kind === "option" ? f.type.of : f.type;
     return `${tsDocs(f.docs, "  ")}  ${f.name}${optional ? "?" : ""}: ${tsType(type)};`;
   };
-  const fields = (list) => list.map(field).join("\n");
-  const declare = (d) => {
-    const head = tsDocs(d.docs);
-    if (d.kind === "struct")
-      return `${head}export interface ${d.name} {\n${fields(d.fields)}\n}`;
-    if (d.kind === "strings")
-      return `${head}export type ${d.name} = ${d.variants
-        .filter((v) => !v.other)
-        .map((v) => JSON.stringify(v.name))
-        .join(" | ")};`;
-    const variants = d.variants.map((v) => {
-      const tag = `  ${d.tag}: ${JSON.stringify(v.name)};`;
-      const docs = tsDocs(v.docs);
-      if (v.shape === "unit") return `${docs}{\n${tag}\n}`;
-      if (v.shape === "struct")
-        return `${docs}{\n${tag}\n${fields(v.fields)}\n}`;
-      return `${docs}({\n${tag}\n} & ${tsType(v.type)})`;
-    });
-    return `${head}export type ${d.name} =\n${variants.map((v) => `  | ${v}`).join("\n")};`;
-  };
+  const declare = (d) =>
+    d.kind === "struct"
+      ? `${tsDocs(d.docs)}export interface ${d.name} {\n${d.fields.map(field).join("\n")}\n}`
+      : `${tsDocs(d.docs)}export type ${d.name} = ${d.variants
+          .filter((v) => !v.other)
+          .map((v) => JSON.stringify(v.name))
+          .join(" | ")};`;
   return `// Generated by scripts/generate-wire-types.mjs from the core's Rust. Do not edit by hand.\n\n${closure(TS_ROOTS).map(declare).join("\n\n")}\n`;
 }
 
-const SWIFT_KEYWORDS = new Set([
-  "default",
-  "in",
-  "is",
-  "as",
-  "case",
-  "class",
-  "struct",
-  "enum",
-  "func",
-  "let",
-  "var",
-  "return",
-  "self",
-  "Self",
-  "static",
-  "switch",
-  "where",
-  "while",
-  "for",
-  "if",
-  "else",
-  "import",
-  "init",
-  "protocol",
-  "extension",
-  "operator",
-  "repeat",
-  "throw",
-  "throws",
-  "true",
-  "false",
-  "nil",
-  "super",
-]);
-
-function swiftCase(name) {
-  const parts = words(name.replaceAll("-", "_"));
-  const identifier =
-    parts[0] +
-    parts
-      .slice(1)
-      .map((w) => w[0].toUpperCase() + w.slice(1))
-      .join("");
-  return SWIFT_KEYWORDS.has(identifier) ? `\`${identifier}\`` : identifier;
-}
+const swiftCase = (name) => renameAll(name.replaceAll("-", "_"), "camelCase");
 
 /**
  * Swift for the notch. It decodes only the fields it reads, and a value the
@@ -687,10 +535,7 @@ function swift() {
       .filter((v) => !v.other)
       .map((v) => {
         const name = swiftCase(v.name);
-        const raw =
-          name.replaceAll("`", "") === v.name
-            ? ""
-            : ` = ${JSON.stringify(v.name)}`;
+        const raw = name === v.name ? "" : ` = ${JSON.stringify(v.name)}`;
         return `${docs(v.docs, "    ")}    case ${name}${raw}`;
       });
     const unknown = fallback ? swiftCase(fallback.name) : "unknown";
@@ -708,7 +553,7 @@ ${cases.join("\n")}
 
 import Foundation
 
-${closure(SWIFT_ROOTS, (name) => SWIFT_FIELDS[name])
+${closure(SWIFT_ROOTS, (name) => SWIFT_FIELDS[name]?.split(" "))
   .map(declare)
   .join("\n\n")}
 `;
