@@ -238,18 +238,7 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                         {running ? <IconStop size={11} /> : <IconRun size={11} />}
                         {running ? "Stop" : "Run"}
                     </button>
-                </Tooltip>
-                <button
-                    className="tb-run-chip"
-                    onClick={() => setOpen((value) => !value)}
-                    aria-haspopup="menu"
-                    aria-expanded={open}
-                    aria-label="Choose a task to run">
-                    {state !== "idle" && <span className={`tb-run-state ${state}`} />}
-                    <span className="tb-run-label">{selected.label}</span>
-                    {status && <span className={`tb-run-meta ${status.tone}`}>· {status.text}</span>}
-                    <IconChevron size={10} className="env-dd-chev" />
-                </button>
+                </span>
                 {whyShown && (
                     <Tooltip label={tests?.failed ? "Show the failed tests" : "Show why it stopped"}>
                         <button
