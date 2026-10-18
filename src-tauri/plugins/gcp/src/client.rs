@@ -80,8 +80,16 @@ pub fn checked(status: u16, body: Value) -> GcpResult<Value> {
     let error = at(&body, "/error");
     let message = at(error, "/message")
         .as_str()
-        .unwrap_or("Google Cloud refused the request")
+        .unwrap_or("Google Cloud refused the request");
+    let message = message
+        .split("\nHelp Token")
+        .next()
+        .unwrap_or(message)
+        .trim()
         .to_string();
+    if message.contains("Billing must be enabled") {
+        return Err(GcpError::NoBilling);
+    }
     let details = at(error, "/details")
         .as_array()
         .cloned()
@@ -319,6 +327,13 @@ mod tests {
             checked(403, bare),
             Err(GcpError::ServiceDisabled { service, url: None }) if service == "compute.googleapis.com"
         ));
+        let unbilled = json!({ "error": { "code": 400, "message": "Billing account for project '1' is not found. Billing must be enabled for activation of service(s) 'compute.googleapis.com' to proceed.\nHelp Token: abc" } });
+        assert!(matches!(checked(400, unbilled), Err(GcpError::NoBilling)));
+        let noisy =
+            json!({ "error": { "code": 500, "message": "Backend broke.\nHelp Token: abc" } });
+        assert!(
+            matches!(checked(500, noisy), Err(GcpError::Api { message, .. }) if message == "Backend broke.")
+        );
         let denied = json!({ "error": { "code": 403, "message": "Permission 'run.services.list' denied", "status": "PERMISSION_DENIED" } });
         assert!(matches!(checked(403, denied), Err(GcpError::Permission(_))));
         assert!(matches!(checked(401, json!({})), Err(GcpError::Auth(_))));

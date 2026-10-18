@@ -14,6 +14,8 @@ pub enum GcpError {
         service: String,
         url: Option<String>,
     },
+    /// The project has no billing account, which Google needs before most APIs can be turned on.
+    NoBilling,
     Permission(String),
     NotFound(String),
     RateLimited,
@@ -49,6 +51,9 @@ impl fmt::Display for GcpError {
                     "gcp: the {service} API is turned off in this project"
                 ),
             },
+            Self::NoBilling => formatter.write_str(
+                "gcp: billing isn't enabled for this project; link a billing account before turning on this API",
+            ),
             Self::Permission(message) => write!(formatter, "gcp: not allowed: {message}"),
             Self::NotFound(message) => write!(formatter, "gcp: {message}"),
             Self::RateLimited => {
@@ -90,6 +95,7 @@ impl From<GcpError> for PluginError {
             GcpError::Unconfigured => PluginError::new("unconfigured", message),
             GcpError::Auth(_) => PluginError::new("auth", message),
             GcpError::ServiceDisabled { .. } => PluginError::new("service-disabled", message),
+            GcpError::NoBilling => PluginError::new("billing-disabled", message),
             GcpError::Permission(_) => PluginError::new("forbidden", message).with_status(403),
             GcpError::NotFound(_) => PluginError::new("not-found", message),
             GcpError::RateLimited => PluginError::new("rate-limited", message).with_status(429),
