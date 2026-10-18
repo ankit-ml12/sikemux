@@ -121,6 +121,8 @@ export interface CodeHostApi {
     jobSummary(repo: RepoRef, checkRunId: string): Promise<JobSummary | null>;
     runTiming(repo: RepoRef, runId: string): Promise<RunTiming>;
     workflowFile(repo: RepoRef, workflowId: string): Promise<WorkflowFile>;
+    /** A workflow file by its path at a commit, for hosts whose runs can call other workflow files. */
+    workflowFileAt?(repo: RepoRef, path: string, gitRef: string): Promise<WorkflowFile>;
     artifacts(repo: RepoRef, runId: string): Promise<Artifact[]>;
     pendingApprovals(repo: RepoRef, runId: string): Promise<PendingApproval[]>;
     dispatch(repo: RepoRef, workflowId: string, gitRef: string, inputs: Record<string, string>): Promise<void>;

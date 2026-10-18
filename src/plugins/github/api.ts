@@ -134,6 +134,7 @@ export const actionsApi = {
     jobSummary: (repo: RepoRef, checkRunId: string) => call<JobSummary | null>("jobSummary", { ...repo, checkRunId: Number(checkRunId) }),
     runTiming: (repo: RepoRef, runId: string) => call<RunTiming>("runTiming", { ...repo, runId: Number(runId) }),
     workflowFile: (repo: RepoRef, workflowId: string) => call<WorkflowFile>("workflowFile", { ...repo, workflowId: Number(workflowId) }),
+    workflowFileAt: (repo: RepoRef, path: string, gitRef: string) => call<WorkflowFile>("workflowFileAt", { ...repo, path, gitRef }),
     artifacts: (repo: RepoRef, runId: string) =>
         call<(Omit<Artifact, "id"> & { id: number })[]>("artifacts", { ...repo, runId: Number(runId) }).then((rows): Artifact[] =>
             rows.map(withTextId),

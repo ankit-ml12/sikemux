@@ -7,15 +7,25 @@ import { coarse } from "./hooks";
 import { formatDuration } from "../../lib/format";
 
 interface Props {
+    repo: RepoRef;
     run: Run;
     jobs: Job[];
     now: number;
+    active: boolean;
     openJob: string | null;
     onOpen: (jobId: string) => void;
     fileShown: boolean;
     /** Left out when the host cannot show the file a run came from. */
     onToggleFile: (() => void) | null;
 }
+
+interface Shared {
+    now: number;
+    openJob: string | null;
+    onOpen: (jobId: string) => void;
+}
+
+type Mark = Outcome | "idle";
 
 function fileName(path: string | null): string | null {
     if (!path) return null;
@@ -44,7 +54,9 @@ export const JobGraph = memo(function JobGraph({ run, jobs, now, openJob, onOpen
                     </button>
                 )}
             </div>
-            {stages.length === 0 ? (
+            {!settled ? (
+                <div className="gha-graph-stages" />
+            ) : graph.length === 0 ? (
                 <div className="gha-dim gha-graph-empty">No jobs yet</div>
             ) : (
                 <div className="gha-graph-stages">

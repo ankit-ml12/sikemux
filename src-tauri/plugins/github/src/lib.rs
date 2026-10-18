@@ -203,6 +203,7 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         "jobSummary" => answer(input, move |q| annotations::summary(data_dir, q)),
         "runTiming" => answer(input, move |q| runs::timing(data_dir, q)),
         "workflowFile" => answer(input, move |q| workflows::file(data_dir, q)),
+        "workflowFileAt" => answer(input, move |q| workflows::file_at(data_dir, q)),
 
         "artifacts" => answer(input, move |q| artifacts::list(data_dir, q)),
 
