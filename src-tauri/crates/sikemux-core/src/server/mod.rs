@@ -14,6 +14,7 @@ mod display;
 mod edits;
 mod entry;
 mod follow;
+mod git;
 mod handover;
 mod harness;
 mod host;
@@ -28,6 +29,7 @@ mod names;
 mod network_watch;
 mod notify;
 pub mod plugins;
+mod ports;
 mod prepare;
 mod questions;
 mod remote;
@@ -312,6 +314,8 @@ pub(crate) struct Core {
     pub(crate) names: names::Names,
     pub(crate) boards: board::Boards,
     pub(crate) changes: changed::Changes,
+    pub(crate) ports: ports::Ports,
+    pub(crate) git_watches: crate::git::watch::Watches,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
     pub(crate) notify: notify::Notifier,
@@ -372,6 +376,8 @@ impl Core {
             names,
             boards: board::Boards::new(data_dir),
             changes: changed::Changes::default(),
+            ports: ports::Ports::default(),
+            git_watches: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
             notify: notify::Notifier::default(),
@@ -1017,6 +1023,7 @@ pub(crate) async fn run_core(
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
     core.chats.resets.arm_saved(&core);
+    git::follow_projects(&core);
     if let Some(data_dir) = config.data_dir.as_deref() {
         crate::git_guard::shim::install(data_dir, config.cli_endpoint.as_deref());
         tokio::spawn(workspace::refresh_launchers(core.clone()));
@@ -1057,6 +1064,11 @@ pub(crate) async fn run_core(
             core.clone(),
             |core| &core.hosts.wake,
             hosts::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.ports.wake,
+            ports::settle,
         )),
         tokio::spawn(workspace::recents(core.clone())),
         tokio::spawn(notify::run(core.clone())),

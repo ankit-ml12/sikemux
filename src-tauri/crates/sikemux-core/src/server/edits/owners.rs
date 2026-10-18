@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::{line_count, read_text, Edit, Lines};
 use crate::server::names::project_of;
@@ -127,56 +127,46 @@ pub(crate) fn owners(core: &Core, dir: &Path, staged: bool) -> Result<Owners, St
     traced(core, dir, staged).map(|(owners, _)| owners)
 }
 
-/// `owners`, reusing what git said of the checkout when last asked at the same
-/// `generation`: a name the asker gives each state of the checkout it watches.
-/// With `moved`, a read at its earlier state is brought up to date by asking
-/// git again only of the paths that moved since.
-pub(crate) fn owners_at(
-    core: &Core,
-    dir: &Path,
-    staged: bool,
-    generation: &str,
-    moved: Option<&Moved>,
-) -> Result<Owners, String> {
-    type Read = HashMap<(PathBuf, bool), (String, Arc<Diff>)>;
+/// `owners`, reusing what git said of the checkout when last asked while its
+/// watcher has seen nothing move, and bringing an earlier read up to date by
+/// asking git again only of the paths that moved since.
+pub(crate) fn owners_at(core: &Core, dir: &Path, staged: bool) -> Result<Owners, String> {
+    let Some((key, generation)) = dir.to_str().and_then(crate::git::status::watched_generation)
+    else {
+        return owners(core, dir, staged);
+    };
+    type Read = HashMap<(PathBuf, bool), (u64, Arc<Diff>)>;
     static READ: Mutex<Option<Read>> = Mutex::new(None);
     let lock = || READ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let key = (dir.to_path_buf(), staged);
+    let at = (dir.to_path_buf(), staged);
     let kept = lock()
         .get_or_insert_with(HashMap::new)
-        .get(&key)
-        .map(|(at, diff)| (at.clone(), diff.clone()));
+        .get(&at)
+        .map(|(read_at, diff)| (*read_at, diff.clone()));
     let diff = match kept {
-        Some((at, diff)) if at == generation => diff,
+        Some((read_at, diff)) if read_at == generation => diff,
         kept => {
             let patched = kept
-                .zip(moved)
-                .filter(|((at, diff), moved)| {
-                    *at == moved.since && diff.read_at.elapsed() < PATCHED_LIFETIME
+                .filter(|(_, diff)| diff.read_at.elapsed() < PATCHED_LIFETIME)
+                .and_then(|(read_at, diff)| {
+                    let repo = git2::Repository::open(&key).ok()?;
+                    Some((diff, crate::git::status::moved_since(&repo, &key, read_at)?))
                 })
-                .map(|((_, diff), moved)| patched_diff(&diff, staged, &moved.paths));
+                .map(|(diff, moved)| patched_diff(&diff, staged, &moved));
             let diff = Arc::new(match patched {
                 Some(diff) => diff?,
                 None => read_diff(dir, staged, true, None, false)?,
             });
             let mut read = lock();
             let read = read.get_or_insert_with(HashMap::new);
-            if read.len() >= REMEMBERED_CHECKOUTS && !read.contains_key(&key) {
+            if read.len() >= REMEMBERED_CHECKOUTS && !read.contains_key(&at) {
                 read.clear();
             }
-            read.insert(key, (generation.to_owned(), diff.clone()));
+            read.insert(at, (generation, diff.clone()));
             diff
         }
     };
     Ok(record_over(core, dir, staged, &diff))
-}
-
-/// The paths of a watched checkout that moved after the state named `since`,
-/// as its top folder names them.
-#[derive(Deserialize)]
-pub(crate) struct Moved {
-    pub since: String,
-    pub paths: Vec<String>,
 }
 
 /// How long a read may be carried forward by asking again only of moved
