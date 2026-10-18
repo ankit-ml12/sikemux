@@ -13,14 +13,19 @@ use super::notify::Signal;
 use super::remote;
 use super::Core;
 
-const STEP: Duration = Duration::from_secs(15);
+/// A phone sends its ticket as soon as it connects, so reading one gets only
+/// a moment.
+const HELLO: Duration = Duration::from_secs(5);
 /// Time for the phone to read the answer before the connection closes.
 const LINGER: Duration = Duration::from_secs(2);
 pub(super) const NAME_LIMIT: usize = 64;
 pub(super) const PLATFORM_LIMIT: usize = 16;
-/// Join connections answered at once. One person adds one phone at a time;
-/// anything past this is turned away before it costs anything.
-static IN_PROGRESS: Semaphore = Semaphore::const_new(4);
+/// Connections whose ticket is still being read. Past this, more are turned
+/// away before they cost anything.
+static READING: Semaphore = Semaphore::const_new(32);
+/// Phones with a good ticket waiting for the person, who adds one at a time.
+/// Only a ticket the account issued for this host takes one of these.
+static WAITING: Semaphore = Semaphore::const_new(4);
 
 pub(super) fn clean(text: &str, limit: usize) -> String {
     let kept: String = text
@@ -50,16 +55,22 @@ async fn refuse(writer: &mut SendStream, connection: &Connection, phone: &str, r
 }
 
 pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
-    let Ok(_slot) = IN_PROGRESS.try_acquire() else {
-        connection.close(0u32.into(), b"busy");
-        return;
-    };
     let phone = connection.remote_id().to_string();
-    let Ok(Ok((mut writer, mut reader))) = tokio::time::timeout(STEP, connection.accept_bi()).await
-    else {
-        return;
+    let (mut writer, hello) = {
+        let Ok(_reading) = READING.try_acquire() else {
+            connection.close(0u32.into(), b"busy");
+            return;
+        };
+        let read = async {
+            let (writer, mut reader) = connection.accept_bi().await.ok()?;
+            Some((writer, join::receive::<JoinHello>(&mut reader, HELLO).await))
+        };
+        let Ok(Some(read)) = tokio::time::timeout(HELLO, read).await else {
+            return;
+        };
+        read
     };
-    let Ok(hello) = join::receive::<JoinHello>(&mut reader, STEP).await else {
+    let Ok(hello) = hello else {
         refuse(&mut writer, &connection, &phone, Refusal::Unreadable).await;
         return;
     };
@@ -74,6 +85,10 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
         }
         Ok(None) => {}
     }
+    let Ok(_waiting) = WAITING.try_acquire() else {
+        connection.close(0u32.into(), b"busy");
+        return;
+    };
     core.remote.forget_device_requests(&phone);
     let request = PendingDevice {
         id: uuid::Uuid::new_v4().to_string(),
