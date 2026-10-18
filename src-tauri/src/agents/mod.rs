@@ -9,7 +9,6 @@ use sikemux_core::agent_accounts::status::AgentStatus;
 
 pub(crate) use config::global_skill_folders;
 pub use sikemux_core::agent_catalog::AgentKind;
-pub(crate) use sikemux_core::sessions::context::session_transcript_path;
 pub use watch::{note_streaming_session, watch_count};
 
 #[derive(Serialize)]
