@@ -75,7 +75,6 @@ pub(crate) async fn call(
         "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
         "stopChatIfIdle" => answer(stop_chat_if_idle(&core, parse(params)?)),
-        "chatStates" => answer(core.chats.states()),
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
         "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),
         "addProject" => answer(workspace::add_project(&core, parse(params)?).await?),
