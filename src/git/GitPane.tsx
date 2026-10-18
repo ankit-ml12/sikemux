@@ -1276,8 +1276,8 @@ function GitWorkbench({
         ]);
 
     const commitHead = (c: GitCommit) => (
-        <div className="git-detail git-commit-card">
-            <div className="git-commit-card-body">
+        <div className="git-detail git-card">
+            <div className="git-card-body">
                 <h2 className="git-detail-title">{c.subject}</h2>
                 <dl className="git-detail-facts">
                     <dt>Author</dt>
@@ -1311,7 +1311,7 @@ function GitWorkbench({
                     </dd>
                 </dl>
             </div>
-            <div className="git-commit-card-foot">
+            <div className="git-card-foot">
                 <button type="button" className="git-foot-btn" onClick={() => openCommitBranchPrompt(c)}>
                     <IconGit size={12} />
                     Branch from here
@@ -1328,19 +1328,29 @@ function GitWorkbench({
     const branchHead = (entry: BranchEntry) => {
         if (entry.kind === "remote") {
             return (
-                <div className="git-detail">
-                    <h2 className="git-detail-title mono">{entry.remote.name}</h2>
-                    <div className="git-detail-meta">
-                        <span className="mono">{entry.remote.url}</span>
+                <div className="git-detail git-card">
+                    <div className="git-card-body">
+                        <h2 className="git-detail-title mono">{entry.remote.name}</h2>
+                        <dl className="git-detail-facts">
+                            <dt>URL</dt>
+                            <dd className="mono">{entry.remote.url}</dd>
+                        </dl>
                     </div>
-                    <div className="git-detail-actions">
-                        {remoteItems(entry.remote)
-                            .filter((item) => !item.sep)
-                            .map((item) => (
-                                <button key={item.label} type="button" className={`git-btn${item.danger ? " danger" : ""}`} onClick={item.run}>
-                                    {item.label}
-                                </button>
-                            ))}
+                    <div className="git-card-foot">
+                        <span className="git-card-group">
+                            {remoteItems(entry.remote)
+                                .filter((item) => !item.sep)
+                                .map((item) => (
+                                    <button
+                                        key={item.label}
+                                        type="button"
+                                        className={`git-foot-btn${item.danger ? " danger" : ""}`}
+                                        onClick={item.run}>
+                                        {item.icon}
+                                        {item.label}
+                                    </button>
+                                ))}
+                        </span>
                     </div>
                 </div>
             );
@@ -1348,32 +1358,32 @@ function GitWorkbench({
         if (entry.kind === "remoteBranch") {
             const rb = entry.branch;
             return (
-                <div className="git-detail">
-                    <h2 className="git-detail-title mono">{rb.full_ref}</h2>
-                    <div className="git-detail-meta">
-                        {rb.tracked_by ? (
-                            <span>
-                                tracked by <span className="mono">{rb.tracked_by}</span>
-                            </span>
-                        ) : (
-                            <span>no local branch</span>
-                        )}
+                <div className="git-detail git-card">
+                    <div className="git-card-body">
+                        <h2 className="git-detail-title mono">{rb.full_ref}</h2>
+                        <dl className="git-detail-facts">
+                            <dt>Local</dt>
+                            <dd>{rb.tracked_by ? <span className="mono">{rb.tracked_by}</span> : "no local branch"}</dd>
+                        </dl>
                     </div>
-                    <div className="git-detail-actions">
-                        <button type="button" className="git-btn primary" onClick={() => checkoutRemoteBranch(entry.remote, rb)}>
+                    <div className="git-card-foot">
+                        <span className="git-card-group">
+                            <button type="button" className="git-foot-btn" onClick={() => openMergeMenu(rb.full_ref)}>
+                                <IconMerge size={12} />
+                                Merge into {currentBranch || "HEAD"}
+                            </button>
+                            <button type="button" className="git-foot-btn" disabled={!currentBranch} onClick={() => setUpstreamTo(rb)}>
+                                <IconLink size={12} />
+                                Set as upstream
+                            </button>
+                            <button type="button" className="git-foot-btn danger" onClick={() => confirmRemoteBranchDelete(entry.remote, rb)}>
+                                <IconTrash size={12} />
+                                Delete on {entry.remote}
+                            </button>
+                        </span>
+                        <button type="button" className="git-foot-btn primary" onClick={() => checkoutRemoteBranch(entry.remote, rb)}>
                             <IconCheckout size={12} />
                             {rb.tracked_by ? `Check out ${rb.tracked_by}` : "Check out"}
-                        </button>
-                        <button type="button" className="git-btn" onClick={() => openMergeMenu(rb.full_ref)}>
-                            <IconMerge size={12} />
-                            Merge into {currentBranch || "HEAD"}
-                        </button>
-                        <button type="button" className="git-btn" disabled={!currentBranch} onClick={() => setUpstreamTo(rb)}>
-                            Set as upstream
-                        </button>
-                        <button type="button" className="git-btn danger" onClick={() => confirmRemoteBranchDelete(entry.remote, rb)}>
-                            <IconTrash size={12} />
-                            Delete on {entry.remote}
                         </button>
                     </div>
                 </div>
@@ -1381,72 +1391,76 @@ function GitWorkbench({
         }
         const b = entry.branch;
         return (
-            <div className="git-detail">
-                <h2 className="git-detail-title mono">
-                    {b.name}
-                    {b.current && <span className="git-chip live">checked out</span>}
-                </h2>
-                <div className="git-detail-meta">
-                    {b.upstream ? (
-                        <span>
-                            tracks <span className="mono">{b.upstream}</span>
-                        </span>
-                    ) : (
-                        <span>no upstream</span>
-                    )}
+            <div className="git-detail git-card">
+                <div className="git-card-body">
+                    <h2 className="git-detail-title mono">
+                        {b.name}
+                        {b.current && <span className="git-chip live">checked out</span>}
+                    </h2>
+                    <dl className="git-detail-facts">
+                        <dt>Upstream</dt>
+                        <dd>{b.upstream ? <span className="mono">{b.upstream}</span> : "none"}</dd>
+                        {b.current && (
+                            <>
+                                <dt>To push</dt>
+                                <dd className={ahead > 0 ? "git-fact-ahead" : undefined}>
+                                    {ahead} commit{ahead === 1 ? "" : "s"}
+                                </dd>
+                                <dt>To pull</dt>
+                                <dd className={behind > 0 ? "git-fact-behind" : undefined}>
+                                    {behind} commit{behind === 1 ? "" : "s"}
+                                </dd>
+                                <dt>Changes</dt>
+                                <dd>
+                                    {files.length} uncommitted file{files.length === 1 ? "" : "s"}
+                                </dd>
+                            </>
+                        )}
+                    </dl>
                 </div>
-                {b.current && (
-                    <div className="git-stats">
-                        <div className="git-stat">
-                            <b className="ahead">{ahead}</b>
-                            <span>to push</span>
-                        </div>
-                        <div className="git-stat">
-                            <b className="behind">{behind}</b>
-                            <span>to pull</span>
-                        </div>
-                        <div className="git-stat">
-                            <b>{files.length}</b>
-                            <span>uncommitted</span>
-                        </div>
-                    </div>
-                )}
-                <div className="git-detail-actions">
+                <div className="git-card-foot">
                     {b.current ? (
                         <>
-                            <button type="button" className="git-btn primary" onClick={pushRepo}>
-                                <IconPush size={12} />
-                                {upstream ? "Push" : "Publish"}
-                            </button>
-                            <button type="button" className="git-btn" onClick={pullRepo}>
-                                <IconPull size={12} />
-                                Pull
-                            </button>
-                            <button type="button" className="git-btn" onClick={() => openBranchRenamePrompt(b)}>
-                                <IconPencil size={12} />
-                                Rename
-                            </button>
-                            <button type="button" className="git-btn" onClick={() => openNewBranchPrompt(b.name)}>
-                                <IconPlus size={12} />
-                                New branch from here
-                            </button>
+                            <span className="git-card-group">
+                                <button type="button" className="git-foot-btn" onClick={() => openNewBranchPrompt(b.name)}>
+                                    <IconPlus size={12} />
+                                    New branch from here
+                                </button>
+                                <button type="button" className="git-foot-btn" onClick={() => openBranchRenamePrompt(b)}>
+                                    <IconPencil size={12} />
+                                    Rename
+                                </button>
+                            </span>
+                            <span className="git-card-group">
+                                <button type="button" className="git-foot-btn" onClick={pullRepo}>
+                                    <IconPull size={12} />
+                                    Pull
+                                </button>
+                                <button type="button" className={`git-foot-btn${ahead > 0 || !upstream ? " primary" : ""}`} onClick={pushRepo}>
+                                    <IconPush size={12} />
+                                    {upstream ? "Push" : "Publish"}
+                                </button>
+                            </span>
                         </>
                     ) : (
                         <>
-                            <button type="button" className="git-btn primary" onClick={() => checkoutBranch(b.name)}>
+                            <span className="git-card-group">
+                                <button type="button" className="git-foot-btn" onClick={() => mergeRef(b.name)}>
+                                    <IconMerge size={12} />
+                                    Merge into {currentBranch || "HEAD"}
+                                </button>
+                                <button type="button" className="git-foot-btn" onClick={() => mergeRef(b.name, true)}>
+                                    <IconMerge size={12} />
+                                    Squash merge
+                                </button>
+                                <button type="button" className="git-foot-btn danger" onClick={() => openBranchDeleteMenu(b)}>
+                                    <IconTrash size={12} />
+                                    Delete
+                                </button>
+                            </span>
+                            <button type="button" className="git-foot-btn primary" onClick={() => checkoutBranch(b.name)}>
                                 <IconCheckout size={12} />
                                 Check out
-                            </button>
-                            <button type="button" className="git-btn" onClick={() => mergeRef(b.name)}>
-                                <IconMerge size={12} />
-                                Merge into {currentBranch || "HEAD"}
-                            </button>
-                            <button type="button" className="git-btn" onClick={() => mergeRef(b.name, true)}>
-                                Squash merge
-                            </button>
-                            <button type="button" className="git-btn danger" onClick={() => openBranchDeleteMenu(b)}>
-                                <IconTrash size={12} />
-                                Delete
                             </button>
                         </>
                     )}

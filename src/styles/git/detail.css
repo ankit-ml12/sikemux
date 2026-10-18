@@ -50,10 +50,10 @@
 .git-detail-actions .git-btn {
     height: 26px;
 }
-.git-commit-card {
+.git-card {
     padding: 0;
 }
-.git-commit-card-body {
+.git-card-body {
     padding: 14px 16px 12px;
 }
 .git-detail-facts {
@@ -92,7 +92,7 @@
     background: var(--surface-hover);
     color: var(--text-primary);
 }
-.git-commit-card-foot {
+.git-card-foot {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -113,9 +113,40 @@
 .git-foot-btn svg {
     color: var(--text-tertiary);
 }
-.git-foot-btn:hover {
+.git-foot-btn:hover:not(:disabled) {
     background: var(--surface-hover);
     color: var(--text-primary);
+}
+.git-foot-btn:disabled {
+    color: var(--text-disabled);
+    cursor: default;
+}
+.git-foot-btn.danger,
+.git-foot-btn.danger svg,
+.git-foot-btn.danger:hover:not(:disabled) {
+    color: var(--danger);
+}
+.git-foot-btn.primary,
+.git-foot-btn.primary svg,
+.git-foot-btn.primary:hover:not(:disabled) {
+    background: var(--acc);
+    color: var(--on-accent);
+}
+.git-foot-btn.primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+}
+.git-card-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    min-width: 0;
+}
+.git-detail-facts .git-fact-ahead {
+    color: var(--warn);
+}
+.git-detail-facts .git-fact-behind {
+    color: var(--git-renamed);
 }
 .git-foot-chev {
     transform: rotate(90deg);
@@ -181,34 +212,4 @@
 .git-chip.live {
     color: var(--live);
     border-color: color-mix(in oklab, var(--live) 35%, transparent);
-}
-.git-stats {
-    display: flex;
-    gap: var(--space-1h);
-    margin-top: 10px;
-}
-.git-stat {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 92px;
-    padding: 7px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-}
-.git-stat b {
-    font-family: var(--mono);
-    font-size: var(--text-sm);
-    font-weight: var(--weight-medium);
-    color: var(--text-primary);
-}
-.git-stat b.ahead {
-    color: var(--warn);
-}
-.git-stat b.behind {
-    color: var(--git-renamed);
-}
-.git-stat span {
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
 }
