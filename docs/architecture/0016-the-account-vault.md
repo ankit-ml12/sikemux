@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Decision date: 2026-10-16
+- Amended: 2026-10-19, to say which credentials are shared and how a per-host agent login stays
+  within the vendors' terms
 
 ## Context
 
@@ -15,8 +17,12 @@ when its home goes away.
 
 ## Decision
 
-- **One vault per account holds what every host needs.** Model providers' keys, plugin sign-ins
-  such as GitHub, Jira, Bitbucket, Slack and AWS, database logins, and the saved browser profile.
+- **One vault per account holds what every host needs.** Model providers' API keys, plugin
+  sign-ins such as GitHub, Jira, Bitbucket, Slack and AWS, database logins, and the saved browser
+  profile. These are the person's own to place on their machines: a provider key is billed to its
+  owner, which Anthropic's terms allow in "a secrets manager… for use by the customer's own
+  authorized users", and a plugin sign-in was issued to Sikemux's own OAuth app for this person.
+  Agents that run on a provider key, such as OpenCode, OMP, Hermes and Pi, take it from here.
 - **The accounts server cannot read it.** Everything in the vault is encrypted under a vault key
   the server never sees, as shared chats are sealed
   ([ADR 0011](./0011-shared-chats-are-sealed-and-relayed.md)). The vault key is wrapped once for
@@ -33,9 +39,23 @@ when its home goes away.
   reaches a transcript.
 - **Each host keeps a local copy in its own secret store.** The Keychain on a Mac, private files
   elsewhere, as `sikemux-keychain` does today, refreshed when an entry changes.
-- **Agent sign-ins stay out of it.** An agent CLI's own login, such as Claude Code's or Codex's,
-  is made on each host through the vendor's own flow, relayed to whichever device the person
-  holds, and never copied: vendors forbid passing those credentials on.
+- **One place refreshes each sign-in.** Some services hand out a new refresh token each time and
+  void the old one, as Atlassian does, so two hosts refreshing the same sign-in lock each other
+  out. The host that made the sign-in refreshes it and writes the new tokens back to the vault;
+  the others only read. When that host leaves, another takes it over.
+- **Hosts the person does not control get keys, not subscriptions.** A hosted sandbox can use
+  the person's provider keys, billed to them. Subscription logins stay on the person's own
+  machines ([ADR 0014](./0014-agents-run-on-hosts-and-every-client-is-a-way-in.md)).
+- **Agent sign-ins stay out of it, and are made once per host.** An agent CLI's subscription
+  login, such as Claude Code's, Codex's with a ChatGPT plan, Grok's or Gemini's, is never stored,
+  copied or handed between hosts. Anthropic's terms say developers "may not collect, store, or
+  intermediate Claude.ai credentials or session tokens — sign-in to a Claude account must complete
+  through Anthropic's own flow", and the other vendors' logins are treated the same way. When a
+  host needs one, Sikemux runs that host's own login, such as `claude /login` or
+  `codex login --device-auth`, in a terminal shown on the device the person holds. The person
+  finishes it on the vendor's page and types any code into the agent's own prompt; Sikemux carries
+  the keystrokes as a terminal does and never reads or keeps the result. A long-lived token from
+  `claude setup-token` is the person's to set on a machine themselves; Sikemux does not hold it.
 
 ## Consequences
 
@@ -47,6 +67,9 @@ when its home goes away.
   never holds the key; revoking it from any other device or the web app cuts it off.
 - Every use of an entry is logged with the agent or device, the host and the time, and shows in
   the inbox and the web app.
+- Each new host asks the person once per subscription agent it runs. Every host signed in to the
+  same plan draws on the same quota, which Anthropic sizes for "ordinary, individual usage", so
+  many hosts running agents all day should use provider keys instead.
 
 ## Alternatives considered
 
@@ -56,3 +79,8 @@ when its home goes away.
   expose every account's keys and sign-ins.
 - **Copying agent CLI sign-ins between hosts.** Rejected: vendors forbid it, and a copied
   subscription login can be revoked for every host at once.
+- **Keeping a `claude setup-token` token in the vault and setting it on every host.** Rejected:
+  it is a session token Sikemux would store and pass on, which Anthropic's terms forbid. The
+  person may still set one on their own machines.
+- **Every host refreshing a shared sign-in itself.** Rejected: services that rotate refresh
+  tokens void every copy but the last.
