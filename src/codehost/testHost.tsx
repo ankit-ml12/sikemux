@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { installIpcTransportForTests, MemoryIpcTransport } from "../api/transport";
 import { HostProvider, registerCodeHost, type CodeHost, type CodeHostApi } from "./registry";
 import type { RepoRef } from "./types";
+import { getState } from "../state/store";
 
 export const TEST_HOST = "test.host";
 
@@ -59,4 +60,14 @@ export function ciCore() {
         moved: (repo: RepoRef) =>
             transport.emit("core_changed", { topic: "ci", project: null, paths: [`${repo.provider}:${repo.owner}/${repo.name}`] }),
     };
+}
+
+/** What each project folder picked on `provider`, as `repo` or `account`, from the core's workspace in the store. */
+export function picked(provider: string, key: "repo" | "account"): Record<string, string> {
+    return Object.fromEntries(
+        Object.entries(getState().codeHosts).flatMap(([cwd, hosts]) => {
+            const value = hosts[provider]?.[key];
+            return value ? [[cwd, value]] : [];
+        }),
+    );
 }

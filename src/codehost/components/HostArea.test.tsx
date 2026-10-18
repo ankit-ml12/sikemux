@@ -46,7 +46,8 @@ vi.mock("./DispatchDialog", () => ({
 import { invalidate } from "../../plugin-api/resources";
 import type { TreeSection } from "../state";
 import { hostSettings, resetView, setFollowBranch, updateView, viewOf } from "../state";
-import { InHost, registerTestHost, TEST_HOST } from "../testHost";
+import { InHost, picked, registerTestHost, TEST_HOST } from "../testHost";
+import { setState } from "../../state/store";
 import { HostArea } from "./HostArea";
 
 const signIn = vi.hoisted(() => ({ last: null as null | ((account: string | null) => void) }));
@@ -93,7 +94,8 @@ beforeEach(() => {
     resetView(PANE);
     api.status.mockReset().mockResolvedValue(signedIn);
     api.workflows.mockReset().mockResolvedValue([{ id: "12", name: "Deploy", path: ".github/workflows/deploy.yml", state: "active" }]);
-    hostSettings(TEST_HOST).update((settings) => ({ ...settings, accountByProject: {}, followBranch: true }));
+    setState({ codeHosts: {} });
+    hostSettings(TEST_HOST).update((settings) => ({ ...settings, followBranch: true }));
     signIn.last = null;
 });
 
@@ -105,7 +107,7 @@ describe("HostArea", () => {
         show("pulls");
         await screen.findByText("sign in here");
         act(() => signIn.last?.("grace-id"));
-        expect(hostSettings(TEST_HOST).get().accountByProject[CWD]).toBe("grace-id");
+        expect(picked(TEST_HOST, "account")[CWD]).toBe("grace-id");
     });
 
     it("keeps no account for a repository that is not the project's own", async () => {
@@ -114,7 +116,7 @@ describe("HostArea", () => {
         await screen.findByText("sign in here");
         act(() => signIn.last?.("grace-id"));
         act(() => signIn.last?.(null));
-        expect(hostSettings(TEST_HOST).get().accountByProject).toEqual({});
+        expect(picked(TEST_HOST, "account")).toEqual({});
     });
 
     it("lists runs on the project's branch while following it, and on a branch typed into the filter otherwise", async () => {

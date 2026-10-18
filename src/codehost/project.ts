@@ -4,7 +4,8 @@ import { resource, useCachedResourceEnabled, useResourceEnabled } from "../plugi
 import { isOwnBranch } from "./checkout";
 import { enabledCodeHosts, type CodeHost } from "./registry";
 import { accountForR, hostStatusR, pullsR } from "./resources";
-import { hostSettings, refOf } from "./state";
+import { useStore } from "../state/store";
+import { refOf } from "./state";
 import type { Pull, RepoRef } from "./types";
 
 /** `origin` is what people push to, so it is the remote that names the repository. */
@@ -53,8 +54,8 @@ export function useHostRepo(cwd: string | null, enabled: boolean): HostRepo {
     const overview = useCachedResourceEnabled(enabled && !!cwd, gitOverviewR, cwd ?? "");
     const remote = fromRemote.data ?? null;
     const provider = remote?.provider ?? "";
-    const chosen = hostSettings(provider).useSelect((settings) => (cwd && provider ? (settings.repoByProject[cwd] ?? null) : null));
-    const pickedAccount = hostSettings(provider).useSelect((settings) => (cwd && provider ? (settings.accountByProject[cwd] ?? null) : null));
+    const chosen = useStore((s) => (cwd && provider ? (s.codeHosts[cwd]?.[provider]?.repo ?? null) : null));
+    const pickedAccount = useStore((s) => (cwd && provider ? (s.codeHosts[cwd]?.[provider]?.account ?? null) : null));
     const overridden = useMemo(() => (chosen ? refOf(provider, chosen) : null), [chosen, provider]);
     const shown = overridden ?? remote;
     const found = useCachedResourceEnabled(enabled && !!shown && !pickedAccount, accountForR, shown ?? NO_REPO);

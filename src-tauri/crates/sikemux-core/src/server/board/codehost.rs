@@ -2,11 +2,16 @@
 //! GitHub and Bitbucket plugins and the person's own sign-in to them, and
 //! what reviewers say on them.
 
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::auto::Pull;
-use crate::server::plugins;
+use crate::protocol::CodeHostChoice;
+use crate::server::names::project_of;
+use crate::server::{plugins, Core};
 
 const HOSTS: [(&str, &str); 2] = [("github", "GitHub"), ("bitbucket", "Bitbucket")];
 /// Conclusions that let a change through.
@@ -65,8 +70,22 @@ impl Repo {
     }
 }
 
-/// The code host the remote `url` is on, with an account signed in to it.
-pub(crate) async fn find(url: &str) -> Result<Repo, String> {
+/// What the person picked by hand on each code host for the project `dir`
+/// is in, its worktrees included.
+pub(crate) fn picks(core: &Core, dir: &Path) -> BTreeMap<String, CodeHostChoice> {
+    let project = PathBuf::from(project_of(dir, &core.workspaces.project_paths()));
+    core.workspaces
+        .view()
+        .projects
+        .into_iter()
+        .find(|known| known.path == project)
+        .map(|known| known.code_hosts)
+        .unwrap_or_default()
+}
+
+/// The code host the remote `url` is on, with an account signed in to it,
+/// or the repository and account in `picks` for it.
+pub(crate) async fn find(url: &str, picks: &BTreeMap<String, CodeHostChoice>) -> Result<Repo, String> {
     for (host, label) in HOSTS {
         let Ok(found) = plugins::call(&plugin(host), "resolveRemote", json!({ "url": url })).await
         else {
@@ -79,14 +98,23 @@ pub(crate) async fn find(url: &str) -> Result<Repo, String> {
         if found["sameHost"] != Value::Bool(true) {
             continue;
         }
-        let account = plugins::call(
-            &plugin(host),
-            "accountFor",
-            json!({ "owner": owner, "name": name }),
-        )
-        .await
-        .ok()
-        .and_then(|account| account.as_str().map(str::to_owned));
+        let pick = picks.get(&plugin(host)).cloned().unwrap_or_default();
+        let (owner, name) = pick
+            .repo
+            .as_deref()
+            .and_then(|slug| slug.split_once('/'))
+            .map_or((owner, name), |(owner, name)| (owner.to_owned(), name.to_owned()));
+        let account = match pick.account {
+            Some(account) => Some(account),
+            None => plugins::call(
+                &plugin(host),
+                "accountFor",
+                json!({ "owner": owner, "name": name }),
+            )
+            .await
+            .ok()
+            .and_then(|account| account.as_str().map(str::to_owned)),
+        };
         if account.is_none() {
             return Err(format!(
                 "sign in to {label} in Sikemux with an account that can reach {owner}/{name}"
@@ -104,8 +132,12 @@ pub(crate) async fn find(url: &str) -> Result<Repo, String> {
 
 /// The pull requests the commit `sha` came in through, the merged one first,
 /// when the code host the remote `url` is on can tell.
-pub(crate) async fn pulls_of(url: &str, sha: &str) -> Result<Vec<Value>, String> {
-    let repo = find(url).await?;
+pub(crate) async fn pulls_of(
+    url: &str,
+    picks: &BTreeMap<String, CodeHostChoice>,
+    sha: &str,
+) -> Result<Vec<Value>, String> {
+    let repo = find(url, picks).await?;
     let found = plugins::call(
         &plugin(repo.host),
         "commitPulls",

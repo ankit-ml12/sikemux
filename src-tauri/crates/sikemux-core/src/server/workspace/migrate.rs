@@ -2,7 +2,7 @@
 //! devices added, how sleeping chats ran, and the projects, agents, spaces and
 //! pinned chats the app kept in its own state then.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags};
@@ -10,7 +10,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{check_agent, is_chat_provider, Kept, Saved};
-use crate::protocol::{ChatAccount, PinnedChat, ProjectInfo, SpaceInfo, WorkspaceAgent};
+use crate::protocol::{
+    ChatAccount, CodeHostChoice, PinnedChat, ProjectInfo, SpaceInfo, WorkspaceAgent,
+};
 
 /// The app's data folder in this build, which is the core's when the app
 /// started it, and the only core that may read the app's state.
@@ -112,6 +114,19 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
             .filter(|space| saved.spaces.iter().any(|known| known.id == *space))
             .map(str::to_owned)
     };
+    let code_hosts_of = |cwd: &str| -> BTreeMap<String, CodeHostChoice> {
+        prefs["pluginSettings"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(plugin, settings)| {
+                let repo = text(&settings["repoByProject"], cwd);
+                let account = text(&settings["accountByProject"], cwd);
+                (repo.is_some() || account.is_some())
+                    .then(|| (plugin.clone(), CodeHostChoice { repo, account }))
+            })
+            .collect()
+    };
     let sessions = app["sessions"].as_array().cloned().unwrap_or_default();
     let projects: Vec<ProjectInfo> = sessions
         .iter()
@@ -122,6 +137,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 id: text(session, "id")?,
                 name: text(session, "name").unwrap_or_else(|| cwd.clone()),
                 space: space_of(&cwd),
+                code_hosts: code_hosts_of(&cwd),
                 path: cwd.into(),
                 pinned: session["pinned"].as_bool().unwrap_or(false),
             })

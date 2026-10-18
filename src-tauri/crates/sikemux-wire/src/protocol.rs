@@ -865,6 +865,21 @@ pub struct ProjectInfo {
     /// The space it is shown in, by id; none shows it in every space.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub space: Option<String>,
+    /// What the person picked by hand for it on each code host, by the
+    /// host's plugin id, over what its remote and the host's accounts say.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub code_hosts: BTreeMap<String, CodeHostChoice>,
+}
+
+/// A repository or account picked for a project on one code host.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeHostChoice {
+    /// `owner/name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// A set of projects the person shows on their own.

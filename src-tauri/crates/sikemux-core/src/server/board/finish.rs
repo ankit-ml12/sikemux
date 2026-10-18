@@ -4,7 +4,7 @@
 //! anything more goes back to the person. While it waits for review, its
 //! agent is handed reviewers' comments and its replies are posted for it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::auto::{Finish, Pull, Run, Settings, Stage};
@@ -375,7 +375,8 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
         ));
     }
     let origin = origin.ok_or("the project has no origin remote to open a pull request on")?;
-    let host = codehost::find(&origin).await?;
+    let picks = codehost::picks(core, Path::new(&step.project));
+    let host = codehost::find(&origin, &picks).await?;
     let (branch, pushed) = (step.run.branch.clone(), step.run.head.clone());
     let head = {
         let tree = tree.clone();

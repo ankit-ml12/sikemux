@@ -630,13 +630,15 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             let origin = origin
                 .as_deref()
                 .ok_or("this project has no origin remote to find its CI runs on")?;
-            let ci = ci::find(origin, run).await?;
+            let picks = codehost::picks(core, Path::new(&request.project));
+            let ci = ci::find(origin, &picks, run).await?;
             let top = top.clone();
             blocking(move || Ok((ci::commits(&top, &ci)?, Some(ci))))
                 .await
                 .map_err(|error| error.to_string())?
         }
     };
+    let picks = codehost::picks(core, &top);
     let core = core.clone();
     let (found, mut commits) = blocking(move || {
         let hashes: Vec<&str> = found
@@ -683,9 +685,9 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     if let Some(origin) = origin {
         let mut asked = tokio::task::JoinSet::new();
         for (commit, _) in commits.iter().filter(|(_, owners)| owners.is_empty()) {
-            let (origin, hash) = (origin.clone(), commit.hash.clone());
+            let (origin, picks, hash) = (origin.clone(), picks.clone(), commit.hash.clone());
             asked.spawn(async move {
-                let found = codehost::pulls_of(&origin, &hash).await.ok()?;
+                let found = codehost::pulls_of(&origin, &picks, &hash).await.ok()?;
                 Some((hash, found.into_iter().next()?))
             });
         }

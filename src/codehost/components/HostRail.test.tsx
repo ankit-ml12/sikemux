@@ -14,8 +14,9 @@ const api = vi.hoisted(() => ({
 import { invalidate } from "../../plugin-api/resources";
 import { useToasts } from "../../state/toast";
 import { AccountProvider, type CodeHost } from "../registry";
-import { hostSettings, setProjectAccount } from "../state";
-import { InHost, registerTestHost, TEST_HOST } from "../testHost";
+import { setProjectAccount } from "../state";
+import { InHost, picked, registerTestHost, TEST_HOST } from "../testHost";
+import { setState } from "../../state/store";
 import { HostAccountButton } from "./HostRail";
 import { sectionLabel, sectionsOf } from "../sections";
 
@@ -66,7 +67,7 @@ beforeEach(() => {
     api.accounts.mockResolvedValue([entry("ada-id", "ada", { isDefault: true })]);
     api.signOut.mockResolvedValue(undefined);
     api.setDefaultAccount.mockResolvedValue(undefined);
-    hostSettings(TEST_HOST).update((settings) => ({ ...settings, accountByProject: {} }));
+    setState({ codeHosts: {} });
     useToasts.setState({ toasts: [] });
 });
 
@@ -100,7 +101,7 @@ describe("the account at the foot of the rail", () => {
         expect(rows[1]?.textContent).toContain("git.corp.example");
         expect(within(menu).queryByText(/Open new projects as/)).toBeNull();
         await userEvent.click(rows[1]!);
-        expect(hostSettings(TEST_HOST).get().accountByProject[CWD]).toBe("grace-id");
+        expect(picked(TEST_HOST, "account")[CWD]).toBe("grace-id");
     });
 
     it("signs the account out and makes every project that picked it find another", async () => {
@@ -110,7 +111,7 @@ describe("the account at the foot of the rail", () => {
         await userEvent.click(within(await openMenu()).getByRole("menuitem", { name: /Sign ada out/ }));
         expect(api.signOut).toHaveBeenCalledWith("ada-id");
         await waitFor(() => expect(toasts()).toContain("success: Signed ada out of Test host"));
-        expect(hostSettings(TEST_HOST).get().accountByProject).toEqual({ "/work/other": "grace-id" });
+        expect(picked(TEST_HOST, "account")).toEqual({ "/work/other": "grace-id" });
     });
 
     it("signs out a borrowed token without forgetting any project's account", async () => {
@@ -120,6 +121,6 @@ describe("the account at the foot of the rail", () => {
         await userEvent.click(within(await openMenu()).getByRole("menuitem", { name: /Sign ada out/ }));
         expect(api.signOut).toHaveBeenCalledWith(null);
         await waitFor(() => expect(toasts()).toContain("success: Signed ada out of Test host"));
-        expect(hostSettings(TEST_HOST).get().accountByProject).toEqual({ "/work/other": "grace-id" });
+        expect(picked(TEST_HOST, "account")).toEqual({ "/work/other": "grace-id" });
     });
 });

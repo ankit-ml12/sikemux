@@ -37,6 +37,18 @@ export interface ProjectInfo {
   pinned?: boolean;
   /** The space it is shown in, by id; none shows it in every space. */
   space?: string;
+  /**
+   * What the person picked by hand for it on each code host, by the
+   * host's plugin id, over what its remote and the host's accounts say.
+   */
+  codeHosts?: Record<string, CodeHostChoice>;
+}
+
+/** A repository or account picked for a project on one code host. */
+export interface CodeHostChoice {
+  /** `owner/name`. */
+  repo?: string;
+  account?: string;
 }
 
 /** A set of projects the person shows on their own. */
@@ -181,7 +193,7 @@ export interface SessionInfo {
   ssh?: SshLink;
 }
 
-export type SessionKind = 'terminal' | 'task';
+export type SessionKind = "terminal" | "task";
 
 /** A task's launch request without its environment. */
 export interface TaskSessionInfo {
@@ -196,7 +208,7 @@ export interface TaskSessionInfo {
   agentId?: string;
 }
 
-export type TaskSource = 'built-in' | 'project' | 'recent';
+export type TaskSource = "built-in" | "project" | "recent";
 
 /** `code` is absent when the status could not be read. */
 export interface SessionExit {
@@ -209,13 +221,14 @@ export interface SessionExit {
  * waiting on them first. Only a running turn is Working; subagents and
  * shells left running are counted beside the agent instead.
  */
-export type AgentGroup = 'blocked' | 'working' | 'done' | 'idle';
+export type AgentGroup = "blocked" | "working" | "done" | "idle";
 
 /** What a list says an agent is doing: its group, unless it is not running. */
-export type AgentStatus = 'blocked' | 'working' | 'done' | 'idle' | 'asleep' | 'stopped' | 'starting';
+export type AgentStatus =
+  "blocked" | "working" | "done" | "idle" | "asleep" | "stopped" | "starting";
 
 /** Where an SSH terminal's connection stands, as its startup loop reports it. */
-export type SshLink = 'connecting' | 'connected' | 'disconnected';
+export type SshLink = "connecting" | "connected" | "disconnected";
 
 export interface ChatInfo {
   agentId: string;
@@ -268,7 +281,7 @@ export interface ChatInfo {
   attentionRank?: number;
 }
 
-export type ChatState = 'starting' | 'ready' | 'stopped';
+export type ChatState = "starting" | "ready" | "stopped";
 
 /** Something an agent is waiting on a person for. */
 export interface Attention {
@@ -284,7 +297,7 @@ export interface Attention {
   choices?: PermissionChoices;
 }
 
-export type AttentionKind = 'permission';
+export type AttentionKind = "permission";
 
 /**
  * What a permission request comes down to for a client that offers only
@@ -369,10 +382,19 @@ export interface InboxItem {
   host?: string;
 }
 
-export type InboxTier = 'needs' | 'review' | 'finished' | 'progress';
+export type InboxTier = "needs" | "review" | "finished" | "progress";
 
 export type InboxKind =
-  'permission' | 'question' | 'input' | 'held' | 'assumption' | 'pullRequest' | 'changes' | 'failed' | 'finished' | 'working';
+  | "permission"
+  | "question"
+  | "input"
+  | "held"
+  | "assumption"
+  | "pullRequest"
+  | "changes"
+  | "failed"
+  | "finished"
+  | "working";
 
 export interface InboxCard {
   project: string;
@@ -471,7 +493,7 @@ export interface HostInfo {
  * Which kind of Sikemux build a core belongs to. Each keeps its own key and
  * paired devices, so one host can show up once per channel.
  */
-export type BuildChannel = 'dev' | 'nightly' | 'stable';
+export type BuildChannel = "dev" | "nightly" | "stable";
 
 export interface RemoteStatus {
   enabled: boolean;
@@ -516,7 +538,7 @@ export interface DeviceInfo {
 }
 
 /** What a paired device was approved to do. */
-export type DeviceAccess = 'full' | 'watch';
+export type DeviceAccess = "full" | "watch";
 
 export interface PendingDevice {
   /** Names this request in `AnswerPairing`. */
@@ -548,10 +570,10 @@ export interface AccountLink {
   since: number;
 }
 
-export type AccountLinkState = 'connecting' | 'live' | 'offline' | 'removed';
+export type AccountLinkState = "connecting" | "live" | "offline" | "removed";
 
 /** Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted. */
-export type RevokeReason = 'removed' | 'signed_out' | 'account_deleted';
+export type RevokeReason = "removed" | "signed_out" | "account_deleted";
 
 export interface UpdateRequired {
   current: string;
@@ -566,7 +588,8 @@ export interface PhoneNotifications {
   since: number;
 }
 
-export type NotificationState = 'off' | 'on' | 'phoneOff' | 'notReaching' | 'otherAccount' | 'signedOut';
+export type NotificationState =
+  "off" | "on" | "phoneOff" | "notReaching" | "otherAccount" | "signedOut";
 
 /** A phone the person lets in ahead of it asking, by its account key. */
 export interface AllowedDevice {
@@ -600,4 +623,4 @@ export interface LinkedHost {
 }
 
 /** What happened to this host's network. */
-export type NetworkChange = 'online' | 'offline' | 'changed' | 'woke';
+export type NetworkChange = "online" | "offline" | "changed" | "woke";

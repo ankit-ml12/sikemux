@@ -20,6 +20,7 @@ import {
     viewOf,
     type HostSettings,
 } from "./state";
+import { picked } from "./testHost";
 
 const HOST = "test.host";
 const settings = hostSettings(HOST);
@@ -30,14 +31,10 @@ describe("hostSettings", () => {
             () =>
                 ({
                     pinned: ["nodelike/sikemux", "not a repo", 7, "nodelike/sikemux"],
-                    repoByProject: { "/repo": "owner/name", "/bad": 3, "/alsobad": "owner" },
-                    accountByProject: { "/repo": "work-id", "/bad": 4, "/empty": "" },
                 }) as unknown as HostSettings,
         );
         expect(settings.get()).toEqual({
             pinned: ["nodelike/sikemux"],
-            repoByProject: { "/repo": "owner/name" },
-            accountByProject: { "/repo": "work-id" },
             followBranch: true,
         });
     });
@@ -47,9 +44,9 @@ describe("hostSettings", () => {
         setProjectAccount(HOST, "/also-work", "work-id");
         setProjectAccount(HOST, "/home", "home-id");
         forgetAccount(HOST, "work-id");
-        expect(settings.get().accountByProject).toEqual({ "/home": "home-id" });
+        expect(picked(HOST, "account")).toEqual({ "/home": "home-id" });
         setProjectAccount(HOST, "/home", null);
-        expect(settings.get().accountByProject).toEqual({});
+        expect(picked(HOST, "account")).toEqual({});
     });
 
     it("keeps following the branch unless it was turned off on purpose", () => {

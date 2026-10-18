@@ -1,4 +1,5 @@
 import { DEFAULT_NOTCH_SETTINGS } from "../notch/notchSettings";
+import type { CodeHostChoice } from "../api/generated/wire";
 import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
@@ -91,6 +92,8 @@ export interface DomainState {
     pluginSettings: Readonly<Record<string, unknown>>;
     /** Plugins switched off in Settings; they are built in but act as if absent. */
     disabledPlugins: readonly string[];
+    /** The repository and account picked by hand on each code host, by project folder, as the core keeps them. */
+    codeHosts: Readonly<Record<string, Record<string, CodeHostChoice>>>;
     restoreAgentTabs: boolean;
     spaces: readonly ProjectSpace[];
     /** The space id each project belongs to, by project folder, so it outlives closing the project. */
@@ -299,6 +302,7 @@ export const useStore = create<StoreState>(() => {
         diffTarget: {},
         pluginSettings: {},
         disabledPlugins: [],
+        codeHosts: {},
         restoreAgentTabs: true,
         spaces: [],
         projectSpaces: {},

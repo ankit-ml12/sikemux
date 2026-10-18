@@ -52,8 +52,9 @@ import { invalidate, useResource } from "../../plugin-api/resources";
 import { emit } from "../../state/bus";
 import type { GitArea } from "../../state/types";
 import { pullsR } from "../resources";
-import { hostSettings, setProjectRepo } from "../state";
-import { registerTestHost, TEST_HOST } from "../testHost";
+import { setProjectRepo } from "../state";
+import { picked, registerTestHost, TEST_HOST } from "../testHost";
+import { setState } from "../../state/store";
 import { GitHostShell } from "./GitHostShell";
 import { useGitShell } from "../shellContext";
 
@@ -101,7 +102,7 @@ beforeEach(() => {
         .mockResolvedValue({ repo: { host: "example.test", owner: "nodelike", name: "sikemux" }, slug: "nodelike/sikemux", sameHost: true });
     api.accountFor.mockReset().mockResolvedValue("ada-id");
     api.commitAuthors.mockReset().mockResolvedValue([{ email: "Grace@Example.com", login: "grace", avatarUrl: "https://example.test/grace.png" }]);
-    hostSettings(TEST_HOST).update((settings) => ({ ...settings, repoByProject: {}, accountByProject: {} }));
+    setState({ codeHosts: {} });
     signIn.last = null;
 });
 
@@ -120,7 +121,7 @@ describe("GitHostShell", () => {
     });
 
     it("uses the account picked for the project without asking which can see it", async () => {
-        hostSettings(TEST_HOST).update((settings) => ({ ...settings, accountByProject: { [CWD]: "grace-id" } }));
+        setState({ codeHosts: { [CWD]: { [TEST_HOST]: { account: "grace-id" } } } });
         shell("pulls");
         expect((await screen.findByTestId("host-area")).textContent).toContain("as grace-id");
         expect(api.accountFor).not.toHaveBeenCalled();
@@ -171,9 +172,9 @@ describe("GitHostShell", () => {
         shell("pulls");
         await userEvent.click(within(await openAccountMenu()).getByRole("menuitem", { name: "Choose another repository…" }));
         await userEvent.click(await screen.findByRole("button", { name: "team/fork" }));
-        expect(hostSettings(TEST_HOST).get().repoByProject).toEqual({ [CWD]: "team/fork" });
+        expect(picked(TEST_HOST, "repo")).toEqual({ [CWD]: "team/fork" });
         await userEvent.click(screen.getByRole("button", { name: "nodelike/sikemux" }));
-        expect(hostSettings(TEST_HOST).get().repoByProject).toEqual({});
+        expect(picked(TEST_HOST, "repo")).toEqual({});
         await userEvent.click(screen.getByRole("button", { name: "Close picker" }));
         expect(screen.queryByRole("dialog", { name: "picker" })).toBeNull();
     });
@@ -184,7 +185,7 @@ describe("GitHostShell", () => {
         expect(screen.getByText(/Add another Test host account/)).toBeTruthy();
         expect(screen.queryByTestId("host-area")).toBeNull();
         act(() => signIn.last?.("grace-id"));
-        expect(hostSettings(TEST_HOST).get().accountByProject).toEqual({ [CWD]: "grace-id" });
+        expect(picked(TEST_HOST, "account")).toEqual({ [CWD]: "grace-id" });
         expect(await screen.findByTestId("host-area")).toBeTruthy();
     });
 
@@ -196,7 +197,7 @@ describe("GitHostShell", () => {
 
         await userEvent.click(within(await openAccountMenu()).getByRole("menuitem", { name: "Add another account…" }));
         act(() => signIn.last?.(null));
-        expect(hostSettings(TEST_HOST).get().accountByProject).toEqual({});
+        expect(picked(TEST_HOST, "account")).toEqual({});
         expect(await screen.findByTestId("host-area")).toBeTruthy();
     });
 });

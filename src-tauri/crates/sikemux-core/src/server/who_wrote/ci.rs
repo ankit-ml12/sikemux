@@ -2,7 +2,7 @@
 //! run of its workflow on its branch that passed, and the commits between
 //! them, those whose changes the failing job's error points at first.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -11,6 +11,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::{git, lock, remember, Found};
+use crate::protocol::CodeHostChoice;
 use crate::server::board::codehost::{self, Repo};
 
 const ASK_BUDGET: Duration = Duration::from_secs(10);
@@ -227,8 +228,12 @@ fn summary(run: &Value) -> Value {
 }
 
 /// Finds the failing run `asked` names on the code host `origin` is on.
-pub(super) async fn find(origin: &str, asked: Asked) -> Result<Ci, String> {
-    let repo = timed(ASK_BUDGET, codehost::find(origin)).await?;
+pub(super) async fn find(
+    origin: &str,
+    picks: &BTreeMap<String, CodeHostChoice>,
+    asked: Asked,
+) -> Result<Ci, String> {
+    let repo = timed(ASK_BUDGET, codehost::find(origin, picks)).await?;
     let mut notes = Vec::new();
     let mut also_failing = Vec::new();
     let (id, job) = match asked {

@@ -1,6 +1,10 @@
 import { definePaneViews } from "../plugin-api/paneViews";
 import { definePluginSettings, type PluginSettings } from "../plugin-api/settings";
+import { coreCall } from "../api/core";
+import type { CodeHostChoice } from "../api/generated/wire";
 import { setGitView } from "../state/commands";
+import { getState, setState } from "../state/store";
+import { swallow } from "../state/toast";
 import type { RepoRef } from "./types";
 
 export const STATUS_FILTERS = ["all", "in_progress", "queued", "success", "failure", "cancelled"] as const;
@@ -16,10 +20,6 @@ export const isTreeSection = (area: string): area is TreeSection => (TREE_SECTIO
 
 export interface HostSettings {
     pinned: string[];
-    /** A repository picked by hand for a project folder, which wins over what its remote says. */
-    repoByProject: Record<string, string>;
-    /** An account picked by hand for a project folder, which wins over the first account that can see its repository. */
-    accountByProject: Record<string, string>;
     followBranch: boolean;
 }
 
@@ -28,18 +28,8 @@ const isSlug = (value: unknown): value is string => typeof value === "string" &&
 
 function decodeSettings(saved: unknown): HostSettings {
     const raw = isRecord(saved) ? saved : {};
-    const repoByProject: Record<string, string> = {};
-    for (const [cwd, slug] of Object.entries(isRecord(raw.repoByProject) ? raw.repoByProject : {})) {
-        if (isSlug(slug)) repoByProject[cwd] = slug;
-    }
-    const accountByProject: Record<string, string> = {};
-    for (const [cwd, account] of Object.entries(isRecord(raw.accountByProject) ? raw.accountByProject : {})) {
-        if (typeof account === "string" && account) accountByProject[cwd] = account;
-    }
     return {
         pinned: Array.isArray(raw.pinned) ? [...new Set(raw.pinned.filter(isSlug))] : [],
-        repoByProject,
-        accountByProject,
         followBranch: raw.followBranch !== false,
     };
 }
@@ -63,30 +53,32 @@ export function togglePinned(provider: string, slug: string): void {
     }));
 }
 
+/**
+ * Picks the repository or account `provider` shows for the project at `cwd`, over what its remote and the host's accounts
+ * say, or with null goes back to them. The core keeps the pick, so Auto and every device use the same one.
+ */
+function pickCodeHost(provider: string, cwd: string, change: CodeHostChoice): void {
+    const state = getState();
+    const current = state.codeHosts[cwd] ?? {};
+    const choice = Object.fromEntries(Object.entries({ ...current[provider], ...change }).filter(([, value]) => value)) as CodeHostChoice;
+    const { [provider]: _replaced, ...others } = current;
+    const next = choice.repo || choice.account ? { ...others, [provider]: choice } : others;
+    setState({ codeHosts: { ...state.codeHosts, [cwd]: next } });
+    const project = Object.values(state.sessions).find((session) => session.kind === "project" && session.cwd === cwd);
+    if (project) void coreCall("updateProject", { id: project.id, patch: { codeHosts: next } }).catch(swallow("pick the project's code host"));
+}
+
 export function setProjectRepo(provider: string, cwd: string, slug: string | null): void {
-    hostSettings(provider).update((settings) => {
-        const repoByProject = { ...settings.repoByProject };
-        if (slug) repoByProject[cwd] = slug;
-        else delete repoByProject[cwd];
-        return { ...settings, repoByProject };
-    });
+    pickCodeHost(provider, cwd, { repo: slug ?? undefined });
 }
 
 export function setProjectAccount(provider: string, cwd: string, account: string | null): void {
-    hostSettings(provider).update((settings) => {
-        const accountByProject = { ...settings.accountByProject };
-        if (account) accountByProject[cwd] = account;
-        else delete accountByProject[cwd];
-        return { ...settings, accountByProject };
-    });
+    pickCodeHost(provider, cwd, { account: account ?? undefined });
 }
 
 /** Every project that picked an account forgets it once it signs out, and goes back to finding one. */
 export function forgetAccount(provider: string, account: string): void {
-    hostSettings(provider).update((settings) => ({
-        ...settings,
-        accountByProject: Object.fromEntries(Object.entries(settings.accountByProject).filter(([, picked]) => picked !== account)),
-    }));
+    for (const [cwd, hosts] of Object.entries(getState().codeHosts)) if (hosts[provider]?.account === account) setProjectAccount(provider, cwd, null);
 }
 
 export function setFollowBranch(provider: string, followBranch: boolean): void {

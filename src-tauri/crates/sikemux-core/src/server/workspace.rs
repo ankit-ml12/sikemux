@@ -460,6 +460,7 @@ impl Workspaces {
                 path,
                 pinned: false,
                 space: None,
+                code_hosts: Default::default(),
             };
             check_project(&project, saved)?;
             saved.projects.push(project.clone());
@@ -1766,6 +1767,7 @@ mod tests {
             path: "/Users/me/sikemux".into(),
             pinned: false,
             space: None,
+            code_hosts: Default::default(),
         }
     }
 
