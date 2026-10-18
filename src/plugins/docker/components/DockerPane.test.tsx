@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
     container: vi.fn(),
     stats: vi.fn(),
     stacks: vi.fn(),
+    images: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), dockerApi: api }));
 const openUrl = vi.hoisted(() => vi.fn(() => Promise.resolve()));
@@ -31,6 +32,7 @@ beforeEach(() => {
     api.containers.mockResolvedValue([REDIS, SHOP_WEB, SHOP_DB]);
     api.stats.mockResolvedValue([]);
     api.stacks.mockResolvedValue([]);
+    api.images.mockResolvedValue([]);
 });
 
 describe("the Docker pane", () => {

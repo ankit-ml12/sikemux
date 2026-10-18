@@ -620,3 +620,26 @@
 .docker-service-container:hover {
     color: var(--acc);
 }
+
+.docker-push {
+    margin-left: auto;
+}
+
+.docker-row-actions {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.docker-link {
+    margin-left: 10px;
+    color: var(--acc);
+    font-size: var(--text-xs);
+}
+
+.docker-link:hover {
+    text-decoration: underline;
+}
+
+.docker-link.danger {
+    color: var(--danger);
+}

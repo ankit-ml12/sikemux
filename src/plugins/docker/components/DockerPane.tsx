@@ -4,11 +4,12 @@ import { EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../pl
 import { formatBytes } from "../../../plugin-api/format";
 import { refreshDocker, type DockerStatus } from "../api";
 import { usePoll } from "../hooks";
-import { dockerContainersR, dockerStacksR, dockerStatsR, dockerStatusR } from "../resources";
+import { dockerContainersR, dockerImagesR, dockerStacksR, dockerStatsR, dockerStatusR } from "../resources";
 import { updateDockerView, useDockerView, type DockerSection } from "../state";
 import { ContainerDetail } from "./ContainerDetail";
 import { Containers } from "./Containers";
 import { DockerMark } from "./DockerMark";
+import { Images } from "./Images";
 import { LogView } from "./LogView";
 import { Stacks } from "./Stacks";
 import { STATS_POLL_MS, StatsView } from "./StatsView";
@@ -49,6 +50,7 @@ function NotRunning({ status, error, onRetry }: { status: DockerStatus | undefin
 const SECTIONS: { value: DockerSection; label: string }[] = [
     { value: "containers", label: "Containers" },
     { value: "stacks", label: "Compose" },
+    { value: "images", label: "Images" },
 ];
 
 function Engine({ paneId, active, status }: { paneId: string; active: boolean; status: DockerStatus }) {
@@ -62,13 +64,14 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
     const stacking = active && view.section === "stacks" && !view.container;
     const stacks = useResourceEnabled(active, dockerStacksR);
     usePoll(stacking, LIST_POLL_MS, stacks.refresh);
+    const images = useResourceEnabled(active, dockerImagesR);
     const engine = status.engine;
     const running = containers.data?.filter((each) => each.state === "running").length ?? engine?.running ?? 0;
     const total = containers.data?.length ?? engine?.containers ?? 0;
     const counts: Record<DockerSection, string> = {
         containers: `${running}/${total}`,
         stacks: stacks.data ? String(stacks.data.length) : "",
-        images: "",
+        images: images.data ? String(images.data.length) : "",
         volumes: "",
         disk: "",
     };
@@ -152,6 +155,12 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
                             onBack={() => updateDockerView(paneId, { container: null })}>
                             {(detail) => (view.tab === "logs" ? <LogView container={detail} /> : <StatsView active={active} container={detail} />)}
                         </ContainerDetail>
+                    ) : view.section === "images" ? (
+                        images.data ? (
+                            <Images images={images.data} find={view.find} />
+                        ) : (
+                            <SkeletonRows rows={5} label="Loading images" />
+                        )
                     ) : view.section === "stacks" ? (
                         stacks.data ? (
                             <Stacks stacks={stacks.data} find={view.find} onOpen={(container) => updateDockerView(paneId, { container })} />
