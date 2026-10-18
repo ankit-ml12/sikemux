@@ -7,9 +7,11 @@
 //   projects — the projects an account can see
 //   run      — Cloud Run services, revisions, traffic, jobs and executions
 //   logging  — searching and following a project's logs
+//   compute  — Compute Engine VMs, their power, serial output and SSH
 
 mod auth;
 mod client;
+mod compute;
 mod error;
 mod gcloud;
 mod logging;
@@ -64,6 +66,10 @@ impl Plugin for Gcp {
                 "runJob" => answer(run::job_detail(params(input)?)).await,
                 "runJobExecute" => answer(run::run_job(params(input)?)).await,
                 "logs" => answer(logging::search(params(input)?)).await,
+                "instances" => answer(compute::instances(params(input)?)).await,
+                "instance" => answer(compute::instance_detail(params(input)?)).await,
+                "instancePower" => answer(compute::power(params(input)?)).await,
+                "instanceSerial" => answer(compute::serial(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
