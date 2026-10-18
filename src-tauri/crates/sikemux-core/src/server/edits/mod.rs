@@ -9,6 +9,7 @@ pub(crate) mod commit;
 pub(crate) mod footer;
 pub(crate) mod guard;
 mod lines;
+mod named;
 pub(crate) mod note;
 mod outside;
 mod owners;

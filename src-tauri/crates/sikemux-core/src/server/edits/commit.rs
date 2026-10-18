@@ -14,6 +14,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::footer::{agent, attributed, known};
+use super::named;
 use super::owners::{git, run, traced, Diff, FileOwners, Hunk, Owners};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::connection::blocking;
@@ -135,6 +136,13 @@ pub(crate) fn commit(
         if changes.is_empty() {
             return Err(nothing_yours(&left));
         }
+        let lacking = unresolved(&diff, &changes)?;
+        if !lacking.is_empty() {
+            return Err(format!(
+                "Nothing was committed, since the commit would not build on its own: {}. Name the missing files in paths too, or wait until the agent writing them commits.",
+                lacking.join("; ")
+            ));
+        }
         let me = owners
             .authors
             .iter()
@@ -214,6 +222,41 @@ fn nothing_yours(left: &[Left]) -> String {
         ));
     }
     text
+}
+
+/// What the lines `changes` add name that the commit made of them lacks.
+fn unresolved(diff: &Diff, changes: &[Change]) -> Result<Vec<String>, String> {
+    let looked_at: Vec<&Change> = changes
+        .iter()
+        .filter(|change| change.content.is_some() && named::looks_at(&change.path))
+        .collect();
+    if looked_at.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut tree: HashSet<String> = match &diff.base {
+        Some(base) => git(&diff.top, &["ls-tree", "-r", "-z", "--name-only", base])?
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        None => HashSet::new(),
+    };
+    for change in changes {
+        match change.content {
+            Some(_) => tree.insert(change.path.clone()),
+            None => tree.remove(&change.path),
+        };
+    }
+    let mut lacking = Vec::new();
+    for change in looked_at {
+        let old = match &change.before {
+            Some(blob) => run(&diff.top, &["cat-file", "blob", blob], None, None)?,
+            None => Vec::new(),
+        };
+        let new = change.content.as_deref().unwrap_or_default();
+        lacking.extend(named::missing(&change.path, &old, new, &tree));
+    }
+    Ok(lacking)
 }
 
 /// `path`, given from `dir` or whole, from the top of the checkout.
@@ -424,7 +467,11 @@ impl Planner<'_> {
                 by: by.into_iter().collect(),
             });
         };
-        if !whole && !authors.iter().any(|author| self.is_mine(*author, may_whole)) {
+        if !whole
+            && !authors
+                .iter()
+                .any(|author| self.is_mine(*author, may_whole))
+        {
             leave(authors.iter().map(|at| Some(*at)).collect(), left);
             return Ok(());
         }
@@ -862,7 +909,15 @@ mod tests {
         let git = |args: &[&str]| run(&top, args, None, None).unwrap();
         git(&["init", "-q"]);
         git(&["add", "."]);
-        git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-qm",
+            "base",
+        ]);
         for file in files {
             std::fs::write(top.join(file), "x\ny\n").unwrap();
         }
