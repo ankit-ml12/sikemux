@@ -19,7 +19,7 @@ afterEach(() => {
 
 describe("GlobalSkillsBridge", () => {
     it("offers to move a skill an agent saved in its own folder, and moves it when asked", async () => {
-        const adopt = vi.fn(() => ({ name: "notes", description: "", path: "/data/skills/notes" }));
+        const adopt = vi.fn((params: unknown) => ({ name: "notes", description: "", path: "/data/skills/notes", params }));
         const added = [{ agent: "Claude", name: "notes", path: "/home/.claude/skills/notes" }];
         transport.register("core_call", (args) => {
             const { method, params } = args as { method: string; params: unknown };
