@@ -34,7 +34,7 @@ and builds it from those tokens.
 | Borders  | `--border`, `--border-strong` (hover), `--border-selected` (a focused field)                                                                      |
 | Ramp     | `--gray-100` … `--gray-1000`, mixed in oklab from the theme's ground and ink                                                                      |
 | Semantic | `--danger`, `--live`, `--warn`, `--cmd`, the `--git-*` colours and the `--brand-*` agent colours                                                  |
-| Radius   | `--radius-1` 4px chips · `--radius-2` 4px controls and rows · `--radius-3` 10px panels · `--radius-4` 14px floats                                 |
+| Radius   | `--radius-1` 4px chips · `--radius-2` 5px controls and rows · `--radius-3` 10px panels · `--radius-4` 14px floats                                 |
 | Shadow   | `--shadow-1` … `--shadow-4`, from a pressed control to a modal                                                                                    |
 | Focus    | `--focus-ring`, drawn outside the element so it never moves a layout                                                                              |
 | Type     | `--ui` (Figtree) for what the app says, `--mono` for what the machine says; `--text-3xs` 10px … `--text-2xl` 28px, 13px by default; three weights |
