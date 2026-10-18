@@ -154,7 +154,7 @@ async function frame(source, target) {
     width: viewport.width + pad * 2,
     height: viewport.height + pad * 2,
   });
-  await page.setContent(`<!doctype html><html><body style="margin:0;display:grid;place-items:center;height:100vh;background:radial-gradient(120% 90% at 20% 0%, #2a2140 0%, #120f1a 55%, #0b0a10 100%)">
+  await page.setContent(`<!doctype html><html><body style="margin:0;display:grid;place-items:center;height:100vh;background:#0b0a10 url(${origin}/__showcase/wallpaper) center / cover no-repeat">
         <img src="${image}" style="width:${viewport.width}px;height:${viewport.height}px;border-radius:12px;box-shadow:0 0 0 1px rgba(255,255,255,.09),0 1px 0 rgba(255,255,255,.06) inset,0 30px 80px rgba(0,0,0,.55),0 8px 24px rgba(0,0,0,.35)">
     </body></html>`);
   await page.screenshot({ path: target });
