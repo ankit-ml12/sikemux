@@ -122,7 +122,7 @@ export function Overview({
                                 <dt>Domains</dt>
                                 <dd className="vercel-domain-list">
                                     {(domains.data ?? [])
-                                        .filter((domain) => !domain.redirect)
+                                        .filter((domain) => !domain.redirect && !domain.gitBranch)
                                         .map((domain) => (
                                             <button
                                                 key={domain.name}
