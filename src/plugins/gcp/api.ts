@@ -632,6 +632,8 @@ export const gcpApi = {
     buckets: (target: Target) => backend.call<Bucket[]>("buckets", t(target)),
     objects: (target: Target, bucket: string, prefix: string) => backend.call<Folder>("objects", { ...t(target), bucket, prefix }),
     objectPreview: (target: Target, bucket: string, object: string) => backend.call<ObjectPreview>("objectPreview", { ...t(target), bucket, object }),
+    objectUpload: (target: Target, bucket: string, prefix: string, path: string) =>
+        backend.call<StorageObject>("objectUpload", { ...t(target), bucket, prefix, path }),
     objectDownload: (target: Target, bucket: string, object: string) =>
         backend.call<{ path: string; size: number }>("objectDownload", { ...t(target), bucket, object }),
 

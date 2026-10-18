@@ -8,7 +8,8 @@ vi.mock("../api", async (importOriginal) => {
     return { ...(await importOriginal<object>()), gcpApi: api };
 });
 const notify = vi.hoisted(() => vi.fn());
-vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), notify }));
+const pickFile = vi.hoisted(() => vi.fn(() => Promise.resolve("/Users/ankit/Desktop/report.csv")));
+vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), notify, pickFile }));
 
 import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
@@ -100,5 +101,16 @@ describe("Cloud Storage", () => {
         expect(screen.getByText("gs://acme-assets/robots.txt")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Download" }));
         await waitFor(() => expect(notify).toHaveBeenCalledWith("success", "Saved to /Users/ankit/Downloads/robots.txt"));
+    });
+
+    it("uploads a picked file into the folder that is open", async () => {
+        api.objectUpload.mockResolvedValue({ name: "logs/report.csv", size: 10, contentType: "text/csv", storageClass: "STANDARD", updatedAt: null });
+        renderPage();
+        fireEvent.click(await screen.findByRole("row", { name: /acme-assets/ }));
+        fireEvent.click(await screen.findByRole("row", { name: /logs\// }));
+        await screen.findByText("app.log");
+        fireEvent.click(screen.getByRole("button", { name: "Upload file" }));
+        await waitFor(() => expect(api.objectUpload).toHaveBeenCalledWith(target, "acme-assets", "logs/", "/Users/ankit/Desktop/report.csv"));
+        expect(notify).toHaveBeenCalledWith("success", "Uploaded logs/report.csv");
     });
 });

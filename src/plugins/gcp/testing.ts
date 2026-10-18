@@ -35,6 +35,7 @@ export function mockApi() {
         objects: vi.fn(),
         objectPreview: vi.fn(),
         objectDownload: vi.fn(),
+        objectUpload: vi.fn(),
         sqlInstances: vi.fn(),
         sqlInstance: vi.fn(),
         sqlChange: vi.fn(),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { notify } from "../../../plugin-api/host";
-import { useResourceEnabled } from "../../../plugin-api/resources";
+import { notify, pickFile } from "../../../plugin-api/host";
+import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import { failureMessage, gcpApi, type Bucket, type ObjectPreview, type StorageObject, type Target } from "../api";
 import { bucketsR, folderR } from "../resources";
@@ -65,11 +65,29 @@ function BucketBrowser({ paneId, active, target, bucket }: ProductProps & { buck
         updateGcpView(paneId, { prefix });
     };
     const words = view.filter.trim().toLowerCase();
+    const [uploading, setUploading] = useState(false);
+    const upload = async () => {
+        const path = await pickFile(`Upload to ${bucket}/${view.prefix}`);
+        if (!path) return;
+        setUploading(true);
+        try {
+            const stored = await gcpApi.objectUpload(target, bucket, view.prefix, path);
+            notify("success", `Uploaded ${stored.name}`);
+            invalidate((kind) => kind === "gcp.objects");
+        } catch (error) {
+            notify("error", `Upload: ${failureMessage(error)}`);
+        } finally {
+            setUploading(false);
+        }
+    };
     return (
         <div className="gcp-page">
             <PageHeader
                 title={<>Bucket details: {bucket}</>}
                 back={{ label: "buckets", go: () => updateGcpView(paneId, { open: null, prefix: "" }) }}>
+                <Button primary disabled={uploading} onClick={() => void upload()}>
+                    {uploading ? "Uploading…" : "Upload file"}
+                </Button>
                 <Button onClick={() => visit(consoleUrl(`storage/browser/${bucket}`, target.project))}>Open in Cloud console</Button>
             </PageHeader>
             <nav className="gcp-crumbs" aria-label="Folder">
