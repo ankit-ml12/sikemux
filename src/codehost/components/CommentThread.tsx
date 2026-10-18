@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { copyText, notify, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { IconCheck, IconClose, IconCommit, IconEye, IconGit, IconMerge, IconPencil, IconPush, IconUser } from "../../plugin-api/ui";
 import { hostApi, type RepoRef, type ReviewEvent, type TimelineItem } from "../api";
 import { useHost, usePictureOf, type ThreadOf } from "../registry";
-import { timelineR } from "../resources";
+import { pullCommitsR, timelineR } from "../resources";
 import { SectionIcon } from "./ActionsIcon";
 import { Avatar, Initial, Prose } from "./Pictures";
 import { formatAgo } from "../../lib/format";
@@ -40,6 +40,11 @@ export interface Post {
     at: string | null;
     body: string;
     review: string | null;
+}
+
+function CommitFace({ account, name }: { account: { login: string | null; avatarUrl: string | null } | undefined; name: string | null }) {
+    // Without an account behind it, the commit's name is someone's initials, never a picture looked up by that name.
+    return account?.avatarUrl ? <Avatar url={account.avatarUrl} login={account.login} /> : <Initial login={name} />;
 }
 
 export function Face({ login, url }: { login: string | null; url: string | null }) {
@@ -99,7 +104,10 @@ function Event({ icon, tone, children }: { icon: ReactNode; tone?: string; child
     );
 }
 
-function Commits({ commits, now }: { commits: readonly TimelineItem[]; now: number }) {
+/** Who GitHub says wrote each commit, by its hash. A commit's own author is only a name, which no picture can be found by. */
+type CommitAccounts = ReadonlyMap<string, { login: string | null; avatarUrl: string | null }>;
+
+function Commits({ commits, accounts, now }: { commits: readonly TimelineItem[]; accounts: CommitAccounts; now: number }) {
     const authors = [...new Set(commits.map((commit) => commit.actor))];
     const first = commits.find((commit) => commit.actor === authors[0]);
     return (
@@ -116,7 +124,7 @@ function Commits({ commits, now }: { commits: readonly TimelineItem[]; now: numb
                     <span className="gha-tl-commit-dot">
                         <IconCommit size={14} />
                     </span>
-                    <Face login={commit.actor} url={commit.avatarUrl ?? null} />
+                    <CommitFace account={commit.sha ? accounts.get(commit.sha) : undefined} name={commit.actor} />
                     <span className="gha-tl-commit-message">{(commit.message ?? "").split("\n")[0]}</span>
                     {commit.sha && (
                         <button
@@ -322,23 +330,17 @@ interface Props {
     of?: ThreadOf;
 }
 
-export function CommentThread({
-    repo,
-    number,
-    active,
-    now,
-    opening = null,
-    base = null,
-    review = null,
-    children,
-    extraActions,
-    of = "pull",
-}: Props) {
+export function CommentThread({ repo, number, active, now, opening = null, base = null, review = null, children, extraActions, of = "pull" }: Props) {
     const timeline = useResourceEnabled(active, timelineR, repo, number, of);
     const host = useHost();
     const [draft, setDraft] = useState("");
     const [busy, setBusy] = useState<ReviewEvent | "comment" | null>(null);
     const blocks = blocksOf(timeline.data ?? []);
+    const pushed = useResourceEnabled(active && of === "pull" && blocks.some((block) => block.kind === "commits"), pullCommitsR, repo, number);
+    const accounts = useMemo<CommitAccounts>(
+        () => new Map((pushed.data ?? []).map((commit) => [commit.sha, { login: commit.author, avatarUrl: commit.avatarUrl }])),
+        [pushed.data],
+    );
     const written = draft.trim().length > 0;
     const refreshThread = (also?: string) => invalidate((kind) => kind === "host.timeline" || kind === also);
 
@@ -377,7 +379,7 @@ export function CommentThread({
                 {opening && <PostCard post={opening} now={now} />}
                 {blocks.map((block, index) =>
                     block.kind === "commits" ? (
-                        <Commits key={`commits-${block.commits[0]?.sha ?? index}`} commits={block.commits} now={now} />
+                        <Commits key={`commits-${block.commits[0]?.sha ?? index}`} commits={block.commits} accounts={accounts} now={now} />
                     ) : (
                         <ItemView key={`${block.item.kind}-${block.item.id ?? block.item.sha ?? index}`} item={block.item} now={now} base={base} />
                     ),
