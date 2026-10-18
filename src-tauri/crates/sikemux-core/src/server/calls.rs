@@ -33,7 +33,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "moveProject" | "setSpaces" | "setPinnedChats" | "setAgentDefaults" | "createAgent"
         | "updateAgent" | "closeAgents" | "plugin" | "pluginManifests" | "pluginSetDisabled"
         | "pluginStream" | "pluginSignIn" | "signInCallback" => Needs::Person,
-        "changeOwners" | "commitOwners" | "activitySummary" | "showCi" => Needs::Watch,
+        "changeOwners" | "commitOwners" | "activitySummary" => Needs::Watch,
         "setActivityPrice" => Needs::Person,
         "createAgentWorktree" => Needs::Person,
         "modelProviders" | "modelProviderModels" | "modelHelper" | "agentSignIns" => Needs::Full,
@@ -72,7 +72,6 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "edits"
             | "changeOwners"
             | "commitOwners"
-            | "showCi"
             | "inbox"
             | "digest"
             | "activitySummary"
@@ -238,10 +237,6 @@ pub(crate) async fn call(
             answer(())
         }
         "trustAsks" => answer(super::tasks::asks(&core)),
-        "showCi" => {
-            super::ci::show(&core, client.id, parse(params)?);
-            answer(())
-        }
         "answerTrust" => {
             let params: TrustAnswerParams = parse(params)?;
             answer(super::tasks::answer_trust(&core, &params.id, params.trust)?)
