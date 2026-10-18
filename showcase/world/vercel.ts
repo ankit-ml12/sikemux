@@ -78,6 +78,7 @@ const deployment = (
   target,
   createdAt: minutesAgo(minutes),
   readyAt: state === "READY" ? minutesAgo(minutes - 1) : null,
+  buildMs: state === "READY" || state === "ERROR" ? 38_000 + minutes * 7 : null,
   branch,
   commit,
   message,

@@ -56,6 +56,7 @@ pub fn deployment(value: &Value) -> Value {
         "target": match at(value, "/target").as_str() { Some("production") => "production", _ => "preview" },
         "createdAt": value.get("created").or_else(|| value.get("createdAt")).cloned().unwrap_or(Value::Null),
         "readyAt": at(value, "/ready"),
+        "buildMs": build_ms(value),
         "branch": git(meta, "Ref"),
         "commit": git(meta, "Sha"),
         "message": first_line(git(meta, "Message")),
@@ -64,6 +65,16 @@ pub fn deployment(value: &Value) -> Value {
         "aliases": at(value, "/alias"),
         "error": value.get("errorMessage").cloned().unwrap_or(Value::Null),
     })
+}
+
+/// How long the build ran, from when it started building to when it finished.
+fn build_ms(value: &Value) -> Value {
+    let started = value.get("buildingAt").and_then(Value::as_u64);
+    let finished = value.get("ready").and_then(Value::as_u64);
+    match (started, finished) {
+        (Some(started), Some(finished)) if finished >= started => json!(finished - started),
+        _ => Value::Null,
+    }
 }
 
 #[derive(Deserialize)]
@@ -319,7 +330,7 @@ mod tests {
     #[test]
     fn a_listed_deployment_reads_with_its_git_facts() {
         let raw = json!({
-            "uid": "dpl_1", "name": "web", "url": "web-abc.vercel.app", "state": "ERROR", "target": null, "created": 10,
+            "uid": "dpl_1", "name": "web", "url": "web-abc.vercel.app", "state": "ERROR", "target": null, "created": 10, "buildingAt": 1000, "ready": 46000,
             "creator": { "username": "ankit" },
             "meta": { "githubCommitRef": "fix-nav", "githubCommitSha": "abc123", "githubCommitMessage": "Fix the nav\n\nlonger body", "githubCommitAuthorName": "Ankit" },
             "inspectorUrl": "https://vercel.com/acme/web/1"
@@ -332,6 +343,7 @@ mod tests {
         assert_eq!(read["branch"], "fix-nav");
         assert_eq!(read["message"], "Fix the nav");
         assert_eq!(read["author"], "Ankit");
+        assert_eq!(read["buildMs"], 45000);
     }
 
     #[test]
