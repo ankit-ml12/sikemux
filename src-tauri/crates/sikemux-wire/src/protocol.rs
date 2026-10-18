@@ -1409,11 +1409,6 @@ pub enum Event {
     ChatBegun {
         chat: ChatInfo,
     },
-    /// A device opened a sleeping chat. Sent only to clients on this host,
-    /// which start it again.
-    WakeChat {
-        agent_id: String,
-    },
     /// What an agent waited on was answered or withdrawn.
     AttentionCleared {
         id: String,
