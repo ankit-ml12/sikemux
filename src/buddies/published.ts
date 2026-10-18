@@ -1,23 +1,9 @@
 import { EVERY_PACK, packById, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyStyle } from "./catalogue";
 import { buddyBox, FULL_BOX } from "./render";
 import type { Agent } from "../state/types";
+import type { BuddyLook, PublishedBuddies } from "../api/generated/wire";
 
-/** A buddy as the app draws it: its pack and shape by id, and its colour. */
-export interface BuddyLook {
-    pack: string;
-    shape: string;
-    color: string;
-}
-
-/** The buddies the app draws while they are on, as it tells its core for the notch and phones. */
-export interface PublishedBuddies {
-    pack: string;
-    shape: string;
-    motion: boolean;
-    agents: Record<string, BuddyLook>;
-    /** The viewBox each shape is cropped to, by `pack/shape`; only a page can measure it. */
-    boxes: Record<string, string>;
-}
+export type { PublishedBuddies };
 
 export interface DrawnBuddy {
     pack: BuddyPack;
