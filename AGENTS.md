@@ -158,6 +158,13 @@
   change adds, removes or renames something the site describes, say so, so the site
   can be updated.
 
+## Marketing
+
+- `marketing/` is a separate local Git repo, ignored by this one: `inspiration/` holds
+  screenshots of what other products do well, indexed in its README; `outreach/`
+  tracks who we contact. File new references and contacts there and commit inside
+  `marketing/`, never in this repo.
+
 ## Docs
 
 - The user docs for docs.sikemux.com live in `docs-site/`, a Fumadocs site on Astro with
