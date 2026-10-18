@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
-import { formatAgo } from "../../../plugin-api/format";
+import { formatAgo, formatDuration } from "../../../plugin-api/format";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, Seg, SendToAgentMenu, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { failureMessage, refreshVercel, vercelApi, type VercelDeployment, type VercelLogLine, type VercelProject, type VercelStatus } from "../api";
@@ -314,7 +314,10 @@ function Deployments({ active, team, project, onOpen }: { active: boolean; team:
                         <span className={`vercel-target ${each.target}`}>
                             {each.id === project.production?.id ? "Current" : each.target === "production" ? "Production" : "Preview"}
                         </span>
-                        <span className="vercel-row-state">{stateLabel(each.state)}</span>
+                        <span className="vercel-row-state">
+                            {stateLabel(each.state)}
+                            {each.buildMs !== null && ` ${formatDuration(each.buildMs)}`}
+                        </span>
                         <span className="vercel-row-age">{formatAgo(each.createdAt)}</span>
                     </button>
                 ))}
@@ -462,7 +465,10 @@ function DeploymentView({
                     <span className={`vercel-target ${deployment.target}`}>
                         {isCurrent ? "Current production" : deployment.target === "production" ? "Production" : "Preview"}
                     </span>
-                    <span className="vercel-fact">{stateLabel(deployment.state)}</span>
+                    <span className="vercel-fact">
+                        {stateLabel(deployment.state)}
+                        {deployment.buildMs !== null && ` in ${formatDuration(deployment.buildMs)}`}
+                    </span>
                     {deployment.branch && <span className="vercel-fact">{deployment.branch}</span>}
                     {deployment.commit && (
                         <button type="button" className="vercel-fact mono" onClick={() => copyWithNotice(deployment.commit!, "the commit")}>

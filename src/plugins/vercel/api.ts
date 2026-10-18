@@ -58,6 +58,8 @@ export interface VercelDeployment {
     target: "production" | "preview";
     createdAt: number;
     readyAt: number | null;
+    /** How long the build ran, once it finished. */
+    buildMs: number | null;
     branch: string | null;
     commit: string | null;
     message: string | null;

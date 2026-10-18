@@ -56,6 +56,7 @@ const failed: VercelDeployment = {
     target: "preview",
     createdAt: Date.now() - 120_000,
     readyAt: null,
+    buildMs: 45_000,
     branch: "fix-nav",
     commit: "abc1234def",
     message: "Fix the nav",
