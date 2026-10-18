@@ -5,21 +5,24 @@
     width: 100%;
     outline: none;
 }
-/* The side panel stands beside the review as a card of its own, so the pane draws no frame or focus ring around the
-   two; the review column carries the frame instead, over the pane's own ground and picture. */
+/* The git pane's surface is its review column, or the whole of a host screen the project tree opened, so the pane
+   itself draws no frame, ground or focus ring and the side panel stands beside the surface as a card of its own. */
 .pane.pane-git {
     border-color: transparent;
+    background: none;
 }
 .git-pane:focus-visible {
     box-shadow: none;
 }
-/* The review column keeps the pane's frame, with its cards inside. */
-.pane-git .git-right {
+.git-framed {
     position: relative;
     isolation: isolate;
-    padding: var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
+    background: var(--pane-ground);
+}
+.git-right.git-framed {
+    padding: var(--space-2);
 }
 
 /* The changes view is panels on the pane's picture: the commit box, the files and the history, each with its own

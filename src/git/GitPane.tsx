@@ -1756,6 +1756,7 @@ function GitWorkbench({
                 onArea={(area) => cmd.setGitView(paneId, { area })}>
                 <GitColumns
                     paneId={paneId}
+                    framed
                     left={
                         <>
                             <div className="git-side">
