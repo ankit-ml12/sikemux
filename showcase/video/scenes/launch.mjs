@@ -3,6 +3,7 @@ import {
   approveFromNotch,
   askOtter,
   browserCheck,
+  chartAnswer,
   composer,
   flipScope,
   MAPLE,
@@ -10,10 +11,18 @@ import {
   OTTER,
   openProject,
   startChats,
+  swipeRail,
   swipeTabs,
   WREN,
   wrenAtItsDesk,
 } from "../parts.mjs";
+
+const railHead = ".tab-rail .swipe-page.is-current .scope-track";
+const otterRow = {
+  selector: ".tab-rail .agent-row *",
+  text: "Line up the sidebar labels",
+  exact: false,
+};
 
 export default {
   setup: async (s) => {
@@ -21,6 +30,7 @@ export default {
     await startChats(s, [
       ["s-sikemux", "w-agent-phone"],
       ["s-sikemux", "w-agent-replay"],
+      ["s-mood", "w-agent-palette"],
       ["s-mood", "w-agent-hero"],
       ["s-sikemux", "w-tab-rail"],
     ]);
@@ -33,49 +43,45 @@ export default {
     await s.place(composer, { x: 0.62, y: 0.45 });
   },
   play: async (s) => {
-    await s.zoom(composer, {
-      scale: 1.22,
-      at: { x: 0.5, y: 0.1 },
-      duration: 3000,
-      wait: false,
-    });
-    await askOtter(s, { perSecond: 26 });
+    s.handPace = 0.8;
+    await s.wait(900);
+    s.zoom(composer, { scale: 1.22, at: { x: 0.5, y: 0.1 } });
+    await askOtter(s, { perSecond: 30 });
     await s.live({ agent: OTTER, steps: 2, wait: false });
 
-    await s.zoomOut({ duration: 900, wait: false });
+    await s.zoomOut({ wait: false });
     await swipeTabs(s);
-    await s.wait(250);
     await swipeTabs(s);
-    await s.wait(250);
-    await openProject(s, "moodboard-studio");
-    await s.zoom(".tab-rail", {
+    await s.zoom(railHead, {
       scale: 1.8,
-      at: { x: 0.5, y: 0.3 },
-      duration: 900,
+      at: { x: 0.5, y: 4 },
+      wait: false,
+    });
+    await swipeRail(s, { hold: 250 });
+    await s.zoomOut({ wait: false });
+    await openProject(s, "moodboard-studio");
+    await s.zoom(railHead, {
+      scale: 1.8,
+      at: { x: 0.5, y: 4 },
       wait: false,
     });
     await flipScope(s, "All projects");
-    await s.wait(500);
+    await s.wait(350);
 
-    await browserCheck(s, { pace: 0.6 });
-    await s.wait(300);
+    await browserCheck(s, { pace: 0.45 });
+    await chartAnswer(s, { pace: 0.6, hold: 600 });
 
-    await s.zoomOut({ duration: 800, wait: false });
-    await s.click({
-      selector: ".tab-rail .agent-row *",
-      text: "Line up the sidebar labels",
-      exact: false,
-    });
-    await messageAndBoard(s, { pace: 0.6, hold: 1000 });
+    await s.zoomOut({ wait: false });
+    await s.click(otterRow);
+    await messageAndBoard(s, { pace: 0.45, hold: 650 });
 
-    await s.app(() => showcase.backend.settleLive("tab-rail"));
-    await s.cut(() => s.open("s-sikemux", "w-tab-rail"), { duration: 420 });
-    await s.zoomOut({ duration: 10 });
-    await approveFromNotch(s, { hold: 900 });
+    await s.zoomOut({ wait: false });
+    await s.click(otterRow);
+    await approveFromNotch(s, { hold: 700 });
 
     s.live({ agent: MAPLE, wait: false });
-    await s.zoomOut({ duration: 1300, wait: false });
+    await s.zoomOut({ wait: false });
     await s.move({ x: 1180, y: 700 });
-    await s.wait(1500);
+    await s.wait(500);
   },
 };

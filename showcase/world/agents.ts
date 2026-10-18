@@ -479,6 +479,25 @@ export const CUED_TURNS: Record<string, { agentId: string; updates: Update[] }> 
       },
     ],
   },
+  "flint-charts-the-palettes": {
+    agentId: AGENTS.palette.id,
+    updates: [
+      user("How much closer? Show me."),
+      think("Plotting each category's distance from the hand-picked palettes."),
+      say("Closer in every category, and by the most on night shots, for 25 ms more at p50:"),
+      tool("other", "mcp__sikemux-tools__page_show", {
+        rawInput: { title: "Palette distance from the hand-picked references" },
+        rawOutput: JSON.stringify({
+          page: {
+            id: "d4e7b1c53a2f4b7c9d8e0f1a2b3c4d44",
+            title: "Palette distance from the hand-picked references",
+            height: 340,
+          },
+        }),
+        durationMs: 500,
+      }),
+    ],
+  },
   "otter-runs-the-rail-tests": {
     agentId: AGENTS.rail.id,
     updates: [

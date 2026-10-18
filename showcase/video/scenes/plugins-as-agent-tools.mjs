@@ -15,10 +15,7 @@ export default {
     await s.zoom(tools, { scale: 2, at: { x: 0.35, y: 0.5 } });
     await s.wait(1600);
     await s.live({ agent: MOSS, steps: 1 });
-    await s.zoom(
-      { selector: ".chat-message", last: true },
-      { scale: 1.6, duration: 900 },
-    );
+    await s.zoom({ selector: ".chat-message", last: true }, { scale: 1.6 });
     await s.wait(1400);
     await s.click({ selector: ".chat-tools-sum", last: true });
     await s.click({
@@ -29,7 +26,7 @@ export default {
     });
     await s.zoom(
       { selector: ".chat-tool-terminal", last: true },
-      { scale: 1.9, duration: 900, wait: false },
+      { scale: 1.9, wait: false },
     );
     await s.move(
       { selector: ".chat-tool-terminal", last: true },
@@ -37,15 +34,14 @@ export default {
     );
     await s.wait(2200);
     s.live({ agent: MOSS, pace: 0.6, wait: false });
-    await s.zoomOut({ duration: 1200 });
+    await s.zoomOut();
     await s.wait(3200);
     await s.zoom(tools, {
       scale: 1.8,
       at: { x: 0.35, y: 0.8 },
-      duration: 1100,
     });
     await s.wait(1600);
-    await s.zoomOut({ duration: 1200 });
+    await s.zoomOut();
     await s.wait(600);
   },
 };

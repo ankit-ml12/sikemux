@@ -280,12 +280,15 @@ export class ShowcaseBackend implements IpcTransport {
       "plugin_manifests",
       constant(
         [
-          ["rundeck", "Rundeck"],
-          ["signoz", "SigNoz"],
           ["aws", "AWS"],
           ["bruno", "Bruno"],
-          ["github", "GitHub"],
           ["database", "Database"],
+          ["github", "GitHub"],
+          ["jira", "Jira"],
+          ["linear", "Linear"],
+          ["rundeck", "Rundeck"],
+          ["signoz", "SigNoz"],
+          ["slack", "Slack"],
           ["vercel", "Vercel"],
         ].map(([id, name]) => ({
           id: `sikemux.${id}`,
@@ -661,6 +664,12 @@ export class ShowcaseBackend implements IpcTransport {
       "sikemux.database": DATABASE,
       "sikemux.jira": JIRA,
       "sikemux.vercel": VERCEL,
+      "sikemux.slack": {
+        status: () => ({ configured: true, ok: true, authFailed: false, message: null, workspaces: [] }),
+      },
+      "sikemux.linear": {
+        status: () => ({ configured: false, ok: false, authFailed: false, message: null, workspaces: [] }),
+      },
     };
     this.on("plugin_call", ({ plugin, method, params }) => {
       const answer = plugins[plugin as string]?.[method as string];

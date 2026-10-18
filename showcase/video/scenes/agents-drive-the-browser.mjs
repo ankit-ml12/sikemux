@@ -20,11 +20,11 @@ export default {
     await s.wait(300);
     await s.key("Enter");
     await s.app(() => showcase.backend.cue("wren-checks-the-cover"));
-    await s.zoomOut({ duration: 900, wait: false });
+    await s.zoomOut({ wait: false });
     await s.live({ agent: WREN, steps: 2 });
     await browserCheck(s);
     await s.wait(1800);
-    await s.zoomOut({ duration: 1300 });
+    await s.zoomOut();
     await s.wait(900);
   },
 };

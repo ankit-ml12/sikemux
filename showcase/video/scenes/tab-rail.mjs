@@ -26,27 +26,20 @@ export default {
     await s.wait(500);
     await swipeTabs(s, { pixels: -520 });
     await s.wait(500);
-    await s.zoom(".tab-rail", {
-      scale: 2.2,
-      at: { x: 0.5, y: 0.3 },
-      wait: false,
-    });
+    await s.zoom(railHead, { scale: 2.2, at: { x: 0.5, y: 4.5 } });
+    await swipeRail(s);
+    await s.wait(300);
     await flipScope(s, "All projects");
     await s.wait(1300);
     await s.move(row("Fix the cover buttons"));
     await s.wait(600);
-    await s.zoomOut({ duration: 900, wait: false });
+    await s.zoomOut({ wait: false });
     await s.click(row("Fix the cover buttons"));
     await s.wait(1200);
-    await s.zoom(".tab-rail", {
-      scale: 2.2,
-      at: { x: 0.5, y: 0.3 },
-      duration: 900,
-      wait: false,
-    });
+    await s.zoom(railHead, { scale: 2.2, at: { x: 0.5, y: 4.5 }, wait: false });
     await flipScope(s, "moodboard-studio");
     await s.wait(1300);
-    await s.zoomOut({ duration: 1300 });
+    await s.zoomOut();
     await s.wait(800);
   },
 };

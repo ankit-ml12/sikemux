@@ -129,7 +129,34 @@ const agents: PersistedAgent[] = Object.values(AGENTS).map((agent) => ({
 
 export const EDITOR_TABS = [`${SIKEMUX}/src/rail/TabRail.tsx`];
 
+/** Terminals that only fill the rail out, each opening on one shell. */
+const MORE_TERMINALS = [
+  { id: "s-logs", name: "logs" },
+  { id: "s-scratch", name: "scratch" },
+];
+
+const oneTerminal = (sessionId: string, cwd: string, title: string): Window[] => [
+  terminalWindow(`w-${sessionId}`, pane(`t-${sessionId}`, cwd, "terminal", title), `t-${sessionId}`),
+];
+
 export function demoSnapshot(): PersistedSnapshot {
+  const snapshot = baseSnapshot();
+  for (const terminal of MORE_TERMINALS) {
+    snapshot.sessions.push({
+      id: terminal.id,
+      name: terminal.name,
+      kind: "command",
+      cwd: DEMO_HOME,
+      pinned: false,
+      activeWindowId: `w-${terminal.id}`,
+    });
+    snapshot.windowsBySession[terminal.id] = oneTerminal(terminal.id, DEMO_HOME, "zsh");
+  }
+  snapshot.sessionOrder.push(...MORE_TERMINALS.map((terminal) => terminal.id));
+  return snapshot;
+}
+
+function baseSnapshot(): PersistedSnapshot {
   return {
     version: VERSION,
     sessions: [
@@ -223,7 +250,7 @@ export function demoSnapshot(): PersistedSnapshot {
       },
       {
         id: "s-shell",
-        name: "1",
+        name: "zsh",
         kind: "command",
         cwd: DEMO_HOME,
         pinned: false,
@@ -335,25 +362,6 @@ export function demoSnapshot(): PersistedSnapshot {
         agentWindow(AGENTS.incident),
         agentWindow(AGENTS.flow),
         agentWindow(AGENTS.latency),
-      ],
-      "s-portal": [
-        terminalWindow(
-          "w-client-portal",
-          pane(
-            "t-client-portal",
-            `${DEMO_HOME}/work/client-portal`,
-            "terminal",
-            "zsh",
-          ),
-          "t-client-portal",
-        ),
-      ],
-      "s-infra": [
-        terminalWindow(
-          "w-infra",
-          pane("t-infra", `${DEMO_HOME}/work/infra`, "terminal", "zsh"),
-          "t-infra",
-        ),
       ],
       "s-gpu": [
         terminalWindow(
@@ -503,8 +511,6 @@ export function demoSnapshot(): PersistedSnapshot {
       "s-front",
       "s-mood",
       "s-billing",
-      "s-portal",
-      "s-infra",
       "s-gpu",
       "s-bastion",
       "s-shell",
@@ -544,8 +550,6 @@ export function demoSnapshot(): PersistedSnapshot {
         [FRONT]: "space-personal",
         [MOODBOARD]: "space-personal",
         [`${DEMO_HOME}/work/billing-service`]: "space-acme",
-        [`${DEMO_HOME}/work/client-portal`]: "space-acme",
-        [`${DEMO_HOME}/work/infra`]: "space-acme",
       },
       activeSpaceId: null,
       providerProfiles: DEFAULT_PROVIDER_PROFILES.flatMap((profile) =>

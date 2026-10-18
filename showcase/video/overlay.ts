@@ -1,4 +1,7 @@
 import "./overlay.css";
+import { STAGE } from "../stage.mjs";
+
+const CENTRE = { x: STAGE.width / 2, y: STAGE.height / 2 };
 
 /**
  * Where a beat points: a selector in the app, the first (or last) element of the
@@ -101,7 +104,7 @@ function element(target: Exclude<Target, Rect>): Element | null {
   return (target.last ? innermost.at(-1) : innermost[0]) ?? null;
 }
 
-/** A target's box on the 1920 by 1080 screen, before the camera moves it. */
+/** A target's box on the stage, before the camera moves it. */
 function rect(target: Target): Rect | null {
   if (typeof target === "object" && "width" in target) return target;
   const found = element(target);
@@ -117,8 +120,8 @@ function rect(target: Target): Rect | null {
   // The screen's own parts move with the camera, so their box is taken back to where they sit unmoved.
   const { x, y, scale } = lens;
   return {
-    x: (box.x - (960 - x * scale)) / scale,
-    y: (box.y - (540 - y * scale)) / scale,
+    x: (box.x - (CENTRE.x - x * scale)) / scale,
+    y: (box.y - (CENTRE.y - y * scale)) / scale,
     width: box.width / scale,
     height: box.height / scale,
   };
@@ -161,12 +164,12 @@ function syncAnimations(now: number) {
 }
 
 let shape: Shape | null = null;
-let lens: Frame["camera"] = { x: 960, y: 540, scale: 1, blur: 0 };
+let lens: Frame["camera"] = { ...CENTRE, scale: 1, blur: 0 };
 
 function show(frame: Frame, now: number) {
   lens = frame.camera;
   const { x, y, scale, blur } = frame.camera;
-  camera.style.transform = `translate(${960 - x * scale}px, ${540 - y * scale}px) scale(${scale})`;
+  camera.style.transform = `translate(${CENTRE.x - x * scale}px, ${CENTRE.y - y * scale}px) scale(${scale})`;
   camera.style.filter = blur > 0.05 ? `blur(${blur}px)` : "";
   const next = frame.cursor.shape ?? shapeAt(frame.cursor.x, frame.cursor.y);
   if (next !== shape) {

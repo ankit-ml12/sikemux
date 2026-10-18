@@ -28,24 +28,20 @@ export default {
     await s.wait(300);
     await s.key("Enter");
     await s.app(() => showcase.backend.cue("comet-checks-the-card"));
-    await s.zoomOut({ duration: 900, wait: false });
+    await s.zoomOut({ wait: false });
     await s.live({ agent: COMET, steps: 3 });
     await s.zoom(".sim-device", {
       scale: 1.7,
       at: { x: 0.5, y: 0.45 },
-      duration: 1100,
       wait: false,
     });
     await s.live({ agent: COMET, steps: 3 });
     await s.wait(900);
     await s.live({ agent: COMET, steps: 3, pace: 0.6 });
-    await s.zoom(
-      { selector: ".chat-image", last: true },
-      { scale: 1.5, duration: 1000 },
-    );
+    await s.zoom({ selector: ".chat-image", last: true }, { scale: 1.5 });
     s.live({ agent: COMET, wait: false });
     await s.wait(1800);
-    await s.zoomOut({ duration: 1300 });
+    await s.zoomOut();
     await s.wait(800);
   },
 };

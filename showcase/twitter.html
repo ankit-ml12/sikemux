@@ -4,22 +4,23 @@
     <meta charset="UTF-8" />
     <title>Sikemux · Twitter</title>
     <style>
+      /* Clipped rather than hidden, so the app scrolling something into view can never scroll the frame around it. */
       html,
       body {
         margin: 0;
         height: 100%;
-        overflow: hidden;
+        overflow: clip;
         background: #111;
       }
 
-      /* Every download is cut from this one 16:9 stage, saved at 2.25x. Here it is scaled to fit the browser. */
+      /* Every download is cut from this one 16:9 stage, sized in showcase/stage.mjs. Here it is scaled to fit the browser. */
       .stage {
         position: absolute;
         top: 50%;
         left: 50%;
-        width: 1920px;
-        height: 1080px;
-        overflow: hidden;
+        width: var(--stage-width);
+        height: var(--stage-height);
+        overflow: clip;
         background: #000;
         transform: translate(-50%, -50%) scale(var(--fit, 1));
       }
@@ -34,9 +35,10 @@
 
       iframe {
         position: absolute;
-        inset: 27px 115px;
-        width: calc(100% - 230px);
-        height: calc(100% - 54px);
+        top: calc((var(--stage-height) - var(--window-height)) / 2);
+        left: calc((var(--stage-width) - var(--window-width)) / 2);
+        width: var(--window-width);
+        height: var(--window-height);
         border: 0;
         border-radius: 12px;
         box-shadow:
@@ -111,8 +113,7 @@
 
       /* The window drops below the closed island, leaving a gap. */
       .has-notch iframe {
-        top: 54px;
-        height: calc(100% - 81px);
+        top: var(--window-top);
       }
 
       .app-view {
@@ -144,6 +145,15 @@
       <input type="file" class="screenshot-picker" accept="image/*" />
     </div>
     <script type="module">
+      import { STAGE, WINDOW } from "/showcase/stage.mjs";
+      for (const [name, value] of Object.entries({
+        "stage-width": STAGE.width,
+        "stage-height": STAGE.height,
+        "window-width": WINDOW.width,
+        "window-height": WINDOW.height,
+        "window-top": WINDOW.top,
+      }))
+        document.documentElement.style.setProperty(`--${name}`, `${value}px`);
       const stage = document.querySelector(".stage");
       const camera = document.querySelector(".camera");
       const picker = document.querySelector(".wallpaper-picker");
@@ -187,7 +197,7 @@
         const fit = () =>
           stage.style.setProperty(
             "--fit",
-            Math.min(1, (innerWidth - 32) / 1920, (innerHeight - 96) / 1080),
+            Math.min(1, (innerWidth - 32) / STAGE.width, (innerHeight - 96) / STAGE.height),
           );
         addEventListener("resize", fit);
         fit();

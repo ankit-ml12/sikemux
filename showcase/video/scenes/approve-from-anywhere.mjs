@@ -8,14 +8,11 @@ export default {
   play: async (s) => {
     await s.wait(700);
     await approveFromNotch(s, { hold: 1500, showCard: 1400 });
-    await s.zoomOut({ duration: 1400, wait: false });
+    await s.zoomOut({ wait: false });
     await s.live({ agent: OTTER, pace: 0.7 });
-    await s.zoom(
-      { selector: ".chat-message", last: true },
-      { scale: 1.6, duration: 1100 },
-    );
+    await s.zoom({ selector: ".chat-message", last: true }, { scale: 1.6 });
     await s.wait(1600);
-    await s.zoomOut({ duration: 1200 });
+    await s.zoomOut();
     await s.wait(700);
   },
 };

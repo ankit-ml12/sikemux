@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { FIXED_TIME, launchChrome, startShowcase } from "../harness.mjs";
 import { Director, FPS } from "./director.mjs";
+import { STAGE } from "../stage.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const sceneDir = resolve(import.meta.dirname, "scenes");
@@ -13,6 +14,7 @@ const { values: options, positionals: only } = parseArgs({
     out: { type: "string", default: resolve(root, "marketing/x/posts") },
     height: { type: "string", default: "1440" },
     draft: { type: "boolean", default: false },
+    at: { type: "string" },
   },
 });
 
@@ -28,6 +30,30 @@ for (const name of chosen)
 // A draft is a quick, softer look at the timing.
 const scale = options.draft ? 1 : 2;
 const height = options.draft ? 1080 : Number(options.height);
+
+// `--at 0.5,9,30` saves the frames at those seconds as pictures, for judging a look without a whole render.
+const stillsAt = options.at
+  ?.split(",")
+  .map((seconds) => Math.round(Number(seconds) * FPS));
+
+function picture(png, path) {
+  const ffmpeg = spawn(
+    "ffmpeg",
+    [
+      "-y",
+      "-loglevel",
+      "error",
+      "-i",
+      "-",
+      "-vf",
+      `scale=-2:${height}:flags=lanczos`,
+      path,
+    ],
+    { stdio: ["pipe", "inherit", "inherit"] },
+  );
+  ffmpeg.stdin.end(png);
+  return new Promise((done) => ffmpeg.on("exit", done));
+}
 
 function encoder(path) {
   const ffmpeg = spawn(
@@ -72,7 +98,7 @@ const browser = await launchChrome();
 for (const name of chosen) {
   const { default: scene } = await import(resolve(sceneDir, `${name}.mjs`));
   const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
+    viewport: STAGE,
     deviceScaleFactor: scale,
     colorScheme: "dark",
   });
@@ -96,24 +122,35 @@ for (const name of chosen) {
     : resolve(options.out, name);
   await mkdir(folder, { recursive: true });
   const path = resolve(folder, options.draft ? `${name}.mp4` : "clip.mp4");
-  const video = encoder(path);
+  const stills = [];
+  const video = stillsAt ? null : encoder(path);
   const director = new Director({
     page,
     app: null,
     start: start + 1000,
     capture: async () => {
+      if (stillsAt && !stillsAt.includes(director.recorded)) return;
       const { data } = await cdp.send("Page.captureScreenshot", {
         format: "png",
-        optimizeForSpeed: true,
+        optimizeForSpeed: !stillsAt,
       });
-      await video.write(Buffer.from(data, "base64"));
+      const png = Buffer.from(data, "base64");
+      if (video) return video.write(png);
+      const still = resolve(
+        root,
+        "showcase/out/video",
+        `${name}-${(director.recorded / FPS).toFixed(1)}s.png`,
+      );
+      await mkdir(resolve(root, "showcase/out/video"), { recursive: true });
+      await picture(png, still);
+      stills.push(still);
     },
   });
   const began = Date.now();
   await director.until(
     async () =>
       page.evaluate(() => Boolean(window.video?.ready())).catch(() => false),
-    { label: "the app to start" },
+    { label: "the app to start", limit: 120_000 },
   );
   director.appFrame = page.frames().find((frame) => frame !== page.mainFrame());
   await director.app(() => document.fonts.ready);
@@ -133,6 +170,11 @@ for (const name of chosen) {
   }
   director.background.clear();
   await director.still();
+  if (!video) {
+    console.log(`✓ ${name}  ${stills.length} stills\n  ${stills.join("\n  ")}`);
+    await context.close();
+    continue;
+  }
   await video.close();
   const { size } = await stat(path);
   console.log(

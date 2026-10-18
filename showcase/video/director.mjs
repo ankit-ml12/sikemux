@@ -1,16 +1,36 @@
 import { openWindow } from "../scenes.mjs";
+import { STAGE } from "../stage.mjs";
 
 export const FPS = 60;
 const STEP = 1000 / FPS;
-const WIDTH = 1920;
-const HEIGHT = 1080;
+const { width: WIDTH, height: HEIGHT } = STAGE;
+/** Scenes give zoom scales for a 1920-wide screen, so a zoomed view looks the same size however wide the stage is. */
+const ZOOM_UNIT = WIDTH / 1920;
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const lerp = (from, to, at) => from + (to - from) * at;
 /** How a hand moves between two points: slow away, fast across, slow onto the target. */
 const handEase = (p) => p * p * p * (10 + p * (6 * p - 15));
-const cameraEase = (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
+const scrollEase = (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 const outEase = (p) => 1 - (1 - p) ** 3;
+
+/** A CSS cubic-bezier timing curve, solved for its progress at time `p`. */
+function bezier(x1, y1, x2, y2) {
+  const along = (t, a, b) =>
+    3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (p) => {
+    let low = 0;
+    let high = 1;
+    for (let step = 0; step < 30; step++) {
+      const mid = (low + high) / 2;
+      if (along(mid, x1, x2) < p) low = mid;
+      else high = mid;
+    }
+    return along((low + high) / 2, y1, y2);
+  };
+}
+/** The camera starts fast and settles gently. */
+const lensEase = bezier(0.2, 0.8, 0.2, 1);
 
 function seeded(seed) {
   let state = seed;
@@ -43,6 +63,8 @@ export class Director {
     this.blur = 0;
     this.mouse = null;
     this.random = seeded(7);
+    /** How long the hand takes to cross the screen, as a share of a relaxed glide. */
+    this.handPace = 1;
   }
 
   get seconds() {
@@ -140,14 +162,23 @@ export class Director {
     while (this.tweens.size) await this.frame();
   }
 
+  /** A target's box on the screen; several targets make the box around them all. */
   async rect(target) {
-    const found = await this.page.evaluate(
-      (target) => window.video.rect(target),
-      target,
+    const targets = Array.isArray(target) ? target : [target];
+    const boxes = await this.page.evaluate(
+      (targets) => targets.map((target) => window.video.rect(target)),
+      targets,
     );
-    if (!found)
-      throw new Error(`nothing on screen matches ${JSON.stringify(target)}`);
-    return found;
+    const missing = boxes.findIndex((box) => !box);
+    if (missing >= 0)
+      throw new Error(
+        `nothing on screen matches ${JSON.stringify(targets[missing])}`,
+      );
+    const left = Math.min(...boxes.map((box) => box.x));
+    const top = Math.min(...boxes.map((box) => box.y));
+    const right = Math.max(...boxes.map((box) => box.x + box.width));
+    const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
   /** Plays on until `target` is on screen. */
@@ -191,7 +222,8 @@ export class Director {
     const from = { x: this.cursor.x, y: this.cursor.y };
     const distance = Math.hypot(to.x - from.x, to.y - from.y);
     if (distance < 1) return;
-    const time = duration ?? 280 + 210 * Math.log2(1 + distance / 70);
+    const time =
+      duration ?? this.handPace * (280 + 210 * Math.log2(1 + distance / 70));
     const bend = (this.random() < 0.5 ? -1 : 1) * Math.min(60, distance * 0.08);
     const control = {
       x: (from.x + to.x) / 2 + ((to.y - from.y) / distance) * bend,
@@ -249,7 +281,7 @@ export class Director {
       scale,
       pad = 48,
       at = { x: 0.5, y: 0.5 },
-      duration = 1100,
+      duration = 450,
       wait = true,
     } = {},
   ) {
@@ -261,7 +293,8 @@ export class Director {
         WIDTH / (box.width + pad * 2),
         HEIGHT / (box.height + pad * 2),
       );
-      width = WIDTH / clamp(scale ?? fit, 1, 3);
+      width =
+        WIDTH / clamp(scale === undefined ? fit : scale * ZOOM_UNIT, 1, 5);
       center = { x: box.x + box.width * at.x, y: box.y + box.height * at.y };
     }
     const height = (width * HEIGHT) / WIDTH;
@@ -272,7 +305,7 @@ export class Director {
     };
     const start = { ...this.view };
     const tween = this.tween(duration, (progress) => {
-      const p = cameraEase(progress);
+      const p = lensEase(progress);
       this.view.width = start.width * (end.width / start.width) ** p;
       // A zoom keeps one point of the screen still, as a lens would, instead of sliding across it.
       const along =
@@ -335,7 +368,7 @@ export class Director {
   }
 
   /** Scrolls `selector`, or the first thing inside it that scrolls, smoothly by `by` pixels. */
-  async scroll(selector, { by, duration = 1600, ease = cameraEase } = {}) {
+  async scroll(selector, { by, duration = 1600, ease = scrollEase } = {}) {
     const from = await this.app((selector) => {
       const root = [...document.querySelectorAll(selector)].find(
         (element) => element.getClientRects().length,
@@ -370,6 +403,7 @@ export class Director {
    * carries on onto the next one in one motion.
    */
   async swipe(target, { pixels = 160, duration = 240, at } = {}) {
+    await this.still();
     await this.move(target, { at });
     await this.pressCursor(1, 90);
     await this.app(() => showcase.backend.emit("wheel-touch", true));

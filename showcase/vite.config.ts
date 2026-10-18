@@ -14,6 +14,10 @@ import {
 import base from "../vite.config.ts";
 import { DEMO_PROJECTS, PANE_IMAGE } from "./world/projects.ts";
 import { PANE_IMAGE_FILE } from "./world/paneImage.ts";
+import { STAGE } from "./stage.mjs";
+
+/** A still is 4320 pixels wide, so each of the thirds layout's images is 1440. */
+const STILL_WIDTH = 4320;
 
 const LOCAL_ROOTS: Record<string, string> = {
   sikemux: resolve(import.meta.dirname, ".."),
@@ -326,12 +330,12 @@ const NOTCH_DIR = join(import.meta.dirname, "out/notch");
 let notchRender: Promise<void> | null = null;
 
 // The island is SwiftUI, so its own snapshot tool draws it once per server, on a clear background,
-// sharp enough for a video to zoom right in, about the demo's own agents.
+// sharp enough for a video to zoom right in on it, about the demo's own agents.
 function renderNotch(): Promise<void> {
   notchRender ??= new Promise((done, fail) => {
     const notchPackage = join(import.meta.dirname, "../src-tauri/notch");
     const fixture = join(import.meta.dirname, "world/notch.fixture");
-    spawn("swift", ["run", "--package-path", notchPackage, "notch-snapshots", NOTCH_DIR, "--bare", "--scale", "3", "--fixture", fixture], {
+    spawn("swift", ["run", "--package-path", notchPackage, "notch-snapshots", NOTCH_DIR, "--bare", "--scale", "4", "--fixture", fixture], {
       stdio: "ignore",
     }).on("exit", (code) => {
       if (code === 0) return done();
@@ -352,8 +356,8 @@ async function snapshot(
   const context = await (
     await snapshotBrowser
   ).newContext({
-    viewport: { width: 1920, height: 1080 },
-    deviceScaleFactor: 2.25,
+    viewport: STAGE,
+    deviceScaleFactor: STILL_WIDTH / STAGE.width,
     colorScheme: "dark",
   });
   try {
@@ -398,7 +402,7 @@ async function snapshot(
     for (const [index, name] of names.entries()) {
       await page.screenshot({
         path: join(homedir(), "Downloads", name),
-        clip: { x: index * 640, y: 0, width: 640, height: 1080 },
+        clip: { x: (index * STAGE.width) / 3, y: 0, width: STAGE.width / 3, height: STAGE.height },
       });
     }
     return names;

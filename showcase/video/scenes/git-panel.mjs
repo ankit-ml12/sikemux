@@ -13,7 +13,6 @@ export default {
     await s.zoom(".git-right", {
       scale: 1.35,
       at: { x: 0.5, y: 0.3 },
-      duration: 1600,
       wait: false,
     });
     await s.scroll(".git-right", { by: 760, duration: 5200 });
@@ -21,7 +20,6 @@ export default {
     await s.zoom(".git-left", {
       scale: 1.7,
       at: { x: 0.5, y: 0.25 },
-      duration: 1300,
       wait: false,
     });
     await s.swipe(".git-left .swipe-page.is-current");
@@ -35,7 +33,6 @@ export default {
     await s.zoom(".git-right", {
       scale: 1.3,
       at: { x: 0.5, y: 0.2 },
-      duration: 1300,
       wait: false,
     });
     await s.click({
@@ -47,7 +44,7 @@ export default {
     await s.move({ x: 1180, y: 760 });
     await s.scroll(".git-right", { by: 1500, duration: 8000 });
     await s.wait(900);
-    await s.zoomOut({ duration: 1400 });
+    await s.zoomOut();
     await s.wait(700);
   },
 };
