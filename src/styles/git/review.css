@@ -82,12 +82,12 @@
 .merge-review-item {
     overflow: clip;
     border: 1px solid var(--border);
-    border-radius: var(--radius-3);
+    border-radius: var(--radius-2);
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 /* Pinned while its card scrolls under it, a header keeps the card's top corners, so it still reads as the card's top. */
 .merge-review-item > .merge-file-header {
-    border-radius: calc(var(--radius-3) - 1px) calc(var(--radius-3) - 1px) 0 0;
+    border-radius: calc(var(--radius-2) - 1px) calc(var(--radius-2) - 1px) 0 0;
 }
 .merge-file-dir {
     color: var(--text-tertiary);
