@@ -1,6 +1,6 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AcpChat } from "../api/acp";
+import type { ChatInfo } from "../api/generated/wire";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { chatInfo } from "../test/wire";
 import { getState, setState } from "../state/store";
@@ -20,8 +20,8 @@ afterEach(() => {
     resetIpcTransportForTests();
 });
 
-function phoneChat(): AcpChat {
-    return {
+const phoneChat = (): ChatInfo =>
+    chatInfo({
         agentId: "agent-from-phone",
         provider: "codex",
         cwd: "/Users/me/site",
