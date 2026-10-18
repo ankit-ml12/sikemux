@@ -27,7 +27,7 @@ import {
 } from "../state/selectors";
 import { type CtxItem } from "../rail/FileTree";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
-import { PaneField, PanePaintedContext } from "../ui/ShaderField";
+import { PaneField, PanePaintedContext, ScreenFieldContext } from "../ui/ShaderField";
 import { agentMenu, renameAgentNamePrompt, renameAgentPrompt } from "./agentMenu";
 import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
@@ -715,11 +715,22 @@ const WindowLayer = memo(function WindowLayer({
                                 {/* The pane is a surface, so it carries its own texture — and only
                                     while its screen is on stage, so a screen off stage spends no
                                     WebGL context on a field nobody is looking at. The editor draws
-                                    its own, on the code panel beside its file tree, git on its review column, and the desk and plugins have none. */}
-                                {p.kind !== "editor" && p.kind !== "git" && p.kind !== "desk" && !isPluginKind(p.kind) && <PaneField enabled={paneShader} />}
-                                <ErrorBoundary label={`${p.kind} pane`}>
-                                    {renderWorkbenchItem({ pane: p, session, win, active: paneActive, visible: paneVisible, painted: panePainted })}
-                                </ErrorBoundary>
+                                    its own, on the code panel beside its file tree, git on its review column, a plugin only on its sign-in, and the desk none. */}
+                                {p.kind !== "editor" && p.kind !== "git" && p.kind !== "desk" && !isPluginKind(p.kind) && (
+                                    <PaneField enabled={paneShader} />
+                                )}
+                                <ScreenFieldContext.Provider value={isPluginKind(p.kind)}>
+                                    <ErrorBoundary label={`${p.kind} pane`}>
+                                        {renderWorkbenchItem({
+                                            pane: p,
+                                            session,
+                                            win,
+                                            active: paneActive,
+                                            visible: paneVisible,
+                                            painted: panePainted,
+                                        })}
+                                    </ErrorBoundary>
+                                </ScreenFieldContext.Provider>
                             </PanePaintedContext.Provider>
                             {live && canUnsplit && (
                                 <button

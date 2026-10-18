@@ -1,5 +1,7 @@
 .signin-screen {
     --signin-tint: color-mix(in oklab, var(--ink) 3%, transparent);
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;

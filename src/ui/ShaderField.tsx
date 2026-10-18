@@ -3,6 +3,7 @@ import { usePaneImageState } from "../lib/paneImage";
 import { useShaderField } from "../hooks/useShaderField";
 import { reviveShaderField, type ShaderFieldPreset } from "../lib/shaderField";
 import { whenStageStill } from "../state/nativeViews";
+import { useStore } from "../state/store";
 
 /**
  * An empty element for a Paper Shaders field to paint into.
@@ -35,6 +36,16 @@ export function ShaderField({
             }}
         />
     );
+}
+
+/** Whether the pane around draws no picture of its own and leaves one to a screen inside it, as a plugin's pane does for its sign-in. */
+export const ScreenFieldContext = createContext(false);
+
+/** The pane's picture behind one screen of a pane that draws none of its own. */
+export function ScreenField() {
+    const wanted = useContext(ScreenFieldContext);
+    const paneShader = useStore((s) => s.paneShader);
+    return wanted ? <PaneField enabled={paneShader} /> : null;
 }
 
 /** Whether the screen a pane sits on is on the stage, standing still or sliding. */
