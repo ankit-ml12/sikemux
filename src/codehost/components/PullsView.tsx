@@ -107,13 +107,19 @@ function PullHeadline({
 }
 
 function PullCi({ runs }: { runs: readonly Run[] }) {
-    const outcome = overallOutcome(runs);
+    const overall = overallOutcome(runs);
+    // Nothing started yet reads apart from something running.
+    const outcome = overall === "running" && !runs.some((run) => outcomeOf(run) === "running") ? "queued" : overall;
     const summary = checksSummary(runs);
     const passed = runs.filter((run) => ["success", "skipped"].includes(outcomeOf(run))).length;
     return (
         <Tooltip label={summary === "all passed" ? "All checks passed" : `Checks: ${summary}`}>
             <span className="pr-ci" data-outcome={outcome}>
-                <OutcomeIcon outcome={outcome} size={12} />
+                {outcome === "running" || outcome === "queued" ? (
+                    <span className="pr-ci-pending" data-outcome={outcome} role="img" aria-label={outcome === "running" ? "Running" : "Queued"} />
+                ) : (
+                    <OutcomeIcon outcome={outcome} size={12} />
+                )}
                 <span className="pr-ci-count">
                     {passed}/{runs.length}
                 </span>
