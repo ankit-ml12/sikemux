@@ -2,7 +2,7 @@
 
 # Sikemux
 
-**A terminal workspace for you and your coding agents.**
+**The IDE for you and your coding agents.**
 
 Bring Claude Code, Codex or OpenCode. Sikemux gives them your shell, browser, logs and deploys, in one 16 MB native app.
 
