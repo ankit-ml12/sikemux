@@ -204,7 +204,13 @@ export type ChatAction =
     | { type: "reset"; hold?: boolean }
     | { type: "config"; options: unknown }
     | { type: "status"; state: ChatState["connection"] }
-    | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }
+    | {
+          type: "ready";
+          capabilities: Record<string, unknown>;
+          setup: Record<string, unknown>;
+          /** Whether the core says a turn is running, for a chat taken up whose replay may start partway through it. */
+          running?: boolean;
+      }
     | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[]; messageId?: string; at?: number }
     | { type: "rewind"; messageId: string }
     | { type: "earlier"; messages: ChatMessage[] }

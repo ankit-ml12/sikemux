@@ -221,7 +221,12 @@ export function useAcpSession({
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
                 flushUpdates();
-                dispatch({ type: "ready", capabilities: response.capabilities, setup: response.setup });
+                dispatch({
+                    type: "ready",
+                    capabilities: response.capabilities,
+                    setup: response.setup,
+                    running: attached.status === "live" ? attached.running : undefined,
+                });
                 setReplaying(false);
                 setAppliedPermissionMode(appliedMode);
             })

@@ -765,7 +765,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 failure: action.state === "error" ? state.failure : null,
             };
         case "ready":
-            return { ...state, connection: "ready", capabilities: action.capabilities, setup: action.setup, error: null, failure: null };
+            return {
+                ...state,
+                connection: "ready",
+                capabilities: action.capabilities,
+                setup: action.setup,
+                running: action.running ?? state.running,
+                error: null,
+                failure: null,
+            };
         case "local_prompt": {
             const id = `local-${state.nextId}`;
             return {
