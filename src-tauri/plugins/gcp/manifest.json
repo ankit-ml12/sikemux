@@ -67,7 +67,11 @@
             "scheduler",
             "iam",
             "service_accounts",
-            "datasets"
+            "datasets",
+            "network",
+            "dns",
+            "alerting",
+            "snapshots"
           ]
         },
         "project": {
@@ -120,7 +124,8 @@
             "error_group",
             "repository",
             "tables",
-            "table"
+            "table",
+            "dns_zone"
           ]
         },
         "project": {
@@ -354,7 +359,12 @@
             "schedule_pause",
             "schedule_resume",
             "bq_estimate",
-            "bq_query"
+            "bq_query",
+            "vm_snapshot",
+            "firewall_disable",
+            "firewall_enable",
+            "alert_disable",
+            "alert_enable"
           ]
         },
         "project": {

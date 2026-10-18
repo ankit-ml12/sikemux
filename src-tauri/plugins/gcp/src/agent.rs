@@ -11,8 +11,8 @@ use crate::agent_setup;
 use crate::auth::{self, Target};
 use crate::error::{GcpError, GcpResult};
 use crate::{
-    bigquery, build, compute, errors, functions, gke, iam, logging, metrics, projects, pubsub,
-    registry, run, scheduler, secrets, sql, storage,
+    alerting, bigquery, build, compute, dns, errors, functions, gke, iam, logging, metrics,
+    network, projects, pubsub, registry, run, scheduler, secrets, sql, storage,
 };
 
 /// A tool's input as the shape a module reads, saying which field was wrong when one was.
@@ -135,6 +135,10 @@ async fn list(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
         "iam" => answer(json!(iam::members(read(fields)?).await?)),
         "service_accounts" => answer(json!(iam::service_accounts(read(fields)?).await?)),
         "datasets" => answer(json!(bigquery::datasets(read(fields)?).await?)),
+        "network" => answer(network::overview(read(fields)?).await?),
+        "dns" => answer(json!(dns::zones(read(fields)?).await?)),
+        "alerting" => answer(alerting::alerting(read(fields)?).await?),
+        "snapshots" => answer(json!(compute::snapshots(read(fields)?).await?)),
         other => Err(GcpError::BadArg(format!(
             "`{other}` is not a kind gcp_list knows"
         ))),
@@ -295,6 +299,9 @@ async fn act(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
             };
             errors::set_status(read(with(json!({ "group": name, "status": status })))?).await
         }
+        "vm_snapshot" => compute::take_snapshot(read(with(json!({ "zone": location, "disk": name })))?, &logging::rfc3339_before(crate::now_secs(), 0)).await,
+        "firewall_disable" | "firewall_enable" => network::set_firewall(read(with(json!({ "rule": name, "disabled": action == "firewall_disable" })))?).await,
+        "alert_disable" | "alert_enable" => alerting::set_policy(read(with(json!({ "policy": name, "enabled": action == "alert_enable" })))?).await,
         "schedule_run" | "schedule_pause" | "schedule_resume" => {
             let change = action.trim_start_matches("schedule_");
             scheduler::change(read(with(json!({ "location": location, "job": name, "action": change })))?).await
