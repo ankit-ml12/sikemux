@@ -223,6 +223,29 @@ pub async fn bytes(
     parse(status, &bytes).map(|_| Vec::new())
 }
 
+/// Sends raw bytes to Google, such as a file to store, answering with the JSON it sends back.
+pub async fn upload(
+    target: &Target,
+    url: &str,
+    query: &[(&str, String)],
+    bytes: Vec<u8>,
+    content_type: &str,
+) -> GcpResult<Value> {
+    let token = auth::token(target.account()).await?;
+    let response = http()?
+        .post(url)
+        .bearer_auth(token)
+        .query(query)
+        .header("Content-Type", content_type)
+        .timeout(Duration::from_secs(600))
+        .body(bytes)
+        .send()
+        .await?;
+    let status = response.status().as_u16();
+    let body = read_body(response).await?;
+    parse(status, &body)
+}
+
 /// A value as one percent-encoded part of an address, for names that may hold slashes and spaces.
 pub fn encoded(value: &str) -> String {
     value

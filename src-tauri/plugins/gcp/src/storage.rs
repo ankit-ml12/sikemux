@@ -239,6 +239,83 @@ pub async fn download(input: ObjectRef) -> GcpResult<Value> {
     Ok(json!({ "path": path.to_string_lossy(), "size": size }))
 }
 
+/// The content type a file's extension suggests, so a browser shows it rather than downloading it.
+pub fn content_type(name: &str) -> &'static str {
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" | "mjs" => "text/javascript",
+        "json" => "application/json",
+        "txt" | "log" | "md" => "text/plain",
+        "csv" => "text/csv",
+        "xml" => "application/xml",
+        "yaml" | "yml" => "application/yaml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "gz" | "tgz" => "application/gzip",
+        "wasm" => "application/wasm",
+        _ => "application/octet-stream",
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Upload {
+    #[serde(flatten)]
+    pub target: Target,
+    pub bucket: String,
+    /// The folder it goes in, ending in a slash; none puts it at the bucket's top.
+    #[serde(default)]
+    pub prefix: Option<String>,
+    /// The file on this Mac to upload.
+    pub path: PathBuf,
+}
+
+/// Stores a file from this Mac in a bucket's folder, under the file's own name.
+pub async fn upload(input: Upload) -> GcpResult<Value> {
+    let bucket = segment("bucket", &input.bucket)?;
+    let name = input
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| GcpError::BadArg("no file was named".into()))?
+        .to_string();
+    let path = input.path.clone();
+    let bytes = tokio::task::spawn_blocking(move || -> GcpResult<Vec<u8>> {
+        let size = std::fs::metadata(&path)
+            .map_err(|error| GcpError::BadArg(format!("reading the file: {error}")))?
+            .len();
+        if size > MAX_DOWNLOAD_BYTES {
+            return Err(GcpError::BadArg(format!(
+                "the file is {} MiB; use gcloud storage cp for one this large",
+                size / (1024 * 1024)
+            )));
+        }
+        std::fs::read(&path).map_err(|error| GcpError::BadArg(format!("reading the file: {error}")))
+    })
+    .await
+    .map_err(|error| GcpError::Transport(error.to_string()))??;
+    let key = format!("{}{name}", input.prefix.unwrap_or_default());
+    let stored = client::upload(
+        &input.target,
+        &format!("https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o"),
+        &[("uploadType", "media".into()), ("name", key)],
+        bytes,
+        content_type(&name),
+    )
+    .await?;
+    Ok(object(&stored))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +340,15 @@ mod tests {
             "image/png",
             &[0x89, b'P', b'N', b'G', 0, 0]
         ));
+    }
+
+    #[test]
+    fn a_files_extension_names_its_type() {
+        assert_eq!(content_type("index.HTML"), "text/html");
+        assert_eq!(content_type("report.csv"), "text/csv");
+        assert_eq!(content_type("photo.jpeg"), "image/jpeg");
+        assert_eq!(content_type("backup"), "application/octet-stream");
+        assert_eq!(content_type("archive.tar.gz"), "application/gzip");
     }
 
     #[test]

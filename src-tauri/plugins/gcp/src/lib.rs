@@ -157,6 +157,7 @@ impl Plugin for Gcp {
                 "objects" => answer(storage::objects(params(input)?)).await,
                 "objectPreview" => answer(storage::preview(params(input)?)).await,
                 "objectDownload" => answer(storage::download(params(input)?)).await,
+                "objectUpload" => answer(storage::upload(params(input)?)).await,
                 "sqlInstances" => answer(sql::instances(params(input)?)).await,
                 "sqlInstance" => answer(sql::instance_detail(params(input)?)).await,
                 "sqlChange" => answer(sql::change(params(input)?)).await,
