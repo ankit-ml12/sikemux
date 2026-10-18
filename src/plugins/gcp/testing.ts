@@ -11,6 +11,7 @@ export function mockApi() {
         runServices: vi.fn(),
         runService: vi.fn(),
         runSetTraffic: vi.fn(),
+        runSplitTraffic: vi.fn(),
         runDeploy: vi.fn(),
         runJobs: vi.fn(),
         runJob: vi.fn(),

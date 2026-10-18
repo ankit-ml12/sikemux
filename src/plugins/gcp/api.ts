@@ -585,6 +585,8 @@ export const gcpApi = {
         backend.call<RunServiceDetail>("runService", { ...t(target), location, service }),
     runSetTraffic: (target: Target, location: string, service: string, revision: string | null) =>
         backend.call<Operation>("runSetTraffic", { ...t(target), location, service, revision }),
+    runSplitTraffic: (target: Target, location: string, service: string, split: { revision: string | null; percent: number }[]) =>
+        backend.call<Operation>("runSetTraffic", { ...t(target), location, service, split }),
     runDeploy: (target: Target, location: string, service: string, change: { image?: string; minInstances?: number; maxInstances?: number }) =>
         backend.call<Operation>("runDeploy", { ...t(target), location, service, ...change }),
     runJobs: (target: Target) => backend.call<RunJob[]>("runJobs", t(target)),

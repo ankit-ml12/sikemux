@@ -228,7 +228,28 @@ function ServicePage({
                         </div>
                         <Tabs label={name} tabs={SERVICE_TABS} value={tab} onChange={(value) => updateGcpView(paneId, { tab: value })} />
                         {tab === "metrics" && <RunMetrics active={active} target={target} name={name} />}
-                        {tab === "revisions" && <Revisions detail={detail} busy={action.busy} onSendAll={sendAll} />}
+                        {tab === "revisions" && (
+                            <>
+                                <TrafficSplit
+                                    detail={detail}
+                                    busy={action.busy}
+                                    onSave={(split) =>
+                                        void action.run(
+                                            {
+                                                title: `Split ${name}'s traffic?`,
+                                                body: split
+                                                    .map((share) => `${share.percent}% to ${share.revision ?? "the latest revision"}`)
+                                                    .join(", "),
+                                                confirmLabel: "Save traffic",
+                                            },
+                                            "Traffic is moving",
+                                            () => gcpApi.runSplitTraffic(target, location, name, split),
+                                        )
+                                    }
+                                />
+                                <Revisions detail={detail} busy={action.busy} onSendAll={sendAll} />
+                            </>
+                        )}
                         {tab === "logs" && <LogStream active={active} target={target} query={{ resource: "runService", name }} />}
                         {tab === "details" && <ServiceFacts detail={detail} />}
                     </>
@@ -265,6 +286,79 @@ function RunMetrics({ active, target, name }: { active: boolean; target: Target;
                 <Sparkline title="Instances" series={instances.data} />
             </div>
         </>
+    );
+}
+
+/** The shares a service's traffic splits into now, as the editor starts them. */
+export function currentShares(detail: RunServiceDetail): Record<string, number> {
+    const shares: Record<string, number> = { "": 0 };
+    for (const revision of detail.revisions.filter((each) => each.state === "READY")) shares[revision.name] = 0;
+    for (const entry of detail.traffic)
+        shares[entry.latest ? "" : (entry.revision ?? "")] = (shares[entry.latest ? "" : (entry.revision ?? "")] ?? 0) + entry.percent;
+    return shares;
+}
+
+function TrafficSplit({
+    detail,
+    busy,
+    onSave,
+}: {
+    detail: RunServiceDetail;
+    busy: boolean;
+    onSave: (split: { revision: string | null; percent: number }[]) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [shares, setShares] = useState<Record<string, number>>(() => currentShares(detail));
+    const total = Object.values(shares).reduce((sum, share) => sum + share, 0);
+    if (!open)
+        return (
+            <div>
+                <Button
+                    onClick={() => {
+                        setShares(currentShares(detail));
+                        setOpen(true);
+                    }}>
+                    Manage traffic
+                </Button>
+            </div>
+        );
+    return (
+        <section className="gcp-traffic" aria-label="Manage traffic">
+            {Object.keys(shares).map((revision) => (
+                <label key={revision || "latest"} className="gcp-traffic-row">
+                    <span className="gcp-mono">{revision || "Latest healthy revision"}</span>
+                    <input
+                        className="gcp-input"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={shares[revision]}
+                        onChange={(event) =>
+                            setShares({ ...shares, [revision]: Math.max(0, Math.min(100, Math.round(Number(event.target.value) || 0))) })
+                        }
+                        aria-label={`Traffic to ${revision || "the latest revision"}`}
+                    />
+                    <span className="gcp-muted">%</span>
+                </label>
+            ))}
+            <div className="gcp-log-bar">
+                <span className={total === 100 ? "gcp-muted" : "gcp-error-text"}>Total {total}%</span>
+                <Button
+                    primary
+                    disabled={busy || total !== 100}
+                    onClick={() => {
+                        onSave(
+                            Object.entries(shares)
+                                .filter(([, percent]) => percent > 0)
+                                .map(([revision, percent]) => ({ revision: revision || null, percent })),
+                        );
+                        setOpen(false);
+                    }}>
+                    Save
+                </Button>
+                <Button onClick={() => setOpen(false)}>Cancel</Button>
+            </div>
+        </section>
     );
 }
 

@@ -149,4 +149,23 @@ describe("Cloud Run", () => {
         fireEvent.click(screen.getByRole("button", { name: "Edit scaling…" }));
         await waitFor(() => expect(api.runDeploy).toHaveBeenLastCalledWith(target, "us-central1", "api", { minInstances: 1, maxInstances: 20 }));
     });
+
+    it("splits traffic between revisions once the shares add up to 100", async () => {
+        api.runSplitTraffic.mockResolvedValue({ operation: "op" });
+        renderPage();
+        fireEvent.click(await screen.findByRole("row", { name: /api/ }));
+        fireEvent.click(await screen.findByRole("tab", { name: "Revisions" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Manage traffic" }));
+        fireEvent.change(screen.getByRole("spinbutton", { name: "Traffic to api-00012-xyz" }), { target: { value: "80" } });
+        expect(screen.getByText("Total 90%")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+        fireEvent.change(screen.getByRole("spinbutton", { name: "Traffic to api-00011-abc" }), { target: { value: "20" } });
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+        await waitFor(() =>
+            expect(api.runSplitTraffic).toHaveBeenCalledWith(target, "us-central1", "api", [
+                { revision: "api-00012-xyz", percent: 80 },
+                { revision: "api-00011-abc", percent: 20 },
+            ]),
+        );
+    });
 });
