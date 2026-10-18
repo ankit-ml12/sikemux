@@ -107,7 +107,7 @@ inventing new ones. Inspect again after writing to see `configErrors`.
 `command` to run. `workspace_inspect` lists the task ids: those from
 `sikemux.json`, then those Sikemux found in the project's build files
 (`foundIn: "build files"`), and those the person added for themselves
-(`foundIn: "added by the person"`). The found ones include Maven, Gradle and
+(`foundIn: ".sikemux/tasks.json"`). The found ones include Maven, Gradle and
 Go run, test and build tasks, Cargo run, test and build tasks, a
 `package.json`'s scripts, and a Python project's FastAPI, Flask or Django app
 and pytest. A found task runs on the Java its build asks for (`java.runsOn`),
@@ -128,23 +128,22 @@ call fails or you are unsure whether it landed.
 
 Two things can stop a launch:
 
-- A `sikemux.json` task may need trust. Sikemux shows its own dialog, and a
-  changed `sikemux.json` is checked again before the next launch. While the
-  dialog waits on the person, `task_start` returns at once with
+- A `sikemux.json` task, or one the person keeps in `.sikemux/tasks.json`,
+  may need trust. Sikemux asks the person in whichever Sikemux app they have
+  open; their answer holds on this host until the file changes. While the
+  question waits, `task_start` returns at once with
   `status: "awaiting-trust"` and an `executionId` that `task_read` and
   `task_stop` already know. Call `task_start` again with the same key, or
   `events_wait` with that `executionId`, to see it start. If the person
   refuses, the run ends as `failed`. A `command` needs no trust, and neither
-does anything you start while the person runs you in YOLO mode.
-- A task found in the build files is checked first: its build tool must be
-  installed, a new enough Java must exist, and a Node.js project's dependencies
-  must be installed. If not, `task_start` fails and
-  says what is missing and how to install it. When a Spring Boot, Next.js, FastAPI or
-  Flask app's port is taken, it runs on the next free one instead, and the result's `previewUrl`
-  says where.
-- If the same task is already running from the command deck, stop it there
-  first. Starting a task already running through the harness just returns that
-  execution.
+  does anything you start while the person runs you in YOLO mode.
+- A task is checked first: its build tool must be installed, a new enough Java
+  must exist, and a Node.js project's dependencies must be installed. If not,
+  `task_start` fails and says what is missing and how to install it. When a
+  Spring Boot, Next.js, FastAPI or Flask app's port is taken, it runs on the
+  next free one instead, and the result's `previewUrl` says where.
+- Starting a task that is already running, whether you, another agent or the
+  person started it, returns that execution.
 
 After a Maven, Gradle, Vitest, Jest, pytest, Go or Cargo test task, `workspace_inspect` has
 `testResults`: per module, the counts and each failing test with its message,
@@ -171,18 +170,15 @@ person's focus. To bring the person to it, call `ui_open` with
 `kind: "terminal"`, the `executionId`, and `focus: true`.
 
 `task_stop` takes an `executionId` and stops that exact execution and
-its process tree. A `taskId` instead stops that task's latest execution. It
-does not stop a task started from the command deck.
+its process tree. A `taskId` instead stops that task's latest execution.
 
 ### What survives a reload or restart
 
 Tasks, their runs and idempotency keys live in Sikemux's background process,
 so they survive the window reloading, the app quitting and Sikemux updating.
-While the window is closed, `task_read`, `task_stop`, `events_wait` and
-`task_start` with a key you already used keep working, and `workspace_inspect`
-returns your runs and an event cursor with `window: null` and a `note`; its
-panes, `sikemux.json` tasks and ports need the window. Starting a new run,
-`ui_open` and the browser tools need the window too; with it closed they fail
+Every task tool works while the window is closed, and so does
+`workspace_inspect`, which then lists no panes and says so in a `note`.
+`ui_open` and the browser tools need the window; with it closed they fail
 and say so. While Sikemux updates its background process a call can fail for
 a moment saying so; call it again. When Sikemux opens again the tasks'
 terminals come back. Chat agents keep running too: a turn in progress goes
@@ -521,7 +517,8 @@ When an action makes the page open a tab of its own, as a link with a new
 window target does, the result lists it under `openedTabs`, and that tab is
 now the current one. Tabs do not survive a restart of Sikemux.
 
-Files a page downloads are saved to `~/Downloads`. When your click, press or
+Files a page downloads are saved to a folder of Sikemux's own, and reach
+`~/Downloads` only when the person keeps them. When your click, press or
 navigation starts one, the result lists it under `downloads` with its `path`,
 `state` and `bytes`, after waiting up to 15 seconds for it to finish. A
 download that starts later shows up in the next result, such as a
