@@ -9,7 +9,7 @@ use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::Request;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::agent_names::call;
+use crate::core_call::call;
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
 

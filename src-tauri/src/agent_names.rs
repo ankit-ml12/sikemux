@@ -5,12 +5,12 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use sikemux_core::client::{CoreClient, Reply};
-use sikemux_core::protocol::{Request, Response};
+use sikemux_core::client::CoreClient;
 use tauri::{AppHandle, Manager, State};
 
+use crate::core_call::call;
 use crate::error::{AppError, AppResult};
-use crate::pty::{core_error, PtyManager};
+use crate::pty::PtyManager;
 
 /// The core's calls the page may make through this.
 const METHODS: [&str; 4] = ["nameAgent", "renameAgent", "agentsInApp", "agentSessions"];
@@ -50,20 +50,5 @@ pub(crate) async fn connected(app: &AppHandle, client: &Arc<CoreClient>) {
         if let Err(error) = call(client, IN_APP.to_owned(), params).await {
             eprintln!("Sikemux could not tell its core which agents it holds: {error}");
         }
-    }
-}
-
-pub(crate) async fn call(client: &CoreClient, method: String, params: Value) -> AppResult<Value> {
-    let reply = client
-        .submit(Request::Call { method, params }, |reply| reply)
-        .map_err(core_error)?
-        .await
-        .map_err(core_error)?
-        .map_err(core_error)?;
-    match reply {
-        Reply::Response(Response::Called { result }) => Ok(result),
-        _ => Err(AppError::Other(
-            "the core answered a call with something else".into(),
-        )),
     }
 }

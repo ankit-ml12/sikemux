@@ -7,7 +7,7 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 use serde_json::{json, Value};
 use tauri::State;
 
-use crate::agent_names::call;
+use crate::core_call::call;
 use crate::error::AppResult;
 use crate::pty::PtyManager;
 

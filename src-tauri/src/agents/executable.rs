@@ -37,7 +37,7 @@ async fn signed_in(
         return AgentStatus::Unknown;
     };
     let params = json!({ "provider": provider, "configPath": config_path });
-    crate::agent_names::call(&client, "agentStatus".into(), params)
+    crate::core_call::call(&client, "agentStatus".into(), params)
         .await
         .ok()
         .and_then(|status| serde_json::from_value(status).ok())

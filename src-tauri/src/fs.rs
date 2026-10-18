@@ -381,7 +381,7 @@ fn person_wrote(manager: &crate::pty::PtyManager, path: PathBuf) {
     };
     tauri::async_runtime::spawn(async move {
         let params = serde_json::json!({ "path": path });
-        let _ = crate::agent_names::call(&client, "personSaved".to_owned(), params).await;
+        let _ = crate::core_call::call(&client, "personSaved".to_owned(), params).await;
     });
 }
 

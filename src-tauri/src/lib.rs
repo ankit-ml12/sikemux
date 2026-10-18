@@ -3,6 +3,7 @@ mod acp;
 mod activity;
 mod agent_board;
 mod agent_names;
+mod core_call;
 mod agent_notification;
 mod agent_questions;
 mod agents;
@@ -303,6 +304,7 @@ pub fn run() {
             share::share_access,
             share::share_call,
             agent_names::agent_name_call,
+            core_call::core_call,
             agent_questions::agent_question_call,
             inbox::inbox_call,
             agent_board::agent_board_call,

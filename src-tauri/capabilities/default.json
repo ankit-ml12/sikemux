@@ -60,6 +60,7 @@
     "allow-share-access",
     "allow-share-call",
     "allow-agent-name-call",
+    "allow-core-call",
     "allow-agent-question-call",
     "allow-inbox-call",
     "allow-agent-board-call",

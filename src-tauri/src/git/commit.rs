@@ -2,7 +2,7 @@ use serde_json::json;
 use tauri::State;
 
 use super::{current_branch_name, default_remote, has_upstream, run_blocking, run_git};
-use crate::agent_names::call;
+use crate::core_call::call;
 use crate::pty::PtyManager;
 
 /// Commits what is staged with `message`. The core runs the commit, so that

@@ -4,7 +4,7 @@
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::agent_names::call;
+use crate::core_call::call;
 use crate::error::{AppError, AppResult};
 use crate::pty::PtyManager;
 

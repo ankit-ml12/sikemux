@@ -43,6 +43,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "share_access",
     "share_call",
     "agent_name_call",
+    "core_call",
     "agent_question_call",
     "inbox_call",
     "agent_board_call",

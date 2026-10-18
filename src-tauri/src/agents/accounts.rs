@@ -34,7 +34,7 @@ pub async fn agent_accounts_call(
         return Err(AppError::Other(format!("{method} is not an account call")));
     }
     let client = manager.client().await?;
-    crate::agent_names::call(&client, method, params).await
+    crate::core_call::call(&client, method, params).await
 }
 
 async fn agent_command(

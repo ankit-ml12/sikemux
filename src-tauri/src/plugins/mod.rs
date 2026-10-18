@@ -67,7 +67,7 @@ fn plugin_error(failure: Failure) -> AppError {
 
 async fn forward(manager: &PtyManager, method: &str, params: Value) -> AppResult<Value> {
     let client = manager.client().await?;
-    crate::agent_names::call(&client, method.to_owned(), params).await
+    crate::core_call::call(&client, method.to_owned(), params).await
 }
 
 #[tauri::command]
