@@ -114,8 +114,9 @@ function Commits({ commits, now }: { commits: readonly TimelineItem[]; now: numb
             {commits.map((commit) => (
                 <div className="gha-tl-commit" key={commit.sha ?? commit.message}>
                     <span className="gha-tl-commit-dot">
-                        <IconCommit size={12} />
+                        <IconCommit size={14} />
                     </span>
+                    <Face login={commit.actor} url={commit.avatarUrl ?? null} />
                     <span className="gha-tl-commit-message">{(commit.message ?? "").split("\n")[0]}</span>
                     {commit.sha && (
                         <button
@@ -318,8 +319,6 @@ interface Props {
     children?: ReactNode;
     /** Sits beside the composer's own buttons, such as closing the issue. */
     extraActions?: ReactNode;
-    /** Leaves pushed commits out, for a pull request whose commits are listed beside the thread. */
-    withoutCommits?: boolean;
     of?: ThreadOf;
 }
 
@@ -333,14 +332,13 @@ export function CommentThread({
     review = null,
     children,
     extraActions,
-    withoutCommits = false,
     of = "pull",
 }: Props) {
     const timeline = useResourceEnabled(active, timelineR, repo, number, of);
     const host = useHost();
     const [draft, setDraft] = useState("");
     const [busy, setBusy] = useState<ReviewEvent | "comment" | null>(null);
-    const blocks = blocksOf(timeline.data ?? []).filter((block) => !withoutCommits || block.kind !== "commits");
+    const blocks = blocksOf(timeline.data ?? []);
     const written = draft.trim().length > 0;
     const refreshThread = (also?: string) => invalidate((kind) => kind === "host.timeline" || kind === also);
 

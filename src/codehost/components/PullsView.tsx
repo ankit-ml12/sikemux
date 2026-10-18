@@ -580,7 +580,6 @@ export function PullRight({
                         number={found.number}
                         active={active}
                         now={now}
-                        withoutCommits
                         opening={{
                             key: "opening",
                             author: found.author,

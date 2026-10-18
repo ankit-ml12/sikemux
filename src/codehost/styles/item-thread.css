@@ -232,8 +232,43 @@
     font-family: var(--mono);
     font-size: var(--text-xs);
 }
+/* Each pushed commit as GitHub lists it: a dot on the thread line, its author, its subject in code type, its hash. */
 .gha-tl-commit {
-    grid-template-columns: 32px minmax(0, 1fr) auto;
+    grid-template-columns: 32px 20px minmax(0, 1fr) auto;
     padding-left: calc(var(--tl-x) - 16px);
+    min-height: 30px;
     font-size: var(--text-xs);
+}
+.gha-tl-commit > .gha-avatar {
+    width: 20px;
+    height: 20px;
+}
+.gha-tl-commit .gha-tl-commit-message {
+    font-family: var(--mono);
+    color: var(--text-secondary);
+}
+.gha-tl-commit .gha-tl-sha {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+/* The thread line runs on through a run of commits, behind their dots. */
+.gha-tl-commits::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--tl-x) - 0.5px);
+    z-index: -1;
+    width: 1px;
+    background: var(--border);
+}
+.gha-tl-commits {
+    isolation: isolate;
+}
+.gha-tl-commit-dot {
+    background: var(--surface);
+    border-radius: var(--radius-full);
+    width: 18px;
+    height: 18px;
+    justify-self: center;
 }
