@@ -18,6 +18,7 @@ use crate::protocol::{
 use super::super::access::Peer;
 use super::super::connection::{ClientConn, ClientId};
 use super::history::{History, HistoryState, Page, Recovered, MAX_HISTORY_BYTES};
+use super::queue::{batch_len, Queued, MAX_QUEUED};
 use super::states::{Subagent, Task};
 
 /// One frame's worth of streamed updates travels as a single event. Each
@@ -201,6 +202,15 @@ struct Chunk<'a> {
 
 fn only_keys(object: &serde_json::Map<String, Value>, allowed: &[&str]) -> bool {
     object.keys().all(|key| allowed.contains(&key.as_str()))
+}
+
+/// What waits behind the running turn, as a session update apps that know
+/// nothing of it pass over.
+fn queue_update(inner: &Inner) -> Value {
+    json!({
+        "sessionId": inner.start.as_ref().map(|start| start.session_id.as_str()),
+        "update": { "sessionUpdate": "queued_messages", "messages": inner.queued },
+    })
 }
 
 /// The most of a chat's title that is kept.
@@ -1119,6 +1129,8 @@ struct Inner {
     closed: bool,
     /// Events from this index on are kept but not sent yet.
     holding: Option<u64>,
+    /// What the person sent while the agent was at work, oldest first.
+    queued: Vec<Queued>,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1172,6 +1184,7 @@ impl Feed {
                 title: None,
                 closed: false,
                 holding: None,
+                queued: Vec::new(),
             }),
         })
     }
@@ -1236,6 +1249,7 @@ impl Feed {
                 title: state.title,
                 closed: false,
                 holding: None,
+                queued: Vec::new(),
             }),
         })
     }
@@ -1448,6 +1462,59 @@ impl Feed {
         );
     }
 
+    /// Keeps `message` until the running turn ends, unless as many already wait.
+    pub(crate) fn enqueue(&self, message: Queued) -> bool {
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
+        if inner.queued.len() >= MAX_QUEUED {
+            return false;
+        }
+        inner.queued.push(message);
+        self.queue_changed(&mut inner);
+        true
+    }
+
+    /// Takes the waiting messages `ids`, or with none the next that go out together.
+    pub(crate) fn take_queued(&self, ids: Option<&[String]>) -> Vec<Queued> {
+        let Ok(mut inner) = self.inner.lock() else {
+            return Vec::new();
+        };
+        let taken: Vec<Queued> = match ids {
+            None => {
+                let count = batch_len(&inner.queued);
+                inner.queued.drain(..count).collect()
+            }
+            Some(ids) => {
+                let (taken, kept) = std::mem::take(&mut inner.queued)
+                    .into_iter()
+                    .partition(|message| ids.contains(&message.id));
+                inner.queued = kept;
+                taken
+            }
+        };
+        if !taken.is_empty() {
+            self.queue_changed(&mut inner);
+        }
+        taken
+    }
+
+    pub(crate) fn clear_queue(&self) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        if !inner.queued.is_empty() {
+            inner.queued.clear();
+            self.queue_changed(&mut inner);
+        }
+    }
+
+    fn queue_changed(&self, inner: &mut Inner) {
+        self.flush_locked(inner);
+        let update = queue_update(inner);
+        self.broadcast(inner, ChatEventKind::SessionUpdate, update);
+    }
+
     pub(crate) fn subscribe(&self, client: &Arc<ClientConn>) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.subscribers.insert(client.id, client.clone());
@@ -1522,6 +1589,12 @@ impl Feed {
                 } else {
                     (inner.replay.events(), None)
                 };
+                if !inner.queued.is_empty() {
+                    replay.push(ChatEvent {
+                        kind: ChatEventKind::SessionUpdate,
+                        payload: queue_update(inner),
+                    });
+                }
                 if lost {
                     replay.insert(
                         0,

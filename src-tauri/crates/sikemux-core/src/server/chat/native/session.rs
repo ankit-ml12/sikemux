@@ -20,7 +20,7 @@ use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, switches_at_limit, Carried, Outcome,
     Rebind, Replay,
 };
-use super::super::{reset, stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
+use super::super::{reset, stall_later, Asked, Chat, ChatCommand, Delivery, Respond, NOBODY};
 use super::process::{AgentRecord, Lines, Process, Released, Writer};
 
 /// What the person sent, for the agent to read in its own form.
@@ -277,8 +277,6 @@ impl Sink {
     }
 }
 
-/// No client: a message that went in on its own, which every client is told of.
-const NOBODY: crate::server::connection::ClientId = 0;
 const HELD_PROMPT_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Sends `command` to the chat's loop again once the running turn has ended.
@@ -778,10 +776,13 @@ pub(crate) async fn run<B: Backend>(
                             context,
                         };
                         after_turn(chat.clone(), held);
-                    } else {
+                    } else if !chat
+                        .feed
+                        .enqueue(super::super::queue::Queued::new(text, paths, context))
+                    {
                         chat.emit(
                             ChatEventKind::Error,
-                            error_message("wait for the current turn to finish"),
+                            error_message("too many messages are waiting for this turn"),
                         );
                     }
                     continue;

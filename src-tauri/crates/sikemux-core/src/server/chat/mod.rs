@@ -6,7 +6,7 @@ pub(crate) mod feed;
 mod history;
 mod kept;
 mod native;
-mod queue;
+pub(crate) mod queue;
 mod rebind;
 pub(crate) mod reset;
 mod states;
