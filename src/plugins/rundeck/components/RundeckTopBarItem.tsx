@@ -4,7 +4,7 @@ import { currentBranch, git, gitOverviewR, notify, reportError } from "../../../
 import { invalidate, peekResource, useResourceEnabled } from "../../../plugin-api/resources";
 import { IconCheck, IconCheckout, IconChevron, IconRundeck, Tooltip } from "../../../plugin-api/ui";
 import type { MatrixCell, RundeckJob } from "../api";
-import { rndJobCellsR, rndJobIndexR, rndProjectsR } from "../resources";
+import { rndJobCellsR, rndJobIndexR, rndProjectsR, useProdEnvs } from "../resources";
 import { basenameOf, displayStatus, groupSegments, isLiveStatus, isProdTarget, targetTone, type EnvTone } from "../shape";
 import { openRundeckJob, rundeckSettings, setDeployTarget } from "../state";
 import { useEvery } from "../../../plugin-api/hooks";
@@ -36,7 +36,7 @@ function matchJobs(jobs: RundeckJob[], folder: string): RundeckJob[] {
  */
 export function RundeckTopBarItem({ projectCwd, stripHovered }: PluginTopBarProps) {
     const folder = projectCwd ? basenameOf(projectCwd) : null;
-    const prodEnvs = rundeckSettings.useSelect((s) => s.prodEnvs);
+    const prodEnvs = useProdEnvs();
     const picked = rundeckSettings.useSelect((s) => (projectCwd ? s.deployTargets[projectCwd] : undefined));
     const deployWanted = stripHovered || peekResource(rndJobIndexR) !== undefined || peekResource(rndProjectsR) !== undefined;
     const index = useResourceEnabled(!!folder && deployWanted, rndJobIndexR);

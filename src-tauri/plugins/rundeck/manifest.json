@@ -30,7 +30,8 @@
         "job": { "type": "string", "description": "Its id or group/name path." },
         "project": { "type": "string" },
         "options": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Option values by name." },
-        "wait": { "type": "boolean", "description": "Default true; false answers with the execution id at once." }
+        "wait": { "type": "boolean", "description": "Default true; false answers with the execution id at once." },
+        "production": { "type": "boolean", "description": "True only after the person agreed to run this production job." }
       },
       "required": ["job"]
     },

@@ -12,9 +12,10 @@ import {
     type RundeckExecution,
     type RundeckJob,
     type RundeckProject,
+    type RundeckLists,
     type RundeckStatus,
 } from "./api";
-import { DEFAULT_BRANCH_OPTIONS } from "./shape";
+import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS } from "./shape";
 
 export const rndStatusR = resource({
     kind: "rnd.status",
@@ -82,14 +83,19 @@ export const rndPlanR = resource({
     staleAfterMs: 10_000,
 });
 
-const rndBranchOptionsR = resource({
-    kind: "rnd.branchOptions",
-    fetch: (): Promise<string[]> => rundeckApi.branchOptions(),
+export const rndListsR = resource({
+    kind: "rnd.lists",
+    fetch: (): Promise<RundeckLists> => rundeckApi.lists(),
 });
 
 /** Job options that hold the git branch, as the plugin keeps them. */
 export function useBranchOptions(): string[] {
-    return useResource(rndBranchOptionsR).data ?? DEFAULT_BRANCH_OPTIONS;
+    return useResource(rndListsR).data?.branchOptions ?? DEFAULT_BRANCH_OPTIONS;
 }
 
-export const branchOptionsNow = (): string[] => peekResource(rndBranchOptionsR) ?? DEFAULT_BRANCH_OPTIONS;
+/** Words that mark a job's top folder or project as production, as the plugin keeps them. */
+export function useProdEnvs(): string[] {
+    return useResource(rndListsR).data?.prodEnvs ?? DEFAULT_PROD_ENVS;
+}
+
+export const branchOptionsNow = (): string[] => peekResource(rndListsR)?.branchOptions ?? DEFAULT_BRANCH_OPTIONS;

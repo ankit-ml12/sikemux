@@ -3,7 +3,7 @@ import { useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, Filter, IconRun, IconWarning, Seg, SkeletonRows } from "../../../plugin-api/ui";
 import type { MatrixCell } from "../api";
-import { rndMatrixR } from "../resources";
+import { rndMatrixR, useProdEnvs } from "../resources";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
 import { childSegment, duration, groupSegments, inGroup, isLiveStatus, isProdTarget } from "../shape";
@@ -215,7 +215,7 @@ function JobList({
     onDeploy: (cell: MatrixCell) => void;
 }) {
     const body = useRef<HTMLTableSectionElement>(null);
-    const prodEnvs = cmd.rundeckSettings.useSelect((s) => s.prodEnvs);
+    const prodEnvs = useProdEnvs();
     const flat = sections.flatMap((s) => s.cells);
     const onKey = (event: KeyboardEvent, cell: MatrixCell) => {
         const at = flat.indexOf(cell);
@@ -376,7 +376,7 @@ function Compare({
     onOpen: (cell: MatrixCell) => void;
     onDeploy: (cell: MatrixCell) => void;
 }) {
-    const prodEnvs = cmd.rundeckSettings.useSelect((s) => s.prodEnvs);
+    const prodEnvs = useProdEnvs();
     const names = [...new Set(sections.flatMap((s) => s.cells.map((c) => c.name)))].sort((a, b) => a.localeCompare(b));
     const path = (segment: string) => [...groupSegments(group), segment].join("/");
     return (

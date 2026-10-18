@@ -74,12 +74,6 @@ struct JobCellsParams {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BranchOptionsParams {
-    names: Vec<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct ExecutionsParams {
     job_id: String,
     project: String,
@@ -186,16 +180,8 @@ impl Plugin for Rundeck {
                     return answer(auth::login_with_token(data_dir, params(input)?)).await
                 }
                 "logout" => return answer(auth::logout(data_dir)).await,
-                "branchOptions" => {
-                    return answer(async {
-                        Ok(config::load(data_dir).await?.settings.branch_options)
-                    })
-                    .await
-                }
-                "setBranchOptions" => {
-                    let BranchOptionsParams { names } = params(input)?;
-                    return answer(auth::set_branch_options(data_dir, names)).await;
-                }
+                "lists" => return answer(auth::lists(data_dir)).await,
+                "setLists" => return answer(auth::set_lists(data_dir, params(input)?)).await,
                 _ => {}
             }
             let (session, saved) = signed_in(ctx).await?;
@@ -277,7 +263,9 @@ impl Plugin for Rundeck {
                     let FindJobsParams { project, filter } = params(input)?;
                     answer(agent::find_jobs(session, project, filter)).await
                 }
-                "agentRun" => answer(agent::run(session, params(input)?)).await,
+                "agentRun" => {
+                    answer(agent::run(session, params(input)?, &saved.settings.prod_envs)).await
+                }
                 "agentExecutions" => {
                     answer(agent::history(session, params(input)?, branch_options)).await
                 }

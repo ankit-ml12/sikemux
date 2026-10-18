@@ -282,6 +282,12 @@ export interface PlanResult {
     push_action: PushAction;
 }
 
+/** The lists people edit in the plugin's settings, kept by the core. */
+export interface RundeckLists {
+    branchOptions: string[];
+    prodEnvs: string[];
+}
+
 export const rundeckApi = {
     status: () => backend.call<RundeckStatus>("status"),
     login: (req: RundeckLoginRequest) => rndInvoke<RundeckLoginResult>("login", req),
@@ -295,8 +301,8 @@ export const rundeckApi = {
     optionValues: (url: string) => rndInvoke<OptionValue[]>("optionValues", { url }),
     branchesMatrix: (project: string) => rndInvoke<MatrixResult>("branchesMatrix", { project }),
     jobCells: (jobs: RundeckJob[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs }),
-    branchOptions: () => backend.call<string[]>("branchOptions"),
-    setBranchOptions: (names: string[]) => backend.call<null>("setBranchOptions", { names }),
+    lists: () => backend.call<RundeckLists>("lists"),
+    setLists: (lists: Partial<RundeckLists>) => backend.call<null>("setLists", lists),
 
     executions: (jobId: string, project: string, max = 25, onlySucceeded = false) =>
         rndInvoke<RundeckExecution[]>("executions", { jobId, project, max, onlySucceeded }),

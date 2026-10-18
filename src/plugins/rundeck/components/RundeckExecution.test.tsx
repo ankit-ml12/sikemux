@@ -11,7 +11,7 @@ vi.mock("../api", () => ({
         abort: vi.fn(),
         jobDetail: () => new Promise(() => {}),
         executions: () => new Promise(() => {}),
-        branchOptions: async () => ["BRANCH"],
+        lists: async () => ({ branchOptions: ["BRANCH"], prodEnvs: ["prod"] }),
     },
     failureMessage: (e: unknown) => String(e),
 }));

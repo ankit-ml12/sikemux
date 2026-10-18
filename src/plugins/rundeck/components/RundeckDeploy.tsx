@@ -5,7 +5,7 @@ import { IconRun, IconWarning, SkeletonRows } from "../../../plugin-api/ui";
 import { failureMessage, rundeckApi, type JobDetail, type JobOption, type PlanResult } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndExecutionsR, rndJobDetailR, rndJobsR, rndPlanR, useBranchOptions } from "../resources";
+import { rndExecutionsR, rndJobDetailR, rndJobsR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
 import { branchOf, branchOptionName, envOf, isLiveStatus, isProdTarget, localDateTimeToIso, qualifiedName } from "../shape";
 import { watchRun } from "../runWatch";
 import { useDebounced } from "../../../plugin-api/hooks";
@@ -113,7 +113,7 @@ interface FormProps extends Props {
 
 function RunForm({ paneId, level, active, detail, permalink, children }: FormProps) {
     const branchOptions = useBranchOptions();
-    const isProd = cmd.rundeckSettings.useSelect((s) => isProdTarget(level.project, level.group, s.prodEnvs));
+    const isProd = isProdTarget(level.project, level.group, useProdEnvs());
     const repoPath = level.repoPath ?? "";
     const branchKey = useMemo(
         () =>

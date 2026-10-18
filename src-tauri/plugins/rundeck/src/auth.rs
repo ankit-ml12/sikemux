@@ -387,25 +387,43 @@ pub async fn logout(data_dir: &Path) -> RundeckResult<()> {
     config::save(data_dir, saved).await
 }
 
-pub async fn set_branch_options(data_dir: &Path, names: Vec<String>) -> RundeckResult<()> {
-    let names: Vec<String> = names
-        .into_iter()
-        .map(|name| name.trim().to_string())
-        .filter(|name| !name.is_empty())
-        .collect();
+/// The lists people edit in the plugin's settings. An empty list goes back to the defaults.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lists {
+    pub branch_options: Option<Vec<String>>,
+    pub prod_envs: Option<Vec<String>>,
+}
+
+pub async fn lists(data_dir: &Path) -> RundeckResult<Lists> {
     let settings = config::load(data_dir).await?.settings;
-    config::save_settings(
-        data_dir,
-        Settings {
-            branch_options: if names.is_empty() {
-                Settings::default().branch_options
-            } else {
-                names
-            },
-            ..settings
-        },
-    )
-    .await
+    Ok(Lists {
+        branch_options: Some(settings.branch_options),
+        prod_envs: Some(settings.prod_envs),
+    })
+}
+
+pub async fn set_lists(data_dir: &Path, lists: Lists) -> RundeckResult<()> {
+    fn tidy(names: Vec<String>, fallback: fn() -> Vec<String>) -> Vec<String> {
+        let names: Vec<String> = names
+            .into_iter()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect();
+        if names.is_empty() {
+            fallback()
+        } else {
+            names
+        }
+    }
+    let mut settings = config::load(data_dir).await?.settings;
+    if let Some(names) = lists.branch_options {
+        settings.branch_options = tidy(names, config::default_branch_options);
+    }
+    if let Some(names) = lists.prod_envs {
+        settings.prod_envs = tidy(names, config::default_prod_envs);
+    }
+    config::save_settings(data_dir, settings).await
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ import { failureMessage, rundeckApi, type RundeckStatus } from "../api";
 import * as cmd from "../state";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, splitList } from "../shape";
 import { useMenuKeys } from "./hooks";
-import { useBranchOptions } from "../resources";
+import { useBranchOptions, useProdEnvs } from "../resources";
 import { hostFromUrl, Status } from "./parts";
 
 /** The server card at the foot of the sidebar; it opens the plugin's settings above itself. */
@@ -52,7 +52,7 @@ export function RundeckConnection({ status, onSignedOut }: { status: RundeckStat
 }
 
 function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
-    const prodEnvs = cmd.rundeckSettings.useSelect((s) => s.prodEnvs);
+    const prodEnvs = useProdEnvs();
     const branchOptions = useBranchOptions();
     const notifyWhenDone = cmd.rundeckSettings.useSelect((s) => s.notifyWhenDone);
     const [signingOut, setSigningOut] = useState(false);
@@ -80,7 +80,12 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
                 help="A job counts as production when its top folder or project name contains one of these words."
                 value={prodEnvs}
                 fallback={DEFAULT_PROD_ENVS}
-                onCommit={(list) => cmd.updateRundeckSettings({ prodEnvs: list })}
+                onCommit={(list) =>
+                    void rundeckApi
+                        .setLists({ prodEnvs: list })
+                        .then(() => invalidate((kind) => kind === "rnd.lists"))
+                        .catch((e: unknown) => setError(failureMessage(e)))
+                }
             />
             <ListField
                 label="Branch options"
@@ -89,8 +94,8 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
                 fallback={DEFAULT_BRANCH_OPTIONS}
                 onCommit={(list) =>
                     void rundeckApi
-                        .setBranchOptions(list)
-                        .then(() => invalidate((kind) => ["rnd.branchOptions", "rnd.matrix", "rnd.jobCells", "rnd.plan"].includes(kind)))
+                        .setLists({ branchOptions: list })
+                        .then(() => invalidate((kind) => ["rnd.lists", "rnd.matrix", "rnd.jobCells", "rnd.plan"].includes(kind)))
                         .catch((e: unknown) => setError(failureMessage(e)))
                 }
             />

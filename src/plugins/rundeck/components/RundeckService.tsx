@@ -5,7 +5,7 @@ import { formatAgo, formatDuration } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconExternal, IconFetch, IconGit, IconRun, IconWarning, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
 import { failureMessage, type RundeckExecution } from "../api";
-import { rndExecutionsR, rndJobDetailR, rndJobsR, useBranchOptions } from "../resources";
+import { rndExecutionsR, rndJobDetailR, rndJobsR, useBranchOptions, useProdEnvs } from "../resources";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
 import { branchOf, branchOptionName, isProdTarget } from "../shape";
@@ -26,7 +26,7 @@ const HISTORY = 30;
 export function RundeckService({ paneId, active, level }: Props) {
     const job = cmd.jobRefOf(level);
     const branchOptions = useBranchOptions();
-    const isProd = cmd.rundeckSettings.useSelect((s) => isProdTarget(job.project, job.group, s.prodEnvs));
+    const isProd = isProdTarget(job.project, job.group, useProdEnvs());
     const detail = useResourceEnabled(active, rndJobDetailR, job.jobId);
     const jobs = useResourceEnabled(active, rndJobsR, job.project);
     const execs = useResourceEnabled(active, rndExecutionsR, job.jobId, job.project, HISTORY);

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { closeCorePalettes, onPaneClosed, openSurface } from "../../plugin-api/host";
 import { definePluginSettings } from "../../plugin-api/settings";
 import { RUNDECK_DEPLOY, RUNDECK_PLUGIN_ID } from "./kinds";
-import { DEFAULT_PROD_ENVS, basenameOf } from "./shape";
+import { basenameOf } from "./shape";
 
 /** A Rundeck job as the views address it, plus the local checkout linked to it, if any. */
 export interface JobRef {
@@ -32,7 +32,6 @@ export interface DeployTarget {
 export interface RundeckSettings {
     activeProject: string;
     activeGroup: string | null;
-    prodEnvs: string[];
     /** The job picked for each local project folder. */
     deployTargets: Record<string, DeployTarget>;
     treeHidden: boolean;
@@ -41,11 +40,6 @@ export interface RundeckSettings {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-
-const stringList = (value: unknown, fallback: string[]): string[] => {
-    if (!Array.isArray(value)) return fallback;
-    return value.filter((entry): entry is string => typeof entry === "string");
-};
 
 function decodeSettings(saved: unknown): RundeckSettings {
     const raw = isRecord(saved) ? saved : {};
@@ -58,7 +52,6 @@ function decodeSettings(saved: unknown): RundeckSettings {
     return {
         activeProject: typeof raw.activeProject === "string" ? raw.activeProject : "",
         activeGroup: typeof raw.activeGroup === "string" && raw.activeGroup ? raw.activeGroup : null,
-        prodEnvs: stringList(raw.prodEnvs, DEFAULT_PROD_ENVS),
         deployTargets,
         treeHidden: raw.treeHidden === true,
         notifyWhenDone: raw.notifyWhenDone !== false,

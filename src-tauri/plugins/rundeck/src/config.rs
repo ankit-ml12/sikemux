@@ -1,6 +1,6 @@
 // The Rundeck this app is signed in to. The API token lives in the Keychain;
-// the file beside it keeps the address, who signed in, and which job options
-// carry the branch.
+// the file beside it keeps the address, who signed in, which job options carry
+// the branch, and which folders are production.
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -24,9 +24,14 @@ const TOKEN_SERVICE: &str = "sikemux-rundeck-token-test";
 const TOKEN_ACCOUNT: &str = "api-token";
 
 const DEFAULT_BRANCH_OPTIONS: [&str; 4] = ["BRANCH", "GIT_BRANCH", "GIT_REF", "REF"];
+const DEFAULT_PROD_ENVS: [&str; 4] = ["prod", "production", "prd", "live"];
 
-fn default_branch_options() -> Vec<String> {
+pub fn default_branch_options() -> Vec<String> {
     DEFAULT_BRANCH_OPTIONS.map(String::from).to_vec()
+}
+
+pub fn default_prod_envs() -> Vec<String> {
+    DEFAULT_PROD_ENVS.map(String::from).to_vec()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -41,6 +46,8 @@ pub struct Settings {
     pub allow_insecure_private_http: bool,
     /// Job options that hold the git branch, tried in order, in any case.
     pub branch_options: Vec<String>,
+    /// Words that mark a job's top folder or project as production.
+    pub prod_envs: Vec<String>,
 }
 
 impl Default for Settings {
@@ -51,6 +58,7 @@ impl Default for Settings {
             token_id: String::new(),
             allow_insecure_private_http: false,
             branch_options: default_branch_options(),
+            prod_envs: default_prod_envs(),
         }
     }
 }

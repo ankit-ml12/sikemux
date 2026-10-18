@@ -910,7 +910,6 @@ describe("frontend persistence", () => {
         expect(getState().sessionOrder).toEqual([sid]);
         expect(getState().recent).toEqual([]);
         expect(rundeckSettings.get().activeProject).toBe("");
-        expect(rundeckSettings.get().prodEnvs).toEqual(["prod"]);
 
         invoke.mockResolvedValue(undefined);
         const unsubscribe = subscribePersist();
@@ -1006,7 +1005,6 @@ describe("frontend persistence", () => {
         expect(rundeckSettings.get()).toEqual({
             activeProject: "channeliq",
             activeGroup: "dev",
-            prodEnvs: ["prod"],
             deployTargets: {},
             treeHidden: false,
             notifyWhenDone: true,
