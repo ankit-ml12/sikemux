@@ -668,6 +668,7 @@
   .prompt p { margin-top: 8px; font-size: 15px; line-height: 1.5; text-wrap: balance; }
   .prompt .digits { margin-top: 24px; }
   .prompt-form { padding: 24px 24px 0; display: flex; flex-direction: column; gap: 12px; }
+  .warn-line { font-size: 15px; line-height: 1.5; color: var(--danger); }
   .stack .prompt-glyph { margin-bottom: 10px; }
   .digits span.gap { background: none; border: 0; }
   .dev-connect { flex: none; height: 32px; padding: 0 13px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-raised); font-size: 14px; font-weight: 600; color: var(--text-primary); }
@@ -1300,7 +1301,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Confirm it's you</b><div class="note">Deleting needs a sign-in from the last ten minutes. When it is older, the server says so and the phone asks again: the password for an account that has one, otherwise a code to the account's email, in the same tiles as signing in. The sixth digit sends it, and the deletion carries on by itself. A wrong code edges the tiles red and says why; Back cancels and deletes nothing.</div></figcaption>
+      <figcaption><b>Confirm it's you</b><div class="note">Deleting the account, and adding a host by its code, need a sign-in from the last ten minutes. When it is older, the server says so and the phone asks again: the password for an account that has one, otherwise a code to the account's email, in the same tiles as signing in. The sixth digit sends it, and the deletion or the adding carries on by itself. A wrong code edges the tiles red and says why; Back cancels and does nothing. With a password the button under it is named for what comes next: Delete account, or Add host.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1592,7 +1593,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Host code</b><div class="note">Reached from "Have a code?" under Bring it in, or from a sikemux://host-sign-in?code= link with the code filled in and looked up at once. The code is the one a server or spare computer prints when it signs in over SSH; dashes and case don't matter. A code that is wrong, refused or past its ten minutes says so in red under the field.</div></figcaption>
+      <figcaption><b>Host code</b><div class="note">Reached from "Have a code?" under Bring it in. The person types the code the host shows; no link fills it in, so a code sent by someone else can't add their computer. The code is the one a server or spare computer prints when it signs in over SSH; dashes and case don't matter. A code that is wrong, refused or past its ten minutes says so in red under the field.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1605,12 +1606,29 @@
           <p>Linux · stable. Only add a computer you are setting up right now.</p>
         </div>
         <div class="prompt-form">
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconClock:18}}</span><div class="body"><div class="t">Asked 2m ago</div></div></div>
+            <div class="row"><span class="mark">{{IconGlobe:18}}</span><div class="body"><div class="t">From Germany · Hetzner Online</div><div class="s">203.0.113.7</div></div></div>
+          </div>
+      <figcaption><b>Check the host</b><div class="note">The host behind the code, as it named itself, with its system and channel, and a one-line warning. Under it, when the host asked and from where: the country and network the server's address book places it in, then its address. When the server knows neither it says "From an unknown place". Add host puts it on the account, after a sign-in from the last ten minutes: when the last is older, Confirm it's you comes first, the same screen as deleting the account, its button reading Add host, and the host is added once it is done. The host finishes signing in on its next ask and shows up in Devices to connect to. Not mine stops its sign-in. Either way the screen says what happened, and Done goes back to Devices.</div></figcaption>
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+        <div class="prompt">
+          <div class="prompt-glyph">{{IconDesktop:34}}</div>
+          <h2>Add build-box to your account?</h2>
+          <p>Linux · stable. Only add a computer you are setting up right now.</p>
+        </div>
+        <div class="prompt-form">
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconClock:18}}</span><div class="body"><div class="t">Asked just now</div></div></div>
+            <div class="row"><span class="mark">{{IconGlobe:18}}</span><div class="body"><div class="t">From an unknown place</div></div></div>
+          </div>
+          <div class="warn-line">This host was removed from your account on 3 October 2026. Add it back only if you are setting it up again yourself.</div>
           <div class="btn primary">Add host</div>
           <div class="btn danger">Not mine</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Check the host</b><div class="note">The host behind the code, as it named itself, with its system and channel, and a one-line warning. Add host puts it on the account; the host finishes signing in on its next ask and shows up in Devices to connect to. Not mine stops its sign-in. Either way the screen says what happened, and Done goes back to Devices.</div></figcaption>
+      <figcaption><b>A host once removed</b><div class="note">A host taken off the account can come back only through a code approved like this, so the screen says in red when it was removed. Its rows read the same; here the server could not place the address.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
