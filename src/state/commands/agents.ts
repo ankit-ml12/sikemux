@@ -1,5 +1,5 @@
 import { agentApi, type AgentSession } from "../../api/agents";
-import { acpApi, type AcpChat } from "../../api/acp";
+import { acpApi } from "../../api/acp";
 import { agentNamesApi } from "../../api/agentNames";
 import type { ChatInfo } from "../../api/generated/wire";
 import { runOfAgent } from "../../agents/agentBoard";
