@@ -79,6 +79,8 @@ export function clerkVerifier(options: VerifierOptions): Verifier {
           expiresAt: new Date((payload.exp ?? 0) * 1000),
         };
       }
+      if (payload.client_id !== undefined)
+        throw unauthorized("The sign-in token is an app's, not a session's.");
       if (typeof payload.sid !== "string")
         throw unauthorized("The sign-in token is not a session token.");
       if (payload.sts === "pending")
