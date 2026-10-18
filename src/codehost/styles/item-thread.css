@@ -292,11 +292,16 @@
     padding-top: var(--space-3);
     border-top: 1px solid var(--border);
 }
-.gha-reading .prose > h3:first-child {
+.gha-reading .prose > :is(h3:first-child, :is(h1, h2) + h3) {
+    margin-top: var(--space-3);
     padding-top: 0;
     border-top: 0;
 }
 .gha-summary.gha-reading > .gha-summary-head {
     padding: var(--space-2) var(--space-4);
     font-size: var(--text-sm);
+}
+/* The summary's text starts on the same edge as its title. */
+.gha-summary.gha-reading > .prose {
+    padding: var(--space-3) var(--space-4);
 }
