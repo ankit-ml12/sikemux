@@ -101,7 +101,7 @@
     left: calc(var(--tl-x) - 0.5px);
     width: 1px;
     height: var(--tl-gap);
-    background: var(--border);
+    background: var(--tree-spine);
 }
 .gha-tl-event {
     position: relative;
@@ -264,7 +264,7 @@
     left: calc(var(--tl-x) - 0.5px);
     z-index: -1;
     width: 1px;
-    background: var(--border);
+    background: var(--tree-spine);
 }
 .gha-tl-commits {
     isolation: isolate;
