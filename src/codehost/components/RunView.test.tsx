@@ -154,7 +154,7 @@ describe("a run waiting for approval", () => {
 describe("RunView", () => {
     it("re-runs once however many times the button is pressed", async () => {
         await renderRun(makeRun());
-        const button = screen.getByRole("button", { name: "Re-run all jobs" });
+        const button = screen.getByRole("button", { name: "Re-run all" });
         fireEvent.click(button);
         fireEvent.click(button);
         await act(async () => {});
@@ -225,7 +225,7 @@ async function renderPane(run: Run, jobs: Job[] = [], canWrite = true) {
     return view;
 }
 
-const card = () => document.querySelector(".gha-merge-box") as HTMLElement;
+const card = () => document.querySelector(".git-side-head") as HTMLElement;
 
 describe("the run's card", () => {
     it("cancels a run only once the person confirms", async () => {
@@ -346,7 +346,7 @@ describe("watching a run", () => {
         });
         expect(api.watch).toHaveBeenCalledTimes(1);
         expect(api.run).toHaveBeenCalled();
-        expect(within(card()).getByText("Passed")).toBeTruthy();
+        expect(within(card()).getByRole("img", { name: "Passed" })).toBeTruthy();
     });
 
     it("stops the watch when the run is closed", async () => {

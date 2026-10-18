@@ -294,3 +294,22 @@ button.git-file-row {
 .git-right-review > .empty-state {
     margin: auto;
 }
+/* An open run's side panel: its actions share the row equally, however many it has. */
+.git-btn-group.git-side-actions.run-side-actions {
+    grid-template-columns: none;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+}
+.run-side-took {
+    margin-left: auto;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+}
+.pr-ci-pending.run-mark[data-outcome="running"] {
+    width: 13px;
+    height: 13px;
+}
+.git-side-head > :is(.gha-callout, .gha-attempts, .gha-approvals) {
+    margin: 0 var(--space-2) var(--space-2);
+}
