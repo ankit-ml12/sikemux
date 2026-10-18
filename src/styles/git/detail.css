@@ -60,7 +60,7 @@
     display: grid;
     grid-template-columns: 64px minmax(0, 1fr);
     align-items: center;
-    row-gap: var(--space-1h);
+    row-gap: var(--space-1);
     column-gap: var(--space-3);
     margin: var(--space-3) 0 0;
     font-size: var(--text-2xs);
@@ -73,6 +73,7 @@
     align-items: center;
     flex-wrap: wrap;
     gap: var(--space-1h);
+    min-height: 22px;
     min-width: 0;
     margin: 0;
     color: var(--text-secondary);
@@ -83,6 +84,7 @@
     width: 20px;
     height: 20px;
     padding: 0;
+    margin-left: -4px;
     border-radius: var(--radius-1);
     color: var(--text-tertiary);
 }
