@@ -378,6 +378,12 @@ export const IconReplaceAll = makeSvgIcon(
     </>,
 );
 export const IconCheck = makeSvgIcon(<path d="M3.5 8.4 6.6 11.5 12.5 4.5" />);
+export const IconCheckCircle = makeSvgIcon(
+    <>
+        <circle cx="8" cy="8" r="6.2" />
+        <path d="m5.5 8.2 1.8 1.8 3.3-3.6" />
+    </>,
+);
 export const IconWarning = makeSvgIcon(
     <>
         <path d="M8 1.9 14.6 13.6H1.4z" />

@@ -7,6 +7,7 @@ import {
     Dropdown,
     EmptyState,
     IconCheck,
+    IconCheckCircle,
     IconCheckout,
     IconChevron,
     IconCommit,
@@ -769,7 +770,7 @@ function PullColumn({
                         icon: <IconCommit size={14} />,
                         content: <PullHistory repo={repo} number={number} active={active} selected={commit} onSelect={onCommit} />,
                     },
-                    { id: "merge", label: "Checks and merge", icon: <IconMerge size={14} />, content: merge },
+                    { id: "merge", label: "Checks and merge", icon: <IconCheckCircle size={14} />, content: merge },
                 ]}
             />
         </div>
