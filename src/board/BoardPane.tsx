@@ -14,7 +14,7 @@ import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
 import { useStore } from "../state/store";
 import { basename } from "../lib/paths";
-import { IconBoard, IconLink, IconRefresh } from "../ui/Icons";
+import { IconBoard, IconChevron, IconLink, IconRefresh, IconSearch } from "../ui/Icons";
 import { EmptyState } from "../ui/Panel";
 import { useCardDrag } from "../ui/kanbanDrag";
 import { Switch } from "../ui/Controls";
@@ -51,6 +51,13 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     const [onlyNeeds, setOnlyNeeds] = useState(false);
     const [selected, setSelected] = useState<number | "new" | "auto" | "messages" | null>(null);
     const [moving, setMoving] = useState<Record<number, CardStatus>>({});
+    const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+    const fold = (lane: string) =>
+        setFolded((now) => {
+            const next = new Set(now);
+            if (!next.delete(lane)) next.add(lane);
+            return next;
+        });
 
     const refresh = () => readBoard(folder);
     useEffect(() => {
@@ -185,7 +192,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                         role="list"
                         aria-label={name}>
                         <div className="kanban-column-head">
-                            <span>{name}</span>
+                            <span className="kanban-column-name">{name}</span>
                             <span className="kanban-count">{inColumn.length}</span>
                         </div>
                         {inColumn.map(card)}
@@ -200,7 +207,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
             return (
                 <>
                     <b>Nobody yet</b>
-                    {autoOn && <span className="kanban-meta">Auto picks these up</span>}
+                    <span className="kanban-meta">{autoOn ? `${count(list)} · Auto picks these up` : count(list)}</span>
                 </>
             );
         const keys = [...new Set(list.flatMap((each) => (each.ticket ? [each.ticket.key] : [])))];
@@ -209,9 +216,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
             <>
                 <TeamMark id={team} cli={list.find((each) => each.owner === team)?.ownerCli ?? null} />
                 <b>{list[0]?.teamName ?? "An agent"}'s team</b>
-                {(keys.length > 0 || workers.length > 0) && (
-                    <span className="kanban-meta">{[...keys, workers.join(", ")].filter(Boolean).join(" · ")}</span>
-                )}
+                <span className="kanban-meta">{[count(list), ...keys, workers.join(", ")].filter(Boolean).join(" · ")}</span>
             </>
         );
     };
@@ -224,19 +229,24 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                         <h2>Board</h2>
                         <span className="kanban-tag board-project">{basename(folder)}</span>
                         <span className="kanban-meta">
-                            {cards.length === 1 ? "1 card" : `${cards.length} cards`}
+                            {count(cards)}
                             {fromTickets > 0 && ` · ${fromTickets} from Jira`}
                         </span>
                         <span className="kanban-grow" />
                         <span className="board-auto" title={auto?.autoNote ?? undefined}>
                             <Switch checked={autoOn} onChange={(on) => void setAuto(on)} label="Auto" />
-                            <button type="button" className="board-auto-label" aria-pressed={selected === "auto"} onClick={() => setSelected("auto")}>
-                                {autoOn && auto ? `Auto · ${auto.running} of ${auto.settings.slots} running` : "Auto"}
+                            <button type="button" className="kanban-pick" aria-pressed={selected === "auto"} onClick={() => setSelected("auto")}>
+                                Auto
+                                {autoOn && auto && (
+                                    <span className="kanban-pick-count">
+                                        {auto.running} of {auto.settings.slots} running
+                                    </span>
+                                )}
                             </button>
                         </span>
                         <button
                             type="button"
-                            className="board-auto-label"
+                            className="kanban-pick"
                             aria-pressed={selected === "messages"}
                             title="Messages between this project's agents"
                             onClick={() => setSelected("messages")}>
@@ -250,14 +260,17 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                         </button>
                     </div>
                     <div className="kanban-filters" role="group" aria-label="Filter the board">
-                        <input
-                            className="kanban-search"
-                            value={words}
-                            onChange={(event) => setWords(event.target.value)}
-                            placeholder="Find a card"
-                            aria-label="Find a card"
-                            spellCheck={false}
-                        />
+                        <span className="kanban-find">
+                            <IconSearch size={13} />
+                            <input
+                                className="kanban-search"
+                                value={words}
+                                onChange={(event) => setWords(event.target.value)}
+                                placeholder="Find a card"
+                                aria-label="Find a card"
+                                spellCheck={false}
+                            />
+                        </span>
                         <button type="button" className="kanban-pick" aria-pressed={fromJira} onClick={() => setFromJira((on) => !on)}>
                             From Jira
                         </button>
@@ -288,13 +301,19 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                 ) : shown.length === 0 ? (
                     <EmptyState message="No card matches." />
                 ) : (
-                    <div className="board-bands">
-                        {bands.map(([team, list]) => (
-                            <div key={team ?? "nobody"} className="board-band">
-                                <div className="board-band-head">{bandHead(team, list)}</div>
-                                {columns(list)}
-                            </div>
-                        ))}
+                    <div className="kanban-lanes">
+                        {bands.map(([team, list]) => {
+                            const lane = team ?? "nobody";
+                            return (
+                                <div key={lane} className="kanban-lane">
+                                    <button type="button" className="kanban-lane-head" aria-expanded={!folded.has(lane)} onClick={() => fold(lane)}>
+                                        <IconChevron size={12} className="kanban-lane-chevron" />
+                                        {bandHead(team, list)}
+                                    </button>
+                                    {!folded.has(lane) && columns(list)}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </section>
@@ -317,6 +336,8 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
         </div>
     );
 }
+
+const count = (list: readonly BoardCard[]) => (list.length === 1 ? "1 card" : `${list.length} cards`);
 
 function TeamMark({ id, cli }: { id: string; cli: string | null }) {
     return <AgentMark agentId={id} cli={cli} />;

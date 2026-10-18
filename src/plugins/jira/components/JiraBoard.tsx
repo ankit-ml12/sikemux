@@ -126,7 +126,7 @@ export function JiraBoard({
                     role="list"
                     aria-label={column.name}>
                     <div className="kanban-column-head">
-                        <span className="jira-column-name">{column.name}</span>
+                        <span className="kanban-column-name">{column.name}</span>
                         <span className="kanban-count">{column.issues.length}</span>
                     </div>
                     {column.issues.map((issue) => (
@@ -161,7 +161,7 @@ export function JiraBoard({
     );
 
     return (
-        <section className="kanban jira-board" aria-label={board.name}>
+        <section className="kanban" aria-label={board.name}>
             <header className="kanban-head">
                 <div className="kanban-title">
                     <h2>{board.name}</h2>
@@ -182,7 +182,7 @@ export function JiraBoard({
                     <p className="kanban-meta">Showing the first 300 issues. Pick people or narrow the board in Jira to see the rest.</p>
                 )}
                 <div className="kanban-filters" role="group" aria-label="Filter the board">
-                    <span className="jira-board-search">
+                    <span className="kanban-find">
                         <IconSearch size={13} />
                         <input
                             className="kanban-search"
@@ -246,17 +246,17 @@ export function JiraBoard({
             ) : !narrowed ? (
                 <SkeletonRows rows={6} label="Loading their cards" />
             ) : (
-                <div className="jira-lanes">
+                <div className="kanban-lanes">
                     {lanes.length === 0
                         ? lanesOf(columns)
                         : lanes.map((lane) => (
-                              <div key={lane.id} className="jira-swimlane">
+                              <div key={lane.id} className="kanban-lane">
                                   <button
                                       type="button"
-                                      className="jira-swimlane-head"
+                                      className="kanban-lane-head"
                                       aria-expanded={!folded.has(lane.id)}
                                       onClick={() => fold(lane.id)}>
-                                      <IconChevron size={12} className="jira-swimlane-chevron" />
+                                      <IconChevron size={12} className="kanban-lane-chevron" />
                                       <Avatar person={lane.person} large />
                                       <b>{lane.person?.name ?? "Unassigned"}</b>
                                       <span className="jira-meta">({lane.count === 1 ? "1 work item" : `${lane.count} work items`})</span>

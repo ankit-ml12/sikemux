@@ -294,6 +294,15 @@ export const SCENES = [
     crops: { stage: ".stage" },
   },
   {
+    name: "agent-board",
+    settle: 1200,
+    setup: async (page) => {
+      await openWindow(page, "s-sikemux", "w-tab-rail");
+      await run(page, () => showcase.cmd.openBoard());
+    },
+    crops: { stage: ".stage" },
+  },
+  {
     name: "jira-board",
     settle: 1400,
     setup: async (page) => {
