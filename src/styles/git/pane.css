@@ -17,6 +17,7 @@
 .git-framed {
     position: relative;
     isolation: isolate;
+    overflow: clip;
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     background: var(--pane-ground);
