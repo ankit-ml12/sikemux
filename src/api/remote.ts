@@ -2,31 +2,10 @@ import { invokeCommand as invoke } from "./invoke";
 import type { PublishedBuddies } from "../buddies/published";
 import { getIpcTransport } from "./transport";
 
-import type { AllowedDevice, DeviceAccess, DeviceInfo, PendingDevice, PublishedChat, PublishedRecent, RemoteStatus } from "./generated/wire";
+import type { AllowedDevice, DeviceAccess, PublishedChat, PublishedRecent, RemotePairing, RemoteStatus } from "./generated/wire";
 
-export type { AccountLink, NotificationState, UpdateRequired } from "./generated/wire";
-export type { AllowedDevice, DeviceAccess, DeviceInfo, PendingDevice, PublishedChat, PublishedRecent, RemoteStatus };
-
-/** Another host on the account linked with this one, whose agents and this host's may start each other's workers. */
-export interface LinkedHost {
-    /** The host's public key. */
-    readonly id: string;
-    readonly name: string;
-    readonly platform: string;
-    readonly linkedAt: number;
-    readonly lastSeen: number | null;
-    readonly connected: boolean;
-    /** Agents of teams shared with this host that run on it. */
-    readonly agents: number;
-}
-
-/** Who waits to join or link with this host, and who already has. */
-export interface RemotePairing {
-    readonly pending: readonly PendingDevice[];
-    readonly devices: readonly DeviceInfo[];
-    readonly links: readonly LinkedHost[];
-    readonly pendingLinks: readonly PendingDevice[];
-}
+export type { AccountLink, DeviceInfo, LinkedHost, NotificationState, PendingDevice, UpdateRequired } from "./generated/wire";
+export type { AllowedDevice, DeviceAccess, PublishedChat, PublishedRecent, RemotePairing, RemoteStatus };
 
 /** A project a paired device may start an agent in. */
 export interface PublishedProject {

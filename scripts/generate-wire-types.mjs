@@ -20,6 +20,8 @@ const SOURCES = [
   `${WIRE}/accounts/protocol.rs`,
   `${CORE}/server/inbox.rs`,
   `${CORE}/server/workspace.rs`,
+  `${CORE}/server/remote.rs`,
+  `${CORE}/server/hosts/mod.rs`,
 ];
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
@@ -36,6 +38,11 @@ const RENAMES = {
     Shown: "AgentShown",
   },
   [`${CORE}/server/workspace.rs`]: { Buddies: "PublishedBuddies" },
+  [`${CORE}/server/remote.rs`]: {
+    Pairing: "RemotePairing",
+    LinkedHost: "StoredLink",
+  },
+  [`${CORE}/server/hosts/mod.rs`]: { LinkView: "LinkedHost" },
 };
 
 /** Fields the Rust keeps as JSON so phones read changes over the air, and the type that JSON has. */
@@ -50,6 +57,7 @@ const TS_ROOTS = [
   "PublishedChat",
   "PublishedRecent",
   "AllowedDevice",
+  "RemotePairing",
   "NetworkChange",
   "Inbox",
 ];

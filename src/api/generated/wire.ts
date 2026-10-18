@@ -5,7 +5,7 @@ export interface DeviceView {
     sessions: SessionInfo[];
     chats: ChatInfo[];
     attentions: Attention[];
-    /** Saved chats the app lists as recent, newest first, none of them open. */
+    /** The newest saved chats in this host's projects, none of them open. */
     recent: RecentInfo[];
     /**
      * What waits on the person, ranked, as the core's inbox JSON. Kept as
@@ -589,6 +589,29 @@ export interface AllowedDevice {
     name: string;
     platform: string;
     access: DeviceAccess;
+}
+
+/**
+ * Who waits to join this host and who is paired, and the hosts linked with
+ * it or asking to be, for the owner's devices.
+ */
+export interface RemotePairing {
+    pending: PendingDevice[];
+    devices: DeviceInfo[];
+    links: LinkedHost[];
+    pendingLinks: PendingDevice[];
+}
+
+/** A linked host as Settings and phones list it. */
+export interface LinkedHost {
+    id: string;
+    name: string;
+    platform: string;
+    linkedAt: number;
+    lastSeen: number | null;
+    connected: boolean;
+    /** Agents of teams this host shares with it. */
+    agents: number;
 }
 
 /** What happened to this host's network. */
