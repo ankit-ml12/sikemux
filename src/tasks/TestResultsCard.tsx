@@ -1,37 +1,12 @@
-import { useEffect, useState } from "react";
 import { requestOpenFile } from "../state/commands/editor";
-import { swallow } from "../state/toast";
 import { IconAgent, IconClose, IconRefresh, IconTerminal } from "../ui/Icons";
-import type { ResolvedTaskDefinition, TaskControllerSnapshot } from "./taskRegistry";
-import { isTestTask, readTestResults, type TestResults } from "./testResults";
+import type { ProjectTask, TestResults } from "./coreTasks";
 
 export interface FinishedTestRun {
     /** Changes with every run, so a card dismissed for one run opens again for the next. */
     readonly key: string;
-    readonly task: ResolvedTaskDefinition;
+    readonly task: ProjectTask;
     readonly results: TestResults;
-}
-
-/** The JUnit results of the project's last test task, read once it has finished. */
-export function useFinishedTestRun(runtime: TaskControllerSnapshot | null): FinishedTestRun | null {
-    const task = runtime && runtime.activeRunId === null && runtime.task && isTestTask(runtime.task.id) ? runtime.task : null;
-    const key = task && runtime ? `${task.project}\0${task.id}\0${runtime.runAttempts}` : null;
-    const [found, setFound] = useState<FinishedTestRun | null>(null);
-    useEffect(() => {
-        if (!task || !key) return;
-        let cancelled = false;
-        void readTestResults(task.cwd)
-            .then((results) => {
-                if (!cancelled && results) setFound({ key, task, results });
-            })
-            .catch(swallow("read test results"));
-        return () => {
-            cancelled = true;
-        };
-        // The key names the run; the task object is rebuilt on every registry change.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [key]);
-    return found && found.key === key ? found : null;
 }
 
 /** `FooTest` for a Java class, `price.test.ts` for a file a JavaScript runner names. */
@@ -122,7 +97,7 @@ export function FailureCard({
     onShowOutput,
     onFix,
 }: {
-    task: ResolvedTaskDefinition;
+    task: ProjectTask;
     summary: string;
     onClose: () => void;
     onShowOutput: () => void;

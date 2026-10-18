@@ -1,5 +1,5 @@
 import type { FinishedTestRun } from "./TestResultsCard";
-import type { ResolvedTaskDefinition } from "./taskRegistry";
+import type { ProjectTask } from "./coreTasks";
 
 function relative(project: string, path: string): string {
     return path === project ? "." : path.startsWith(`${project}/`) ? path.slice(project.length + 1) : path;
@@ -23,10 +23,10 @@ export function testFixRequest(run: FinishedTestRun, project: string): string {
 }
 
 /** What an agent is asked when a task stopped with an error: it starts the task itself to read why. */
-export function failureFixRequest(task: ResolvedTaskDefinition, summary: string, project: string): string {
+export function failureFixRequest(task: ProjectTask, summary: string, project: string): string {
     return [
         `The task "${task.label}" in ${projectName(project)} stopped: ${summary}.`,
-        `It runs \`${task.command}\` in ${relative(project, task.cwd)}.`,
+        `It runs \`${task.command}\` in ${task.cwd}.`,
         `Start it with task_start (taskId ${task.id}) and read its output with task_read to see the error, then find the cause and fix it.`,
         "Start it again afterwards and check that it keeps running.",
     ].join("\n");

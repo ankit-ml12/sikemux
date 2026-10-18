@@ -16,7 +16,6 @@ import {
     toggleDesk,
 } from "./commands";
 import { deskEditorId, deskItemsOf, shownDeskItem } from "./desks";
-import { taskPtyBindings } from "../tasks/nativeRuntime";
 import { collectPanes } from "./layout";
 import { agentIdsOf, agentPaneId, shownDeskPaneId } from "./selectors";
 import { useSimulatorReveal } from "./simulatorReveal";
@@ -253,16 +252,14 @@ describe("the desk", () => {
         expect(getState().windows.window.activePaneId).toBe("agent-1");
     });
 
-    it("lets go of a terminal's process when its tab closes, and shows its neighbour", () => {
-        const release = vi.spyOn(taskPtyBindings, "release");
+    it("drops a terminal when its tab closes, and shows its neighbour", () => {
         openFileOnDesk("agent-1", "/code/a.ts");
         setState({ editorViews: { [deskEditorId("agent-1")]: { openTabs: ["/code/a.ts"], activePath: "/code/a.ts" } } } as never);
-        const id = openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
+        openDeskTerminal("agent-1", { terminalKey: "task-web", label: "Web", cwd: "/code" });
         const terminal = deskItemsOf(getState(), "agent-1").find((item) => item.kind === "terminal")!;
 
         closeDeskItem("agent-1", terminal);
 
-        expect(release).toHaveBeenCalledWith(id);
         expect(getState().desks["agent-1"].terminals).toEqual([]);
         const items = deskItemsOf(getState(), "agent-1");
         expect(shownDeskItem(getState().desks["agent-1"], items)).toBe("file:/code/a.ts");

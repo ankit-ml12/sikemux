@@ -34,7 +34,6 @@ function deps(sessions: SessionInfo[], chats: ChatInfo[] = []) {
         kill,
         chats: { list: async () => chats, stopIfIdle: stopChat },
         boards: async () => {},
-        tasks: { watch: vi.fn(), adoptDeckTask: vi.fn(), showHarnessTerminal: vi.fn() },
         schedule: (callback, delay) => {
             expect(delay).toBe(UNCLAIMED_GRACE_MS);
             scheduled.push(callback);

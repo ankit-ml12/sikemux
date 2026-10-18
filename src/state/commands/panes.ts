@@ -1,5 +1,4 @@
 import { pluginDocuments } from "../../plugins/documents";
-import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { sshStartup } from "../../terminal/sshStartup";
 import { getState, mutate, type StoreState } from "../store";
 import { agentPaneId, editorPaneOf, ownerSessionId, paneToSeparate, tabSplitAllowed, type SplitSide } from "../selectors";
@@ -176,10 +175,8 @@ export function closePane(windowId: string, paneId: string): void {
 }
 
 function closeActivePane(): void {
-    let taskPaneId: string | null = null;
     withActiveWindow((d, w, session) => {
         const closingPaneId = w.activePaneId;
-        if (collectPanes(w.root).some((pane) => pane.id === closingPaneId && pane.externalPty)) taskPaneId = closingPaneId;
         if (d.gitModal?.ownerPaneId === closingPaneId) d.gitModal = null;
         const root = removePane(w.root, closingPaneId);
         if (root === null && w.fixed) return;
@@ -209,7 +206,6 @@ function closeActivePane(): void {
         win.root = root;
         win.activePaneId = remaining[0].id;
     });
-    if (taskPaneId) taskPtyBindings.release(taskPaneId);
 }
 
 function replaceWithFreshTerminalTab(d: StoreState, session: Session, closing: Window): void {
@@ -228,13 +224,9 @@ function replaceWithFreshTerminalTab(d: StoreState, session: Session, closing: W
 }
 
 function closeActiveTerminalTab(): void {
-    let taskPaneIds: string[] = [];
     withActiveSession((d, session) => {
         const closing = d.windows[session.activeWindowId];
         if (!closing || closing.role !== "term") return;
-        taskPaneIds = collectPanes(closing.root)
-            .filter((pane) => pane.externalPty)
-            .map((pane) => pane.id);
 
         const winIds = d.windowsBySession[session.id] ?? [];
         const termIds = winIds.filter((id) => d.windows[id]?.role === "term");
@@ -259,7 +251,6 @@ function closeActiveTerminalTab(): void {
         sess.activeWindowId = nextId;
         d.zoomedPaneId = null;
     });
-    for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
 }
 
 export function closeActiveFocusTarget(): void {

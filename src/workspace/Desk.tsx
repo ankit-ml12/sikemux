@@ -469,7 +469,7 @@ function DeskSession({
                                 active={active && showing}
                                 visible={visible && showing}
                                 context={context(terminal.id)}
-                                externallyOwned
+                                taskTerminalKey={terminal.terminalKey}
                             />
                         </div>
                     );

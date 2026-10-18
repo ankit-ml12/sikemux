@@ -6,7 +6,7 @@ import { useToasts } from "../state/toast";
 import { getState, setState } from "../state/store";
 import { deskEditorId } from "../state/desks";
 import { noteSimulatorActing } from "../state/simulatorAgents";
-import { taskPtyBindings } from "../tasks/nativeRuntime";
+import { setTaskRunsForTests } from "../tasks/coreTasks";
 import type { Session, Window as WindowT } from "../state/types";
 import * as cmd from "../state/commands";
 import { DeskHost } from "./Desk";
@@ -564,7 +564,7 @@ describe("DeskHost", () => {
     });
 
     it("lists one kind at a time and switches kinds from the icons beside the strip", async () => {
-        taskPtyBindings.bind("term-web", { executionId: "run-1", terminalKey: "task-web", ptyId: 7 } as never);
+        setTaskRunsForTests([{ executionId: "run-1", taskId: "web", project: "/repo", status: "running", ptyId: 7, agentId: "agent-one", terminalKey: "task-web" }]);
         setState({
             desks: {
                 "agent-one": {
@@ -605,7 +605,7 @@ describe("DeskHost", () => {
         fireEvent.click(kinds.getByRole("tab", { name: "Files" }));
 
         expect(getState().desks["agent-one"].active).toBe("file:/repo/src/a.ts");
-        taskPtyBindings.release("term-web");
+        setTaskRunsForTests([]);
     });
 
     it("cannot switch to a kind with nothing in it, but an empty browser opens a page", async () => {

@@ -2,30 +2,18 @@ import { invokeCommand } from "../api/invoke";
 import { browserApi } from "../api/browser";
 import { pagesApi } from "../api/pages";
 import { chatShown } from "../chat/chatViews";
-import { portsApi } from "../api/ports";
 import { loadProjectConfig } from "../projects/projectConfig";
-import { trustProjectConfig } from "../projects/projectConfigRuntime";
-import { confirmDialog } from "../state/dialog";
-import { joinPath } from "../lib/paths";
-import { projectPorts } from "../ports/projectPorts";
 import { collectPanes } from "../state/layout";
 import { agentIdsOf, projectSessionId } from "../state/selectors";
 import { useStore, setState } from "../state/store";
 import * as commands from "../state/commands";
-import { appTaskRuntime, detectTasksWithJava } from "../tasks/application";
-import { PERSONAL_TASK_PREFIX } from "../tasks/addedTasks";
-import { DETECTED_TASK_PREFIX } from "../tasks/detectedTasks";
-import { checkProblems, checkTask } from "../tasks/environmentCheck";
-import { isFilePath, isTestTask, readTestResults } from "../tasks/testResults";
-import { NativeTaskExecutionBackend, WorkbenchTaskTerminalSurface, taskPtyBindings } from "../tasks/nativeRuntime";
-import type { TaskExecutionRequest } from "../tasks/runtime";
+import { runShownIn, taskRuns } from "../tasks/coreTasks";
 import { openTerminalWorker } from "../agents/terminalWorker";
 import { appConsole } from "./appConsole";
 
 /**
  * A tool call the core hands to the window because it needs the window: the
- * layout, `sikemux.json` and its trust prompt, or the panes. The core keeps
- * the runs, keys and events itself.
+ * panes it shows and what opens in them. The core answers everything else.
  */
 export interface HarnessRequest {
     id: string;
@@ -35,7 +23,8 @@ export interface HarnessRequest {
     params: Record<string, unknown>;
 }
 
-function preserveFocus<T>(operation: () => T): T {
+/** Runs `operation` and puts the person's focus back where it was. */
+export function preserveFocus<T>(operation: () => T): T {
     const before = useStore.getState();
     try {
         return operation();
@@ -55,20 +44,6 @@ function preserveFocus<T>(operation: () => T): T {
         });
     }
 }
-
-export function harnessTerminalKey(project: string, taskId: string): string {
-    return JSON.stringify(["harness", project, taskId]);
-}
-
-/* A task an agent started goes on that agent's desk. One started with no agent
-   behind it, or by one that has since closed, gets a tab in the workspace. */
-export const harnessTerminals = new WorkbenchTaskTerminalSurface(taskPtyBindings, (request) =>
-    request.agentId && useStore.getState().agents[request.agentId]
-        ? commands.openDeskTerminal(request.agentId, request)
-        : preserveFocus(() => commands.openTaskTerminal(request)),
-);
-
-const backend = new NativeTaskExecutionBackend();
 
 function text(params: Record<string, unknown>, key: string, required = true): string | undefined {
     const value = params[key];
@@ -93,101 +68,6 @@ function projectSession(request: HarnessRequest) {
     return session;
 }
 
-async function configuredTask(project: string, taskId: string) {
-    const config = await loadProjectConfig(project);
-    if (config.status === "absent") throw new Error("Project has no sikemux.json; add one that defines tasks");
-    if (config.status === "invalid")
-        throw new Error(`sikemux.json is invalid: ${config.errors.map((error) => `${error.path} ${error.message}`).join(" · ")}`);
-    const task = config.config.tasks.find((task) => task.id === taskId);
-    if (!task) throw new Error("Task is not defined in sikemux.json");
-    return { config, task };
-}
-
-/** The person already let a YOLO agent run anything, so its tasks skip the trust prompt. */
-function runsInYoloMode(request: HarnessRequest): boolean {
-    return Boolean(request.agentId && useStore.getState().agents[request.agentId]?.permissionMode === "bypass");
-}
-
-type Launch = Omit<TaskExecutionRequest, "executionId" | "terminalKey" | "agentId">;
-
-async function configuredLaunch(request: HarnessRequest, executionId: string, taskId: string): Promise<{ launch: Launch; previewUrl?: string }> {
-    const { project } = request;
-    const { config, task } = await configuredTask(project, taskId);
-    const trusted =
-        runsInYoloMode(request) ||
-        (await trustProjectConfig(config, (ask) => {
-            void invokeCommand("harness_awaiting_trust", { executionId }).catch(() => {});
-            return confirmDialog(ask);
-        }));
-    if (!trusted) throw new Error("Project configuration was not approved");
-    const fresh = await loadProjectConfig(project);
-    if (fresh.status !== "valid" || fresh.fingerprint !== config.fingerprint) throw new Error("Project configuration changed; inspect and retry");
-    projectSession(request);
-    const userTask = appTaskRuntime.getSnapshot(project);
-    if (userTask?.task?.id === taskId && ["running", "stopping"].includes(userTask.status))
-        throw new Error("This task is already running through the command deck");
-    return {
-        launch: {
-            taskId,
-            project,
-            source: "project",
-            label: task.label,
-            command: task.command,
-            cwd: task.cwd === "." ? project : joinPath(project, task.cwd),
-            env: task.env,
-            cols: 120,
-            rows: 30,
-        },
-        previewUrl: config.config.preview?.command === task.command ? config.config.preview.url : undefined,
-    };
-}
-
-/* The core has already made the run and checked the command task's directory;
-   this trusts, spawns it through the core under that run's id and shows its
-   terminal. */
-async function startTask(request: HarnessRequest): Promise<{ previewUrl?: string }> {
-    const { params, project } = request;
-    const executionId = text(params, "executionId")!;
-    const taskId = text(params, "taskId")!;
-    const command = text(params, "command", false);
-    let prepared: { launch: Launch; previewUrl?: string };
-    if (command) {
-        projectSession(request);
-        prepared = {
-            launch: {
-                taskId,
-                project,
-                source: "project",
-                label: text(params, "label")!,
-                command,
-                cwd: text(params, "cwd")!,
-                env: {},
-                cols: 120,
-                rows: 30,
-            },
-        };
-    } else if (taskId.startsWith(DETECTED_TASK_PREFIX) || taskId.startsWith(PERSONAL_TASK_PREFIX)) prepared = await detectedLaunch(request, taskId);
-    else prepared = await configuredLaunch(request, executionId, taskId);
-    const { launch, previewUrl } = prepared;
-    const previous = text(params, "previousExecutionId", false);
-    if (previous) await invokeCommand("harness_stop_runs", { executionId: previous });
-    const agentId = request.agentId ?? undefined;
-    const execution: TaskExecutionRequest = {
-        ...launch,
-        executionId,
-        terminalKey: harnessTerminalKey(project, taskId),
-        ...(agentId ? { agentId } : {}),
-    };
-    const started = await backend.start(execution);
-    try {
-        await harnessTerminals.open({ ...execution, ptyId: started.ptyId, agentId, signal: new AbortController().signal });
-    } catch (error) {
-        await Promise.resolve(backend.stop(started.ptyId)).catch(() => {});
-        throw error;
-    }
-    return previewUrl ? { previewUrl } : {};
-}
-
 /* A chat draws the page from the call's answer; an agent in its terminal has
    no chat, so the page opens on its desk instead. */
 async function showPage(request: HarnessRequest) {
@@ -207,67 +87,6 @@ async function showPage(request: HarnessRequest) {
     };
 }
 
-/** A task Sikemux found in the project's build files: no trust prompt, but the same check the run button makes. */
-async function detectedLaunch(request: HarnessRequest, taskId: string): Promise<{ launch: Launch; previewUrl?: string }> {
-    const { project } = request;
-    const { tasks, java } = await detectTasksWithJava(project);
-    const task = tasks.find((candidate) => candidate.id === taskId);
-    if (!task) throw new Error("No task with this id in the project's build files; call workspace_inspect for the current list");
-    const items = await checkTask(task, java.get(taskId) ?? null, [harnessTerminalKey(project, taskId)]);
-    // Another agent's server on the port is the usual case with worktrees, so this one moves to a free port instead of failing.
-    const moved = items.find((item) => item.kind === "port" && !item.ok && item.freePort !== null);
-    const movedTo = moved?.kind === "port" ? moved.freePort : null;
-    const problems = checkProblems(items.filter((item) => item !== moved));
-    if (problems) throw new Error(`${task.label} can't start yet:\n${problems}`);
-    projectSession(request);
-    return {
-        launch: {
-            taskId,
-            project,
-            source: "built-in",
-            label: task.label,
-            command: task.command,
-            cwd: task.cwd,
-            env: moved?.kind === "port" && moved.envVar && movedTo ? { ...task.env, [moved.envVar]: String(movedTo) } : (task.env ?? {}),
-            cols: 120,
-            rows: 30,
-        },
-        ...(movedTo ? { previewUrl: `http://localhost:${movedTo}` } : {}),
-    };
-}
-
-const FAILURE_MESSAGE_CHARS = 1000;
-
-/** The JUnit reports each module's test task left behind, failures first and with paths relative to the project. */
-async function latestTestResults(project: string, tasks: readonly { id: string; cwd: string }[]) {
-    const modules = [...new Set(tasks.filter((task) => isTestTask(task.id)).map((task) => task.cwd))];
-    const found = await Promise.all(modules.map(async (cwd) => ({ cwd, results: await readTestResults(cwd).catch(() => null) })));
-    return found.flatMap(({ cwd, results }) =>
-        results
-            ? [
-                  {
-                      cwd: relativeTo(project, cwd),
-                      passed: results.passed,
-                      failed: results.failed,
-                      skipped: results.skipped,
-                      failures: results.failures.map((failure) => ({
-                          test: isFilePath(failure.className) ? `${failure.className} › ${failure.name}` : `${failure.className}.${failure.name}`,
-                          message:
-                              failure.message.length > FAILURE_MESSAGE_CHARS
-                                  ? `${failure.message.slice(0, FAILURE_MESSAGE_CHARS)}…`
-                                  : failure.message,
-                          ...(failure.file ? { file: relativeTo(project, failure.file), line: failure.line } : {}),
-                      })),
-                  },
-              ]
-            : [],
-    );
-}
-
-function relativeTo(project: string, path: string): string {
-    return path === project ? "." : path.startsWith(`${project}/`) ? path.slice(project.length + 1) : path;
-}
-
 export async function handleHarnessRequest(request: HarnessRequest, signal?: AbortSignal): Promise<unknown> {
     if (signal?.aborted) throw signal.reason;
     if (request.method === "agent.terminal") return openTerminalWorker(request.params);
@@ -275,18 +94,9 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
     const { params, project } = request;
     switch (request.method) {
         case "workspace.inspect": {
-            const [config, listening, detected] = await Promise.all([
-                loadProjectConfig(project),
-                portsApi.listening().catch(() => []),
-                detectTasksWithJava(project).catch(() => null),
-            ]);
-            const testResults = await latestTestResults(project, detected?.tasks ?? []);
             const state = useStore.getState();
-            const previewUrl = config.status === "valid" ? config.config.preview?.url : undefined;
             return {
-                project,
                 sessionId: session.id,
-                agentId: request.agentId,
                 active: state.activeSessionId === session.id,
                 activeWindowId: session.activeWindowId,
                 windows: (state.windowsBySession[session.id] ?? [])
@@ -304,37 +114,8 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                             openTabs: state.editorViews[pane.id]?.openTabs,
                         })),
                     })),
-                tasks: [
-                    ...(config.status === "valid" ? config.config.tasks.map(({ id, label, command, cwd }) => ({ id, label, command, cwd })) : []),
-                    ...(detected?.tasks ?? []).map(({ id, label, command, cwd }) => {
-                        const java = detected?.java.get(id);
-                        return {
-                            id,
-                            label,
-                            command,
-                            cwd: relativeTo(project, cwd),
-                            foundIn: id.startsWith(PERSONAL_TASK_PREFIX) ? ".sikemux/tasks.json" : "build files",
-                            ...(java ? { java: { required: java.required, runsOn: java.runtime?.major ?? null } } : {}),
-                        };
-                    }),
-                ],
-                ...(testResults.length ? { testResults } : {}),
-                configStatus: config.status,
-                configErrors: config.status === "invalid" ? config.errors : undefined,
-                userTask: (() => {
-                    const task = appTaskRuntime.getSnapshot(project);
-                    return task ? { status: task.status, taskId: task.task?.id } : null;
-                })(),
-                ports: projectPorts(state, session.id, listening, previewUrl).map(({ port, address, process, owner }) => ({
-                    port,
-                    address,
-                    process,
-                    owner: { kind: owner.kind, label: owner.label },
-                })),
             };
         }
-        case "task.start":
-            return startTask(request);
         case "ui.open": {
             const kind = text(params, "kind")!;
             if (params.focus !== undefined && typeof params.focus !== "boolean") throw new Error("focus must be a boolean");

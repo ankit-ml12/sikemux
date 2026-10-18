@@ -8,7 +8,6 @@ import { lsp } from "../../api/lsp";
 import { sshApi } from "../../api/ssh";
 import { dirname } from "../../lib/paths";
 import { sshStartup } from "../../terminal/sshStartup";
-import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { getState, mutate, setState, type StoreState } from "../store";
 import { reportError } from "../toast";
 import { agentIdsOf } from "../selectors";
@@ -237,14 +236,6 @@ export function dropSession(id: string): void {
     const beforeClose = getState();
     const closingCwd = beforeClose.sessions[id]?.cwd;
     const closingAgentIds = agentIdsOf(beforeClose, id);
-    const taskPaneIds = (beforeClose.windowsBySession[id] ?? []).flatMap((windowId) => {
-        const window = beforeClose.windows[windowId];
-        return window
-            ? collectPanes(window.root)
-                  .filter((pane) => pane.externalPty)
-                  .map((pane) => pane.id)
-            : [];
-    });
     mutate((d) => {
         if (d.sessionOrder.length <= 1) return;
         const closed = d.sessions[id];
@@ -277,7 +268,6 @@ export function dropSession(id: string): void {
         d.zoomedPaneId = null;
     });
     if (!getState().sessions[id]) {
-        for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
         for (const agentId of closingAgentIds) closeAgentDesk(agentId);
     }
     if (closingCwd) {

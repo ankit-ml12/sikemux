@@ -3,51 +3,37 @@ import { openPortExternally, revealPortOwner } from "../ports/portActions";
 import { taskTerminalReveal } from "../ports/projectPorts";
 import { useProjectPorts } from "../ports/useProjectPorts";
 import { SendToAgentMenu } from "../agents/SendToAgentMenu";
-import { projectControllerBridge } from "../projects/controllerBridge";
-import { invokeCommand } from "../api/invoke";
 import { getState } from "../state/store";
 import { reportError } from "../state/toast";
 import { IconAgent, IconCheck, IconChevron, IconClose, IconExternal, IconPlus, IconRefresh, IconRun, IconStop, IconTerminal } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
-import { addRerunTask, appTaskRuntime, getAppTaskSnapshot, javaChoiceOf, subscribeAppTasks, subscribeTaskRuntime } from "./application";
-import { checkItemText } from "./environmentCheck";
+import { tasksApi, useProjectTasks, useTaskRuns, type ProjectTask, type TaskRun } from "./coreTasks";
 import {
     dismissPendingCheck,
-    fixAndRun,
     getPendingCheck,
-    projectTasksFor,
-    restartProjectTask,
-    runPendingCheckAnyway,
+    personRuns,
     runProjectTask,
-    stopProjectTask,
+    stopTaskRun,
     subscribePendingCheck,
     type PendingCheck,
 } from "./projectTaskActions";
-import { taskTerminalKey } from "./runtime";
 import { AddTaskForm } from "./AddTaskForm";
 import { failureFixRequest, findTasksRequest, testFixRequest } from "./agentRequests";
-import { FailureCard, TestResultsCard, useFinishedTestRun, type FinishedTestRun } from "./TestResultsCard";
-import { rerunFailedCommand } from "./testResults";
-import type { ResolvedTaskDefinition, TaskControllerSnapshot } from "./taskRegistry";
+import { FailureCard, TestResultsCard, type FinishedTestRun } from "./TestResultsCard";
 
-function useSecondsSince(runId: number | null): number {
-    const [startedAt, setStartedAt] = useState(() => Date.now());
+function useSecondsSince(startedAt: number | null): number {
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
-        if (runId === null) return;
-        const at = Date.now();
-        setStartedAt(at);
-        setNow(at);
+        if (startedAt === null) return;
+        setNow(Date.now());
         const timer = setInterval(() => setNow(Date.now()), 1000);
         return () => clearInterval(timer);
-    }, [runId]);
-    return Math.max(0, Math.floor((now - startedAt) / 1000));
+    }, [startedAt]);
+    return startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
-function exitSummary(snapshot: TaskControllerSnapshot): string {
-    const message = snapshot.failures.at(-1)?.message ?? "";
-    const code = /exited with code (\d+)/.exec(message)?.[1];
-    return code ? `exited ${code}` : "failed";
+function exitSummary(run: TaskRun): string {
+    return run.exitCode !== undefined ? `exited ${run.exitCode}` : "failed";
 }
 
 const BUILD_TOOL_LABELS: Readonly<Record<string, string>> = {
@@ -62,25 +48,25 @@ interface TaskGroup {
     readonly key: string;
     readonly title: string;
     readonly meta: string | null;
-    readonly tasks: readonly ResolvedTaskDefinition[];
+    readonly tasks: readonly ProjectTask[];
     /** The label without the folder, since the group's heading names it. */
-    readonly shortLabel: (task: ResolvedTaskDefinition) => string;
+    readonly shortLabel: (task: ProjectTask) => string;
 }
 
 /** sikemux.json's tasks, then one group per folder the build-file tasks came from. */
-function taskGroups(tasks: readonly ResolvedTaskDefinition[], project: string): TaskGroup[] {
+function taskGroups(tasks: readonly ProjectTask[], project: string): TaskGroup[] {
     const groups: TaskGroup[] = [];
-    const configured = tasks.filter((task) => task.source !== "built-in");
+    const configured = tasks.filter((task) => task.source === "project" || task.source === "personal");
     if (configured.length) groups.push({ key: "config", title: "sikemux.json", meta: null, tasks: configured, shortLabel: (task) => task.label });
-    const byFolder = new Map<string, ResolvedTaskDefinition[]>();
-    for (const task of tasks.filter((candidate) => candidate.source === "built-in"))
+    const byFolder = new Map<string, ProjectTask[]>();
+    for (const task of tasks.filter((candidate) => candidate.source === "detected" || candidate.source === "rerun"))
         byFolder.set(task.cwd, [...(byFolder.get(task.cwd) ?? []), task]);
     for (const [cwd, folderTasks] of byFolder) {
-        const folder = cwd === project ? (project.split("/").pop() ?? project) : cwd.slice(project.length + 1);
+        const folder = cwd === "." ? (project.split("/").pop() ?? project) : cwd;
         const tool = BUILD_TOOL_LABELS[folderTasks[0].command.split(" ")[0]];
-        const java = javaChoiceOf(project, folderTasks[0].id);
-        const javaText = java ? (java.runtime ? `Java ${java.runtime.major}` : `needs Java ${java.required}`) : null;
-        const suffix = cwd === project ? "" : ` (${folder})`;
+        const java = folderTasks[0].java;
+        const javaText = java ? (java.runsOn !== null ? `Java ${java.runsOn}` : `needs Java ${java.required}`) : null;
+        const suffix = cwd === "." ? "" : ` (${folder})`;
         groups.push({
             key: cwd,
             title: folder,
@@ -92,30 +78,13 @@ function taskGroups(tasks: readonly ResolvedTaskDefinition[], project: string): 
     return groups;
 }
 
-/** Stops a run from the menu's Running now list: the person's own task through the runtime, an agent's through the harness. */
-function stopRun(terminalKey: string | undefined, executionId: string): void {
-    let key: unknown[] = [];
-    try {
-        key = terminalKey ? (JSON.parse(terminalKey) as unknown[]) : [];
-    } catch {
-        key = [];
-    }
-    if (key[0] === "task" && typeof key[1] === "string") {
-        stopProjectTask(key[1]);
-        return;
-    }
-    void invokeCommand("harness_stop_runs", { executionId }).catch(reportError("stop run"));
-}
-
 function CheckCard({ check }: { check: PendingCheck }) {
     const [fixing, setFixing] = useState(false);
-    const installs = check.items.some((item) => !item.ok && item.kind !== "port");
-    const fixable = installs || check.items.some((item) => !item.ok && item.kind === "port" && item.freePort !== null);
+    const installs = check.checks.some((item) => !item.ok && item.kind !== "port");
+    const fixable = installs || check.checks.some((item) => !item.ok && item.kind === "port" && item.freePort !== null);
     const fix = () => {
         setFixing(true);
-        void fixAndRun(check)
-            .catch(reportError(`fix ${check.task.label}`))
-            .finally(() => setFixing(false));
+        void runProjectTask(check.project, check.task, { fix: true }).finally(() => setFixing(false));
     };
     return (
         <>
@@ -127,20 +96,20 @@ function CheckCard({ check }: { check: PendingCheck }) {
                         <IconClose size={11} />
                     </button>
                 </div>
-                {check.items.map((item) => {
-                    const { title, detail } = checkItemText(item);
-                    return (
-                        <div key={item.kind} className={`tb-run-check-item${item.ok ? "" : " bad"}`}>
-                            <span className="tb-run-check-mark">{item.ok ? <IconCheck size={11} /> : <IconClose size={11} />}</span>
-                            <span className="tb-run-check-text">
-                                <span>{title}</span>
-                                <span className="tb-run-check-detail">{detail}</span>
-                            </span>
-                        </div>
-                    );
-                })}
+                {check.checks.map((item) => (
+                    <div key={item.kind} className={`tb-run-check-item${item.ok ? "" : " bad"}`}>
+                        <span className="tb-run-check-mark">{item.ok ? <IconCheck size={11} /> : <IconClose size={11} />}</span>
+                        <span className="tb-run-check-text">
+                            <span>{item.title}</span>
+                            <span className="tb-run-check-detail">{item.detail}</span>
+                        </span>
+                    </div>
+                ))}
                 <div className="tb-run-check-actions">
-                    <button className="tb-run-check-btn" onClick={() => runPendingCheckAnyway(check)} disabled={fixing}>
+                    <button
+                        className="tb-run-check-btn"
+                        onClick={() => void runProjectTask(check.project, check.task, { force: true })}
+                        disabled={fixing}>
                         Run anyway
                     </button>
                     {fixable && (
@@ -155,43 +124,45 @@ function CheckCard({ check }: { check: PendingCheck }) {
 }
 
 export function RunChip({ sessionId, project }: { sessionId: string; project: string }) {
-    const registry = useSyncExternalStore(subscribeAppTasks, getAppTaskSnapshot);
-    const controller = useSyncExternalStore(projectControllerBridge.subscribe, projectControllerBridge.getActiveSnapshot);
-    const runtime = useSyncExternalStore(subscribeTaskRuntime, () => appTaskRuntime.getSnapshot(project));
+    const [menuOpened, setMenuOpened] = useState(0);
+    const offered = useProjectTasks(project, menuOpened);
+    const allRuns = useTaskRuns();
     const ports = useProjectPorts(sessionId);
     const [picked, setPicked] = useState<Readonly<Record<string, string>>>({});
     const [open, setOpen] = useState(false);
-    const elapsed = useSecondsSince(runtime?.activeRunId ?? null);
     const pendingCheck = useSyncExternalStore(subscribePendingCheck, getPendingCheck);
-    const testRun = useFinishedTestRun(runtime);
     const [dismissedTests, setDismissedTests] = useState<string | null>(null);
-    const [failureShown, setFailureShown] = useState<number | null>(null);
+    const [failureShown, setFailureShown] = useState<string | null>(null);
     const [adding, setAdding] = useState(false);
     const [agentPicker, setAgentPicker] = useState<{ x: number; y: number; text: string } | null>(null);
+    const { running: runningRun, last } = personRuns(allRuns, project);
+    const elapsed = useSecondsSince(runningRun?.startedAt ?? null);
 
-    const config = controller?.cwd === project ? (controller.config ?? null) : null;
-    const tasks = projectTasksFor(registry, project, config);
-    const running = runtime?.activeRunId != null ? (tasks.find((task) => task.id === runtime.task?.id) ?? null) : null;
+    const tasks = offered?.tasks ?? [];
+    const running = runningRun ? (tasks.find((task) => task.id === runningRun.taskId) ?? null) : null;
     const selected = running ?? tasks.find((task) => task.id === picked[project]) ?? tasks[0];
     if (!selected) return null;
 
-    const key = taskTerminalKey(project, selected.id);
-    const port = running ? ports.find((candidate) => candidate.owner.terminalKey === key) : undefined;
-    const failed = !running && runtime?.status === "failed" && runtime.task?.id === selected.id ? exitSummary(runtime) : null;
-    const java = javaChoiceOf(project, selected.id);
+    const key = runningRun?.terminalKey ?? (last?.taskId === selected.id ? last.terminalKey : null);
+    const port = runningRun ? ports.find((candidate) => candidate.owner.executionId === runningRun.executionId) : undefined;
+    const lastOfSelected = !running && last?.taskId === selected.id ? last : null;
+    const failed = lastOfSelected?.status === "failed" ? exitSummary(lastOfSelected) : null;
+    const java = selected.java;
     const url = port ? `http://localhost:${port.port}` : null;
     const otherRuns = ports.filter((candidate) => candidate.owner.kind !== "terminal" && candidate !== port);
-    const tests = !running && testRun?.task.id === selected.id ? testRun.results : null;
+    const testRun: FinishedTestRun | null =
+        lastOfSelected?.tests && !runningRun ? { key: lastOfSelected.executionId, task: selected, results: lastOfSelected.tests } : null;
+    const tests = testRun?.results ?? null;
     const testsCardOpen =
         testRun !== null && tests !== null && tests.failed > 0 && dismissedTests !== testRun.key && !open && pendingCheck?.project !== project;
 
     const close = () => setOpen(false);
     const showOutput = () => {
-        const reveal = taskTerminalReveal(getState(), sessionId, key);
+        const reveal = key ? taskTerminalReveal(getState(), sessionId, key) : null;
         if (reveal) revealPortOwner(reveal);
     };
     const primaryLabel = running ? `Stop ${running.label}` : `Run ${selected.label}`;
-    const failureCardOpen = failed !== null && !tests && failureShown === (runtime?.runAttempts ?? null) && !open;
+    const failureCardOpen = failed !== null && !tests && failureShown === (lastOfSelected?.executionId ?? null) && !open;
     const whyShown = (tests?.failed && dismissedTests === testRun?.key) || (failed !== null && !tests && !failureCardOpen);
     const status: { text: string; tone: string } | null = port
         ? { text: `:${port.port}`, tone: "" }
@@ -203,7 +174,7 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                 : { text: `${tests.passed} passed`, tone: "passed" }
             : failed
               ? { text: failed, tone: "failed" }
-              : java && !java.runtime
+              : java && java.runsOn === null
                 ? { text: `needs Java ${java.required}`, tone: "warn" }
                 : null;
     const pickAgent = (anchor: HTMLElement, text: string) => {
@@ -213,37 +184,49 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
     };
     const state = port ? "up" : running ? "running" : tests ? (tests.failed ? "failed" : "up") : failed ? "failed" : "idle";
     const rerunFailed = (run: FinishedTestRun) => {
-        const command = rerunFailedCommand(run.task.command, run.results.failures);
-        if (!command) return null;
+        if (!lastOfSelected) return null;
+        const executionId = lastOfSelected.executionId;
         return () => {
             setDismissedTests(run.key);
-            const [base, folder] = run.task.id.split(":");
-            const id = base.endsWith(".failed") ? run.task.id : folder ? `${base}.failed:${folder}` : `${base}.failed`;
-            const label = run.task.label.endsWith(" (failed only)") ? run.task.label : `${run.task.label} (failed only)`;
-            addRerunTask({ id, label, project, command, cwd: run.task.cwd, env: run.task.env }, run.task.id);
-            const task = getAppTaskSnapshot().tasks.find((candidate) => candidate.project === project && candidate.id === id);
-            if (!task) return;
-            setPicked((current) => ({ ...current, [project]: id }));
-            runProjectTask(project, config, task);
+            void tasksApi
+                .rerunFailed(executionId)
+                .then(({ taskId }) => setPicked((current) => ({ ...current, [project]: taskId })))
+                .catch(reportError("rerun failed tests"));
         };
     };
     return (
         <>
             <span className="tb-run" data-no-window-drag>
-                <Tooltip label={primaryLabel}>
+                <span className="tb-run-split">
+                    <Tooltip label={primaryLabel}>
+                        <button
+                            className={`tb-run-btn${running ? " running" : ""}`}
+                            onClick={() => (runningRun ? stopTaskRun(runningRun) : void runProjectTask(project, selected))}
+                            aria-label={primaryLabel}>
+                            {running ? <IconStop size={11} /> : <IconRun size={11} />}
+                            {running ? "Stop" : "Run"}
+                        </button>
+                    </Tooltip>
                     <button
-                        className={`tb-run-btn${running ? " running" : ""}`}
-                        onClick={() => (running ? stopProjectTask(project) : runProjectTask(project, config, selected))}
-                        aria-label={primaryLabel}>
-                        {running ? <IconStop size={11} /> : <IconRun size={11} />}
-                        {running ? "Stop" : "Run"}
+                        className="tb-run-chip"
+                        onClick={() => {
+                            if (!open) setMenuOpened((count) => count + 1);
+                            setOpen((value) => !value);
+                        }}
+                        aria-haspopup="menu"
+                        aria-expanded={open}
+                        aria-label="Choose a task to run">
+                        {state !== "idle" && <span className={`tb-run-state ${state}`} />}
+                        <span className="tb-run-label">{selected.label}</span>
+                        {status && <span className={`tb-run-meta ${status.tone}`}>· {status.text}</span>}
+                        <IconChevron size={10} className="env-dd-chev" />
                     </button>
                 </span>
                 {whyShown && (
                     <Tooltip label={tests?.failed ? "Show the failed tests" : "Show why it stopped"}>
                         <button
                             className="tb-run-why"
-                            onClick={() => (tests?.failed ? setDismissedTests(null) : setFailureShown(runtime?.runAttempts ?? null))}>
+                            onClick={() => (tests?.failed ? setDismissedTests(null) : setFailureShown(lastOfSelected?.executionId ?? null))}>
                             Why?
                         </button>
                     </Tooltip>
@@ -323,7 +306,7 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                                         role="menuitem"
                                         onClick={() => {
                                             close();
-                                            restartProjectTask(project, config, running);
+                                            void runProjectTask(project, running);
                                         }}>
                                         <IconRefresh size={12} />
                                         <span>Restart</span>
@@ -392,13 +375,13 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                                                     aria-label={`Stop what listens on ${run.port}`}
                                                     onClick={(event) => {
                                                         event.stopPropagation();
-                                                        stopRun(run.owner.terminalKey, run.owner.executionId!);
+                                                        void tasksApi.stop(run.owner.executionId!).catch(reportError("stop run"));
                                                     }}
                                                     onKeyDown={(event) => {
                                                         if (event.key !== "Enter" && event.key !== " ") return;
                                                         event.preventDefault();
                                                         event.stopPropagation();
-                                                        stopRun(run.owner.terminalKey, run.owner.executionId!);
+                                                        void tasksApi.stop(run.owner.executionId!).catch(reportError("stop run"));
                                                     }}>
                                                     <IconStop size={9} />
                                                 </span>

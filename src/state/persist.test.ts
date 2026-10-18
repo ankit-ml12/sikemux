@@ -84,16 +84,7 @@ describe("frontend persistence", () => {
 
     it("omits transient task terminals and restores a durable active window", async () => {
         cmd.createProjectSession("/work/demo");
-        const paneId = cmd.openTaskTerminal({
-            executionId: "execution-secret-free",
-            terminalKey: "task:test:/work/demo",
-            taskId: "test",
-            label: "Test",
-            project: "/work/demo",
-            source: "project",
-            cwd: "/work/demo",
-            signal: new AbortController().signal,
-        });
+        const paneId = cmd.openTaskTerminal({ terminalKey: "task:test:/work/demo", label: "Test", project: "/work/demo", cwd: "/work/demo" });
         const state = getState();
         const session = state.sessions[state.activeSessionId];
         expect(state.windows[session.activeWindowId]).toMatchObject({ transient: true, activePaneId: paneId });

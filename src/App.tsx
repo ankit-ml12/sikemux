@@ -1,5 +1,5 @@
 import "./styles/restored-rails.css";
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { invokeCommand as invoke } from "./api/invoke";
 import { whenIdle } from "./lib/idle";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -17,6 +17,7 @@ import { watchSshLinks } from "./terminal/sshLinks";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
 import { agentApi, type AgentAccountBook } from "./api/agents";
+import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
 import { AgentInstallHost } from "./agents/AgentInstall";
 import { FilePalette } from "./palettes/FilePalette";
@@ -97,17 +98,10 @@ import { projectActionCommand, trustProjectConfig } from "./projects/projectConf
 import { worktreeHasLiveOwners } from "./git/worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
 import { workbenchRuntime } from "./workbench/runtime";
-import {
-    appTaskRuntime,
-    clearActiveProjectTasks,
-    getAppTaskSnapshot,
-    replaceActiveProjectTasks,
-    refreshDetectedTasks,
-    subscribeAppTasks,
-} from "./tasks/application";
-import { projectTasksFor, restartProjectTask, runProjectTask, stopProjectTask } from "./tasks/projectTaskActions";
+import { personRuns, runProjectTask, stopTaskRun } from "./tasks/projectTaskActions";
+import { useProjectTasks, useTaskRuns, type ProjectTask, type TaskRun } from "./tasks/coreTasks";
+import { showTaskTerminals } from "./tasks/taskTerminals";
 import { activeProjectConfigMatches, whenTrusted } from "./projects/projectTrust";
-import type { ResolvedTaskDefinition, TaskControllerSnapshot } from "./tasks/taskRegistry";
 import {
     applicationActionContext,
     applicationActionContextFingerprint,
@@ -149,13 +143,10 @@ export interface ActiveTaskControls {
  * already-running PTY. Restart is stricter: it is available only while the
  * last task still resolves through the current trusted project inventory.
  */
-export function activeTaskControls(snapshot: TaskControllerSnapshot | null, currentTasks: readonly ResolvedTaskDefinition[]): ActiveTaskControls {
-    if (!snapshot || snapshot.disposed) return Object.freeze({ canStop: false, restartTaskId: null });
-    const restartTaskId = snapshot.task && currentTasks.some((task) => task.id === snapshot.task!.id) ? snapshot.task.id : null;
-    return Object.freeze({
-        canStop: snapshot.activeRunId !== null,
-        restartTaskId,
-    });
+export function activeTaskControls(running: TaskRun | null, currentTasks: readonly ProjectTask[]): ActiveTaskControls {
+    if (!running) return Object.freeze({ canStop: false, restartTaskId: null });
+    const restartTaskId = currentTasks.some((task) => task.id === running.taskId) ? running.taskId : null;
+    return Object.freeze({ canStop: true, restartTaskId });
 }
 
 /** The part of `path` below `folder`, with forward slashes, or null when it is not below it. */
@@ -296,23 +287,12 @@ function ProjectBridge() {
         };
     }, []);
 
-    const taskProjectRootsRef = useRef<Set<string>>(new Set());
-
     useEffect(() => {
-        if (activeProjectCwd && projectConfig?.status === "valid") {
-            replaceActiveProjectTasks(activeProjectCwd, projectConfig.fingerprint, projectConfig.config.tasks);
-        } else {
-            clearActiveProjectTasks();
-        }
-        return clearActiveProjectTasks;
-    }, [activeProjectCwd, projectConfig]);
-
-    useEffect(() => {
-        void refreshDetectedTasks(activeProjectCwd || null).catch(reportError("detect project tasks"));
-        return () => {
-            void refreshDetectedTasks(null);
-        };
-    }, [activeProjectCwd]);
+        showTaskTerminals();
+        return onCoreChanged("tasks", (change) => {
+            if (change.project) void projectControllerBridge.refresh(change.project);
+        });
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -329,7 +309,7 @@ function ProjectBridge() {
                     actions: projectConfig.config.actions,
                     isCurrent: () => activeProjectConfigMatches(activeProjectCwd, projectConfig),
                     execute: (action) => {
-                        whenTrusted(activeProjectCwd, projectConfig, false, () => cmd.runCustomCommand(projectActionCommand(action)));
+                        whenTrusted(activeProjectCwd, projectConfig, () => cmd.runCustomCommand(projectActionCommand(action)));
                     },
                 });
                 dispose = () => registration.dispose();
@@ -343,14 +323,6 @@ function ProjectBridge() {
             dispose?.();
         };
     }, [activeProjectCwd, activeSessionId, projectConfig]);
-
-    useEffect(() => {
-        const current = new Set(projectRepoKey.split("\0").filter(Boolean));
-        for (const project of taskProjectRootsRef.current) {
-            if (!current.has(project)) void appTaskRuntime.disposeProject(project).catch(reportError("stop closed-project task"));
-        }
-        taskProjectRootsRef.current = current;
-    }, [projectRepoKey]);
 
     useEffect(() => {
         const roots = projectRepoKey ? projectRepoKey.split("\0") : [];
@@ -392,7 +364,8 @@ function ApplicationCommandPalette() {
     const activeProjectSnapshot = projectControllerSnapshot?.cwd === activeProjectCwd ? projectControllerSnapshot : null;
     const projectConfig = activeProjectSnapshot?.config ?? null;
     const activeWorktrees = activeProjectSnapshot?.worktrees ?? [];
-    const taskRegistrySnapshot = useSyncExternalStore(subscribeAppTasks, getAppTaskSnapshot, getAppTaskSnapshot);
+    const offeredTasks = useProjectTasks(activeProjectCwd || null);
+    const taskRuns = useTaskRuns();
     useSyncExternalStore(subscribeApplicationActions, getApplicationActionRevision, getApplicationActionRevision);
     useStore(applicationActionContextFingerprint);
     const actionContext = applicationActionContext(getState());
@@ -461,16 +434,16 @@ function ApplicationCommandPalette() {
             ),
         });
     }
-    const currentProjectTasks = projectTasksFor(taskRegistrySnapshot, activeProjectCwd, projectConfig);
+    const currentProjectTasks = offeredTasks?.tasks ?? [];
     const taskCommands: StandaloneCommand[] = currentProjectTasks.map((task) => ({
         id: `task.run.${task.id}`,
         title: task.label,
         detail: `Run task from ${task.cwd}`,
         category: "Tasks",
-        execute: runStandalone(`task.run.${task.id}`, () => runProjectTask(activeProjectCwd, projectConfig, task)),
+        execute: runStandalone(`task.run.${task.id}`, () => void runProjectTask(activeProjectCwd, task)),
     }));
-    const taskRuntimeSnapshot = activeProjectCwd ? appTaskRuntime.getSnapshot(activeProjectCwd) : null;
-    const taskControls = activeTaskControls(taskRuntimeSnapshot, currentProjectTasks);
+    const runningTask = activeProjectCwd ? personRuns(taskRuns, activeProjectCwd).running : null;
+    const taskControls = activeTaskControls(runningTask, currentProjectTasks);
     const restartTask = currentProjectTasks.find((task) => task.id === taskControls.restartTaskId);
     if (activeProjectCwd && restartTask) {
         taskCommands.push({
@@ -478,16 +451,16 @@ function ApplicationCommandPalette() {
             title: "Restart active task",
             detail: "Stop the current project task and start its current trusted definition",
             category: "Tasks",
-            execute: runStandalone("task.restart-active", () => restartProjectTask(activeProjectCwd, projectConfig, restartTask)),
+            execute: runStandalone("task.restart-active", () => void runProjectTask(activeProjectCwd, restartTask)),
         });
     }
-    if (activeProjectCwd && taskControls.canStop) {
+    if (activeProjectCwd && runningTask && taskControls.canStop) {
         taskCommands.push({
             id: "task.stop-active",
             title: "Stop active task",
             detail: "Stop only the exact PTY owned by the current project task",
             category: "Tasks",
-            execute: runStandalone("task.stop-active", () => stopProjectTask(activeProjectCwd)),
+            execute: runStandalone("task.stop-active", () => stopTaskRun(runningTask!)),
         });
     }
     const worktreeCommands: StandaloneCommand[] = activeWorktrees
@@ -958,6 +931,7 @@ export default function App() {
             <NetworkBridge />
             <ProjectBridge />
             <AgentSessionSync />
+            <AgentLifecycleManager />
             <TopBar />
             <div className="body">
                 <SideRail />

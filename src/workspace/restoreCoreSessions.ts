@@ -9,9 +9,6 @@ import * as cmd from "../state/commands";
 import { agentSessionPlan, claimedSessionIds, unclaimedTerminals } from "../state/coreSessionClaims";
 import { getState, setState } from "../state/store";
 import { notify } from "../state/toast";
-import { adoptCoreTasks, type TaskAdoptionTargets } from "../tasks/adoption";
-import { appTaskRuntime } from "../tasks/application";
-import { NativeTaskExecutionBackend } from "../tasks/nativeRuntime";
 import { offerResumableSessions, spawnedThisPage } from "../terminal/sessionResume";
 import { relaunchTuiAgent } from "../agents/tuiResume";
 
@@ -33,26 +30,16 @@ export interface CoreSessionRestoreDeps {
     kill(id: number): Promise<void>;
     chats: { list(): Promise<ChatInfo[]>; stopIfIdle(agentId: string): Promise<boolean> };
     boards(): Promise<void>;
-    tasks: TaskAdoptionTargets;
     schedule(callback: () => void, delayMs: number): void;
 }
 
 function defaultDeps(): CoreSessionRestoreDeps {
-    const backend = new NativeTaskExecutionBackend();
     return {
         list: coreSessionsApi.list,
         resume: relaunchTuiAgent,
         kill: coreSessionsApi.kill,
         chats: { list: acpApi.list, stopIfIdle: acpApi.stopIfIdle },
         boards: () => agentBoardApi.all().then(cmd.setAgentBoards),
-        tasks: {
-            watch: (ptyId) => backend.watch(ptyId),
-            adoptDeckTask: (task, executionId, started) => appTaskRuntime.adopt(task, executionId, started),
-            showHarnessTerminal: (request) =>
-                void import("../harness/service")
-                    .then(({ harnessTerminals }) => harnessTerminals.open({ ...request, background: true, signal: new AbortController().signal }))
-                    .catch(() => {}),
-        },
         schedule: (callback, delayMs) => void window.setTimeout(callback, delayMs),
     };
 }
@@ -60,8 +47,7 @@ function defaultDeps(): CoreSessionRestoreDeps {
 /**
  * Takes back what the core kept while the app was closed or reloading:
  * terminal agents still running come back live, as do chats other agents or a board's Auto started, ones that crashed meanwhile
- * are resumed in their pane, running tasks rejoin the
- * command deck or reopen their terminals, chat panes take their chats back
+ * are resumed in their pane, chat panes take their chats back
  * as they mount, and terminals from before this page that nothing in the
  * layout names, like chats no pane took back once they are at rest, are
  * stopped after a grace, so none of them runs forever unseen.
@@ -82,7 +68,7 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
         const ptyId = getState().agents[id]?.ptyId;
         if (ptyId !== undefined) void deps.resume(id, ptyId).catch(() => {});
     }
-    const tasks = await adoptCoreTasks(sessions, deps.tasks);
+    const tasks = sessions.filter((session) => session.kind === "task" && session.running).length;
 
     const claimed = claimedSessionIds(getState());
     const earlier = sessions.filter((session) => !spawnedThisPage(session.id));

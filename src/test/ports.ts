@@ -1,18 +1,17 @@
-import type { ListeningPort, ListeningPortOwner } from "../api/ports";
+import type { CorePort } from "../ports/projectPorts";
 import { getState, setState } from "../state/store";
 
-export function terminalPort(port: number, owner: Partial<Extract<ListeningPortOwner, { kind: "pty" }>> = {}, process = "node"): ListeningPort {
+export function terminalPort(port: number, paneId?: string, process = "node"): CorePort {
     return {
         port,
         address: "127.0.0.1",
         pid: port,
         process,
-        owner: { kind: "pty", ptyId: 1, project: null, paneId: null, agentId: null, taskExecutionId: null, ...owner },
+        project: "/code",
+        owner: { kind: "terminal", sessionId: 1, ...(paneId ? { paneId } : {}) },
+        url: `http://localhost:${port}/`,
+        preview: false,
     };
-}
-
-export function agentPort(port: number, agentId: string): ListeningPort {
-    return { port, address: "0.0.0.0", pid: port, process: "next-server", owner: { kind: "agent", agentId } };
 }
 
 const agentWindow = (agentId: string) => ({

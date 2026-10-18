@@ -2,6 +2,39 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { coreCall } from "../api/core";
 import { onCoreChanged } from "../api/coreChanged";
 
+/* The shapes below are the core's JSON for tasks (sikemux-core tasks/ and
+   server/tasks.rs); the wire generator does not read tagged enums. */
+
+/** Something that would stop a task from starting, worded by the core. */
+export type Check = { readonly title: string; readonly detail: string } & (
+    | { readonly kind: "buildTool"; readonly ok: boolean; readonly name: string; readonly program: string }
+    | { readonly kind: "java"; readonly ok: boolean; readonly required: number; readonly using: number | null; readonly current: number | null }
+    | { readonly kind: "deps"; readonly ok: boolean; readonly install: string }
+    | {
+          readonly kind: "port";
+          readonly ok: boolean;
+          readonly port: number;
+          readonly heldBy: string | null;
+          readonly freePort: number | null;
+          readonly envVar: string | null;
+      }
+);
+
+export interface TestFailure {
+    readonly className: string;
+    readonly name: string;
+    readonly message: string;
+    /** Absolute path of the test's source file, when it was found. */
+    readonly file: string | null;
+    readonly line: number | null;
+}
+
+export interface TestResults {
+    readonly passed: number;
+    readonly failed: number;
+    readonly skipped: number;
+    readonly failures: readonly TestFailure[];
+}
 
 export type TaskSourceKind = "project" | "personal" | "detected" | "rerun" | "command";
 
@@ -29,6 +62,13 @@ export interface TrustAsk {
     readonly body: string;
     readonly commands: { label: string; command: string }[];
     readonly confirmLabel: string;
+}
+
+/** A trust question waiting on the person. */
+export interface PendingTrust extends TrustAsk {
+    readonly id: string;
+    readonly project: string;
+    readonly executionId?: string;
 }
 
 export type RunStatus = "awaiting-trust" | "starting" | "running" | "completed" | "failed" | "stopping" | "stopped";
@@ -67,6 +107,8 @@ export const tasksApi = {
         coreCall<{ executionId: string } | { checks: Check[] }>("taskStart", { project, taskId, ...how }),
     stop: (executionId: string) => coreCall<void>("taskStop", { executionId }),
     rerunFailed: (executionId: string) => coreCall<{ taskId: string; executionId: string }>("taskRerunFailed", { executionId }),
+    trustAsks: () => coreCall<PendingTrust[]>("trustAsks"),
+    answerTrust: (id: string, trust: boolean) => coreCall<void>("answerTrust", { id, trust }),
     add: (project: string, task: { label: string; command: string; cwd: string; team: boolean }) =>
         coreCall<{ taskId: string }>("addTask", { project, ...task }),
 };
@@ -75,11 +117,20 @@ let runs: readonly TaskRun[] = [];
 let watching = false;
 const listeners = new Set<() => void>();
 
+function setRuns(next: readonly TaskRun[]): void {
+    runs = next;
+    for (const listener of [...listeners]) listener();
+}
+
 function readRuns(): void {
     void coreCall<TaskRun[]>("taskRuns")
+        .then(setRuns)
         .catch(() => {});
 }
 
+export function setTaskRunsForTests(next: readonly TaskRun[]): void {
+    watching = true;
+    setRuns(next);
 }
 
 function subscribeRuns(listener: () => void): () => void {

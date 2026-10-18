@@ -1,6 +1,6 @@
 import { ActionRegistry, type ActionContextInput, type ActionDefinition, type ActionScope } from "./registry";
 import { keybindingLabel, matchesKeybinding } from "../commands/keybindings";
-import { normalizeProjectActionKeybinding, type ProjectAction } from "../projects/projectConfig";
+import type { ProjectAction } from "../projects/projectConfig";
 import {
     InternalExtensionHost,
     type ExtensionContributionAdapter,
@@ -205,7 +205,7 @@ export class ApplicationActionRuntime {
                         detail: safeActionText(action.description || `Run from ${options.configPath}`, "Run project action", 2_048),
                         category: "Project · sikemux.json",
                         source: "project.config",
-                        defaultBinding: action.keybinding ? normalizeProjectActionKeybinding(action.keybinding) : null,
+                        defaultBinding: action.keybinding ?? null,
                         when: (context) => context.project?.root === options.projectRoot && isCurrent(),
                         run: () => {
                             if (!isCurrent()) throw new StaleProjectActionConfigurationError();

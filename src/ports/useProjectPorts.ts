@@ -6,9 +6,8 @@ import { swallow } from "../state/toast";
 import { useTaskRuns } from "../tasks/coreTasks";
 import { projectPorts, type CorePort, type ProjectPort } from "./projectPorts";
 
-export const PORT_REFRESH_MS = 5_000;
-/** A server binds its port a moment after its task starts. */
-export const PORT_SETTLE_MS = 1_500;
+const NO_PORTS: CorePort[] = [];
+const NO_SHOWN: ProjectPort[] = [];
 
 /** The ports the project's terminals, tasks and agents listen on, read again whenever the core says they changed. */
 export function useProjectPorts(sessionId: string | null): ProjectPort[] {
@@ -29,7 +28,8 @@ export function useProjectPorts(sessionId: string | null): ProjectPort[] {
             cancelled = true;
             unsubscribe();
         };
-    }, [sessionId, live, visible, previewUrl]);
-
-    return found && found.sessionId === sessionId ? found.ports : NO_PORTS;
+    }, [cwd]);
+    const ports = found && found.cwd === cwd ? found.ports : NO_PORTS;
+    const runs = useTaskRuns();
+    return useMemo(() => (sessionId && ports.length ? projectPorts(getState(), sessionId, ports, runs) : NO_SHOWN), [sessionId, ports, runs]);
 }

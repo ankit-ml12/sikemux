@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { git } from "../api/git";
-import { portsApi } from "../api/ports";
+import { coreCall } from "../api/core";
 import { sendToAgent } from "../agents/sendToAgent";
 import { joinPath } from "../lib/paths";
 import * as cmd from "../state/commands";
@@ -9,16 +9,19 @@ import { agentDisplayOf } from "../state/selectors";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
 import type { AgentWorktree } from "../state/types";
-import { detectTasksWithJava } from "../tasks/application";
-import { isFilePath, isTestTask, readTestResults, type TestResults } from "../tasks/testResults";
+import type { CorePort } from "../ports/projectPorts";
 import { IconCheck, IconClose, IconExternal } from "../ui/Icons";
 import { useInbox } from "./useInbox";
 
 const SHOWN_FILES = 6;
 
+/** One module's test results, as the core words them for agents too. */
 interface ModuleTests {
     readonly cwd: string;
-    readonly results: TestResults;
+    readonly passed: number;
+    readonly failed: number;
+    readonly skipped: number;
+    readonly failures: readonly { test: string; message: string; line?: number | null }[];
 }
 
 interface Evidence {
@@ -31,27 +34,22 @@ interface Evidence {
 /** What an agent's worktree shows about its work: changes, test results and where its server listens. */
 async function gatherEvidence(agentId: string, worktree: AgentWorktree): Promise<Evidence> {
     const base = worktree.base ?? worktree.startSha;
-    const [compare, status, detected, listening] = await Promise.all([
+    const [compare, status, tests, listening] = await Promise.all([
         git.compare(worktree.path, base, "HEAD").catch(() => null),
         git.status(worktree.path).catch(() => null),
-        detectTasksWithJava(worktree.path).catch(() => null),
-        portsApi.listening().catch(() => []),
+        coreCall<ModuleTests[]>("testResults", { project: worktree.path }).catch(() => []),
+        coreCall<CorePort[]>("ports").catch(() => []),
     ]);
     const uncommitted = status?.files.map((file) => file.path) ?? [];
     const changed = [...new Set([...(compare?.files.map((file) => file.path) ?? []), ...uncommitted])];
-    const modules = [...new Set((detected?.tasks ?? []).filter((task) => isTestTask(task.id)).map((task) => task.cwd))];
-    const tests = (await Promise.all(modules.map(async (cwd) => ({ cwd, results: await readTestResults(cwd).catch(() => null) })))).flatMap(
-        ({ cwd, results }) => (results ? [{ cwd, results }] : []),
-    );
-    const port = listening.find((candidate) => candidate.owner.agentId === agentId);
+    const port = listening.find((candidate) => candidate.owner.kind !== "terminal" && candidate.owner.agentId === agentId);
     return { changed, uncommitted: uncommitted.length, tests, url: port ? `http://localhost:${port.port}` : null };
 }
 
 function failureReport(tests: readonly ModuleTests[]): string {
-    const lines = tests.flatMap(({ results }) =>
-        results.failures.map(
-            (failure) =>
-                `- ${isFilePath(failure.className) ? `${failure.className} › ` : `${failure.className}.`}${failure.name}: ${failure.message}${failure.line ? ` (line ${failure.line})` : ""}`,
+    const lines = tests.flatMap(({ failures }) =>
+        failures.map(
+            (failure) => `- ${failure.test}: ${failure.message}${failure.line ? ` (line ${failure.line})` : ""}`,
         ),
     );
     return `These tests fail in your worktree:\n${lines.join("\n")}\nFix them and run the tests again.`;
@@ -85,8 +83,8 @@ export function AgentReview({
         };
     }, [agentId, worktree]);
 
-    const passed = evidence?.tests.reduce((sum, { results }) => sum + results.passed, 0) ?? 0;
-    const failed = evidence?.tests.reduce((sum, { results }) => sum + results.failed, 0) ?? 0;
+    const passed = evidence?.tests.reduce((sum, module) => sum + module.passed, 0) ?? 0;
+    const failed = evidence?.tests.reduce((sum, module) => sum + module.failed, 0) ?? 0;
     const summary = handoff?.result?.split("\n").find((line) => line.trim()) ?? null;
     const left = Math.min(anchor.left, window.innerWidth - 372);
 

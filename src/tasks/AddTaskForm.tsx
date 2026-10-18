@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { projectControllerBridge } from "../projects/controllerBridge";
 import { notify, reportError } from "../state/toast";
-import { savePersonalTask, saveTeamTask } from "./addedTasks";
-import { refreshDetectedTasks } from "./application";
+import { tasksApi } from "./coreTasks";
 
 type Scope = "team" | "personal";
 
@@ -18,21 +16,13 @@ export function AddTaskForm({ project, onDone }: { project: string; onDone: (tas
     const save = () => {
         if (!ready) return;
         setSaving(true);
-        const task = { label: label.trim(), command: command.trim(), cwd: cwd.trim().replace(/^\.?\/+|\/+$/g, "") || "." };
-        const saved =
-            scope === "team"
-                ? saveTeamTask(project, task).then(async (id) => {
-                      await projectControllerBridge.refresh(project);
-                      notify("success", `Added ${task.label} to sikemux.json; commit it to share it`);
-                      return id;
-                  })
-                : savePersonalTask(project, task).then(async (id) => {
-                      await refreshDetectedTasks(project);
-                      notify("success", `Added ${task.label} for you only`);
-                      return id;
-                  });
-        void saved
-            .then(onDone)
+        const team = scope === "team";
+        void tasksApi
+            .add(project, { label, command, cwd, team })
+            .then(({ taskId }) => {
+                notify("success", team ? `Added ${label.trim()} to sikemux.json; commit it to share it` : `Added ${label.trim()} for you only`);
+                onDone(taskId);
+            })
             .catch(reportError("add task"))
             .finally(() => setSaving(false));
     };

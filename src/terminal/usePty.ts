@@ -10,7 +10,7 @@ import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource } fr
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
 import { performanceTelemetry } from "../lib/performance";
 import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/ptyShell";
-import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
+import { runShownIn, taskRuns, type TaskRun } from "../tasks/coreTasks";
 import { coreSessionsApi } from "../api/coreSessions";
 import { noteSpawnedSession, takeResumableSession } from "./sessionResume";
 import { noteTerminalSize } from "./spareShell";
@@ -34,10 +34,21 @@ interface PtyResourceConfiguration {
     readonly initialInput?: string;
     readonly initialDraft?: string;
     readonly context?: PtyContext;
-    readonly externallyOwned?: boolean;
+    readonly taskTerminalKey?: string;
 }
 
 const NOOP = () => {};
+
+/** The task process a task terminal shows: the newest run behind its key. */
+interface TaskPtyBinding {
+    readonly ptyId: number;
+    readonly executionId: string;
+    readonly terminalKey: string;
+}
+
+function bindingOf(run: TaskRun | null): TaskPtyBinding | null {
+    return run?.ptyId === undefined ? null : { ptyId: run.ptyId, executionId: run.executionId, terminalKey: run.terminalKey };
+}
 
 function createExternalControllerRef(binding: TaskPtyBinding | null): RefObject<NativePtyController | null> {
     // A fresh ref identity makes useXterm restart for each immutable binding.
@@ -172,11 +183,10 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
         context?.agentType ?? null,
         context?.initialPromptSubmitted ?? null,
         context?.shellIntegration ?? null,
-        configuration.externallyOwned === true,
+        configuration.taskTerminalKey ?? null,
         taskBinding?.ptyId ?? null,
         taskBinding?.executionId ?? null,
         taskBinding?.terminalKey ?? null,
-        taskBinding?.revision ?? null,
     ]);
 }
 
@@ -194,22 +204,24 @@ export function usePty(opts: {
     spawnWhen?: boolean;
     context?: PtyContext;
     onShellMetadata?: (event: PtyShellMetadataEvent) => void;
-    /** Borrow the task runtime's exact pane-bound PTY; never spawn a shell. */
-    externallyOwned?: boolean;
+    /** Show the process of the task run behind this key; never spawn a shell. */
+    taskTerminalKey?: string;
     /** Durable workbench item owner. Omit for popups, agents, and embedded shells. */
     durableItemId?: string;
     /** The process this terminal showed before the page loaded; read once, when the controller is made. */
     resumePtyId?: number;
     onPtySession?: (id: number) => void;
 }): RefObject<NativePtyController | null> {
-    const { hostRef, spawnWhen = true, externallyOwned = false } = opts;
-    const externalPaneId = externallyOwned ? (opts.context?.paneId ?? null) : null;
-    const subscribeTaskBinding = useCallback(
-        (listener: () => void) => (externalPaneId ? taskPtyBindings.subscribe(externalPaneId, listener) : NOOP),
-        [externalPaneId],
+    const { hostRef, spawnWhen = true, taskTerminalKey } = opts;
+    const externallyOwned = taskTerminalKey !== undefined;
+    const subscribeTaskBinding = useCallback((listener: () => void) => (externallyOwned ? taskRuns.subscribe(listener) : NOOP), [externallyOwned]);
+    const taskExecution = useSyncExternalStore(subscribeTaskBinding, () =>
+        taskTerminalKey === undefined ? null : (runShownIn(taskRuns.getSnapshot(), taskTerminalKey)?.executionId ?? null),
     );
-    const getTaskBindingSnapshot = useCallback(() => (externalPaneId ? taskPtyBindings.getSnapshot(externalPaneId) : null), [externalPaneId]);
-    const taskBinding = useSyncExternalStore(subscribeTaskBinding, getTaskBindingSnapshot, getTaskBindingSnapshot);
+    const taskBinding = useMemo(
+        () => (taskTerminalKey === undefined || taskExecution === null ? null : bindingOf(runShownIn(taskRuns.getSnapshot(), taskTerminalKey))),
+        [taskTerminalKey, taskExecution],
+    );
     const ordinaryControllerRef = useRef<NativePtyController | null>(null);
     const externalControllerRef = useMemo(() => createExternalControllerRef(taskBinding), [taskBinding]);
     const controllerRef = externallyOwned ? externalControllerRef : ordinaryControllerRef;

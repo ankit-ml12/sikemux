@@ -1,13 +1,14 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { IS_MACOS } from "../lib/platform";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { portsApi } from "../api/ports";
+import { coreCall } from "../api/core";
 import { getState, setState } from "../state/store";
-import { agentPort, seedProjects, terminalPort } from "../test/ports";
+import type { CorePort } from "./projectPorts";
+import { seedProjects, terminalPort } from "../test/ports";
 import { copyPortUrl, openPortExternally, openPortOnDesk, revealPortOwner } from "./portActions";
 import { PortsChip } from "./PortsChip";
 
-vi.mock("../api/ports", () => ({ portsApi: { listening: vi.fn(), openExternal: vi.fn() } }));
+vi.mock("../api/core", () => ({ coreCall: vi.fn() }));
 vi.mock("./portActions", () => ({
     copyPortUrl: vi.fn(),
     openPortExternally: vi.fn(),
@@ -16,7 +17,10 @@ vi.mock("./portActions", () => ({
 }));
 
 const initial = getState();
-const listening = vi.mocked(portsApi.listening);
+const listening = {
+    mockResolvedValue: (ports: CorePort[]) =>
+        vi.mocked(coreCall).mockImplementation((method: string) => Promise.resolve((method === "ports" ? ports : []) as never)),
+};
 
 async function renderChip() {
     const view = render(<PortsChip sessionId="project" />);
@@ -41,7 +45,7 @@ async function openMenu(name: string) {
 describe("PortsChip", () => {
     it("shows nothing while the project listens on no port", async () => {
         seedProjects();
-        listening.mockResolvedValue([agentPort(4000, "agent-9")]);
+        listening.mockResolvedValue([]);
         const { container } = await renderChip();
         expect(container.innerHTML).toBe("");
     });
@@ -49,7 +53,7 @@ describe("PortsChip", () => {
     it("opens a port on the desk of the agent that worked last, with the browser, copy and reveal beside it", async () => {
         seedProjects();
         setState({ agentStatus: { "agent-2": { activeAt: 9 } } } as never);
-        listening.mockResolvedValue([terminalPort(5173, { paneId: "pane-1", project: "/code" })]);
+        listening.mockResolvedValue([terminalPort(5173, "pane-1")]);
         await renderChip();
         await openMenu("1 listening port");
 
@@ -73,7 +77,7 @@ describe("PortsChip", () => {
 
     it("opens in the browser instead when no agent is running, and wakes none", async () => {
         seedProjects({ agentLaunch: "dormant" });
-        listening.mockResolvedValue([terminalPort(8080, { project: "/code" })]);
+        listening.mockResolvedValue([terminalPort(8080)]);
         await renderChip();
         await openMenu("1 listening port");
 
@@ -87,7 +91,7 @@ describe("PortsChip", () => {
     it("copies with ⌘C and opens in the browser with ⌘↵ from the focused row", async () => {
         const primary = IS_MACOS ? { metaKey: true } : { ctrlKey: true };
         seedProjects();
-        listening.mockResolvedValue([terminalPort(5173, { paneId: "pane-1", project: "/code" })]);
+        listening.mockResolvedValue([terminalPort(5173, "pane-1")]);
         await renderChip();
         await openMenu("1 listening port");
         fireEvent.keyDown(screen.getByRole("menuitem", { name: /^Open localhost:5173/ }), { key: "c", ...primary });

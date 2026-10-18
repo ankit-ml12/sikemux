@@ -2,7 +2,6 @@ import { pluginDocuments } from "../../plugins/documents";
 import { forgetAgentDeliveries } from "../../agents/agentInbox";
 import { browserApi } from "../../api/browser";
 import { basename } from "../../lib/paths";
-import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { emit } from "../bus";
 import { getState, mutate, setState, type StoreState } from "../store";
 import { deskEditorId } from "../desks";
@@ -288,7 +287,6 @@ export function dropDeskPaneState(d: StoreState, paneId: string): void {
 
 /** An agent's desk goes with the agent: its pages, its files and its terminals. */
 export function closeAgentDesk(agentId: string): void {
-    for (const terminal of getState().desks[agentId]?.terminals ?? []) taskPtyBindings.release(terminal.id);
     mutate((d) => {
         delete d.desks[agentId];
         delete d.editorViews[deskEditorId(agentId)];

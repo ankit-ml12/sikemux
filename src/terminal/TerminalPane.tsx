@@ -39,7 +39,7 @@ export function TerminalPane({
     visible = active,
     spawnWhen = visible,
     context,
-    externallyOwned = false,
+    taskTerminalKey,
     retainPtyOnUnmount = false,
     resumePtyId,
     onPtySession,
@@ -62,8 +62,8 @@ export function TerminalPane({
     visible?: boolean;
     spawnWhen?: boolean;
     context?: PtyContext;
-    /** Borrow a task-owned PTY bound to this pane instead of spawning a shell. */
-    externallyOwned?: boolean;
+    /** Show the process of the task run behind this key instead of spawning a shell. */
+    taskTerminalKey?: string;
     /** Item controllers set this; transient/embedded terminals remain local. */
     retainPtyOnUnmount?: boolean;
     /** The terminal this pane showed before the app last closed, taken back if it still runs. */
@@ -86,7 +86,7 @@ export function TerminalPane({
     const rendererTokenRef = useRef(Symbol("terminal-renderer"));
     const titleChangeRef = useRef(onTitleChange);
     titleChangeRef.current = onTitleChange;
-    const shellIntegration = !externallyOwned && context?.shellIntegration === true;
+    const shellIntegration = !taskTerminalKey && context?.shellIntegration === true;
     const applyShellEvent = useCallback((event: PtyShellMetadataEvent) => {
         setShellMetadata((current) => applyPtyShellMetadataEvent(current, event));
     }, []);
@@ -107,7 +107,7 @@ export function TerminalPane({
         hostRef,
         spawnWhen,
         context,
-        externallyOwned,
+        taskTerminalKey,
         onShellMetadata: shellIntegration ? applyShellEvent : undefined,
         durableItemId: retainPtyOnUnmount ? context?.paneId : undefined,
         resumePtyId,

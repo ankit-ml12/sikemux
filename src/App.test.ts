@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activeTaskControls, gitChangeInvalidates, onGitChanged } from "./App";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "./api/transport";
 import { subscribe } from "./state/bus";
-import type { ResolvedTaskDefinition, TaskControllerSnapshot, TaskLifecycleState } from "./tasks/taskRegistry";
+import type { ProjectTask, TaskRun } from "./tasks/coreTasks";
 
 let transport: MemoryIpcTransport;
 
@@ -14,54 +14,26 @@ beforeEach(() => {
 
 afterEach(() => resetIpcTransportForTests());
 
-function task(id: string): ResolvedTaskDefinition {
-    return Object.freeze({
-        id,
-        label: id,
-        project: "/repo",
-        command: `run ${id}`,
-        cwd: "/repo",
-        env: Object.freeze({}),
-        source: "project",
-    });
+function task(id: string): ProjectTask {
+    return Object.freeze({ id, label: id, command: `run ${id}`, cwd: ".", source: "project" as const });
 }
 
-function snapshot(status: TaskLifecycleState, activeRunId: number | null, activeTask: ResolvedTaskDefinition | null): TaskControllerSnapshot {
-    return Object.freeze({
-        revision: 1,
-        status,
-        disposed: false,
-        task: activeTask,
-        activeRunId,
-        runAttempts: 1,
-        failures: Object.freeze([]),
-    });
+function run(taskId: string): TaskRun {
+    return Object.freeze({ executionId: "run-1", taskId, project: "/repo", status: "running" as const, ptyId: 7, agentId: null, terminalKey: "task" });
 }
 
 describe("active task command reachability", () => {
-    it.each(["running", "stopping", "failed"] as const)("keeps Stop reachable for an owned PTY in %s state after discovery clears", (status) => {
-        expect(activeTaskControls(snapshot(status, 7, task("watch")), [])).toEqual({
-            canStop: true,
-            restartTaskId: null,
-        });
+    it("keeps Stop reachable for a run after its task is gone from the project", () => {
+        expect(activeTaskControls(run("watch"), [])).toEqual({ canStop: true, restartTaskId: null });
     });
 
     it("allows restart only through the current project inventory", () => {
-        const running = snapshot("running", 7, task("watch"));
-
-        expect(activeTaskControls(running, [task("watch")])).toEqual({ canStop: true, restartTaskId: "watch" });
-        expect(activeTaskControls(running, [task("build")])).toEqual({ canStop: true, restartTaskId: null });
+        expect(activeTaskControls(run("watch"), [task("watch")])).toEqual({ canStop: true, restartTaskId: "watch" });
+        expect(activeTaskControls(run("watch"), [task("build")])).toEqual({ canStop: true, restartTaskId: null });
     });
 
-    it("does not expose Stop for a settled or disposed controller", () => {
-        expect(activeTaskControls(snapshot("failed", null, task("watch")), [task("watch")])).toEqual({
-            canStop: false,
-            restartTaskId: "watch",
-        });
-        expect(activeTaskControls({ ...snapshot("running", 7, task("watch")), disposed: true }, [task("watch")])).toEqual({
-            canStop: false,
-            restartTaskId: null,
-        });
+    it("offers neither with nothing running", () => {
+        expect(activeTaskControls(null, [task("watch")])).toEqual({ canStop: false, restartTaskId: null });
     });
 });
 

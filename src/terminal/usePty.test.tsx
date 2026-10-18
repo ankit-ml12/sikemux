@@ -7,7 +7,7 @@ import type { PtyContext } from "../state/types";
 import { claimWorkbenchItemRuntime, disposeWorkbenchItemRuntime, resetWorkbenchItemRuntimeForTests } from "../workbench/itemRuntime";
 import { createItemId } from "../workbench/registry";
 import { resetPtyShellSubscriptionsForTests, type PtyShellMetadataEvent } from "../api/ptyShell";
-import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
+import { setTaskRunsForTests } from "../tasks/coreTasks";
 import type { NativePtyController } from "./usePty";
 import { encodePosixShellLiteral, encodePowerShellLiteral, ptyResourceFingerprint, shellSemanticsForExecutable, usePty } from "./usePty";
 
@@ -51,7 +51,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 afterEach(async () => {
     cleanup();
-    taskPtyBindings.reset();
+    setTaskRunsForTests([]);
     await resetWorkbenchItemRuntimeForTests();
     await resetPtyShellSubscriptionsForTests();
     vi.restoreAllMocks();
@@ -69,6 +69,10 @@ afterEach(async () => {
     attachSequence.current = 0;
 });
 
+function run(ptyId: number, executionId: string) {
+    return { executionId, taskId: "task", project: "/repo", status: "running" as const, ptyId, agentId: null, terminalKey: "task" };
+}
+
 function Harness({
     context,
     initialDropPaths,
@@ -78,7 +82,7 @@ function Harness({
     cwd = "/repo",
     startup = "codex",
     onShellMetadata,
-    externallyOwned = false,
+    taskTerminalKey,
     onController,
 }: {
     context: PtyContext;
@@ -89,7 +93,7 @@ function Harness({
     cwd?: string;
     startup?: string;
     onShellMetadata?: (event: PtyShellMetadataEvent) => void;
-    externallyOwned?: boolean;
+    taskTerminalKey?: string;
     onController?: (controller: NativePtyController | null) => void;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -102,7 +106,7 @@ function Harness({
         hostRef,
         context,
         onShellMetadata,
-        externallyOwned,
+        taskTerminalKey,
         durableItemId: durable ? context.paneId : undefined,
     });
     useEffect(() => {
@@ -149,18 +153,11 @@ describe("terminal path literal encoding", () => {
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, initialDropPaths: ["/tmp/image.png"] }));
         expect(ptyResourceFingerprint(base)).not.toBe(ptyResourceFingerprint({ ...base, context: { ...base.context, sessionName: "renamed" } }));
 
-        const taskBinding = Object.freeze({
-            paneId: createItemId("pane"),
-            ptyId: 70,
-            executionId: "execution-1",
-            terminalKey: "task",
-            revision: 1,
-        }) satisfies TaskPtyBinding;
-        const external = { ...base, externallyOwned: true };
+        const taskBinding = Object.freeze({ ptyId: 70, executionId: "execution-1", terminalKey: "task" });
+        const external = { ...base, taskTerminalKey: "task" };
         expect(ptyResourceFingerprint(external, taskBinding)).not.toBe(
             ptyResourceFingerprint(external, { ...taskBinding, executionId: "execution-2" }),
         );
-        expect(ptyResourceFingerprint(external, taskBinding)).not.toBe(ptyResourceFingerprint(external, { ...taskBinding, revision: 2 }));
     });
 });
 
@@ -203,7 +200,7 @@ describe("usePty", () => {
         claimWorkbenchItemRuntime(createItemId(context.paneId!));
         const onController = vi.fn();
 
-        render(<Harness context={context} durable externallyOwned onController={onController} />);
+        render(<Harness context={context} durable taskTerminalKey="task" onController={onController} />);
         await waitFor(() => expect(onController).toHaveBeenLastCalledWith(null));
 
         expect(invoke.mock.calls.some(([command]) => command === "pty_spawn")).toBe(false);
@@ -221,11 +218,11 @@ describe("usePty", () => {
         };
         claimWorkbenchItemRuntime(createItemId(context.paneId!));
         const controllers: Array<NativePtyController | null> = [];
-        render(<Harness context={context} durable externallyOwned onController={(controller) => controllers.push(controller)} />);
+        render(<Harness context={context} durable taskTerminalKey="task" onController={(controller) => controllers.push(controller)} />);
         await waitFor(() => expect(controllers.at(-1)).toBeNull());
 
         act(() => {
-            taskPtyBindings.bind(context.paneId!, { ptyId: 81, executionId: "execution-1", terminalKey: "task" });
+            setTaskRunsForTests([run(81, "execution-1")]);
         });
         await waitFor(() => expect(controllers.at(-1)).not.toBeNull());
         const controller = controllers.at(-1)!;
@@ -251,13 +248,13 @@ describe("usePty", () => {
             paneId: "pane-task-replacement",
         };
         const runtimeLease = claimWorkbenchItemRuntime(createItemId(context.paneId!));
-        taskPtyBindings.bind(context.paneId!, { ptyId: 91, executionId: "execution-1", terminalKey: "task" });
+        setTaskRunsForTests([run(91, "execution-1")]);
         const controllers: NativePtyController[] = [];
         render(
             <Harness
                 context={context}
                 durable
-                externallyOwned
+                taskTerminalKey="task"
                 onController={(controller) => {
                     if (controller) controllers.push(controller);
                 }}
@@ -269,7 +266,7 @@ describe("usePty", () => {
         expect(invoke).toHaveBeenCalledWith("pty_attach", { id: 91, onEvent: nativeChannels[0] });
 
         act(() => {
-            taskPtyBindings.bind(context.paneId!, { ptyId: 92, executionId: "execution-2", terminalKey: "task" });
+            setTaskRunsForTests([run(92, "execution-2")]);
         });
         await waitFor(() => expect(controllers).toHaveLength(2));
         const replacement = controllers[1]!;
@@ -297,9 +294,9 @@ describe("usePty", () => {
             windowId: "window-1",
             paneId: "pane-task-transient",
         };
-        taskPtyBindings.bind(context.paneId!, { ptyId: 101, executionId: "execution-1", terminalKey: "task" });
+        setTaskRunsForTests([run(101, "execution-1")]);
         let controller: NativePtyController | null = null;
-        const view = render(<Harness context={context} externallyOwned onController={(value) => (controller = value)} />);
+        const view = render(<Harness context={context} taskTerminalKey="task" onController={(value) => (controller = value)} />);
         await waitFor(() => expect(controller).not.toBeNull());
         await controller!.attach(vi.fn());
 
@@ -318,7 +315,7 @@ describe("usePty", () => {
             windowId: "window-1",
             paneId: "pane-ordinary-with-binding",
         };
-        taskPtyBindings.bind(context.paneId!, { ptyId: 111, executionId: "execution-1", terminalKey: "task" });
+        setTaskRunsForTests([run(111, "execution-1")]);
         const controllers: NativePtyController[] = [];
         render(
             <Harness
@@ -333,7 +330,7 @@ describe("usePty", () => {
         expect(controllers[0]!.getSnapshot().processOwnership).toBe("controller");
 
         act(() => {
-            taskPtyBindings.bind(context.paneId!, { ptyId: 112, executionId: "execution-2", terminalKey: "task" });
+            setTaskRunsForTests([run(112, "execution-2")]);
         });
         await Promise.resolve();
 

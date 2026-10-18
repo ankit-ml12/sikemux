@@ -1,5 +1,6 @@
 import { browserApi } from "../../api/browser";
-import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../../tasks/nativeRuntime";
+import { runShownIn, taskRuns } from "../../tasks/coreTasks";
+import type { TaskTerminalRequest } from "./taskTerminal";
 import { emit } from "../bus";
 import { getState, mutate, type StoreState } from "../store";
 import type { Draft } from "immer";
@@ -352,7 +353,7 @@ export function consumeDeskReveal(agentId: string, seq: number): void {
  */
 export function openDeskTerminal(
     agentId: string,
-    request: Pick<TaskTerminalPresentationRequest, "terminalKey" | "label" | "cwd" | "background">,
+    request: Pick<TaskTerminalRequest, "terminalKey" | "label" | "cwd" | "background">,
 ): string {
     let id = "";
     mutate((d) => {
@@ -427,7 +428,7 @@ export function showDeskTerminal(agentId: string, id: string): void {
 export function deskTerminalFor(executionId: string): { agentId: string; id: string } | null {
     for (const [agentId, desk] of Object.entries(getState().desks))
         for (const terminal of desk.terminals)
-            if (taskPtyBindings.getSnapshot(terminal.id)?.executionId === executionId) return { agentId, id: terminal.id };
+            if (runShownIn(taskRuns.getSnapshot(), terminal.terminalKey)?.executionId === executionId) return { agentId, id: terminal.id };
     return null;
 }
 
@@ -474,7 +475,6 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
         });
         return;
     }
-    taskPtyBindings.release(item.terminal.id);
     mutate((d) => {
         const current = d.desks[agentId];
         if (!current) return;

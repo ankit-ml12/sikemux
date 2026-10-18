@@ -1,6 +1,5 @@
 import { hasUsage } from "../../agents/catalog";
 import { pluginDocuments } from "../../plugins/documents";
-import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { invalidate } from "../resources";
 import { getState, mutate } from "../store";
 import {
@@ -193,9 +192,6 @@ export function closeWindowsById(ids: readonly string[], askToStop = true): void
 function closeWindowNow(id: string): void {
     const closing = getState().windows[id];
     if (!closing || closing.fixed) return;
-    const taskPaneIds = collectPanes(closing.root)
-        .filter((pane) => pane.externalPty)
-        .map((pane) => pane.id);
     const closingAgent = closing.role === "agent" ? getState().agents[agentPaneId(closing) ?? ""] : undefined;
     mutate((d) => {
         const sessionId = ownerSessionId(d, id);
@@ -226,7 +222,6 @@ function closeWindowNow(id: string): void {
         d.zoomedPaneId = null;
     });
     if (!getState().windows[id]) {
-        for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
         if (closingAgent) {
             closeAgentDesk(closingAgent.id);
             if (hasUsage(closingAgent.type)) {

@@ -90,7 +90,7 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
             active={active}
             visible={visible}
             context={terminalContext(session, win.id, pane.id)}
-            externallyOwned={pane.externalPty === true}
+            taskTerminalKey={pane.externalPty ? pane.taskTerminalKey : undefined}
             retainPtyOnUnmount
             resumePtyId={pane.ptyId}
             onPtySession={(id) => cmd.setPanePty(pane.id, id)}
