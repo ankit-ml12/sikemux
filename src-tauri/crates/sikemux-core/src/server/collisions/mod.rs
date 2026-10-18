@@ -12,7 +12,7 @@ mod fragile;
 mod merge;
 mod watch;
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
@@ -36,6 +36,8 @@ const MAX_CALLS: usize = 256;
 /// Shell commands kept per agent, to tell whether it was running one when a
 /// file changed.
 const MAX_SHELL_RUNS: usize = 8;
+/// How much of a shell command's text is kept to tell which files it names.
+const MAX_COMMAND_BYTES: usize = 16 * 1024;
 /// How long a change on disk waits for an agent's edit tool to say it made it.
 pub(crate) const GRACE_MS: u64 = 1500;
 /// A burst of edits to the same lines makes one note, once it has been quiet
@@ -141,6 +143,14 @@ struct Call {
     kind: String,
     paths: Vec<PathBuf>,
     at: u64,
+    command: Option<Arc<str>>,
+}
+
+/// A shell command an agent ran, from when it started to when it ended.
+struct ShellRun {
+    started: u64,
+    ended: u64,
+    command: Option<Arc<str>>,
 }
 
 /// Lines one agent changed that another had uncommitted, gathered over a
@@ -179,7 +189,7 @@ pub(super) struct State {
     priors: HashMap<(String, PathBuf), Arc<str>>,
     calls: HashMap<(String, String), Call>,
     /// When each agent's latest shell commands started and finished.
-    shell_runs: HashMap<String, VecDeque<(u64, u64)>>,
+    shell_runs: HashMap<String, VecDeque<ShellRun>>,
     overlaps: HashMap<(PathBuf, String, String), Overlap>,
     hits: VecDeque<Hit>,
     claims: HashMap<PathBuf, Claim>,
@@ -363,6 +373,9 @@ impl Collisions {
                     call.paths.push(path);
                 }
             }
+            if call.command.is_none() {
+                call.command = command_text(update);
+            }
             let call = call.clone();
             let began = !was_command && !ended && call.kind == "execute";
             if ended {
@@ -372,7 +385,11 @@ impl Collisions {
                     if runs.len() >= MAX_SHELL_RUNS {
                         runs.pop_front();
                     }
-                    runs.push_back((call.at, unix_ms()));
+                    runs.push_back(ShellRun {
+                        started: call.at,
+                        ended: unix_ms(),
+                        command: call.command.clone(),
+                    });
                 }
             }
             (call, began)
@@ -1320,7 +1337,20 @@ impl Collisions {
                 .commands(core, project, place, written.at, 0)
                 .is_empty();
         let grace = if exact { 0 } else { GRACE_MS };
-        self.at_work(core, listed, project, place, written.at, grace)
+        let running = self.commands(core, project, place, written.at, grace);
+        let naming: BTreeSet<String> = running
+            .iter()
+            .filter(|(_, commands)| commands.iter().any(|command| names_file(command, place)))
+            .map(|(agent, _)| agent.clone())
+            .collect();
+        if !naming.is_empty() {
+            return (naming, BTreeSet::new());
+        }
+        let terminals = terminals_at_work(core, listed, project, place);
+        if running.is_empty() {
+            return (in_background(core, project, place), terminals);
+        }
+        (running.into_keys().collect(), terminals)
     }
 
     /// Whether an agent's edit tool is changing `path` now.
@@ -1345,30 +1375,17 @@ impl Collisions {
         at: u64,
         grace: u64,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
-        let mut shells = self.commands(core, project, place, at, grace);
-        shells.extend(
-            core.chats
-                .list()
-                .into_iter()
-                .filter(|chat| chat.subagents > 0 || chat.tasks > 0)
-                .map(|chat| chat.agent_id)
-                .filter(|agent| in_project(core, project, agent) && holds(core, place, agent)),
-        );
-        let terminals = listed
-            .iter()
-            .filter(|agent| {
-                agent.reach == super::messages::Reach::Terminal
-                    && agent.project == project
-                    && agent.status == crate::protocol::AgentStatus::Working
-            })
-            .map(|agent| agent.agent_id.clone())
-            .filter(|agent| holds(core, place, agent))
+        let mut shells: BTreeSet<String> = self
+            .commands(core, project, place, at, grace)
+            .into_keys()
             .collect();
-        (shells, terminals)
+        shells.extend(in_background(core, project, place));
+        (shells, terminals_at_work(core, listed, project, place))
     }
 
     /// The chat agents in `project` that were running a shell command at
-    /// `at`, or ended one up to `grace` before, in the checkout holding `place`.
+    /// `at`, or ended one up to `grace` before, in the checkout holding
+    /// `place`, each with the text of those commands.
     fn commands(
         &self,
         core: &Core,
@@ -1376,29 +1393,92 @@ impl Collisions {
         place: &Path,
         at: u64,
         grace: u64,
-    ) -> BTreeSet<String> {
-        let found: BTreeSet<String> = {
+    ) -> BTreeMap<String, Vec<Arc<str>>> {
+        let mut found: BTreeMap<String, Vec<Arc<str>>> = BTreeMap::new();
+        {
             let state = self.lock();
-            state
+            let open = state
                 .calls
                 .iter()
                 .filter(|(_, call)| call.kind == "execute" && call.at <= at)
-                .map(|((agent, _), _)| agent.clone())
-                .chain(
-                    state
-                        .shell_runs
-                        .iter()
-                        .filter(|(_, runs)| {
-                            runs.iter()
-                                .any(|(started, ended)| *started <= at && at <= ended + grace)
-                        })
-                        .map(|(agent, _)| agent.clone()),
-                )
-                .collect()
-        };
+                .map(|((agent, _), call)| (agent, call.command.clone()));
+            let ended = state.shell_runs.iter().flat_map(|(agent, runs)| {
+                runs.iter()
+                    .filter(|run| run.started <= at && at <= run.ended + grace)
+                    .map(move |run| (agent, run.command.clone()))
+            });
+            for (agent, command) in open.chain(ended) {
+                found.entry(agent.clone()).or_default().extend(command);
+            }
+        }
+        found.retain(|agent, _| in_project(core, project, agent) && holds(core, place, agent));
         found
-            .into_iter()
-            .filter(|agent| in_project(core, project, agent) && holds(core, place, agent))
-            .collect()
     }
+}
+
+/// The chat agents in `project` with subagents or background tasks going,
+/// in the checkout holding `place`: whatever those run reports no command.
+fn in_background(core: &Core, project: &str, place: &Path) -> BTreeSet<String> {
+    core.chats
+        .list()
+        .into_iter()
+        .filter(|chat| chat.subagents > 0 || chat.tasks > 0)
+        .map(|chat| chat.agent_id)
+        .filter(|agent| in_project(core, project, agent) && holds(core, place, agent))
+        .collect()
+}
+
+/// The terminal agents in `project` working now, in the checkout holding `place`.
+fn terminals_at_work(
+    core: &Core,
+    listed: &[super::messages::Listed],
+    project: &str,
+    place: &Path,
+) -> BTreeSet<String> {
+    listed
+        .iter()
+        .filter(|agent| {
+            agent.reach == super::messages::Reach::Terminal
+                && agent.project == project
+                && agent.status == crate::protocol::AgentStatus::Working
+        })
+        .map(|agent| agent.agent_id.clone())
+        .filter(|agent| holds(core, place, agent))
+        .collect()
+}
+
+/// The text of the shell command a tool call runs, as its update gives it.
+fn command_text(update: &Value) -> Option<Arc<str>> {
+    let command = update.pointer("/rawInput/command")?;
+    let text = match command {
+        Value::String(text) => text.clone(),
+        Value::Array(words) => words
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => return None,
+    };
+    let mut end = text.len().min(MAX_COMMAND_BYTES);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(Arc::from(&text[..end]))
+}
+
+/// Whether `command` names the file at `place`, as a script that writes it does.
+fn names_file(command: &str, place: &Path) -> bool {
+    place
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            command.match_indices(name).any(|(at, _)| {
+                let before = command[..at].chars().next_back();
+                let after = command[at + name.len()..].chars().next();
+                let edge = |c: Option<char>| {
+                    c.is_none_or(|c| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.')))
+                };
+                edge(before) && edge(after)
+            })
+        })
 }
