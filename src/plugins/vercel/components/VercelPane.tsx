@@ -190,6 +190,7 @@ function ProjectView({
                     )}
                 </span>
             </header>
+            <ProductionCard active={active} team={team} project={project} onOpen={(id) => updateVercelView(paneId, { deployment: id })} />
             <div className="vercel-tabs">
                 <Seg label="Project view" options={TABS} value={view.tab} onChange={(tab) => updateVercelView(paneId, { tab })} />
             </div>
@@ -198,6 +199,83 @@ function ProjectView({
             )}
             {view.tab === "domains" && <Domains active={active} team={team} project={project.name} />}
             {view.tab === "env" && <Environment active={active} team={team} project={project.name} />}
+        </section>
+    );
+}
+
+/** The deployment serving production, and a way back to the one before it. */
+function ProductionCard({ active, team, project, onOpen }: { active: boolean; team: string; project: VercelProject; onOpen: (id: string) => void }) {
+    const deployments = useResourceEnabled(active, vercelDeploymentsR, team, project.name);
+    const [busy, setBusy] = useState(false);
+    const production = project.production;
+    if (!production) return null;
+    const current = deployments.data?.find((each) => each.id === production.id);
+    const previous = deployments.data?.find((each) => each.target === "production" && each.state === "READY" && each.id !== production.id);
+    const domain = production.url?.replace(/^https:\/\//, "");
+
+    const rollback = async () => {
+        if (!previous || busy) return;
+        const confirmed = await confirmDialog({
+            title: "Roll back production?",
+            body: `${previous.message || previous.id} (${formatAgo(previous.createdAt)}) starts serving ${domain ?? "production"} again, without building.`,
+            confirmLabel: "Roll back",
+        });
+        if (!confirmed) return;
+        setBusy(true);
+        try {
+            await vercelApi.promote(team, previous.id);
+            notify("success", "Rolled production back");
+            invalidate((kind) => kind.startsWith("vercel.") && kind !== "vercel.status");
+        } catch (error) {
+            notify("error", `Roll back: ${failureMessage(error)}`);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <section className="vercel-production" aria-label="Production deployment">
+            <header className="vercel-production-head">
+                <span className="vercel-production-label">Production deployment</span>
+                <span className="vercel-actions">
+                    {previous && (
+                        <button type="button" className="vercel-chip" disabled={busy} onClick={() => void rollback()}>
+                            Instant Rollback
+                        </button>
+                    )}
+                    <button type="button" className="vercel-chip" onClick={() => onOpen(production.id)}>
+                        Build log
+                    </button>
+                    {production.url && (
+                        <button type="button" className="vercel-chip primary" onClick={() => visit(production.url!)}>
+                            Visit
+                        </button>
+                    )}
+                </span>
+            </header>
+            <dl className="vercel-production-facts">
+                <div>
+                    <dt>Domain</dt>
+                    <dd>{domain ?? "—"}</dd>
+                </div>
+                <div>
+                    <dt>Status</dt>
+                    <dd>
+                        <StateDot state={production.state} /> {stateLabel(production.state)}
+                    </dd>
+                </div>
+                <div>
+                    <dt>Created</dt>
+                    <dd>
+                        {formatAgo(production.createdAt)}
+                        {current?.author ? ` by ${current.author}` : ""}
+                    </dd>
+                </div>
+                <div>
+                    <dt>Source</dt>
+                    <dd>{current ? [current.branch, current.commit?.slice(0, 7), current.message].filter(Boolean).join(" · ") || "—" : "—"}</dd>
+                </div>
+            </dl>
         </section>
     );
 }
