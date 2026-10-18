@@ -5,6 +5,15 @@
     width: 100%;
     outline: none;
 }
+/* The side panel and the review are cards of their own, so the pane around them draws no frame, ground or focus ring
+   of its own, and the cards reach its edges. */
+.pane.pane-git {
+    border-color: transparent;
+    background: none;
+}
+.git-pane:focus-visible {
+    box-shadow: none;
+}
 
 /* The changes view is panels on the pane's picture: the commit box, the files and the history, each with its own
    edge and corner and a gap between them, never a shared line. The review's files are cards of their own. */
@@ -14,7 +23,7 @@
     gap: var(--space-2);
     min-height: 0;
     width: 100%;
-    padding: var(--space-2);
+    padding: 0;
 }
 
 .git-left {
