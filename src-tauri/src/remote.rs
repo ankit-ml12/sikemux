@@ -40,9 +40,9 @@ pub struct PublishedRecentChats(Mutex<Option<Vec<PublishedRecent>>>);
 #[derive(Default)]
 pub struct PublishedBuddies(Mutex<Value>);
 
-/// The agents the app last showed, sent again like the backdrop.
+/// The agents the app last showed and whether its window was in front, sent again like the backdrop.
 #[derive(Default)]
-pub struct PublishedOnScreen(Mutex<Vec<String>>);
+pub struct PublishedOnScreen(Mutex<(Vec<String>, bool)>);
 
 /// The projects the app has open and the mode it starts agents in, which the
 /// core keeps and offers each agent in.
@@ -143,13 +143,14 @@ pub async fn remote_publish_on_screen(
     manager: State<'_, PtyManager>,
     published: State<'_, PublishedOnScreen>,
     agent_ids: Vec<String>,
+    focused: bool,
 ) -> AppResult<()> {
     if let Ok(mut last) = published.0.lock() {
-        *last = agent_ids.clone();
+        *last = (agent_ids.clone(), focused);
     }
     let client = manager.client().await?;
     client
-        .publish_on_screen(agent_ids)
+        .publish_on_screen(agent_ids, focused)
         .await
         .map_err(core_error)
 }
@@ -206,9 +207,9 @@ pub(crate) async fn connected(
     let on_screen = app
         .try_state::<PublishedOnScreen>()
         .and_then(|published| published.0.lock().ok().map(|last| last.clone()))
-        .filter(|agent_ids| !agent_ids.is_empty());
-    if let Some(agent_ids) = on_screen {
-        if let Err(error) = client.publish_on_screen(agent_ids).await {
+        .filter(|(agent_ids, _)| !agent_ids.is_empty());
+    if let Some((agent_ids, focused)) = on_screen {
+        if let Err(error) = client.publish_on_screen(agent_ids, focused).await {
             eprintln!("Sikemux could not tell its core which agents are on screen: {error}");
         }
     }

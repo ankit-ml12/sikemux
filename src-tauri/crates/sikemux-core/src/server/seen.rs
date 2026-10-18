@@ -1,7 +1,9 @@
 //! Which agents finished or asked for something while the person was looking
-//! elsewhere. The app says which agents it shows, and a phone shows the ones it
-//! has open while it is in front; the rest are left unread until one shows them. It also keeps when each agent last did something, so
-//! lists can put the most recent first.
+//! elsewhere, and which agents some client has on screen. The app says which
+//! agent it shows, and a phone shows the ones it has open while it is in front;
+//! the rest are left unread until one shows them. It also keeps when each agent
+//! last did something, so lists can put the most recent first and idle agents
+//! nobody looks at can be put to sleep.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, MutexGuard};
@@ -10,31 +12,56 @@ use super::connection::ClientId;
 use super::remote::unix_ms;
 
 #[derive(Default)]
+struct View {
+    agents: HashSet<String>,
+    /// Whether the person is looking, not only whether it is drawn: an app
+    /// window in the background still shows its agents but reads none of them.
+    looking: bool,
+}
+
+#[derive(Default)]
 struct State {
     unread: HashSet<String>,
     active_at: HashMap<String, u64>,
     started_at: HashMap<String, u64>,
-    on_screen: HashSet<String>,
-    /// The app connection that said what is on screen; nothing is once it goes.
-    shown_by: Option<ClientId>,
-    on_phones: HashSet<String>,
-    /// Agents that finished or asked while a phone showed them, not yet told to the app.
-    seen_on_phones: Vec<String>,
+    views: HashMap<ClientId, View>,
+    /// When each agent was last on some client's screen.
+    viewed_at: HashMap<String, u64>,
 }
 
 impl State {
-    fn shown(&self, agent_id: &str) -> bool {
-        self.on_screen.contains(agent_id) || self.on_phones.contains(agent_id)
+    fn viewed(&self, agent_id: &str) -> bool {
+        self.views.values().any(|view| view.agents.contains(agent_id))
     }
 
-    fn read_shown(&mut self) {
-        let State {
-            unread,
-            on_screen,
-            on_phones,
-            ..
-        } = self;
-        unread.retain(|agent_id| !on_screen.contains(agent_id) && !on_phones.contains(agent_id));
+    fn looked_at(&self, agent_id: &str) -> bool {
+        self.views
+            .values()
+            .any(|view| view.looking && view.agents.contains(agent_id))
+    }
+
+    /// Shows `client`'s agents, answering the agents no client had on screen before.
+    fn show(&mut self, client: ClientId, view: View) -> Vec<String> {
+        let now = unix_ms();
+        let before = self.views.remove(&client).unwrap_or_default();
+        let opened = view
+            .agents
+            .iter()
+            .filter(|agent_id| !before.agents.contains(*agent_id) && !self.viewed(agent_id))
+            .cloned()
+            .collect();
+        if view.looking {
+            self.unread.retain(|agent_id| !view.agents.contains(agent_id));
+        }
+        if !view.agents.is_empty() {
+            self.views.insert(client, view);
+        }
+        for agent_id in before.agents {
+            if !self.viewed(&agent_id) {
+                self.viewed_at.insert(agent_id, now);
+            }
+        }
+        opened
     }
 }
 
@@ -75,46 +102,29 @@ impl Seen {
     pub(crate) fn wants_a_look(&self, agent_id: &str) {
         let mut state = self.lock();
         state.active_at.insert(agent_id.to_owned(), unix_ms());
-        if !state.shown(agent_id) {
+        if !state.looked_at(agent_id) {
             state.unread.insert(agent_id.to_owned());
-        } else if state.on_phones.contains(agent_id) {
-            state.seen_on_phones.push(agent_id.to_owned());
         }
     }
 
-    pub(crate) fn on_screen(&self, client: ClientId, agent_ids: Vec<String>) {
-        let mut state = self.lock();
-        state.on_screen = agent_ids.into_iter().collect();
-        state.shown_by = Some(client);
-        state.read_shown();
-    }
-
-    /// The agents some phone shows now. Answers with those a phone saw since
-    /// last asked: ones it just opened that were unread, and ones that finished
-    /// or asked while it showed them.
-    pub(crate) fn on_phones(&self, agent_ids: HashSet<String>) -> Vec<String> {
-        let mut state = self.lock();
-        let mut seen = std::mem::take(&mut state.seen_on_phones);
-        seen.extend(
-            state
-                .unread
-                .iter()
-                .filter(|agent_id| agent_ids.contains(*agent_id))
-                .cloned(),
-        );
-        state.on_phones = agent_ids;
-        state.read_shown();
-        seen.sort();
-        seen.dedup();
-        seen
+    /// The agents `client` has on screen now, replacing what it showed before,
+    /// and whether the person is looking at them. Answers the agents it brought
+    /// on screen that no client showed.
+    pub(crate) fn show(
+        &self,
+        client: ClientId,
+        agent_ids: impl IntoIterator<Item = String>,
+        looking: bool,
+    ) -> Vec<String> {
+        let view = View {
+            agents: agent_ids.into_iter().collect(),
+            looking,
+        };
+        self.lock().show(client, view)
     }
 
     pub(crate) fn client_gone(&self, client: ClientId) {
-        let mut state = self.lock();
-        if state.shown_by == Some(client) {
-            state.on_screen.clear();
-            state.shown_by = None;
-        }
+        self.lock().show(client, View::default());
     }
 
     pub(crate) fn unread(&self, agent_id: &str) -> bool {
@@ -135,6 +145,10 @@ impl Seen {
 mod tests {
     use super::*;
 
+    fn shows(seen: &Seen, client: ClientId, agent_ids: &[&str]) -> Vec<String> {
+        seen.show(client, agent_ids.iter().map(|id| (*id).to_owned()), true)
+    }
+
     #[test]
     fn an_agent_off_screen_stays_unread_until_it_is_shown_or_works_again() {
         let seen = Seen::default();
@@ -143,7 +157,7 @@ mod tests {
         seen.working("a");
         assert!(!seen.unread("a"));
         seen.wants_a_look("a");
-        seen.on_screen(1, vec!["a".into()]);
+        shows(&seen, 1, &["a"]);
         assert!(!seen.unread("a"));
     }
 
@@ -164,43 +178,23 @@ mod tests {
     #[test]
     fn an_agent_on_screen_is_never_left_unread() {
         let seen = Seen::default();
-        seen.on_screen(1, vec!["a".into()]);
+        shows(&seen, 1, &["a"]);
         seen.wants_a_look("a");
         assert!(!seen.unread("a"));
-        seen.on_screen(1, Vec::new());
+        shows(&seen, 1, &[]);
         seen.wants_a_look("a");
         assert!(seen.unread("a"));
     }
 
     #[test]
-    fn nothing_is_on_screen_once_the_app_that_showed_it_goes() {
+    fn every_client_s_screen_counts_until_that_client_goes() {
         let seen = Seen::default();
-        seen.on_screen(1, vec!["a".into()]);
-        seen.client_gone(2);
-        seen.wants_a_look("a");
-        assert!(!seen.unread("a"));
+        assert_eq!(shows(&seen, 1, &["a"]), vec!["a".to_owned()]);
+        assert!(shows(&seen, 2, &["a"]).is_empty());
         seen.client_gone(1);
         seen.wants_a_look("a");
-        assert!(seen.unread("a"));
-    }
-
-    #[test]
-    fn an_agent_open_on_a_phone_is_read_and_stays_read_while_shown() {
-        let seen = Seen::default();
-        seen.wants_a_look("a");
-        assert_eq!(
-            seen.on_phones(HashSet::from(["a".to_owned()])),
-            vec!["a".to_owned()]
-        );
         assert!(!seen.unread("a"));
-        assert!(seen.on_phones(HashSet::from(["a".to_owned()])).is_empty());
-        seen.wants_a_look("a");
-        assert!(!seen.unread("a"));
-        assert_eq!(
-            seen.on_phones(HashSet::from(["a".to_owned()])),
-            vec!["a".to_owned()]
-        );
-        seen.on_phones(HashSet::new());
+        seen.client_gone(2);
         seen.wants_a_look("a");
         assert!(seen.unread("a"));
     }

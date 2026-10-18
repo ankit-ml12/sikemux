@@ -168,9 +168,7 @@ impl EventSink for AppSink {
                 if state.state == "stopped" {
                     crate::simulator::agent_stopped(&self.app, &state.agent_id);
                 }
-                self.emit("agent_state_changed", state)
             }
-            Event::AgentsSeen { agent_ids } => self.emit("agents_seen", agent_ids),
             Event::Chat {
                 agent_id, event, ..
             } => {
@@ -192,11 +190,27 @@ impl EventSink for AppSink {
             }
             Event::WakeChat { agent_id } => self.emit("remote_chat_wake", agent_id),
             Event::Network { change } => self.emit("network_changed", change),
+            Event::Notice {
+                title,
+                body,
+                agent_id,
+            } => self.emit(
+                "agent_notice",
+                serde_json::json!({ "title": title, "body": body, "agentId": agent_id }),
+            ),
             Event::FocusAgent { agent_id } => {
                 crate::harness::bring_to_front(&self.app);
                 self.emit("focus_agent", agent_id);
             }
             Event::DeviceView { view } => self.inbox.changed(&self.app, view.inbox),
+            Event::Changed {
+                topic,
+                project,
+                paths,
+            } => self.emit(
+                "core_changed",
+                serde_json::json!({ "topic": topic, "project": project, "paths": paths }),
+            ),
             Event::Attention { .. } | Event::AttentionCleared { .. } => {}
         }
     }

@@ -55,7 +55,6 @@ export function RemoteWorkspaceBridge() {
     );
     const active = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const focused = useWindowFocused();
-    const onScreen = focused ? active : undefined;
 
     useEffect(() => {
         const controller = new AbortController();
@@ -120,8 +119,8 @@ export function RemoteWorkspaceBridge() {
     }, [buddies]);
 
     useEffect(() => {
-        remoteApi.publishOnScreen(onScreen ? [onScreen] : []).catch(swallow("tell the core which agent is on screen"));
-    }, [onScreen]);
+        remoteApi.publishOnScreen(active ? [active] : [], focused).catch(swallow("tell the core which agent is on screen"));
+    }, [active, focused]);
 
     return null;
 }

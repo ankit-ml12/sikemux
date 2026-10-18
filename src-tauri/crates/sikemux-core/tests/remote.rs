@@ -682,7 +682,7 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
 
     let refused = client.publish_agents(Vec::new(), Default::default()).await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
-    let refused = client.publish_on_screen(Vec::new()).await;
+    let refused = client.publish_on_screen(Vec::new(), true).await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
     let refused = client.watch_view().await;
     assert!(refusal(refused).contains("only Sikemux on this host"));

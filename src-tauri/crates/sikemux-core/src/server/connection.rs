@@ -864,8 +864,8 @@ async fn run_requests(
                 let result = core.workspaces.publish_recent(chats);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::PublishOnScreen { agent_ids } => {
-                core.seen.on_screen(client.id, agent_ids);
+            Request::PublishOnScreen { agent_ids, focused } => {
+                core.seen.show(client.id, agent_ids, focused);
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::FocusAgent { agent_id } => {

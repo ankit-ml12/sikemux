@@ -870,8 +870,12 @@ impl CoreClient {
         self.request_done(Request::PublishRecent { chats }).await
     }
 
-    pub async fn publish_on_screen(&self, agent_ids: Vec<String>) -> Result<(), ClientError> {
-        self.request_done(Request::PublishOnScreen { agent_ids })
+    pub async fn publish_on_screen(
+        &self,
+        agent_ids: Vec<String>,
+        focused: bool,
+    ) -> Result<(), ClientError> {
+        self.request_done(Request::PublishOnScreen { agent_ids, focused })
             .await
     }
 

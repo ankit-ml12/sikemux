@@ -84,10 +84,10 @@ describe("RemoteWorkspaceBridge", () => {
         const agentId = Object.values(getState().agents).find((agent) => agent.title === "Fix the login flake")?.id ?? "";
         const titles = (agents.mock.lastCall?.[0] as { titles: Record<string, string> }).titles;
         expect(titles[agentId]).toBe("Fix the login flake");
-        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [agentId] });
+        expect(onScreen.mock.lastCall?.[0]).toMatchObject({ agentIds: [agentId] });
     });
 
-    it("publishes no agent on screen while the window is behind another app", async () => {
+    it("publishes the agent on screen as unwatched while the window is behind another app", async () => {
         transport.register("remote_status", () => status(false));
         const onScreen = vi.fn<(args: unknown) => void>();
         transport.register("remote_publish_on_screen", onScreen);
@@ -97,17 +97,17 @@ describe("RemoteWorkspaceBridge", () => {
             cmd.addAgent("claude", undefined, "Watch the build");
         });
         await settle();
-        expect(onScreen.mock.lastCall?.[0]).not.toEqual({ agentIds: [] });
+        const agentId = Object.values(getState().agents).find((agent) => agent.title === "Watch the build")?.id ?? "";
         act(() => {
             window.dispatchEvent(new Event("blur"));
         });
         await settle();
-        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [] });
+        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [agentId], focused: false });
         act(() => {
             window.dispatchEvent(new Event("focus"));
         });
         await settle();
-        expect(onScreen.mock.lastCall?.[0]).not.toEqual({ agentIds: [] });
+        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [agentId], focused: true });
     });
 
     it("publishes the newest saved chats while remote access is on, leaving open ones out, and refreshes them", async () => {

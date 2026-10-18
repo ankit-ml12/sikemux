@@ -831,7 +831,7 @@ async fn a_client_on_this_host_can_watch_the_device_view_with_the_app_s_titles()
     )
     .await
     .expect("publish titles");
-    app.publish_on_screen(vec!["agent-10".into()])
+    app.publish_on_screen(vec!["agent-10".into()], true)
         .await
         .expect("publish what is on screen");
 

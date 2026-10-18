@@ -145,7 +145,7 @@ export const remoteApi = {
     publishAgents: (chats: readonly PublishedChat[], titles: Readonly<Record<string, string>>) =>
         invoke<void>("remote_publish_agents", { chats, titles }),
     publishRecent: (chats: readonly PublishedRecent[]) => invoke<void>("remote_publish_recent", { chats }),
-    publishOnScreen: (agentIds: readonly string[]) => invoke<void>("remote_publish_on_screen", { agentIds }),
+    publishOnScreen: (agentIds: readonly string[], focused: boolean) => invoke<void>("remote_publish_on_screen", { agentIds, focused }),
     publishPalette: (palette: Readonly<Record<string, string>>) => invoke<void>("remote_publish_palette", { palette }),
     publishBuddies: (buddies: PublishedBuddies | null) => invoke<void>("remote_publish_buddies", { buddies }),
     publishBackdrop: (texture: boolean, image: { readonly id: string; readonly dataUrl: string } | null) =>

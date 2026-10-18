@@ -365,10 +365,12 @@ pub enum Request {
     PublishRecent {
         chats: Vec<PublishedRecent>,
     },
-    /// The agents the person is looking at in the app now, replacing the
-    /// last list. An agent on screen is never left unread.
+    /// The agents the app shows now, replacing the last list, and whether its
+    /// window is in front. An agent on screen in a window in front is never
+    /// left unread, and one on screen is not put to sleep.
     PublishOnScreen {
         agent_ids: Vec<String>,
+        focused: bool,
     },
     /// Sends this client the [`DeviceView`] now and whenever it changes, as
     /// paired devices get it.
@@ -890,13 +892,92 @@ pub struct HostRegistration {
     pub signature: String,
 }
 
-/// A project the app has open.
+/// A project on this host.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectInfo {
     pub id: String,
     pub name: String,
     pub path: PathBuf,
+    #[serde(default)]
+    pub pinned: bool,
+    /// The space it is shown in, by id; none shows it in every space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub space: Option<String>,
+}
+
+/// A set of projects the person shows on their own.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceInfo {
+    pub id: String,
+    pub name: String,
+    /// Empty when the person removed it.
+    #[serde(default)]
+    pub icon: String,
+}
+
+/// A saved chat kept at the top of the list, open or closed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedChat {
+    pub provider: String,
+    /// The provider's own id for the conversation, which resumes it.
+    pub session_id: String,
+    pub title: String,
+    /// The folder it ran in.
+    pub project: PathBuf,
+}
+
+/// An agent in the workspace, kept whether or not it runs now.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceAgent {
+    pub id: String,
+    /// The CLI it runs, such as `claude`.
+    pub provider: String,
+    /// Its project, by id.
+    pub project: String,
+    pub cwd: PathBuf,
+    pub title: String,
+    /// The person named it, so the agent's own titles no longer replace it.
+    #[serde(default)]
+    pub renamed: bool,
+    /// The agent that started it, when one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead: Option<String>,
+    /// The provider's session, which resumes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_id: Option<String>,
+    pub permission_mode: String,
+    /// The person's account it runs on, by profile id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The model provider it runs on in place of its maker's account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// Never put to sleep while idle.
+    #[serde(default)]
+    pub keep_alive: bool,
+    /// Stopped, and woken again on its saved conversation when opened.
+    #[serde(default)]
+    pub asleep: bool,
+    /// The git worktree it works in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<Value>,
+    /// The character drawn for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub buddy: Option<Value>,
+    /// The terminal session running it, for an agent in a terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pty_id: Option<SessionId>,
+    /// Unix milliseconds.
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 /// What a device learns about a launcher: never its program or environment.
@@ -942,6 +1023,15 @@ pub struct ConfigChoice {
 #[serde(rename_all = "camelCase")]
 pub struct Workspace {
     pub projects: Vec<ProjectInfo>,
+    #[serde(default)]
+    pub spaces: Vec<SpaceInfo>,
+    #[serde(default)]
+    pub agents: Vec<WorkspaceAgent>,
+    #[serde(default)]
+    pub pinned: Vec<PinnedChat>,
+    /// The mode agents that can bypass permissions start in.
+    #[serde(default)]
+    pub permission_mode: String,
     pub launchers: Vec<LauncherInfo>,
     /// The app's theme colours by name; empty until the app publishes them.
     pub palette: BTreeMap<String, String>,
@@ -1323,11 +1413,6 @@ pub enum Event {
         id: SessionId,
     },
     AgentState(AgentStateEvent),
-    /// Sent only to local clients: a phone showed these agents, so what they
-    /// last did has been seen.
-    AgentsSeen {
-        agent_ids: Vec<String>,
-    },
     /// Sent only to the clients that started or attached to the chat.
     /// `seq` counts the chat's events, so a client can tell which ones the
     /// attach answer already held.
@@ -1373,6 +1458,24 @@ pub enum Event {
     /// Sent only to the app's window: show this agent and come to the front.
     FocusAgent {
         agent_id: String,
+    },
+    /// Sent only to the app's window: tell the person this, unless they are
+    /// looking at the window.
+    Notice {
+        title: String,
+        body: String,
+        agent_id: String,
+    },
+    /// What a client reads through `Call` under `topic` changed, for
+    /// `project` or for every project when it is absent, so the client reads
+    /// it again. `paths` names what moved inside it; absent means anything
+    /// may have. A client skips topics it does not know.
+    Changed {
+        topic: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        paths: Option<Vec<String>>,
     },
 }
 
@@ -1607,12 +1710,7 @@ mod tests {
     #[test]
     fn a_device_reads_the_view_of_a_core_from_before_recent_chats() {
         let mut view = serde_json::to_value(DeviceView {
-            workspace: Workspace {
-                projects: Vec::new(),
-                launchers: Vec::new(),
-                palette: BTreeMap::new(),
-                backdrop: Backdrop::default(),
-            },
+            workspace: Workspace::default(),
             sessions: Vec::new(),
             chats: Vec::new(),
             attentions: Vec::new(),

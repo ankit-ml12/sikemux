@@ -6,6 +6,7 @@ mod attachments;
 mod board;
 mod callers;
 mod calls;
+mod changed;
 mod chat;
 mod collisions;
 mod connection;
@@ -305,8 +306,11 @@ pub(crate) struct Core {
     pub(crate) seen: seen::Seen,
     /// Pokes the device view awake once something may be watching it.
     pub(crate) view_watched: Notify,
+    /// Sends the device view before its next tick, once an agent's state changed.
+    pub(crate) view_stale: Notify,
     pub(crate) names: names::Names,
     pub(crate) boards: board::Boards,
+    pub(crate) changes: changed::Changes,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
     pub(crate) notify: notify::Notifier,
@@ -363,8 +367,10 @@ impl Core {
             workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
             view_watched: Notify::new(),
+            view_stale: Notify::new(),
             names,
             boards: board::Boards::new(data_dir),
+            changes: changed::Changes::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
             notify: notify::Notifier::default(),
@@ -442,29 +448,35 @@ impl Core {
         Ok(report)
     }
 
-    /// The agents a phone shows: the chats and terminals it has open while its app is in front.
-    fn on_phones(&self) -> HashSet<String> {
+    /// Tells [`Seen`] the agents each phone shows: the chats and terminals it
+    /// has open while its app is in front.
+    fn show_phones(&self) {
         let phones: Vec<_> = self
             .clients()
             .into_iter()
-            .filter(|client| !client.peer.is_local() && client.in_front())
+            .filter(|client| !client.peer.is_local())
             .collect();
         if phones.is_empty() {
-            return HashSet::new();
+            return;
         }
-        let mut shown = HashSet::new();
-        for phone in &phones {
-            shown.extend(self.chats.followed_by(phone.id));
-        }
-        for session in self.all_sessions() {
-            let Some(agent) = session.agent.as_ref() else {
-                continue;
-            };
-            if phones.iter().any(|phone| phone.is_subscribed(session.id)) {
-                shown.insert(agent.agent_id().to_owned());
+        let agent_sessions: Vec<_> = self
+            .all_sessions()
+            .into_iter()
+            .filter_map(|session| Some((session.id, session.agent.as_ref()?.agent_id().to_owned())))
+            .collect();
+        for phone in phones {
+            let mut shown = HashSet::new();
+            if phone.in_front() {
+                shown.extend(self.chats.followed_by(phone.id));
+                shown.extend(
+                    agent_sessions
+                        .iter()
+                        .filter(|(id, _)| phone.is_subscribed(*id))
+                        .map(|(_, agent_id)| agent_id.clone()),
+                );
             }
+            self.seen.show(phone.id, shown, true);
         }
-        shown
     }
 
     /// Every chat and agent terminal running here.
@@ -615,7 +627,10 @@ impl Core {
             }),
             _ => {}
         }
-        let devices_hear = matches!(event, Event::Exited { .. } | Event::ShellMetadata(_));
+        let devices_hear = matches!(
+            event,
+            Event::Exited { .. } | Event::ShellMetadata(_) | Event::Changed { .. }
+        );
         self.broadcast_to(event, |client| devices_hear || client.peer.is_local());
     }
 
@@ -932,12 +947,11 @@ async fn device_views(core: Arc<Core>) {
             core.view_watched.notified().await;
             ticker.reset();
         }
-        ticker.tick().await;
-        let seen = core.seen.on_phones(core.on_phones());
-        if !seen.is_empty() {
-            let event = Event::AgentsSeen { agent_ids: seen };
-            core.broadcast_to(&event, |client| client.peer.is_local());
+        tokio::select! {
+            _ = ticker.tick() => {}
+            () = core.view_stale.notified() => {}
         }
+        core.show_phones();
         let now = core.window.client_id();
         if now != window {
             window = now;
@@ -1012,6 +1026,7 @@ pub(crate) async fn run_core(
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
+        tokio::spawn(changed::serve(core.clone())),
         tokio::spawn(wake::serve(
             core.clone(),
             |core| &core.harness.mailbox.wake,
