@@ -879,3 +879,30 @@ button.gcp-project-row:hover {
 .gcp-error-text {
     color: var(--gcp-red);
 }
+
+.gcp-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: 12px;
+    background: var(--gcp-blue-soft);
+    color: var(--gcp-blue-text);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.gcp-terminal {
+    margin: 0;
+    padding: 12px;
+    border-radius: 4px;
+    background: #202124;
+    color: #e8eaed;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    max-height: 65vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}

@@ -8,6 +8,7 @@ import { gcpSettings, openProduct, PRODUCTS, setGcpAccount, setGcpProject, setGc
 import { GcpMark, ProductIcon } from "./icons";
 import { LoggingPage } from "./LoggingPage";
 import { RunPage } from "./RunPage";
+import { ComputePage } from "./ComputePage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -23,6 +24,7 @@ export interface ProductProps {
 /** Each product's page; a product without one yet is left out of the sidebar. */
 const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     run: RunPage,
+    compute: ComputePage,
     logging: LoggingPage,
 };
 
