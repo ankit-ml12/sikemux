@@ -639,15 +639,21 @@ fn fallback_full_scan(
     }
 }
 
-/// Applies one debounced watcher batch to a cached sorted snapshot. Ambiguous,
-/// outside-root, oversized, or unreadable changes fall back to one full scan.
-/// A missing cache remains missing so the next command performs its normal
-/// complete scan rather than doing duplicate work in the watcher task.
-pub(crate) fn apply_watcher_batch(
-    repo: &str,
-    changes: Vec<WatcherChange>,
-    force_full_rescan: bool,
+/// Brings the snapshot of `project` up to date with what the core saw move in
+/// it, then runs `then`, so a page reading it again sees the change.
+pub(crate) fn moved(
+    project: String,
+    paths: Option<Vec<String>>,
+    then: impl FnOnce() + Send + 'static,
 ) {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(key) = canonical_repo_key(&project) {
+            apply_moved(&key, paths.as_deref());
+        }
+        then();
+    });
+}
+
     let observer = global_observability();
     let mut metadata = Metadata::new();
     metadata.insert("change_count".to_owned(), ScalarValue::from(changes.len()));

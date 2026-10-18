@@ -207,10 +207,19 @@ impl EventSink for AppSink {
                 topic,
                 project,
                 paths,
-            } => self.emit(
-                "core_changed",
-                serde_json::json!({ "topic": topic, "project": project, "paths": paths }),
-            ),
+            } => {
+                let change =
+                    serde_json::json!({ "topic": topic, "project": project, "paths": paths });
+                match project.filter(|_| topic == "git") {
+                    Some(project) => {
+                        let app = self.app.clone();
+                        crate::files::moved(project, paths, move || {
+                            let _ = app.emit_to(MAIN_WEBVIEW, "core_changed", change);
+                        });
+                    }
+                    None => self.emit("core_changed", change),
+                }
+            }
             Event::Attention { .. } | Event::AttentionCleared { .. } => {}
         }
     }

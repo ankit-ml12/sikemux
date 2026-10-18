@@ -84,12 +84,10 @@ fn resolve_stash_ref(repo: &str, refname: &str, expected_sha: &str) -> Result<St
 }
 
 /// Create a new stash. `mode`:
-///   - "all" (default)     → `git stash push -u` (includes untracked).
-///   - "staged"            → `git stash push --staged`.
-///   - "unstaged"          → `git stash push --keep-index` then a fixup
-///                           that leaves only the unstaged work in the
-///                           stash. Implemented as `--keep-index` since
-///                           that's the closest single-command match.
+/// - "all" (default) → `git stash push -u` (includes untracked).
+/// - "staged" → `git stash push --staged`.
+/// - "unstaged" → `git stash push --keep-index`, the closest single command
+///   to leaving only the unstaged work in the stash.
 pub async fn git_stash_push(
     repo: String,
     message: Option<String>,

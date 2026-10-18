@@ -286,14 +286,12 @@ pub async fn git_unstage_all(repo: String) -> Result<(), String> {
 }
 
 /// Discard changes to a single file. `mode`:
-///   - "unstaged"       → revert working tree to match the index
-///                        (= `git restore --worktree <path>`). Staged changes are
-///                        preserved.
-///   - "staged"         → unstage but leave the worktree alone
-///                        (= `git restore --staged <path>`).
-///   - "all"            → discard staged AND unstaged changes: first
-///                        unstage, then restore. For untracked files this
-///                        deletes the file (= `git clean -f <path>`).
+/// - "unstaged" → revert working tree to match the index
+///   (= `git restore --worktree <path>`). Staged changes are preserved.
+/// - "staged" → unstage but leave the worktree alone
+///   (= `git restore --staged <path>`).
+/// - "all" → discard staged AND unstaged changes: first unstage, then
+///   restore. For untracked files this deletes the file (= `git clean -f <path>`).
 ///
 /// For new (untracked) files, "unstaged" and "all" both remove the file
 /// since there's no index or HEAD version to restore from.

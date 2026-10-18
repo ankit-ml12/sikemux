@@ -448,6 +448,32 @@ mod tests {
     use notify::event::{CreateKind, Flag, ModifyKind};
 
     #[test]
+    fn repo_keys_collapse_aliases_and_bound_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let canonical = repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
+        let dotted = temp.path().join(".");
+        assert_eq!(
+            repo_key(dotted.to_string_lossy().as_ref()).unwrap(),
+            canonical
+        );
+        assert!(repo_key("relative/repo").is_err());
+        assert!(repo_key(&format!("/{}", "x".repeat(MAX_REPO_PATH_BYTES))).is_err());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            let parent = tempfile::tempdir().unwrap();
+            let alias = parent.path().join("repo-alias");
+            symlink(temp.path(), &alias).unwrap();
+            assert_eq!(
+                repo_key(alias.to_string_lossy().as_ref()).unwrap(),
+                canonical
+            );
+        }
+    }
+
+    #[test]
     fn moved_paths_are_relative_and_git_state_is_one_entry() {
         let repo = Path::new("/repo");
         let changes = vec![
@@ -459,7 +485,11 @@ mod tests {
         ];
         assert_eq!(
             moved_paths(repo, &changes, false),
-            Some(vec![".git".into(), "src/new.rs".into(), "src/old.rs".into()])
+            Some(vec![
+                ".git".into(),
+                "src/new.rs".into(),
+                "src/old.rs".into()
+            ])
         );
         assert_eq!(moved_paths(repo, &changes, true), None);
         for path in [repo.to_path_buf(), PathBuf::from("/outside/file")] {

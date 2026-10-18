@@ -1,3 +1,5 @@
+pub mod ai;
+mod ai_provider;
 pub mod blame;
 pub mod branches;
 pub mod changes;
@@ -11,7 +13,9 @@ pub mod status;
 pub mod watch;
 pub mod worktree;
 
+use std::io::{self, Read};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -94,6 +98,32 @@ fn open_repo(path: &str) -> Result<Repository, String> {
 const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_COMMAND_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
 
+fn kill_and_reap_process(child: &mut std::process::Child) {
+    // SAFETY: kill only takes integers and touches no memory. A spawned child's id is
+    // never zero, so this never becomes kill(0), which would signal our own process group.
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn read_bounded_pipe(mut pipe: impl Read, exceeded: Arc<AtomicBool>) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = pipe.read(&mut chunk)?;
+        if read == 0 {
+            return Ok(bytes);
+        }
+        if bytes.len().saturating_add(read) > MAX_COMMAND_OUTPUT_BYTES {
+            exceeded.store(true, Ordering::Release);
+            return Err(io::Error::other("subprocess output exceeds 32 MiB limit"));
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+}
+
 /// Capture both pipes while enforcing a deadline and an output cap. Stdin and
 /// both output pipes are handled concurrently so no pipe-ordering deadlock is
 /// possible. Every timeout/error path kills the process group.
@@ -135,6 +165,10 @@ fn git_ok(repo: &str, args: &[&str]) -> Result<String, String> {
     } else {
         Err(if se.trim().is_empty() { so } else { se })
     }
+}
+
+fn git_has_head(repo: &str) -> bool {
+    git_ok(repo, &["rev-parse", "--verify", "HEAD"]).is_ok()
 }
 
 fn current_branch_name(repo: &str) -> Result<String, String> {

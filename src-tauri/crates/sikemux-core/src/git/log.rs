@@ -233,8 +233,7 @@ pub(super) fn describe_commits(
             date: relative_time(commit.time().seconds()),
             time: commit.time().seconds(),
             subject: commit.summary().ok().flatten().unwrap_or("").to_string(),
-            footer: !crate::trailers::agents(commit.message().unwrap_or_default())
-                .is_empty(),
+            footer: !crate::trailers::agents(commit.message().unwrap_or_default()).is_empty(),
             unpushed: unpushed.contains(&oid),
             refs: ref_map.get(&oid).cloned().unwrap_or_default(),
         });

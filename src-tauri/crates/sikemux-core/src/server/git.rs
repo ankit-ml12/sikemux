@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::git::{
-    blame, branches, changes, commit, log, remote, revisions, stash, status, watch, worktree,
+    ai, blame, branches, changes, commit, log, remote, revisions, stash, status, watch, worktree,
 };
 
 use super::access::Needs;
@@ -103,6 +103,7 @@ pub(crate) async fn call(method: &str, params: Value) -> CoreResult<Value> {
         "git.push" => commit::git_push { repo: String },
         "git.pull" => commit::git_pull { repo: String },
         "git.pullRequestUrl" => remote::pull_request_url { repo: String },
+        "git.aiMessage" => ai::git_ai_message { repo: String, provider: Option<String>, model: Option<String> },
         "git.stashList" => stash::git_stash_list { repo: String },
         "git.stashPush" => stash::git_stash_push { repo: String, message: Option<String>, mode: String },
         "git.stashApply" => stash::git_stash_apply { repo: String, refname: String, sha: String },
@@ -131,7 +132,9 @@ fn unfit(error: serde_json::Error) -> CoreError {
 /// Watches the workspace's projects as they are now, telling every client
 /// when one moves.
 pub(crate) fn follow_projects(core: &Core) {
-    let Some(core) = core.me.upgrade() else { return };
+    let Some(core) = core.me.upgrade() else {
+        return;
+    };
     let weak: Weak<Core> = core.me.clone();
     let changed: watch::Changed = Arc::new(move |projects, paths| {
         let Some(core) = weak.upgrade() else { return };
