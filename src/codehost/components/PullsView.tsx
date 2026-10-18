@@ -9,7 +9,10 @@ import {
     IconCheck,
     IconCheckout,
     IconChevron,
+    IconCommit,
     IconExternal,
+    IconFile,
+    IconMerge,
     IconPlus,
     IconPullRequest,
     SkeletonRows,
@@ -21,13 +24,11 @@ import { CommitReview } from "../../git/CommitReview";
 import { GitColumns } from "../../git/GitColumns";
 import { AuthorPicturesProvider, type AuthorPictures } from "../../git/AuthorAvatar";
 import { GitGraph } from "../../git/GitGraph";
-import { FoldPanel } from "../../git/FoldPanel";
 import { hostFileStatus } from "../../git/gitFileStatus";
 import { FileIcon } from "../../ui/FileIcon";
+import { SwipePages } from "../../ui/SwipePages";
 import { basename, dirname } from "../../lib/paths";
-import { requestOpenFile, setGitView } from "../../state/commands";
-import { useStore } from "../../state/store";
-import { DEFAULT_GIT_VIEW } from "../../state/types";
+import { requestOpenFile } from "../../state/commands";
 import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Run } from "../api";
 import { pullCommitsR, pullCountsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
 import { checksSummary, isUnfinished, outcomeOf, overallOutcome, type Outcome } from "../runStatus";
@@ -235,7 +236,6 @@ function MergeBox({
     reviewed,
     active,
     onOpenRun,
-    checkout,
 }: {
     repo: RepoRef;
     pull: Pull;
@@ -243,8 +243,6 @@ function MergeBox({
     reviewed: boolean;
     active: boolean;
     onOpenRun: (runId: string) => void;
-    /** Checking the branch out here, beside Close. */
-    checkout?: ReactNode;
 }) {
     const host = useHost();
     const { pulls } = host.capabilities;
@@ -375,7 +373,6 @@ function MergeBox({
                     </>
                 )}
                 <span className="gha-page-spacer" />
-                {checkout}
                 <button type="button" className="gha-btn danger" disabled={busy} onClick={() => runBusy(setState)}>
                     Close
                 </button>
@@ -384,76 +381,38 @@ function MergeBox({
     );
 }
 
-function CheckoutButton({ cwd, repo, pull, current }: { cwd: string; repo: RepoRef; pull: Pull; current: string | null }) {
+/** Checks the pull request's branch out in this project, one of the side panel's actions. */
+function CheckoutButton({ cwd, repo, pull, current }: { cwd: string | null; repo: RepoRef; pull: Pull; current: string | null }) {
     const host = useHost();
     const [busy, runBusy] = useBusy();
     const local = localBranchOf(pull, repo);
-    if (local && local === current) {
-        return (
-            <span className="gha-checked-out" title={`${local} is checked out in this project`}>
-                <IconCheck size={12} /> Checked out
-            </span>
-        );
-    }
-    if (!isOwnBranch(pull, repo) && !host.pullHeadRef) return null;
+    const here = !!local && local === current;
+    const can = !!cwd && pull.state === "open" && (isOwnBranch(pull, repo) || !!host.pullHeadRef);
     return (
-        <Tooltip label={`Check out ${local ?? "the branch"} in this project`}>
+        <Tooltip
+            label={
+                here
+                    ? `${local} is checked out in this project`
+                    : can
+                      ? `Check out ${local ?? "the branch"} in this project`
+                      : "Only an open pull request in this project's repository can be checked out"
+            }>
             <button
                 type="button"
-                className="gha-btn"
-                disabled={busy}
+                className="git-btn"
+                disabled={busy || here || !can}
                 onClick={() =>
+                    cwd &&
                     runBusy(() =>
                         checkoutPull(cwd, host, repo, pull)
                             .then(() => notify("success", `Checked out #${pull.number}`))
                             .catch(swallow("check out the pull request")),
                     )
                 }>
-                <IconCheckout size={12} /> {busy ? "Checking out…" : "Check out"}
+                {here ? <IconCheck size={13} /> : <IconCheckout size={13} />}
+                {here ? "Checked out" : busy ? "Checking out…" : "Check out"}
             </button>
         </Tooltip>
-    );
-}
-
-/** The top of an open pull request's column, where Changes has its commit box: what it is and what stands between it and merged. */
-function PullCard({
-    repo,
-    cwd,
-    projectBranch,
-    pull,
-    verdict,
-    reviewed,
-    active,
-    onClose,
-    onOpenRun,
-}: {
-    repo: RepoRef;
-    cwd: string | null;
-    projectBranch: string | null;
-    pull: Pull;
-    verdict: string | null;
-    reviewed: boolean;
-    active: boolean;
-    onClose: () => void;
-    onOpenRun: (runId: string) => void;
-}) {
-    return (
-        <>
-            <button type="button" className="pr-back" onClick={onClose}>
-                <IconChevron size={11} /> Pull requests
-            </button>
-            <div className="pr-card">
-                <MergeBox
-                    repo={repo}
-                    pull={pull}
-                    verdict={verdict}
-                    reviewed={reviewed}
-                    active={active}
-                    onOpenRun={onOpenRun}
-                    checkout={cwd && pull.state === "open" ? <CheckoutButton cwd={cwd} repo={repo} pull={pull} current={projectBranch} /> : null}
-                />
-            </div>
-        </>
     );
 }
 
@@ -647,22 +606,18 @@ export function PullRight({
 
 /** A pull request's commits, as the git pane's own history: newest first, one lane, the same rows. */
 function PullHistory({
-    paneId,
     repo,
     number,
     active,
     selected,
     onSelect,
 }: {
-    paneId: string;
     repo: RepoRef;
     number: number;
     active: boolean;
     selected: string | null;
     onSelect: (sha: string | null) => void;
 }) {
-    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? DEFAULT_GIT_VIEW.historyOpen);
-    const height = useStore((s) => s.gitViews[paneId]?.historyHeight ?? null);
     const host = useHost();
     const commits = useResourceEnabled(active, pullCommitsR, repo, number);
     const now = useNow(false);
@@ -691,40 +646,29 @@ function PullHistory({
     }, [commits.data, now]);
     const index = selected ? rows.findIndex((row) => row.full_hash === selected) : -1;
     return (
-        <FoldPanel
-            label="Commits"
-            count={rows.length}
-            summary={rows[0]?.subject ?? null}
-            open={open}
-            height={height}
-            onToggle={() => {
-                if (open) onSelect(null);
-                setGitView(paneId, { historyOpen: !open });
-            }}
-            onResize={(next) => setGitView(paneId, { historyHeight: next })}>
-            <div className="git-list">
-                {commits.status === "loading" && !commits.data ? (
-                    <SkeletonRows rows={4} label="Loading commits" />
-                ) : (
-                    <AuthorPicturesProvider value={pictures}>
-                        <GitGraph
-                            commits={rows}
-                            selectedIndex={index}
-                            focused={index >= 0}
-                            range={null}
-                            onSelect={(i) => onSelect(rows[i]?.full_hash ?? null)}
-                            onActivate={() => {}}
-                        />
-                    </AuthorPicturesProvider>
-                )}
-            </div>
-        </FoldPanel>
+        <div className="git-list">
+            {commits.status === "loading" && !commits.data ? (
+                <SkeletonRows rows={4} label="Loading commits" />
+            ) : (
+                <AuthorPicturesProvider value={pictures}>
+                    <GitGraph
+                        commits={rows}
+                        selectedIndex={index}
+                        focused={index >= 0}
+                        range={null}
+                        onSelect={(i) => onSelect(rows[i]?.full_hash ?? null)}
+                        onActivate={() => {}}
+                    />
+                </AuthorPicturesProvider>
+            )}
+        </div>
     );
 }
 
-/** An open pull request, laid out like Changes: its card, its files, then its conversation and commits folding beneath. */
+type SidePage = "files" | "commits" | "merge";
+
+/** An open pull request's side panel, laid out like the git pane's: what it is and its actions, then its files, commits and merge as pages. */
 function PullColumn({
-    paneId,
     repo,
     cwd,
     projectBranch,
@@ -737,15 +681,16 @@ function PullColumn({
     onClose,
     onOpenRun,
 }: DetailProps & {
-    paneId: string;
     focus: string | null;
     commit: string | null;
     onFocus: (path: string) => void;
     onCommit: (sha: string | null) => void;
     onClose: () => void;
 }) {
+    const host = useHost();
     const pull = useResourceEnabled(active, pullR, repo, number);
     const reviews = useResourceEnabled(active, pullReviewsR, repo, number);
+    const [page, setPage] = useState<SidePage>("files");
     if (pull.status === "loading" && !pull.data) return <SkeletonRows rows={8} label="Loading pull request" />;
     if (!pull.data) {
         return (
@@ -754,23 +699,70 @@ function PullColumn({
     }
     const found = pull.data;
     const reviewList = reviews.data ?? [];
-    const verdict = reviewVerdict(reviewList);
-    return (
-        <>
-            <PullCard
+    const merge = (
+        <div className="pr-card">
+            <MergeBox
                 repo={repo}
-                cwd={cwd}
-                projectBranch={projectBranch}
                 pull={found}
-                verdict={verdict}
+                verdict={reviewVerdict(reviewList)}
                 reviewed={reviewList.length > 0}
                 active={active}
-                onClose={onClose}
                 onOpenRun={onOpenRun}
             />
-            <PullFileRows repo={repo} number={number} active={active} focus={focus} onFocus={onFocus} />
-            <PullHistory paneId={paneId} repo={repo} number={number} active={active} selected={commit} onSelect={onCommit} />
-        </>
+        </div>
+    );
+    const open = found.state === "open";
+    return (
+        <div className="git-side">
+            <div className="git-side-head">
+                <div className="git-side-title">
+                    <Tooltip label="Back to the pull requests">
+                        <button type="button" className="git-foot-btn icon pr-back-btn" aria-label="Back to the pull requests" onClick={onClose}>
+                            <IconChevron size={11} />
+                        </button>
+                    </Tooltip>
+                    <StateMark kind="pull" state={pullState(found)} size={14} />
+                    <span className="pr-side-number">#{found.number}</span>
+                    {found.head && <span className="pr-ref pr-ref-head">{found.head}</span>}
+                    {found.head && found.base && <span className="pr-ref-arrow">→</span>}
+                    {found.base && <span className="pr-ref">{found.base}</span>}
+                </div>
+                <div className="git-btn-group git-side-actions pr-side-actions" role="group" aria-label="Pull request">
+                    <CheckoutButton cwd={cwd} repo={repo} pull={found} current={projectBranch} />
+                    <button type="button" className="git-btn" onClick={() => void openUrl(found.url).catch(swallow(`open ${host.name}`))}>
+                        <IconExternal size={13} />
+                        {host.name}
+                    </button>
+                    <button
+                        type="button"
+                        className={`git-btn${open && !found.draft && found.mergeState !== "dirty" ? " primary" : ""}`}
+                        onClick={() => setPage("merge")}>
+                        <IconMerge size={13} />
+                        {open ? "Merge" : pullState(found) === "merged" ? "Merged" : "Closed"}
+                    </button>
+                </div>
+            </div>
+            <SwipePages
+                label="Pull request"
+                current={page}
+                onChange={(id) => setPage(id as SidePage)}
+                pages={[
+                    {
+                        id: "files",
+                        label: "Files",
+                        icon: <IconFile size={14} />,
+                        content: <PullFileRows repo={repo} number={number} active={active} focus={focus} onFocus={onFocus} />,
+                    },
+                    {
+                        id: "commits",
+                        label: "Commits",
+                        icon: <IconCommit size={14} />,
+                        content: <PullHistory repo={repo} number={number} active={active} selected={commit} onSelect={onCommit} />,
+                    },
+                    { id: "merge", label: "Checks and merge", icon: <IconMerge size={14} />, content: merge },
+                ]}
+            />
+        </div>
     );
 }
 
@@ -894,7 +886,6 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
 
     const left = (
         <PullColumn
-            paneId={paneId}
             repo={repo}
             cwd={cwd}
             projectBranch={projectBranch}

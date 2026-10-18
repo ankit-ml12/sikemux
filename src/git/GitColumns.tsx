@@ -1,8 +1,11 @@
-import { useRef, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from "react";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { PaneField } from "../ui/ShaderField";
 import { LEFT_MIN, RIGHT_MIN, ResizeHandle } from "./ResizeHandle";
+
+/** Lets columns inside a framed host screen take the frame onto their right column, so the left stands outside it. */
+export const ShellFrameContext = createContext<{ claim: () => () => void } | null>(null);
 
 /**
  * The git pane's two columns: a list or a conversation on the left, what it changed on the right. Changes, pull
@@ -22,6 +25,9 @@ export function GitColumns({
 }) {
     const leftRef = useRef<HTMLDivElement>(null);
     const paneShader = useStore((s) => s.paneShader);
+    const shellFrame = useContext(ShellFrameContext);
+    useLayoutEffect(() => shellFrame?.claim(), [shellFrame]);
+    framed ||= !!shellFrame;
     const leftWidth = useStore((s) => s.gitViews[paneId]?.leftWidth ?? null);
     return (
         <div className="git-body">

@@ -13,6 +13,7 @@ import { SectionIcon } from "./ActionsIcon";
 import { HostAccountButton } from "./HostRail";
 import { sectionLabel, sectionsOf } from "../sections";
 import { useStore } from "../../state/store";
+import { ShellFrameContext } from "../../git/GitColumns";
 import { PaneField } from "../../ui/ShaderField";
 import { GitShellContext } from "../shellContext";
 
@@ -73,6 +74,18 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
 
     // The project tree opens these as screens of their own, so the git screens stay out of their header.
     const standalone = host && repo && isTreeSection(area) ? area : null;
+    // A host screen in two columns frames its right column itself, so the whole screen is framed only while none is.
+    const [columns, setColumns] = useState(0);
+    const shellFrame = useMemo(
+        () => ({
+            claim: () => {
+                setColumns((count) => count + 1);
+                return () => setColumns((count) => count - 1);
+            },
+        }),
+        [],
+    );
+    const framed = !!standalone && columns === 0;
     const account =
         host && repo ? (
             <HostAccountButton
@@ -104,8 +117,8 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
                             {account}
                         </div>
                     )}
-                    <div className={`git-shell-main${standalone ? " git-framed" : ""}`}>
-                        {standalone && <PaneField enabled={paneShader} />}
+                    <div className={`git-shell-main${framed ? " git-framed" : ""}`}>
+                        {framed && <PaneField enabled={paneShader} />}
                         {host && repo && adding ? (
                             <div className="gha-pane" data-active={active ? "1" : "0"}>
                                 <div className="gha-callout gha-add-account">
@@ -117,16 +130,18 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
                                 <host.SignIn onSignedIn={added} />
                             </div>
                         ) : standalone && host && repo ? (
-                            <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
-                                <HostArea
-                                    paneId={paneId}
-                                    section={standalone}
-                                    repo={repo}
-                                    branch={found.branch}
-                                    cwd={sameRepo(found.remote, repo) ? cwd : null}
-                                    active={active}
-                                />
-                            </Suspense>
+                            <ShellFrameContext.Provider value={shellFrame}>
+                                <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
+                                    <HostArea
+                                        paneId={paneId}
+                                        section={standalone}
+                                        repo={repo}
+                                        branch={found.branch}
+                                        cwd={sameRepo(found.remote, repo) ? cwd : null}
+                                        active={active}
+                                    />
+                                </Suspense>
+                            </ShellFrameContext.Provider>
                         ) : (
                             <GitShellContext.Provider value={lent}>
                                 <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>

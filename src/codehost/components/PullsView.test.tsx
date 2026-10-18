@@ -127,11 +127,10 @@ it("reads a pull request in the git pane's columns: its card and files on the le
     expect(await within(right).findByText("1 file")).toBeInTheDocument();
 });
 
-it("lists the pull request's commits in the history fold, newest first, and shows one's files on the right", async () => {
+it("lists the pull request's commits on the side panel's Commits page, newest first, and shows one's files on the right", async () => {
     const user = userEvent.setup();
     render(view(31));
-    const toggle = await screen.findByRole("button", { name: /^Commits/ });
-    await waitFor(() => expect(toggle).toHaveTextContent("2"));
+    await user.click(await screen.findByRole("tab", { name: "Commits" }));
 
     const rows = await screen.findAllByRole("button", { name: /feat: / });
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["bbbbbbb feat: second", "aaaaaaa feat: first"]);
@@ -344,12 +343,10 @@ describe("an open pull request", () => {
 
     it("offers no checkout of a fork's branch on a host that cannot fetch it, nor outside the project", async () => {
         detail({ headLabel: "someone-else:feat/run-page" });
-        await within(leftColumn()).findByRole("button", { name: "Merge pull request" });
-        expect(within(leftColumn()).queryByRole("button", { name: /Check out/ })).toBeNull();
+        expect(await within(leftColumn()).findByRole("button", { name: /Check out/ })).toBeDisabled();
         cleanup();
         detail({}, { cwd: null });
-        await within(leftColumn()).findByRole("button", { name: "Merge pull request" });
-        expect(within(leftColumn()).queryByRole("button", { name: /Check out/ })).toBeNull();
+        expect(await within(leftColumn()).findByRole("button", { name: /Check out/ })).toBeDisabled();
     });
 
     it("does not offer approving to its own author", async () => {

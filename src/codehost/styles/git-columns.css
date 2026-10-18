@@ -70,12 +70,30 @@
     background: var(--surface-chosen);
 }
 /* An open pull request's column: its card where Changes has the commit box, then its files, then the folding panels. */
+/* The merge page of the side panel: what stands between the pull request and merged, filling the page. */
 .pr-card {
-    flex: 0 0 auto;
-    margin: var(--space-2) 10px var(--space-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--s-sunken);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.pr-back-btn > svg {
+    transform: rotate(180deg);
+}
+.pr-side-number {
+    flex: none;
+    color: var(--text-primary);
+    font-weight: var(--weight-medium);
+}
+.git-side-title > .pr-ref {
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+}
+.git-side-title > .pr-ref-arrow {
+    flex: none;
+    color: var(--text-tertiary);
+}
+.git-btn-group.git-side-actions.pr-side-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .pr-back {
     display: inline-flex;
