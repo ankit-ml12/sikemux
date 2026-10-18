@@ -858,11 +858,15 @@ is working on.
 
 `git_commit` commits only the lines you wrote, with your edit tools or your
 commands, leaving other agents' changes and the files on disk as they are.
-`paths` also takes changes no agent wrote in those files or folders, and those
-made while your commands and another agent's ran at once, unless another agent
-changed them too. It returns the
-commit, its files and what was left. Pass files a script or build of yours
-produced in `paths` too. In a checkout other agents work in, Sikemux refuses
+Lines changed while your command and others' ran at once count as yours. With
+`paths` it commits only those files or folders: your lines there, and changes
+no other agent wrote, such as what your scripts, builds and formatters made,
+binary files too. A lockfile goes with the manifest change it records. A named
+file holding only another agent's lines fails the commit rather than leaving
+it half done. It returns the commit, its files and what was left. Stage
+nothing yourself mid-task: what you `git add`, `git mv` or `git rm` early goes
+into the next agent's commit. The shell is zsh, which does not split `$FILES`
+into words; name paths or use an array. In a checkout other agents work in, Sikemux refuses
 `git add -A`, `commit -a`, `stash`, `reset --hard` and the like, and
 `git checkout -- <path>` or `git restore` over another agent's uncommitted
 lines, naming that agent; in your own clone, a new repository or a git
