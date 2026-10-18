@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/agents", () => ({
-    agentApi: { sessionContext: async () => null, available: async () => [], account: async () => ({ signedIn: true, sessions: null }) },
+    agentApi: { available: async () => [], account: async () => ({ signedIn: true, sessions: null }) },
 }));
 vi.mock("../api/fs", () => ({ fsapi: { pathKinds: async (paths: string[]) => paths.map(() => null) } }));
 vi.mock("../api/git", () => ({ git: { worktrees: async () => [], overview: async () => ({ status: { branch: "main" } }) } }));

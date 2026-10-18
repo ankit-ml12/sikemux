@@ -24,7 +24,6 @@ import { ChatComposer } from "./ChatComposer";
 import { ComposerBuddy } from "../buddies/Buddy";
 import { useMessageArrival } from "./useMessageArrival";
 import { useAcpSession } from "./useAcpSession";
-import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
 import { putDraft } from "./draftHandoff";
 import { useChatWorktree } from "./useChatWorktree";
@@ -156,18 +155,6 @@ export function AgentChatPane({
     const { atBottom, onScroll, jumpToBottom } = useStickToBottom({ scrollRef, contentRef: scrollContentRef, visible });
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
-
-    useSavedUsage({
-        agentRef,
-        agentId: agent.id,
-        agentResumeId: agent.resumeId,
-        cwd,
-        configPath: profile?.configPath,
-        connection: state.connection,
-        reported: state.usage !== null,
-        setup: state.setup,
-        dispatch,
-    });
 
     useEffect(() => {
         if (state.title && state.title !== agent.title) cmd.setAgentTitle(agent.id, state.title);

@@ -758,8 +758,6 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             return withEarlier(state, action.messages);
         case "config":
             return { ...state, setup: { ...state.setup, configOptions: action.options }, revision: state.revision + 1 };
-        case "saved_usage":
-            return state.usage ? state : { ...state, usage: action.usage, revision: state.revision + 1 };
         case "reset":
             /* A reconnect keeps the transcript on screen so the pane does not
                blank out while the session loads: the resumed session replays

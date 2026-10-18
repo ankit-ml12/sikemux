@@ -345,7 +345,6 @@ pub fn run() {
             agents::accounts::agent_account_sign_out,
             agents::sessions::agent_sessions,
             agents::sessions::recent::agent_recent_sessions,
-            agents::sessions::context::agent_session_context,
             agents::sessions::rename::agent_session_rename,
             agents::sessions::delete::agent_session_delete,
             agents::sessions::relocate::agent_session_relocate,

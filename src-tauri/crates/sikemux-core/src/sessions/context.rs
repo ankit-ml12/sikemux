@@ -14,8 +14,8 @@ use crate::agent_catalog::AgentKind;
 /// Claude does not record the window's size, so `size` is only known for Codex.
 #[derive(Serialize, Debug, PartialEq)]
 pub struct SessionContext {
-    used: u64,
-    size: Option<u64>,
+    pub used: u64,
+    pub size: Option<u64>,
 }
 
 /// A resumed chat hears nothing about its context window until it runs a turn,

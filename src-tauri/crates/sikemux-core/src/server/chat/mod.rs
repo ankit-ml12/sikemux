@@ -10,6 +10,7 @@ pub(crate) mod queue;
 mod rebind;
 pub(crate) mod reset;
 mod states;
+mod usage;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -611,6 +612,7 @@ impl Chat {
             core.names.note_session(self.agent_id(), &start.session_id);
         }
         self.feed.set_start(start.clone());
+        self.tell_saved_usage(&start);
         self.readiness.send_replace(Readiness::Ready(start));
         if let Some(core) = self.core.upgrade() {
             core.agents_changed();

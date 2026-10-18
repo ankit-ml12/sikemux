@@ -140,12 +140,6 @@ export interface AgentSignInPage {
     url: string;
 }
 
-/** How full a saved session's context window was. Claude does not record the window's size. */
-export interface SavedSessionContext {
-    used: number;
-    size: number | null;
-}
-
 export const agentApi = {
     available: fetchAvailable,
     /** The accounts the core keeps; `null` until the app first gives it some. */
@@ -179,8 +173,6 @@ export const agentApi = {
         getIpcTransport().subscribe<AgentSignInPage>("agent_account_sign_in", (event) => listener(event.payload), { signal }),
     sessions: fetchSessions,
     recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => invoke<RecentChatsPage>("agent_recent_sessions", { request }),
-    sessionContext: (agent: AgentType, cwd: string, sessionId: string, configPath?: string): Promise<SavedSessionContext | null> =>
-        invoke<SavedSessionContext | null>("agent_session_context", { agent, cwd, sessionId, configPath }),
     renameSession: (agent: AgentType, cwd: string, sessionId: string, title: string, executablePath?: string, configPath?: string): Promise<void> =>
         invoke<void>("agent_session_rename", { agent, cwd, sessionId, title, executablePath, configPath }),
     deleteSession: (agent: AgentType, cwd: string, sessionId: string, executablePath?: string, configPath?: string): Promise<void> =>

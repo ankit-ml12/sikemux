@@ -83,3 +83,39 @@ impl Chat {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn models(current: &str, options: &[(&str, &str)]) -> Value {
+        let options: Vec<Value> = options
+            .iter()
+            .map(|(value, name)| json!({ "value": value, "name": name }))
+            .collect();
+        json!({ "configOptions": [{ "id": "model", "type": "select", "currentValue": current, "options": options }] })
+    }
+
+    #[test]
+    fn a_model_named_for_a_million_tokens_has_the_long_window() {
+        assert_eq!(window(&models("opus[1m]", &[]), None, 0), LONG_WINDOW);
+        assert_eq!(
+            window(&models("default", &[("default", "Opus (1M context)")]), None, 0),
+            LONG_WINDOW
+        );
+        assert_eq!(window(&json!({}), Some("sonnet[1m]"), 0), LONG_WINDOW);
+    }
+
+    #[test]
+    fn a_session_past_the_standard_window_has_the_long_one() {
+        assert_eq!(window(&json!({}), Some("claude-opus-5-5"), 515_222), LONG_WINDOW);
+        assert_eq!(window(&json!({}), Some("claude-opus-5-5"), 150_000), DEFAULT_WINDOW);
+    }
+
+    #[test]
+    fn every_other_model_has_the_standard_window() {
+        assert_eq!(window(&models("sonnet", &[("sonnet", "Sonnet 5")]), None, 0), DEFAULT_WINDOW);
+        assert_eq!(window(&json!({}), Some("sonnet"), 0), DEFAULT_WINDOW);
+        assert_eq!(window(&models("claude-1mini", &[]), None, 0), DEFAULT_WINDOW);
+    }
+}

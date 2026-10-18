@@ -218,7 +218,6 @@ export type ChatAction =
     | { type: "rewind"; messageId: string }
     | { type: "earlier"; messages: ChatMessage[] }
     | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
-    | { type: "saved_usage"; usage: ContextUsage }
     | { type: "turn_started"; at?: number }
     | { type: "turn_completed"; stopReason?: string; at?: number }
     | { type: "permission_requested"; request: AcpPermissionRequest }

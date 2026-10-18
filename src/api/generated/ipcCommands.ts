@@ -92,7 +92,6 @@ export const IPC_COMMANDS = [
     "agent_account_sign_out",
     "agent_sessions",
     "agent_recent_sessions",
-    "agent_session_context",
     "agent_session_rename",
     "agent_session_delete",
     "agent_session_relocate",

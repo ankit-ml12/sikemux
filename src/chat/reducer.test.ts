@@ -868,14 +868,6 @@ describe("chat reducer", () => {
         expect(update(initialChatState, { sessionUpdate: "usage_update", used: NaN, size: 10 }).usage).toBeNull();
     });
 
-    it("uses saved usage only until the agent reports its own", () => {
-        const saved = chatReducer(initialChatState, { type: "saved_usage", usage: { used: 5, size: 100 } });
-        const reported = update(saved, { sessionUpdate: "usage_update", used: 50, size: 100 });
-
-        expect(saved.usage).toEqual({ used: 5, size: 100 });
-        expect(chatReducer(reported, { type: "saved_usage", usage: { used: 5, size: 100 } })).toBe(reported);
-    });
-
     it("keeps a running turn through a starting status but ends it on an error", () => {
         const request = { requestId: "p1", sessionId: ROOT_SESSION, toolCall: { toolCallId: "t1", title: "Run" }, options: [] };
         const busy = replay(chatReducer(chatReducer(initialChatState, { type: "turn_started" }), { type: "permission_requested", request }), [
