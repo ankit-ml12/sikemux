@@ -184,7 +184,6 @@
     "allow-ssh-config-ensure",
     "allow-open-url",
     "allow-macos-focus-app",
-    "allow-run-background-command",
     "allow-set-window-blur",
     "allow-plugin-manifests",
     "allow-plugin-set-disabled",

@@ -227,7 +227,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "ssh_config_ensure",
     "open_url",
     "macos_focus_app",
-    "run_background_command",
     "set_window_blur",
     "plugin_manifests",
     "plugin_set_disabled",
