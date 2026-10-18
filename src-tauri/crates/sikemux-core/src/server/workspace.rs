@@ -1,8 +1,9 @@
-//! The projects on this host, the app's and those the person added from a
-//! device, and the agents it can start, kept by the core across restarts so a
-//! paired device can start or wake a chat with no app running. The core offers each agent on each of the person's accounts
-//! and finds its program itself; a launch builds its environment afresh,
-//! keys and all.
+//! The workspace on this host: its projects and spaces, and its agents with
+//! how each one runs, kept by the core across restarts. Every client reads it
+//! in the device view and changes it through the core's calls, so a phone
+//! sees what the app sees with or without the app. The core offers each agent
+//! on each of the person's accounts and finds its program itself; a launch
+//! builds its environment afresh, keys and all.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -12,38 +13,53 @@ use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
+use tokio::sync::Notify;
 
 use crate::agent_accounts::status::{self, AgentStatus};
 use crate::agent_accounts::Book;
-use crate::agent_catalog::AGENTS;
-use crate::cli::protocol::{REVIEWER_OFFER, TOOLS_OFFER_ENV};
+use crate::agent_catalog::{AgentKind, AGENTS};
+use crate::cli::protocol::{is_tool_agent_id, REVIEWER_OFFER, TOOLS_OFFER_ENV};
 use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec};
 use crate::protocol::{
     Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, Event, LauncherInfo,
-    ProjectInfo, PublishedChat, PublishedRecent, RecentInfo, RequestId, Response, Workspace,
+    PinnedChat, ProjectInfo, RecentInfo, RequestId, Response, SpaceInfo, Workspace, WorkspaceAgent,
     WAKE_WAIT,
 };
+use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRef, RecentRequest};
 
 use super::chat;
 use super::connection::{blocking, ClientConn};
+use super::names::project_of;
 use super::wake::Wake;
 use super::{Core, CoreError, CoreResult};
 use crate::acp::pickers;
 
+mod migrate;
+
+/// Bumped by a change to what [`Saved`] holds that an earlier file needs
+/// carried over to.
+const VERSION: u32 = 1;
 const MAX_PROJECTS: usize = 512;
+const MAX_SPACES: usize = 64;
+const MAX_PINNED: usize = 256;
 const MAX_LAUNCHERS: usize = 64;
-const MAX_CHATS: usize = 1024;
-const MAX_RECENT: usize = 100;
-const MAX_SESSION_ID_CHARS: usize = 512;
+const MAX_AGENTS: usize = 1024;
 const MAX_TITLE_CHARS: usize = 200;
+const MAX_FIELD_CHARS: usize = 512;
+/// Room for a worktree or a buddy, which are a handful of short fields.
+const MAX_DETAIL_BYTES: usize = 4096;
 const MAX_COLOURS: usize = 64;
 /// A phone-sized JPEG is a few hundred kilobytes; this leaves room without letting one fill a frame.
 const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 const MAX_COLOUR_CHARS: usize = 64;
 const MAX_BUDDY_AGENTS: usize = 4096;
 const MAX_BUDDY_BOXES: usize = 512;
+/// How many of the newest saved chats devices can take up again.
+const RECENT_LIMIT: usize = 30;
+/// Saved chats change with every turn, so many ending at once look once.
+const RECENT_SETTLE: Duration = Duration::from_secs(2);
 
 /// One agent the core offers, on one of the person's accounts.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,17 +74,14 @@ pub(crate) struct Launcher {
     pub program: Option<PathBuf>,
 }
 
-/// How a chat the app stopped was running, so the core can wake it alone.
-#[derive(Debug, Serialize, Deserialize)]
+/// An agent as the core keeps it: what every client sees, and the accounts
+/// its chat signs in as, which no device sees.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Asleep {
-    agent_id: String,
-    launcher: String,
-    cwd: PathBuf,
-    resume_id: Option<String>,
-    permission_mode: String,
-    model: Option<String>,
-    effort: Option<String>,
+struct Kept {
+    #[serde(flatten)]
+    agent: WorkspaceAgent,
+    #[serde(default)]
     account: Option<ChatAccount>,
     #[serde(default)]
     fallbacks: Vec<ChatAccount>,
@@ -78,40 +91,59 @@ struct Asleep {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Saved {
-    /// The projects the app has open.
-    projects: Vec<ProjectInfo>,
-    /// The projects the person added from a device, which no app holds.
     #[serde(default)]
-    added: Vec<ProjectInfo>,
+    version: u32,
+    #[serde(default)]
+    projects: Vec<ProjectInfo>,
+    #[serde(default)]
+    spaces: Vec<SpaceInfo>,
+    #[serde(default)]
+    agents: Vec<Kept>,
+    #[serde(default)]
+    pinned: Vec<PinnedChat>,
     /// The person's agent accounts, absent until the app first says which they are.
     accounts: Option<Book>,
-    /// The mode the person starts agents in, absent until the app first says.
+    /// The mode the person starts agents in, absent until they first choose.
     permission_mode: Option<String>,
-    /// The app's chats, absent until it has said which it holds.
-    chats: Option<Vec<PublishedChat>>,
-    recent: Vec<PublishedRecent>,
-    asleep: Vec<Asleep>,
 }
 
 impl Saved {
-    /// Every project on this host: the app's, then those added from devices.
-    fn all_projects(&self) -> impl Iterator<Item = &ProjectInfo> {
-        self.projects.iter().chain(&self.added)
+    fn kept(&self, agent_id: &str) -> Option<&Kept> {
+        self.agents.iter().find(|kept| kept.agent.id == agent_id)
     }
+
+    fn kept_mut(&mut self, agent_id: &str) -> Option<&mut Kept> {
+        self.agents
+            .iter_mut()
+            .find(|kept| kept.agent.id == agent_id)
+    }
+
+    fn project(&self, id: &str) -> Option<&ProjectInfo> {
+        self.projects.iter().find(|project| project.id == id)
+    }
+}
+
+/// A saved chat devices may take up again, with the launcher that does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Recent {
+    launcher: String,
+    provider: String,
+    session_id: String,
+    title: String,
+    cwd: PathBuf,
+    active_at: u64,
 }
 
 #[derive(Default)]
 struct Published {
     saved: Saved,
     launchers: Vec<Launcher>,
-    titles: BTreeMap<String, String>,
+    recent: Vec<Recent>,
     /// Each provider's `configOptions` from its last session, by provider.
     config_options: BTreeMap<String, Value>,
     palette: BTreeMap<String, String>,
     texture: bool,
     image: Option<BackdropImage>,
-    /// How the app runs each of its agents, by agent id.
-    runs: BTreeMap<String, AgentRun>,
     buddies: Option<Buddies>,
 }
 
@@ -155,13 +187,118 @@ impl Buddies {
     }
 }
 
-/// The launcher and permission mode the app runs an agent with, which the
-/// core cannot read off a terminal agent itself.
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// How an agent is launched, as the workspace keeps it.
+#[derive(Clone, Debug)]
 pub(crate) struct AgentRun {
     pub launcher: String,
     pub permission_mode: String,
+}
+
+/// The launcher that starts `agent`: its CLI on the account it runs on.
+fn launcher_of(agent: &WorkspaceAgent) -> String {
+    match &agent.profile_id {
+        Some(profile) => format!("{}:{profile}", agent.provider),
+        None => agent.provider.clone(),
+    }
+}
+
+/// The agent's title when it has one beyond its CLI's name.
+fn named(agent: &WorkspaceAgent) -> Option<String> {
+    Some(agent.title.clone()).filter(|title| !title.trim().is_empty() && title != &agent.provider)
+}
+
+fn is_chat_provider(provider: &str) -> bool {
+    AGENTS
+        .iter()
+        .any(|def| def.kind == provider && def.kind != "pi")
+}
+
+fn now_ms() -> u64 {
+    super::remote::unix_ms()
+}
+
+fn too_long(text: &str, chars: usize) -> bool {
+    text.chars().count() > chars
+}
+
+/// `value` with `patch`'s fields set over its own, a null field cleared, and
+/// any of `fixed` refused.
+fn patched<T: Serialize + for<'de> Deserialize<'de>>(
+    value: &T,
+    patch: Map<String, Value>,
+    fixed: &[&str],
+) -> CoreResult<T> {
+    let mut whole = serde_json::to_value(value)?;
+    let Some(object) = whole.as_object_mut() else {
+        return Err("only a record can be changed".into());
+    };
+    for (key, field) in patch {
+        if fixed.contains(&key.as_str()) {
+            return Err(format!("{key} cannot be changed").into());
+        }
+        if field.is_null() {
+            object.remove(&key);
+        } else {
+            object.insert(key, field);
+        }
+    }
+    serde_json::from_value(whole)
+        .map_err(|error| CoreError::from(format!("the change does not fit: {error}")))
+}
+
+fn check_agent(agent: &WorkspaceAgent, saved: &Saved) -> CoreResult<()> {
+    let long = |text: &Option<String>| {
+        text.as_deref()
+            .is_some_and(|text| too_long(text, MAX_FIELD_CHARS))
+    };
+    let detail = |value: &Option<Value>| {
+        value
+            .as_ref()
+            .is_some_and(|value| value.to_string().len() > MAX_DETAIL_BYTES)
+    };
+    if !is_tool_agent_id(&agent.id) {
+        return Err("that is not an agent id".into());
+    }
+    if too_long(&agent.title, MAX_TITLE_CHARS)
+        || too_long(&agent.provider, 64)
+        || too_long(&agent.permission_mode, 64)
+        || [
+            &agent.lead,
+            &agent.resume_id,
+            &agent.profile_id,
+            &agent.model,
+            &agent.model_provider,
+            &agent.effort,
+        ]
+        .into_iter()
+        .any(long)
+        || detail(&agent.worktree)
+        || detail(&agent.buddy)
+    {
+        return Err("the agent has a field longer than the core keeps".into());
+    }
+    if !agent.cwd.is_absolute() {
+        return Err("an agent's folder must be an absolute path".into());
+    }
+    if saved.project(&agent.project).is_none() {
+        return Err("that project is not on this host".into());
+    }
+    Ok(())
+}
+
+fn check_project(project: &ProjectInfo, saved: &Saved) -> CoreResult<()> {
+    if too_long(&project.name, MAX_TITLE_CHARS) || too_long(&project.id, MAX_FIELD_CHARS) {
+        return Err("the project has a field longer than the core keeps".into());
+    }
+    if !project.path.is_absolute() {
+        return Err(format!("project {} has no absolute path", project.name).into());
+    }
+    if let Some(space) = &project.space {
+        if !saved.spaces.iter().any(|known| &known.id == space) {
+            return Err("that space is not on this host".into());
+        }
+    }
+    Ok(())
 }
 
 pub(crate) struct Workspaces {
@@ -173,9 +310,10 @@ pub(crate) struct Workspaces {
     data_dir: Option<PathBuf>,
     /// Counts the looks over the agents, so one that took longer never replaces a newer one.
     asked: AtomicU64,
-    /// Tells the core the agents the app holds, or the launchers it offers,
-    /// changed.
+    /// Tells the core the workspace, or the launchers it offers, changed.
     pub(crate) wake: Wake,
+    /// The saved chats may have changed.
+    recent_stale: Notify,
 }
 
 pub(crate) struct ChatChoice {
@@ -196,11 +334,11 @@ pub(crate) struct ResumeChoice {
     pub effort: Option<String>,
 }
 
-fn recent_id(chat: &PublishedRecent) -> String {
+fn recent_id(chat: &Recent) -> String {
     format!("{}:{}", chat.provider, chat.session_id)
 }
 
-fn running_now(chat: &PublishedRecent, open: &[ChatInfo]) -> bool {
+fn running_now(chat: &Recent, open: &[ChatInfo]) -> bool {
     open.iter().any(|live| {
         live.provider == chat.provider
             && live.session_id.as_deref() == Some(chat.session_id.as_str())
@@ -210,12 +348,18 @@ fn running_now(chat: &PublishedRecent, open: &[ChatInfo]) -> bool {
 impl Workspaces {
     pub(crate) fn new(data_dir: Option<&Path>) -> Self {
         let path = data_dir.map(|dir| dir.join("workspace.json"));
-        let saved = path
+        let read: Value = path
             .as_deref()
             .and_then(|path| std::fs::read(path).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
-        Self {
+            .unwrap_or(Value::Null);
+        let mut saved: Saved = serde_json::from_value(read.clone()).unwrap_or_default();
+        let upgraded = saved.version < VERSION;
+        if upgraded {
+            migrate::carry_over(&mut saved, &read, data_dir);
+            saved.version = VERSION;
+        }
+        let workspaces = Self {
             published: Mutex::new(Published {
                 saved,
                 ..Published::default()
@@ -225,7 +369,12 @@ impl Workspaces {
             data_dir: data_dir.map(Path::to_path_buf),
             asked: AtomicU64::new(0),
             wake: Wake::default(),
+            recent_stale: Notify::new(),
+        };
+        if upgraded {
+            workspaces.save(&workspaces.lock().saved);
         }
+        workspaces
     }
 
     fn lock(&self) -> MutexGuard<'_, Published> {
@@ -242,86 +391,358 @@ impl Workspaces {
             .map_err(std::io::Error::from)
             .and_then(|bytes| sikemux_process::files::write_atomic(path, &bytes, true));
         if let Err(error) = written {
-            eprintln!("sikemux core: the app's projects and agents were not saved: {error}");
+            eprintln!("sikemux core: the workspace was not saved: {error}");
         }
     }
 
-    /// Keeps the app's projects and the mode it starts agents in, and says
-    /// whether that mode changed.
-    fn set(&self, projects: Vec<ProjectInfo>, permission_mode: String) -> CoreResult<bool> {
-        if projects.len() > MAX_PROJECTS || permission_mode.len() > 64 {
-            return Err("the app published more projects than the core keeps".into());
-        }
-        if let Some(project) = projects.iter().find(|project| !project.path.is_absolute()) {
-            return Err(format!("project {} has no absolute path", project.name).into());
-        }
+    /// Changes what is saved, keeps it, and tells the core.
+    fn change<T>(&self, change: impl FnOnce(&mut Saved) -> CoreResult<T>) -> CoreResult<T> {
         let mut published = self.lock();
-        let changed = published.saved.permission_mode.as_ref() != Some(&permission_mode);
-        published
-            .saved
-            .added
-            .retain(|added| !projects.iter().any(|project| project.path == added.path));
-        published.saved.projects = projects;
-        published.saved.permission_mode = Some(permission_mode);
+        let changed = change(&mut published.saved)?;
         self.save(&published.saved);
+        drop(published);
+        self.wake.now();
         Ok(changed)
     }
 
-    /// Adds a folder on this host as a project, or answers the project already there.
-    fn add_project(&self, path: PathBuf, name: Option<String>) -> CoreResult<ProjectInfo> {
-        let mut published = self.lock();
-        if let Some(project) = published
-            .saved
-            .all_projects()
-            .find(|project| project.path == path)
-        {
-            return Ok(project.clone());
-        }
-        if published.saved.all_projects().count() >= MAX_PROJECTS {
-            return Err("this host already keeps as many projects as it can".into());
-        }
-        let name = name
-            .map(|name| {
-                name.trim()
-                    .chars()
-                    .take(MAX_TITLE_CHARS)
-                    .collect::<String>()
-            })
-            .filter(|name| !name.is_empty())
-            .or_else(|| {
-                path.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
-            .unwrap_or_else(|| path.display().to_string());
-        let project = ProjectInfo {
-            id: uuid::Uuid::new_v4().to_string(),
-            name,
-            path,
-        };
-        published.saved.added.push(project.clone());
-        self.save(&published.saved);
+    /// The saved chats may have changed, so the recent ones are looked for again.
+    pub(crate) fn recent_stale(&self) {
+        self.recent_stale.notify_one();
+    }
+
+    /// Adds a folder on this host as a project, or answers the project already
+    /// there. A client may name the new project's id.
+    fn add_project(
+        &self,
+        path: PathBuf,
+        name: Option<String>,
+        id: Option<String>,
+    ) -> CoreResult<ProjectInfo> {
+        let project = self.change(|saved| {
+            if let Some(project) = saved.projects.iter().find(|project| project.path == path) {
+                return Ok(project.clone());
+            }
+            if saved.projects.len() >= MAX_PROJECTS {
+                return Err("this host already keeps as many projects as it can".into());
+            }
+            let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            if saved.project(&id).is_some() {
+                return Err("a project with that id is already on this host".into());
+            }
+            let name = name
+                .map(|name| {
+                    name.trim()
+                        .chars()
+                        .take(MAX_TITLE_CHARS)
+                        .collect::<String>()
+                })
+                .filter(|name| !name.is_empty())
+                .or_else(|| {
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| path.display().to_string());
+            let project = ProjectInfo {
+                id,
+                name,
+                path,
+                pinned: false,
+                space: None,
+            };
+            check_project(&project, saved)?;
+            saved.projects.push(project.clone());
+            Ok(project)
+        })?;
+        self.recent_stale();
         Ok(project)
     }
 
+    /// The project `cwd` is in, added when it is in none, for an agent that
+    /// started there.
+    fn project_for(&self, cwd: &Path) -> CoreResult<String> {
+        let path = PathBuf::from(project_of(cwd, &self.project_paths()));
+        Ok(self.add_project(path, None, None)?.id)
+    }
+
+    /// Stops offering a project, and forgets the agents in it.
     fn remove_project(&self, path: &Path) -> CoreResult<()> {
-        let mut published = self.lock();
-        if published
-            .saved
-            .projects
-            .iter()
-            .any(|project| project.path == path)
-        {
-            return Err(
-                "that project is open in Sikemux's window on this host; close it there".into(),
-            );
-        }
-        let before = published.saved.added.len();
-        published.saved.added.retain(|project| project.path != path);
-        if published.saved.added.len() == before {
-            return Err("that folder is not a project on this host".into());
-        }
-        self.save(&published.saved);
+        self.change(|saved| {
+            let id = saved
+                .projects
+                .iter()
+                .find(|project| project.path == path)
+                .map(|project| project.id.clone())
+                .ok_or_else(|| CoreError::from("that folder is not a project on this host"))?;
+            saved.projects.retain(|project| project.id != id);
+            saved.agents.retain(|kept| kept.agent.project != id);
+            Ok(())
+        })?;
+        self.recent_stale();
         Ok(())
+    }
+
+    fn update_project(&self, id: &str, patch: Map<String, Value>) -> CoreResult<ProjectInfo> {
+        self.change(|saved| {
+            let index = saved
+                .projects
+                .iter()
+                .position(|project| project.id == id)
+                .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+            let project = patched(&saved.projects[index], patch, &["id", "path"])?;
+            check_project(&project, saved)?;
+            saved.projects[index] = project.clone();
+            Ok(project)
+        })
+    }
+
+    fn move_project(&self, id: &str, index: usize) -> CoreResult<()> {
+        self.change(|saved| {
+            let from = saved
+                .projects
+                .iter()
+                .position(|project| project.id == id)
+                .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+            let project = saved.projects.remove(from);
+            let index = index.min(saved.projects.len());
+            saved.projects.insert(index, project);
+            Ok(())
+        })
+    }
+
+    /// Replaces the spaces; a project in one that is gone is shown in every space.
+    fn set_spaces(&self, spaces: Vec<SpaceInfo>) -> CoreResult<()> {
+        let oversized = spaces.iter().any(|space| {
+            too_long(&space.id, MAX_FIELD_CHARS)
+                || too_long(&space.name, MAX_TITLE_CHARS)
+                || too_long(&space.icon, MAX_FIELD_CHARS)
+        });
+        if spaces.len() > MAX_SPACES || oversized {
+            return Err("more spaces than the core keeps".into());
+        }
+        self.change(|saved| {
+            for project in &mut saved.projects {
+                let gone = project
+                    .space
+                    .as_ref()
+                    .is_some_and(|space| !spaces.iter().any(|kept| &kept.id == space));
+                if gone {
+                    project.space = None;
+                }
+            }
+            saved.spaces = spaces;
+            Ok(())
+        })
+    }
+
+    fn set_pinned(&self, pinned: Vec<PinnedChat>) -> CoreResult<()> {
+        let oversized = pinned.iter().any(|chat| {
+            too_long(&chat.provider, 64)
+                || too_long(&chat.session_id, MAX_FIELD_CHARS)
+                || too_long(&chat.title, MAX_TITLE_CHARS)
+        });
+        if pinned.len() > MAX_PINNED || oversized {
+            return Err("more pinned chats than the core keeps".into());
+        }
+        self.change(|saved| {
+            saved.pinned = pinned;
+            Ok(())
+        })
+    }
+
+    /// Keeps the mode agents start in, and says whether it changed.
+    fn set_permission_mode(&self, mode: String) -> CoreResult<bool> {
+        if too_long(&mode, 64) {
+            return Err("that is not a permission mode".into());
+        }
+        self.change(|saved| {
+            let changed = saved.permission_mode.as_ref() != Some(&mode);
+            saved.permission_mode = Some(mode);
+            Ok(changed)
+        })
+    }
+
+    pub(crate) fn agent(&self, agent_id: &str) -> Option<WorkspaceAgent> {
+        self.lock()
+            .saved
+            .kept(agent_id)
+            .map(|kept| kept.agent.clone())
+    }
+
+    /// Adds an agent, or replaces the one with its id. Without an id the core
+    /// names it.
+    fn put_agent(&self, mut draft: Map<String, Value>) -> CoreResult<WorkspaceAgent> {
+        if !draft.contains_key("id") {
+            let id = format!("agent-{}", uuid::Uuid::new_v4().simple());
+            draft.insert("id".into(), Value::String(id));
+        }
+        if !draft.contains_key("createdAt") {
+            draft.insert("createdAt".into(), now_ms().into());
+        }
+        let agent: WorkspaceAgent = serde_json::from_value(Value::Object(draft))
+            .map_err(|error| CoreError::from(format!("that is not an agent: {error}")))?;
+        let put = self.change(|saved| {
+            check_agent(&agent, saved)?;
+            let count = saved.agents.len();
+            match saved.kept_mut(&agent.id) {
+                Some(kept) => kept.agent = agent.clone(),
+                None if count >= MAX_AGENTS => {
+                    return Err("this host already keeps as many agents as it can".into())
+                }
+                None => saved.agents.push(Kept {
+                    agent: agent.clone(),
+                    account: None,
+                    fallbacks: Vec::new(),
+                }),
+            }
+            Ok(agent)
+        })?;
+        Ok(put)
+    }
+
+    pub(crate) fn update_agent(
+        &self,
+        agent_id: &str,
+        patch: Map<String, Value>,
+    ) -> CoreResult<WorkspaceAgent> {
+        self.change(|saved| {
+            let current = saved
+                .kept(agent_id)
+                .ok_or_else(|| CoreError::from("that agent is not on this host"))?;
+            let agent = patched(&current.agent, patch, &["id", "createdAt"])?;
+            check_agent(&agent, saved)?;
+            if let Some(kept) = saved.kept_mut(agent_id) {
+                kept.agent = agent.clone();
+            }
+            Ok(agent)
+        })
+    }
+
+    pub(crate) fn set_asleep(&self, agent_id: &str, asleep: bool) {
+        let _ = self.change(|saved| {
+            if let Some(kept) = saved.kept_mut(agent_id) {
+                kept.agent.asleep = asleep;
+            }
+            Ok(())
+        });
+    }
+
+    fn close_agents(&self, agent_ids: &[String]) -> CoreResult<()> {
+        self.change(|saved| {
+            saved
+                .agents
+                .retain(|kept| !agent_ids.contains(&kept.agent.id));
+            Ok(())
+        })?;
+        self.recent_stale();
+        Ok(())
+    }
+
+    /// Every agent in the workspace, running or not.
+    pub(crate) fn agent_ids(&self) -> std::collections::HashSet<String> {
+        self.lock()
+            .saved
+            .agents
+            .iter()
+            .map(|kept| kept.agent.id.clone())
+            .collect()
+    }
+
+    /// Keeps a chat that just started among the agents, so every client
+    /// lists it whoever started it: a device, an agent, Auto or the app.
+    pub(crate) fn note_begun(&self, chat: &chat::Chat) {
+        let launch = &chat.launch;
+        if let Some(known) = self.agent(chat.agent_id()) {
+            if known.asleep {
+                self.set_asleep(&known.id, false);
+            }
+            return;
+        }
+        let lead = chat
+            .origin
+            .started_by
+            .as_deref()
+            .and_then(|lead| self.agent(lead));
+        let project = match &lead {
+            Some(lead) if launch.cwd.starts_with(&lead.cwd) => lead.project.clone(),
+            _ => match self.project_for(&launch.cwd) {
+                Ok(project) => project,
+                Err(error) => {
+                    eprintln!("sikemux core: a chat that started was not kept: {error}");
+                    return;
+                }
+            },
+        };
+        let profile_id = chat.origin.launcher.as_deref().and_then(|launcher| {
+            launcher
+                .strip_prefix(&format!("{}:", launch.provider))
+                .map(str::to_owned)
+        });
+        let worktree = lead.as_ref().and_then(|lead| {
+            let path = lead.worktree.as_ref()?.get("path")?.as_str()?;
+            launch
+                .cwd
+                .starts_with(path)
+                .then(|| lead.worktree.clone())?
+        });
+        let agent = WorkspaceAgent {
+            id: chat.agent_id().to_owned(),
+            provider: launch.provider.clone(),
+            project,
+            cwd: launch.cwd.clone(),
+            title: launch.provider.clone(),
+            renamed: false,
+            lead: lead.map(|lead| lead.id),
+            resume_id: launch.resume_id.clone(),
+            permission_mode: launch.permission_mode.clone(),
+            profile_id,
+            model: launch.model.clone(),
+            model_provider: launch.env.get(ROUTED_ENV).cloned(),
+            effort: launch.effort.clone(),
+            keep_alive: false,
+            asleep: false,
+            worktree,
+            buddy: None,
+            pty_id: None,
+            created_at: now_ms(),
+        };
+        let Ok(Value::Object(draft)) = serde_json::to_value(agent) else {
+            return;
+        };
+        if let Err(error) = self.put_agent(draft) {
+            eprintln!("sikemux core: a chat that started was not kept: {error}");
+        }
+    }
+
+    /// Keeps how the agent's chat runs as it stops, so it can be woken on its
+    /// saved conversation with no app there.
+    pub(crate) fn note_stopping(&self, chat: &chat::Chat) {
+        let launch = chat.current_now();
+        let _ = self.change(|saved| {
+            if let Some(kept) = saved.kept_mut(chat.agent_id()) {
+                let agent = &mut kept.agent;
+                agent.resume_id = launch.resume_id.or(agent.resume_id.take());
+                agent.permission_mode = launch.permission_mode;
+                agent.model = launch.model;
+                agent.effort = launch.effort;
+                kept.account = launch.account;
+                kept.fallbacks = launch.fallbacks;
+            }
+            Ok(())
+        });
+        self.recent_stale();
+    }
+
+    /// How the agent's chat was last running, to start it again.
+    fn kept_launch(&self, agent_id: &str) -> Option<Kept> {
+        self.lock().saved.kept(agent_id).cloned()
+    }
+
+    /// The launcher and mode an agent runs with.
+    pub(crate) fn run_of(&self, agent_id: &str) -> Option<AgentRun> {
+        self.agent(agent_id).map(|agent| AgentRun {
+            launcher: launcher_of(&agent),
+            permission_mode: agent.permission_mode,
+        })
     }
 
     pub(crate) fn accounts(&self) -> Option<Book> {
@@ -330,9 +751,11 @@ impl Workspaces {
 
     pub(crate) fn set_accounts(&self, book: Book) -> CoreResult<()> {
         book.check()?;
-        let mut published = self.lock();
-        published.saved.accounts = Some(book);
-        self.save(&published.saved);
+        self.change(|saved| {
+            saved.accounts = Some(book);
+            Ok(())
+        })?;
+        self.recent_stale();
         Ok(())
     }
 
@@ -487,10 +910,9 @@ impl Workspaces {
     fn project_path(&self, id: &str) -> CoreResult<PathBuf> {
         self.lock()
             .saved
-            .all_projects()
-            .find(|project| project.id == id)
+            .project(id)
             .map(|project| project.path.clone())
-            .ok_or_else(|| CoreError::from("that project is not open in Sikemux on this host"))
+            .ok_or_else(|| CoreError::from("that project is not on this host"))
     }
 
     fn launcher(&self, id: &str) -> CoreResult<Launcher> {
@@ -553,79 +975,19 @@ impl Workspaces {
         self.lock().buddies.clone()
     }
 
-    pub(crate) fn publish_agents(
-        &self,
-        chats: Vec<PublishedChat>,
-        titles: BTreeMap<String, String>,
-    ) -> CoreResult<()> {
-        let too_long = |title: &str| title.chars().count() > MAX_TITLE_CHARS;
-        let chat_too_long = |chat: &PublishedChat| chat.title.as_deref().is_some_and(too_long);
-        if chats.len() > MAX_CHATS
-            || titles.len() > MAX_CHATS
-            || chats.iter().any(chat_too_long)
-            || titles.values().any(|title| too_long(title))
-        {
-            return Err("the app published more agents than the core keeps".into());
-        }
-        let mut published = self.lock();
-        published.titles = titles;
-        if published.saved.chats.as_ref() != Some(&chats) {
-            published
-                .saved
-                .asleep
-                .retain(|asleep| chats.iter().any(|chat| chat.agent_id == asleep.agent_id));
-            published.saved.chats = Some(chats);
-            self.save(&published.saved);
-            self.wake.now();
-        }
-        Ok(())
-    }
-
-    pub(crate) fn publish_runs(&self, runs: BTreeMap<String, AgentRun>) -> CoreResult<()> {
-        let oversized = |run: &AgentRun| run.launcher.len() > 256 || run.permission_mode.len() > 64;
-        if runs.values().any(oversized) {
-            return Err(
-                "the app said an agent runs with a launcher or mode longer than the core keeps"
-                    .into(),
-            );
-        }
-        self.lock().runs = runs;
-        Ok(())
-    }
-
-    pub(crate) fn run_of(&self, agent_id: &str) -> Option<AgentRun> {
-        self.lock().runs.get(agent_id).cloned()
-    }
-
-    pub(crate) fn publish_recent(&self, chats: Vec<PublishedRecent>) -> CoreResult<()> {
-        let oversized = |chat: &PublishedRecent| {
-            chat.title.chars().count() > MAX_TITLE_CHARS
-                || chat.session_id.is_empty()
-                || chat.session_id.chars().count() > MAX_SESSION_ID_CHARS
-        };
-        if chats.len() > MAX_RECENT || chats.iter().any(oversized) {
-            return Err("the app published more recent chats than the core keeps".into());
-        }
-        let mut published = self.lock();
-        if published.saved.recent != chats {
-            published.saved.recent = chats;
-            self.save(&published.saved);
-        }
-        Ok(())
-    }
-
-    /// The recent chats a device may take up again: those in a project the
-    /// app has open, leaving out any running now.
+    /// The recent chats a device may take up again: those in a project on
+    /// this host, leaving out any running now.
     pub(crate) fn recent(&self, open: &[ChatInfo]) -> Vec<RecentInfo> {
         let published = self.lock();
         let saved = &published.saved;
-        saved
+        published
             .recent
             .iter()
             .filter(|chat| !running_now(chat, open))
             .filter_map(|chat| {
                 let project = saved
-                    .all_projects()
+                    .projects
+                    .iter()
                     .find(|project| project.path == chat.cwd)?;
                 Some(RecentInfo {
                     id: recent_id(chat),
@@ -639,28 +1001,83 @@ impl Workspaces {
             .collect()
     }
 
+    /// What to look for recent chats with: each launcher's account once, the
+    /// projects, and the sessions agents here already hold.
+    fn recent_requests(&self) -> Vec<(String, RecentRequest)> {
+        let published = self.lock();
+        let saved = &published.saved;
+        let projects: Vec<String> = saved
+            .projects
+            .iter()
+            .take(saved_chats::MAX_PROJECTS)
+            .map(|project| project.path.to_string_lossy().into_owned())
+            .collect();
+        let selected = saved.accounts.as_ref().map(|book| &book.selected);
+        let mut requests: Vec<(String, RecentRequest)> = Vec::new();
+        for launcher in &published.launchers {
+            let Some(agent) = AgentKind::from_name(&launcher.agent.provider) else {
+                continue;
+            };
+            let chosen = selected
+                .and_then(|selected| selected.get(&launcher.agent.provider))
+                .is_none_or(|profile| launcher.id.ends_with(&format!(":{profile}")));
+            let taken = requests
+                .iter()
+                .any(|(_, request)| request.providers[0].agent == agent);
+            if !chosen || taken {
+                continue;
+            }
+            let exclude = saved
+                .agents
+                .iter()
+                .filter(|kept| kept.agent.provider == launcher.agent.provider)
+                .filter_map(|kept| kept.agent.resume_id.clone())
+                .map(|id| RecentRef { agent, id })
+                .collect();
+            requests.push((
+                launcher.id.clone(),
+                RecentRequest {
+                    providers: vec![RecentProvider {
+                        agent,
+                        config_path: launcher.agent.config_path.clone(),
+                    }],
+                    projects: projects.clone(),
+                    limit: RECENT_LIMIT,
+                    cursor: None,
+                    query: None,
+                    exclude,
+                },
+            ));
+        }
+        requests
+    }
+
+    fn set_recent(&self, recent: Vec<Recent>) -> bool {
+        let mut published = self.lock();
+        let changed = published.recent != recent;
+        published.recent = recent;
+        changed
+    }
+
     /// How to start the recent chat a device chose, the way it would start a new one.
     fn resume_choice(&self, choice: ResumeChoice, open: &[ChatInfo]) -> CoreResult<ChatChoice> {
         let published = self.lock();
         let saved = &published.saved;
-        let chat = saved
+        let chat = published
             .recent
             .iter()
             .find(|chat| recent_id(chat) == choice.recent)
             .ok_or_else(|| {
-                CoreError::from(
-                    "that chat is no longer among the recent ones in Sikemux on this host",
-                )
+                CoreError::from("that chat is no longer among the recent ones on this host")
             })?;
         if running_now(chat, open) {
             return Err("that chat is already open on this host".into());
         }
         let project = saved
-            .all_projects()
+            .projects
+            .iter()
             .find(|project| project.path == chat.cwd)
-            .ok_or_else(|| {
-                CoreError::from("that chat's project is not open in Sikemux on this host")
-            })?;
+            .ok_or_else(|| CoreError::from("that chat's project is not on this host"))?;
         let launcher = published
             .launchers
             .iter()
@@ -683,14 +1100,15 @@ impl Workspaces {
     pub(crate) fn project_paths(&self) -> Vec<PathBuf> {
         self.lock()
             .saved
-            .all_projects()
+            .projects
+            .iter()
             .map(|project| project.path.clone())
             .collect()
     }
 
-    /// What the app calls an agent terminal.
+    /// What the person or the agent named an agent, when it has a name beyond its CLI's.
     pub(crate) fn title(&self, agent_id: &str) -> Option<String> {
-        self.lock().titles.get(agent_id).cloned()
+        self.agent(agent_id).as_ref().and_then(named)
     }
 
     /// Keeps the models and effort levels a provider's session offered, so a
@@ -706,29 +1124,32 @@ impl Workspaces {
         }
     }
 
-    /// The running chats under the app's names, which include the agent's own
-    /// unless the person renamed the chat, then the app's chats that are not running.
+    /// The running chats under the workspace's titles, which include the
+    /// agent's own unless the person renamed it, then the chat agents that are
+    /// not running.
     pub(crate) fn listed(&self, mut running: Vec<ChatInfo>) -> Vec<ChatInfo> {
         let published = self.lock();
-        let chats = published.saved.chats.as_deref().unwrap_or_default();
+        let agents = &published.saved.agents;
         for chat in &mut running {
-            let title = chats
+            let title = agents
                 .iter()
-                .find(|known| known.agent_id == chat.agent_id)
-                .and_then(|known| known.title.clone());
+                .find(|kept| kept.agent.id == chat.agent_id)
+                .and_then(|kept| named(&kept.agent));
             if title.is_some() {
                 chat.title = title;
             }
         }
-        let stopped: Vec<ChatInfo> = chats
+        let stopped: Vec<ChatInfo> = agents
             .iter()
-            .filter(|chat| !running.iter().any(|live| live.agent_id == chat.agent_id))
-            .map(|chat| ChatInfo {
-                agent_id: chat.agent_id.clone(),
+            .map(|kept| &kept.agent)
+            .filter(|agent| is_chat_provider(&agent.provider) && agent.pty_id.is_none())
+            .filter(|agent| !running.iter().any(|live| live.agent_id == agent.id))
+            .map(|agent| ChatInfo {
+                agent_id: agent.id.clone(),
                 name: None,
-                provider: chat.provider.clone(),
-                title: chat.title.clone(),
-                cwd: chat.cwd.clone(),
+                provider: agent.provider.clone(),
+                title: named(agent),
+                cwd: agent.cwd.clone(),
                 session_id: None,
                 state: ChatState::Stopped,
                 running: false,
@@ -742,7 +1163,7 @@ impl Workspaces {
                 model: None,
                 model_provider: None,
                 effort: None,
-                asleep: chat.asleep,
+                asleep: agent.asleep,
                 unread: false,
                 active_at: None,
                 group: Default::default(),
@@ -754,30 +1175,28 @@ impl Workspaces {
         running
     }
 
-    /// Whether the app is known to have closed the chat.
+    /// Whether the agent is no longer in the workspace.
     pub(crate) fn closed(&self, agent_id: &str) -> bool {
-        self.lock()
-            .saved
-            .chats
-            .as_ref()
-            .is_some_and(|chats| !chats.iter().any(|chat| chat.agent_id == agent_id))
+        self.agent(agent_id).is_none()
     }
 
-    /// Whether the app has the chat open, and if so whether it is asleep.
+    /// Whether the agent is in the workspace, and if so whether it is asleep.
     pub(crate) fn published(&self, agent_id: &str) -> Option<bool> {
-        self.lock()
-            .saved
-            .chats
-            .iter()
-            .flatten()
-            .find(|chat| chat.agent_id == agent_id)
-            .map(|chat| chat.asleep)
+        self.agent(agent_id).map(|agent| agent.asleep)
     }
 
     pub(crate) fn view(&self) -> Workspace {
         let published = self.lock();
+        let saved = &published.saved;
         Workspace {
-            projects: published.saved.all_projects().cloned().collect(),
+            projects: saved.projects.clone(),
+            spaces: saved.spaces.clone(),
+            agents: saved.agents.iter().map(|kept| kept.agent.clone()).collect(),
+            pinned: saved.pinned.clone(),
+            permission_mode: saved
+                .permission_mode
+                .clone()
+                .unwrap_or_else(|| "bypass".into()),
             launchers: published
                 .launchers
                 .iter()
@@ -1027,50 +1446,6 @@ impl Workspaces {
         }
         Ok(Some(launcher.id.clone()))
     }
-
-    /// Keeps how the agent's chat runs as it stops, so a device can wake it
-    /// when the app is not there to.
-    pub(crate) fn note_stopping(&self, chat: &chat::Chat) {
-        let agent_id = chat.agent_id();
-        let Some(launcher) = chat
-            .origin
-            .launcher
-            .clone()
-            .or_else(|| self.run_of(agent_id).map(|run| run.launcher))
-        else {
-            return;
-        };
-        let launch = chat.current_now();
-        let mut published = self.lock();
-        let asleep = &mut published.saved.asleep;
-        asleep.retain(|asleep| asleep.agent_id != agent_id);
-        if asleep.len() >= MAX_CHATS {
-            asleep.remove(0);
-        }
-        asleep.push(Asleep {
-            agent_id: agent_id.to_owned(),
-            launcher,
-            cwd: launch.cwd,
-            resume_id: launch.resume_id,
-            permission_mode: launch.permission_mode,
-            model: launch.model,
-            effort: launch.effort,
-            account: launch.account,
-            fallbacks: launch.fallbacks,
-        });
-        self.save(&published.saved);
-    }
-
-    fn take_asleep(&self, agent_id: &str) -> Option<Asleep> {
-        let mut published = self.lock();
-        let asleep = &mut published.saved.asleep;
-        let index = asleep
-            .iter()
-            .position(|asleep| asleep.agent_id == agent_id)?;
-        let taken = asleep.remove(index);
-        self.save(&published.saved);
-        Some(taken)
-    }
 }
 
 /// Gives `launch` to `agent_id`, with the tools that are its own.
@@ -1135,28 +1510,12 @@ fn still_there(launcher: &Launcher) -> Result<PathBuf, String> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct WorkspaceParams {
-    projects: Vec<ProjectInfo>,
-    permission_mode: String,
-}
-
-/// Keeps the projects the app has open and the mode it starts agents in.
-pub(crate) async fn set_workspace(core: &Arc<Core>, params: WorkspaceParams) -> CoreResult<()> {
-    if core
-        .workspaces
-        .set(params.projects, params.permission_mode)?
-    {
-        refresh_launchers(core.clone()).await;
-    }
-    Ok(())
-}
-
-#[derive(Deserialize)]
 pub(crate) struct AddProjectParams {
     path: PathBuf,
     #[serde(default)]
     name: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
 }
 
 /// Makes a folder on this host a project, so agents can be started in it from
@@ -1179,7 +1538,8 @@ pub(crate) async fn add_project(
         }
     })
     .await?;
-    let project = core.workspaces.add_project(path, params.name)?;
+    let project = core.workspaces.add_project(path, params.name, params.id)?;
+    super::git::follow_projects(core);
     core.publish_device_view();
     Ok(project)
 }
@@ -1189,11 +1549,172 @@ pub(crate) struct RemoveProjectParams {
     path: PathBuf,
 }
 
-/// Stops offering a project a device added. Agents already at work in it keep working.
+/// Stops offering a project, and closes its agents.
 pub(crate) fn remove_project(core: &Core, params: RemoveProjectParams) -> CoreResult<()> {
     core.workspaces.remove_project(&params.path)?;
+    agents_closed(core);
+    super::git::follow_projects(core);
     core.publish_device_view();
     Ok(())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateProjectParams {
+    id: String,
+    patch: Map<String, Value>,
+}
+
+/// Renames, pins or moves a project to a space.
+pub(crate) fn update_project(core: &Core, params: UpdateProjectParams) -> CoreResult<ProjectInfo> {
+    let project = core.workspaces.update_project(&params.id, params.patch)?;
+    core.publish_device_view();
+    Ok(project)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct MoveProjectParams {
+    id: String,
+    index: usize,
+}
+
+pub(crate) fn move_project(core: &Core, params: MoveProjectParams) -> CoreResult<()> {
+    core.workspaces.move_project(&params.id, params.index)?;
+    core.publish_device_view();
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SpacesParams {
+    spaces: Vec<SpaceInfo>,
+}
+
+pub(crate) fn set_spaces(core: &Core, params: SpacesParams) -> CoreResult<()> {
+    core.workspaces.set_spaces(params.spaces)?;
+    core.publish_device_view();
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PinnedParams {
+    chats: Vec<PinnedChat>,
+}
+
+pub(crate) fn set_pinned_chats(core: &Core, params: PinnedParams) -> CoreResult<()> {
+    core.workspaces.set_pinned(params.chats)?;
+    core.publish_device_view();
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DefaultsParams {
+    permission_mode: String,
+}
+
+/// Keeps the mode agents start in, and offers the launchers in it.
+pub(crate) async fn set_defaults(core: &Arc<Core>, params: DefaultsParams) -> CoreResult<()> {
+    if core
+        .workspaces
+        .set_permission_mode(params.permission_mode)?
+    {
+        refresh_launchers(core.clone()).await;
+    }
+    core.publish_device_view();
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateAgentParams {
+    agent: Map<String, Value>,
+}
+
+/// Adds an agent to the workspace, or replaces the one with its id.
+pub(crate) fn create_agent(core: &Core, params: CreateAgentParams) -> CoreResult<WorkspaceAgent> {
+    let agent = core.workspaces.put_agent(params.agent)?;
+    core.publish_device_view();
+    Ok(agent)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateAgentParams {
+    agent_id: String,
+    patch: Map<String, Value>,
+}
+
+/// Changes some of an agent's fields; a null one is cleared.
+pub(crate) fn update_agent(core: &Core, params: UpdateAgentParams) -> CoreResult<WorkspaceAgent> {
+    let agent = core
+        .workspaces
+        .update_agent(&params.agent_id, params.patch)?;
+    core.publish_device_view();
+    Ok(agent)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CloseAgentsParams {
+    agent_ids: Vec<String>,
+}
+
+/// Takes agents out of the workspace.
+pub(crate) fn close_agents(core: &Core, params: CloseAgentsParams) -> CoreResult<()> {
+    core.workspaces.close_agents(&params.agent_ids)?;
+    agents_closed(core);
+    core.publish_device_view();
+    Ok(())
+}
+
+/// What follows agents leaving the workspace, however they left: their
+/// names are free again.
+fn agents_closed(core: &Core) {
+    core.names
+        .set_in_app(core.workspaces.agent_ids(), core.running_agents());
+}
+
+/// Runs whenever the workspace changes: agents in it keep their names while
+/// nothing of them runs.
+pub(crate) fn settle(core: &Arc<Core>) {
+    core.names
+        .set_in_app(core.workspaces.agent_ids(), core.running_agents());
+    core.agents_changed();
+}
+
+/// Looks for the newest saved chats whenever they may have changed, for
+/// devices to take up again.
+pub(crate) async fn recents(core: Arc<Core>) {
+    loop {
+        tokio::time::sleep(RECENT_SETTLE).await;
+        let requests = core.workspaces.recent_requests();
+        let found = blocking(move || Ok(newest(requests))).await;
+        if let Ok(found) = found {
+            if core.workspaces.set_recent(found) {
+                core.publish_device_view();
+            }
+        }
+        core.workspaces.recent_stale.notified().await;
+    }
+}
+
+fn newest(requests: Vec<(String, RecentRequest)>) -> Vec<Recent> {
+    let mut found: Vec<Recent> = requests
+        .into_iter()
+        .flat_map(|(launcher, request)| {
+            let page = saved_chats::recent_page(request).ok()?;
+            Some(page.sessions.into_iter().map(move |session| Recent {
+                launcher: launcher.clone(),
+                provider: session.agent.to_owned(),
+                session_id: session.id,
+                title: session.title.chars().take(MAX_TITLE_CHARS).collect(),
+                cwd: session.project.into(),
+                active_at: session.mtime * 1000,
+            }))
+        })
+        .flatten()
+        .collect();
+    found.sort_by_key(|chat| std::cmp::Reverse(chat.active_at));
+    found.truncate(RECENT_LIMIT);
+    found
 }
 
 /// Finds each offered agent's program and offers those found, with what
@@ -1274,7 +1795,7 @@ pub(crate) async fn wake_chat(
     let deadline = tokio::time::Instant::now() + WAKE_WAIT;
     if !running(core, &agent_id) {
         match core.workspaces.published(&agent_id) {
-            None => return Err("that chat is no longer open in Sikemux on this host".into()),
+            None => return Err("that chat is no longer on this host".into()),
             Some(false) => {
                 return Err(
                     "this chat stopped on the host; open it in Sikemux there to start it again"
@@ -1310,20 +1831,30 @@ async fn wake_here(
     by: Option<&Arc<ClientConn>>,
     agent_id: &str,
 ) -> CoreResult<()> {
-    let asleep = core.workspaces.take_asleep(agent_id).ok_or_else(|| {
-        CoreError::from(
-            "Sikemux on this host does not know how this chat ran; open it there to wake it",
-        )
-    })?;
-    let (mut launch, launcher) = built(core, &asleep.launcher, asleep.cwd).await?;
-    launch.resume_id = asleep.resume_id;
-    launch.permission_mode = asleep.permission_mode;
-    launch.model = asleep.model;
-    launch.effort = asleep.effort;
-    launch.account = asleep.account;
-    launch.fallbacks = asleep.fallbacks;
+    let (launch, launcher) = launch_of(core, agent_id).await?;
     begin(core, by, launch, agent_id, launcher)?;
     Ok(())
+}
+
+/// How to start an agent's chat again on its saved conversation, with its
+/// launcher.
+pub(crate) async fn launch_of(
+    core: &Arc<Core>,
+    agent_id: &str,
+) -> CoreResult<(ChatLaunch, String)> {
+    let kept = core
+        .workspaces
+        .kept_launch(agent_id)
+        .ok_or_else(|| CoreError::from("that chat is no longer on this host"))?;
+    let agent = kept.agent;
+    let (mut launch, launcher) = built(core, &launcher_of(&agent), agent.cwd).await?;
+    launch.resume_id = agent.resume_id;
+    launch.permission_mode = agent.permission_mode;
+    launch.model = agent.model;
+    launch.effort = agent.effort;
+    launch.account = kept.account;
+    launch.fallbacks = kept.fallbacks;
+    Ok((launch, launcher))
 }
 
 /// Starts the chat and answers `client` once its session is ready.
@@ -1391,7 +1922,10 @@ mod tests {
     }
 
     fn offer(workspaces: &Workspaces, launchers: Vec<Launcher>) {
-        workspaces.set(vec![project()], "bypass".into()).unwrap();
+        let project = project();
+        workspaces
+            .add_project(project.path, Some(project.name), Some(project.id))
+            .unwrap();
         workspaces.set_launchers(launchers);
     }
 
@@ -1410,6 +1944,8 @@ mod tests {
             id: "sess-1".into(),
             name: "sikemux".into(),
             path: "/Users/me/sikemux".into(),
+            pinned: false,
+            space: None,
         }
     }
 
@@ -1424,8 +1960,8 @@ mod tests {
         }
     }
 
-    fn recent(session_id: &str, cwd: &str) -> PublishedRecent {
-        PublishedRecent {
+    fn recent(session_id: &str, cwd: &str) -> Recent {
+        Recent {
             launcher: "claude:work".into(),
             provider: "claude".into(),
             session_id: session_id.into(),
@@ -1500,13 +2036,11 @@ mod tests {
     fn a_device_sees_recent_chats_in_open_projects_but_not_running_ones() {
         let workspaces = Workspaces::new(None);
         offer(&workspaces, vec![launcher()]);
-        workspaces
-            .publish_recent(vec![
-                recent("s1", "/Users/me/sikemux"),
-                recent("s2", "/Users/me/sikemux"),
-                recent("s3", "/Users/me/closed"),
-            ])
-            .unwrap();
+        workspaces.set_recent(vec![
+            recent("s1", "/Users/me/sikemux"),
+            recent("s2", "/Users/me/sikemux"),
+            recent("s3", "/Users/me/closed"),
+        ]);
         let running = workspaces.listed(Vec::new());
         let shown = workspaces.recent(&running);
         assert_eq!(
@@ -1556,9 +2090,7 @@ mod tests {
     fn a_recent_chat_resumes_with_its_launcher_in_its_project() {
         let workspaces = Workspaces::new(None);
         offer(&workspaces, vec![launcher()]);
-        workspaces
-            .publish_recent(vec![recent("s1", "/Users/me/sikemux")])
-            .unwrap();
+        workspaces.set_recent(vec![recent("s1", "/Users/me/sikemux")]);
         let choice = workspaces
             .resume_choice(resuming("claude:s1"), &[])
             .unwrap();
@@ -1573,20 +2105,18 @@ mod tests {
     fn only_a_published_recent_chat_resumes() {
         let workspaces = Workspaces::new(None);
         offer(&workspaces, vec![launcher()]);
-        workspaces
-            .publish_recent(vec![recent("s1", "/Users/me/sikemux")])
-            .unwrap();
+        workspaces.set_recent(vec![recent("s1", "/Users/me/sikemux")]);
         assert!(workspaces
             .resume_choice(resuming("claude:other"), &[])
             .is_err());
         assert!(workspaces.resume_choice(resuming("s1"), &[]).is_err());
-        workspaces.publish_recent(Vec::new()).unwrap();
+        workspaces.set_recent(Vec::new());
         assert!(workspaces
             .resume_choice(resuming("claude:s1"), &[])
             .is_err());
         let mut elsewhere = recent("s2", "/Users/me/sikemux");
         elsewhere.launcher = "codex".into();
-        workspaces.publish_recent(vec![elsewhere]).unwrap();
+        workspaces.set_recent(vec![elsewhere]);
         assert!(workspaces
             .resume_choice(resuming("claude:s2"), &[])
             .is_err());
@@ -1595,9 +2125,9 @@ mod tests {
     #[test]
     fn a_relative_project_path_is_refused() {
         let workspaces = Workspaces::new(None);
-        let mut relative = project();
-        relative.path = "sikemux".into();
-        assert!(workspaces.set(vec![relative], "bypass".into()).is_err());
+        assert!(workspaces
+            .add_project("sikemux".into(), None, None)
+            .is_err());
     }
 
     #[test]
@@ -1623,7 +2153,7 @@ mod tests {
                 ..Book::default()
             })
             .unwrap();
-        workspaces.set(vec![project()], "bypass".into()).unwrap();
+        workspaces.set_permission_mode("bypass".into()).unwrap();
         let offered = workspaces.offered();
         let ids: Vec<&str> = offered
             .iter()
