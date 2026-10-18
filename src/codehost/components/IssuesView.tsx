@@ -347,6 +347,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                             <IconChevron size={11} />
                         </button>
                     </Tooltip>
+                    <SectionIcon section="issues" size={14} />
                     <span className="pr-side-number">Issues</span>
                     <span className="gha-page-spacer" />
                     <div className="gha-chips gha-seg issue-side-seg" role="group" aria-label="Which to list">
