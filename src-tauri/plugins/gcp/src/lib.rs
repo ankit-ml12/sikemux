@@ -14,12 +14,14 @@
 //   pubsub   — Pub/Sub topics, subscriptions, publishing and peeking
 //   build    — Cloud Build builds, logs, triggers, retries and cancels
 //   secrets  — Secret Manager secrets and versions, by name only
+//   functions — Cloud Functions of both generations
 
 mod auth;
 mod build;
 mod client;
 mod compute;
 mod error;
+mod functions;
 mod gcloud;
 mod gke;
 mod logging;
@@ -122,6 +124,8 @@ impl Plugin for Gcp {
                 "secrets" => answer(secrets::secrets(params(input)?)).await,
                 "secret" => answer(secrets::secret_detail(params(input)?)).await,
                 "secretVersion" => answer(secrets::set_version(params(input)?)).await,
+                "functions" => answer(functions::functions(params(input)?)).await,
+                "function" => answer(functions::function_detail(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
