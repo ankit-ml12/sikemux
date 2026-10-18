@@ -29,8 +29,8 @@ export function Docs(props: {
   toc: TOCItemType[];
   markdownUrl: string;
   editUrl: string;
-  landing: boolean;
-  children: ReactNode;
+  kind: "landing" | "page" | "missing";
+  children?: ReactNode;
 }) {
   const tree = useMemo(() => ({ ...props.tree, children: props.tree.children.map(withAgentMarks) }), [props.tree]);
   const agent = agentOf(props.pathname);
@@ -45,6 +45,7 @@ export function Docs(props: {
       <DocsLayout
         tree={tree}
         themeSwitch={{ enabled: false }}
+        sidebar={{ collapsible: false, components: { Folder: NavGroup } }}
         githubUrl="https://github.com/nodelike/sikemux"
         nav={{ mode: "top", title: <Wordmark /> }}
         links={[
@@ -60,8 +61,34 @@ export function Docs(props: {
           },
         ]}
       >
-        {props.landing ? (
-          <DocsPage full breadcrumb={{ enabled: false }} footer={{ enabled: false }} tableOfContent={{ enabled: false }}>
+        {props.kind === "missing" ? (
+          <DocsPage
+            className="missing"
+            breadcrumb={{ enabled: false }}
+            footer={{ enabled: false }}
+            tableOfContent={{ enabled: false }}
+            tableOfContentPopover={{ enabled: false }}
+          >
+            <p className="hero-label">404</p>
+            <DocsTitle>{props.title}</DocsTitle>
+            <DocsDescription>{props.description}</DocsDescription>
+            <div className="hero-actions">
+              <a className="hero-btn hero-btn-primary" href="/">
+                Docs home
+              </a>
+              <a className="hero-btn hero-btn-quiet" href="/getting-started/install/">
+                Install
+              </a>
+            </div>
+          </DocsPage>
+        ) : props.kind === "landing" ? (
+          <DocsPage
+            className="landing"
+            breadcrumb={{ enabled: false }}
+            footer={{ enabled: false }}
+            tableOfContent={{ enabled: false }}
+            tableOfContentPopover={{ enabled: false }}
+          >
             <Hero title={props.title} description={props.description} />
             <DocsBody>{props.children}</DocsBody>
           </DocsPage>
@@ -87,6 +114,7 @@ export function Docs(props: {
     </RootProvider>
   );
 }
+
 function withAgentMarks(node: Node): Node {
   if (node.type === "folder") return { ...node, children: node.children.map(withAgentMarks) };
   if (node.type !== "page") return node;
@@ -94,7 +122,14 @@ function withAgentMarks(node: Node): Node {
   return agent ? { ...node, icon: <AgentMark agent={agent} /> } : node;
 }
 
+function NavGroup({ item, children }: { item: Folder; children: ReactNode }) {
+  return (
+    <section className="nav-group">
+      <p className="nav-group-title">{item.name}</p>
       <div className="tree">{children}</div>
+    </section>
+  );
+}
 
 function Toc() {
   const items = useTOCItems();
