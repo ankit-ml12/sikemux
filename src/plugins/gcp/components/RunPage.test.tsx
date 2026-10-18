@@ -8,7 +8,12 @@ vi.mock("../api", async (importOriginal) => {
     return { ...(await importOriginal<object>()), gcpApi: api };
 });
 const confirm = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
-vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), confirmDialog: confirm }));
+const prompt = vi.hoisted(() => vi.fn<(request: { label?: string }) => Promise<string | null>>());
+vi.mock("../../../plugin-api/host", async (importOriginal) => ({
+    ...(await importOriginal<object>()),
+    confirmDialog: confirm,
+    promptDialog: prompt,
+}));
 
 import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
@@ -131,5 +136,17 @@ describe("Cloud Run", () => {
         fireEvent.click(await screen.findByRole("row", { name: /nightly/ }));
         await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Execute" })));
         await waitFor(() => expect(api.runJobExecute).toHaveBeenCalledWith(target, "us-central1", "nightly"));
+    });
+
+    it("deploys a new image, and new scaling, as new revisions", async () => {
+        api.runDeploy.mockResolvedValue({ operation: "op" });
+        prompt.mockResolvedValueOnce("us-docker.pkg.dev/acme/api:1.5");
+        renderPage();
+        fireEvent.click(await screen.findByRole("row", { name: /api/ }));
+        fireEvent.click(await screen.findByRole("button", { name: "Deploy image…" }));
+        await waitFor(() => expect(api.runDeploy).toHaveBeenCalledWith(target, "us-central1", "api", { image: "us-docker.pkg.dev/acme/api:1.5" }));
+        prompt.mockResolvedValueOnce("1").mockResolvedValueOnce("20");
+        fireEvent.click(screen.getByRole("button", { name: "Edit scaling…" }));
+        await waitFor(() => expect(api.runDeploy).toHaveBeenLastCalledWith(target, "us-central1", "api", { minInstances: 1, maxInstances: 20 }));
     });
 });

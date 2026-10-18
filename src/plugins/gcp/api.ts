@@ -560,6 +560,8 @@ export const gcpApi = {
         backend.call<RunServiceDetail>("runService", { ...t(target), location, service }),
     runSetTraffic: (target: Target, location: string, service: string, revision: string | null) =>
         backend.call<Operation>("runSetTraffic", { ...t(target), location, service, revision }),
+    runDeploy: (target: Target, location: string, service: string, change: { image?: string; minInstances?: number; maxInstances?: number }) =>
+        backend.call<Operation>("runDeploy", { ...t(target), location, service, ...change }),
     runJobs: (target: Target) => backend.call<RunJob[]>("runJobs", t(target)),
     runJob: (target: Target, location: string, job: string) => backend.call<RunJobDetail>("runJob", { ...t(target), location, job }),
     runJobExecute: (target: Target, location: string, job: string) => backend.call<Operation>("runJobExecute", { ...t(target), location, job }),

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { notify, promptDialog } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { gcpApi, type RunJob, type RunRevision, type RunService, type RunServiceDetail, type Target } from "../api";
 import { metricsR, runJobR, runJobsR, runServiceR, runServicesR } from "../resources";
@@ -142,9 +143,66 @@ function ServicePage({
             "Traffic is moving",
             () => gcpApi.runSetTraffic(target, location, name, revision),
         );
+    const deployImage = async () => {
+        const image = await promptDialog({
+            title: `Deploy a new revision of ${name}`,
+            body: "The image the new revision runs. Every other setting carries over from the current revision.",
+            label: "Container image",
+            initial: service.data?.image ?? "",
+            confirmLabel: "Next",
+        });
+        if (!image?.trim() || image.trim() === service.data?.image) return;
+        await action.run(
+            {
+                title: `Deploy ${image.trim()}?`,
+                body: `${name} gets a new revision running this image, and it takes traffic as the service's traffic settings say.`,
+                confirmLabel: "Deploy",
+            },
+            "Deploying the new revision",
+            () => gcpApi.runDeploy(target, location, name, { image: image.trim() }),
+        );
+    };
+    const editScaling = async () => {
+        const min = await promptDialog({
+            title: `Scaling for ${name}`,
+            body: "Instances kept warm even with no traffic. 0 scales to zero.",
+            label: "Minimum instances",
+            initial: String(service.data?.minInstances ?? 0),
+            confirmLabel: "Next",
+        });
+        if (min === null) return;
+        const max = await promptDialog({
+            title: `Scaling for ${name}`,
+            body: "The most instances it may scale out to.",
+            label: "Maximum instances",
+            initial: String(service.data?.maxInstances ?? 100),
+            confirmLabel: "Next",
+        });
+        if (max === null) return;
+        const [low, high] = [Number(min.trim()), Number(max.trim())];
+        if (![low, high].every((count) => Number.isInteger(count) && count >= 0 && count <= 1000) || low > high) {
+            notify("error", "Scaling needs whole numbers from 0 to 1000, with the minimum no higher than the maximum");
+            return;
+        }
+        await action.run(
+            {
+                title: `Scale ${name} to ${low}–${high} instances?`,
+                body: "This deploys a new revision with the new scaling; every other setting carries over.",
+                confirmLabel: "Deploy",
+            },
+            "Deploying the new scaling",
+            () => gcpApi.runDeploy(target, location, name, { minInstances: low, maxInstances: high }),
+        );
+    };
     return (
         <div className="gcp-page">
             <PageHeader title={<>Service details: {name}</>} back={{ label: "services", go: onBack }}>
+                <Button disabled={action.busy || !service.data} onClick={() => void deployImage()}>
+                    Deploy image…
+                </Button>
+                <Button disabled={action.busy || !service.data} onClick={() => void editScaling()}>
+                    Edit scaling…
+                </Button>
                 <Button disabled={action.busy} onClick={() => sendAll(null)}>
                     Send all traffic to latest
                 </Button>
