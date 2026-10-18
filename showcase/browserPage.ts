@@ -20,8 +20,8 @@ export const BROWSER_TABS: Record<
     tabs: [
       tab(
         "tab-site",
-        "https://monkeytype.com/",
-        "Monkeytype | A minimalistic, customizable typing test",
+        "https://vercel.com/",
+        "Agentic Infrastructure - Vercel",
         true,
       ),
     ],
@@ -30,7 +30,7 @@ export const BROWSER_TABS: Record<
 };
 
 const SNAPSHOTS: Record<string, string> = {
-  [AGENTS.hero.id]: "/showcase/pages/monkeytype.png",
+  [AGENTS.hero.id]: "/showcase/pages/vercel.png",
 };
 const frames = new Map<string, HTMLImageElement>();
 

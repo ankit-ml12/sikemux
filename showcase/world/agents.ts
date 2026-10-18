@@ -237,12 +237,12 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       say(
         "Both buttons now share the row and wrap when the window gets narrow. The site builds cleanly.",
       ),
-      user("Nice. Open monkeytype in your tab, I'll take a typing break."),
+      user("Nice. Open vercel.com in your tab."),
     ],
     live: [
-      think("Opening monkeytype.com in my tab."),
+      think("Opening vercel.com in my tab."),
       tool("fetch", "mcp__sikemux-tools__browser_navigate", {
-        rawInput: { url: "https://monkeytype.com/" },
+        rawInput: { url: "https://vercel.com/" },
         durationMs: 1_400,
       }),
       tool(
