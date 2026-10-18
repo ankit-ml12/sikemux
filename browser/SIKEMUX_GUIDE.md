@@ -867,7 +867,10 @@ file holding only another agent's lines fails the commit rather than leaving
 it half done. It returns the commit, its files and what was left. Stage
 nothing yourself mid-task: what you `git add`, `git mv` or `git rm` early goes
 into the next agent's commit. The shell is zsh, which does not split `$FILES`
-into words; name paths or use an array. In a checkout other agents work in, Sikemux refuses
+into words; name paths or use an array. With `push: true` it then pushes
+your own commits only, even when other agents' unpushed commits sit before
+them, and lists theirs as kept; with no `message` it only pushes. Push only
+when the person asked for it. In a checkout other agents work in, Sikemux refuses
 `git add -A`, `commit -a`, `stash`, `reset --hard` and the like, and
 `git checkout -- <path>` or `git restore` over another agent's uncommitted
 lines, naming that agent; in your own clone, a new repository or a git

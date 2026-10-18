@@ -37,6 +37,15 @@ pub(crate) struct Committed {
     note: Option<String>,
 }
 
+/// What `git_commit` did: the commit, and what it pushed when asked to.
+#[derive(Serialize)]
+struct Done {
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    committed: Option<Committed>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pushed: Option<super::push::Pushed>,
+}
+
 fn is_zero(count: &usize) -> bool {
     *count == 0
 }
@@ -65,14 +74,17 @@ struct Change {
     removed: u64,
 }
 
-/// `git_commit`: commits the calling agent's lines in its checkout.
+/// `git_commit`: commits the calling agent's lines in its checkout, then
+/// pushes its unpushed commits when asked to.
 pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = request
         .agent_id
         .clone()
         .ok_or("git_commit needs the calling agent's id")?;
+    let push = request.params.get("push").and_then(Value::as_bool) == Some(true);
     let message = match request.params.get("message") {
-        Some(Value::String(message)) => message.clone(),
+        Some(Value::String(message)) => Some(message.clone()),
+        None | Some(Value::Null) if push => None,
         _ => return Err("message must be the commit message".into()),
     };
     let named: Vec<String> = match request.params.get("paths") {
@@ -82,10 +94,20 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         }
     };
     let (core, dir) = (core.clone(), PathBuf::from(&request.project));
-    blocking(move || Ok(commit(&core, &dir, &agent_id, &message, &named)?))
-        .await
-        .map_err(|error| error.to_string())
-        .and_then(|committed| serde_json::to_value(committed).map_err(|error| error.to_string()))
+    blocking(move || {
+        let committed = match &message {
+            Some(message) => Some(commit(&core, &dir, &agent_id, message, &named)?),
+            None => None,
+        };
+        let pushed = match push {
+            true => Some(super::push::push(&core, &dir, &agent_id, "origin")?),
+            false => None,
+        };
+        Ok(Done { committed, pushed })
+    })
+    .await
+    .map_err(|error| error.to_string())
+    .and_then(|done| serde_json::to_value(done).map_err(|error| error.to_string()))
 }
 
 /// Commits what `agent_id` wrote in `dir`'s checkout, and every change in the

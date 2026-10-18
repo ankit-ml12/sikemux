@@ -1807,11 +1807,12 @@
             "minLength": 1,
             "maxLength": 4096
           }
+        },
+        "push": {
+          "type": "boolean"
         }
       },
-      "required": [
-        "message"
-      ]
+      "required": []
     },
     {
       "name": "skills",
