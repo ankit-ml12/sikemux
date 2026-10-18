@@ -19,6 +19,9 @@ import { SecretsPage } from "./SecretsPage";
 import { FunctionsPage } from "./FunctionsPage";
 import { ErrorsPage } from "./ErrorsPage";
 import { BigQueryPage } from "./BigQueryPage";
+import { RegistryPage } from "./RegistryPage";
+import { SchedulerPage } from "./SchedulerPage";
+import { IamPage } from "./IamPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -42,7 +45,10 @@ const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     bigquery: BigQueryPage,
     pubsub: PubSubPage,
     build: BuildPage,
+    registry: RegistryPage,
+    scheduler: SchedulerPage,
     secrets: SecretsPage,
+    iam: IamPage,
     logging: LoggingPage,
     errors: ErrorsPage,
 };

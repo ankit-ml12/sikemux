@@ -1170,3 +1170,14 @@ button.gcp-project-row:hover {
     font-weight: 500;
     color: var(--gcp-text-2);
 }
+
+.gcp-roles {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    white-space: normal;
+}
+
+.gcp-cell .gcp-chip + .gcp-chip {
+    margin-left: 4px;
+}
