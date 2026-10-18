@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::time::Duration;
 
-use crate::server::{edits, Core};
+use crate::server::{edits, sandbox, Core};
 
 const QUICK: Duration = Duration::from_secs(60);
 /// Pushing and fetching wait on the network.
@@ -14,7 +14,6 @@ const OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 /// How much of a failure's output a note or a fix request carries.
 const TAIL_CHARS: usize = 3000;
 const SLUG_MAX: usize = 40;
-const BRANCH_PREFIX: &str = "sikemux/";
 
 fn run(
     dir: &Path,
@@ -201,34 +200,8 @@ pub(super) fn add_worktree(project: &Path, slug: &str) -> Result<Tree, String> {
         base.clone()
     };
     let start_sha = git(&repo, &["rev-parse", &start])?;
-    let folder = worktrees_folder(&repo);
-    let (branch, path) = (1..=50)
-        .map(|index| {
-            let slug = if index == 1 {
-                slug.to_owned()
-            } else {
-                format!("{slug}-{index}")
-            };
-            (format!("{BRANCH_PREFIX}{slug}"), folder.join(&slug))
-        })
-        .find(|(branch, path)| !path.exists() && !branch_exists(&repo, branch))
-        .ok_or("every worktree name for this card is taken")?;
-    std::fs::create_dir_all(&folder)
-        .map_err(|error| format!("could not make {}: {error}", folder.display()))?;
-    let target = path.to_string_lossy().into_owned();
-    git_in(
-        &repo,
-        &[
-            "worktree",
-            "add",
-            "--no-track",
-            "-b",
-            &branch,
-            &target,
-            &start_sha,
-        ],
-        SLOW,
-    )?;
+    let (branch, path) = sandbox::cut(&repo, slug, &start_sha)?;
+    sandbox::copy_included(&repo, &path);
     Ok(Tree {
         cwd: path.join(&inside),
         repo,
@@ -311,11 +284,7 @@ pub(super) fn check(cwd: &Path, command: &str) -> Result<(bool, String), String>
 /// Takes away a card's worktree and its branch, here and, when `remote`, on
 /// the remote too.
 pub(super) fn remove_worktree(repo: &Path, tree: &Path, branch: &str, remote: bool) {
-    let target = tree.to_string_lossy().into_owned();
-    if let Err(error) = git(repo, &["worktree", "remove", "--force", &target]) {
-        eprintln!("sikemux core: Auto left the worktree {target}: {error}");
-    }
-    let _ = git(repo, &["branch", "-D", branch]);
+    sandbox::remove(repo, tree, branch);
     if !remote {
         return;
     }

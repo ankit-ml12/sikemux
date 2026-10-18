@@ -16,18 +16,18 @@ const MAX_COMMAND_CHARS: usize = 8_000;
 
 #[derive(Deserialize)]
 pub(crate) struct CommandParams {
-    command: String,
+    pub command: String,
     #[serde(default)]
-    cwd: Option<PathBuf>,
+    pub cwd: Option<PathBuf>,
     /// Only `SIKEMUX_` variables are passed on.
     #[serde(default)]
-    env: HashMap<String, String>,
+    pub env: HashMap<String, String>,
 }
 
 #[derive(Serialize)]
 pub(crate) struct CommandResult {
-    code: i32,
-    output: String,
+    pub code: i32,
+    pub output: String,
 }
 
 /// Runs `command` in the person's login shell, answering its exit code and

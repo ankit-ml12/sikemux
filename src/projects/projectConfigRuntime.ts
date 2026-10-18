@@ -15,17 +15,6 @@ export function projectActionCommand(action: ProjectAction): CustomCommand {
     };
 }
 
-export function worktreeHookCommand(hook: ProjectWorktreeCreateHook): CustomCommand {
-    return {
-        id: `project.worktree.${hook.id}`,
-        title: hook.label,
-        detail: "Project-defined worktree setup",
-        command: hook.command,
-        contexts: ["project"],
-        placement: "background",
-    };
-}
-
 /**
  * Asks the person to trust the file unless the host already does, and keeps
  * their yes on the host until the file changes.

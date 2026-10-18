@@ -16,6 +16,7 @@ use crate::protocol::AgentStatus;
 use super::super::connection::blocking;
 use super::super::names::{self, Adopted, Worker};
 use super::super::remote::unix_ms;
+use super::super::sandbox;
 use super::super::spawn::{self as local, ForHost};
 use super::super::Core;
 use super::code::{self, Checked, Code};
@@ -339,7 +340,7 @@ pub(super) async fn start_here(
             core.hosts.team.remove_tree(&params.agent_id);
             let (repo, path, branch) = (tree.repo, tree.path, tree.branch);
             let _ = blocking(move || {
-                code::remove(&repo, &path, &branch);
+                sandbox::remove(&repo, &path, &branch);
                 Ok(())
             })
             .await;

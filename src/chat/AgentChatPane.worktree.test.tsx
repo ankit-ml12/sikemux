@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PreparedWorktree } from "../agents/agentWorktree";
 import { resetResourcesForTests } from "../state/resources";
 import { setState } from "../state/store";
 import type { Agent, AgentWorktree } from "../state/types";
 import { AgentChatPane } from "./AgentChatPane";
+import type { PreparedWorktree } from "./useChatWorktree";
 import { draftOf, typeDraft } from "../test/draft";
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +20,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../api/agents", () => ({ agentApi: { available: async () => [] } }));
 vi.mock("../api/fs", () => ({ fsapi: { pathKinds: async (paths: string[]) => paths.map(() => null) } }));
 vi.mock("../api/git", () => ({ git: { worktrees: mocks.worktrees, overview: async () => ({ status: { branch: "main" } }) } }));
-vi.mock("../agents/agentWorktree", () => ({ createAgentWorktree: mocks.create }));
+vi.mock("../api/core", async (importOriginal) => {
+    const original = await importOriginal<typeof import("../api/core")>();
+    return {
+        coreCall: (method: string, params: unknown) => (method === "createAgentWorktree" ? mocks.create(params) : original.coreCall(method, params)),
+    };
+});
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async () => () => {}),
@@ -117,9 +122,7 @@ describe("AgentChatPane in a worktree", () => {
         await sendFirstMessage("Fix the flaky PTY test");
 
         await waitFor(() =>
-            expect(mocks.create).toHaveBeenCalledWith(
-                expect.objectContaining({ agentId: agent.id, projectCwd: "/repo", message: "Fix the flaky PTY test" }),
-            ),
+            expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id, message: "Fix the flaky PTY test" })),
         );
         expect(mocks.setAgentWorktreeDefault).toHaveBeenCalledWith("/repo", true);
         expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();

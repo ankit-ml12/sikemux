@@ -11,10 +11,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::super::board::git::{
-    branch_exists, git, git_in, git_with, inside, slug, worktrees_folder, SLOW,
-};
+use super::super::board::git::{git, git_in, git_with, inside, slug, SLOW};
 use super::super::connection::blocking;
+use super::super::sandbox;
 use super::super::Core;
 use super::link::Received;
 use super::name_of;
@@ -345,40 +344,12 @@ pub(crate) fn checkout(
             return Err("the lead's bundle did not hold its commit".into());
         }
     }
-    let folder = worktrees_folder(&repo);
-    let base = slug(name);
-    let (branch, path) = (1..=50)
-        .map(|index| {
-            let slug = if index == 1 {
-                base.clone()
-            } else {
-                format!("{base}-{index}")
-            };
-            (format!("sikemux/{slug}"), folder.join(&slug))
-        })
-        .find(|(branch, path)| !path.exists() && !branch_exists(&repo, branch))
-        .ok_or("every worktree name for this worker is taken")?;
-    std::fs::create_dir_all(&folder)
-        .map_err(|error| format!("could not make {}: {error}", folder.display()))?;
-    let target = path.to_string_lossy().into_owned();
-    let added = git_in(
-        &repo,
-        &[
-            "worktree",
-            "add",
-            "--no-track",
-            "-b",
-            &branch,
-            &target,
-            &code.commit,
-        ],
-        SLOW,
-    );
+    let added = sandbox::cut(&repo, name, &code.commit);
     let _ = git(&repo, &["update-ref", "-d", &incoming]);
-    added?;
+    let (branch, path) = added?;
     if let Some(patch) = &code.patch {
         if let Err(error) = apply(&path, patch) {
-            remove(&repo, &path, &branch);
+            sandbox::remove(&repo, &path, &branch);
             return Err(error);
         }
     }
@@ -429,13 +400,6 @@ fn apply(tree: &Path, patch: &str) -> Result<(), String> {
         "The lead's uncommitted changes, as they were when it started this worker",
     ]);
     git_in(tree, &args, SLOW).map(drop)
-}
-
-/// Takes away a worker's checkout and its branch.
-pub(crate) fn remove(repo: &Path, tree: &Path, branch: &str) {
-    let target = tree.to_string_lossy().into_owned();
-    let _ = git(repo, &["worktree", "remove", "--force", &target]);
-    let _ = git(repo, &["branch", "-D", branch]);
 }
 
 /// A bundle at `into` of the worker's commits since the lead's commit, and

@@ -714,6 +714,26 @@ async fn ask_person(core: &Arc<Core>, project: &str, ask: TrustAsk, execution_id
     answer
 }
 
+/// Whether `agent_id`, or the person when there is none, may run the
+/// commands in `project`'s `sikemux.json`, asking the person when they have
+/// not trusted it on this host yet.
+pub(crate) async fn config_trusted(core: &Arc<Core>, project: &Path, agent_id: Option<&str>) -> bool {
+    if bypasses(core, agent_id) {
+        return true;
+    }
+    let config = {
+        let project = project.to_path_buf();
+        blocking(move || Ok(config::load(&project))).await
+    };
+    let Ok(config) = config else {
+        return false;
+    };
+    match config_needs(core, &config) {
+        Some(ask) => ask_person(core, &project.to_string_lossy(), ask, None).await,
+        None => true,
+    }
+}
+
 /// The trust questions waiting on the person.
 pub(crate) fn asks(core: &Core) -> Vec<Value> {
     core.tasks
