@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { copyWithNotice } from "../../../plugin-api/host";
-import { VirtualLogList } from "../../../plugin-api/ui";
+import { SendToAgentMenu, VirtualLogList } from "../../../plugin-api/ui";
 import { dockerApi, failureMessage, type ContainerDetail, type LogLine } from "../api";
+import { containerForAgent } from "../forAgent";
 import { appendLines, clockOf, filterLines, linesAsText } from "../logs";
 
 /** How close to the bottom counts as reading the newest lines, so the log keeps following. */
@@ -19,6 +20,7 @@ export function LogView({ container }: { container: ContainerDetail }) {
     const [errorsOnly, setErrorsOnly] = useState(false);
     const [withTime, setWithTime] = useState(false);
     const [wrap, setWrap] = useState(true);
+    const [agentMenu, setAgentMenu] = useState<{ x: number; y: number } | null>(null);
     const atBottom = useRef(true);
     const run = `${container.id}:${container.state.startedAt ?? ""}`;
 
@@ -71,7 +73,25 @@ export function LogView({ container }: { container: ContainerDetail }) {
                 <button type="button" className="docker-button" disabled={lines.length === 0} onClick={() => setLines([])}>
                     Clear
                 </button>
+                <button
+                    type="button"
+                    className="docker-button"
+                    onClick={(event) => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        setAgentMenu({ x: box.right, y: box.bottom + 4 });
+                    }}>
+                    Ask an agent
+                </button>
             </div>
+            {agentMenu ? (
+                <SendToAgentMenu
+                    x={agentMenu.x}
+                    y={agentMenu.y}
+                    alignRight
+                    delivery={() => ({ text: containerForAgent(container, shown) })}
+                    onClose={() => setAgentMenu(null)}
+                />
+            ) : null}
             {error ? <p className="docker-note">{error}</p> : null}
             <VirtualLogList
                 items={shown}
