@@ -1,6 +1,5 @@
 import type { AgentBuddy, AgentType } from "../state/types";
 import { coreCall } from "./core";
-import { invokeCommand as invoke } from "./invoke";
 
 /** An agent's name as the core keeps it. */
 export interface AgentName {
@@ -27,12 +26,6 @@ export interface ClosedAgent {
     readonly buddy: unknown;
 }
 
-/** The launcher and permission mode the app runs an agent with. */
-export interface AgentRun {
-    readonly launcher: string;
-    readonly permissionMode: string;
-}
-
 export interface NameRequest {
     readonly agentId: string;
     readonly cwd: string;
@@ -49,10 +42,4 @@ export const agentNamesApi = {
     name: (request: NameRequest) => coreCall<GivenName>("nameAgent", request),
     rename: (agentId: string, name: string) => coreCall<AgentName>("renameAgent", { agentId, name }),
     closed: (cwd: string) => coreCall<ClosedAgent[]>("closedAgents", { cwd }),
-    /**
-     * Every agent the app holds, sleeping ones included, so the core keeps their names theirs and frees the names of the
-     * rest, and how each runs, so an agent a terminal agent starts runs on its account and in its mode.
-     */
-    inApp: (agentIds: readonly string[], runs: Readonly<Record<string, AgentRun>>) =>
-        invoke<null>("agent_name_call", { method: "agentsInApp", params: { agentIds, runs } }),
 };

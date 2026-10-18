@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentCwd } from "../agents/agentPtyContext";
-import { effectiveMode } from "../agents/agentLaunch";
-import { agentNamesApi, type AgentRun, type NameRequest } from "../api/agentNames";
+import { agentNamesApi, type NameRequest } from "../api/agentNames";
 import { wearBuddy } from "../buddies/commands";
-import { launcherId } from "../remote/workspace";
 import * as cmd from "../state/commands";
 import { agentIdsOf } from "../state/selectors";
 import { useStore, type StoreState } from "../state/store";
@@ -33,19 +31,8 @@ function nameRequests(state: Pick<StoreState, "agents" | "windows" | "sessions" 
     });
 }
 
-function heldAgents(agents: StoreState["agents"]): { agentIds: string[]; runs: Record<string, AgentRun> } {
-    const agentIds = Object.keys(agents).sort();
-    const runs: Record<string, AgentRun> = {};
-    for (const id of agentIds) {
-        const agent = agents[id];
-        runs[id] = { launcher: launcherId(agent.type, agent.profileId), permissionMode: effectiveMode(agent) };
-    }
-    return { agentIds, runs };
-}
-
 /**
- * Tells the core every agent the app holds, so a closed one's name is free again, then asks for each one's name. The
- * core names an agent as it starts; this also names the ones restored from before and those opened again from Recent,
+ * Asks the core for each agent's name. The core names an agent as it starts; this also names the ones restored from before and those opened again from Recent,
  * which get a new name unless the person named them, and tells the core which provider session each runs and how each looks.
  */
 export function AgentNameBridge() {
@@ -54,19 +41,12 @@ export function AgentNameBridge() {
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const windowsBySession = useStore((s) => s.windowsBySession);
-    const held = useMemo(() => JSON.stringify(heldAgents(agents)), [agents]);
     const requests = useMemo(
         () => JSON.stringify(nameRequests({ agents, windows, sessions, sessionOrder, windowsBySession })),
         [agents, windows, sessions, sessionOrder, windowsBySession],
     );
-    const told = useRef<Promise<unknown>>(Promise.resolve());
     const asked = useRef(new Map<string, string>());
     const [retries, setRetries] = useState(0);
-
-    useEffect(() => {
-        const { agentIds, runs } = JSON.parse(held) as ReturnType<typeof heldAgents>;
-        told.current = agentNamesApi.inApp(agentIds, runs).catch(swallow("tell the core which agents the app holds"));
-    }, [held]);
 
     useEffect(() => {
         let retry: number | undefined;
@@ -74,8 +54,8 @@ export function AgentNameBridge() {
             const key = JSON.stringify(request);
             if (asked.current.get(request.agentId) === key) continue;
             asked.current.set(request.agentId, key);
-            told.current
-                .then(() => agentNamesApi.name(request))
+            agentNamesApi
+                .name(request)
                 .then(
                     (named) => {
                         cmd.setAgentName(request.agentId, named.name, named.parent);

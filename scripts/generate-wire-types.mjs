@@ -54,8 +54,6 @@ const TS_ROOTS = [
   "DeviceView",
   "HostInfo",
   "RemoteStatus",
-  "PublishedChat",
-  "PublishedRecent",
   "AllowedDevice",
   "RemotePairing",
   "NetworkChange",
