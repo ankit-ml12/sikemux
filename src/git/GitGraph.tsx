@@ -11,7 +11,7 @@ const ROW_H = 26;
 /** Beyond two, refs crowd the subject out of the row entirely. */
 const LANE_W = 14; // horizontal gap between lanes
 const X0 = 14; // x of lane 0's centre
-const NODE_R = 4;
+const NODE_R = 3;
 const GUTTER_PAD = 18; // breathing room between the deepest lane and the text
 
 const gutterWidth = (maxLanes: number) => X0 + Math.max(0, maxLanes - 1) * LANE_W + GUTTER_PAD;
@@ -174,8 +174,8 @@ function drawSelection(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: n
     const ctx = sizeCanvas(canvas, rows, maxLanes);
     const row = rows[selectedIndex];
     if (!ctx || !row) return;
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "rgba(255,255,255,.9)";
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255,.75)";
     ctx.beginPath();
     ctx.arc(laneX(row.lane), selectedIndex * ROW_H + ROW_H / 2, NODE_R + 3, 0, Math.PI * 2);
     ctx.stroke();
@@ -191,7 +191,9 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, co
     const edgeColor = (e: { color: number; unpushed: boolean }) => (e.unpushed ? unpushedColor : col(e.color));
     const cp = ROW_H * 0.42;
 
-    ctx.lineWidth = 1.8;
+    // The lines sit back like the project tree's spine, so the commits' text leads the eye.
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6;
     rows.forEach((r, i) => {
         const yTop = i * ROW_H;
         const yMid = yTop + ROW_H / 2;
@@ -225,6 +227,7 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, co
         }
     });
 
+    ctx.globalAlpha = 1;
     rows.forEach((r, i) => {
         const yMid = i * ROW_H + ROW_H / 2;
         const nodeX = laneX(r.lane);
@@ -232,18 +235,18 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, co
 
         ctx.fillStyle = voidColor;
         ctx.beginPath();
-        ctx.arc(nodeX, yMid, NODE_R + 1.6, 0, Math.PI * 2);
+        ctx.arc(nodeX, yMid, NODE_R + 1.5, 0, Math.PI * 2);
         ctx.fill();
 
         if (r.isHead) {
-            ctx.lineWidth = 2.2;
+            ctx.lineWidth = 1.5;
             ctx.strokeStyle = c;
             ctx.beginPath();
             ctx.arc(nodeX, yMid, NODE_R + 1, 0, Math.PI * 2);
             ctx.stroke();
             ctx.fillStyle = c;
             ctx.beginPath();
-            ctx.arc(nodeX, yMid, 2.3, 0, Math.PI * 2);
+            ctx.arc(nodeX, yMid, 1.6, 0, Math.PI * 2);
             ctx.fill();
         } else {
             ctx.fillStyle = c;
