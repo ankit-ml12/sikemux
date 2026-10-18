@@ -125,6 +125,7 @@ impl Plugin for Gcp {
                 "runServices" => answer(run::services(params(input)?)).await,
                 "runService" => answer(run::service_detail(params(input)?)).await,
                 "runSetTraffic" => answer(run::set_traffic(params(input)?)).await,
+                "runDeploy" => answer(run::deploy(params(input)?)).await,
                 "runJobs" => answer(run::jobs(params(input)?)).await,
                 "runJob" => answer(run::job_detail(params(input)?)).await,
                 "runJobExecute" => answer(run::run_job(params(input)?)).await,

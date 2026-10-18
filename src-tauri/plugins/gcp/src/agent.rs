@@ -256,6 +256,8 @@ async fn act(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
     let database = |action: &str| with(json!({ "instance": name, "action": action }));
     match action.as_str() {
         "run_traffic" => run::set_traffic(read(with(json!({ "location": location, "service": name, "revision": revision })))?).await,
+        "run_deploy" => run::deploy(read(with(json!({ "location": location, "service": name, "image": field(&input, "data") })))?).await,
+        "run_scale" => run::deploy(read(with(json!({ "location": location, "service": name, "minInstances": count })))?).await,
         "run_job" => run::run_job(read(with(json!({ "location": location, "job": name })))?).await,
         "vm_start" => compute::power(read(vm("start"))?).await,
         "vm_stop" => compute::power(read(vm("stop"))?).await,

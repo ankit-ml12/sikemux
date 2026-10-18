@@ -281,6 +281,106 @@ pub async fn set_traffic(input: Traffic) -> GcpResult<Value> {
     Ok(json!({ "operation": short(&text(&operation, "/name")), "done": at(&operation, "/done") }))
 }
 
+/// The service as Google sent it, with only the template's image and scaling changed, ready to send back.
+pub fn changed_template(
+    mut raw: Value,
+    image: Option<&str>,
+    min: Option<u32>,
+    max: Option<u32>,
+) -> GcpResult<Value> {
+    let template = raw
+        .get_mut("template")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| GcpError::Response("the service has no template".into()))?;
+    template.remove("revision");
+    if let Some(image) = image {
+        let container = template
+            .get_mut("containers")
+            .and_then(Value::as_array_mut)
+            .and_then(|containers| containers.first_mut())
+            .and_then(Value::as_object_mut)
+            .ok_or_else(|| GcpError::Response("the service has no container".into()))?;
+        container.insert("image".into(), json!(image));
+    }
+    if min.is_some() || max.is_some() {
+        let scaling = template.entry("scaling").or_insert_with(|| json!({}));
+        if let Some(scaling) = scaling.as_object_mut() {
+            if let Some(min) = min {
+                scaling.insert("minInstanceCount".into(), json!(min));
+            }
+            if let Some(max) = max {
+                scaling.insert("maxInstanceCount".into(), json!(max));
+            }
+        }
+    }
+    Ok(raw)
+}
+
+/// An image address a deploy will take: a registry path with a tag or digest, nothing that reads as a flag or a URL.
+pub fn image_ref(image: &str) -> GcpResult<String> {
+    let image = image.trim();
+    let allowed =
+        |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | ':' | '@');
+    if image.is_empty()
+        || image.contains("://")
+        || image.starts_with('-')
+        || !image.chars().all(allowed)
+        || !image.contains('/')
+    {
+        return Err(GcpError::BadArg(format!(
+            "`{image}` is not an image address such as us-docker.pkg.dev/project/repo/image:tag"
+        )));
+    }
+    Ok(image.to_string())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Deploy {
+    #[serde(flatten)]
+    pub service: ServiceRef,
+    /// The image the new revision runs; none keeps the current one.
+    #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub min_instances: Option<u32>,
+    #[serde(default)]
+    pub max_instances: Option<u32>,
+}
+
+/// Deploys a new revision of a service with another image or other scaling, keeping every other setting.
+pub async fn deploy(input: Deploy) -> GcpResult<Value> {
+    let image = input
+        .image
+        .as_deref()
+        .map(str::trim)
+        .filter(|image| !image.is_empty())
+        .map(image_ref)
+        .transpose()?;
+    if image.is_none() && input.min_instances.is_none() && input.max_instances.is_none() {
+        return Err(GcpError::BadArg(
+            "name an image or the instances to scale to".into(),
+        ));
+    }
+    if let (Some(min), Some(max)) = (input.min_instances, input.max_instances) {
+        if min > max {
+            return Err(GcpError::BadArg(format!(
+                "at least {min} instances cannot fit in at most {max}"
+            )));
+        }
+    }
+    let url = service_url(&input.service)?;
+    let raw = client::get(&input.service.target, &url, &[]).await?;
+    let body = changed_template(
+        raw,
+        image.as_deref(),
+        input.min_instances,
+        input.max_instances,
+    )?;
+    let operation = client::patch(&input.service.target, &url, &[], &body).await?;
+    Ok(json!({ "operation": short(&text(&operation, "/name")), "done": at(&operation, "/done") }))
+}
+
 /// Every Cloud Run job in the project, in every region.
 pub async fn jobs(input: Listing) -> GcpResult<Vec<Value>> {
     let project = input.target.project()?;
@@ -407,6 +507,42 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert_eq!(names[1]["secret"], "db-password");
         assert!(!json!(names).to_string().contains("prod"));
+    }
+
+    #[test]
+    fn a_deploy_changes_only_the_image_and_scaling() {
+        let raw = raw_service();
+        let mut with_revision = raw.clone();
+        with_revision["template"]["revision"] = json!("api-00012-xyz");
+        let changed = changed_template(
+            with_revision,
+            Some("us-docker.pkg.dev/acme/api:1.5"),
+            Some(1),
+            None,
+        )
+        .expect("changed");
+        assert_eq!(
+            changed["template"]["containers"][0]["image"],
+            "us-docker.pkg.dev/acme/api:1.5"
+        );
+        assert_eq!(changed["template"]["scaling"]["minInstanceCount"], 1);
+        assert_eq!(changed["template"]["scaling"]["maxInstanceCount"], 10);
+        assert_eq!(
+            changed["template"]["containers"][0]["env"],
+            raw["template"]["containers"][0]["env"]
+        );
+        assert!(changed["template"].get("revision").is_none());
+        assert!(changed_template(json!({}), None, None, None).is_err());
+    }
+
+    #[test]
+    fn an_image_address_is_a_registry_path() {
+        assert!(image_ref("us-docker.pkg.dev/acme/web/storefront:2.4.0").is_ok());
+        assert!(image_ref("gcr.io/acme/api@sha256:abc").is_ok());
+        assert!(image_ref("https://evil.example/x").is_err());
+        assert!(image_ref("--flag").is_err());
+        assert!(image_ref("storefront").is_err());
+        assert!(image_ref("us-docker.pkg.dev/acme/web/storefront:2.4.0; rm").is_err());
     }
 
     #[test]

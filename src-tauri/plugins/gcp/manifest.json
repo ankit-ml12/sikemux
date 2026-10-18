@@ -317,12 +317,14 @@
         ]
       },
       "method": "agentAct",
-      "description": "Change something, only when asked. revision: a Run revision or secret version; count: scale or resize; data: a message or BigQuery SQL (capped).",
+      "description": "Change something, only when asked. revision: Run revision or secret version; count: scale or resize; data: an image to deploy, a message or SQL.",
       "properties": {
         "action": {
           "type": "string",
           "enum": [
             "run_traffic",
+            "run_deploy",
+            "run_scale",
             "run_job",
             "vm_start",
             "vm_stop",
