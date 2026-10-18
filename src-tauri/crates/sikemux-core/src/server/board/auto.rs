@@ -17,7 +17,6 @@ use crate::server::connection::blocking;
 use crate::server::names::Starting;
 use crate::server::remote::unix_ms;
 use crate::server::spawn::Ending;
-use crate::server::workspace::own_launch;
 use crate::server::{chat, messages, Core};
 
 pub(super) const MAX_SLOTS: u32 = 8;
@@ -550,7 +549,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
                 },
                 core.running_agents(),
             );
-            own_launch(&core, &mut launch, &agent);
+            launch.agent_id = agent.clone();
             Ok((tree, launch, launcher, named.name))
         })
         .await
@@ -582,6 +581,15 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
     super::tell_window(core);
     let chat =
         chat::begin(core, launch, None, Some(launcher)).map_err(|error| error.to_string())?;
+    let worktree = json!({
+        "repo": tree.repo,
+        "path": tree.path,
+        "branch": tree.branch,
+        "base": tree.base,
+        "startSha": tree.start_sha,
+    });
+    let worktree = serde_json::Map::from_iter([("worktree".to_owned(), worktree)]);
+    let _ = core.workspaces.update_agent(agent, worktree);
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
     core.publish_device_view();
     chat::until_started(core, chat)
