@@ -664,6 +664,19 @@ export class ShowcaseBackend implements IpcTransport {
       },
     );
     this.onCore(["workspace"], constant(demoWorkspace()));
+    this.onCore(["startChat"], ({ params }) => {
+      const { agentId } = params as { agentId: string };
+      const agent = Object.values(AGENTS).find((candidate) => candidate.id === agentId);
+      this.startAgent(agentId, agent?.type ?? "claude");
+      return null;
+    });
+    this.onCore(["ports", "taskRuns", "trustAsks", "closedAgents", "agentSignIns"], constant([]));
+    this.onCore(["tasks"], ({ params }) => ({
+      project: (params as { project: string }).project,
+      configStatus: "absent",
+      trusted: true,
+      tasks: [],
+    }));
     this.on("core_call", ({ method, params }) =>
       this.coreMethods.get(method as string)?.({ method, params: params as Args }) ?? null,
     );

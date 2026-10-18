@@ -331,10 +331,13 @@ let notchRender: Promise<void> | null = null;
 
 // The island is SwiftUI, so its own snapshot tool draws it once per server, on a clear background,
 // sharp enough for a video to zoom right in on it, about the demo's own agents.
+// Pictures already drawn from the current fixture are kept, so a capture does not rebuild the island.
 function renderNotch(): Promise<void> {
+  const fixture = join(import.meta.dirname, "world/notch.fixture");
+  const drawn = join(NOTCH_DIR, "P1-permission.png");
+  if (existsSync(drawn) && statSync(drawn).mtimeMs > statSync(fixture).mtimeMs) return Promise.resolve();
   notchRender ??= new Promise((done, fail) => {
     const notchPackage = join(import.meta.dirname, "../src-tauri/notch");
-    const fixture = join(import.meta.dirname, "world/notch.fixture");
     spawn("swift", ["run", "--package-path", notchPackage, "notch-snapshots", NOTCH_DIR, "--bare", "--scale", "4", "--fixture", fixture], {
       stdio: "ignore",
     }).on("exit", (code) => {

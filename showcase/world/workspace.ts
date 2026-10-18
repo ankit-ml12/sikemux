@@ -349,7 +349,7 @@ function baseSnapshot(): PersistedSnapshot {
             { type: "pane", id: "t-ssh-gpu", cwd: SIKEMUX, kind: "terminal", title: "gpu-box", startup: "ssh gpu-box" },
             "t-ssh-gpu",
           ),
-          name: "ssh gpu-box",
+          customName: "ssh gpu-box",
         },
         {
           id: "w-sikemux-files",
