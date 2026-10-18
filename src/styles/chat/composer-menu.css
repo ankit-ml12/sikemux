@@ -1,11 +1,14 @@
 /* Stuck to the composer from above like the live stack: the same fill and border, stepped in narrower,
    ending on the composer's top border. */
-.chat-slash-menu {
+.chat-slash-dock {
     position: absolute;
     right: calc(var(--chat-step) - 1px);
     bottom: calc(100% + 1px);
     left: calc(var(--chat-step) - 1px);
     z-index: 2;
+}
+
+.chat-slash-menu {
     overflow: hidden;
     border: 1px solid var(--border);
     border-bottom: 0;

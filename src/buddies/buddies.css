@@ -225,6 +225,13 @@
 .composer-buddy:has(+ .chat-live-stack, + .chat-project-strip) {
     width: calc(min(100%, 820px) - var(--chat-step) * 2);
 }
+.chat-slash-dock > .composer-buddy {
+    width: 100%;
+}
+/* The menu over the composer carries its own peek, so the one beneath it stays out of sight. */
+.chat-composer-wrap:has(.chat-slash-dock) > .composer-buddy {
+    visibility: hidden;
+}
 .composer-buddy > .buddy {
     position: absolute;
     right: 20px;

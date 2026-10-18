@@ -112,6 +112,7 @@ export default function ComposerMenu({
     keys,
     onPick,
     onScope,
+    peek,
 }: {
     token: ComposerToken;
     agentId: string;
@@ -125,6 +126,8 @@ export default function ComposerMenu({
     keys: RefObject<MenuKeys | null>;
     onPick: (pick: MenuPick) => void;
     onScope: (trigger: ComposerTrigger) => void;
+    /** Shown peeking over the menu's top edge. */
+    peek?: ReactNode;
 }) {
     const { trigger, needle } = token;
     const slashCommands = useMemo(() => (trigger === "/" ? commandMatches(commands, needle) : []), [commands, trigger, needle]);
@@ -248,55 +251,58 @@ export default function ComposerMenu({
 
     return (
         menu && (
-            <div className={`chat-slash-menu ${menu.variant}`} role="listbox" aria-label={menu.label} aria-busy={menu.loading}>
-                <div className="chat-slash-heading">
-                    {trigger === "/" ? (
-                        <span>Session commands</span>
-                    ) : (
-                        <span className="chat-menu-scopes">
-                            {SCOPES.map((scope) => (
-                                <button
-                                    key={scope.trigger}
-                                    type="button"
-                                    aria-pressed={scope.trigger === trigger}
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={() => onScope(scope.trigger)}>
-                                    {menu.loading && scope.trigger === trigger ? (
-                                        <span className="chat-subagent-spinner" aria-hidden="true" />
-                                    ) : (
-                                        <kbd>{scope.trigger}</kbd>
-                                    )}
-                                    {scope.label}
-                                </button>
-                            ))}
-                        </span>
-                    )}
-                    <span>{menu.aside}</span>
-                </div>
-                {menu.loading &&
-                    rows.length === 0 &&
-                    LOADING_ROWS.map((width) => (
-                        <div key={width} className="chat-menu-loading" aria-hidden="true">
-                            <i />
-                            <i />
-                            <i style={{ width: `${width}%` }} />
-                        </div>
+            <div className="chat-slash-dock">
+                {peek}
+                <div className={`chat-slash-menu ${menu.variant}`} role="listbox" aria-label={menu.label} aria-busy={menu.loading}>
+                    <div className="chat-slash-heading">
+                        {trigger === "/" ? (
+                            <span>Session commands</span>
+                        ) : (
+                            <span className="chat-menu-scopes">
+                                {SCOPES.map((scope) => (
+                                    <button
+                                        key={scope.trigger}
+                                        type="button"
+                                        aria-pressed={scope.trigger === trigger}
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={() => onScope(scope.trigger)}>
+                                        {menu.loading && scope.trigger === trigger ? (
+                                            <span className="chat-subagent-spinner" aria-hidden="true" />
+                                        ) : (
+                                            <kbd>{scope.trigger}</kbd>
+                                        )}
+                                        {scope.label}
+                                    </button>
+                                ))}
+                            </span>
+                        )}
+                        <span>{menu.aside}</span>
+                    </div>
+                    {menu.loading &&
+                        rows.length === 0 &&
+                        LOADING_ROWS.map((width) => (
+                            <div key={width} className="chat-menu-loading" aria-hidden="true">
+                                <i />
+                                <i />
+                                <i style={{ width: `${width}%` }} />
+                            </div>
+                        ))}
+                    {!menu.loading && rows.length === 0 && menu.empty && <div className="chat-slash-empty">{menu.empty}</div>}
+                    {rows.map((row, index) => (
+                        <Fragment key={row.key}>
+                            {row.group && row.group !== rows[index - 1]?.group && <div className="chat-slash-group">{row.group}</div>}
+                            <button
+                                type="button"
+                                role="option"
+                                aria-selected={index === shown}
+                                className={index === shown ? "selected" : ""}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => onPick(row.pick)}>
+                                {row.content}
+                            </button>
+                        </Fragment>
                     ))}
-                {!menu.loading && rows.length === 0 && menu.empty && <div className="chat-slash-empty">{menu.empty}</div>}
-                {rows.map((row, index) => (
-                    <Fragment key={row.key}>
-                        {row.group && row.group !== rows[index - 1]?.group && <div className="chat-slash-group">{row.group}</div>}
-                        <button
-                            type="button"
-                            role="option"
-                            aria-selected={index === shown}
-                            className={index === shown ? "selected" : ""}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => onPick(row.pick)}>
-                            {row.content}
-                        </button>
-                    </Fragment>
-                ))}
+                </div>
             </div>
         )
     );

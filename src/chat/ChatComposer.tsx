@@ -37,6 +37,7 @@ import { ContextMark } from "./ContextChip";
 import { contextChip } from "./promptContext";
 import { mentionContext, useMates, type Mate } from "./agentMentions";
 import type { EarlierChat } from "./earlierChats";
+import { ComposerBuddy } from "../buddies/Buddy";
 import ComposerMenu, { type MenuKeys, type MenuPick } from "./ComposerMenu";
 import DictationPreview from "./DictationPreview";
 import DraftEditor, { type DraftBox, type DraftChip } from "./DraftEditor";
@@ -545,6 +546,7 @@ export function ChatComposer({
                     keys={menuKeys}
                     onPick={pick}
                     onScope={switchScope}
+                    peek={<ComposerBuddy agent={agent} />}
                 />
             )}
             <div className="chat-field">
