@@ -29,6 +29,60 @@ pub fn share_message(nonce: &str, key: &str) -> String {
     format!("sikemux-share|{nonce}|{key}")
 }
 
+/// What a Mac signs to watch a shared chat as the host's account.
+pub fn share_viewer_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-share-viewer|{nonce}|{key}")
+}
+
+/// One request a host makes to the accounts API as itself, signed in its
+/// `Authorization: SikemuxHost <key>.<time>.<signature>` header.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostRequest {
+    pub method: String,
+    /// The path and query exactly as sent, such as `/v1/devices?role=client`.
+    pub path: String,
+    /// Unix seconds.
+    pub time: u64,
+    /// The lowercase hex SHA-256 of the body; an empty body hashes the empty string.
+    pub body_sha256: String,
+}
+
+const HOST_REQUEST_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const MAX_HOST_REQUEST_PATH: usize = 2048;
+
+impl HostRequest {
+    pub fn message(&self) -> String {
+        format!(
+            "sikemux-host-request|{}|{}|{}|{}",
+            self.method, self.path, self.time, self.body_sha256
+        )
+    }
+
+    /// Accepts only an HTTP request to the API, so a request to sign one
+    /// cannot make the core sign any other text.
+    pub fn check(&self) -> Result<(), &'static str> {
+        if !HOST_REQUEST_METHODS.contains(&self.method.as_str()) {
+            return Err("the method is not one the accounts API takes");
+        }
+        let path_fits = self.path.starts_with("/v1/")
+            && self.path.len() <= MAX_HOST_REQUEST_PATH
+            && self.path.bytes().all(|b| b.is_ascii_graphic() && b != b'|');
+        if !path_fits {
+            return Err("the path is not an accounts API path");
+        }
+        let is_sha256 = self.body_sha256.len() == 64
+            && self
+                .body_sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !is_sha256 {
+            return Err("the body's hash is 64 lowercase hex characters");
+        }
+        Ok(())
+    }
+}
+
 /// Where the accounts API is. Dev builds talk to a server on this computer,
 /// or to `SIKEMUX_API_URL`.
 pub fn api_base() -> String {

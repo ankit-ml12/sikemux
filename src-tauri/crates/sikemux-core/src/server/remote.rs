@@ -497,6 +497,39 @@ impl Remote {
         Some((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
     }
 
+    /// The core's key and its signature over `request`, for calling the
+    /// accounts API as this host. The time must be close to now, so no
+    /// signature is made ahead for later use.
+    pub(super) fn sign_host_request(
+        &self,
+        request: &crate::accounts::HostRequest,
+    ) -> CoreResult<(String, String)> {
+        request.check().map_err(CoreError::from)?;
+        let now = unix_ms() / 1000;
+        if request.time.abs_diff(now) > HOST_REQUEST_SKEW_SECS {
+            return Err("the request's time is not now".into());
+        }
+        self.sign_with_key(|_| request.message())
+    }
+
+    /// The core's key and its signature over the shared chat viewer's text
+    /// for `nonce`, a share connection's challenge.
+    pub(super) fn sign_share_viewer(&self, nonce: &str) -> CoreResult<(String, String)> {
+        crate::accounts::check_live(nonce).map_err(CoreError::from)?;
+        self.sign_with_key(|key| crate::accounts::share_viewer_message(nonce, key))
+    }
+
+    fn sign_with_key(&self, message: impl FnOnce(&str) -> String) -> CoreResult<(String, String)> {
+        let inner = self.lock();
+        let secret = inner
+            .secret
+            .as_ref()
+            .ok_or_else(|| CoreError::from("the core's key has not loaded"))?;
+        let key = secret.public().to_string();
+        let message = message(&key);
+        Ok((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
+    }
+
     /// The accounts API, while the host is signed in to an account there.
     pub(super) fn signed_in_api(&self) -> Option<String> {
         let inner = self.lock();
