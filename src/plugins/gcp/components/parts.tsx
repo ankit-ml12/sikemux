@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
 import { formatAgo } from "../../../plugin-api/format";
 import { invalidate, type ResourceHandle } from "../../../plugin-api/resources";
@@ -381,4 +381,13 @@ export function took(start: string | null | undefined, end: string | null | unde
     if (seconds < 60) return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);
     return minutes < 60 ? `${minutes}m ${seconds % 60}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/** Reads a resource again every few seconds while something in it is still on its way. */
+export function usePollWhile(active: boolean, underway: boolean, refresh: () => unknown, everyMs = 4000) {
+    useEffect(() => {
+        if (!active || !underway) return;
+        const timer = window.setInterval(() => void refresh(), everyMs);
+        return () => window.clearInterval(timer);
+    }, [active, underway, refresh, everyMs]);
 }

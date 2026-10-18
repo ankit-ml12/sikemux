@@ -7,7 +7,23 @@ import { buildR, buildsR, triggersR } from "../resources";
 import { splitOpen, updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { Filter } from "./RunPage";
-import { ago, Button, consoleUrl, Copyable, Facts, keyOf, Loaded, PageHeader, Status, Table, Tabs, took, useAction, visit } from "./parts";
+import {
+    ago,
+    Button,
+    consoleUrl,
+    Copyable,
+    Facts,
+    keyOf,
+    Loaded,
+    PageHeader,
+    Status,
+    Table,
+    Tabs,
+    took,
+    useAction,
+    usePollWhile,
+    visit,
+} from "./parts";
 
 const LISTS = [
     { value: "history", label: "History" },
@@ -82,6 +98,7 @@ export function BuildPage({ paneId, active, target }: ProductProps) {
 
 function History({ active, target, filter, onOpen }: { active: boolean; target: Target; filter: string; onOpen: (build: Build) => void }) {
     const builds = useResourceEnabled(active, buildsR, ...keyOf(target));
+    usePollWhile(active, builds.data?.some((build) => underway(build.status)) ?? false, builds.refresh);
     const words = filter.trim().toLowerCase();
     return (
         <Loaded handle={builds} label="builds" empty={(rows) => (rows.length === 0 ? "No builds in this project yet." : null)}>
@@ -130,6 +147,7 @@ function BuildDetails({
     onOpen: (build: Build) => void;
 }) {
     const build = useResourceEnabled(active, buildR, ...keyOf(target), id, region);
+    usePollWhile(active, build.data ? underway(build.data.status) : false, build.refresh);
     const action = useAction();
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const detail = build.data;

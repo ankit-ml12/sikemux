@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({}) as ReturnType<typeof import("../testing").mockApi>);
@@ -102,5 +102,23 @@ describe("Cloud Build", () => {
         fireEvent.click(await screen.findByRole("button", { name: "Run" }));
         await waitFor(() => expect(api.triggerRun).toHaveBeenCalledWith(target, "t1", "release"));
         expect(host.prompt).toHaveBeenCalledWith(expect.objectContaining({ initial: "main" }));
+    });
+
+    it("reads a running build again until it finishes", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+            api.build
+                .mockResolvedValueOnce({ ...detail, status: "WORKING", log: ["Step #0: installing"] })
+                .mockResolvedValue({ ...detail, status: "SUCCESS", log: ["Step #0: installing", "DONE"] });
+            renderPage();
+            fireEvent.click(await screen.findByRole("row", { name: /b1f2c3d4/ }));
+            expect(await screen.findByText(/installing/)).toBeInTheDocument();
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(4500);
+            });
+            expect(await screen.findByText(/DONE/)).toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
