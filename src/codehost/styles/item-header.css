@@ -136,3 +136,6 @@
 .gha-patch-line.ctx {
     color: var(--text-tertiary);
 }
+.pr-headline-top > .status-mark {
+    --mark-lift: -0.03em;
+}
