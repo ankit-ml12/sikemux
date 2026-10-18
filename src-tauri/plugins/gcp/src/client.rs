@@ -130,7 +130,21 @@ async fn request(
     query: &[(&str, String)],
     body: Option<&Value>,
 ) -> GcpResult<(u16, Vec<u8>)> {
+    request_range(token, method, url, query, body, None).await
+}
+
+async fn request_range(
+    token: &str,
+    method: Method,
+    url: &str,
+    query: &[(&str, String)],
+    body: Option<&Value>,
+    range: Option<u64>,
+) -> GcpResult<(u16, Vec<u8>)> {
     let mut builder = http()?.request(method, url).bearer_auth(token).query(query);
+    if let Some(last) = range {
+        builder = builder.header("Range", format!("bytes=0-{last}"));
+    }
     if let Some(body) = body {
         builder = builder.json(body);
     }
@@ -186,6 +200,36 @@ pub async fn patch(
     body: &Value,
 ) -> GcpResult<Value> {
     send(target, Method::PATCH, url, query, Some(body)).await
+}
+
+/// Calls Google for raw bytes, such as an object's contents, the first `limit` of them when there is one.
+pub async fn bytes(
+    target: &Target,
+    url: &str,
+    query: &[(&str, String)],
+    limit: Option<u64>,
+) -> GcpResult<Vec<u8>> {
+    let account = target.account();
+    let token = auth::token(account).await?;
+    let range = limit.map(|limit| limit.saturating_sub(1));
+    let (status, bytes) = request_range(&token, Method::GET, url, query, None, range).await?;
+    if (200..300).contains(&status) {
+        return Ok(bytes);
+    }
+    parse(status, &bytes).map(|_| Vec::new())
+}
+
+/// A value as one percent-encoded part of an address, for names that may hold slashes and spaces.
+pub fn encoded(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 /// Every item of a listing under `key`, following `nextPageToken` up to `limit` items.
@@ -266,5 +310,9 @@ mod tests {
         assert!(segment("project", "..").is_err());
         assert!(segment("project", "").is_err());
         assert_eq!(short("projects/p/locations/us/services/api"), "api");
+        assert_eq!(
+            encoded("logs/2024 10/app.log"),
+            "logs%2F2024%2010%2Fapp.log"
+        );
     }
 }

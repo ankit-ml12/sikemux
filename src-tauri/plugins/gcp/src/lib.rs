@@ -9,6 +9,7 @@
 //   logging  — searching and following a project's logs
 //   compute  — Compute Engine VMs, their power, serial output and SSH
 //   gke      — GKE clusters, node pools, workloads, pods, services and pod logs
+//   storage  — Cloud Storage buckets, folders, previews and downloads
 
 mod auth;
 mod client;
@@ -19,6 +20,7 @@ mod gke;
 mod logging;
 mod projects;
 mod run;
+mod storage;
 
 use std::sync::Arc;
 
@@ -94,6 +96,10 @@ impl Plugin for Gcp {
                     .await
                 }
                 "deploymentScale" => answer(gke::scale(params(input)?)).await,
+                "buckets" => answer(storage::buckets(params(input)?)).await,
+                "objects" => answer(storage::objects(params(input)?)).await,
+                "objectPreview" => answer(storage::preview(params(input)?)).await,
+                "objectDownload" => answer(storage::download(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
