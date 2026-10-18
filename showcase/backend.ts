@@ -226,6 +226,7 @@ export class ShowcaseBackend implements IpcTransport {
     Set<IpcEventListener<unknown>>
   >();
   private readonly handlers = new Map<string, Handler>();
+  private readonly coreMethods = new Map<string, Handler>();
   private readonly outputs = new Map<string, PtyOutput>();
   private sequence = 0;
 
@@ -259,6 +260,11 @@ export class ShowcaseBackend implements IpcTransport {
 
   on(command: string, handler: Handler): void {
     this.handlers.set(command, handler);
+  }
+
+  /** Answers the core methods named, which the page calls through `core_call`. */
+  onCore(methods: string[], handler: Handler): void {
+    for (const method of methods) this.coreMethods.set(method, handler);
   }
 
   terminalOutput(paneId: string): PtyOutput | undefined {
@@ -305,7 +311,6 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("cli_frontend_ready", constant([]));
     this.on("take_deep_links", constant([]));
     this.on("harness_claim", constant([]));
-    this.on("git_worktree_list", constant([]));
     this.on("agent_sessions_watch_start", constant(1));
     this.on("lsp_locations", constant([]));
     this.on("lsp_document_symbols", constant([]));
@@ -349,8 +354,6 @@ export class ShowcaseBackend implements IpcTransport {
       "plugin_set_disabled",
       "set_window_blur",
       "state_save",
-      "repo_watch_start",
-      "repo_watch_stop",
       "path_kinds",
       "activity_turn_started",
       "activity_turn_ended",
@@ -421,15 +424,18 @@ export class ShowcaseBackend implements IpcTransport {
     }));
     const projectAt = (repo: unknown) =>
       DEMO_PROJECTS.find((candidate) => candidate.path === repo)?.name;
+    const git = (method: string, handler: Handler) =>
+      this.onCore([`git.${method}`], ({ params }) => handler(params as Args));
+    git("worktrees", constant([]));
     // Commits are the real repository's; the working tree and the index are the demo's.
     const isCommit = (rev: unknown) =>
       typeof rev === "string" && rev !== "HEAD" && !rev.startsWith(":");
-    this.on("git_file_at", async ({ repo, rev, path }) =>
+    git("fileAt", async ({ repo, rev, path }) =>
       isCommit(rev)
         ? server("file_at", { project: projectAt(repo), rev, path })
         : server("read_file", { path: `${repo}/${path}` }).catch(() => ""),
     );
-    this.on("git_file_diff", ({ repo, path, baseRev, headRev, full }) =>
+    git("fileDiff", ({ repo, path, baseRev, headRev, full }) =>
       isCommit(headRev)
         ? server("file_diff", {
             project: projectAt(repo),
@@ -440,9 +446,9 @@ export class ShowcaseBackend implements IpcTransport {
           })
         : (FILE_DIFFS[path as string] ?? []),
     );
-    this.on("git_blame", constant({ commits: [], lines: [] }));
+    git("blame", constant({ commits: [], lines: [] }));
 
-    this.on("git_overview", async ({ repo }) => {
+    git("overview", async ({ repo }) => {
       const project = DEMO_PROJECTS.find(
         (candidate) => candidate.path === repo,
       );
@@ -465,30 +471,30 @@ export class ShowcaseBackend implements IpcTransport {
       };
       return overview;
     });
-    this.on("git_commit_owners", ({ commits }) =>
+    this.onCore(["commitOwners"], ({ params }) =>
       Object.fromEntries(
-        (commits as string[]).flatMap((hash) => {
+        (params as { commits: string[] }).commits.flatMap((hash) => {
           const owners = commitOwners.get(hash);
           return owners ? [[hash, owners]] : [];
         }),
       ),
     );
-    this.on("git_status", ({ repo }) => GIT_STATUS[repo as string]);
-    this.on(
-      "git_remotes",
+    git("status", ({ repo }) => GIT_STATUS[repo as string]);
+    git(
+      "remotes",
       constant([
         { name: "origin", url: "git@github.com:nodelike/sikemux.git" },
       ]),
     );
-    this.on("git_stash_list", constant([]));
-    this.on("git_commit_files", async ({ repo, rev }) => {
+    git("stashList", constant([]));
+    git("commitFiles", async ({ repo, rev }) => {
       const project = DEMO_PROJECTS.find(
         (candidate) => candidate.path === repo,
       );
       if (!project) return [];
       return server<string[]>("commit_files", { project: project.name, rev });
     });
-    this.on("git_compare", async ({ repo }) => {
+    git("compare", async ({ repo }) => {
       const project = DEMO_PROJECTS.find(
         (candidate) => candidate.path === repo,
       );
@@ -512,7 +518,7 @@ export class ShowcaseBackend implements IpcTransport {
         commits,
       };
     });
-    this.on("git_remote_branches", ({ repo, remote }) =>
+    git("remoteBranches", ({ repo, remote }) =>
       (BRANCHES[repo as string] ?? ["main"]).map((name) => ({
         name,
         full_ref: `${remote}/${name}`,
@@ -562,7 +568,7 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("agent_recent_sessions", ({ request }) =>
       recentPage(request as RecentRequest),
     );
-    this.on("agent_accounts_call", ({ method, params }) => {
+    this.onCore(["agentUsage", "agentAccountStatus"], ({ method, params }) => {
       const { provider, configPath } = (params ?? {}) as Args;
       const account = OTHER_ACCOUNTS[String(configPath).split("/").pop() ?? ""];
       if (method === "agentUsage") {
@@ -616,7 +622,7 @@ export class ShowcaseBackend implements IpcTransport {
         parent: null,
       };
     });
-    this.on("inbox_call", ({ method, params }) => {
+    this.onCore(["inbox", "agentMessages"], ({ method, params }) => {
       if (method === "agentMessages")
         return {
           project: (params as { project: string }).project,
@@ -632,18 +638,12 @@ export class ShowcaseBackend implements IpcTransport {
         order: [],
       };
     });
-    this.on("agent_board_call", ({ method, params }) => {
-      const { id, status } = (params ?? {}) as {
-        id?: number;
-        status?: BoardCard["status"];
-      };
-      if (method === "boards") return [this.board];
-      if (method === "boardUpdate" && id !== undefined)
-        this.changeCard({ id, ...(status ? { status } : {}) });
-      if (method === "boardSettings")
-        this.board = {
-          ...this.board,
-          settings: { ...this.board.settings, ...(params as object) },
+    this.onCore(
+      ["boards", "board", "boardAdd", "boardUpdate", "boardRemove", "boardSettings", "boardRetry"],
+      ({ method, params }) => {
+        const { id, status } = (params ?? {}) as {
+          id?: number;
+          status?: BoardCard["status"];
         };
       if (method === "boardRemove")
         this.board = {
