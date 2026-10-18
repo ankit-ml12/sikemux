@@ -77,55 +77,74 @@
     font-size: var(--text-2xs);
 }
 .gha-graph-stages {
-    display: flex;
-    align-items: center;
+    min-height: 68px;
     padding: var(--space-4) var(--space-3);
     overflow-x: auto;
 }
-.gha-graph-stage {
+.gha-graph-canvas {
     position: relative;
+    isolation: isolate;
+    width: max-content;
+}
+.gha-graph-edges {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    overflow: visible;
+    pointer-events: none;
+}
+.gha-graph-edges path {
+    fill: none;
+    stroke: var(--tree-spine);
+    stroke-width: 1;
+}
+.gha-graph-edges circle {
+    fill: var(--tree-spine);
+}
+.gha-graph-columns {
+    display: flex;
+    align-items: flex-start;
+    gap: calc(var(--space-6) * 2);
+}
+.gha-graph-stage {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-3);
     flex: 0 0 auto;
 }
-.gha-graph-stage:not([data-first="1"]) {
-    padding-left: var(--space-6);
-}
-.gha-graph-stage:not([data-first="1"])::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 0;
-    width: var(--space-6);
-    height: 1px;
-    background: var(--border-strong);
+.gha-graph-stage > .gha-graph-job,
+.gha-graph-group:not([data-called="1"]) {
+    width: 240px;
 }
 .gha-graph-group {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    min-width: 200px;
-    max-width: 280px;
-}
-.gha-graph-group[data-titled="1"] {
-    padding: var(--space-2);
+    padding: var(--space-1h) var(--space-2) var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     background: var(--gha-tint);
 }
+.gha-graph-group[data-called="1"] > .gha-graph-columns {
+    gap: var(--space-6);
+}
 .gha-graph-group-title {
-    padding: 0 var(--space-1) var(--space-1);
+    padding: 0 var(--space-0) var(--space-0);
     font-size: var(--text-2xs);
-    color: var(--text-tertiary);
+    font-weight: var(--weight-medium);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .gha-graph-job {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    min-width: 0;
     height: 28px;
     padding: 0 var(--space-2);
     border: 1px solid var(--border);
@@ -141,18 +160,42 @@
         border-color var(--dur-1) linear,
         color var(--dur-1) linear;
 }
-.gha-graph-job:hover {
-    background: var(--surface-hover);
+.gha-graph-group[data-called="1"] .gha-graph-job {
+    width: 220px;
+}
+.gha-graph-job[data-idle="1"] {
+    color: var(--text-tertiary);
+    cursor: default;
+}
+button.gha-graph-job:hover {
+    background: linear-gradient(var(--surface-hover) 0 0), var(--gha-tint);
     border-color: var(--border-strong);
     color: var(--text-primary);
 }
 .gha-graph-job[data-on="1"] {
-    background: var(--surface-chosen);
+    background: linear-gradient(var(--surface-chosen) 0 0), var(--gha-tint);
     color: var(--text-primary);
 }
 .gha-graph-job:focus-visible {
     box-shadow: var(--focus-ring);
     outline: none;
+}
+.gha-graph-mark {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--text-tertiary);
+}
+.gha-graph-mark[data-outcome="success"] {
+    color: var(--live);
+}
+.gha-graph-mark[data-outcome="failure"] {
+    color: var(--danger);
+}
+.gha-graph-mark-inner {
+    stroke: var(--on-accent);
 }
 .gha-graph-job-took {
     flex: 0 0 auto;

@@ -425,9 +425,11 @@ function RunSummary({
                 </div>
             )}
             <JobGraph
+                repo={repo}
                 run={run}
                 jobs={open.jobs}
                 now={open.now}
+                active={active}
                 openJob={openJob}
                 onOpen={pick}
                 fileShown={showFile}

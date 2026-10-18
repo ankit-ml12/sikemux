@@ -1,4 +1,6 @@
 import type { Job, LogLine, Step } from "./api";
+import { outcomeOf } from "./runStatus";
+import { calledPath, type WorkflowJob } from "./workflowJobs";
 
 /** Jobs from one called workflow, which GitHub names `Caller / Job` and draws in one box. */
 export interface JobGroup {
@@ -34,18 +36,28 @@ interface Unit {
     order: number;
 }
 
+interface Named {
+    job: Job;
+    name: string;
+}
+
 /**
- * GitHub does not say which job waited for which, so the stages are read off
- * the clock: a group that only started once everything before it had finished
- * was waiting on it. Jobs that have not started yet come last.
+ * The list of jobs does not say which job waited for which, so without the
+ * workflow file the stages are read off the clock: a group that only started
+ * once everything before it had finished was waiting on it. Jobs that have not
+ * started yet come last.
  */
 export function stagesOf(jobs: readonly Job[]): Stage[] {
+    return stagesOfNamed(jobs.map((job) => ({ job, name: job.name })));
+}
+
+function stagesOfNamed(named: readonly Named[]): Stage[] {
     const units = new Map<string, Unit>();
-    jobs.forEach((job, order) => {
-        const { group, label } = splitName(job.name);
+    named.forEach(({ job, name }, order) => {
+        const { group, label } = splitName(name);
         const key = group ?? `job:${job.id}`;
         const unit = units.get(key) ?? { group: { key, title: group, jobs: [] }, start: null, end: null, order };
-        unit.group.jobs.push({ job, label: group ? label : job.name });
+        unit.group.jobs.push({ job, label: group ? label : name });
         const start = time(job.startedAt);
         const end = time(job.completedAt);
         if (start !== null) unit.start = unit.start === null ? start : Math.min(unit.start, start);
@@ -154,6 +166,14 @@ function columnsOf(nodes: readonly GraphNode[]): Graph {
 function byClock(named: readonly Named[], prefix: string): Graph {
     let before: string[] = [];
     return stagesOfNamed(named).map((stage) => {
+        const column = stage.map((group): GraphNode => ({
+            id: prefix + group.key,
+            title: group.title,
+            jobs: group.jobs,
+            inner: null,
+            needs: before,
+            skipped: false,
+        }));
         before = column.map((node) => node.id);
         return column;
     });
@@ -201,6 +221,7 @@ function fromFile(named: readonly Named[], declared: readonly WorkflowJob[], fil
     return columnsOf(nodes);
 }
 
+/**
  * The run's jobs laid out as GitHub draws them, by what each one `needs` in the
  * workflow file at `path`, with a called workflow's jobs inside the job that
  * called it. Without the file, or with a job it does not declare, it falls back
