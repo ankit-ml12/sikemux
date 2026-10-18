@@ -16,7 +16,8 @@ import { useStore } from "../state/store";
 import type { AgentType } from "../state/types";
 import { AgentIcon, IconFolder } from "../ui/Icons";
 import { SettingsPage, SettingsSection } from "../settings/SettingsLayout";
-import { setPriceOverride, usePriceOverrides } from "./priceOverrides";
+import { onCoreChanged } from "../api/coreChanged";
+import { swallow } from "../state/toast";
 import "../styles/activity.css";
 
 type Metric = "agentMs" | "sessions" | "tokens" | "commits" | "costUsd";
@@ -69,18 +70,21 @@ function metricText(metric: Metric, value: number): string {
 export function useActivitySummary(project?: string): { summary: ActivitySummary | null; failed: boolean } {
     const [summary, setSummary] = useState<ActivitySummary | null>(null);
     const [failed, setFailed] = useState(false);
-    const prices = usePriceOverrides();
 
     useEffect(() => {
         let live = true;
-        activityApi
-            .summary(project, prices)
-            .then((next) => live && setSummary(next))
-            .catch(() => live && setFailed(true));
+        const read = () =>
+            activityApi
+                .summary(project)
+                .then((next) => live && setSummary(next))
+                .catch(() => live && setFailed(true));
+        void read();
+        const stop = onCoreChanged("activity", () => void read());
         return () => {
             live = false;
+            stop();
         };
-    }, [project, prices]);
+    }, [project]);
 
     return { summary, failed };
 }
@@ -112,7 +116,7 @@ export function ActivityPage() {
                 <Calendar days={summary?.days ?? NO_DAYS} loaded={!!summary} metric={metric} onMetric={setMetric} />
             </SettingsSection>
             <SettingsSection title="By model">
-                <ModelList models={summary?.models} />
+                <ModelList models={summary?.models} prices={summary?.pricing.overrides} />
             </SettingsSection>
             <SettingsSection title="By agent">
                 <ShareList shares={summary?.agents} kind="agent" metric={metric} />
@@ -331,8 +335,7 @@ function percent(part: number, whole: number): number {
     return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }
 
-function ModelList({ models }: { models?: ActivityModel[] }) {
-    const prices = usePriceOverrides();
+function ModelList({ models, prices = {} }: { models?: ActivityModel[]; prices?: Record<string, PriceOverride> }) {
     const [editing, setEditing] = useState<string | null>(null);
     if (!models) return null;
     if (models.length === 0) return <div className="settings-empty">Nothing recorded yet.</div>;
@@ -400,12 +403,14 @@ function PriceForm({ model, price, onDone }: { model: string; price?: PriceOverr
     });
     const save = () => {
         if (!valid) return;
-        setPriceOverride(model, {
-            input: parsed("input")!,
-            output: parsed("output")!,
-            cacheRead: parsed("cacheRead"),
-            cacheWrite: parsed("cacheWrite"),
-        });
+        void activityApi
+            .setPrice(model, {
+                input: parsed("input")!,
+                output: parsed("output")!,
+                cacheRead: parsed("cacheRead"),
+                cacheWrite: parsed("cacheWrite"),
+            })
+            .catch(swallow("save the price"));
         onDone();
     };
     return (
@@ -436,7 +441,7 @@ function PriceForm({ model, price, onDone }: { model: string; price?: PriceOverr
                         type="button"
                         className="settings-btn"
                         onClick={() => {
-                            setPriceOverride(model, null);
+                            void activityApi.setPrice(model, null).catch(swallow("save the price"));
                             onDone();
                         }}>
                         Use published price

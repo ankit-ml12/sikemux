@@ -1542,6 +1542,7 @@ fn start(
         core.name_agent(&agent_id, &cwd, Some(&provider), resume_id.as_deref());
     });
     core.seen.active(chat.agent_id());
+    super::activity_log::chat_launched(core, &chat.launch);
     chat.keep(kept::Progress::STARTING);
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);

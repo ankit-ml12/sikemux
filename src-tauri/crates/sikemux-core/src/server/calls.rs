@@ -32,7 +32,8 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "markAgentSignedOut" | "addProject" | "removeProject" | "updateProject"
         | "moveProject" | "setSpaces" | "setPinnedChats" | "setAgentDefaults" | "createAgent"
         | "updateAgent" | "closeAgents" => Needs::Person,
-        "changeOwners" | "commitOwners" => Needs::Watch,
+        "changeOwners" | "commitOwners" | "activitySummary" => Needs::Watch,
+        "setActivityPrice" => Needs::Person,
         method if method.starts_with("git.") => super::git::needs(method),
         _ => Needs::Local,
     }
@@ -59,6 +60,7 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "commitOwners"
             | "inbox"
             | "digest"
+            | "activitySummary"
             | "pairing"
             | "shares"
             | "agentAccounts"
@@ -82,6 +84,13 @@ pub(crate) async fn call(
         "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
         "stopChatIfIdle" => answer(stop_chat_if_idle(&core, parse(params)?)),
+        "activitySummary" => answer(activity_summary(&core, parse(params)?).await?),
+        "setActivityPrice" => {
+            let params: ActivityPriceParams = parse(params)?;
+            core.activity_log.set_price(&params.model, params.price)?;
+            core.changes.changed("activity", None, None);
+            answer(())
+        }
         "steerQueued" => {
             let params: QueuedParams = parse(params)?;
             answer(super::chat::queue::steer(&core, &params.agent_id, params.ids, params.message).await?)
@@ -150,6 +159,31 @@ pub(crate) async fn call(
             let params: ProjectParams = parse(params)?;
             answer(super::ports::project_ports(&core, params.project).await?)
         }
+        "projectConfig" => {
+            let params: ProjectParams = parse(params)?;
+            answer(super::tasks::project_config(&core, params.project).await?)
+        }
+        "trustProject" => {
+            let params: TrustProjectParams = parse(params)?;
+            answer(super::tasks::trust_project(&core, params.project, params.fingerprint).await?)
+        }
+        "tasks" => {
+            let params: ProjectParams = parse(params)?;
+            answer(super::tasks::list(&core, params.project).await?)
+        }
+        "taskRuns" => answer(super::tasks::runs(&core)),
+        "taskStart" => answer(super::tasks::start(&core, parse(params)?).await?),
+        "taskRerunFailed" => answer(super::tasks::rerun_failed(&core, parse(params)?).await?),
+        "taskStop" => {
+            let params: RunParams = parse(params)?;
+            super::harness::stop_run(&core, &params.execution_id).await?;
+            answer(())
+        }
+        "answerTaskTrust" => {
+            let params: TaskTrustParams = parse(params)?;
+            answer(super::tasks::answer_trust(&core, &params.execution_id, params.trust)?)
+        }
+        "addTask" => answer(super::tasks::add(&core, parse(params)?).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => {
             only_window(&core, client)?;
@@ -194,6 +228,25 @@ fn answer(result: impl Serialize) -> CoreResult<Value> {
 #[derive(Deserialize)]
 struct ProjectParams {
     project: String,
+}
+
+#[derive(Deserialize)]
+struct TrustProjectParams {
+    project: String,
+    fingerprint: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunParams {
+    execution_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskTrustParams {
+    execution_id: String,
+    trust: bool,
 }
 
 #[derive(Deserialize)]
@@ -295,6 +348,33 @@ struct NamedAgent {
     named: AgentName,
     #[serde(skip_serializing_if = "Option::is_none")]
     buddy: Option<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivitySummaryParams {
+    /// Minutes the person's clock is ahead of UTC, which places each event on their own day.
+    utc_offset_minutes: i64,
+    project: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ActivityPriceParams {
+    model: String,
+    price: Option<super::activity_log::PriceOverride>,
+}
+
+async fn activity_summary(
+    core: &Arc<Core>,
+    params: ActivitySummaryParams,
+) -> CoreResult<super::activity_log::ActivitySummary> {
+    let core = core.clone();
+    blocking(move || {
+        Ok(core
+            .activity_log
+            .summary(params.utc_offset_minutes * 60_000, params.project.as_deref()))
+    })
+    .await
 }
 
 /// Messages waiting behind an agent's turn, by id.
@@ -451,6 +531,8 @@ async fn commit_staged(core: &Arc<Core>, params: CommitParams) -> CoreResult<Str
         let output = edits::footer::commit(&core, &params.dir, &[], &params.message, None)?;
         let said = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
         if output.status.success() {
+            core.activity_log
+                .record_commit(&params.dir.to_string_lossy());
             Ok(said(&output.stdout))
         } else if output.stderr.trim_ascii().is_empty() {
             Err(said(&output.stdout).into())

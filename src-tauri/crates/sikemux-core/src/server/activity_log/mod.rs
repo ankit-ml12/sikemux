@@ -1,39 +1,345 @@
+//! What agents did on this host, for the Activity page: the sessions they
+//! opened, the turns they ran, the commits made and the tokens their
+//! transcripts report, kept in one database in the core's data folder and
+//! priced from the model feed and the person's own prices.
+
 mod pricing;
 
-use crate::agents::{session_transcript_path, AgentKind};
-use pricing::{PriceOverride, Prices, PricingInfo};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::async_runtime::spawn_blocking;
+
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::acp::account::directory_variable;
+use crate::agent_catalog::AgentKind;
+use crate::launch::model_feed::Feed;
+pub(crate) use pricing::PriceOverride;
+use pricing::{Prices, PricingInfo};
+
+use super::transcript::{self, Cli};
+use super::Core;
 
 const DAY_MS: i64 = 86_400_000;
 const HEATMAP_DAYS: i64 = 371;
 const MAX_TRANSCRIPT_READ: u64 = 64 * 1024 * 1024;
 const MAX_TURN_COMMITS: usize = 500;
 const GIT_TIMEOUT: Duration = Duration::from_secs(5);
+const DATABASE: &str = "activity.sqlite3";
+const PRICES: &str = "activity-prices.json";
 
-fn database_path() -> Option<PathBuf> {
-    let filename = if cfg!(debug_assertions) {
-        "activity.dev.sqlite3"
-    } else {
-        "activity.sqlite3"
-    };
-    Some(crate::state::state_path()?.with_file_name(filename))
+/// Where an agent works and the transcript its CLI writes, as the core knows
+/// them when a turn begins or ends.
+pub(crate) struct Place {
+    pub agent: String,
+    pub cwd: String,
+    pub transcript: Option<Transcript>,
 }
 
-fn database() -> MutexGuard<'static, Option<Connection>> {
-    static DATABASE: OnceLock<Mutex<Option<Connection>>> = OnceLock::new();
-    DATABASE
-        .get_or_init(|| Mutex::new(None))
+pub(crate) struct Transcript {
+    pub kind: AgentKind,
+    pub session: String,
+    pub path: PathBuf,
+}
+
+/// Where the agent `agent_id` works and the transcript its CLI writes, for a
+/// chat or an agent in a terminal.
+pub(crate) fn place(core: &Core, agent_id: &str) -> Option<Place> {
+    if let Some(chat) = core.chats.get(agent_id) {
+        let launch = chat.current_launch();
+        let home = directory_variable(&launch.provider)
+            .and_then(|variable| launch.env.get(variable))
+            .map(PathBuf::from);
+        let session = chat.feed.start().map(|start| start.session_id);
+        return Some(Place {
+            transcript: transcript_of(&launch.provider, session, home.as_deref()),
+            cwd: launch.cwd.to_string_lossy().into_owned(),
+            agent: launch.provider,
+        });
+    }
+    let session = core.agent_session(agent_id)?;
+    let owner = session.owner();
+    let agent = owner.agent_type.clone()?;
+    Some(Place {
+        transcript: transcript_of(
+            &agent,
+            core.names.session_of(agent_id),
+            owner.account_home.as_deref(),
+        ),
+        cwd: owner.project.clone()?,
+        agent,
+    })
+}
+
+pub(crate) fn transcript_of(agent: &str, session: Option<String>, home: Option<&Path>) -> Option<Transcript> {
+    let session = session?;
+    let cli = Cli::of(agent)?;
+    let path = transcript::locate(cli, home, &session)?;
+    let kind = match cli {
+        Cli::Claude => AgentKind::Claude,
+        Cli::Codex => AgentKind::Codex,
+    };
+    Some(Transcript { kind, session, path })
+}
+
+pub(crate) fn chat_launched(core: &Core, launch: &crate::protocol::ChatLaunch) {
+    let home = directory_variable(&launch.provider)
+        .and_then(|variable| launch.env.get(variable))
+        .map(PathBuf::from);
+    let place = Place {
+        agent: launch.provider.clone(),
+        cwd: launch.cwd.to_string_lossy().into_owned(),
+        transcript: transcript_of(&launch.provider, launch.resume_id.clone(), home.as_deref()),
+    };
+    core.activity_log.launched(place, "chat", launch.resume_id.is_some());
+}
+
+/// For an agent a terminal starts, the session its command resumes, if any.
+pub(crate) fn resumed_by(spawn: &crate::protocol::TerminalSpawn) -> Option<Option<String>> {
+    let command = spawn.direct_command.as_ref()?;
+    let agent = spawn.context.as_ref()?.agent_type.as_deref()?;
+    Some(resumed_session_in_args(agent, &command.args).map(str::to_owned))
+}
+
+pub(crate) fn terminal_launched(core: &Core, owner: &super::prepare::Owner, resumed: Option<String>) {
+    let (Some(agent), Some(project)) = (&owner.agent_type, &owner.project) else {
+        return;
+    };
+    let place = Place {
+        agent: agent.clone(),
+        cwd: project.clone(),
+        transcript: transcript_of(agent, resumed.clone(), owner.account_home.as_deref()),
+    };
+    core.activity_log.launched(place, "terminal", resumed.is_some());
+}
+
+/// Work on the database and git, off the threads that serve clients.
+fn in_background(work: impl FnOnce() + Send + 'static) {
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn_blocking(work);
+    }
+}
+
+struct OpenTurn {
+    started_ms: i64,
+    head: Option<String>,
+}
+
+pub(crate) struct ActivityLog {
+    path: Option<PathBuf>,
+    prices_path: Option<PathBuf>,
+    database: Mutex<Option<Connection>>,
+    turns: Mutex<HashMap<String, OpenTurn>>,
+    feed: Option<Feed>,
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The database the app kept before the core did, moved over once.
+fn take_over_app_database(path: &Path) {
+    let Some(old) = sikemux_process::paths::config_file("activity", "sqlite3") else {
+        return;
+    };
+    if path.exists() || !old.exists() {
+        return;
+    }
+    for suffix in ["", "-wal", "-shm"] {
+        let from = PathBuf::from(format!("{}{suffix}", old.display()));
+        if from.exists() {
+            let _ = fs::rename(&from, format!("{}{suffix}", path.display()));
+        }
+    }
+}
+
+impl ActivityLog {
+    pub(crate) fn new(data_dir: Option<&Path>) -> Self {
+        let path = data_dir.map(|dir| dir.join(DATABASE));
+        if let Some(path) = &path {
+            take_over_app_database(path);
+        }
+        Self {
+            path,
+            prices_path: data_dir.map(|dir| dir.join(PRICES)),
+            database: Mutex::new(None),
+            turns: Mutex::new(HashMap::new()),
+            feed: data_dir.map(Feed::new),
+        }
+    }
+
+    /// Runs `work` against the database. Activity is a record, never a
+    /// reason for the action it describes to fail, so errors are dropped here.
+    fn with_database<T>(&self, work: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> Option<T> {
+        let path = self.path.as_ref()?;
+        let mut cache = lock(&self.database);
+        if cache.is_none() {
+            *cache = Some(open(path).ok()?);
+        }
+        let result = work(cache.as_ref()?);
+        if result.is_err() {
+            *cache = None;
+        }
+        result.ok()
+    }
+
+    /// An agent opened a session, `resumed` when it loaded one. A loaded
+    /// session's transcript already holds turns from before it came here, so
+    /// only what is written from now on is counted.
+    pub(crate) fn launched(self: &Arc<Self>, place: Place, transport: &'static str, resumed: bool) {
+        let log = self.clone();
+        let at_ms = now_ms();
+        in_background(move || {
+            log.with_database(|db| {
+                db.execute(
+                    "INSERT INTO launches (at_ms, agent, project, transport, resumed) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![at_ms, place.agent, place.cwd, transport, resumed],
+                )
+            });
+            let Some(transcript) = place.transcript.as_ref().filter(|_| resumed) else {
+                return;
+            };
+            let Ok(len) = fs::metadata(&transcript.path).map(|meta| meta.len()) else {
+                return;
+            };
+            let key = transcript_key(transcript.kind, &transcript.session);
+            log.with_database(|db| {
+                db.execute(
+                    "INSERT INTO transcripts (session, path, offset, mark) VALUES (?1, ?2, ?3, '')
+                     ON CONFLICT(session) DO UPDATE SET path = excluded.path, offset = excluded.offset, mark = '',
+                         model = '', speed = 'standard'",
+                    params![key, transcript.path.to_string_lossy(), len as i64],
+                )
+            });
+        });
+    }
+
+    /// The agent began a turn; the commit it began on says which commits it made.
+    pub(crate) fn turn_started(self: &Arc<Self>, agent_id: &str, cwd: String) {
+        let started_ms = now_ms();
+        {
+            let mut turns = lock(&self.turns);
+            if turns.contains_key(agent_id) {
+                return;
+            }
+            turns.insert(
+                agent_id.to_owned(),
+                OpenTurn {
+                    started_ms,
+                    head: None,
+                },
+            );
+        }
+        let log = self.clone();
+        let agent_id = agent_id.to_owned();
+        in_background(move || {
+            let head = head(&cwd);
+            if let Some(turn) = lock(&log.turns)
+                .get_mut(&agent_id)
+                .filter(|turn| turn.started_ms == started_ms)
+            {
+                turn.head = head;
+            }
+        });
+    }
+
+    pub(crate) fn turn_ended(self: &Arc<Self>, agent_id: &str, place: Place) {
+        let Some(turn) = lock(&self.turns).remove(agent_id) else {
+            return;
+        };
+        let ended_ms = now_ms();
+        let log = self.clone();
+        in_background(move || {
+            log.with_database(|db| {
+                db.execute(
+                    "INSERT INTO turns (started_ms, ended_ms, agent, project) VALUES (?1, ?2, ?3, ?4)",
+                    params![turn.started_ms, ended_ms, place.agent, place.cwd],
+                )
+            });
+            if let Some(start) = turn.head.as_deref() {
+                log.record_commits_since(&place.cwd, start, Some(&place.agent));
+            }
+            log.record_new_tokens(&place, ended_ms);
+        });
+    }
+
+    fn record_commits_since(&self, repo: &str, start: &str, agent: Option<&str>) {
+        let range = format!("{start}..HEAD");
+        let Some(log) = git(repo, &["log", "--format=%H %ct", &range]) else {
+            return;
+        };
+        let commits: Vec<(&str, i64)> = log
+            .lines()
+            .take(MAX_TURN_COMMITS)
+            .filter_map(|line| {
+                let (sha, seconds) = line.split_once(' ')?;
+                Some((sha, seconds.trim().parse::<i64>().ok()? * 1000))
+            })
+            .collect();
+        self.insert_commits(repo, &commits, agent);
+    }
+
+    fn insert_commits(&self, repo: &str, commits: &[(&str, i64)], agent: Option<&str>) {
+        if commits.is_empty() {
+            return;
+        }
+        self.with_database(|db| {
+            let mut insert = db.prepare_cached(
+                "INSERT OR IGNORE INTO commits (sha, at_ms, project, agent) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for (sha, at_ms) in commits {
+                insert.execute(params![sha, at_ms, repo, agent])?;
+            }
+            Ok(())
+        });
+    }
+
+    /// A commit the person made in Sikemux.
+    pub(crate) fn record_commit(&self, repo: &str) {
+        if let Some(sha) = head(repo) {
+            self.insert_commits(repo, &[(&sha, now_ms())], None);
+        }
+    }
+
+    fn price_overrides(&self) -> HashMap<String, PriceOverride> {
+        self.prices_path
+            .as_ref()
+            .and_then(|path| fs::read(path).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    /// Prices `model` at what the person entered, or at the published price
+    /// again with none.
+    pub(crate) fn set_price(&self, model: &str, price: Option<PriceOverride>) -> Result<(), String> {
+        let path = self.prices_path.as_ref().ok_or("Sikemux keeps no prices here")?;
+        let mut prices = self.price_overrides();
+        match price {
+            Some(price) => prices.insert(model.to_owned(), price),
+            None => prices.remove(model),
+        };
+        let bytes = serde_json::to_vec(&prices).map_err(|error| error.to_string())?;
+        sikemux_process::files::write_atomic(path, &bytes, false).map_err(|error| error.to_string())
+    }
+
+    /// `offset_ms` places each event on the person's own calendar day.
+    pub(crate) fn summary(&self, offset_ms: i64, project: Option<&str>) -> ActivitySummary {
+        let overrides = self.price_overrides();
+        let feed = self.feed.as_ref().map(Feed::current).unwrap_or_default();
+        let prices = Prices::new(&feed, &overrides);
+        let mut summary = self
+            .with_database(|db| summarize(db, offset_ms.clamp(-DAY_MS, DAY_MS), now_ms(), project, &prices))
+            .unwrap_or_default();
+        summary.pricing.overrides = overrides;
+        summary
+    }
 }
 
 fn open(path: &Path) -> rusqlite::Result<Connection> {
@@ -108,21 +414,6 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Runs `work` against the activity database. Activity is a record, never a
-/// reason for the action it describes to fail, so errors are dropped here.
-fn with_database<T>(work: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> Option<T> {
-    let path = database_path()?;
-    let mut cache = database();
-    if cache.is_none() {
-        *cache = Some(open(&path).ok()?);
-    }
-    let result = work(cache.as_ref()?);
-    if result.is_err() {
-        *cache = None;
-    }
-    result.ok()
-}
-
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -133,8 +424,7 @@ fn now_ms() -> i64 {
 fn git(repo: &str, args: &[&str]) -> Option<String> {
     let mut command = crate::git::git_command(repo);
     command.args(args);
-    let output =
-        crate::bounded_process::run(&mut command, None, GIT_TIMEOUT, 1024 * 1024, None).ok()?;
+    let output = sikemux_process::run(&mut command, None, GIT_TIMEOUT, 1024 * 1024, None).ok()?;
     output
         .status
         .success()
@@ -147,54 +437,8 @@ fn head(repo: &str) -> Option<String> {
         .filter(|sha| !sha.is_empty())
 }
 
-fn parse_agent(agent: &str) -> Option<AgentKind> {
-    serde_json::from_value(Value::String(agent.to_string())).ok()
-}
-
-// ---- launches ----------------------------------------------------------
-
-pub fn record_launch(
-    agent: &str,
-    project: &str,
-    transport: &str,
-    resumed_session: Option<&str>,
-    config_path: Option<&str>,
-) {
-    let at_ms = now_ms();
-    with_database(|db| {
-        db.execute(
-            "INSERT INTO launches (at_ms, agent, project, transport, resumed) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![at_ms, agent, project, transport, resumed_session.is_some()],
-        )
-    });
-    if let (Some(kind), Some(session)) = (parse_agent(agent), resumed_session) {
-        skip_earlier_history(kind, project, session, config_path);
-    }
-}
-
-/// A loaded session's transcript already holds turns from before it came
-/// into Sikemux. Only what is written from here on is Sikemux's.
-fn skip_earlier_history(kind: AgentKind, cwd: &str, session: &str, config_path: Option<&str>) {
-    let Some(path) = session_transcript_path(kind, cwd, session, config_path) else {
-        return;
-    };
-    let Ok(len) = fs::metadata(&path).map(|meta| meta.len()) else {
-        return;
-    };
-    let key = transcript_key(kind, session);
-    with_database(|db| {
-        db.execute(
-            "INSERT INTO transcripts (session, path, offset, mark) VALUES (?1, ?2, ?3, '')
-             ON CONFLICT(session) DO UPDATE SET path = excluded.path, offset = excluded.offset, mark = '',
-                 model = '', speed = 'standard'",
-            params![key, path.to_string_lossy(), len as i64],
-        )
-    });
-}
-
-/// The session a direct agent command resumes, read from the arguments
-/// `agentLaunchArgs` builds on the frontend.
-pub fn resumed_session_in_args<'a>(agent: &str, args: &'a [String]) -> Option<&'a str> {
+/// The session a terminal agent's command resumes, read from its arguments.
+pub(crate) fn resumed_session_in_args<'a>(agent: &str, args: &'a [String]) -> Option<&'a str> {
     if agent == "codex" {
         return (args.first().map(String::as_str) == Some("resume"))
             .then(|| args.last().map(String::as_str))
@@ -209,115 +453,6 @@ pub fn resumed_session_in_args<'a>(agent: &str, args: &'a [String]) -> Option<&'
     args.windows(2)
         .find(|pair| pair[0] == flag)
         .map(|pair| pair[1].as_str())
-}
-
-// ---- turns -------------------------------------------------------------
-
-struct OpenTurn {
-    started_ms: i64,
-    head: Option<String>,
-}
-
-fn open_turns() -> MutexGuard<'static, HashMap<String, OpenTurn>> {
-    static TURNS: OnceLock<Mutex<HashMap<String, OpenTurn>>> = OnceLock::new();
-    TURNS
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-#[tauri::command]
-pub async fn activity_turn_started(agent_id: String, cwd: String) {
-    let started_ms = now_ms();
-    {
-        let mut turns = open_turns();
-        if turns.contains_key(&agent_id) {
-            return;
-        }
-        turns.insert(
-            agent_id.clone(),
-            OpenTurn {
-                started_ms,
-                head: None,
-            },
-        );
-    }
-    let head = spawn_blocking(move || head(&cwd)).await.ok().flatten();
-    if let Some(turn) = open_turns()
-        .get_mut(&agent_id)
-        .filter(|turn| turn.started_ms == started_ms)
-    {
-        turn.head = head;
-    }
-}
-
-#[tauri::command]
-pub async fn activity_turn_ended(
-    agent_id: String,
-    agent: String,
-    cwd: String,
-    session_id: Option<String>,
-    config_path: Option<String>,
-) {
-    let Some(turn) = open_turns().remove(&agent_id) else {
-        return;
-    };
-    let ended_ms = now_ms();
-    let _ = spawn_blocking(move || {
-        with_database(|db| {
-            db.execute(
-                "INSERT INTO turns (started_ms, ended_ms, agent, project) VALUES (?1, ?2, ?3, ?4)",
-                params![turn.started_ms, ended_ms, agent, cwd],
-            )
-        });
-        if let Some(start) = turn.head.as_deref() {
-            record_commits_since(&cwd, start, Some(&agent));
-        }
-        if let (Some(kind), Some(session)) = (parse_agent(&agent), session_id.as_deref()) {
-            record_new_tokens(kind, &cwd, session, config_path.as_deref(), ended_ms);
-        }
-    })
-    .await;
-}
-
-// ---- commits -----------------------------------------------------------
-
-fn record_commits_since(repo: &str, start: &str, agent: Option<&str>) {
-    let range = format!("{start}..HEAD");
-    let Some(log) = git(repo, &["log", "--format=%H %ct", &range]) else {
-        return;
-    };
-    let commits: Vec<(&str, i64)> = log
-        .lines()
-        .take(MAX_TURN_COMMITS)
-        .filter_map(|line| {
-            let (sha, seconds) = line.split_once(' ')?;
-            Some((sha, seconds.trim().parse::<i64>().ok()? * 1000))
-        })
-        .collect();
-    insert_commits(repo, &commits, agent);
-}
-
-fn insert_commits(repo: &str, commits: &[(&str, i64)], agent: Option<&str>) {
-    if commits.is_empty() {
-        return;
-    }
-    with_database(|db| {
-        let mut insert = db.prepare_cached(
-            "INSERT OR IGNORE INTO commits (sha, at_ms, project, agent) VALUES (?1, ?2, ?3, ?4)",
-        )?;
-        for (sha, at_ms) in commits {
-            insert.execute(params![sha, at_ms, repo, agent])?;
-        }
-        Ok(())
-    });
-}
-
-/// A commit made from Sikemux's own commit box.
-pub fn record_commit(repo: &str) {
-    if let Some(sha) = head(repo) {
-        insert_commits(repo, &[(&sha, now_ms())], None);
-    }
 }
 
 // ---- tokens ------------------------------------------------------------
@@ -384,82 +519,78 @@ fn transcript_key(kind: AgentKind, session: &str) -> String {
     format!("{}:{session}", kind.as_str())
 }
 
-fn record_new_tokens(
-    kind: AgentKind,
-    cwd: &str,
-    session: &str,
-    config_path: Option<&str>,
-    at_ms: i64,
-) {
-    let key = transcript_key(kind, session);
-    let known = with_database(|db| {
-        db.query_row(
-            "SELECT path, offset, mark, model, speed FROM transcripts WHERE session = ?1",
-            params![key],
-            |row| {
-                Ok((
-                    PathBuf::from(row.get::<_, String>(0)?),
-                    row.get::<_, i64>(1)? as u64,
-                    ReadState {
-                        mark: row.get(2)?,
-                        model: row.get(3)?,
-                        speed: row.get(4)?,
+impl ActivityLog {
+    /// Counts the tokens the agent's transcript reported since it was last read.
+    fn record_new_tokens(&self, place: &Place, at_ms: i64) {
+        let Some(transcript) = &place.transcript else {
+            return;
+        };
+        let key = transcript_key(transcript.kind, &transcript.session);
+        let known = self
+            .with_database(|db| {
+                db.query_row(
+                    "SELECT path, offset, mark, model, speed FROM transcripts WHERE session = ?1",
+                    params![key],
+                    |row| {
+                        Ok((
+                            PathBuf::from(row.get::<_, String>(0)?),
+                            row.get::<_, i64>(1)? as u64,
+                            ReadState {
+                                mark: row.get(2)?,
+                                model: row.get(3)?,
+                                speed: row.get(4)?,
+                            },
+                        ))
                     },
-                ))
-            },
-        )
-        .optional()
-    })
-    .flatten()
-    .filter(|(path, _, _)| path.is_file());
-    let (path, offset, state) = match known {
-        Some(known) => known,
-        None => match session_transcript_path(kind, cwd, session, config_path) {
-            Some(path) => (path, 0, ReadState::default()),
-            None => return,
-        },
-    };
-    let Some((text, next_offset)) = read_complete_lines(&path, offset) else {
-        return;
-    };
-    let (tally, next) = match kind {
-        AgentKind::Claude => count_claude_tokens(&text, state),
-        AgentKind::Codex => count_codex_tokens(&text, state),
-        _ => return,
-    };
-    with_database(|db| {
-        db.execute(
-            "INSERT INTO transcripts (session, path, offset, mark, model, speed) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(session) DO UPDATE SET path = excluded.path, offset = excluded.offset,
-                 mark = excluded.mark, model = excluded.model, speed = excluded.speed",
-            params![
-                key,
-                path.to_string_lossy(),
-                next_offset as i64,
-                next.mark,
-                next.model,
-                next.speed
-            ],
-        )?;
-        for entry in tally.0.iter().filter(|entry| !entry.count.is_empty()) {
+                )
+                .optional()
+            })
+            .flatten()
+            .filter(|(path, _, _)| path.is_file());
+        let (path, offset, state) =
+            known.unwrap_or_else(|| (transcript.path.clone(), 0, ReadState::default()));
+        let Some((text, next_offset)) = read_complete_lines(&path, offset) else {
+            return;
+        };
+        let (tally, next) = match transcript.kind {
+            AgentKind::Claude => count_claude_tokens(&text, state),
+            AgentKind::Codex => count_codex_tokens(&text, state),
+            _ => return,
+        };
+        self.with_database(|db| {
             db.execute(
-                "INSERT INTO tokens (at_ms, agent, project, input, output, cache_read, cache_write, model, speed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO transcripts (session, path, offset, mark, model, speed) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(session) DO UPDATE SET path = excluded.path, offset = excluded.offset,
+                     mark = excluded.mark, model = excluded.model, speed = excluded.speed",
                 params![
-                    at_ms,
-                    kind.as_str(),
-                    cwd,
-                    entry.count.input as i64,
-                    entry.count.output as i64,
-                    entry.count.cache_read as i64,
-                    entry.count.cache_write as i64,
-                    entry.model,
-                    entry.speed
+                    key,
+                    path.to_string_lossy(),
+                    next_offset as i64,
+                    next.mark,
+                    next.model,
+                    next.speed
                 ],
             )?;
-        }
-        Ok(())
-    });
+            for entry in tally.0.iter().filter(|entry| !entry.count.is_empty()) {
+                db.execute(
+                    "INSERT INTO tokens (at_ms, agent, project, input, output, cache_read, cache_write, model, speed)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![
+                        at_ms,
+                        transcript.kind.as_str(),
+                        place.cwd,
+                        entry.count.input as i64,
+                        entry.count.output as i64,
+                        entry.count.cache_read as i64,
+                        entry.count.cache_write as i64,
+                        entry.model,
+                        entry.speed
+                    ],
+                )?;
+            }
+            Ok(())
+        });
+    }
 }
 
 /// Everything after `offset` up to the last full line, and where that ends.
@@ -628,7 +759,7 @@ fn count_codex_tokens(text: &str, state: ReadState) -> (ModelTally, ReadState) {
 
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct ActivityTotals {
+pub(crate) struct ActivityTotals {
     sessions: i64,
     resumed: i64,
     turns: i64,
@@ -650,7 +781,7 @@ pub struct ActivityTotals {
 
 #[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ActivityDay {
+pub(crate) struct ActivityDay {
     day: i64,
     sessions: i64,
     agent_ms: i64,
@@ -661,7 +792,7 @@ pub struct ActivityDay {
 
 #[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ActivityShare {
+pub(crate) struct ActivityShare {
     name: String,
     sessions: i64,
     agent_ms: i64,
@@ -672,7 +803,7 @@ pub struct ActivityShare {
 
 #[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ActivityModel {
+pub(crate) struct ActivityModel {
     model: String,
     agent: String,
     input: i64,
@@ -686,7 +817,7 @@ pub struct ActivityModel {
 
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct ActivitySummary {
+pub(crate) struct ActivitySummary {
     totals: ActivityTotals,
     /// Local calendar days, counted from the Unix epoch, with anything on them.
     days: Vec<ActivityDay>,
@@ -910,26 +1041,6 @@ fn summarize(
         models,
         pricing: prices.info.clone(),
     })
-}
-
-/// `utc_offset_minutes` places each event on the user's own calendar day.
-/// `prices` are the person's own, by model, and win over the published table.
-#[tauri::command]
-pub async fn activity_summary(
-    utc_offset_minutes: i64,
-    project: Option<String>,
-    prices: Option<HashMap<String, PriceOverride>>,
-) -> ActivitySummary {
-    let offset_ms = utc_offset_minutes.clamp(-24 * 60, 24 * 60) * 60_000;
-    let now = now_ms();
-    spawn_blocking(move || {
-        let prices = Prices::new(&crate::model_providers::feed(), &prices.unwrap_or_default());
-        with_database(|db| summarize(db, offset_ms, now, project.as_deref(), &prices))
-    })
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or_default()
 }
 
 #[cfg(test)]

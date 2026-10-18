@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sikemux_core::launch::model_feed::{Cost, Model, Snapshot};
+use crate::launch::model_feed::{Cost, Model, Snapshot};
 use std::collections::HashMap;
 
 /// Bare family names could be any generation, and synthetic messages were never billed.
@@ -14,7 +14,7 @@ const UNPRICEABLE: [&str; 6] = [
 
 /// USD per token.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rates {
+pub(crate) struct Rates {
     pub input: f64,
     pub output: f64,
     pub cache_read: f64,
@@ -22,14 +22,14 @@ pub struct Rates {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ModelRate {
+pub(crate) struct ModelRate {
     pub standard: Rates,
     pub fast: Option<Rates>,
     pub ultrafast: Option<Rates>,
 }
 
 impl ModelRate {
-    pub fn at(&self, speed: &str) -> Rates {
+    pub(crate) fn at(&self, speed: &str) -> Rates {
         match speed {
             "fast" => self.fast,
             "ultrafast" => self.ultrafast,
@@ -70,9 +70,9 @@ fn rates(cost: Cost, standard: Option<&Rates>) -> Option<Rates> {
 }
 
 /// A price the person entered, in USD per million tokens.
-#[derive(Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct PriceOverride {
+pub(crate) struct PriceOverride {
     pub input: f64,
     pub output: f64,
     pub cache_read: Option<f64>,
@@ -98,18 +98,20 @@ impl PriceOverride {
 
 #[derive(Serialize, Clone, Default, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct PricingInfo {
+pub(crate) struct PricingInfo {
     pub fetched_at_ms: Option<i64>,
+    /// The person's own prices, by model.
+    pub overrides: HashMap<String, PriceOverride>,
 }
 
-pub struct Prices {
+pub(crate) struct Prices {
     table: HashMap<String, ModelRate>,
     overrides: HashMap<String, ModelRate>,
     pub info: PricingInfo,
 }
 
 impl Prices {
-    pub fn new(feed: &Snapshot, overrides: &HashMap<String, PriceOverride>) -> Self {
+    pub(crate) fn new(feed: &Snapshot, overrides: &HashMap<String, PriceOverride>) -> Self {
         Self {
             table: feed
                 .prices()
@@ -122,11 +124,12 @@ impl Prices {
                 .collect(),
             info: PricingInfo {
                 fetched_at_ms: (feed.fetched_at_ms > 0).then_some(feed.fetched_at_ms),
+                overrides: HashMap::new(),
             },
         }
     }
 
-    pub fn lookup(&self, model: &str) -> Option<ModelRate> {
+    pub(crate) fn lookup(&self, model: &str) -> Option<ModelRate> {
         let key = normalize(model);
         if let Some(rate) = self.overrides.get(&key) {
             return Some(*rate);

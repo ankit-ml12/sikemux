@@ -36,6 +36,19 @@ impl Core {
         }
         let agent_id = agent_id.to_owned();
         let came_to_rest = matches!(activity, Activity::Finished { .. } | Activity::Problem(_));
+        match &activity {
+            Activity::Started => {
+                if let Some(place) = super::activity_log::place(self, &agent_id) {
+                    self.activity_log.turn_started(&agent_id, place.cwd);
+                }
+            }
+            Activity::Finished { .. } | Activity::Problem(_) => {
+                if let Some(place) = super::activity_log::place(self, &agent_id) {
+                    self.activity_log.turn_ended(&agent_id, place);
+                }
+            }
+            _ => {}
+        }
         match activity {
             Activity::Started => {
                 self.seen.started(&agent_id);

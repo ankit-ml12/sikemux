@@ -1,4 +1,4 @@
-import { invokeCommand as invoke } from "./invoke";
+import { coreCall } from "./core";
 import type { AgentType } from "../state/types";
 
 export interface ActivityTotals {
@@ -52,6 +52,8 @@ export interface ActivityModel {
 
 export interface ActivityPricing {
     fetchedAtMs: number | null;
+    /** The person's own prices, by model. */
+    overrides: Record<string, PriceOverride>;
 }
 
 /** USD per million tokens. Cache rates fall back to the input rate. */
@@ -71,28 +73,9 @@ export interface ActivitySummary {
     pricing: ActivityPricing;
 }
 
-export interface ActivityTurnEnd {
-    agentId: string;
-    agent: AgentType;
-    cwd: string;
-    sessionId?: string;
-    configPath?: string;
-}
-
 export const activityApi = {
-    turnStarted: (agentId: string, cwd: string): Promise<void> => invoke<void>("activity_turn_started", { agentId, cwd }),
-    turnEnded: (turn: ActivityTurnEnd): Promise<void> =>
-        invoke<void>("activity_turn_ended", {
-            agentId: turn.agentId,
-            agent: turn.agent,
-            cwd: turn.cwd,
-            sessionId: turn.sessionId ?? null,
-            configPath: turn.configPath ?? null,
-        }),
-    summary: (project?: string, prices?: Record<string, PriceOverride>): Promise<ActivitySummary> =>
-        invoke<ActivitySummary>("activity_summary", {
-            utcOffsetMinutes: -new Date().getTimezoneOffset(),
-            project: project ?? null,
-            prices: prices ?? null,
-        }),
+    summary: (project?: string): Promise<ActivitySummary> =>
+        coreCall<ActivitySummary>("activitySummary", { utcOffsetMinutes: -new Date().getTimezoneOffset(), project: project ?? null }),
+    /** Prices `model` at what the person entered, or at the published price again with none. */
+    setPrice: (model: string, price: PriceOverride | null): Promise<void> => coreCall<void>("setActivityPrice", { model, price }),
 };

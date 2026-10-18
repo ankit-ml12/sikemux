@@ -58,23 +58,6 @@ pub async fn pty_spawn(
     context: Option<PtyContext>,
     continues: Option<Continuation>,
 ) -> AppResult<SessionId> {
-    let agent_launch = match (direct_command.as_ref(), context.as_ref()) {
-        (Some(command), Some(context)) => {
-            match (context.agent_type.clone(), context.project.clone()) {
-                (Some(agent), Some(project)) => {
-                    let resumed = crate::activity::resumed_session_in_args(&agent, &command.args)
-                        .map(str::to_string);
-                    let config_path = command
-                        .profile
-                        .as_ref()
-                        .and_then(|profile| profile.config_path.clone());
-                    Some((agent, project, resumed, config_path))
-                }
-                _ => None,
-            }
-        }
-        _ => None,
-    };
     let agent = direct_command.is_some()
         && context
             .as_ref()
@@ -104,17 +87,6 @@ pub async fn pty_spawn(
         )
         .await
         .map_err(core_error)?;
-    if let Some((agent, project, resumed, config_path)) = agent_launch {
-        tauri::async_runtime::spawn_blocking(move || {
-            crate::activity::record_launch(
-                &agent,
-                &project,
-                "terminal",
-                resumed.as_deref(),
-                config_path.as_deref(),
-            )
-        });
-    }
     Ok(id)
 }
 

@@ -1,5 +1,6 @@
 mod access;
 mod activity;
+pub(crate) mod activity_log;
 mod agent;
 mod agent_accounts;
 mod attachments;
@@ -38,6 +39,7 @@ mod seen;
 mod session;
 mod share;
 mod spawn;
+mod tasks;
 mod tools;
 mod transcript;
 mod upgrade;
@@ -307,6 +309,7 @@ pub(crate) struct Core {
     pub(crate) shares: share::Shares,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
+    pub(crate) activity_log: Arc<activity_log::ActivityLog>,
     /// Pokes the device view awake once something may be watching it.
     pub(crate) view_watched: Notify,
     /// Sends the device view before its next tick, once an agent's state changed.
@@ -315,6 +318,7 @@ pub(crate) struct Core {
     pub(crate) boards: board::Boards,
     pub(crate) changes: changed::Changes,
     pub(crate) ports: ports::Ports,
+    pub(crate) tasks: tasks::Tasks,
     pub(crate) git_watches: crate::git::watch::Watches,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
@@ -371,12 +375,14 @@ impl Core {
             shares: share::Shares::default(),
             workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
+            activity_log: Arc::new(activity_log::ActivityLog::new(data_dir)),
             view_watched: Notify::new(),
             view_stale: Notify::new(),
             names,
             boards: board::Boards::new(data_dir),
             changes: changed::Changes::default(),
             ports: ports::Ports::default(),
+            tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
@@ -1035,6 +1041,7 @@ pub(crate) async fn run_core(
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
         tokio::spawn(changed::serve(core.clone())),
+        tokio::spawn(tasks::publish_runs(core.clone())),
         tokio::spawn(wake::serve(
             core.clone(),
             |core| &core.harness.mailbox.wake,
