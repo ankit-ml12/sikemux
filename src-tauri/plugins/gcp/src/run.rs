@@ -248,6 +248,14 @@ pub fn env_names(env: &Value) -> Vec<Value> {
         .collect()
 }
 
+#[derive(Deserialize, Clone, Debug)]
+pub struct Share {
+    /// The revision, or none for whichever revision is latest.
+    #[serde(default)]
+    pub revision: Option<String>,
+    pub percent: u32,
+}
+
 #[derive(Deserialize)]
 pub struct Traffic {
     #[serde(flatten)]
@@ -255,27 +263,44 @@ pub struct Traffic {
     /// The revision to send every request to; none sends them to the latest ready one.
     #[serde(default)]
     pub revision: Option<String>,
+    /// A split between revisions instead, such as 90% on one and 10% on a canary; the shares must add up to 100.
+    #[serde(default)]
+    pub split: Option<Vec<Share>>,
+}
+
+/// Cloud Run's traffic targets for a split, refusing one that does not add up to 100.
+pub fn targets_of(split: &[Share]) -> GcpResult<Vec<Value>> {
+    let total: u32 = split.iter().map(|share| share.percent).sum();
+    if total != 100 {
+        return Err(GcpError::BadArg(format!(
+            "the shares add up to {total}%, not 100%"
+        )));
+    }
+    split
+        .iter()
+        .filter(|share| share.percent > 0)
+        .map(|share| match share.revision.as_deref().map(str::trim).filter(|revision| !revision.is_empty()) {
+            Some(revision) => Ok(json!({ "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": segment("revision", revision)?, "percent": share.percent })),
+            None => Ok(json!({ "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": share.percent })),
+        })
+        .collect()
 }
 
 /// Sends all of a service's traffic to one revision, as a rollback does, or back to the latest.
 pub async fn set_traffic(input: Traffic) -> GcpResult<Value> {
     let url = service_url(&input.service)?;
-    let target = match input
-        .revision
-        .as_deref()
-        .map(str::trim)
-        .filter(|revision| !revision.is_empty())
-    {
-        Some(revision) => {
-            json!({ "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": segment("revision", revision)?, "percent": 100 })
-        }
-        None => json!({ "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": 100 }),
+    let targets = match &input.split {
+        Some(split) => targets_of(split)?,
+        None => targets_of(&[Share {
+            revision: input.revision.clone(),
+            percent: 100,
+        }])?,
     };
     let operation = client::patch(
         &input.service.target,
         &url,
         &[("updateMask", "traffic".into())],
-        &json!({ "traffic": [target] }),
+        &json!({ "traffic": targets }),
     )
     .await?;
     Ok(json!({ "operation": short(&text(&operation, "/name")), "done": at(&operation, "/done") }))
@@ -507,6 +532,45 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert_eq!(names[1]["secret"], "db-password");
         assert!(!json!(names).to_string().contains("prod"));
+    }
+
+    #[test]
+    fn a_split_must_add_up_to_a_hundred() {
+        let split = [
+            Share {
+                revision: Some("api-00012-xyz".into()),
+                percent: 90,
+            },
+            Share {
+                revision: Some("api-00013-abc".into()),
+                percent: 10,
+            },
+            Share {
+                revision: None,
+                percent: 0,
+            },
+        ];
+        let targets = targets_of(&split).expect("adds up");
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[1]["percent"], 10);
+        assert!(targets_of(&[Share {
+            revision: None,
+            percent: 90
+        }])
+        .is_err());
+        assert_eq!(
+            targets_of(&[Share {
+                revision: None,
+                percent: 100
+            }])
+            .expect("latest")[0]["type"],
+            "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+        );
+        assert!(targets_of(&[Share {
+            revision: Some("../x".into()),
+            percent: 100
+        }])
+        .is_err());
     }
 
     #[test]
