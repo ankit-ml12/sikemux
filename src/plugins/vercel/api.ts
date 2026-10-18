@@ -43,7 +43,10 @@ export interface VercelProject {
     repo: string | null;
     gitProvider: string | null;
     productionBranch: string | null;
+    /** The deployment serving production. */
     production: { id: string; url: string | null; state: DeploymentState; createdAt: number } | null;
+    /** A newer production build that is still building or failed, while the one before it serves. */
+    latestProduction: { id: string; state: DeploymentState; createdAt: number } | null;
 }
 
 export interface VercelDeployment {
