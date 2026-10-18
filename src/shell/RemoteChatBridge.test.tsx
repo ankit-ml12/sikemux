@@ -2,6 +2,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AcpChat } from "../api/acp";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
+import { chatInfo } from "../test/wire";
 import { getState, setState } from "../state/store";
 import { AGENTS_SEEN_EVENT, FOCUS_AGENT_EVENT, REMOTE_CHAT_BEGUN_EVENT, RemoteChatBridge } from "./RemoteChatBridge";
 
