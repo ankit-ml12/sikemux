@@ -23,11 +23,13 @@
 //   scheduler — Cloud Scheduler jobs, run now, paused or resumed
 //   iam      — who holds which role, and service accounts
 //   bigquery — datasets, tables, previews and capped queries
+//   billing  — whether the project bills, to which account, and its budgets
 
 mod agent;
 mod agent_setup;
 mod auth;
 mod bigquery;
+mod billing;
 mod build;
 mod client;
 mod compute;
@@ -181,6 +183,7 @@ impl Plugin for Gcp {
                 "schedulerChange" => answer(scheduler::change(params(input)?)).await,
                 "iamMembers" => answer(iam::members(params(input)?)).await,
                 "serviceAccounts" => answer(iam::service_accounts(params(input)?)).await,
+                "billing" => answer(billing::billing(params(input)?)).await,
                 "datasets" => answer(bigquery::datasets(params(input)?)).await,
                 "tables" => answer(bigquery::tables(params(input)?)).await,
                 "table" => answer(bigquery::table(params(input)?)).await,
