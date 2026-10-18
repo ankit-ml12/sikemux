@@ -125,7 +125,6 @@ export async function messageAndBoard(s, { pace = 1, hold = 1400 } = {}) {
   await s.zoom(".kanban-columns", {
     scale: 1.45,
     at: { x: 0.5, y: 0.35 },
-    duration: 700,
     wait: false,
   });
   await s.move(card("Ledger import onto amounts"));

@@ -1,5 +1,7 @@
 import { agentsAtWork } from "../../scenes.mjs";
-import { flipScope, startChats, swipeTabs } from "../parts.mjs";
+import { flipScope, startChats, swipeRail, swipeTabs } from "../parts.mjs";
+
+const railHead = ".tab-rail .swipe-page.is-current .scope-track";
 
 const row = (title) => ({
   selector: ".tab-rail .agent-row *",

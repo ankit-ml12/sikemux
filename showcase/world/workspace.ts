@@ -193,22 +193,6 @@ function baseSnapshot(): PersistedSnapshot {
         activeWindowId: "w-billing-service",
       },
       {
-        id: "s-portal",
-        name: "client-portal",
-        kind: "project",
-        cwd: `${DEMO_HOME}/work/client-portal`,
-        pinned: false,
-        activeWindowId: "w-client-portal",
-      },
-      {
-        id: "s-infra",
-        name: "infra",
-        kind: "project",
-        cwd: `${DEMO_HOME}/work/infra`,
-        pinned: false,
-        activeWindowId: "w-infra",
-      },
-      {
         id: "s-gpu",
         name: "gpu-box",
         kind: "ssh",
