@@ -1,4 +1,4 @@
-import { createPluginBackend } from "../../plugin-api/backend";
+import { browserSignIn, createPluginBackend } from "../../plugin-api/backend";
 import { invalidate } from "../../plugin-api/resources";
 import { VERCEL_PLUGIN_ID } from "./kinds";
 
@@ -11,6 +11,8 @@ export interface VercelAccount {
     username: string;
     name: string;
     email: string;
+    /** A browser sign-in sees only the teams the Sikemux integration is installed on. */
+    signIn: "token" | "browser";
 }
 
 export interface VercelTeam {
@@ -30,6 +32,8 @@ export interface VercelStatus {
     team: string | null;
     /** Whether the account has projects outside its teams; newer accounts keep them in a default team. */
     personal: boolean;
+    /** Whether this build can sign in through the browser. */
+    browserSignIn: boolean;
 }
 
 /** BUILDING, ERROR, INITIALIZING, QUEUED, READY or CANCELED. */
@@ -106,6 +110,7 @@ export const refreshVercel = () => invalidate((kind) => kind.startsWith("vercel.
 export const vercelApi = {
     status: () => backend.call<VercelStatus>("status"),
     signIn: (token: string) => backend.call<VercelStatus>("signIn", { token }),
+    signInWithBrowser: (openPage: (url: string) => void) => browserSignIn<VercelStatus>(backend, "signInWithBrowser", openPage),
     signOut: () => backend.call<void>("signOut"),
     setTeam: (team: string) => backend.call<void>("setTeam", { team }),
     projects: (team: string) => backend.call<VercelProject[]>("projects", { team }),

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { notify, swallow } from "../../../plugin-api/host";
+import { notify, openSignInUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { failureMessage, refreshVercel, vercelApi, type VercelProject, type VercelStatus } from "../api";
@@ -15,6 +15,7 @@ import { VercelMark } from "./VercelMark";
 import { VercelSignIn } from "./VercelSignIn";
 import "../vercel.css";
 
+const ADD_TEAM = "add-team";
 const SIDE_MIN = 180;
 const SIDE_MAX = 420;
 
@@ -43,6 +44,13 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
 
     const chooseTeam = (next: string) => {
         if (next === team) return;
+        if (next === ADD_TEAM) {
+            void vercelApi
+                .signInWithBrowser((url) => void openSignInUrl(url).catch(swallow("open Vercel")))
+                .done.then(refreshVercel)
+                .catch((error: unknown) => notify("error", `Add a team: ${failureMessage(error)}`));
+            return;
+        }
         updateVercelView(paneId, { project: null, deployment: null, section: "overview" });
         void vercelApi
             .setTeam(next)
@@ -68,6 +76,9 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                             ? [{ value: "", label: status.account?.name || status.account?.username || "Personal", detail: "Personal account" }]
                             : []),
                         ...status.teams.map((each) => ({ value: each.id, label: each.name, detail: each.slug })),
+                        ...(status.account?.signIn === "browser" && status.browserSignIn
+                            ? [{ value: ADD_TEAM, label: "Add a team…", detail: "Install Sikemux on another team" }]
+                            : []),
                     ]}
                     onChange={chooseTeam}
                 />

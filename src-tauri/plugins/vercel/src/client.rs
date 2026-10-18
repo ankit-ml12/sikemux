@@ -9,7 +9,7 @@ use futures::StreamExt;
 use reqwest::{Client, Method, Response};
 use serde_json::Value;
 
-use crate::config::{self, Account};
+use crate::config::{self, Account, SignIn};
 use crate::error::{VercelError, VercelResult};
 
 const API: &str = "https://api.vercel.com";
@@ -25,7 +25,7 @@ pub fn text(value: &Value, path: &str) -> String {
     at(value, path).as_str().unwrap_or_default().to_string()
 }
 
-fn http() -> VercelResult<&'static Client> {
+pub fn http() -> VercelResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
@@ -42,30 +42,41 @@ fn http() -> VercelResult<&'static Client> {
 }
 
 struct HeldToken {
+    entry: (String, Option<String>),
     token: String,
     at: Instant,
 }
 
-static TOKEN: Mutex<Option<HeldToken>> = Mutex::new(None);
+static TOKENS: Mutex<Vec<HeldToken>> = Mutex::new(Vec::new());
 
 pub fn forget() {
-    if let Ok(mut held) = TOKEN.lock() {
-        *held = None;
+    if let Ok(mut held) = TOKENS.lock() {
+        held.clear();
     }
 }
 
-async fn token_of(account: &Account) -> VercelResult<String> {
-    if let Ok(held) = TOKEN.lock() {
-        if let Some(held) = held.as_ref().filter(|held| held.at.elapsed() < TOKEN_TTL) {
+/// The token kept for the account, or for its install on `team`.
+async fn token_of(account: &Account, team: Option<&str>) -> VercelResult<String> {
+    let entry = (account.id.clone(), team.map(str::to_string));
+    if let Ok(held) = TOKENS.lock() {
+        if let Some(held) = held
+            .iter()
+            .find(|held| held.entry == entry && held.at.elapsed() < TOKEN_TTL)
+        {
             return Ok(held.token.clone());
         }
     }
     let reading = account.clone();
-    let token = config::blocking(Box::new(move || config::keychain_read(&reading)))
-        .await?
-        .ok_or(VercelError::Unconfigured)?;
-    if let Ok(mut held) = TOKEN.lock() {
-        *held = Some(HeldToken {
+    let scope = entry.1.clone();
+    let token = config::blocking(Box::new(move || {
+        config::keychain_read(&reading, scope.as_deref())
+    }))
+    .await?
+    .ok_or(VercelError::Unconfigured)?;
+    if let Ok(mut held) = TOKENS.lock() {
+        held.retain(|held| held.entry != entry);
+        held.push(HeldToken {
+            entry,
             token: token.clone(),
             at: Instant::now(),
         });
@@ -92,14 +103,30 @@ impl Session {
     /// The account signed in, for the team named, or the one chosen in Sikemux.
     pub async fn of(data_dir: &Path, team: Option<&str>) -> VercelResult<Session> {
         let config = config::load(data_dir);
-        let account = config.account.ok_or(VercelError::Unconfigured)?;
-        let token = token_of(&account).await?;
+        let account = config.account.clone().ok_or(VercelError::Unconfigured)?;
         let team = match team.map(str::trim) {
             Some("") | Some("personal") => None,
             Some(team) => Some(team.to_string()),
-            None => config.team,
+            None => config.team.clone(),
         };
-        Ok(Session { token, team })
+        match account.sign_in {
+            SignIn::Token => Ok(Session {
+                token: token_of(&account, None).await?,
+                team,
+            }),
+            SignIn::Browser => {
+                let install = config.install(team.as_deref()).ok_or_else(|| {
+                    VercelError::NotFound(format!(
+                        "Sikemux is not installed on {}; add it from the team menu in the Vercel pane",
+                        team.as_deref().unwrap_or("the personal account")
+                    ))
+                })?;
+                Ok(Session {
+                    token: token_of(&account, install.team.as_deref()).await?,
+                    team: install.team.clone(),
+                })
+            }
+        }
     }
 
     pub async fn get(&self, path: &str, query: &[(&str, String)]) -> VercelResult<Value> {
@@ -121,7 +148,7 @@ impl Session {
     }
 }
 
-async fn read_body(response: Response) -> VercelResult<Vec<u8>> {
+pub async fn read_body(response: Response) -> VercelResult<Vec<u8>> {
     let mut stream = response.bytes_stream();
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {

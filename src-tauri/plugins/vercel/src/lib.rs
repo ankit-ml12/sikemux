@@ -1,9 +1,10 @@
 // Vercel: an account's projects and deployments, each deployment's build log, and
 // building, promoting and stopping them, in a pane and as agent tools.
 //
-//   config      — the account signed in here, its token in the Keychain, and the team chosen
+//   config      — the account signed in here, its tokens in the Keychain, and the team chosen
 //   client      — the REST client, the token, the team a call is for, and Vercel's errors in words
-//   auth        — signing in with an access token, choosing a team, and the account's status
+//   oauth       — installing the Sikemux integration from the browser, and removing it
+//   auth        — signing in with the browser or an access token, choosing a team, and the account's status
 //   projects    — projects, their domains, and the names of their environment variables
 //   deployments — listing and reading deployments, build logs, redeploy, promote and cancel
 
@@ -12,6 +13,7 @@ mod client;
 mod config;
 mod deployments;
 mod error;
+mod oauth;
 mod projects;
 
 use std::sync::Arc;
@@ -19,7 +21,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
+    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
 use crate::error::VercelResult;
@@ -70,6 +72,25 @@ impl Plugin for Vercel {
                 "redeploy" => answer(deployments::redeploy(data_dir, params(input)?)).await,
                 "promote" => answer(deployments::promote(data_dir, params(input)?)).await,
                 "cancel" => answer(deployments::cancel(data_dir, params(input)?)).await,
+                _ => Err(PluginError::unknown_method(method)),
+            }
+        })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        ctx: &'a PluginContext,
+        method: &'a str,
+        _input: Value,
+        sink: StreamSink,
+    ) -> PluginFuture<'a, ()> {
+        Box::pin(async move {
+            let data_dir = ctx.data_dir();
+            match method {
+                "signInWithBrowser" => {
+                    auth::sign_in_with_browser(data_dir, &sink).await?;
+                    sink.send(reply(auth::status(data_dir).await)?)
+                }
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
