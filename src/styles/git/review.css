@@ -88,6 +88,7 @@
 /* Pinned while its card scrolls under it, a header keeps the card's top corners, so it still reads as the card's top. */
 .merge-review-item > .merge-file-header {
     border-radius: calc(var(--radius-2) - 1px) calc(var(--radius-2) - 1px) 0 0;
+    background: var(--surface);
 }
 .merge-file-dir {
     color: var(--text-tertiary);
