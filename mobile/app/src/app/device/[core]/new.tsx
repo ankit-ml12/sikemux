@@ -6,6 +6,7 @@ import { File } from 'expo-file-system';
 import type { ConnectionLike } from '@sikemux/native';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
+import { agentLabel } from '@mac/agents/catalog';
 import { ComposerAttachments } from '@/chat/Attachments';
 import { ChatTitle } from '@/chat/ChatTitle';
 import { AttachSheet } from '@/chat/AttachSheet';
@@ -14,7 +15,6 @@ import { ComposerInput } from '@/chat/ComposerInput';
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type Attachment } from '@/chat/session';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf, useLive } from '@/devices/hub';
-import { chatTitle } from '@/devices/words';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
 import { AgentFace } from '@/ui/Buddy';
@@ -168,7 +168,7 @@ export default function NewChat() {
 
   return (
     <Screen>
-      <Nav title={launcher ? <ChatTitle provider={launcher.provider} title={chatTitle({ provider: launcher.provider })} /> : undefined} />
+      <Nav title={launcher ? <ChatTitle provider={launcher.provider} title={`New ${agentLabel(launcher.provider)} chat`} /> : undefined} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={styles.welcome}>
           {absent ? (

@@ -51,15 +51,11 @@ struct ConfigChoice: Codable, Hashable {
 
 struct SessionInfo: Codable, Hashable {
     let id: Int
-    let running: Bool
     let project: String?
     let agentId: String?
     /// What the core calls an agent terminal's agent, such as Otter.
     let agentName: String?
     let agentType: String?
-    /// The name the app gives an agent terminal.
-    let title: String?
-    let attentionRank: Int?
 }
 
 struct ChatInfo: Codable, Hashable {
@@ -67,19 +63,10 @@ struct ChatInfo: Codable, Hashable {
     /// What the core calls the agent, such as Otter.
     let name: String?
     let provider: String
-    /// What the agent named the session, once it has.
-    let title: String?
     let cwd: String
-    /// Subagents still running for it.
-    let subagents: Int
-    /// Background shells and monitors still running for it.
-    let tasks: Int
     /// The agent is retrying a request that got no answer over the network:
     /// the attempt it is on, or 0 when it did not say.
     let reconnecting: Int?
-    /// Its place among the open agents, chats and agent terminals together,
-    /// in the order they want the person: 0 first.
-    let attentionRank: Int
 }
 
 /// Something an agent is waiting on a person for.
@@ -107,6 +94,8 @@ struct Inbox: Codable, Hashable {
     let items: [InboxItem]
     /// Agents at work now.
     let working: Int
+    /// Every open agent here as devices show it, in the order they list them.
+    let agents: [AgentShown]
     /// The characters the app draws for its agents, while buddies are on.
     let buddies: PublishedBuddies?
 }
@@ -178,6 +167,35 @@ enum InboxKind: String, Codable, Hashable {
 
 struct InboxCard: Codable, Hashable {
     let title: String
+}
+
+/// How devices show an open agent here.
+struct AgentShown: Codable, Hashable {
+    let agentId: String
+    /// What its row is titled: the chat's or terminal's own title, else what
+    /// it is, such as "New Claude chat".
+    let title: String
+    let group: AgentGroup
+    let subagents: Int
+    let tasks: Int
+}
+
+/// Where an agent stands for the person, in the order lists show the groups:
+/// waiting on them first. Only a running turn is Working; subagents and
+/// shells left running are counted beside the agent instead.
+enum AgentGroup: String, Codable, Hashable {
+    /// It waits on a permission or an answer.
+    case blocked
+    case working
+    /// It finished a turn the person has not seen.
+    case done
+    case idle
+    /// One added after this build.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
 }
 
 /// The characters the app draws for its agents while buddies are on, so the

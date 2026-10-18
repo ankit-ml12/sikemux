@@ -420,6 +420,11 @@ export interface RemoteAgent {
 /** How devices show an open agent here. */
 export interface AgentShown {
   agentId: string;
+  /**
+   * What its row is titled: the chat's or terminal's own title, else what
+   * it is, such as "New Claude chat".
+   */
+  title: string;
   status: AgentStatus;
   group: AgentGroup;
   unread: boolean;

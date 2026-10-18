@@ -27,7 +27,6 @@ import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hu
 import { dismissCardsFor } from '@/notify/cards';
 import { deviceName } from '@/devices/paired';
 import { agentLabel } from '@mac/agents/catalog';
-import { chatTitle } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/controls';
@@ -200,7 +199,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     load: session.loadEarlier,
   });
   const activity = activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state.messages));
-  const title = state.title ?? (info ? chatTitle(info) : agentLabel(provider));
+  const title = state.title ?? live.snapshot?.inbox.agents.find((shown) => shown.agentId === agentId)?.title ?? agentLabel(provider);
   const watchOnly = access === 'watch';
   const steerable = state.capabilities.steering === true && state.running && !watchOnly;
   const liveShown = hasLiveWork(fresh) && chat.attached === 'live';

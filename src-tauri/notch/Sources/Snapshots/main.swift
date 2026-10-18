@@ -57,7 +57,17 @@ let fixture = #"""
     {"id": "p1", "agentId": "a1",
      "choices": {"allowOnce": "o1", "allowAlways": "o2", "reject": "o3", "command": "pnpm test --filter core -- --runInBand", "title": "Run tests"}}
   ],
-  "inbox": {"working": 2, "items": [
+  "inbox": {"working": 2, "agents": [
+    {"agentId": "a1", "title": "Fix the login flake", "group": "blocked", "subagents": 0, "tasks": 0},
+    {"agentId": "a9", "title": "Move the ledger import", "group": "blocked", "subagents": 0, "tasks": 0},
+    {"agentId": "a4", "title": "Bump Astro to 6", "group": "done", "subagents": 0, "tasks": 0},
+    {"agentId": "a10", "title": "Rotate the signing keys", "group": "done", "subagents": 0, "tasks": 0},
+    {"agentId": "a11", "title": "Tidy the changelog", "group": "done", "subagents": 0, "tasks": 0},
+    {"agentId": "a2", "title": "Refactor the auth middleware", "group": "working", "subagents": 3, "tasks": 0},
+    {"agentId": "a3", "title": "Draft the notch spec", "group": "working", "subagents": 0, "tasks": 0},
+    {"agentId": "a5", "title": "Profile the terminal flood", "group": "idle", "subagents": 0, "tasks": 2},
+    {"agentId": "t1", "title": "Tighten the rail spacing", "group": "idle", "subagents": 0, "tasks": 0}
+  ], "items": [
     {"id": "permission:a1:p1", "tier": "needs", "kind": "permission", "agentId": "a1", "name": "Otter", "cli": "claude", "project": "p-sikemux",
      "title": "Fix the login flake", "what": "Needs your permission", "detail": "pnpm test --filter core -- --runInBand", "at": AGO(134), "requestId": "p1"},
     {"id": "question:q1", "tier": "needs", "kind": "question", "agentId": "a9", "name": "Maple", "cli": "codex", "project": "p-server",
@@ -108,7 +118,7 @@ let buddies = arguments.contains("--buddies")
     : decoded.inbox.buddies
 let full = DeviceView(
     workspace: decoded.workspace, sessions: decoded.sessions, chats: decoded.chats, attentions: decoded.attentions,
-    inbox: Inbox(items: decoded.inbox.items, working: decoded.inbox.working, buddies: buddies)
+    inbox: Inbox(items: decoded.inbox.items, working: decoded.inbox.working, agents: decoded.inbox.agents, buddies: buddies)
 )
 
 func view(keeping ids: Set<String>?) -> DeviceView {
@@ -119,7 +129,10 @@ func view(keeping ids: Set<String>?) -> DeviceView {
         sessions: full.sessions.filter { $0.agentId.map(ids.contains) ?? false },
         chats: full.chats.filter { ids.contains($0.agentId) },
         attentions: full.attentions.filter { ids.contains($0.agentId) },
-        inbox: Inbox(items: items, working: items.filter { $0.kind == .working }.count, buddies: full.inbox.buddies)
+        inbox: Inbox(
+            items: items, working: items.filter { $0.kind == .working }.count,
+            agents: full.inbox.agents.filter { ids.contains($0.agentId) }, buddies: full.inbox.buddies
+        )
     )
 }
 

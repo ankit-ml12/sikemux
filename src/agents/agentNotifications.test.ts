@@ -39,7 +39,7 @@ const { installAgentNotifications, introduceNotifications } = await import("./ag
 const initial = getState();
 
 function shown(agentId: string, group: AgentGroup): Record<string, AgentShown> {
-    return { [agentId]: { agentId, status: group, group, unread: group === "done", subagents: 0, tasks: 0, activeAt: null } };
+    return { [agentId]: { agentId, title: agentId, status: group, group, unread: group === "done", subagents: 0, tasks: 0, activeAt: null } };
 }
 
 const notice = { title: "Codex needs your input", body: "openjob on studio", agentId: "a2" };

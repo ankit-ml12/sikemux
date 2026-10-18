@@ -68,13 +68,12 @@ const SWIFT_FIELDS = {
   LauncherInfo: "id provider label permissionMode model effort",
   ConfigPicker: "id current choices",
   ConfigChoice: "value label",
-  ChatInfo:
-    "agentId name provider title cwd attentionRank subagents tasks reconnecting",
-  SessionInfo:
-    "id running project agentId agentName agentType title attentionRank",
+  ChatInfo: "agentId name provider cwd reconnecting",
+  SessionInfo: "id project agentId agentName agentType",
   Attention: "id agentId choices",
   PermissionChoices: "allowOnce allowAlways reject command title",
-  Inbox: "items working buddies",
+  Inbox: "items working agents buddies",
+  AgentShown: "agentId title group subagents tasks",
   InboxItem:
     "id tier kind agentId name cli project title what detail at session card requestId questionId url",
   InboxCard: "title",

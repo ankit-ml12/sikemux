@@ -14,7 +14,7 @@ use crate::protocol::{
 };
 
 use super::board::{self, Summary, Waits};
-use super::notify::clip;
+use super::notify::{clip, provider_name};
 use super::remote::unix_ms;
 use super::Core;
 
@@ -175,6 +175,9 @@ pub(crate) struct View {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Shown {
     pub agent_id: String,
+    /// What its row is titled: the chat's or terminal's own title, else what
+    /// it is, such as "New Claude chat".
+    pub title: String,
     pub status: AgentStatus,
     pub group: AgentGroup,
     pub unread: bool,
@@ -734,12 +737,12 @@ fn ranked(mut items: Vec<Item>) -> Vec<Item> {
 /// The inbox, from the chats and terminals the device view lists.
 pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> View {
     View {
-        agents: shown(chats, sessions),
+        agents: shown(core, chats, sessions),
         ..view_of(core, &agents(core, chats, sessions), sessions)
     }
 }
 
-fn shown(chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown> {
+fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown> {
     let mut ranked: Vec<(u32, Shown)> = chats
         .iter()
         .map(|chat| {
@@ -747,6 +750,9 @@ fn shown(chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown> {
                 chat.attention_rank,
                 Shown {
                     agent_id: chat.agent_id.clone(),
+                    title: chat.title.clone().filter(|title| !title.is_empty()).unwrap_or_else(|| {
+                        format!("New {} chat", provider_name(core, &chat.provider))
+                    }),
                     status: chat.status,
                     group: chat.group,
                     unread: chat.unread,
@@ -766,6 +772,9 @@ fn shown(chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown> {
             session.attention_rank.unwrap_or(u32::MAX),
             Shown {
                 agent_id: agent_id.clone(),
+                title: session.title.clone().filter(|title| !title.is_empty()).unwrap_or_else(|| {
+                    provider_name(core, session.agent_type.as_deref().unwrap_or("agent"))
+                }),
                 status: session.status?,
                 group: session.group?,
                 unread: session.unread,

@@ -56,7 +56,7 @@ function arrangeAgents(count: number) {
     const agentStatus = Object.fromEntries(
         Object.keys(agents).map((id, index) => [
             id,
-            { agentId: id, status: "idle" as const, group: "idle" as const, unread: false, subagents: 0, tasks: 0, activeAt: index },
+            { agentId: id, title: id, status: "idle" as const, group: "idle" as const, unread: false, subagents: 0, tasks: 0, activeAt: index },
         ]),
     );
     setState({

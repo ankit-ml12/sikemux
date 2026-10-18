@@ -401,7 +401,7 @@ struct Named {
     project: Option<String>,
 }
 
-fn provider_name(core: &Core, provider: &str) -> String {
+pub(crate) fn provider_name(core: &Core, provider: &str) -> String {
     if let Some(agent) = crate::agent_catalog::agent(provider) {
         return agent.label.into();
     }

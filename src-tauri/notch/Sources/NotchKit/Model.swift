@@ -3,7 +3,7 @@ import Foundation
 extension DeviceView {
     static let empty = DeviceView(
         workspace: Workspace(projects: [], launchers: []), sessions: [], chats: [], attentions: [],
-        inbox: Inbox(items: [], working: 0, buddies: nil)
+        inbox: Inbox(items: [], working: 0, agents: [], buddies: nil)
     )
 }
 
@@ -66,13 +66,12 @@ struct QuestionChoice: Decodable, Equatable {
     let label: String
 }
 
-/// One row of the island: an inbox item with what the notch adds to it.
+/// One row of the island: an inbox item with how the core shows its agent.
 struct Entry: Identifiable, Equatable {
     let item: InboxItem
+    /// How the core shows the item's agent, while it is open here.
+    let agent: AgentShown?
     let project: String
-    /// Subagents, and shells or monitors, its agent still has going.
-    let subagents: Int
-    let tasks: Int
     let ask: Ask?
     var question: AgentQuestion? = nil
     /// The attempt its agent is retrying a failed request on, 0 when it did not say.
@@ -80,12 +79,22 @@ struct Entry: Identifiable, Equatable {
 
     var id: String { item.id }
     var provider: String { item.cli ?? "" }
-    var title: String { item.title ?? item.card?.title ?? item.what }
+    var title: String { agent?.title ?? item.title ?? item.card?.title ?? item.what }
+    /// Subagents, and shells or monitors, its agent still has going.
+    var subagents: Int { agent?.subagents ?? 0 }
+    var tasks: Int { agent?.tasks ?? 0 }
     var isChat: Bool { item.agentId != nil && item.session == nil && item.cli != nil }
     var since: Date? { item.at > 0 ? Date(timeIntervalSince1970: Double(item.at) / 1000) : nil }
 
     var mark: Mark {
-        switch item.tier {
+        switch agent?.group {
+        case .blocked: return .needs
+        case .working: return .working
+        case .done: return item.kind == .failed ? .failed : .done
+        case .idle: return .idle
+        case .unknown, nil: break
+        }
+        return switch item.tier {
         case .needs: .needs
         case .progress: .working
         case .review, .finished: item.kind == .failed ? .failed : .done
@@ -112,30 +121,23 @@ extension DeviceView {
         return URL(fileURLWithPath: value).lastPathComponent
     }
 
-    /// Every open agent once, in the app rail's order, each with what the inbox says about it and the question it asks
-    /// from `questions`. Agents on other hosts the inbox lists follow; items that are not about an agent are left out.
+    /// Every open agent once, in the order the core lists them on every device, each with what the inbox says about it
+    /// and the question it asks from `questions`. Agents on other hosts the inbox lists follow; items that are not about
+    /// an agent are left out.
     func entries(_ questions: [AgentQuestion]) -> [Entry] {
-        let open = chats.map { (agentId: $0.agentId, rank: $0.attentionRank) }
-            + sessions.compactMap { session in
-                session.running ? session.agentId.map { (agentId: $0, rank: session.attentionRank) } : nil
-            }
-        let ranked = open.enumerated()
-            .sorted { ($0.element.rank ?? Int.max, $0.offset) < ($1.element.rank ?? Int.max, $1.offset) }
-            .map(\.element.agentId)
-        let listed = Set(ranked)
+        let listed = Set(inbox.agents.map(\.agentId))
         var seen = Set<String>()
         let others = inbox.items.compactMap(\.agentId).filter { !listed.contains($0) && seen.insert($0).inserted }
-        return (ranked + others).compactMap { agentId in
+        return (inbox.agents.map(\.agentId) + others).compactMap { agentId in
+            let agent = inbox.agents.first { $0.agentId == agentId }
             guard let item = inbox.items.first(where: { $0.agentId == agentId }) ?? idleItem(agentId) else { return nil }
-            let chat = chats.first { $0.agentId == agentId }
             return Entry(
                 item: item,
+                agent: agent,
                 project: projectName(item.project),
-                subagents: chat?.subagents ?? 0,
-                tasks: chat?.tasks ?? 0,
                 ask: attentions.first { $0.id == item.requestId }.map(Ask.init),
                 question: questions.first { $0.id == item.questionId },
-                reconnecting: chat?.reconnecting
+                reconnecting: chats.first { $0.agentId == agentId }?.reconnecting
             )
         }
     }
@@ -144,14 +146,14 @@ extension DeviceView {
         if let chat = chats.first(where: { $0.agentId == agentId }) {
             return InboxItem(
                 id: "agent:\(agentId)", tier: .unknown, kind: .unknown, agentId: agentId, name: chat.name, cli: chat.provider,
-                project: chat.cwd, title: chat.title ?? "New \(agentName(chat.provider)) chat", what: "", detail: nil, at: 0,
+                project: chat.cwd, title: nil, what: "", detail: nil, at: 0,
                 session: nil, card: nil, requestId: nil, questionId: nil, url: nil
             )
         }
         guard let session = sessions.first(where: { $0.agentId == agentId }) else { return nil }
         return InboxItem(
             id: "agent:\(agentId)", tier: .unknown, kind: .unknown, agentId: agentId, name: session.agentName,
-            cli: session.agentType, project: session.project, title: session.title, what: "", detail: nil, at: 0,
+            cli: session.agentType, project: session.project, title: nil, what: "", detail: nil, at: 0,
             session: session.id, card: nil, requestId: nil, questionId: nil, url: nil
         )
     }

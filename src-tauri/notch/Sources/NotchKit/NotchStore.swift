@@ -324,8 +324,8 @@ final class NotchStore {
         let counts: [(Rollup, Int)] = [
             (.mark(.needs), entries.filter { $0.mark == .needs }.count),
             (.mark(.working), view.inbox.working),
-            (.subagents, view.chats.reduce(0) { $0 + $1.subagents }),
-            (.shells, view.chats.reduce(0) { $0 + $1.tasks }),
+            (.subagents, view.inbox.agents.reduce(0) { $0 + $1.subagents }),
+            (.shells, view.inbox.agents.reduce(0) { $0 + $1.tasks }),
             (.mark(.done), entries.filter { $0.mark == .done || $0.mark == .failed }.count),
         ]
         return counts.filter { $0.1 > 0 }.map { (mark: $0.0, count: $0.1) }

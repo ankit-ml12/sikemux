@@ -1,13 +1,7 @@
-import { agentLabel } from '@mac/agents/catalog';
-import type { ChatInfo, InboxItem, ProjectInfo } from '@/core/protocol';
+import type { InboxItem, ProjectInfo } from '@/core/protocol';
 
 export function folder(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
-}
-
-/** The title the agent gave the chat, as the Mac's rail shows it. */
-export function chatTitle(chat: Pick<ChatInfo, 'title' | 'provider'>): string {
-  return chat.title ?? `New ${agentLabel(chat.provider)} chat`;
 }
 
 export function inProject(project: ProjectInfo, path: string): boolean {

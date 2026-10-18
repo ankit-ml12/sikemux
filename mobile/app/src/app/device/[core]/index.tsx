@@ -7,6 +7,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { agentLabel } from '@mac/agents/catalog';
 import { formatAge } from '@mac/lib/format';
 import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
+import type { AgentShown } from '@/core/wire.generated';
 import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
 import { deviceKind, deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { Board } from '@/devices/Board';
@@ -15,7 +16,7 @@ import { ProjectSheet } from '@/devices/ProjectSheet';
 import { WorkerRow, workersOf } from '@/devices/RemoteWorker';
 import { summary } from '@/devices/status';
 import { agentDisplay } from '@mac/state/agentStatus';
-import { chatTitle, folder, inProject, itemIn } from '@/devices/words';
+import { folder, inProject, itemIn } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
 import { AgentFace } from '@/ui/Buddy';
@@ -164,23 +165,20 @@ function Recent({
   );
 }
 
-type OpenAgent = { kind: 'chat'; chat: ChatInfo; rank?: number } | { kind: 'terminal'; session: SessionInfo; rank?: number };
+type OpenAgent = { shown: AgentShown } & ({ kind: 'chat'; chat: ChatInfo } | { kind: 'terminal'; session: SessionInfo });
 
-/** The open agents in the host rail's order, what wants the person first; agents the core has not ranked go last. */
+/** The open agents in the order the host lists them on every device, what wants the person first. */
 function openAgents(snapshot: Snapshot, scope: ProjectInfo | undefined, provider: string): OpenAgent[] {
-  const chats = snapshot.chats
-    .filter((chat) => (!scope || inProject(scope, chat.cwd)) && (provider === 'all' || chat.provider === provider))
-    .map((chat): OpenAgent => ({ kind: 'chat', chat, rank: chat.attentionRank }));
-  const terminals = snapshot.sessions
-    .filter(
-      (session) =>
-        session.agentName &&
-        session.running &&
-        (!scope || session.project === scope.id) &&
-        (provider === 'all' || session.agentType === provider),
-    )
-    .map((session): OpenAgent => ({ kind: 'terminal', session, rank: session.attentionRank }));
-  return [...chats, ...terminals].sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
+  return snapshot.inbox.agents.flatMap((shown): OpenAgent[] => {
+    const chat = snapshot.chats.find((candidate) => candidate.agentId === shown.agentId);
+    if (chat) {
+      const listed = (!scope || inProject(scope, chat.cwd)) && (provider === 'all' || chat.provider === provider);
+      return listed ? [{ kind: 'chat', chat, shown }] : [];
+    }
+    const session = snapshot.sessions.find((candidate) => candidate.agentId === shown.agentId);
+    const listed = session && (!scope || session.project === scope.id) && (provider === 'all' || session.agentType === provider);
+    return session && listed ? [{ kind: 'terminal', session, shown }] : [];
+  });
 }
 
 /** The host's agents: its open agents in one list, each with its own state, then its recent chats. */
@@ -217,14 +215,19 @@ function Agents({
           {open.map((agent) =>
             agent.kind === 'chat' ? (
               <Fragment key={agent.chat.agentId}>
-                <ChatRow core={core} chat={agent.chat} place={placeOf(agent.chat.cwd)} />
+                <ChatRow core={core} chat={agent.chat} shown={agent.shown} place={placeOf(agent.chat.cwd)} />
                 {workersOf(workers, agent.chat.agentId).map((worker) => (
                   <WorkerRow key={worker.agentId} worker={worker} nested />
                 ))}
               </Fragment>
             ) : (
               <Fragment key={agent.session.id}>
-                <TerminalAgentRow session={agent.session} place={placeOf(agent.session.project)} onOpen={() => onTab('terminals')} />
+                <TerminalAgentRow
+                  session={agent.session}
+                  shown={agent.shown}
+                  place={placeOf(agent.session.project)}
+                  onOpen={() => onTab('terminals')}
+                />
                 {agent.session.agentId
                   ? workersOf(workers, agent.session.agentId).map((worker) => <WorkerRow key={worker.agentId} worker={worker} nested />)
                   : null}
@@ -259,13 +262,13 @@ function terminalDetail(session: SessionInfo): string {
 
 /* A host sends its whole view several times a second while an agent works; each row redraws only when its own
    item changed, which the hub keeps as the same object otherwise. */
-const ChatRow = memo(function ChatRow({ core, chat, place }: { core: string; chat: ChatInfo; place?: string }) {
-  const display = agentDisplay(chat);
+const ChatRow = memo(function ChatRow({ core, chat, shown, place }: { core: string; chat: ChatInfo; shown: AgentShown; place?: string }) {
+  const display = agentDisplay(shown);
   return (
     <Row
       mark={<AgentFace agentId={chat.agentId} provider={chat.provider} group={display.group} size={20} />}
       name={chat.name}
-      title={chatTitle(chat)}
+      title={shown.title}
       place={place}
       end={
         <>
@@ -282,19 +285,21 @@ const ChatRow = memo(function ChatRow({ core, chat, place }: { core: string; cha
 /** An agent running in a terminal, listed with the chats as the host's rail lists it. */
 const TerminalAgentRow = memo(function TerminalAgentRow({
   session,
+  shown,
   place,
   onOpen,
 }: {
   session: SessionInfo;
+  shown: AgentShown;
   place?: string;
   onOpen: () => void;
 }) {
-  const { group } = agentDisplay(session);
+  const { group } = agentDisplay(shown);
   return (
     <Row
       mark={<AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} group={group} size={20} />}
       name={session.agentName}
-      title={terminalTitle(session)}
+      title={shown.title}
       place={place}
       end={<AgentState group={group} />}
       onPress={onOpen}
