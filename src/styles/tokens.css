@@ -159,7 +159,7 @@
      * existing sheets get the new geometry without touching every rule.
      */
     --radius-1: 4px; /* badges, chips, dots, the smallest controls */
-    --radius-2: 6px; /* buttons, inputs, rows, tabs — the default */
+    --radius-2: 4px; /* buttons, inputs, rows, tabs — the default */
     --radius-3: 10px; /* rails, panels, cards */
     --radius-4: 14px; /* palettes, dialogs, anything that floats */
     --radius-full: 999px;

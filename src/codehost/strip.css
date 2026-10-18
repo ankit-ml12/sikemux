@@ -35,7 +35,7 @@
     flex: none;
     padding: 2px;
     border: 1px solid var(--border-strong);
-    border-radius: 8px;
+    border-radius: calc(var(--radius-2) + 2px);
     background: var(--s-sunken);
 }
 .git-nav-tab {

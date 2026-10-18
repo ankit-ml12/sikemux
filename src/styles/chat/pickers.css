@@ -159,7 +159,7 @@
     width: 100%;
     padding: 10px;
     text-align: left;
-    border-radius: 7px;
+    border-radius: var(--radius-2);
     color: var(--ink);
 }
 
