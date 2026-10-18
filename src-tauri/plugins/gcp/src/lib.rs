@@ -53,6 +53,7 @@ mod registry;
 mod run;
 mod scheduler;
 mod secrets;
+mod services;
 mod sql;
 mod storage;
 
@@ -209,6 +210,7 @@ impl Plugin for Gcp {
                 "tables" => answer(bigquery::tables(params(input)?)).await,
                 "table" => answer(bigquery::table(params(input)?)).await,
                 "query" => answer(bigquery::query(params(input)?)).await,
+                "enableService" => answer(services::enable(params(input)?)).await,
                 _ => match agent::call(ctx, method, input).await {
                     Some(answer) => answer,
                     None => Err(PluginError::unknown_method(method)),

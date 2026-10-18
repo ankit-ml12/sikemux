@@ -109,7 +109,7 @@ pub fn checked(status: u16, body: Value) -> GcpResult<Value> {
             || message.contains("is disabled") =>
         {
             GcpError::ServiceDisabled {
-                service: "needed".into(),
+                service: service_named_in(&message).unwrap_or_else(|| "needed".into()),
                 url: None,
             }
         }
@@ -121,6 +121,13 @@ pub fn checked(status: u16, body: Value) -> GcpResult<Value> {
             message: message.chars().take(300).collect(),
         },
     })
+}
+
+/// The API in a message such as "... Enable it by visiting https://console.developers.google.com/apis/api/run.googleapis.com/overview?project=1".
+fn service_named_in(message: &str) -> Option<String> {
+    let (_, rest) = message.split_once("/apis/api/")?;
+    let service = rest.split(['/', '?', ' ']).next()?;
+    (!service.is_empty()).then(|| service.to_string())
 }
 
 async fn request(
@@ -306,6 +313,11 @@ mod tests {
         assert!(matches!(
             checked(403, disabled),
             Err(GcpError::ServiceDisabled { service, url: Some(_) }) if service == "run.googleapis.com"
+        ));
+        let bare = json!({ "error": { "code": 403, "message": "Compute Engine API has not been used in project 1 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/compute.googleapis.com/overview?project=1 then retry." } });
+        assert!(matches!(
+            checked(403, bare),
+            Err(GcpError::ServiceDisabled { service, url: None }) if service == "compute.googleapis.com"
         ));
         let denied = json!({ "error": { "code": 403, "message": "Permission 'run.services.list' denied", "status": "PERMISSION_DENIED" } });
         assert!(matches!(checked(403, denied), Err(GcpError::Permission(_))));

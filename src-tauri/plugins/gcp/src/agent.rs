@@ -12,7 +12,7 @@ use crate::auth::{self, Target};
 use crate::error::{GcpError, GcpResult};
 use crate::{
     alerting, bigquery, build, compute, dns, errors, functions, gke, iam, logging, metrics,
-    network, projects, pubsub, registry, run, scheduler, secrets, sql, storage,
+    network, projects, pubsub, registry, run, scheduler, secrets, services, sql, storage,
 };
 
 /// A tool's input as the shape a module reads, saying which field was wrong when one was.
@@ -306,6 +306,7 @@ async fn act(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
             let change = action.trim_start_matches("schedule_");
             scheduler::change(read(with(json!({ "location": location, "job": name, "action": change })))?).await
         }
+        "api_enable" => services::enable(read(with(json!({ "service": name })))?).await,
         other => Err(GcpError::BadArg(format!("`{other}` is not an action gcp_act knows"))),
     }
 }

@@ -364,7 +364,8 @@
             "firewall_disable",
             "firewall_enable",
             "alert_disable",
-            "alert_enable"
+            "alert_enable",
+            "api_enable"
           ]
         },
         "project": {
