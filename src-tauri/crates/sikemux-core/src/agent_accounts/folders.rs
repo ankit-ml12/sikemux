@@ -195,21 +195,25 @@ fn make_account(provider: &str, name: &str, home: &Path) -> Result<String, Strin
         counter += 1;
     }
     let directory = home.join(&folder);
-    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-    std::fs::write(
-        directory.join(MARKER),
-        "Made by Sikemux for one account. Links here point at the default account's shared files.\n",
-    )
-    .map_err(|error| error.to_string())?;
+    write_private(
+        &directory.join(MARKER),
+        b"Made by Sikemux for one account. Links here point at the default account's shared files.\n",
+    )?;
     if provider == "claude" {
         let default = std::fs::read(home.join(".claude.json"))
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .unwrap_or(Value::Null);
         let seed = serde_json::to_vec_pretty(&claude_seed(&default)).map_err(|e| e.to_string())?;
-        std::fs::write(directory.join(".claude.json"), seed).map_err(|e| e.to_string())?;
+        write_private(&directory.join(".claude.json"), &seed)?;
     }
     Ok(format!("~/{folder}"))
+}
+
+/// The seed copies MCP servers whose environment may hold tokens, so the
+/// folder and its files are the person's alone.
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    sikemux_process::files::write_atomic(path, bytes, true).map_err(|error| error.to_string())
 }
 
 /// Makes a folder for another account, sharing what the default one has, and
