@@ -382,9 +382,9 @@ fn for_project(found: Vec<ListeningPort>, project: &Path) -> Vec<ProjectPort> {
 pub(crate) async fn project_ports(core: &Arc<Core>, project: String) -> CoreResult<Vec<ProjectPort>> {
     let first = {
         let mut state = core.ports.lock();
-        let first = !state
+        let first = state
             .watched_until
-            .is_some_and(|until| Instant::now() < until);
+            .is_none_or(|until| Instant::now() >= until);
         state.watched_until = Some(Instant::now() + WATCHED_FOR);
         first
     };

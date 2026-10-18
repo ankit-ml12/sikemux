@@ -16,14 +16,17 @@ const GATHER: Duration = Duration::from_millis(50);
 /// Past this many paths a notice says anything may have changed.
 const MAX_PATHS: usize = 512;
 
+/// Paths by topic and project; none means anything may have changed.
+type Pending = BTreeMap<(String, Option<String>), Option<BTreeSet<String>>>;
+
 #[derive(Default)]
 pub(crate) struct Changes {
-    pending: Mutex<BTreeMap<(String, Option<String>), Option<BTreeSet<String>>>>,
+    pending: Mutex<Pending>,
     notify: Notify,
 }
 
 impl Changes {
-    fn lock(&self) -> MutexGuard<'_, BTreeMap<(String, Option<String>), Option<BTreeSet<String>>>> {
+    fn lock(&self) -> MutexGuard<'_, Pending> {
         self.pending
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
