@@ -6,6 +6,8 @@ import { metricsR, runJobR, runJobsR, runServiceR, runServicesR } from "../resou
 import { splitOpen, updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { LogStream } from "./LogStream";
+import { SendToAgent } from "./SendToAgent";
+import { serviceForAgent } from "../forAgent";
 import { ago, Button, consoleUrl, Copyable, Facts, keyOf, Loaded, PageHeader, Sparkline, Status, Table, Tabs, took, useAction, visit } from "./parts";
 
 const LISTS = [
@@ -206,6 +208,7 @@ function ServicePage({
                 <Button disabled={action.busy} onClick={() => sendAll(null)}>
                     Send all traffic to latest
                 </Button>
+                <SendToAgent disabled={!service.data} delivery={() => (service.data ? serviceForAgent(target.project, service.data) : "")} />
                 <Button onClick={() => visit(consoleUrl(`run/detail/${location}/${name}/metrics`, target.project))}>
                     Edit & deploy in Cloud console
                 </Button>

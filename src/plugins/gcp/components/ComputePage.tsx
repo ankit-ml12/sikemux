@@ -5,6 +5,8 @@ import { instanceR, instancesR, metricsR, serialR } from "../resources";
 import { splitOpen, updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { LogStream } from "./LogStream";
+import { SendToAgent } from "./SendToAgent";
+import { serialForAgent } from "../forAgent";
 import { Filter } from "./RunPage";
 import { ago, Button, consoleUrl, Copyable, Facts, keyOf, Loaded, PageHeader, size, Sparkline, Status, Table, Tabs, useAction, visit } from "./parts";
 
@@ -149,7 +151,7 @@ function InstancePage({
                         <Tabs label={name} tabs={TABS} value={tab} onChange={(value) => updateGcpView(paneId, { tab: value })} />
                         {tab === "details" && <InstanceFacts detail={detail} />}
                         {tab === "observability" && <InstanceCpu active={active} target={target} id={detail.id} />}
-                        {tab === "serial" && <Serial active={active} target={target} zone={zone} name={name} />}
+                        {tab === "serial" && <Serial active={active} target={target} zone={zone} name={name} vm={detail} />}
                         {tab === "logs" && <LogStream active={active} target={target} query={{ resource: "instance", name: detail.id }} />}
                     </>
                 )}
@@ -203,7 +205,7 @@ function InstanceCpu({ active, target, id }: { active: boolean; target: Target; 
     );
 }
 
-function Serial({ active, target, zone, name }: { active: boolean; target: Target; zone: string; name: string }) {
+function Serial({ active, target, zone, name, vm }: { active: boolean; target: Target; zone: string; name: string; vm: VmDetail }) {
     const serial = useResourceEnabled(active, serialR, ...keyOf(target), zone, name);
     return (
         <Loaded
@@ -215,6 +217,7 @@ function Serial({ active, target, zone, name }: { active: boolean; target: Targe
                     <div className="gcp-log-bar">
                         {output.trimmed && <span className="gcp-muted">Showing the last 256 KiB.</span>}
                         <Button onClick={() => void serial.refresh()}>Refresh</Button>
+                        <SendToAgent delivery={() => serialForAgent(target.project, vm, output.contents)} />
                     </div>
                     <pre className="gcp-terminal">{output.contents}</pre>
                 </div>

@@ -7,6 +7,8 @@ import { clustersR, kubeServicesR, podsR, workloadsR } from "../resources";
 import { splitOpen, updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { LogStream } from "./LogStream";
+import { SendToAgent } from "./SendToAgent";
+import { podForAgent } from "../forAgent";
 import { Filter } from "./RunPage";
 import { ago, Button, consoleUrl, Facts, keyOf, Loaded, PageHeader, Status, Table, Tabs, useAction, visit } from "./parts";
 
@@ -348,6 +350,7 @@ function PodLogs({ target, cluster, pod, onBack }: { target: Target; cluster: Gk
         <div className="gcp-section">
             <PageHeader title={<>Logs: {pod.name}</>} back={{ label: "pods", go: onBack }}>
                 <Button onClick={() => setPrevious(!previous)}>{previous ? "Current run" : "Previous run"}</Button>
+                <SendToAgent disabled={!lines} delivery={() => podForAgent(target.project, cluster, pod, lines ?? [], previous)} />
             </PageHeader>
             <Facts
                 items={[
