@@ -41,6 +41,7 @@ mod remote;
 mod sandbox;
 mod sandbox;
 mod saved;
+mod saved_sessions;
 mod seen;
 mod session;
 mod share;

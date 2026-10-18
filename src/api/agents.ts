@@ -106,7 +106,7 @@ async function fetchSessions(agent: string, cwd: string, configPath?: string): P
     const k = key(agent, cwd, configPath);
     const existing = inflight.get(k);
     if (existing) return existing;
-    const p = invoke<AgentSession[]>("agent_sessions", { agent, cwd, configPath }).finally(() => {
+    const p = coreCall<AgentSession[]>("savedSessions", { agent, cwd, configPath }).finally(() => {
         inflight.delete(k);
     });
     inflight.set(k, p);
@@ -182,13 +182,13 @@ export const agentApi = {
         return Promise.resolve(stop);
     },
     sessions: fetchSessions,
-    recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => invoke<RecentChatsPage>("agent_recent_sessions", { request }),
+    recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => coreCall<RecentChatsPage>("recentSessions", { request }),
     renameSession: (agent: AgentType, cwd: string, sessionId: string, title: string, executablePath?: string, configPath?: string): Promise<void> =>
-        invoke<void>("agent_session_rename", { agent, cwd, sessionId, title, executablePath, configPath }),
+        coreCall<void>("renameSession", { agent, cwd, sessionId, title, executablePath, configPath }),
     deleteSession: (agent: AgentType, cwd: string, sessionId: string, executablePath?: string, configPath?: string): Promise<void> =>
-        invoke<void>("agent_session_delete", { agent, cwd, sessionId, executablePath, configPath }),
+        coreCall<void>("deleteSession", { agent, cwd, sessionId, executablePath, configPath }),
     relocateSession: (agent: AgentType, fromCwd: string, toCwd: string, sessionId: string, configPath?: string): Promise<void> =>
-        invoke<void>("agent_session_relocate", { agent, fromCwd, toCwd, sessionId, configPath }),
+        coreCall<void>("relocateSession", { agent, fromCwd, toCwd, sessionId, configPath }),
     watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
         invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),
     watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),

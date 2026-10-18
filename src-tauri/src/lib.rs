@@ -1,6 +1,5 @@
 mod account;
 mod acp;
-mod core_call;
 mod agent_notification;
 mod agent_questions;
 mod agents;
@@ -10,6 +9,7 @@ mod autopsy;
 mod browser;
 mod cli_install;
 mod cli_open;
+mod core_call;
 mod deep_link;
 mod dialogs;
 mod diff;
@@ -333,12 +333,6 @@ pub fn run() {
             grammars::grammar_load,
             state::state_save,
             agents::executable::available_agents,
-            agents::sessions::agent_sessions,
-            agents::sessions::recent::agent_recent_sessions,
-            agents::sessions::rename::agent_session_rename,
-            agents::sessions::delete::agent_session_delete,
-            agents::sessions::relocate::agent_session_relocate,
-            agents::sessions::live_agent_sessions,
             agents::watch::agent_sessions_watch_start,
             agents::watch::agent_sessions_watch_stop,
             fs::read_dir,

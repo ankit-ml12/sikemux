@@ -39,7 +39,8 @@ pub(crate) fn needs(method: &str) -> Needs {
         "createAgentWorktree" => Needs::Person,
         "modelProviders" | "modelProviderModels" | "modelHelper" | "agentSignIns" => Needs::Full,
         "agentSignIn" | "agentSignInCode" | "cancelAgentSignIn" | "agentSignOut" => Needs::Person,
-        "skillsOverview" | "skillsAdded" => Needs::Full,
+        "skillsOverview" | "skillsAdded" | "savedSessions" | "recentSessions" => Needs::Full,
+        "renameSession" | "deleteSession" | "relocateSession" => Needs::Person,
         "createSkill" | "installSkill" | "removeSkill" | "adoptSkill" => Needs::Person,
         "modelProviderCheck" | "modelProviderConnect" | "modelProviderDisconnect"
         | "setModelHelper" => Needs::Person,
@@ -85,6 +86,8 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "agentSignIns"
             | "skillsOverview"
             | "skillsAdded"
+            | "savedSessions"
+            | "recentSessions"
     )
 }
 
@@ -142,6 +145,9 @@ pub(crate) async fn call(
         "createAgentWorktree" => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
         method if method.starts_with("git.") => {
             super::git::call(&core, &client.peer, method, params).await
+        }
+        method if super::saved_sessions::METHODS.contains(&method) => {
+            super::saved_sessions::call(method, params).await
         }
         method if super::skill_library::METHODS.contains(&method) => {
             super::skill_library::call(&core, method, params).await

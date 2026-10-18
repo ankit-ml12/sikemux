@@ -1,6 +1,5 @@
 pub(crate) mod config;
 pub(crate) mod executable;
-pub(crate) mod sessions;
 pub(crate) mod watch;
 
 use serde::{Deserialize, Serialize};

@@ -557,13 +557,14 @@ export class ShowcaseBackend implements IpcTransport {
     });
 
     this.on("available_agents", constant(AVAILABLE_AGENTS));
-    this.on("agent_sessions", ({ agent, cwd }) =>
-      (SAVED_SESSIONS[agent as string] ?? []).filter(
+    this.onCore(["savedSessions"], ({ params }) => {
+      const { agent, cwd } = params as Args;
+      return (SAVED_SESSIONS[agent as string] ?? []).filter(
         (row) => row.project === cwd,
-      ),
-    );
-    this.on("agent_recent_sessions", ({ request }) =>
-      recentPage(request as RecentRequest),
+      );
+    });
+    this.onCore(["recentSessions"], ({ params }) =>
+      recentPage((params as Args).request as RecentRequest),
     );
     this.onCore(["agentUsage", "agentAccountStatus"], ({ method, params }) => {
       const { provider, configPath } = (params ?? {}) as Args;
