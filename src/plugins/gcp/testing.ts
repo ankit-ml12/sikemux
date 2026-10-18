@@ -65,6 +65,7 @@ export function mockApi() {
         iamMembers: vi.fn(),
         serviceAccounts: vi.fn(),
         billing: vi.fn(),
+        enableService: vi.fn(),
         network: vi.fn(),
         firewallToggle: vi.fn(),
         dnsZones: vi.fn(),

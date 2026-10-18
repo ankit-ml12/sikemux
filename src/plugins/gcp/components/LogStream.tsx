@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDebounced } from "../../../plugin-api/hooks";
 import { Dropdown, EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import { failureMessage, gcpApi, type LogEntry, type LogQuery, type Target } from "../api";
+import { Problem } from "./Problem";
 
 const SEVERITIES = [
     { value: "", label: "All severities" },
@@ -104,6 +105,7 @@ export function LogStream({ active, target, query, extraFilter }: { active: bool
     const [live, setLive] = useState(false);
     const [entries, setEntries] = useState<LogEntry[] | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [attempt, setAttempt] = useState(0);
     const end = useRef<HTMLDivElement>(null);
     const full: LogQuery = useMemo(
         () => ({ ...query, severity: severity || null, since, text: text || null, filter: extraFilter || query.filter || null, limit: 300 }),
@@ -137,7 +139,7 @@ export function LogStream({ active, target, query, extraFilter }: { active: bool
         return () => {
             current = false;
         };
-    }, [active, live, target, full]);
+    }, [active, live, target, full, attempt]);
 
     useEffect(() => {
         if (live) end.current?.scrollIntoView({ block: "end" });
@@ -161,7 +163,7 @@ export function LogStream({ active, target, query, extraFilter }: { active: bool
                 </button>
             </div>
             {error ? (
-                <EmptyState message={error} tone="error" />
+                <Problem error={error} what="logs" onRetry={() => setAttempt((n) => n + 1)} />
             ) : entries === null ? (
                 <SkeletonRows rows={8} label="Loading log entries" />
             ) : entries.length === 0 ? (

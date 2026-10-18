@@ -6,6 +6,7 @@ import { datasetsR, tableR, tablesR } from "../resources";
 import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { Button, consoleUrl, Facts, keyOf, PageHeader, size, Tabs, visit } from "./parts";
+import { Problem } from "./Problem";
 
 const cell = (value: unknown) => (value === null || value === undefined ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value));
 
@@ -228,7 +229,7 @@ function TableView({ paneId, active, target, dataset, table }: { paneId: string;
             </h2>
             <Tabs label={table} tabs={TABLE_TABS} value={tab} onChange={(value) => updateGcpView(paneId, { tab: value })} />
             {found.status === "error" && !found.data ? (
-                <EmptyState message={found.error ?? "Could not open the table."} tone="error" />
+                <Problem error={found.error} what="the table" onRetry={() => void found.refresh()} />
             ) : !found.data ? (
                 <SkeletonRows rows={5} label="Loading the table" />
             ) : tab === "schema" ? (

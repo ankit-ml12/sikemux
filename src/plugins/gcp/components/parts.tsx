@@ -5,6 +5,7 @@ import { invalidate, type ResourceHandle } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { failureMessage, type Series, type Target } from "../api";
 import { gcpSettings } from "../state";
+import { Problem } from "./Problem";
 
 /** The account and project the console acts on, or null before a project is picked. */
 export function useTarget(): Target | null {
@@ -183,7 +184,7 @@ export function Loaded<T>({
     children: (data: T) => ReactNode;
 }) {
     if (handle.status === "error" && handle.data === undefined)
-        return <EmptyState message={handle.error ?? `Could not load ${name}.`} tone="error" />;
+        return <Problem error={handle.error} what={name} onRetry={() => void handle.refresh()} />;
     if (handle.data === undefined) return <SkeletonRows rows={6} label={`Loading ${name}`} />;
     const nothing = empty(handle.data);
     return (

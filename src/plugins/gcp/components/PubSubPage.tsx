@@ -8,6 +8,7 @@ import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { Filter } from "./RunPage";
 import { ago, Button, consoleUrl, Facts, keyOf, Loaded, PageHeader, Sparkline, Table, Tabs, visit } from "./parts";
+import { Problem } from "./Problem";
 
 const LISTS = [
     { value: "topics", label: "Topics" },
@@ -225,7 +226,7 @@ function SubscriptionPanel({
                         <span className="gcp-muted">Messages are handed straight back, so readers still get them.</span>
                     </div>
                     {error ? (
-                        <EmptyState message={error} tone="error" />
+                        <Problem error={error} what="messages" onRetry={pull} />
                     ) : pulling && !messages ? (
                         <SkeletonRows rows={3} label="Pulling messages" />
                     ) : messages && messages.length === 0 ? (

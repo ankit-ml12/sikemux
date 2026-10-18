@@ -778,6 +778,8 @@ export const gcpApi = {
     alertPolicyToggle: (target: Target, policy: string, enabled: boolean) =>
         backend.call<unknown>("alertPolicyToggle", { ...t(target), policy, enabled }),
     billing: (target: Target) => backend.call<Billing>("billing", t(target)),
+    enableService: (target: Target, service: string) =>
+        backend.call<{ service: string; enabled: boolean }>("enableService", { ...t(target), service }),
     datasets: (target: Target) => backend.call<{ id: string; location: string | null; name: string | null }[]>("datasets", t(target)),
     tables: (target: Target, dataset: string) =>
         backend.call<{ id: string; type: string; partitioned: boolean }[]>("tables", { ...t(target), dataset }),

@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { notify, pickFile } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
+import { SkeletonRows } from "../../../plugin-api/ui";
 import { failureMessage, gcpApi, type Bucket, type ObjectPreview, type StorageObject, type Target } from "../api";
 import { bucketsR, folderR } from "../resources";
 import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { Filter } from "./RunPage";
 import { ago, Button, consoleUrl, Copyable, Facts, keyOf, Loaded, PageHeader, size, Table, visit } from "./parts";
+import { Problem } from "./Problem";
 
 export function StoragePage({ paneId, active, target }: ProductProps) {
     const view = useGcpView(paneId);
@@ -152,6 +153,7 @@ function BucketBrowser({ paneId, active, target, bucket }: ProductProps & { buck
 function ObjectPanel({ target, bucket, name, onClose }: { target: Target; bucket: string; name: string; onClose: () => void }) {
     const [preview, setPreview] = useState<ObjectPreview | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [attempt, setAttempt] = useState(0);
     const [saving, setSaving] = useState(false);
     useEffect(() => {
         let current = true;
@@ -164,7 +166,7 @@ function ObjectPanel({ target, bucket, name, onClose }: { target: Target; bucket
         return () => {
             current = false;
         };
-    }, [target, bucket, name]);
+    }, [target, bucket, name, attempt]);
     const download = () => {
         setSaving(true);
         gcpApi
@@ -182,7 +184,7 @@ function ObjectPanel({ target, bucket, name, onClose }: { target: Target; bucket
                 </button>
             </header>
             {error ? (
-                <EmptyState message={error} tone="error" />
+                <Problem error={error} what="the preview" onRetry={() => setAttempt((n) => n + 1)} />
             ) : !preview ? (
                 <SkeletonRows rows={5} label="Loading the object" />
             ) : (

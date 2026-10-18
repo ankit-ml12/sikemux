@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import type { GcpProject } from "../api";
+import { Problem } from "./Problem";
 import { gcpProjectsR } from "../resources";
 import { gcpSettings, setGcpProject } from "../state";
 
@@ -36,7 +37,7 @@ export function ProjectList({ active, onPicked }: { active: boolean; onPicked?: 
                 spellCheck={false}
             />
             {projects.status === "error" && !projects.data ? (
-                <EmptyState message={projects.error ?? "Could not list projects."} tone="error" />
+                <Problem error={projects.error} what="projects" onRetry={() => void projects.refresh()} />
             ) : !projects.data ? (
                 <SkeletonRows rows={5} label="Loading projects" />
             ) : shown.length === 0 ? (

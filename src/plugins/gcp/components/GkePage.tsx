@@ -11,6 +11,7 @@ import { SendToAgent } from "./SendToAgent";
 import { podForAgent } from "../forAgent";
 import { Filter } from "./RunPage";
 import { ago, Button, consoleUrl, Facts, keyOf, Loaded, PageHeader, Status, Table, Tabs, useAction, visit } from "./parts";
+import { Problem } from "./Problem";
 
 export function GkePage({ paneId, active, target }: ProductProps) {
     const view = useGcpView(paneId);
@@ -376,6 +377,7 @@ function PodLogs({ target, cluster, pod, onBack }: { target: Target; cluster: Gk
     const [previous, setPrevious] = useState(false);
     const [lines, setLines] = useState<PodLogLine[] | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [attempt, setAttempt] = useState(0);
     useEffect(() => {
         let current = true;
         setLines(null);
@@ -387,7 +389,7 @@ function PodLogs({ target, cluster, pod, onBack }: { target: Target; cluster: Gk
         return () => {
             current = false;
         };
-    }, [target, cluster.location, cluster.name, pod.namespace, pod.name, previous]);
+    }, [target, cluster.location, cluster.name, pod.namespace, pod.name, previous, attempt]);
     return (
         <div className="gcp-section">
             <PageHeader title={<>Logs: {pod.name}</>} back={{ label: "pods", go: onBack }}>
@@ -404,7 +406,7 @@ function PodLogs({ target, cluster, pod, onBack }: { target: Target; cluster: Gk
             />
             <PodEvents target={target} cluster={cluster} pod={pod} />
             {error ? (
-                <EmptyState message={error} tone="error" />
+                <Problem error={error} what="pod logs" onRetry={() => setAttempt((n) => n + 1)} />
             ) : !lines ? (
                 <SkeletonRows rows={8} label="Loading pod logs" />
             ) : lines.length === 0 ? (

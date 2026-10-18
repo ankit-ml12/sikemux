@@ -17,6 +17,7 @@ import type { Target } from "../api";
 import { ProductIcon } from "./icons";
 import { RecentErrors } from "./RecentErrors";
 import { ago, Button, consoleUrl, Facts, keyOf, PageHeader, Status, visit } from "./parts";
+import { Problem } from "./Problem";
 
 function Card({
     product,
@@ -58,6 +59,8 @@ export function Overview({ active, target, onOpen }: { active: boolean; target: 
     const project = useResourceEnabled(active, gcpProjectsR, target.account ?? "").data?.find((each) => each.id === target.project);
     const openErrors = (errors.data ?? []).filter((group) => group.status === "OPEN").length;
     const count = (data: unknown[] | undefined, failed: boolean) => (data ? data.length : failed ? "—" : "…");
+    const note = (handle: { data: unknown; failure: string | undefined }, detail: string) =>
+        !handle.data && handle.failure === "service-disabled" ? "API not enabled" : detail;
     const failing = (run.data ?? []).filter((service) => service.state === "FAILED").length;
     const running = (instances.data ?? []).filter((vm) => vm.status === "RUNNING").length;
 
@@ -80,7 +83,7 @@ export function Overview({ active, target, onOpen }: { active: boolean; target: 
                 <section className="gcp-box-card" aria-label="Billing">
                     <h2 className="gcp-section-title">Billing</h2>
                     {billing.status === "error" && !billing.data ? (
-                        <p className="gcp-note">{billing.error}</p>
+                        <Problem compact error={billing.error} what="billing" onRetry={() => void billing.refresh()} />
                     ) : !billing.data ? (
                         <p className="gcp-note">Loading…</p>
                     ) : (
@@ -129,43 +132,49 @@ export function Overview({ active, target, onOpen }: { active: boolean; target: 
                         product="run"
                         title="Cloud Run"
                         value={count(run.data, run.status === "error")}
-                        detail={failing > 0 ? `${failing} failing` : "services"}
+                        detail={note(run, failing > 0 ? `${failing} failing` : "services")}
                         onOpen={() => onOpen("run")}
                     />
                     <Card
                         product="functions"
                         title="Cloud Functions"
                         value={count(functions.data, functions.status === "error")}
-                        detail="functions"
+                        detail={note(functions, "functions")}
                         onOpen={() => onOpen("functions")}
                     />
                     <Card
                         product="compute"
                         title="Compute Engine"
                         value={count(instances.data, instances.status === "error")}
-                        detail={instances.data ? `${running} running` : "VMs"}
+                        detail={note(instances, instances.data ? `${running} running` : "VMs")}
                         onOpen={() => onOpen("compute")}
                     />
                     <Card
                         product="gke"
                         title="Kubernetes Engine"
                         value={count(clusters.data, clusters.status === "error")}
-                        detail="clusters"
+                        detail={note(clusters, "clusters")}
                         onOpen={() => onOpen("gke")}
                     />
                     <Card
                         product="storage"
                         title="Cloud Storage"
                         value={count(buckets.data, buckets.status === "error")}
-                        detail="buckets"
+                        detail={note(buckets, "buckets")}
                         onOpen={() => onOpen("storage")}
                     />
-                    <Card product="sql" title="SQL" value={count(sql.data, sql.status === "error")} detail="instances" onOpen={() => onOpen("sql")} />
+                    <Card
+                        product="sql"
+                        title="SQL"
+                        value={count(sql.data, sql.status === "error")}
+                        detail={note(sql, "instances")}
+                        onOpen={() => onOpen("sql")}
+                    />
                     <Card
                         product="errors"
                         title="Error Reporting"
                         value={errors.data ? openErrors : errors.status === "error" ? "—" : "…"}
-                        detail="open in the last day"
+                        detail={note(errors, "open in the last day")}
                         onOpen={() => onOpen("errors")}
                     />
                 </div>

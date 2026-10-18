@@ -1,11 +1,12 @@
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
+import { SkeletonRows } from "../../../plugin-api/ui";
 import { gcpApi, type Secret, type Target } from "../api";
 import { secretR, secretsR } from "../resources";
 import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { Filter } from "./RunPage";
 import { ago, Button, consoleUrl, Facts, keyOf, Loaded, PageHeader, Status, Table, useAction, visit } from "./parts";
+import { Problem } from "./Problem";
 
 const replication = (secret: Secret) => (secret.replication === "automatic" ? "Automatic" : secret.replication.join(", "));
 
@@ -79,7 +80,7 @@ function SecretPanel({ active, target, name, onClose }: { active: boolean; targe
                 </button>
             </header>
             {secret.status === "error" && !secret.data ? (
-                <EmptyState message={secret.error ?? "Could not open the secret."} tone="error" />
+                <Problem error={secret.error} what="the secret" onRetry={() => void secret.refresh()} />
             ) : !secret.data ? (
                 <SkeletonRows rows={4} label="Loading the secret" />
             ) : (
