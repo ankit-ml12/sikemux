@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { notify } from "../../../plugin-api/host";
+import { isPluginFailure } from "../../../plugin-api/backend";
 import { failureMessage, gcpApi, refreshGcp } from "../api";
 import type { Product } from "../state";
 import { ProductIcon } from "./icons";
@@ -58,6 +59,7 @@ export function Problem({ error, what, onRetry, compact }: { error: string | und
 function ApiOff({ service, compact }: { service: string; compact?: boolean }) {
     const target = useTarget();
     const [enabling, setEnabling] = useState(false);
+    const [unbilled, setUnbilled] = useState(false);
     const known = APIS[service];
     const name = known?.name ?? (service === "needed" ? "A required API" : service);
     const project = target?.project ?? "";
@@ -72,7 +74,10 @@ function ApiOff({ service, compact }: { service: string; compact?: boolean }) {
                 notify("info", `${name} is on.`);
                 refreshGcp();
             })
-            .catch((failure: unknown) => notify("error", `Enable ${name}: ${plainError(failureMessage(failure))}`))
+            .catch((failure: unknown) => {
+                if (isPluginFailure(failure, "billing-disabled")) setUnbilled(true);
+                else notify("error", `Enable ${name}: ${plainError(failureMessage(failure))}`);
+            })
             .finally(() => setEnabling(false));
     };
 
@@ -84,16 +89,23 @@ function ApiOff({ service, compact }: { service: string; compact?: boolean }) {
                 </div>
             )}
             <h3>{name}</h3>
-            <p>
-                {service === "needed" ? "An API this page needs" : "This API"} isn't enabled for <strong>{project}</strong>. Enable it to use this
-                page; it can take a minute to start working.
-            </p>
+            {unbilled ? (
+                <p>
+                    Google needs a billing account linked to <strong>{project}</strong> before it turns on this API. Link one, then enable it again.
+                </p>
+            ) : (
+                <p>
+                    {service === "needed" ? "An API this page needs" : "This API"} isn't enabled for <strong>{project}</strong>. Enable it to use this
+                    page; it can take a minute to start working.
+                </p>
+            )}
             <div className="gcp-problem-actions">
                 {service !== "needed" && (
                     <Button primary onClick={enable} disabled={enabling || !target}>
                         {enabling ? "Enabling…" : "Enable"}
                     </Button>
                 )}
+                {unbilled && <Button onClick={() => visit(consoleUrl("billing/linkedaccount", project))}>Link a billing account</Button>}
                 <Button onClick={() => visit(library)}>{service === "needed" ? "Open API library" : "Open in Console"}</Button>
             </div>
         </div>

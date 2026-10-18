@@ -36,6 +36,13 @@ describe("Problem", () => {
         await waitFor(() => expect(api.enableService).toHaveBeenCalledWith({ account: null, project: "acme" }, "compute.googleapis.com"));
     });
 
+    it("asks for a billing account when Google won't turn the API on without one", async () => {
+        api.enableService.mockRejectedValue({ category: "billing-disabled", message: "billing isn't enabled" });
+        render(<Problem error={turnedOff} what="VM instances" onRetry={vi.fn()} />);
+        fireEvent.click(screen.getByRole("button", { name: "Enable" }));
+        expect(await screen.findByRole("button", { name: "Link a billing account" })).toBeTruthy();
+    });
+
     it("lets any other failure be tried again", () => {
         const retry = vi.fn();
         render(<Problem error="sikemux.gcp: gcp: http 500: boom" what="buckets" onRetry={retry} />);
