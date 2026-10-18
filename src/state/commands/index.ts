@@ -1,4 +1,3 @@
-export { agentSupportsSkipPermissions } from "./agentLogic";
 export { agentDirectCommand, agentExecutablePath, agentStartup, profileOf, relaunchSpec, shellQuote } from "./agentLaunchCommand";
 export { mergePinnedIntoRoots, normaliseProjectRoots } from "./settingsLogic";
 export * from "./agents";

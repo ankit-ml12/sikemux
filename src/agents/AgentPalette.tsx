@@ -11,7 +11,7 @@ import { useStore } from "../state/store";
 import type { AgentPermissionMode, AgentType } from "../state/types";
 import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../ui/Icons";
 import { formatAge } from "../lib/format";
-import { agentAbout, agentLabel, installCommand, loginArgs } from "./catalog";
+import { agentAbout, agentLabel, canBypassPermissions, installCommand, loginArgs } from "./catalog";
 import { installAgent, signInAgent } from "./AgentInstall";
 import { withMissingAgents } from "./setupList";
 import { leavingOverlay } from "../lib/motion";
@@ -164,7 +164,7 @@ export function AgentPalette() {
     }
 
     function launchMode(type: AgentType): AgentPermissionMode {
-        return mode === YOLO && !cmd.agentSupportsSkipPermissions(type) ? NORMAL : mode;
+        return mode === YOLO && !canBypassPermissions(type) ? NORMAL : mode;
     }
 
     function moveSelection(delta: number) {

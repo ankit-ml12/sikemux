@@ -3,20 +3,20 @@ import { acpApi } from "../../api/acp";
 import { agentNamesApi } from "../../api/agentNames";
 import type { ChatInfo } from "../../api/generated/wire";
 import { runOfAgent } from "../../agents/agentBoard";
-import { waitsOnPerson, type AgentQuestion } from "../../agents/agentQuestions";
+import type { AgentQuestion } from "../../agents/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
-import { isAgentType } from "../../agents/catalog";
+import { canBypassPermissions, isAgentType } from "../../agents/catalog";
 import { agentSupportsChat, effectiveMode, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
-import { isAgentBusy, reduceAgentState } from "../agentStatus";
+import { agentHasBackgroundWork, isAgentBusy, type AgentShown } from "../agentStatus";
+import { chatShown } from "../../chat/chatViews";
 import { confirmDialog } from "../dialog";
 import { invalidate, peekResource } from "../resources";
 import { agentCatalogR, agentSessionsR } from "../resources.defs";
 import { getState, mutate, type StoreState } from "../store";
 import { notify, reportError, swallow } from "../toast";
 import { agentIdsWithLiveSessions } from "../agentLiveSessions";
-import { agentSupportsSkipPermissions } from "./agentLogic";
 import { agentExecutablePath, profileOf, relaunchSpec } from "./agentLaunchCommand";
 import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId, projectSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
@@ -56,7 +56,7 @@ export function agentSessionMetadataPending(agent: Agent): boolean {
 export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string): void {
     mutate((d) => {
         const agent = d.agents[id];
-        if (!agent || isAgentBusy(d.agentActivity[id])) return;
+        if (!agent || isAgentBusy(d.agentStatus[id])) return;
         const profile = profileId ? profileOf(d, { profileId, type }) : undefined;
         if (profileId && !profile) return;
         const mode = normalizePermissionMode(type, agent.permissionMode ?? d.defaultAgentPermissionMode);
@@ -110,7 +110,7 @@ export function setAgentPermissionMode(id: string, requestedMode: AgentPermissio
 
 export function toggleAgentSkipPermissions(id: string): void {
     const agent = getState().agents[id];
-    if (!agent || !agentSupportsSkipPermissions(agent.type)) return;
+    if (!agent || !canBypassPermissions(agent.type)) return;
     const next = effectiveMode(agent) === "bypass" ? normalizePermissionMode(agent.type, "workspace-write") : "bypass";
     setAgentPermissionMode(id, next);
 }
@@ -392,7 +392,7 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
         if (candidates.length === 0) return;
 
         const freshAgents = matchingAgents
-            .filter((agent) => !agent.resumeId && d.agentActivity[agent.id]?.source !== "acp")
+            .filter((agent) => !agent.resumeId && !chatShown(agent.id))
             .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
         for (const agent of freshAgents) {
             // Only adopt a session that didn't exist when this agent launched,
@@ -453,8 +453,8 @@ export function canMoveAgentToProject(state: StoreState, agent: Agent): boolean 
     if (!agent.resumeId) return true;
     if (!RELOCATABLE_SESSIONS.has(agent.type)) return false;
     if (agent.launchState === "dormant") return true;
-    const backend = state.agentActivity[agent.id]?.backendState;
-    return backend !== "working" && backend !== "blocked" && !agentHasBackgroundWork(state, agent.id);
+    const shown = state.agentStatus[agent.id];
+    return !isAgentBusy(shown) && !agentHasBackgroundWork(shown);
 }
 
 /**
@@ -649,16 +649,7 @@ export function selectAgent(id: string): void {
         sess.activeWindowId = winId;
         // Picking a real agent tab replaces the draft, exactly like any other tab.
         d.agentPaletteOpen = false;
-        if (agent.launchState === "dormant") {
-            agent.launchState = "live";
-            delete d.agentActivity[id];
-            return;
-        }
-        const activity = d.agentActivity[id];
-        if (activity) {
-            activity.unread = false;
-            if (activity.state === "done") activity.state = "idle";
-        }
+        if (agent.launchState === "dormant") agent.launchState = "live";
     });
 }
 
@@ -677,25 +668,7 @@ export function resumeAgent(id: string): void {
         const agent = d.agents[id];
         if (!agent) return;
         agent.launchState = "live";
-        delete d.agentActivity[id];
     });
-}
-
-/* A turn is over long before the work it started is. Shells, monitors and
-   subagents outlive the answer that launched them, and ending the agent ends
-   them too, so the count of what is still going decides whether it can sleep. */
-export function noteAgentBackgroundWork(id: string, tasks: number, subagents: number): void {
-    mutate((d) => {
-        if (!d.agents[id]) return;
-        if (tasks > 0) d.agentTasks[id] = tasks;
-        else delete d.agentTasks[id];
-        if (subagents > 0) d.agentSubagents[id] = subagents;
-        else delete d.agentSubagents[id];
-    });
-}
-
-export function agentHasBackgroundWork(state: StoreState, id: string): boolean {
-    return (state.agentTasks[id] ?? 0) + (state.agentSubagents[id] ?? 0) > 0;
 }
 
 /**
@@ -703,14 +676,13 @@ export function agentHasBackgroundWork(state: StoreState, id: string): boolean {
  * started is still running, and it is surely idle rather than guessed idle from a quiet terminal.
  */
 export function isAgentSleepable(state: StoreState, agent: Agent): boolean {
-    const activity = state.agentActivity[agent.id];
+    const shown = state.agentStatus[agent.id];
     return (
         agent.launchState !== "dormant" &&
         !!agent.resumeId &&
         !agent.keepAlive &&
-        !agentHasBackgroundWork(state, agent.id) &&
-        activity?.backendState === "idle" &&
-        activity.confidence !== "low"
+        (shown?.status === "idle" || shown?.status === "done") &&
+        !agentHasBackgroundWork(shown)
     );
 }
 
@@ -722,8 +694,6 @@ export function sleepAgents(ids: readonly string[]): string[] {
             const agent = d.agents[id];
             if (!agent?.resumeId || agent.launchState === "dormant") continue;
             agent.launchState = "dormant";
-            delete d.agentTasks[id];
-            delete d.agentSubagents[id];
             slept.push(id);
         }
     });
@@ -765,75 +735,23 @@ export async function sleepIdleAgents(): Promise<number> {
     return count;
 }
 
-export function noteAgentActivity(id: string, event: "working" | "complete" | import("../agentStatus").AgentStateEvent): void {
+/** Takes how the core shows each open agent, from its device view. */
+export function setAgentStatus(agents: readonly AgentShown[]): void {
+    const before = getState().agentStatus;
+    const same = (a: AgentShown, b: AgentShown) =>
+        a.status === b.status && a.group === b.group && a.unread === b.unread && a.subagents === b.subagents && a.tasks === b.tasks && a.activeAt === b.activeAt;
+    const next = Object.fromEntries(agents.map((shown) => [shown.agentId, before[shown.agentId] && same(before[shown.agentId], shown) ? before[shown.agentId] : shown]));
+    const ids = Object.keys(next);
+    if (ids.length === Object.keys(before).length && ids.every((id) => next[id] === before[id])) return;
     mutate((d) => {
-        if (!d.agents[id]) return;
-        const visible = activeAgentId(d, d.sessions[d.activeSessionId]) === id;
-        const previous = d.agentActivity[id];
-        const semantic =
-            typeof event === "string"
-                ? {
-                      agentId: id,
-                      state: event === "complete" ? ("idle" as const) : ("working" as const),
-                      sequence: (previous?.sequence ?? 0) + 1,
-                      source: "activity" as const,
-                      confidence: "low" as const,
-                      reason: event === "complete" ? "legacy activity settled" : "terminal input or output",
-                  }
-                : event;
-        if (semantic.state !== "stopped" && waitsOnPerson(d.agentQuestions, id)) {
-            if (previous && semantic.sequence <= previous.sequence) return;
-            const held = previous?.reported !== undefined ? previous : reduceAgentState(previous, { ...semantic, state: "blocked" }, visible);
-            if (held) d.agentActivity[id] = { ...held, sequence: semantic.sequence, reported: semantic.state };
-            return;
-        }
-        const reduced = reduceAgentState(previous, semantic, visible);
-        if (reduced) d.agentActivity[id] = reduced;
+        d.agentStatus = next;
     });
 }
 
-/**
- * Takes the open questions the core sent. An agent waiting on the person's answer shows as needing input whatever it
- * reports, and goes back to what it last reported once the question is answered.
- */
+/** Takes the open questions the core sent. */
 export function setAgentQuestions(questions: AgentQuestion[]): void {
     mutate((d) => {
-        const before = d.agentQuestions;
         d.agentQuestions = questions;
-        for (const id of new Set([...before, ...questions].map((question) => question.agentId))) {
-            const asking = waitsOnPerson(questions, id);
-            if (asking === waitsOnPerson(before, id) || !d.agents[id]) continue;
-            const previous = d.agentActivity[id];
-            if (asking) {
-                const visible = activeAgentId(d, d.sessions[d.activeSessionId]) === id;
-                const held = reduceAgentState(
-                    previous,
-                    {
-                        agentId: id,
-                        state: "blocked",
-                        sequence: (previous?.sequence ?? 0) + 1,
-                        source: previous?.source ?? "activity",
-                        confidence: "high",
-                        reason: "asked the person a question",
-                    },
-                    visible,
-                );
-                if (held) d.agentActivity[id] = { ...held, reported: previous?.backendState ?? "idle" };
-            } else if (previous?.reported !== undefined) {
-                const { reported, ...rest } = previous;
-                d.agentActivity[id] = { ...rest, state: reported, backendState: reported, unread: false, reason: "question answered" };
-            }
-        }
-    });
-}
-
-export function clearAgentUnread(id: string): void {
-    mutate((d) => {
-        const activity = d.agentActivity[id];
-        if (activity) {
-            activity.unread = false;
-            if (activity.state === "done") activity.state = "idle";
-        }
     });
 }
 
