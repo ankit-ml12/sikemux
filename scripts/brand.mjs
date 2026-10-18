@@ -108,8 +108,14 @@ for (const ground of Object.keys(GROUNDS))
       ]);
 pngs.push(["icon/icon-dark-square.svg", "social/avatar-400.png", 400]);
 for (const kind of ["wordmark", "lockup"])
-  for (const name of kind === "wordmark" ? ["white", "black"] : ["white", "black", "purple"])
-    pngs.push([`wordmark/${kind}-${name}.svg`, `wordmark/${kind}-${name}-2048.png`, 2048]);
+  for (const name of kind === "wordmark"
+    ? ["white", "black"]
+    : ["white", "black", "purple"])
+    pngs.push([
+      `wordmark/${kind}-${name}.svg`,
+      `wordmark/${kind}-${name}-2048.png`,
+      2048,
+    ]);
 
 const browser = await chromium.launch({ channel: "chrome" });
 for (const [source, target, size] of pngs) {

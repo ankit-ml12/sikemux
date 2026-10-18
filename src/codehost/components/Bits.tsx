@@ -84,4 +84,3 @@ function StateGlyph({ kind, tone, size }: { kind: "pull" | "issue"; tone: string
     if (tone === "not_planned") return <NotPlannedIcon size={size} />;
     return tone === "closed" ? <IconCheck size={size} /> : <SectionIcon section="issues" size={size} />;
 }
-
