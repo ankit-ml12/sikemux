@@ -1,0 +1,58 @@
+import type { ChatInfo, SessionInfo } from "../api/generated/wire";
+
+export function sessionInfo(fields: Partial<SessionInfo> & Pick<SessionInfo, "id">): SessionInfo {
+    return {
+        kind: "terminal",
+        pid: 1,
+        running: true,
+        cols: 80,
+        rows: 24,
+        attached: 0,
+        project: null,
+        paneId: null,
+        agentId: null,
+        agentName: null,
+        agentType: null,
+        taskExecutionId: null,
+        agentState: null,
+        task: null,
+        exit: null,
+        killed: false,
+        startedBy: null,
+        title: null,
+        unread: false,
+        activeAt: null,
+        group: null,
+        status: null,
+        attentionRank: null,
+        ...fields,
+    };
+}
+
+export function chatInfo(fields: Partial<ChatInfo> & Pick<ChatInfo, "agentId">): ChatInfo {
+    return {
+        name: null,
+        provider: "claude",
+        title: null,
+        cwd: "/repo",
+        sessionId: "s",
+        state: "ready",
+        running: true,
+        pendingPermissions: [],
+        subagents: 0,
+        tasks: 0,
+        reconnecting: null,
+        startedBy: null,
+        launcher: null,
+        permissionMode: "bypass",
+        model: null,
+        effort: null,
+        asleep: false,
+        unread: false,
+        activeAt: null,
+        group: "idle",
+        status: "idle",
+        attentionRank: 0,
+        ...fields,
+    };
+}

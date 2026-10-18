@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AcpChat } from "../api/acp";
+import type { ChatInfo } from "../api/generated/wire";
+import { chatInfo } from "../test/wire";
 import { resetResourcesForTests } from "../state/resources";
 import { getState, setState } from "../state/store";
 import type { Agent, ProviderProfile } from "../state/types";
@@ -23,21 +24,8 @@ function agent(id: string, fields: Partial<Agent> = {}): Agent {
     return { id, type: "claude", title: id, startup: "claude", launchState: "live", ...fields };
 }
 
-function chat(agentId: string): AcpChat {
-    return {
-        agentId,
-        provider: "claude",
-        cwd: "/repo",
-        sessionId: "s",
-        state: "ready",
-        running: true,
-        pendingPermissions: [],
-        startedBy: null,
-        launcher: null,
-        permissionMode: "bypass",
-        model: null,
-        effort: null,
-    };
+function chat(agentId: string): ChatInfo {
+    return chatInfo({ agentId });
 }
 
 beforeEach(() => {

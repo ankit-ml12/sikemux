@@ -1,25 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { CoreSession } from "../api/coreSessions";
+import type { SessionInfo } from "../api/generated/wire";
+import { sessionInfo } from "../test/wire";
 import { agentSessionPlan, claimedSessionIds, unclaimedTerminals } from "./coreSessionClaims";
 import { cloneLayout } from "./layout";
 import type { Agent, PaneNode, Window } from "./types";
 
-function session(id: number, overrides: Partial<CoreSession> = {}): CoreSession {
-    return {
-        id,
-        kind: "terminal",
-        pid: 100,
-        running: true,
-        project: null,
-        paneId: null,
-        agentId: null,
-        agentType: null,
-        task: null,
-        exit: null,
-        killed: false,
-        startedBy: null,
-        ...overrides,
-    };
+function session(id: number, overrides: Partial<SessionInfo> = {}): SessionInfo {
+    return sessionInfo({ id, pid: 100, ...overrides });
 }
 
 function pane(id: string, ptyId?: number): PaneNode {

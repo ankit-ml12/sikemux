@@ -1,4 +1,4 @@
-import type { CoreSession } from "../api/coreSessions";
+import type { SessionInfo } from "../api/generated/wire";
 import { afterAgentExit } from "../agents/tuiRecovery";
 import { collectPanes } from "./layout";
 import type { StoreState } from "./store";
@@ -24,7 +24,7 @@ export interface AgentSessionPlan {
     readonly resume: readonly string[];
 }
 
-export function agentSessionPlan(state: Pick<StoreState, "agents">, sessions: readonly CoreSession[]): AgentSessionPlan {
+export function agentSessionPlan(state: Pick<StoreState, "agents">, sessions: readonly SessionInfo[]): AgentSessionPlan {
     const terminals = new Map(sessions.filter((session) => session.kind === "terminal").map((session) => [session.id, session]));
     const live: string[] = [];
     const gone: string[] = [];
@@ -40,13 +40,13 @@ export function agentSessionPlan(state: Pick<StoreState, "agents">, sessions: re
     return { live, gone, dropped, resume };
 }
 
-function crashed(session: CoreSession, resumeId: string | undefined): boolean {
+function crashed(session: SessionInfo, resumeId: string | undefined): boolean {
     const exit = { code: session.exit?.code ?? null, signal: session.exit?.signal ?? null, killed: session.killed };
     return afterAgentExit({ exit, resumeId, lastResumeAt: null, now: 0 }) === "resume";
 }
 
 /** Terminals this app started that nothing in the workspace refers to. Tasks are taken over separately. */
-export function unclaimedTerminals(sessions: readonly CoreSession[], claimed: ReadonlySet<number>): number[] {
+export function unclaimedTerminals(sessions: readonly SessionInfo[], claimed: ReadonlySet<number>): number[] {
     return sessions
         .filter((session) => session.kind === "terminal" && session.startedBy === null && !claimed.has(session.id))
         .map((session) => session.id);

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { coreSessionsApi, type SshLink } from "../api/coreSessions";
+import { coreSessionsApi } from "../api/coreSessions";
+import type { SshLink } from "../api/generated/wire";
 import { getIpcTransport } from "../api/transport";
 import { collectPanes } from "../state/layout";
 import { useStore, type StoreState } from "../state/store";

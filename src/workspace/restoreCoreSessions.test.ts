@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-import type { AcpChat } from "../api/acp";
-import type { CoreSession } from "../api/coreSessions";
+import type { ChatInfo, SessionInfo } from "../api/generated/wire";
+import { chatInfo, sessionInfo } from "../test/wire";
 import { claimChat } from "../chat/chatClaims";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
@@ -15,41 +15,15 @@ import { KEPT_RUNNING_NOTICE, UNCLAIMED_GRACE_MS, offerSavedSessions, restoreCor
 
 const initial = getState();
 
-function terminal(id: number, running = true, exit: CoreSession["exit"] = running ? null : { code: 0, signal: null }): CoreSession {
-    return {
-        id,
-        kind: "terminal",
-        pid: 1,
-        running,
-        project: null,
-        paneId: null,
-        agentId: null,
-        agentType: null,
-        task: null,
-        exit,
-        killed: false,
-        startedBy: null,
-    };
+function terminal(id: number, running = true, exit: SessionInfo["exit"] = running ? null : { code: 0, signal: null }): SessionInfo {
+    return sessionInfo({ id, running, exit });
 }
 
-function chat(agentId: string, startedBy: string | null = null): AcpChat {
-    return {
-        agentId,
-        provider: "claude",
-        cwd: "/repo",
-        sessionId: "s",
-        state: "ready",
-        running: true,
-        pendingPermissions: [],
-        startedBy,
-        launcher: startedBy ? "claude" : null,
-        permissionMode: "bypass",
-        model: null,
-        effort: null,
-    };
+function chat(agentId: string, startedBy: string | null = null): ChatInfo {
+    return chatInfo({ agentId, startedBy, launcher: startedBy ? "claude" : null });
 }
 
-function deps(sessions: CoreSession[], chats: AcpChat[] = []) {
+function deps(sessions: SessionInfo[], chats: ChatInfo[] = []) {
     const scheduled: Array<() => void> = [];
     const kill = vi.fn(async (_id: number) => {});
     const stopChat = vi.fn(async (_agentId: string) => true);

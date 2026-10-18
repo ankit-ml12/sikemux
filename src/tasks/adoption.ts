@@ -1,11 +1,11 @@
-import type { CoreSession, CoreTaskInfo } from "../api/coreSessions";
+import type { SessionInfo, TaskSessionInfo } from "../api/generated/wire";
 import type { TaskExecutionStart, TaskTerminalOpenRequest } from "./runtime";
 import type { ResolvedTaskDefinition } from "./taskRegistry";
 
 /** Where a task the core kept goes back to: the command deck, or the harness that an agent started it through. */
 export type TaskOrigin = { readonly kind: "deck" | "harness"; readonly project: string; readonly taskId: string };
 
-export function taskOrigin(task: CoreTaskInfo): TaskOrigin | null {
+export function taskOrigin(task: TaskSessionInfo): TaskOrigin | null {
     let key: unknown;
     try {
         key = JSON.parse(task.terminalKey);
@@ -28,7 +28,7 @@ export interface TaskAdoptionTargets {
 /* Only running tasks come back: the deck shows one running task per project
    and nothing of finished ones, and a finished harness run needs no terminal
    for an agent to read how it ended. */
-export async function adoptCoreTasks(sessions: readonly CoreSession[], targets: TaskAdoptionTargets): Promise<number> {
+export async function adoptCoreTasks(sessions: readonly SessionInfo[], targets: TaskAdoptionTargets): Promise<number> {
     let running = 0;
     for (const session of sessions) {
         const task = session.kind === "task" ? session.task : null;

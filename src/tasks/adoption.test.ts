@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CoreSession, CoreTaskInfo } from "../api/coreSessions";
+import type { SessionInfo, TaskSessionInfo } from "../api/generated/wire";
+import { sessionInfo } from "../test/wire";
 import { adoptCoreTasks, taskOrigin, type TaskAdoptionTargets } from "./adoption";
 
-function taskInfo(kind: string, taskId: string, overrides: Partial<CoreTaskInfo> = {}): CoreTaskInfo {
+function taskInfo(kind: string, taskId: string, overrides: Partial<TaskSessionInfo> = {}): TaskSessionInfo {
     return {
         executionId: `exec-${taskId}`,
         terminalKey: JSON.stringify([kind, "/repo", taskId]),
@@ -17,21 +18,8 @@ function taskInfo(kind: string, taskId: string, overrides: Partial<CoreTaskInfo>
     };
 }
 
-function taskSession(id: number, task: CoreTaskInfo, running = true): CoreSession {
-    return {
-        id,
-        kind: "task",
-        pid: 1,
-        running,
-        project: "/repo",
-        paneId: null,
-        agentId: null,
-        agentType: null,
-        task,
-        exit: null,
-        killed: false,
-        startedBy: null,
-    };
+function taskSession(id: number, task: TaskSessionInfo, running = true): SessionInfo {
+    return sessionInfo({ id, kind: "task", running, project: "/repo", task });
 }
 
 function targets() {

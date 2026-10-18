@@ -1,4 +1,6 @@
-export type TaskSource = "built-in" | "project" | "recent";
+import type { TaskSource } from "../api/generated/wire";
+
+export type { TaskSource };
 export type TaskLifecycleState = "idle" | "running" | "stopping" | "failed";
 export type TaskFailureOperation = "run" | "completion" | "stop";
 

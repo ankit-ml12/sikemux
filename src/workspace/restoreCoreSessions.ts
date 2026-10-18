@@ -1,6 +1,7 @@
-import { acpApi, type AcpChat } from "../api/acp";
+import { acpApi } from "../api/acp";
 import { agentBoardApi } from "../api/agentBoard";
-import { coreSessionsApi, type CoreSession } from "../api/coreSessions";
+import { coreSessionsApi } from "../api/coreSessions";
+import type { ChatInfo, SessionInfo } from "../api/generated/wire";
 import { runOfAgent } from "../agents/agentBoard";
 import { chatClaimed } from "../chat/chatClaims";
 import { QUIT_AND_STOP_SHORTCUT } from "../commands/keybindings";
@@ -27,10 +28,10 @@ export function offerSavedSessions(): void {
 }
 
 export interface CoreSessionRestoreDeps {
-    list(): Promise<CoreSession[]>;
+    list(): Promise<SessionInfo[]>;
     resume(agentId: string, ptyId: number): Promise<void>;
     kill(id: number): Promise<void>;
-    chats: { list(): Promise<AcpChat[]>; stopIfIdle(agentId: string): Promise<boolean> };
+    chats: { list(): Promise<ChatInfo[]>; stopIfIdle(agentId: string): Promise<boolean> };
     boards(): Promise<void>;
     tasks: TaskAdoptionTargets;
     schedule(callback: () => void, delayMs: number): void;
@@ -66,7 +67,7 @@ function defaultDeps(): CoreSessionRestoreDeps {
  * stopped after a grace, so none of them runs forever unseen.
  */
 export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = defaultDeps()): Promise<void> {
-    let sessions: CoreSession[];
+    let sessions: SessionInfo[];
     try {
         sessions = await deps.list();
     } catch {
@@ -98,7 +99,7 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     deps.schedule(() => {
         const stillClaimed = claimedSessionIds(getState());
         for (const id of candidates) if (!stillClaimed.has(id)) void deps.kill(id).catch(() => {});
-        const stopUnclaimed = (kept: AcpChat[], taken: ReadonlySet<string>) => {
+        const stopUnclaimed = (kept: ChatInfo[], taken: ReadonlySet<string>) => {
             for (const chat of kept)
                 if (!taken.has(chat.agentId) && !chatClaimed(chat.agentId)) void deps.chats.stopIfIdle(chat.agentId).catch(() => {});
         };
@@ -112,7 +113,7 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
 }
 
 /** Shows the chats other devices or agents started, or a board runs, and answers which they are. */
-async function adoptChats(chats: AcpChat[], deps: CoreSessionRestoreDeps): Promise<Set<string>> {
+async function adoptChats(chats: ChatInfo[], deps: CoreSessionRestoreDeps): Promise<Set<string>> {
     if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
     const boards = getState().agentBoards;
     const adopted = chats.filter((chat) => chat.startedBy !== null || runOfAgent(boards, chat.agentId));
