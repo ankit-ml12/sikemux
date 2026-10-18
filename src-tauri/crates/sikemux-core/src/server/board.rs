@@ -46,6 +46,7 @@ const MAX_URL_CHARS: usize = 2048;
 /// How much of a card's details and result `board_list` shows before one
 /// card is asked for in full.
 const LISTED_TEXT_CHARS: usize = 240;
+const RECENT_DONE: usize = 10;
 /// How long an agent has been idle before the board offers it cards.
 const IDLE_BEFORE_OFFER_MS: u64 = 5_000;
 const MAX_OFFERED: usize = 6;
@@ -1269,16 +1270,29 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             };
             (place, status, card.id)
         };
-        let mut cards: Vec<&Card> = board.cards.iter().collect();
+        let all_done = request.params.get("done") == Some(&Value::Bool(true));
+        let mut done: Vec<&Card> = board.cards.iter().filter(|card| card.status == Status::Done).collect();
+        done.sort_by_key(|card| std::cmp::Reverse(card.id));
+        let hidden_done = if all_done { 0 } else { done.len().saturating_sub(RECENT_DONE) };
+        let shown_done: Vec<u64> = done.iter().take(done.len() - hidden_done).map(|card| card.id).collect();
+        let mut cards: Vec<&Card> = board
+            .cards
+            .iter()
+            .filter(|card| card.status != Status::Done || shown_done.contains(&card.id))
+            .collect();
         cards.sort_by_key(|card| rank(card));
         let listed: Vec<Value> = cards
             .iter()
             .map(|card| agent_view(&core, board, card, false))
             .collect();
+        let mut note = "Your cards come first, then your team's. Pass card for one card in full.".to_string();
+        if hidden_done > 0 {
+            note.push_str(&format!(" {hidden_done} older done cards are left out; pass done to list them."));
+        }
         Ok(json!({
             "project": project,
             "cards": listed,
-            "note": "Your cards come first, then your team's. Pass card for one card in full.",
+            "note": note,
         }))
     })
     .await

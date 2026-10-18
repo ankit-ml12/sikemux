@@ -19,6 +19,8 @@ use crate::error::{JiraError, JiraResult};
 const DEFAULT_LIMIT: u64 = 20;
 const MAX_LIMIT: u64 = 100;
 const MAX_COMMENTS: usize = 50;
+const AGENT_COMMENTS: usize = 10;
+const AGENT_COMMENT_CHARS: usize = 4000;
 const COMMENTS_PER_HIT: usize = 5;
 const MAX_CHANGES: usize = 50;
 /// Longer values are cut, so a rewritten field does not carry its whole text twice.
@@ -468,6 +470,40 @@ pub struct IssueRequest {
     pub key: String,
     #[serde(default)]
     pub site: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct AgentIssueRequest {
+    pub key: String,
+    #[serde(default)]
+    pub site: Option<String>,
+    #[serde(default)]
+    pub comments: Option<usize>,
+}
+
+/// The issue as an agent reads it: only the newest comments, each cut to a readable length.
+pub async fn agent_issue(data_dir: &Path, request: AgentIssueRequest) -> JiraResult<IssueDetail> {
+    let keep = request
+        .comments
+        .unwrap_or(AGENT_COMMENTS)
+        .clamp(1, MAX_COMMENTS);
+    let mut detail = issue(
+        data_dir,
+        IssueRequest {
+            key: request.key,
+            site: request.site,
+        },
+    )
+    .await?;
+    let skipped = detail.comments.len().saturating_sub(keep);
+    detail.comments.drain(..skipped);
+    for comment in &mut detail.comments {
+        if let Some((cut, _)) = comment.body.char_indices().nth(AGENT_COMMENT_CHARS) {
+            comment.body.truncate(cut);
+            comment.body.push('…');
+        }
+    }
+    Ok(detail)
 }
 
 pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDetail> {

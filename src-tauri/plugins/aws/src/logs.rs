@@ -20,6 +20,7 @@ const MAX_EVENTS: usize = 500;
 // to keep the newest.
 const SCANNED_EVENTS: &str = "2000";
 const MAX_MESSAGE_CHARS: usize = 2000;
+const RESULT_BUDGET: usize = 24_000;
 const SUGGESTED_GROUPS: &str = "30";
 
 #[derive(Serialize)]
@@ -34,6 +35,12 @@ pub struct LogEvent {
     at: String,
     stream: Option<String>,
     message: String,
+}
+
+impl LogEvent {
+    fn size(&self) -> usize {
+        self.at.len() + self.stream.as_ref().map_or(0, String::len) + self.message.len()
+    }
 }
 
 #[derive(Deserialize)]
@@ -155,18 +162,31 @@ pub(crate) async fn search(
         other => other?,
     };
     let matched = resp.events.len();
-    let skipped = matched.saturating_sub(limit);
-    let note = match (skipped, resp.next_token.is_some()) {
+    let mut events: Vec<LogEvent> = resp
+        .events
+        .into_iter()
+        .skip(matched.saturating_sub(limit))
+        .map(trimmed)
+        .collect();
+    let mut size: usize = events.iter().map(LogEvent::size).sum();
+    let mut over_budget = 0;
+    while events.len() > 1 && size > RESULT_BUDGET {
+        size -= events.remove(0).size();
+        over_budget += 1;
+    }
+    let shown = events.len();
+    let note = match (matched - shown, resp.next_token.is_some()) {
         (0, false) => None,
         (0, true) => Some("More events matched after these; narrow since or the pattern.".to_string()),
         (_, more) => Some(format!(
-            "These are the newest {limit} of {}{matched} matches; narrow since or the pattern for the rest.",
-            if more { "over " } else { "" }
+            "These are the newest {shown} of {}{matched} matches{}; narrow since or the pattern for the rest.",
+            if more { "over " } else { "" },
+            if over_budget > 0 { ", cut to keep this short" } else { "" }
         )),
     };
     Ok(LogSearch {
         group: group.to_string(),
-        events: resp.events.into_iter().skip(skipped).map(trimmed).collect(),
+        events,
         note,
     })
 }

@@ -30,8 +30,8 @@ from the list below.
   attempt and reuse it when a call fails or you are unsure it landed. Use
   tasks for dev servers and watchers rather than background shell jobs.
 - `task_read` pages output by byte cursor: start at `0` and pass back the
-  `cursor` it returns. `plain: true` strips terminal escapes, `tail: N` gives
-  the last lines and `search` the matching ones.
+  `cursor` it returns. Output comes as plain text; `plain: false` keeps the
+  terminal escapes. `tail: N` gives the last lines and `search` the matching ones.
 - `events_wait` takes an event cursor from `workspace_inspect` or the last
   wait. **Event cursors are not output cursors**; never mix them. A timeout
   is normal: wait again with the fresh cursor. Cursors stay valid after
@@ -208,14 +208,14 @@ Start at cursor `0`. Pass the returned `cursor` into the next call. Keep
 reading while `hasMore` is true. Every page reports `end`, the length of the
 output so far. Pages are 8 KiB by default; `limit` accepts 4 to 8192 bytes.
 
-Output is raw terminal data and may contain escape sequences. Three options
-change what comes back:
+Output comes as plain text: escape sequences are stripped and carriage
+returns and cursor moves replayed, so a progress bar or build screen that
+redraws itself shows each line once, in its final state. Runs of an identical
+line or block of lines keep one copy and a note such as
+`[repeated 40 more times]`. The cursor counts raw bytes, so pages chain the
+same either way. Three options change what comes back:
 
-- `plain: true` strips escape sequences and replays carriage returns and
-  cursor moves, so a progress bar or build screen that redraws itself shows
-  each line once, in its final state. Runs of an identical line or block of
-  lines keep one copy and a note such as `[repeated 40 more times]`. The
-  cursor still counts raw bytes, so plain pages chain like raw ones.
+- `plain: false` returns the raw terminal data, escape sequences and all.
 - `tail: N` returns the last N lines instead of paging from the cursor, which
   answers "what did the server just say". Its `cursor` is `end`, ready for the
   next read of new output.

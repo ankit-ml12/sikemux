@@ -65,7 +65,17 @@
         if (!recorder) return { recording: false, note: "this tab has not recorded anything; reload the page and retry the action" };
         const all = recorder.entries();
         const matched = errorsOnly ? all.filter((entry) => entry.level !== "log" && entry.level !== "info" && entry.level !== "debug") : all;
+        const BUDGET = 24000;
         const keep = Math.max(1, Math.min(200, Number(limit) || 50));
-        return { recording: true, url: location.href, recorded: all.length, matched: matched.length, messages: matched.slice(-keep) };
+        const messages = matched.slice(-keep);
+        let size = JSON.stringify(messages).length;
+        let omitted = 0;
+        while (messages.length > 1 && size > BUDGET) {
+            size -= JSON.stringify(messages.shift()).length;
+            omitted++;
+        }
+        const result = { recording: true, url: location.href, recorded: all.length, matched: matched.length, messages };
+        if (omitted) result.omitted = `${omitted} older messages left out to keep this short; pass errors to see only problems`;
+        return result;
     },
 })

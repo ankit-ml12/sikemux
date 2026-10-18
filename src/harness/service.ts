@@ -236,6 +236,8 @@ async function detectedLaunch(request: HarnessRequest, taskId: string): Promise<
     };
 }
 
+const FAILURE_MESSAGE_CHARS = 1000;
+
 /** The JUnit reports each module's test task left behind, failures first and with paths relative to the project. */
 async function latestTestResults(project: string, tasks: readonly { id: string; cwd: string }[]) {
     const modules = [...new Set(tasks.filter((task) => isTestTask(task.id)).map((task) => task.cwd))];
@@ -250,7 +252,10 @@ async function latestTestResults(project: string, tasks: readonly { id: string; 
                       skipped: results.skipped,
                       failures: results.failures.map((failure) => ({
                           test: isFilePath(failure.className) ? `${failure.className} › ${failure.name}` : `${failure.className}.${failure.name}`,
-                          message: failure.message,
+                          message:
+                              failure.message.length > FAILURE_MESSAGE_CHARS
+                                  ? `${failure.message.slice(0, FAILURE_MESSAGE_CHARS)}…`
+                                  : failure.message,
                           ...(failure.file ? { file: relativeTo(project, failure.file), line: failure.line } : {}),
                       })),
                   },

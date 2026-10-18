@@ -10,6 +10,7 @@ interface Entry {
 
 const MAX_ENTRIES = 500;
 const MAX_TEXT = 2000;
+const READ_BUDGET = 24000;
 const CONSOLE_LEVELS = ["log", "info", "warn", "error", "debug"] as const;
 const QUIET_LEVELS: Level[] = ["log", "info", "debug"];
 const TOO_LARGE = Symbol("too large");
@@ -84,10 +85,18 @@ export class AppConsole {
         }));
         const all = [...this.entries, ...swallowed].sort((left, right) => left.at - right.at);
         const matched = params.errors ? all.filter((entry) => !QUIET_LEVELS.includes(entry.level)) : all;
+        const messages = matched.slice(-limit).map((entry) => ({ ...entry, at: new Date(entry.at).toISOString() }));
+        let size = JSON.stringify(messages).length;
+        let omitted = 0;
+        while (messages.length > 1 && size > READ_BUDGET) {
+            size -= JSON.stringify(messages.shift()).length;
+            omitted++;
+        }
         return {
             recorded: all.length,
             matched: matched.length,
-            messages: matched.slice(-limit).map((entry) => ({ ...entry, at: new Date(entry.at).toISOString() })),
+            messages,
+            ...(omitted ? { omitted: `${omitted} older messages left out to keep this short; pass errors to see only problems` } : {}),
         };
     }
 }

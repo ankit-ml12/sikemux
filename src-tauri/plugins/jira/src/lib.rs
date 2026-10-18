@@ -70,6 +70,7 @@ impl Plugin for Jira {
                 "signOut" => answer(auth::sign_out(data_dir, params(input)?)).await,
                 "search" => answer(issues::search(data_dir, params(input)?)).await,
                 "issue" => answer(issues::issue(data_dir, params(input)?)).await,
+                "agentIssue" => answer(issues::agent_issue(data_dir, params(input)?)).await,
                 "comment" => answer(issues::comment(data_dir, params(input)?)).await,
                 "transition" => answer(issues::transition(data_dir, params(input)?)).await,
                 "assign" => answer(issues::assign(data_dir, params(input)?)).await,

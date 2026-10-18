@@ -21,10 +21,11 @@
     {
       "name": "jira_issue",
       "row": {"verb": "read", "kind": "read", "icon": "issue", "target": ["{key}"], "detail": ["{site}"]},
-      "method": "issue",
-      "description": "One Jira issue by key (ABC-123): its fields, description and comments as markdown, its recent field changes, and the transitions it can take next.",
+      "method": "agentIssue",
+      "description": "One Jira issue by key (ABC-123): its fields, description and newest comments as markdown, its recent field changes, and the transitions it can take next.",
       "properties": {
         "key": { "type": "string" },
+        "comments": { "type": "integer", "description": "How many of the newest comments to include, up to 50. Default 10; commentCount says how many there are." },
         "site": { "type": "string" }
       },
       "required": ["key"]

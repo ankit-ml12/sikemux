@@ -1678,6 +1678,9 @@
         "card": {
           "type": "integer",
           "minimum": 1
+        },
+        "done": {
+          "type": "boolean"
         }
       },
       "required": []

@@ -680,7 +680,7 @@ async fn task_read(core: &Core, request: &HarnessRequest) -> Result<Value, Strin
         state.run(&request.project, &execution_id)
     })?;
     let plain = match params.get("plain") {
-        None => false,
+        None => true,
         Some(Value::Bool(plain)) => *plain,
         Some(_) => return Err("plain must be a boolean".into()),
     };
