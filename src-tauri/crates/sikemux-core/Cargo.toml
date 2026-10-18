@@ -8,6 +8,8 @@ publish = false
 sikemux-process = { path = "../sikemux-process" }
 agent-client-protocol = { version = "2.0.0", features = ["unstable_session_notices"] }
 hex = "0.4"
+quick-xml = "0.42"
+regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 semver = "1"

@@ -306,6 +306,7 @@ impl PendingStart {
         }
         tokio::spawn(write_input(Arc::downgrade(&self.session), self.input_jobs));
         tokio::spawn(read_output(core.clone(), self.session));
+        core.ports.changed();
     }
 }
 
@@ -757,6 +758,7 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         killed: session.killed.load(Ordering::Acquire),
     });
     drop(parser);
+    core.ports.changed();
     let failed = match (&code, &signal) {
         (_, Some(signal)) => Some(format!("It stopped from signal {signal}.")),
         (Some(code), None) if *code != 0 => Some(format!("It exited with code {code}.")),

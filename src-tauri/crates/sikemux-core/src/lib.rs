@@ -30,6 +30,7 @@ pub mod server;
 #[cfg(unix)]
 pub mod sessions;
 pub mod skills;
+pub mod tasks;
 pub mod trailers;
 
 use std::path::PathBuf;

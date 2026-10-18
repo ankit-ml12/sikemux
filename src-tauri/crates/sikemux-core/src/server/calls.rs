@@ -22,10 +22,11 @@ use super::{
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
         "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" | "inbox"
-        | "digest" | "agentMessages" => Needs::Watch,
+        | "digest" | "agentMessages" | "workspace" => Needs::Watch,
         "answerQuestion" | "answerQuestions" | "boardAdd" | "boardUpdate" | "boardRemove"
         | "boardSettings" | "boardRetry" | "renameAgent" | "shares" | "agentAccounts"
-        | "agentStatus" | "agentAccountStatus" | "agentUsage" | "cancelResume" => Needs::Full,
+        | "agentStatus" | "agentAccountStatus" | "agentUsage" | "cancelResume" | "steerQueued"
+        | "dropQueued" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" | "linkHost" | "shareChat" | "stopShare"
         | "commitStaged" | "setAgentAccounts" | "addAgentAccount" | "forgetAgentStatus"
         | "markAgentSignedOut" | "addProject" | "removeProject" | "updateProject"
@@ -46,6 +47,7 @@ pub(crate) fn for_person(method: &str) -> bool {
     !matches!(
         method,
         "chatFile"
+            | "workspace"
             | "questions"
             | "boards"
             | "board"
@@ -80,7 +82,16 @@ pub(crate) async fn call(
         "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
         "stopChatIfIdle" => answer(stop_chat_if_idle(&core, parse(params)?)),
+        "steerQueued" => {
+            let params: QueuedParams = parse(params)?;
+            answer(super::chat::queue::steer(&core, &params.agent_id, params.ids, params.message).await?)
+        }
+        "dropQueued" => {
+            let params: QueuedParams = parse(params)?;
+            answer(super::chat::queue::remove(&core, &params.agent_id, &params.ids)?)
+        }
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
+        "workspace" => answer(core.workspaces.view()),
         "addProject" => answer(workspace::add_project(&core, parse(params)?).await?),
         "removeProject" => answer(workspace::remove_project(&core, parse(params)?)?),
         "updateProject" => answer(workspace::update_project(&core, parse(params)?)?),
@@ -135,6 +146,10 @@ pub(crate) async fn call(
         }
         "commitOwners" => answer(who_wrote::call(&core, parse(params)?).await?),
         "inbox" => answer(inbox(&core).await?),
+        "ports" => {
+            let params: ProjectParams = parse(params)?;
+            answer(super::ports::project_ports(&core, params.project).await?)
+        }
         "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => {
             only_window(&core, client)?;
@@ -174,6 +189,11 @@ fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {
 
 fn answer(result: impl Serialize) -> CoreResult<Value> {
     Ok(serde_json::to_value(result)?)
+}
+
+#[derive(Deserialize)]
+struct ProjectParams {
+    project: String,
 }
 
 #[derive(Deserialize)]
@@ -275,6 +295,17 @@ struct NamedAgent {
     named: AgentName,
     #[serde(skip_serializing_if = "Option::is_none")]
     buddy: Option<Value>,
+}
+
+/// Messages waiting behind an agent's turn, by id.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueuedParams {
+    agent_id: String,
+    ids: Vec<String>,
+    /// A message sent with them, after them.
+    #[serde(default)]
+    message: Option<super::chat::queue::Message>,
 }
 
 #[derive(Deserialize)]
@@ -394,7 +425,6 @@ struct PersonSavedParams {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CheckoutParams {
     dir: PathBuf,
     #[serde(default)]
