@@ -15,6 +15,7 @@ import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, toggleGi
 import { invalidate, useCachedResourceEnabled } from "../state/resources";
 import { gitDiscoveredReposR, gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
+import { PaneField } from "../ui/ShaderField";
 import { commitGitDraft, generateGitDraft, runRepositoryGit, useGitWorkbench } from "../state/gitWorkbench";
 import { whenStageStill } from "../state/nativeViews";
 import { errMessage, notify } from "../state/toast";
@@ -193,6 +194,7 @@ function GitWorkbench({
     const busy = sharedOperation?.busy ? sharedOperation.label : localBusy;
     const generating = !!sharedOperation?.busy && sharedOperation.label.startsWith("Generate message");
     const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; alignRight: boolean } | null>(null);
+    const paneShader = useStore((s) => s.paneShader);
     const [inboxOpen, setInboxOpen] = useState(false);
     const [notification, setNotification] = useState<Notification | null>(null);
     const [queries, setQueries] = useState<Record<GitPanel, string>>({ files: "", commits: "", branches: "" });
@@ -1792,6 +1794,7 @@ function GitWorkbench({
                     }
                     right={
                         <div className="git-right-review">
+                            <PaneField enabled={paneShader} />
                             <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>
                                 {!inboxOpen ? (
                                     right
