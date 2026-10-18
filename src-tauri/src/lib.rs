@@ -420,7 +420,6 @@ pub fn run() {
             ssh::ssh_config_ensure,
             external::open_url,
             external::macos_focus_app,
-            external::run_background_command,
             transparency::set_window_blur,
             plugins::plugin_manifests,
             plugins::plugin_set_disabled,

@@ -11,6 +11,7 @@ mod changed;
 mod chat;
 mod collisions;
 mod connection;
+mod custom_command;
 mod display;
 mod edits;
 mod entry;

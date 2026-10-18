@@ -1,4 +1,4 @@
-import { invokeCommand as invoke } from "../../api/invoke";
+import { coreCall } from "../../api/core";
 import { getState, mutate, setState } from "../store";
 import { notify, reportError } from "../toast";
 import { makePane, newId, replacePane, splitPane } from "../layout";
@@ -14,7 +14,7 @@ export async function runBackgroundCommand(
     const session = st.sessions[sessionIdOverride ?? st.activeSessionId];
     if (!session) throw new Error("No active session for project command.");
     const commandCwd = cwdOverride || session.cwd;
-    const result = await invoke<{ code: number; output: string }>("run_background_command", {
+    const result = await coreCall<{ code: number; output: string }>("runCommand", {
         command: custom.command,
         cwd: commandCwd || null,
         env: {

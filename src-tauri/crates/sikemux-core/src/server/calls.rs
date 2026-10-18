@@ -101,6 +101,7 @@ pub(crate) async fn call(
         }
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
         "workspace" => answer(core.workspaces.view()),
+        "runCommand" => answer(super::custom_command::run(parse(params)?).await?),
         "addProject" => answer(workspace::add_project(&core, parse(params)?).await?),
         "removeProject" => answer(workspace::remove_project(&core, parse(params)?)?),
         "updateProject" => answer(workspace::update_project(&core, parse(params)?)?),
