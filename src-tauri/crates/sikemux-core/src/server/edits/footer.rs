@@ -25,8 +25,11 @@ use crate::trailers::{self, Agent, Commit, PendingNote};
 /// Whether commits made in `dir` may name the agents that wrote them. Work
 /// repositories turn it off with `git config sikemux.attribution false`.
 pub(crate) fn attributed(dir: &Path) -> bool {
-    git(dir, &["config", "--type=bool", "--get", "sikemux.attribution"])
-        .map_or(true, |value| value.trim() != "false")
+    git(
+        dir,
+        &["config", "--type=bool", "--get", "sikemux.attribution"],
+    )
+    .map_or(true, |value| value.trim() != "false")
 }
 
 /// The footer for committing what `dir` has staged, or what `index` holds when
