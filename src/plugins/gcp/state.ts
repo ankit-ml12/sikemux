@@ -79,6 +79,7 @@ export interface GcpView {
 const views = definePaneViews<GcpView>({ product: "overview", open: null, tab: null, list: null, prefix: "", filter: "" });
 
 export const useGcpView = views.use;
+export const getGcpView = views.get;
 export const updateGcpView = views.update;
 
 /** Opens a product, closing whatever was open in the one before. */

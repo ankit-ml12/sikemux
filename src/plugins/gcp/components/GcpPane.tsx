@@ -4,7 +4,18 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SkeletonRows } from "../../../plugin-api/ui";
 import { refreshGcp, type GcpStatus, type Target } from "../api";
 import { gcpStatusR } from "../resources";
-import { gcpSettings, openProduct, PRODUCTS, setGcpAccount, setGcpProject, setGcpSideWidth, updateGcpView, useGcpView, type Product } from "../state";
+import {
+    gcpSettings,
+    getGcpView,
+    openProduct,
+    PRODUCTS,
+    setGcpAccount,
+    setGcpProject,
+    setGcpSideWidth,
+    updateGcpView,
+    useGcpView,
+    type Product,
+} from "../state";
 import { AgentSetup } from "./AgentSetup";
 import { GcpMark, ProductIcon } from "./icons";
 import { LoggingPage } from "./LoggingPage";
@@ -24,6 +35,7 @@ import { SchedulerPage } from "./SchedulerPage";
 import { IamPage } from "./IamPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
+import { Search } from "./Search";
 import { Setup } from "./Setup";
 import { useTarget } from "./parts";
 import "../gcp.css";
@@ -52,6 +64,24 @@ const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     logging: LoggingPage,
     errors: ErrorsPage,
 };
+
+function typing(target: EventTarget): boolean {
+    return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+}
+
+/** Esc climbs one level: out of a resource to its list, out of a product to the dashboard. */
+export function goBack(paneId: string): boolean {
+    const view = getGcpView(paneId);
+    if (view.open || view.prefix) {
+        updateGcpView(paneId, view.prefix && view.product === "storage" ? { prefix: "" } : { open: null, tab: null });
+        return true;
+    }
+    if (view.product !== "overview") {
+        openProduct(paneId, "overview");
+        return true;
+    }
+    return false;
+}
 
 const SIDE_MIN = 160;
 const SIDE_MAX = 420;
@@ -91,13 +121,27 @@ function Console({ paneId, active, status }: { paneId: string; active: boolean; 
     };
 
     return (
-        <div className="gcp-pane" data-scheme={dark ? "dark" : "light"}>
+        <div
+            className="gcp-pane"
+            data-scheme={dark ? "dark" : "light"}
+            onKeyDown={(event) => {
+                if (event.key !== "Escape" || event.defaultPrevented || typing(event.target)) return;
+                if (goBack(paneId)) event.preventDefault();
+            }}>
             <header className="gcp-topbar">
                 <span className="gcp-brand">
                     <GcpMark size={22} />
                     <span>Google Cloud</span>
                 </span>
                 <ProjectPicker active={active} />
+                <Search
+                    active={active}
+                    target={target}
+                    onOpen={(hit) => {
+                        openProduct(paneId, hit.product);
+                        if (hit.open || hit.list) updateGcpView(paneId, { open: hit.open, list: hit.list ?? null });
+                    }}
+                />
                 <span className="gcp-topbar-gap" />
                 <Dropdown
                     className="gcp-account"
