@@ -10,9 +10,9 @@ import { commitAuthorsR, hostStatusR } from "../resources";
 import { AccountProvider, codeHost, HostProvider, type CodeHost } from "../registry";
 import { isTreeSection, sameRepo, setProjectAccount, setProjectRepo, slugOf } from "../state";
 import { SectionIcon } from "./ActionsIcon";
-import { GitNav, HostAccountButton, HostNavItems, type NavItem } from "./HostRail";
-import { sectionLabel } from "../sections";
-import { PickRepoContext } from "../pickRepo";
+import { HostAccountButton } from "./HostRail";
+import { sectionLabel, sectionsOf } from "../sections";
+import { GitShellContext } from "../shellContext";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
 const RepoPicker = lazy(() => import("./RepoPicker").then((module) => ({ default: module.RepoPicker })));
@@ -26,23 +26,23 @@ interface Props {
     /** Whether the pane is on screen and settled, so its host data may be read. */
     fetching: boolean;
     onArea: (area: GitArea) => void;
-    /** The local workbench's screens, which head the navigation. */
-    local: readonly NavItem[];
-    /** The local workbench, shown while the area is `local` or the folder is on no known host. */
+    /** The local workbench, shown unless the project tree opened one of the host's screens. */
     children: ReactNode;
 }
 
 /**
- * The git pane's header and whatever it has open. The code host the folder's remote lives on adds its sections to the
- * header; a folder on no known host, or on one whose plugin is switched off, gets the local screens alone.
+ * The git pane's local workbench, or the host screen the project tree opened in its place under a header of its own.
+ * The workbench borrows the host's account, inbox and repository picker for its side panel.
  */
-export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, local, children }: Props) {
+export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, children }: Props) {
     const found = useHostRepo(cwd, fetching);
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
     const [adding, setAdding] = useState(false);
     const hosted = !!host;
-    const pictures = useAuthorPictures(host, found.repo, fetching);
+    const status = useCachedResourceEnabled(fetching && hosted, hostStatusR, found.repo?.provider ?? "", found.repo?.account ?? null);
+    const signedIn = !!status.data?.ok;
+    const pictures = useAuthorPictures(host, found.repo, fetching && signedIn);
 
     // A push, pull or commit changes what the host has to say about this repository's branches and pull requests.
     useEffect(() => {
@@ -80,13 +80,18 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
                 onPickRepo={() => setPicking(true)}
                 onAddAccount={() => setAdding(true)}
             />
-        ) : undefined;
+        ) : null;
+    const lent = {
+        pickRepo: host && repo ? () => setPicking(true) : null,
+        account,
+        inbox: !!host && !!repo && signedIn && sectionsOf(host).includes("inbox"),
+    };
 
     return (
         <HostProvider value={host && repo ? host : null}>
             <AccountProvider value={repo?.account ?? null}>
                 <div className="git-shell">
-                    {standalone && host ? (
+                    {standalone && host && (
                         <div className="git-nav-bar">
                             <h2 className="git-standalone-title">
                                 <SectionIcon section={standalone} size={14} />
@@ -95,8 +100,6 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
                             <div className="git-nav-tools" />
                             {account}
                         </div>
-                    ) : (
-                        <GitNav local={local} host={host && repo ? <HostNavItems area={area} onArea={onArea} /> : undefined} account={account} />
                     )}
                     <div className="git-shell-main">
                         {host && repo && adding ? (
@@ -109,21 +112,21 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
                                 </div>
                                 <host.SignIn onSignedIn={added} />
                             </div>
-                        ) : !host || !repo || area === "local" ? (
-                            <PickRepoContext.Provider value={host && repo ? () => setPicking(true) : null}>
-                                <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
-                            </PickRepoContext.Provider>
-                        ) : (
+                        ) : standalone && host && repo ? (
                             <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
                                 <HostArea
                                     paneId={paneId}
-                                    section={area}
+                                    section={standalone}
                                     repo={repo}
                                     branch={found.branch}
                                     cwd={sameRepo(found.remote, repo) ? cwd : null}
                                     active={active}
                                 />
                             </Suspense>
+                        ) : (
+                            <GitShellContext.Provider value={lent}>
+                                <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
+                            </GitShellContext.Provider>
                         )}
                     </div>
                 </div>
@@ -143,17 +146,10 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
     );
 }
 
-/** The host's pictures for the emails in local commits, once someone is signed in to it. */
-function useAuthorPictures(host: CodeHost | undefined, repo: RepoRef | null, fetching: boolean): AuthorPictures | null {
+/** The host's pictures for the emails in local commits, read while `signedIn` says someone is signed in to it. */
+function useAuthorPictures(host: CodeHost | undefined, repo: RepoRef | null, signedIn: boolean): AuthorPictures | null {
     const provider = repo?.provider ?? "";
-    const status = useCachedResourceEnabled(fetching && !!host, hostStatusR, provider, repo?.account ?? null);
-    const signedIn = !!status.data?.ok;
-    const authors = useCachedResourceEnabled(
-        fetching && signedIn && !!host?.api.commitAuthors,
-        commitAuthorsR,
-        repo ?? { provider, owner: "", name: "" },
-        null,
-    );
+    const authors = useCachedResourceEnabled(signedIn && !!host?.api.commitAuthors, commitAuthorsR, repo ?? { provider, owner: "", name: "" }, null);
     return useMemo(() => {
         if (!host || !signedIn) return null;
         const byEmail = new Map((authors.data ?? []).map((author) => [author.email.toLowerCase(), author.avatarUrl]));

@@ -28,7 +28,7 @@ export const GIT_HELP: GitCheatsheetSection[] = [
     {
         title: "Global",
         rows: helpRows(
-            ["1 2 3", "Changes, History, Branches"],
+            ["1 2 3 4", "Changes, History, Branches, Inbox"],
             ["h", "switch between Changes and History"],
             ["?", "open this cheatsheet"],
             ["@", "toggle command log"],

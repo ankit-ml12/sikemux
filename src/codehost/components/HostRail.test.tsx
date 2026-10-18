@@ -16,7 +16,7 @@ import { useToasts } from "../../state/toast";
 import { AccountProvider, type CodeHost } from "../registry";
 import { hostSettings, setProjectAccount } from "../state";
 import { InHost, registerTestHost, TEST_HOST } from "../testHost";
-import { GitNav, HostAccountButton, HostNavItems } from "./HostRail";
+import { HostAccountButton } from "./HostRail";
 import { sectionLabel, sectionsOf } from "../sections";
 
 const host = registerTestHost(api);
@@ -47,11 +47,7 @@ function renderRail(props: ReturnType<typeof handlers>, { account = null as stri
     return render(
         <InHost host={host}>
             <AccountProvider value={account}>
-                <GitNav
-                    local={[]}
-                    host={<HostNavItems area="pulls" onArea={props.onArea} />}
-                    account={<HostAccountButton slug={slug} cwd={CWD} active onSignIn={() => props.onArea("pulls")} {...props} />}
-                />
+                <HostAccountButton slug={slug} cwd={CWD} active onSignIn={() => props.onArea("pulls")} {...props} />
             </AccountProvider>
         </InHost>,
     );

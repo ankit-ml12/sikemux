@@ -1,78 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { notify, reportError } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { IconCheck, IconGit, IconLogOut, IconPlus, IconUser, Tooltip } from "../../plugin-api/ui";
 import { useAccount, useHost, type HostAccountEntry } from "../registry";
 import { accountsR, hostStatusR } from "../resources";
-import { forgetAccount, setProjectAccount, type Section, isTreeSection } from "../state";
-import { sectionLabel, sectionsOf } from "../sections";
-import { SectionIcon } from "./ActionsIcon";
+import { forgetAccount, setProjectAccount } from "../state";
 import { Avatar, Initial } from "./Pictures";
 import "../strip.css";
-
-/** One of the local workbench's screens, handed to the navigation by the git pane. */
-export interface NavItem {
-    id: string;
-    label: string;
-    shortcut?: string;
-    icon: ReactNode;
-    count?: number;
-    on: boolean;
-    onSelect: () => void;
-}
-
-function NavTab({
-    label,
-    shortcut,
-    on,
-    count,
-    onClick,
-    children,
-}: {
-    label: string;
-    shortcut?: string;
-    on: boolean;
-    count?: number;
-    onClick: () => void;
-    children: ReactNode;
-}) {
-    const name = shortcut ? `${label} (${shortcut})` : label;
-    return (
-        <Tooltip label={name}>
-            <button
-                type="button"
-                className="git-nav-tab"
-                aria-label={name}
-                aria-current={on ? "page" : undefined}
-                data-on={on ? "1" : "0"}
-                onClick={onClick}>
-                {children}
-                <span className="git-nav-label">{label}</span>
-                {!!count && <span className="git-nav-count">{count > 99 ? "99+" : count}</span>}
-            </button>
-        </Tooltip>
-    );
-}
-
-/**
- * The git pane's header: the local screens and the code host's sections and, at the far end, who is signed in.
- */
-export function GitNav({ local, host, account }: { local: readonly NavItem[]; host?: ReactNode; account?: ReactNode }) {
-    return (
-        <div className="git-nav-bar">
-            <div className="git-nav-tools" />
-            <nav className="git-nav" aria-label="Git">
-                {local.map((item) => (
-                    <NavTab key={item.id} label={item.label} shortcut={item.shortcut} on={item.on} count={item.count} onClick={item.onSelect}>
-                        {item.icon}
-                    </NavTab>
-                ))}
-                {host}
-            </nav>
-            {account}
-        </div>
-    );
-}
 
 function AccountRow({ entry, current, onPick }: { entry: HostAccountEntry; current: boolean; onPick: () => void }) {
     return (
@@ -91,23 +25,6 @@ function AccountRow({ entry, current, onPick }: { entry: HostAccountEntry; curre
             </span>
             {current && <IconCheck size={12} />}
         </button>
-    );
-}
-
-/** The code host's sections, after the local screens. */
-export function HostNavItems({ area, onArea }: { area: string; onArea: (section: Section) => void }) {
-    const host = useHost();
-    return (
-        <>
-            <span className="git-nav-sep" />
-            {sectionsOf(host)
-                .filter((section) => !isTreeSection(section))
-                .map((section) => (
-                    <NavTab key={section} label={sectionLabel(host, section)} on={area === section} onClick={() => onArea(section)}>
-                        <SectionIcon section={section} size={14} />
-                    </NavTab>
-                ))}
-        </>
     );
 }
 

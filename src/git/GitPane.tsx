@@ -35,6 +35,7 @@ import {
     IconCommit,
     IconExpandAll,
     IconFilePlus,
+    IconInbox,
     IconGlobe,
     IconLaptop,
     IconStash,
@@ -74,7 +75,8 @@ import { fileAuthors, useChangeOwners } from "./changeOwners";
 import { FileAgentFaces } from "./FileAgentFaces";
 import { CommitAgents, useCommitOwners } from "./CommitAgents";
 import { GitColumns } from "./GitColumns";
-import { usePickRepo } from "../codehost/pickRepo";
+import { useGitShell } from "../codehost/shellContext";
+import type { Notification } from "../codehost/api";
 import { SkeletonRows } from "../ui/Skeleton";
 import { EmptyState } from "../ui/Panel";
 import { AI_MODELS, AI_PROVIDER_LABEL, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPaneConstants";
@@ -84,6 +86,8 @@ import { basename as basenameOf, dirname, joinPath } from "../lib/paths";
 
 const CommitReview = lazy(() => import("./CommitReview").then((module) => ({ default: memo(module.CommitReview) })));
 const MergeReview = lazy(() => import("./MergeReview").then((module) => ({ default: memo(module.MergeReview) })));
+const InboxList = lazy(() => import("../codehost/components/InboxView").then((module) => ({ default: module.InboxList })));
+const InboxDetail = lazy(() => import("../codehost/components/InboxView").then((module) => ({ default: module.InboxDetail })));
 
 const ROW_HEIGHT = 26;
 
@@ -189,6 +193,8 @@ function GitWorkbench({
     const busy = sharedOperation?.busy ? sharedOperation.label : localBusy;
     const generating = !!sharedOperation?.busy && sharedOperation.label.startsWith("Generate message");
     const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; alignRight: boolean } | null>(null);
+    const [inboxOpen, setInboxOpen] = useState(false);
+    const [notification, setNotification] = useState<Notification | null>(null);
     const [queries, setQueries] = useState<Record<GitPanel, string>>({ files: "", commits: "", branches: "" });
     const [fileFilterOpen, setFileFilterOpen] = useState(false);
     const filterInputs = useRef<Record<GitPanel, HTMLInputElement | null>>({ files: null, commits: null, branches: null });
@@ -262,7 +268,10 @@ function GitWorkbench({
     const selectedCommit = filteredCommits[clampSel("commits")];
     const selectedBranchEntry = branchEntries[clampSel("branches")];
 
-    const setPanel = (p: GitPanel) => cmd.setGitView(paneId, { panel: p });
+    const setPanel = (p: GitPanel) => {
+        setInboxOpen(false);
+        cmd.setGitView(paneId, { panel: p });
+    };
     const setSel = (p: GitPanel, index: number) => cmd.setGitView(paneId, { panel: p, selected: { ...sel, [p]: index } });
     const setOpenRemote = (name: string | null) => cmd.setGitView(paneId, { openRemote: name });
 
@@ -939,6 +948,7 @@ function GitWorkbench({
         }
         if (busy) return;
 
+        if (inboxOpen && !INBOX_KEYS.has(k)) return;
         let handled = true;
         if (k === "?") openHelpCheatsheet();
         else if (k === "@") toggleGitCmdLog();
@@ -948,6 +958,7 @@ function GitWorkbench({
             else if (queries[panel]) setQueries((q) => ({ ...q, [panel]: "" }));
             else handled = false;
         } else if (GIT_PANEL_BY_KEY[k]) setPanel(GIT_PANEL_BY_KEY[k]!);
+        else if (k === "4") setInboxOpen(true);
         else if (k === "h" && panel !== "branches") setPanel(panel === "commits" ? "files" : "commits");
         else if (k === "j" || k === "ArrowDown") moveSel(1);
         else if (k === "k" || k === "ArrowUp") moveSel(-1);
@@ -1697,6 +1708,7 @@ function GitWorkbench({
                         <span>{busy}</span>
                     </span>
                 )}
+                <SideAccount />
                 <SideMoreButton onOpen={openMoreMenu} />
             </div>
             <div className="git-btn-group git-side-actions" role="group" aria-label="Sync with the remote">
@@ -1741,36 +1753,38 @@ function GitWorkbench({
                 area={view.area}
                 active={active}
                 fetching={fetching}
-                onArea={(area) => cmd.setGitView(paneId, { area })}
-                local={
-                    hostRepo.repo
-                        ? [
-                              {
-                                  id: "local",
-                                  label: "Local",
-                                  icon: <IconGit size={14} />,
-                                  count: files.length,
-                                  on: view.area === "local",
-                                  onSelect: () => cmd.setGitView(paneId, { area: "local" }),
-                              },
-                          ]
-                        : []
-                }>
+                onArea={(area) => cmd.setGitView(paneId, { area })}>
                 <GitColumns
                     paneId={paneId}
                     left={
                         <>
                             <div className="git-side">
                                 {sideHead}
-                                <SwipePages
-                                    label="Git lists"
-                                    current={panel}
-                                    onChange={(id) => setPanel(id as GitPanel)}
+                                <GitSidePages
+                                    current={inboxOpen ? "inbox" : panel}
+                                    onChange={(id) => (id === "inbox" ? setInboxOpen(true) : setPanel(id as GitPanel))}
+                                    onInboxGone={() => setInboxOpen(false)}
                                     pages={[
                                         { id: "files", label: withShortcut("Changes", "1"), icon: <IconFile size={14} />, content: filesLeft },
                                         { id: "commits", label: withShortcut("History", "2"), icon: <IconCommit size={14} />, content: commitsLeft },
                                         { id: "branches", label: withShortcut("Branches", "3"), icon: <IconGit size={14} />, content: branchesLeft },
                                     ]}
+                                    inbox={{
+                                        id: "inbox",
+                                        label: withShortcut("Inbox", "4"),
+                                        icon: <IconInbox size={14} />,
+                                        content: (
+                                            <div className="git-list git-inbox-list">
+                                                <Suspense fallback={<SkeletonRows rows={8} label="Loading notifications" />}>
+                                                    <InboxList
+                                                        shownId={notification?.id ?? null}
+                                                        onOpen={setNotification}
+                                                        active={active && inboxOpen}
+                                                    />
+                                                </Suspense>
+                                            </div>
+                                        ),
+                                    }}
                                 />
                             </div>
                             {cmdLogOpen && <GitCmdLogBar />}
@@ -1778,7 +1792,15 @@ function GitWorkbench({
                     }
                     right={
                         <div className="git-right-review">
-                            <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>{right}</Suspense>
+                            <Suspense fallback={<SkeletonRows rows={6} label="Loading diff preview" />}>
+                                {!inboxOpen ? (
+                                    right
+                                ) : notification ? (
+                                    <InboxDetail key={notification.id} item={notification} active={active} />
+                                ) : (
+                                    <EmptyState message="Pick a notification to read it." />
+                                )}
+                            </Suspense>
                             {busy && !busy.startsWith("✗") && (
                                 <div className="git-busy-overlay">
                                     <div className="git-busy-card">
@@ -1797,9 +1819,42 @@ function GitWorkbench({
     );
 }
 
+const INBOX_KEYS = new Set(["1", "2", "3", "4", "?", "@", "F", "P", "p"]);
+
+type SidePage = { id: string; label: string; icon: ReactNode; content: ReactNode };
+
+/** The side panel's lists, with the host's inbox after them while someone is signed in to a host that has one. */
+function GitSidePages({
+    current,
+    onChange,
+    onInboxGone,
+    pages,
+    inbox,
+}: {
+    current: string;
+    onChange: (id: string) => void;
+    onInboxGone: () => void;
+    pages: SidePage[];
+    inbox: SidePage;
+}) {
+    const hasInbox = useGitShell().inbox;
+    const inboxGone = !hasInbox && current === inbox.id;
+    useEffect(() => {
+        if (inboxGone) onInboxGone();
+    }, [inboxGone, onInboxGone]);
+    return (
+        <SwipePages label="Git lists" current={inboxGone ? pages[0].id : current} onChange={onChange} pages={hasInbox ? [...pages, inbox] : pages} />
+    );
+}
+
+/** Who is signed in to the host, beside the side panel's menu. */
+function SideAccount() {
+    return <>{useGitShell().account}</>;
+}
+
 /** The side panel's menu of everything else, which can also pick the host repository the pane shows. */
 function SideMoreButton({ onOpen }: { onOpen: (anchor: HTMLElement, pickRepo: (() => void) | null) => void }) {
-    const pickRepo = usePickRepo();
+    const { pickRepo } = useGitShell();
     return <MoreButton label="Remotes, stashes and more" onOpen={(anchor) => onOpen(anchor, pickRepo)} className="git-foot-btn icon" />;
 }
 

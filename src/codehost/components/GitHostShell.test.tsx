@@ -52,6 +52,7 @@ import { pullsR } from "../resources";
 import { hostSettings, setProjectRepo } from "../state";
 import { registerTestHost, TEST_HOST } from "../testHost";
 import { GitHostShell } from "./GitHostShell";
+import { useGitShell } from "../shellContext";
 
 const signIn = vi.hoisted(() => ({ last: null as null | ((account: string | null) => void) }));
 const host = registerTestHost(api) as { -readonly [K in keyof ReturnType<typeof registerTestHost>]: ReturnType<typeof registerTestHost>[K] };
@@ -70,11 +71,16 @@ function PullCount() {
     return <span>pulls read: {pulls.data ? "yes" : "no"}</span>;
 }
 
+/** The account the shell lends the local workbench, drawn where its side panel would draw it. */
+function LentAccount() {
+    return <>{useGitShell().account}</>;
+}
+
 function shell(area: GitArea, children = <div>local workbench</div>) {
     const onArea = vi.fn();
-    const local = [{ id: "changes", label: "Changes", icon: null, on: area === "local", onSelect: vi.fn() }];
     const view = render(
-        <GitHostShell paneId="p-git" cwd={CWD} area={area} active fetching onArea={onArea} local={local}>
+        <GitHostShell paneId="p-git" cwd={CWD} area={area} active fetching onArea={onArea}>
+            <LentAccount />
             {children}
         </GitHostShell>,
     );

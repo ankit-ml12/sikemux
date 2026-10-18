@@ -10,8 +10,9 @@ export const SECTIONS = ["pulls", "actions", "issues", "releases", "inbox"] as c
 export type Section = (typeof SECTIONS)[number];
 
 /** The sections the project tree lists under Git, which open as screens of their own rather than as tabs in the Git pane. */
-export const TREE_SECTIONS: readonly Section[] = ["pulls", "issues", "actions", "releases"];
-export const isTreeSection = (area: string): area is Section => (TREE_SECTIONS as readonly string[]).includes(area);
+export const TREE_SECTIONS = ["pulls", "issues", "actions", "releases"] as const satisfies readonly Section[];
+export type TreeSection = (typeof TREE_SECTIONS)[number];
+export const isTreeSection = (area: string): area is TreeSection => (TREE_SECTIONS as readonly string[]).includes(area);
 
 export interface HostSettings {
     pinned: string[];
