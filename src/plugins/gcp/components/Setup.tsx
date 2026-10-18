@@ -5,7 +5,7 @@ import { gcpApi, refreshGcp, type GcpStatus } from "../api";
 import { invalidate } from "../../../plugin-api/resources";
 import { GcpMark } from "./icons";
 
-const INSTALL = ["brew", "install", "--cask", "google-cloud-sdk"];
+const INSTALL = ["brew", "install", "--cask", "gcloud-cli"];
 
 /** Before the console: getting the gcloud CLI, then signing in to it. */
 export function Setup({ status }: { status: GcpStatus | undefined }) {

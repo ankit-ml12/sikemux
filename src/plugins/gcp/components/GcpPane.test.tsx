@@ -37,7 +37,7 @@ describe("the Google Cloud console", () => {
         api.status.mockResolvedValue({ ...signedIn, installed: false, accounts: [] });
         renderPane();
         fireEvent.click(await screen.findByRole("button", { name: "Install with Homebrew" }));
-        expect(runInTerminal).toHaveBeenCalledWith("Install the Google Cloud CLI", ["brew", "install", "--cask", "google-cloud-sdk"]);
+        expect(runInTerminal).toHaveBeenCalledWith("Install the Google Cloud CLI", ["brew", "install", "--cask", "gcloud-cli"]);
     });
 
     it("signs in through gcloud when no account is signed in", async () => {
