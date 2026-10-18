@@ -14,9 +14,11 @@ pub fn segment(what: &str, value: &str) -> VercelResult<String> {
     if value.is_empty() {
         return Err(VercelError::BadArg(format!("no {what} was named")));
     }
-    if !value
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    let starts_plain = value.starts_with(|c: char| c.is_ascii_alphanumeric());
+    if !starts_plain
+        || !value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
     {
         return Err(VercelError::BadArg(format!("`{value}` is not a {what}")));
     }
