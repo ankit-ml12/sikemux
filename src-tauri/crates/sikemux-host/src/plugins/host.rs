@@ -35,8 +35,11 @@ pub struct PluginHost {
     disabled_file: Option<PathBuf>,
     /// Each plugin's last answer for a set of remotes, kept for when it is slow to answer
     /// again, so an agent's tools do not come and go with a flaky check.
-    offered_before: Mutex<HashMap<(String, Arc<[String]>), bool>>,
+    offered_before: Mutex<OfferedBefore>,
 }
+
+/// Whether a plugin offered tools, by plugin id and the remotes it was asked about.
+type OfferedBefore = HashMap<(String, Arc<[String]>), bool>;
 
 const DISABLED_FILE: &str = "disabled.json";
 
