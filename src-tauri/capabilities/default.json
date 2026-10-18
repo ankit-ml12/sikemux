@@ -109,7 +109,6 @@
     "allow-agent-account-sign-out",
     "allow-agent-sessions",
     "allow-agent-recent-sessions",
-    "allow-agent-session-context",
     "allow-agent-session-rename",
     "allow-agent-session-delete",
     "allow-agent-session-relocate",
