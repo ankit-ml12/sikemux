@@ -5824,6 +5824,7 @@ dependencies = [
  "sikemux-plugin-bitbucket",
  "sikemux-plugin-bruno",
  "sikemux-plugin-database",
+ "sikemux-plugin-gcp",
  "sikemux-plugin-github",
  "sikemux-plugin-gitlab",
  "sikemux-plugin-jira",
