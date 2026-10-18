@@ -2,7 +2,6 @@
 //! device gains a method here without its native code changing, so one a
 //! released app calls is never removed or renamed.
 
-use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -14,7 +13,7 @@ use super::attachments;
 use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
 use super::names::{project_of, AgentName, ClosedAgent, Starting};
-use super::workspace::{self, AgentRun};
+use super::workspace;
 use super::{
     board, inbox, messages, plugins, questions, remote, saved, share, who_wrote, Core, CoreError,
     CoreResult,
@@ -29,7 +28,9 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "agentStatus" | "agentAccountStatus" | "agentUsage" | "cancelResume" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" | "linkHost" | "shareChat" | "stopShare"
         | "commitStaged" | "setAgentAccounts" | "addAgentAccount" | "forgetAgentStatus"
-        | "markAgentSignedOut" | "addProject" | "removeProject" => Needs::Person,
+        | "markAgentSignedOut" | "addProject" | "removeProject" | "updateProject"
+        | "moveProject" | "setSpaces" | "setPinnedChats" | "setAgentDefaults" | "createAgent"
+        | "updateAgent" | "closeAgents" => Needs::Person,
         "changeOwners" | "commitOwners" => Needs::Watch,
         _ => Needs::Local,
     }
@@ -71,15 +72,21 @@ pub(crate) async fn call(
         "chatFile" => answer(chat_file(&core, &client.peer, parse(params)?).await?),
         "nameAgent" => answer(name_agent(&core, parse(params)?).await?),
         "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
-        "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
         "closedAgents" => answer(closed_agents(&core, parse(params)?).await?),
         "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
         "stopChatIfIdle" => answer(stop_chat_if_idle(&core, parse(params)?)),
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
-        "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),
         "addProject" => answer(workspace::add_project(&core, parse(params)?).await?),
         "removeProject" => answer(workspace::remove_project(&core, parse(params)?)?),
+        "updateProject" => answer(workspace::update_project(&core, parse(params)?)?),
+        "moveProject" => answer(workspace::move_project(&core, parse(params)?)?),
+        "setSpaces" => answer(workspace::set_spaces(&core, parse(params)?)?),
+        "setPinnedChats" => answer(workspace::set_pinned_chats(&core, parse(params)?)?),
+        "setAgentDefaults" => answer(workspace::set_defaults(&core, parse(params)?).await?),
+        "createAgent" => answer(workspace::create_agent(&core, parse(params)?)?),
+        "updateAgent" => answer(workspace::update_agent(&core, parse(params)?)?),
+        "closeAgents" => answer(workspace::close_agents(&core, parse(params)?)?),
         method if crate::agent_accounts::METHODS.contains(&method) => {
             super::agent_accounts::call(&core, method, params).await
         }
@@ -281,6 +288,7 @@ fn stop_chat_if_idle(core: &Arc<Core>, params: AgentParams) -> Value {
     }
     let stopped = core.chats.stop_if_idle(&params.agent_id);
     if stopped && chat.is_some() {
+        core.workspaces.set_asleep(&params.agent_id, true);
         core.note_agent_gone(&params.agent_id);
     }
     json!({ "stopped": stopped })
@@ -371,39 +379,6 @@ async fn agent_names(core: &Arc<Core>) -> CoreResult<Vec<AgentName>> {
         let mut agents = core.running_agents();
         agents.extend(core.hosts.team.ids());
         Ok(core.names.of(&agents))
-    })
-    .await
-}
-
-/// The most agents the app may say it holds.
-const MAX_AGENTS_IN_APP: usize = 4096;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentsInAppParams {
-    agent_ids: HashSet<String>,
-    runs: BTreeMap<String, AgentRun>,
-}
-
-/// Every agent the app holds, sleeping ones included, so their names stay
-/// theirs while nothing of them runs here and closed ones' names are free.
-async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResult<()> {
-    if params.agent_ids.len() > MAX_AGENTS_IN_APP || params.runs.len() > MAX_AGENTS_IN_APP {
-        return Err("the app named more agents than the core keeps".into());
-    }
-    if !params
-        .agent_ids
-        .iter()
-        .all(|id| crate::cli::protocol::is_tool_agent_id(id))
-    {
-        return Err("that is not an agent id".into());
-    }
-    core.workspaces.publish_runs(params.runs)?;
-    let core = core.clone();
-    blocking(move || {
-        core.names
-            .set_in_app(params.agent_ids, core.running_agents());
-        Ok(())
     })
     .await
 }
