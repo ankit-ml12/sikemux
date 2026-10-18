@@ -968,3 +968,32 @@ button.gcp-project-row:hover {
     overflow-wrap: anywhere;
     user-select: text;
 }
+
+.gcp-agents {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: auto;
+    padding: 8px 16px 8px 0;
+    border-top: 1px solid var(--gcp-line);
+}
+
+.gcp-agents .gcp-nav-group {
+    padding-left: 24px;
+}
+
+.gcp-agents-for {
+    padding: 4px 0 0 24px;
+    font-size: 12px;
+    color: var(--gcp-text-2);
+}
+
+.gcp-agents > :is(button, div):not(.gcp-nav-group) {
+    margin-left: 20px;
+}
+
+.gcp-agents-note {
+    margin: 0;
+    padding: 0 0 0 24px;
+    color: var(--gcp-text-2);
+}

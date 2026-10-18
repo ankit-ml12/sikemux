@@ -134,3 +134,5 @@ export const recentErrorsR = resource({
     fetch: (account: string, project: string) => gcpApi.logs(target(account, project), { severity: "ERROR", since: "1h", limit: 8 }),
     staleAfterMs: 60_000,
 });
+
+export const agentPicksR = resource({ kind: "gcp.agentPicks", fetch: (folder: string | null) => gcpApi.agentPicks(folder), staleAfterMs: 60_000 });

@@ -5,6 +5,7 @@ import { Dropdown, ResizeHandle, SkeletonRows } from "../../../plugin-api/ui";
 import { refreshGcp, type GcpStatus, type Target } from "../api";
 import { gcpStatusR } from "../resources";
 import { gcpSettings, openProduct, PRODUCTS, setGcpAccount, setGcpProject, setGcpSideWidth, updateGcpView, useGcpView, type Product } from "../state";
+import { AgentSetup } from "./AgentSetup";
 import { GcpMark, ProductIcon } from "./icons";
 import { LoggingPage } from "./LoggingPage";
 import { RunPage } from "./RunPage";
@@ -129,6 +130,7 @@ function Console({ paneId, active, status }: { paneId: string; active: boolean; 
                             </div>
                         );
                     })}
+                    <AgentSetup />
                 </aside>
                 <ResizeHandle
                     targetRef={sideRef}
