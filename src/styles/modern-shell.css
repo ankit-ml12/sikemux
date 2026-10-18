@@ -681,11 +681,11 @@ textarea:focus,
     transform: translateY(-50%);
 }
 
-.tab-wrap:has(.tab-note):not(:has(.tab-status)) .tab-note {
+.tab-wrap:has(.tab-note):not(:has(.tab-status)) :is(.tab-note, .tab-badge) {
     transition: opacity var(--dur-1) linear;
 }
 
-.tab-wrap:has(.tab-note):not(:has(.tab-status)):is(:hover, :has(.tab-x:focus-visible)) .tab-note {
+.tab-wrap:has(.tab-note):not(:has(.tab-status)):is(:hover, :has(.tab-x:focus-visible)) :is(.tab-note, .tab-badge) {
     opacity: 0;
 }
 
