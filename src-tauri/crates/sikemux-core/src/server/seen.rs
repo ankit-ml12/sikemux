@@ -127,6 +127,20 @@ impl Seen {
         self.lock().show(client, View::default());
     }
 
+    /// Whether some client has the agent on screen.
+    pub(crate) fn viewed(&self, agent_id: &str) -> bool {
+        self.lock().viewed(agent_id)
+    }
+
+    /// Since when the agent has been neither on screen nor doing anything,
+    /// as far as this core has seen.
+    pub(crate) fn quiet_since(&self, agent_id: &str) -> Option<u64> {
+        let state = self.lock();
+        let viewed = state.viewed_at.get(agent_id).copied();
+        let active = state.active_at.get(agent_id).copied();
+        viewed.max(active)
+    }
+
     pub(crate) fn unread(&self, agent_id: &str) -> bool {
         self.lock().unread.contains(agent_id)
     }
