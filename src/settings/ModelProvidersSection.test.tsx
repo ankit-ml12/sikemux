@@ -7,6 +7,7 @@ import { ModelProvidersSection } from "./ModelProvidersSection";
 
 let transport: MemoryIpcTransport;
 let providers: ModelProvider[];
+let core: Map<string, (params: unknown) => unknown>;
 
 function row(label: string): HTMLElement {
     const element = screen.getByText(label).closest<HTMLElement>(".settings-row");
@@ -43,8 +44,14 @@ beforeEach(() => {
     ];
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
-    transport.register("model_providers", () => providers.map((provider) => ({ ...provider })));
-    transport.register("model_helper", () => null);
+    core = new Map<string, (params: unknown) => unknown>([
+        ["modelProviders", () => providers.map((provider) => ({ ...provider }))],
+        ["modelHelper", () => null],
+    ]);
+    transport.register("core_call", (args) => {
+        const { method, params } = args as { method: string; params: unknown };
+        return core.get(method)?.(params) ?? null;
+    });
 });
 
 afterEach(() => {
@@ -59,7 +66,7 @@ describe("ModelProvidersSection", () => {
             const { id } = args as { id: string };
             providers = providers.map((provider) => (provider.id === id ? { ...provider, connected: true } : provider));
         });
-        transport.register("model_provider_connect", connect);
+        core.set("modelProviderConnect", connect);
         render(<ModelProvidersSection />);
 
         await screen.findByText("Baseten");
@@ -67,7 +74,7 @@ describe("ModelProvidersSection", () => {
         await user.type(screen.getByLabelText("Baseten API key"), "bt-secret");
         await user.click(screen.getByRole("button", { name: "Connect" }));
 
-        expect(connect).toHaveBeenCalledWith({ id: "baseten", key: "bt-secret" }, expect.anything());
+        expect(connect).toHaveBeenCalledWith({ id: "baseten", key: "bt-secret" });
         expect(await within(row("Baseten")).findByRole("button", { name: "Disconnect" })).toBeInTheDocument();
         expect(screen.getByText("1 connected")).toBeInTheDocument();
         expect(within(row("OpenRouter")).getByRole("button", { name: "Add key" })).toBeInTheDocument();
@@ -75,7 +82,7 @@ describe("ModelProvidersSection", () => {
 
     it("keeps the key field open and says why when the provider refuses the key", async () => {
         const user = userEvent.setup();
-        transport.register("model_provider_connect", () => {
+        core.set("modelProviderConnect", () => {
             throw new Error("Baseten did not accept that key");
         });
         render(<ModelProvidersSection />);
@@ -94,13 +101,13 @@ describe("ModelProvidersSection", () => {
         const disconnect = vi.fn(() => {
             providers[0].connected = false;
         });
-        transport.register("model_provider_disconnect", disconnect);
+        core.set("modelProviderDisconnect", disconnect);
         render(<ModelProvidersSection />);
 
         await screen.findByText("OpenRouter");
         await user.click(within(row("OpenRouter")).getByRole("button", { name: "Disconnect" }));
 
-        expect(disconnect).toHaveBeenCalledWith({ id: "openrouter" }, expect.anything());
+        expect(disconnect).toHaveBeenCalledWith({ id: "openrouter" });
         expect(await within(row("OpenRouter")).findByRole("button", { name: "Add key" })).toBeInTheDocument();
     });
 });

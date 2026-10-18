@@ -25,8 +25,6 @@ mod harness;
 mod inbox;
 mod lsp;
 mod markdown;
-mod model_checks;
-mod model_providers;
 mod notch;
 pub mod observability;
 mod pages;
@@ -198,7 +196,6 @@ pub fn run() {
         })
         .setup(|_app| {
             _app.manage(UiWatchdogState::start()?);
-            model_providers::init(&_app.path().app_data_dir()?);
             skills::watch_global(_app.handle().clone());
             _app.manage(PluginStreams::default());
             let sim = SimManager::default();
@@ -253,7 +250,6 @@ pub fn run() {
         .manage(pages::Pages::default())
         .register_asynchronous_uri_scheme_protocol(pages::SCHEME, pages::handle)
         .invoke_handler(tauri::generate_handler![
-            acp::acp_start,
             acp::acp_attach,
             acp::acp_history,
             acp::acp_list,
@@ -393,13 +389,6 @@ pub fn run() {
             markdown::markdown_parse,
             files::list_project_files_snapshot,
             settings::scan_project_roots,
-            model_providers::model_providers,
-            model_providers::model_provider_models,
-            model_providers::model_provider_connect,
-            model_providers::model_provider_disconnect,
-            model_providers::model_provider_check,
-            model_providers::model_helper,
-            model_providers::model_helper_set,
             skills::skills_overview,
             skills::skills_create,
             skills::skills_install,

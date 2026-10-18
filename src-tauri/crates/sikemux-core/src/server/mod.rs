@@ -27,6 +27,7 @@ mod kept;
 mod launching;
 mod local_peer;
 mod messages;
+mod model_providers;
 mod names;
 mod network_watch;
 mod notify;

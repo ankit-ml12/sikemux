@@ -29,6 +29,7 @@ use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRef, Re
 
 use super::chat;
 use super::connection::blocking;
+use super::model_providers::checks::Checks;
 use super::names::project_of;
 use super::wake::Wake;
 use super::{Core, CoreError, CoreResult};
@@ -304,6 +305,8 @@ pub(crate) struct Workspaces {
     /// Where [`Saved`] is kept; nowhere for a core without a data folder.
     path: Option<PathBuf>,
     providers: Option<Providers>,
+    /// Whether models on each provider call tools the way agents need.
+    pub(crate) model_checks: Checks,
     /// The data folder, which holds the skills library.
     data_dir: Option<PathBuf>,
     /// Counts the looks over the agents, so one that took longer never replaces a newer one.
@@ -364,6 +367,7 @@ impl Workspaces {
             }),
             path,
             providers: data_dir.map(Providers::new),
+            model_checks: Checks::new(data_dir),
             data_dir: data_dir.map(Path::to_path_buf),
             asked: AtomicU64::new(0),
             wake: Wake::default(),
@@ -373,6 +377,11 @@ impl Workspaces {
             workspaces.save(&workspaces.lock().saved);
         }
         workspaces
+    }
+
+    /// The model providers the host's agents run on, and their keys.
+    pub(crate) fn providers(&self) -> Option<&Providers> {
+        self.providers.as_ref()
     }
 
     fn lock(&self) -> MutexGuard<'_, Published> {

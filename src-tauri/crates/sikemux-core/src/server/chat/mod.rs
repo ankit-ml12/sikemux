@@ -1533,6 +1533,7 @@ fn start(
     let resume_id = launch_spec.resume_id.clone();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
     core.workspaces.note_begun(&chat);
+    super::model_providers::chat_begun(core, &chat.launch);
     let naming = (
         core.clone(),
         chat.agent_id().to_owned(),

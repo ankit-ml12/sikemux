@@ -35,6 +35,9 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "pluginStream" | "pluginSignIn" | "signInCallback" => Needs::Person,
         "changeOwners" | "commitOwners" | "activitySummary" => Needs::Watch,
         "setActivityPrice" => Needs::Person,
+        "modelProviders" | "modelProviderModels" | "modelHelper" => Needs::Full,
+        "modelProviderCheck" | "modelProviderConnect" | "modelProviderDisconnect"
+        | "setModelHelper" => Needs::Person,
         method if method.starts_with("git.") => super::git::needs(method),
         _ => Needs::Local,
     }
@@ -71,6 +74,9 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "agentStatus"
             | "agentAccountStatus"
             | "agentUsage"
+            | "modelProviders"
+            | "modelProviderModels"
+            | "modelHelper"
     )
 }
 
@@ -117,6 +123,9 @@ pub(crate) async fn call(
         "updateAgent" => answer(workspace::update_agent(&core, parse(params)?)?),
         "closeAgents" => answer(workspace::close_agents(&core, parse(params)?)?),
         method if method.starts_with("git.") => super::git::call(method, params).await,
+        method if super::model_providers::METHODS.contains(&method) => {
+            super::model_providers::call(&core, method, params).await
+        }
         method if crate::agent_accounts::METHODS.contains(&method) => {
             super::agent_accounts::call(&core, method, params).await
         }

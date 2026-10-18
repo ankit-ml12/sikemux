@@ -592,7 +592,7 @@ export class ShowcaseBackend implements IpcTransport {
         };
       return null;
     });
-    this.on("model_providers", () => []);
+    this.onCore(["modelProviders"], () => []);
     this.on("acp_attach", () => ({ status: "missing" }));
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);

@@ -1,4 +1,4 @@
-import { invokeCommand as invoke } from "./invoke";
+import { coreCall } from "./core";
 
 /** `api` bills per token, `plan` is a monthly coding subscription, `local` runs on this computer. */
 export type ModelProviderKind = "api" | "plan" | "local";
@@ -79,13 +79,13 @@ export function modelWords(choices: ModelChoices, checks: Record<string, ModelCh
 }
 
 export const modelProvidersApi = {
-    list: () => invoke<ModelProvider[]>("model_providers"),
+    list: () => coreCall<ModelProvider[]>("modelProviders"),
     /** What a connected keyed provider serves, read with its key. */
-    models: (id: string) => invoke<ServedModels>("model_provider_models", { id }),
-    connect: (id: string, key: string) => invoke<void>("model_provider_connect", { id, key }),
-    disconnect: (id: string) => invoke<void>("model_provider_disconnect", { id }),
+    models: (id: string) => coreCall<ServedModels>("modelProviderModels", { id }),
+    connect: (id: string, key: string) => coreCall<void>("modelProviderConnect", { id, key }),
+    disconnect: (id: string) => coreCall<void>("modelProviderDisconnect", { id }),
     /** Asks the provider now whether the model calls tools the way agents need. */
-    check: (id: string, model: string) => invoke<ModelCheck>("model_provider_check", { id, model }),
-    helper: () => invoke<ModelHelper | null>("model_helper"),
-    setHelper: (helper: ModelHelper | null) => invoke<void>("model_helper_set", { helper }),
+    check: (id: string, model: string) => coreCall<ModelCheck>("modelProviderCheck", { id, model }),
+    helper: () => coreCall<ModelHelper | null>("modelHelper"),
+    setHelper: (helper: ModelHelper | null) => coreCall<void>("setModelHelper", { helper }),
 };

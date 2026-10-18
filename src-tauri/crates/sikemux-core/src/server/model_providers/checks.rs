@@ -4,13 +4,16 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use reqwest::{RequestBuilder, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sikemux_core::launch::providers::{AnthropicAuth, Provider};
+
+use crate::launch::providers::{AnthropicAuth, Provider};
+use crate::server::remote::unix_ms;
+use crate::server::Core;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_KEPT: usize = 200;
@@ -21,7 +24,7 @@ const ASK: &str = "What is the weather in Paris right now? Use the tool.";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Check {
+pub(crate) struct Check {
     pub works: bool,
     /// When it was checked, in Unix milliseconds.
     pub at: u64,
@@ -32,25 +35,10 @@ pub struct Check {
 /// Checks by provider, then model.
 type Kept = BTreeMap<String, BTreeMap<String, Check>>;
 
-struct Checks {
-    path: PathBuf,
+pub(crate) struct Checks {
+    path: Option<PathBuf>,
     kept: Mutex<Kept>,
     running: Mutex<HashSet<(String, String)>>,
-}
-
-static CHECKS: OnceLock<Checks> = OnceLock::new();
-
-pub fn init(data_dir: &Path) {
-    let path = data_dir.join("model-checks.json");
-    let kept = std::fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
-    let _ = CHECKS.set(Checks {
-        path,
-        kept: Mutex::new(kept),
-        running: Mutex::default(),
-    });
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -60,51 +48,119 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// Claude Code's own suffix for a long context, which the APIs do not take.
-fn api_model(model: &str) -> &str {
+pub(super) fn api_model(model: &str) -> &str {
     model.strip_suffix("[1m]").unwrap_or(model)
 }
 
-pub fn of(provider: &str) -> BTreeMap<String, Check> {
-    CHECKS
-        .get()
-        .and_then(|checks| lock(&checks.kept).get(provider).cloned())
-        .unwrap_or_default()
-}
-
-fn keep(provider: &str, model: &str, check: &Check) {
-    let Some(checks) = CHECKS.get() else {
-        return;
-    };
-    let mut kept = lock(&checks.kept);
-    kept.entry(provider.to_owned())
-        .or_default()
-        .insert(model.to_owned(), check.clone());
-    while kept.values().map(BTreeMap::len).sum::<usize>() > MAX_KEPT {
-        let oldest = kept
-            .iter()
-            .flat_map(|(provider, models)| {
-                models
-                    .iter()
-                    .map(move |(model, check)| (check.at, provider, model))
-            })
-            .min()
-            .map(|(_, provider, model)| (provider.clone(), model.clone()));
-        let Some((provider, model)) = oldest else {
-            break;
-        };
-        if let Some(models) = kept.get_mut(&provider) {
-            models.remove(&model);
-            if models.is_empty() {
-                kept.remove(&provider);
-            }
+impl Checks {
+    pub(crate) fn new(data_dir: Option<&Path>) -> Self {
+        let path = data_dir.map(|dir| dir.join("model-checks.json"));
+        let kept = path
+            .as_deref()
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        Self {
+            path,
+            kept: Mutex::new(kept),
+            running: Mutex::default(),
         }
     }
-    let written = serde_json::to_vec(&*kept)
-        .map_err(std::io::Error::from)
-        .and_then(|bytes| sikemux_process::files::write_atomic(&checks.path, &bytes, false));
-    if let Err(error) = written {
-        eprintln!("Sikemux could not keep the tool-call checks: {error}");
+
+    pub(crate) fn of(&self, provider: &str) -> BTreeMap<String, Check> {
+        lock(&self.kept).get(provider).cloned().unwrap_or_default()
     }
+
+    fn keep(&self, provider: &str, model: &str, check: &Check) {
+        let mut kept = lock(&self.kept);
+        kept.entry(provider.to_owned())
+            .or_default()
+            .insert(model.to_owned(), check.clone());
+        while kept.values().map(BTreeMap::len).sum::<usize>() > MAX_KEPT {
+            let oldest = kept
+                .iter()
+                .flat_map(|(provider, models)| {
+                    models
+                        .iter()
+                        .map(move |(model, check)| (check.at, provider, model))
+                })
+                .min()
+                .map(|(_, provider, model)| (provider.clone(), model.clone()));
+            let Some((provider, model)) = oldest else {
+                break;
+            };
+            if let Some(models) = kept.get_mut(&provider) {
+                models.remove(&model);
+                if models.is_empty() {
+                    kept.remove(&provider);
+                }
+            }
+        }
+        let Some(path) = &self.path else {
+            return;
+        };
+        let written = serde_json::to_vec(&*kept)
+            .map_err(std::io::Error::from)
+            .and_then(|bytes| sikemux_process::files::write_atomic(path, &bytes, false));
+        if let Err(error) = written {
+            eprintln!("sikemux core: the tool-call checks were not kept: {error}");
+        }
+    }
+
+    /// Asks the provider now, on every API it serves the model on, and keeps the verdict.
+    pub(crate) async fn run(
+        &self,
+        provider: &Provider,
+        key: Option<&str>,
+        model: &str,
+    ) -> Result<Check, String> {
+        let model = api_model(model);
+        let (openai, anthropic) = tokio::join!(
+            openai(provider, key, model),
+            anthropic(provider, key, model)
+        );
+        let mut fails = Vec::new();
+        for answer in std::iter::once(openai).chain(anthropic) {
+            if let Answer::Fails(detail) = answer? {
+                fails.push(detail);
+            }
+        }
+        let check = Check {
+            works: fails.is_empty(),
+            at: unix_ms(),
+            detail: (!fails.is_empty()).then(|| fails.join("; ")),
+        };
+        self.keep(&provider.id, model, &check);
+        Ok(check)
+    }
+}
+
+/// Checks a model the first time a chat runs on it, in the background.
+pub(crate) fn first_use(core: &Arc<Core>, provider: &'static Provider, model: &str) {
+    let model = api_model(model).to_owned();
+    let checks = &core.workspaces.model_checks;
+    if checks.of(&provider.id).contains_key(&model)
+        || !lock(&checks.running).insert((provider.id.clone(), model.clone()))
+    {
+        return;
+    }
+    let core = core.clone();
+    tokio::spawn(async move {
+        let key = match provider.key {
+            Some(_) => super::key(&core, &provider.id).await,
+            None => None,
+        };
+        let checks = &core.workspaces.model_checks;
+        if provider.key.is_none() || key.is_some() {
+            if let Err(error) = checks.run(provider, key.as_deref(), &model).await {
+                eprintln!(
+                    "sikemux core: could not check tool calls on {} {model}: {error}",
+                    provider.label
+                );
+            }
+        }
+        lock(&checks.running).remove(&(provider.id.clone(), model));
+    });
 }
 
 /// What one API answered: a verdict on the model, or a failure that says
@@ -183,7 +239,7 @@ fn tool_parameters() -> Value {
 }
 
 async fn openai(provider: &Provider, key: Option<&str>, model: &str) -> Result<Answer, String> {
-    let request = crate::model_providers::client()
+    let request = super::client()
         .post(format!("{}/chat/completions", provider.openai))
         .bearer_auth(key.unwrap_or(&provider.id));
     let body = json!({
@@ -209,7 +265,7 @@ async fn anthropic(
 ) -> Option<Result<Answer, String>> {
     let api = provider.anthropic.as_ref()?;
     let key = key.unwrap_or(&provider.id);
-    let request = crate::model_providers::client()
+    let request = super::client()
         .post(format!("{}/v1/messages", api.url))
         .header("anthropic-version", "2023-06-01");
     let request = match api.auth {
@@ -232,58 +288,4 @@ async fn anthropic(
         })
         .await,
     )
-}
-
-/// Asks the provider now, on every API it serves the model on, and keeps the verdict.
-pub async fn run(provider: &Provider, key: Option<&str>, model: &str) -> Result<Check, String> {
-    let model = api_model(model);
-    let (openai, anthropic) = futures::join!(
-        openai(provider, key, model),
-        anthropic(provider, key, model)
-    );
-    let mut fails = Vec::new();
-    for answer in std::iter::once(openai).chain(anthropic) {
-        if let Answer::Fails(detail) = answer? {
-            fails.push(detail);
-        }
-    }
-    let at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_millis() as u64)
-        .unwrap_or_default();
-    let check = Check {
-        works: fails.is_empty(),
-        at,
-        detail: (!fails.is_empty()).then(|| fails.join("; ")),
-    };
-    keep(&provider.id, model, &check);
-    Ok(check)
-}
-
-/// Checks a model the first time a chat runs on it, in the background.
-pub fn first_use(provider: &'static Provider, model: &str) {
-    let model = api_model(model).to_owned();
-    let Some(checks) = CHECKS.get() else {
-        return;
-    };
-    if of(&provider.id).contains_key(&model)
-        || !lock(&checks.running).insert((provider.id.clone(), model.clone()))
-    {
-        return;
-    }
-    tauri::async_runtime::spawn(async move {
-        let key = match provider.key {
-            Some(_) => crate::model_providers::key(&provider.id).await,
-            None => None,
-        };
-        if provider.key.is_none() || key.is_some() {
-            if let Err(error) = run(provider, key.as_deref(), &model).await {
-                eprintln!(
-                    "Sikemux could not check tool calls on {} {model}: {error}",
-                    provider.label
-                );
-            }
-        }
-        lock(&checks.running).remove(&(provider.id.clone(), model));
-    });
 }
