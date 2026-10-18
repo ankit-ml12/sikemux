@@ -50,7 +50,8 @@ from the list below.
   `agents` for the git commands refused here.
 - Plugin tools (`github_*`, `jira_*`, `rundeck_*`, `slack_*`…) are listed only
   when signed in, and for a code host when this project has a remote on it.
-  If one is missing, ask the person to sign in from its pane and restart you.
+  If one is missing, ask the person to sign in from its pane; if its tools
+  still do not show up, ask them to restart you.
 
 ## Topics
 

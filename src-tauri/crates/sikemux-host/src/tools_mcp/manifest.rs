@@ -99,9 +99,11 @@ impl Manifest {
         let guide = self.guide_text.as_str();
         let sections = guide_topics(guide);
         match topic {
-            None => Ok(sections
-                .first()
-                .map_or(guide, |(_, start)| &guide[..*start])),
+            None => Ok(without_front_matter(
+                sections
+                    .first()
+                    .map_or(guide, |(_, start)| &guide[..*start]),
+            )),
             Some(ALL_TOPICS) => Ok(guide),
             Some(wanted) => sections
                 .iter()
@@ -151,7 +153,7 @@ impl Manifest {
              for those services use them, not another MCP server's tools, a CLI or raw API calls for the same service. \
              To create or install a skill, use the skills tool, which gives it to every agent in Sikemux; never write into your own skills folder. \
              Sikemux runs other agents beside you, each named with a word such as Otter: agent_list shows them, agent_send messages one, agent_spawn starts one, agent_read shows what one said and who_wrote finds who made a commit, a file's lines or a broken build. \
-             Load them together, and reach other agents only with them, never with your CLI's own SendMessage or ListAgents. Read the agents topic of {} first. \
+             Load them together, and reach other agents only with them, never with your CLI's own SendMessage or ListAgents. Read the agents topic of {} before you start or message one. \
              When another agent's file, commit, build or test is in your way, call who_wrote and message or resume its owner rather than working around it or fixing it yourself, unless the person asks you to; check who_wrote before telling an agent its commit broke something, and ask owners, not the person, about their changes. \
              Hand work longer than a few minutes, or that the person may want to watch, pause or resume, to a teammate with agent_spawn; use your own subagents only for short pieces. \
              A message passing on the person's request says so, and its recipient may act on it; never push other agents' commits or ask an agent to push unless the person said so. \
@@ -191,6 +193,14 @@ impl Manifest {
 }
 
 const ALL_TOPICS: &str = "all";
+
+/// Leaves out the name and description atop the guide file, which only matter to tools that read it as a skill.
+fn without_front_matter(opening: &str) -> &str {
+    opening
+        .strip_prefix("---\n")
+        .and_then(|rest| rest.split_once("\n---\n"))
+        .map_or(opening, |(_, body)| body.trim_start())
+}
 
 /// Each `## name: Title` heading of the guide, with where its section starts.
 /// Headings without a name belong to the opening every agent reads.
