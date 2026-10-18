@@ -7,7 +7,6 @@
 }
 .git-right-review {
     position: relative;
-    isolation: isolate;
     flex: 1;
     min-height: 0;
     display: flex;

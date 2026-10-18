@@ -12,8 +12,6 @@ import { isTreeSection, sameRepo, setProjectAccount, setProjectRepo, slugOf } fr
 import { SectionIcon } from "./ActionsIcon";
 import { HostAccountButton } from "./HostRail";
 import { sectionLabel, sectionsOf } from "../sections";
-import { useStore } from "../../state/store";
-import { PaneField } from "../../ui/ShaderField";
 import { GitShellContext } from "../shellContext";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
@@ -41,7 +39,6 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
     const [adding, setAdding] = useState(false);
-    const paneShader = useStore((s) => s.paneShader);
     const hosted = !!host;
     const status = useCachedResourceEnabled(fetching && hosted, hostStatusR, found.repo?.provider ?? "", found.repo?.account ?? null);
     const signedIn = !!status.data?.ok;
@@ -105,7 +102,6 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
                         </div>
                     )}
                     <div className="git-shell-main">
-                        {standalone && <PaneField enabled={paneShader} />}
                         {host && repo && adding ? (
                             <div className="gha-pane" data-active={active ? "1" : "0"}>
                                 <div className="gha-callout gha-add-account">

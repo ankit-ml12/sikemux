@@ -5,26 +5,21 @@
     width: 100%;
     outline: none;
 }
-/* The side panel stands beside the review as a card of its own, so the pane draws no frame, ground or focus ring
-   around the two; the review column carries the frame instead. */
+/* The side panel stands beside the review as a card of its own, so the pane draws no frame or focus ring around the
+   two; the review column carries the frame instead, over the pane's own ground and picture. */
 .pane.pane-git {
     border-color: transparent;
-    background: none;
 }
 .git-pane:focus-visible {
     box-shadow: none;
 }
-/* The review column keeps the pane's frame, with its cards and picture inside. */
+/* The review column keeps the pane's frame, with its cards inside. */
 .pane-git .git-right {
     position: relative;
     isolation: isolate;
     padding: var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
-    background: var(--pane-ground);
-}
-.pane-git .git-right-review > .pane-field {
-    inset: calc(-1 * var(--space-2));
 }
 
 /* The changes view is panels on the pane's picture: the commit box, the files and the history, each with its own
