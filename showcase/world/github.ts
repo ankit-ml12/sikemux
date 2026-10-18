@@ -951,6 +951,7 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     },
   ],
   pendingApprovals: () => [],
+  issueCounts: () => ({ open: 4, closed: 12 }),
   pullCounts: () => ({ open: PULLS.length, closed: CLOSED_PULLS.length }),
   pulls: ({ state }) =>
     state === "closed"

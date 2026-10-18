@@ -177,3 +177,25 @@
     align-items: center;
     gap: var(--space-1);
 }
+/* An issue row keeps starting work on it beside the row, as a pull request row keeps nothing. */
+.issue-row {
+    display: flex;
+    align-items: center;
+}
+.issue-row > .pr-row {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.issue-row > .gha-work-on {
+    flex: none;
+    margin-right: var(--space-2);
+}
+.issue-row + .issue-row {
+    border-top: 1px solid var(--border);
+}
+.issue-row:hover {
+    background: var(--surface-hover);
+}
+.issue-row > .pr-row:hover {
+    background: none;
+}

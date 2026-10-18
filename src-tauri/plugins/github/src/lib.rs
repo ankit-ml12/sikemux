@@ -212,6 +212,7 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
 
         "pulls" => answer(input, move |q| pulls::list(data_dir, q)),
         "pullCounts" => answer(input, move |q| pulls::counts(data_dir, q)),
+        "issueCounts" => answer(input, move |q| pulls::issue_counts(data_dir, q)),
         "pull" => answer(input, move |q| pulls::get(data_dir, q)),
         "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
         "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),

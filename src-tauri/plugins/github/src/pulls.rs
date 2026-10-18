@@ -227,9 +227,18 @@ struct Total {
 
 /// How many pull requests the repository has open and closed, as GitHub's search counts them.
 pub async fn counts(data_dir: &Path, repo: RepoRef) -> GithubResult<PullCounts> {
+    counts_of(data_dir, repo, "pr").await
+}
+
+/// How many issues the repository has open and closed, as GitHub's search counts them.
+pub async fn issue_counts(data_dir: &Path, repo: RepoRef) -> GithubResult<PullCounts> {
+    counts_of(data_dir, repo, "issue").await
+}
+
+async fn counts_of(data_dir: &Path, repo: RepoRef, kind: &'static str) -> GithubResult<PullCounts> {
     repo.checked()?;
     let total = |state: &'static str| {
-        let terms = format!("repo:{}/{} is:pr is:{state}", repo.owner, repo.name);
+        let terms = format!("repo:{}/{} is:{kind} is:{state}", repo.owner, repo.name);
         async move {
             let found: Total = client::get(
                 data_dir,

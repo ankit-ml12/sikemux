@@ -212,6 +212,12 @@ export const issuesR = resource({
     staleAfterMs: 60_000,
 });
 
+export const issueCountsR = resource({
+    kind: "host.issueCounts",
+    fetch: (repo: RepoRef): Promise<{ open: number; closed: number } | null> => hostApi(repo.provider).issueCounts?.(repo) ?? Promise.resolve(null),
+    staleAfterMs: 60_000,
+});
+
 export const issueR = resource({
     kind: "host.issue",
     fetch: (repo: RepoRef, number: number): Promise<Issue> => hostApi(repo.provider).issue(repo, number),

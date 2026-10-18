@@ -4,7 +4,7 @@ import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, IconExternal, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
 import { GitColumns } from "../../git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
-import { issueR, issuesR } from "../resources";
+import { issueCountsR, issueR, issuesR } from "../resources";
 import { compose, setListState, showItem, updateView } from "../state";
 import { Comments, Labels, StateMark, Who } from "./Bits";
 import { CommentThread, Face } from "./CommentThread";
@@ -34,6 +34,43 @@ function WorkOnThis({ repo, number, cwd, compact = false }: { repo: RepoRef; num
         <button type="button" className="gha-btn" disabled={busy} onClick={start}>
             <IconAgent size={12} /> Work on this
         </button>
+    );
+}
+
+/** An issue as the full list shows it, read like the pull request list: who opened it, its state and title, then its number, who and when, with who it is assigned to, its comments and starting work at the end. */
+function IssueListRow({ issue, now, onOpen, work }: { issue: Issue; now: number; onOpen: () => void; work: ReactNode }) {
+    const opened = formatAgo(issue.createdAt, now);
+    const updated = formatAgo(issue.updatedAt, now);
+    return (
+        <div className="issue-row">
+            <button type="button" className="pr-row pr-headline" onClick={onOpen}>
+                <span className="pr-face">
+                    <Face login={issue.author} url={issue.avatarUrl} />
+                </span>
+                <span className="pr-headline-top">
+                    <StateMark kind="issue" state={issue.state} reason={issue.stateReason} size={14} />
+                    <span className="pr-headline-title">{issue.title}</span>
+                </span>
+                <span className="pr-headline-sub">
+                    <span className="pr-headline-who">
+                        #{issue.number} · {issue.author ?? "someone"} opened {opened}
+                        {updated !== opened && <> · updated {updated}</>}
+                    </span>
+                    <Labels labels={issue.labels} />
+                </span>
+                <span className="pr-row-side">
+                    {issue.assignees.length > 0 && (
+                        <span className="pr-row-reviewers" title={`Assigned to ${issue.assignees.join(", ")}`}>
+                            {issue.assignees.map((login) => (
+                                <Face key={login} login={login} url={null} />
+                            ))}
+                        </span>
+                    )}
+                    <Comments count={issue.comments} />
+                </span>
+            </button>
+            {work}
+        </div>
     );
 }
 
@@ -155,6 +192,7 @@ interface Props {
 
 export function IssuesView({ paneId, repo, listState, item, composing, page, cwd, active }: Props) {
     const issues = useResourceEnabled(active && !composing, issuesR, repo, listState, page);
+    const counts = useResourceEnabled(active && !composing && item === null, issueCountsR, repo).data;
     const now = useNow(false);
 
     if (composing) return <NewIssueForm repo={repo} onCreated={(number) => showItem(paneId, number)} onCancel={() => compose(paneId, null)} />;
@@ -185,6 +223,9 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                                 data-on={listState === state ? "1" : "0"}
                                 onClick={() => setListState(paneId, "issues", state)}>
                                 {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+                                {counts && state !== "all" && (
+                                    <span className="gha-chip-count">{counts[state as "open" | "closed"].toLocaleString()}</span>
+                                )}
                             </button>
                         ))}
                     </div>
@@ -198,6 +239,18 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                 </div>
                 {rows.length === 0 ? (
                     <EmptyState icon={<IconInfo size={20} />} message={`No ${listState === "all" ? "" : listState} issues.`} />
+                ) : item === null ? (
+                    <div className="pr-rows">
+                        {rows.map((issue) => (
+                            <IssueListRow
+                                key={issue.number}
+                                issue={issue}
+                                now={now}
+                                onOpen={() => showItem(paneId, issue.number)}
+                                work={cwd && issue.state === "open" && <WorkOnThis repo={repo} number={issue.number} cwd={cwd} compact />}
+                            />
+                        ))}
+                    </div>
                 ) : (
                     rows.map((issue) => (
                         <IssueRow
@@ -224,13 +277,11 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
             </div>
         );
 
-    const right =
-        item === null ? (
-            <EmptyState icon={<IconInfo size={20} />} message="Pick an issue to read it." />
-        ) : (
-            <div className="issue-page">
-                <IssueDetail repo={repo} number={item} active={active} cwd={cwd} />
-            </div>
-        );
+    if (item === null) return <div className="gha-full-page">{list}</div>;
+    const right = (
+        <div className="issue-page">
+            <IssueDetail repo={repo} number={item} active={active} cwd={cwd} />
+        </div>
+    );
     return <GitColumns paneId={paneId} left={list} right={<div className="git-right-review">{right}</div>} />;
 }

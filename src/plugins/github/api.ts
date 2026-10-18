@@ -152,6 +152,7 @@ export const actionsApi = {
     commitAuthors: (repo: RepoRef, gitRef: string | null) => call<CommitAuthor[]>("commitAuthors", { ...repo, gitRef }),
     pullReviews: (repo: RepoRef, number: number) => call<Review[]>("pullReviews", { ...repo, number }),
     issues: (repo: RepoRef, state: string, page: number) => call<IssuePage>("issues", { ...repo, state, page }),
+    issueCounts: (repo: RepoRef) => call<{ open: number; closed: number }>("issueCounts", { ...repo }),
     issue: (repo: RepoRef, number: number) => call<Issue>("issue", { ...repo, number }),
     comments: (repo: RepoRef, number: number) => call<Comment[]>("comments", { ...repo, number }),
     releases: (repo: RepoRef) => call<Release[]>("releases", repo),
