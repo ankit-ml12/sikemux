@@ -91,6 +91,27 @@
     object-fit: contain;
     image-rendering: auto;
 }
+.ed-viewer-image {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    padding: 0;
+}
+.ed-viewer-stage.ed-viewer-image img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    max-width: none;
+    max-height: none;
+    transform-origin: 0 0;
+    visibility: hidden;
+}
+.ed-viewer-image[data-pans] {
+    cursor: grab;
+}
+.ed-viewer-image[data-dragging] {
+    cursor: grabbing;
+}
 .ed-viewer-message {
     display: flex;
     flex-direction: column;
