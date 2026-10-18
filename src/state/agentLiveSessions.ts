@@ -1,3 +1,4 @@
+import { acpApi } from "../api/acp";
 import { agentApi } from "../api/agents";
 import { profileOf } from "./commands/agentLaunchCommand";
 import type { StoreState } from "./store";
@@ -7,7 +8,7 @@ import type { StoreState } from "./store";
    session reads idle only when a turn, a question and every background shell
    are all finished, so idle is the one answer that lets the agent go. */
 export async function agentIdsWithLiveSessions(state: StoreState, ids: readonly string[]): Promise<Set<string>> {
-    const live = new Set<string>();
+    const live = await chatsAtWork(ids);
     const asking = ids.map((id) => state.agents[id]).filter((agent) => agent?.type === "claude" && agent.resumeId && agent.launchState !== "dormant");
     if (asking.length === 0) return live;
 
@@ -33,4 +34,14 @@ export async function agentIdsWithLiveSessions(state: StoreState, ids: readonly 
         }),
     );
     return live;
+}
+
+/* A chat pane taken up mid-turn can read idle while the core is still running
+   the turn, so the core has the last word on its own chats. */
+async function chatsAtWork(ids: readonly string[]): Promise<Set<string>> {
+    const asked = new Set(ids);
+    const chats = await acpApi.list().catch(() => []);
+    return new Set(
+        chats.filter((chat) => asked.has(chat.agentId) && (chat.running || chat.pendingPermissions.length > 0)).map((chat) => chat.agentId),
+    );
 }
