@@ -242,13 +242,6 @@ function Workloads({
                         { label: "Pods", cell: (workload) => `${workload.ready}/${workload.desired}` },
                         { label: "Namespace", cell: (workload) => workload.namespace },
                         {
-                            label: "Image",
-                            width: "minmax(160px, 1.4fr)",
-                            cell: (workload) => (
-                                <span className="gcp-muted">{workload.containers.map((container) => container.image).join(", ")}</span>
-                            ),
-                        },
-                        {
                             label: "",
                             width: "minmax(150px, auto)",
                             align: "end",
@@ -261,6 +254,13 @@ function Workloads({
                                         <Button onClick={() => void scale(workload)}>Scale</Button>
                                     </>
                                 ) : null,
+                        },
+                        {
+                            label: "Image",
+                            width: "minmax(160px, 1.4fr)",
+                            cell: (workload) => (
+                                <span className="gcp-muted">{workload.containers.map((container) => container.image).join(", ")}</span>
+                            ),
                         },
                     ]}
                 />
