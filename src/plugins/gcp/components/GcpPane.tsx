@@ -14,6 +14,8 @@ import { StoragePage } from "./StoragePage";
 import { SqlPage } from "./SqlPage";
 import { PubSubPage } from "./PubSubPage";
 import { BuildPage } from "./BuildPage";
+import { SecretsPage } from "./SecretsPage";
+import { FunctionsPage } from "./FunctionsPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -29,12 +31,14 @@ export interface ProductProps {
 /** Each product's page; a product without one yet is left out of the sidebar. */
 const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     run: RunPage,
+    functions: FunctionsPage,
     compute: ComputePage,
     gke: GkePage,
     storage: StoragePage,
     sql: SqlPage,
     pubsub: PubSubPage,
     build: BuildPage,
+    secrets: SecretsPage,
     logging: LoggingPage,
 };
 
