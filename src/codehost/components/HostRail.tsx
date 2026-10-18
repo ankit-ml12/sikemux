@@ -97,7 +97,7 @@ export function HostAccountButton({
             ) : (
                 onSignIn && (
                     <Tooltip label={`Sign in to ${host.name}`}>
-                        <button type="button" className="git-btn git-nav-signin" aria-label={`Sign in to ${host.name}`} onClick={onSignIn}>
+                        <button type="button" className="git-btn primary git-nav-signin" aria-label={`Sign in to ${host.name}`} onClick={onSignIn}>
                             {host.icon(12)}
                             Sign in
                         </button>
