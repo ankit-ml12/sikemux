@@ -37,7 +37,7 @@ const OTHER_PHONE = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d
 const ACCOUNT_PIXEL: AccountPhone = { key: PHONE, name: "Pixel 8", platform: "android", createdAt: "2026-10-08T09:00:00Z" };
 const ACCOUNT_IPHONE: AccountPhone = { key: OTHER_PHONE, name: "Kishore's phone", platform: "ios", createdAt: "2026-10-07T09:00:00Z" };
 
-function status(pending: readonly PendingDevice[] = []): RemoteStatus {
+function status(pending: PendingDevice[] = []): RemoteStatus {
     return {
         enabled: true,
         coreId: "core",

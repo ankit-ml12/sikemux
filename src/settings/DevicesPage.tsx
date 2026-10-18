@@ -10,7 +10,7 @@ import {
     type DeviceAccess,
     type LinkedHost,
     type NotificationState,
-    type PairedDevice,
+    type DeviceInfo,
     type RemoteStatus,
 } from "../api/remote";
 import { ACCESS_OPTIONS, platformName } from "../remote/access";
@@ -282,7 +282,7 @@ function DeviceRow({
     onAccess,
     onRevoke,
 }: {
-    device: PairedDevice;
+    device: DeviceInfo;
     connected: boolean;
     notifications: NotificationState | undefined;
     now: number;
