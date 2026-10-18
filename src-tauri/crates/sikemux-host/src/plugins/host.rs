@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use semver::Version;
@@ -33,6 +33,9 @@ pub struct PluginHost {
     /// Switched off in Settings: still built in, but nothing reaches them.
     disabled: RwLock<HashSet<String>>,
     disabled_file: Option<PathBuf>,
+    /// Each plugin's last answer for a set of remotes, kept for when it is slow to answer
+    /// again, so an agent's tools do not come and go with a flaky check.
+    offered_before: Mutex<HashMap<(String, Arc<[String]>), bool>>,
 }
 
 const DISABLED_FILE: &str = "disabled.json";
@@ -92,6 +95,7 @@ impl PluginHost {
             runtime: Some(runtime),
             disabled: RwLock::default(),
             disabled_file: None,
+            offered_before: Mutex::default(),
         })
     }
 
@@ -211,12 +215,28 @@ impl PluginHost {
             .collect();
         let mut offering = HashSet::new();
         for (id, mut check) in checks {
-            match tokio::time::timeout(AGENT_CHECK_TIMEOUT, &mut check).await {
-                Ok(Ok(Ok(true))) => {
-                    offering.insert(id);
+            let key = (id.to_string(), Arc::clone(&remotes));
+            let answer = match tokio::time::timeout(AGENT_CHECK_TIMEOUT, &mut check).await {
+                Ok(Ok(Ok(offers))) => Some(offers),
+                Ok(_) => None,
+                Err(_) => {
+                    check.abort();
+                    None
                 }
-                Ok(_) => {}
-                Err(_) => check.abort(),
+            };
+            let mut before = self
+                .offered_before
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let offers = match answer {
+                Some(offers) => {
+                    before.insert(key, offers);
+                    offers
+                }
+                None => before.get(&key).copied().unwrap_or(false),
+            };
+            if offers {
+                offering.insert(id);
             }
         }
         self.tools_of(|id| offering.contains(id))
