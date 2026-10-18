@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VercelDeployment, VercelLog, VercelProject, VercelStatus } from "../api";
 
@@ -61,31 +61,42 @@ const failed: VercelDeployment = {
     commit: "abc1234def",
     message: "Fix the nav",
     author: "Ankit",
+    redeployOf: null,
     inspectorUrl: "https://vercel.com/acme/web/bad",
     aliases: null,
     error: 'Command "npm run build" exited with 1',
 };
 
-const ready: VercelDeployment = {
+const live: VercelDeployment = {
     ...failed,
-    id: "dpl_ok",
+    id: "dpl_live",
     state: "READY",
-    message: "Tidy the footer",
+    target: "production",
+    branch: "main",
+    message: "Ship the redesign",
     error: null,
-    url: "https://web-ok.vercel.app",
 };
+const before: VercelDeployment = { ...live, id: "dpl_before", message: "Last week's build", createdAt: Date.now() - 86_400_000 };
+const redeploy: VercelDeployment = { ...live, id: "dpl_again", state: "CANCELED", message: "Ship the redesign", redeployOf: "dpl_live123456789" };
 
 const log: VercelLog = {
     deployment: failed,
     lines: [
         { at: 1, kind: "command", text: "npm run build" },
         { at: 2, kind: "stderr", text: "Type error: nav is not defined" },
+        { at: 3, kind: "stderr", text: "Build Completed in /vercel/output [41s]" },
     ],
     skipped: 0,
 };
 
 let pane = 0;
 const renderPane = () => render(<VercelPane paneId={`vercel-${++pane}`} active />);
+const openProject = async () => fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev.*acme\/web/ }));
+const nav = (name: string) => fireEvent.click(within(screen.getByRole("navigation", { name: "Vercel" })).getByRole("button", { name }));
+const accept = async (title: string) => {
+    await waitFor(() => expect(useDialogs.getState().dialog).toMatchObject({ kind: "confirm", title }));
+    act(() => acceptDialog(useDialogs.getState().dialog!.id));
+};
 
 afterEach(() => {
     cleanup();
@@ -96,20 +107,22 @@ beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
     api.status.mockResolvedValue(signedIn);
     api.projects.mockResolvedValue([project]);
-    api.deployments.mockResolvedValue([failed, ready]);
-    api.logs.mockImplementation((_team: string, id: string) => Promise.resolve(id === "dpl_ok" ? { ...log, deployment: ready } : log));
+    api.deployments.mockResolvedValue([failed, redeploy, live, before]);
+    api.logs.mockImplementation((_team: string, id: string) =>
+        Promise.resolve({ ...log, deployment: [failed, redeploy, live, before].find((each) => each.id === id) }),
+    );
     api.domains.mockResolvedValue([{ name: "web.acme.dev", verified: true, redirect: null, gitBranch: null }]);
     api.env.mockResolvedValue([
-        { id: "e1", key: "DATABASE_URL", target: ["production", "preview"], type: "encrypted", gitBranch: null, updatedAt: 1 },
+        { id: "e1", key: "DATABASE_URL", target: ["production", "preview", "development"], type: "encrypted", gitBranch: null, updatedAt: 1 },
     ]);
-    api.promote.mockResolvedValue(ready);
+    api.promote.mockResolvedValue(before);
     api.redeploy.mockResolvedValue(failed);
     api.setTeam.mockResolvedValue(undefined);
 });
 
 describe("the Vercel pane", () => {
     it("asks for an access token when no account is signed in", async () => {
-        api.status.mockResolvedValue({ ...signedIn, configured: false, account: null, teams: [], team: null, personal: true });
+        api.status.mockResolvedValue({ ...signedIn, configured: false, account: null, teams: [], team: null });
         renderPane();
         expect(await screen.findByRole("heading", { name: "Connect Vercel" })).toBeInTheDocument();
         fireEvent.change(screen.getByPlaceholderText("Paste a Vercel token"), { target: { value: "tok_123" } });
@@ -118,72 +131,84 @@ describe("the Vercel pane", () => {
         await waitFor(() => expect(api.signIn).toHaveBeenCalledWith("tok_123"));
     });
 
-    it("lists the team's projects and opens one on its deployments", async () => {
+    it("opens a project on its production deployment, as Vercel's overview does", async () => {
         renderPane();
-        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
+        await openProject();
         expect(api.projects).toHaveBeenCalledWith("team_1");
-        expect(await screen.findByText("Fix the nav")).toBeInTheDocument();
-        expect(api.deployments).toHaveBeenCalledWith("team_1", "web");
-        expect(screen.getByText("Tidy the footer")).toBeInTheDocument();
-        expect(screen.getAllByText("fix-nav · abc1234 · Ankit")).toHaveLength(2);
+        const production = await screen.findByRole("region", { name: "Production deployment" });
+        expect(within(production).getByText("Ship the redesign")).toBeInTheDocument();
+        expect(await within(production).findByRole("button", { name: /web\.acme\.dev/ })).toBeInTheDocument();
+        expect(screen.getByText("Active Branches")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /fix-nav.*Fix the nav/ })).toBeInTheDocument();
     });
 
-    it("shows a failed deployment's error and build log, and hands both to an agent", async () => {
+    it("rolls production back to the build before it once the person confirms", async () => {
         renderPane();
-        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
-        fireEvent.click(await screen.findByRole("button", { name: /Fix the nav/ }));
-        expect(await screen.findByText("Type error: nav is not defined")).toBeInTheDocument();
+        await openProject();
+        await waitFor(() => expect(screen.getByRole("button", { name: /Instant Rollback/ })).toBeEnabled());
+        fireEvent.click(screen.getByRole("button", { name: /Instant Rollback/ }));
+        await accept("Roll back production?");
+        await waitFor(() => expect(api.promote).toHaveBeenCalledWith("team_1", "dpl_before"));
+    });
+
+    it("lists deployments as Vercel does, filters them and acts from each row's menu", async () => {
+        renderPane();
+        await openProject();
+        await screen.findByRole("region", { name: "Production deployment" });
+        nav("Deployments");
+        const table = await screen.findByRole("table", { name: "Deployments" });
+        expect(within(table).getAllByText("45s")).toHaveLength(4);
+        expect(within(table).getByText("Redeploy of")).toBeInTheDocument();
+        expect(within(table).getByTitle("Serving production now")).toHaveTextContent("Production");
+
+        fireEvent.click(within(table).getByRole("button", { name: "Actions for Fix the nav" }));
+        expect(screen.getByRole("menuitem", { name: /Instant Rollback/ })).toBeDisabled();
+        fireEvent.click(screen.getByRole("menuitem", { name: "Redeploy" }));
+        await accept("Redeploy?");
+        await waitFor(() => expect(api.redeploy).toHaveBeenCalledWith("team_1", "dpl_bad"));
+    });
+
+    it("shows a failed deployment's error and build log, marking only real errors", async () => {
+        renderPane();
+        await openProject();
+        await screen.findByRole("region", { name: "Production deployment" });
+        nav("Deployments");
+        fireEvent.click(await screen.findByRole("button", { name: "Open Fix the nav" }));
+        const error = await screen.findByText("Type error: nav is not defined");
+        expect(error.closest(".vercel-log-line")).toHaveClass("error");
+        expect(screen.getByText("Build Completed in /vercel/output [41s]").closest(".vercel-log-line")).not.toHaveClass("error");
         expect(screen.getByText('Command "npm run build" exited with 1')).toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "Promote to production" })).not.toBeInTheDocument();
 
         const text = deploymentForAgent(failed, log);
         expect(text).toContain("Vercel deployment dpl_bad of web — https://web-bad.vercel.app");
         expect(text).toContain('Error: Command "npm run build" exited with 1');
-        expect(text).toContain("Type error: nav is not defined");
         expect(text).toContain("vercel_logs or vercel_deployment with id dpl_bad");
-    });
-
-    it("promotes a ready deployment once the person confirms", async () => {
-        renderPane();
-        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
-        fireEvent.click(await screen.findByRole("button", { name: /Tidy the footer/ }));
-        fireEvent.click(await screen.findByRole("button", { name: "Promote to production" }));
-        await waitFor(() => expect(useDialogs.getState().dialog).toMatchObject({ kind: "confirm", title: "Promote to production?" }));
-        expect(api.promote).not.toHaveBeenCalled();
-        act(() => acceptDialog(useDialogs.getState().dialog!.id));
-        await waitFor(() => expect(api.promote).toHaveBeenCalledWith("team_1", "dpl_ok"));
-    });
-
-    it("lists domains, and environment variable names without values", async () => {
-        renderPane();
-        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
-        fireEvent.click(await screen.findByRole("button", { name: "Domains" }));
-        expect(await screen.findByText("Verified")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Environment" }));
-        expect(await screen.findByText("DATABASE_URL")).toBeInTheDocument();
-        expect(screen.getByText("production, preview")).toBeInTheDocument();
-        expect(screen.getByText("Names only. Values stay in Vercel.")).toBeInTheDocument();
-    });
-
-    it("rolls production back to the deployment before it once the person confirms", async () => {
-        const live = { ...ready, id: "dpl_live", target: "production" as const, message: "Ship the redesign" };
-        const before = { ...ready, id: "dpl_before", target: "production" as const, message: "Last week's build" };
-        api.deployments.mockResolvedValue([live, failed, before]);
-        renderPane();
-        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
-        expect(await screen.findByText("fix-nav · abc1234 · Ship the redesign")).toBeInTheDocument();
-        expect(screen.queryByText(/still serves/)).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Instant Rollback" }));
-        await waitFor(() => expect(useDialogs.getState().dialog).toMatchObject({ kind: "confirm", title: "Roll back production?" }));
-        act(() => acceptDialog(useDialogs.getState().dialog!.id));
-        await waitFor(() => expect(api.promote).toHaveBeenCalledWith("team_1", "dpl_before"));
     });
 
     it("says when a newer production build failed while the one before it still serves", async () => {
         api.projects.mockResolvedValue([{ ...project, latestProduction: { id: "dpl_bad", state: "ERROR", createdAt: Date.now() - 120_000 } }]);
         renderPane();
-        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
+        await openProject();
         fireEvent.click(await screen.findByRole("button", { name: /latest production build is error/ }));
         expect(await screen.findByText("Type error: nav is not defined")).toBeInTheDocument();
+    });
+
+    it("lists domains, and environment variable names without values", async () => {
+        renderPane();
+        await openProject();
+        await screen.findByRole("region", { name: "Production deployment" });
+        nav("Domains");
+        expect(await screen.findByText("Valid Configuration")).toBeInTheDocument();
+        nav("Environment Variables");
+        expect(await screen.findByText("DATABASE_URL")).toBeInTheDocument();
+        expect(screen.getByText("All Environments")).toBeInTheDocument();
+        expect(screen.getByText(/Values stay in Vercel/)).toBeInTheDocument();
+    });
+
+    it("lets the person resize the sidebar", async () => {
+        renderPane();
+        const handle = await screen.findByRole("separator", { name: "Resize the Vercel sidebar" });
+        fireEvent.keyDown(handle, { key: "ArrowRight" });
+        await waitFor(() => expect(screen.getByRole("complementary")).toHaveStyle({ width: "180px" }));
     });
 });

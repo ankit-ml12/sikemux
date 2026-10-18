@@ -83,6 +83,7 @@ const deployment = (
   commit,
   message,
   author,
+  redeployOf: null as string | null,
   inspectorUrl: `https://vercel.com/acme/storefront/${id.slice(4)}`,
   aliases: null,
   error,

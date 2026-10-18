@@ -1,553 +1,214 @@
-import { useEffect, useMemo, useState } from "react";
-import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
-import { formatAgo, formatDuration } from "../../../plugin-api/format";
-import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, Seg, SendToAgentMenu, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, refreshVercel, vercelApi, type VercelDeployment, type VercelLogLine, type VercelProject, type VercelStatus } from "../api";
-import { vercelDeploymentsR, vercelDomainsR, vercelEnvR, vercelLogR, vercelProjectsR, vercelStatusR } from "../resources";
-import { deploymentForAgent, isUnderway, updateVercelView, useVercelView, type VercelTab } from "../state";
+import { useRef } from "react";
+import { notify, swallow } from "../../../plugin-api/host";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { Dropdown, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { failureMessage, refreshVercel, vercelApi, type VercelProject, type VercelStatus } from "../api";
+import { vercelProjectsR, vercelStatusR } from "../resources";
+import { updateVercelView, useVercelView, type VercelSection } from "../state";
+import { Deployment } from "./Deployment";
+import { Deployments } from "./Deployments";
+import { Domains, Environment } from "./Settings";
+import { Overview } from "./Overview";
+import { Projects } from "./Projects";
+import { StateDot } from "./parts";
+import { VercelMark } from "./VercelMark";
 import { VercelSignIn } from "./VercelSignIn";
 import "../vercel.css";
 
-const UNDERWAY_POLL_MS = 4000;
+const SIDE_MIN = 180;
+const SIDE_MAX = 420;
 
 export function VercelPane({ paneId, active }: { paneId: string; active: boolean }) {
     const status = useResourceEnabled(active, vercelStatusR);
     if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Connecting to Vercel" />;
     if (!status.data?.configured || status.data.authFailed) return <VercelSignIn status={status.data} onSignedIn={() => refreshVercel()} />;
-    return <VercelAccountView paneId={paneId} active={active} status={status.data} />;
+    return <Dashboard paneId={paneId} active={active} status={status.data} />;
 }
 
-function StateDot({ state }: { state: string }) {
-    return <span className={`vercel-dot ${state.toLowerCase()}`} title={stateLabel(state)} aria-hidden="true" />;
-}
+const SECTIONS: { value: VercelSection; label: string }[] = [
+    { value: "overview", label: "Overview" },
+    { value: "deployments", label: "Deployments" },
+    { value: "env", label: "Environment Variables" },
+    { value: "domains", label: "Domains" },
+];
 
-function stateLabel(state: string): string {
-    const known: Record<string, string> = {
-        READY: "Ready",
-        ERROR: "Error",
-        BUILDING: "Building",
-        QUEUED: "Queued",
-        INITIALIZING: "Initializing",
-        CANCELED: "Canceled",
-    };
-    return known[state] ?? state;
-}
-
-/** Builds print plenty to stderr that is not a failure, so only lines that say so are marked. */
-const looksLikeError = (line: VercelLogLine) => line.kind === "fatal" || /\b(error|failed)\b|ERR!/i.test(line.text);
-
-const visit = (url: string) => void openUrl(url).catch(swallow("open the page"));
-
-function VercelAccountView({ paneId, active, status }: { paneId: string; active: boolean; status: VercelStatus }) {
+/** The account's dashboard laid out as Vercel's: a sidebar of the team and the project's pages, and the page beside it. */
+function Dashboard({ paneId, active, status }: { paneId: string; active: boolean; status: VercelStatus }) {
     const view = useVercelView(paneId);
+    const sideRef = useRef<HTMLDivElement>(null);
     const team = status.team ?? "";
-    const scope = status.teams.find((each) => each.id === team)?.slug ?? status.account?.username ?? "";
+    const scopeSlug = status.teams.find((each) => each.id === team)?.slug ?? status.account?.username ?? "";
     const projects = useResourceEnabled(active, vercelProjectsR, team);
-    const [filter, setFilter] = useState("");
-    const shown = useMemo(() => {
-        const words = filter.trim().toLowerCase();
-        return (projects.data ?? []).filter((project) => !words || project.name.toLowerCase().includes(words));
-    }, [projects.data, filter]);
     const project = projects.data?.find((each) => each.name === view.project) ?? null;
 
     const chooseTeam = (next: string) => {
         if (next === team) return;
-        updateVercelView(paneId, { project: null, deployment: null });
+        updateVercelView(paneId, { project: null, deployment: null, section: "overview" });
         void vercelApi
             .setTeam(next)
             .then(refreshVercel)
             .catch((error: unknown) => notify("error", `Switch team: ${failureMessage(error)}`));
     };
+    const open = (patch: Parameters<typeof updateVercelView>[1]) => updateVercelView(paneId, { deployment: null, ...patch });
 
     return (
         <div className="vercel-pane">
-            <nav className="vercel-list" aria-label="Vercel projects">
-                <div className="vercel-list-head">
-                    <Dropdown
-                        label="Team"
-                        value={team}
-                        options={[
-                            ...(status.personal
-                                ? [{ value: "", label: status.account?.name || status.account?.username || "Personal", detail: "Personal account" }]
-                                : []),
-                            ...status.teams.map((each) => ({ value: each.id, label: each.name, detail: each.slug })),
-                        ]}
-                        onChange={chooseTeam}
-                    />
-                    <button type="button" className="vercel-chip" onClick={() => refreshVercel()}>
-                        Refresh
-                    </button>
-                </div>
+            <aside className="vercel-side" ref={sideRef} style={view.sideWidth ? { width: view.sideWidth } : undefined}>
+                <Dropdown
+                    className="vercel-team"
+                    label="Team"
+                    value={team}
+                    icon={
+                        <span className="vercel-team-mark">
+                            <VercelMark size={12} />
+                        </span>
+                    }
+                    options={[
+                        ...(status.personal
+                            ? [{ value: "", label: status.account?.name || status.account?.username || "Personal", detail: "Personal account" }]
+                            : []),
+                        ...status.teams.map((each) => ({ value: each.id, label: each.name, detail: each.slug })),
+                    ]}
+                    onChange={chooseTeam}
+                />
                 <input
-                    className="vercel-input"
-                    value={filter}
-                    onChange={(event) => setFilter(event.target.value)}
+                    className="vercel-find"
+                    value={view.find}
+                    onChange={(event) => updateVercelView(paneId, { find: event.target.value })}
                     onKeyDown={(event) => {
-                        if (event.key === "Escape") setFilter("");
+                        if (event.key === "Escape") updateVercelView(paneId, { find: "" });
                     }}
-                    placeholder="Filter projects"
-                    aria-label="Filter Vercel projects"
+                    placeholder="Find…"
+                    aria-label="Find"
                     spellCheck={false}
                 />
-                <StaleNotice handle={projects} />
-                {projects.status === "error" && !projects.data ? (
-                    <p className="vercel-note">{projects.error}</p>
-                ) : !projects.data ? (
-                    <SkeletonRows rows={6} label="Loading projects" />
-                ) : shown.length === 0 ? (
-                    <EmptyState message={filter ? "No project matches." : "No projects here yet."} />
-                ) : (
-                    <div className="vercel-rows">
-                        {shown.map((each) => (
-                            <button
-                                key={each.id}
-                                type="button"
-                                className={`vercel-row project${each.name === view.project ? " active" : ""}`}
-                                onClick={() => updateVercelView(paneId, { project: each.name, deployment: null })}>
-                                <StateDot state={each.production?.state ?? "NONE"} />
-                                <span className="vercel-row-main">
-                                    <span className="vercel-row-title">{each.name}</span>
-                                    <span className="vercel-row-sub">
-                                        {each.production?.url?.replace(/^https:\/\//, "") ?? each.repo ?? "No production deployment"}
-                                    </span>
-                                </span>
-                                <span className="vercel-row-age">{formatAgo(each.updatedAt)}</span>
+                <nav className="vercel-nav" aria-label="Vercel">
+                    {project ? (
+                        <>
+                            {SECTIONS.map((section) => (
+                                <button
+                                    key={section.value}
+                                    type="button"
+                                    className={`vercel-nav-item${view.section === section.value && !view.deployment ? " active" : ""}`}
+                                    onClick={() => open({ section: section.value })}>
+                                    {section.label}
+                                </button>
+                            ))}
+                            <div className="vercel-nav-rule" />
+                            <button type="button" className="vercel-nav-item" onClick={() => open({ project: null, section: "overview" })}>
+                                ← All projects
                             </button>
-                        ))}
-                    </div>
-                )}
-                <button
-                    type="button"
-                    className="vercel-signout"
-                    onClick={() => void vercelApi.signOut().then(refreshVercel).catch(swallow("sign out of Vercel"))}>
-                    Sign out of {status.account?.username ?? "Vercel"}
-                </button>
-            </nav>
-            {project ? (
-                <ProjectView paneId={paneId} active={active} team={team} scope={scope} project={project} />
-            ) : (
-                <div className="vercel-detail">
-                    <EmptyState message="Pick a project to see its deployments, domains and environment." />
-                </div>
-            )}
-        </div>
-    );
-}
-
-const TABS: { value: VercelTab; label: string }[] = [
-    { value: "deployments", label: "Deployments" },
-    { value: "domains", label: "Domains" },
-    { value: "env", label: "Environment" },
-];
-
-function ProjectView({
-    paneId,
-    active,
-    team,
-    scope,
-    project,
-}: {
-    paneId: string;
-    active: boolean;
-    team: string;
-    scope: string;
-    project: VercelProject;
-}) {
-    const view = useVercelView(paneId);
-    if (view.deployment) {
-        return (
-            <DeploymentView
-                active={active}
-                team={team}
-                id={view.deployment}
-                production={project.production?.id ?? null}
-                onBack={() => updateVercelView(paneId, { deployment: null })}
-            />
-        );
-    }
-    return (
-        <section className="vercel-detail" aria-label={project.name}>
-            <header className="vercel-detail-head">
-                <div className="vercel-heading-block">
-                    <h2 className="vercel-title">{project.name}</h2>
-                    <div className="vercel-meta">
-                        {project.framework && <span className="vercel-fact">{project.framework}</span>}
-                        {project.repo && <span className="vercel-fact">{project.repo}</span>}
-                        {project.productionBranch && <span className="vercel-fact">production: {project.productionBranch}</span>}
-                    </div>
-                </div>
-                <span className="vercel-actions">
-                    {project.production?.url && (
-                        <button type="button" className="vercel-chip" onClick={() => visit(project.production!.url!)}>
-                            Visit
-                        </button>
-                    )}
-                    {scope && (
-                        <button type="button" className="vercel-chip" onClick={() => visit(`https://vercel.com/${scope}/${project.name}`)}>
-                            Open in Vercel
-                        </button>
-                    )}
-                </span>
-            </header>
-            <ProductionCard active={active} team={team} project={project} onOpen={(id) => updateVercelView(paneId, { deployment: id })} />
-            <div className="vercel-tabs">
-                <Seg label="Project view" options={TABS} value={view.tab} onChange={(tab) => updateVercelView(paneId, { tab })} />
-            </div>
-            {view.tab === "deployments" && (
-                <Deployments active={active} team={team} project={project} onOpen={(id) => updateVercelView(paneId, { deployment: id })} />
-            )}
-            {view.tab === "domains" && <Domains active={active} team={team} project={project.name} />}
-            {view.tab === "env" && <Environment active={active} team={team} project={project.name} />}
-        </section>
-    );
-}
-
-/** The deployment serving production, and a way back to the one before it. */
-function ProductionCard({ active, team, project, onOpen }: { active: boolean; team: string; project: VercelProject; onOpen: (id: string) => void }) {
-    const deployments = useResourceEnabled(active, vercelDeploymentsR, team, project.name);
-    const [busy, setBusy] = useState(false);
-    const production = project.production;
-    if (!production) return null;
-    const current = deployments.data?.find((each) => each.id === production.id);
-    const previous = deployments.data?.find((each) => each.target === "production" && each.state === "READY" && each.id !== production.id);
-    const domain = production.url?.replace(/^https:\/\//, "");
-
-    const rollback = async () => {
-        if (!previous || busy) return;
-        const confirmed = await confirmDialog({
-            title: "Roll back production?",
-            body: `${previous.message || previous.id} (${formatAgo(previous.createdAt)}) starts serving ${domain ?? "production"} again, without building.`,
-            confirmLabel: "Roll back",
-        });
-        if (!confirmed) return;
-        setBusy(true);
-        try {
-            await vercelApi.promote(team, previous.id);
-            notify("success", "Rolled production back");
-            invalidate((kind) => kind.startsWith("vercel.") && kind !== "vercel.status");
-        } catch (error) {
-            notify("error", `Roll back: ${failureMessage(error)}`);
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    return (
-        <section className="vercel-production" aria-label="Production deployment">
-            <header className="vercel-production-head">
-                <span className="vercel-production-label">Production deployment</span>
-                <span className="vercel-actions">
-                    {previous && (
-                        <button type="button" className="vercel-chip" disabled={busy} onClick={() => void rollback()}>
-                            Instant Rollback
-                        </button>
-                    )}
-                    <button type="button" className="vercel-chip" onClick={() => onOpen(production.id)}>
-                        Build log
-                    </button>
-                    {production.url && (
-                        <button type="button" className="vercel-chip primary" onClick={() => visit(production.url!)}>
-                            Visit
-                        </button>
-                    )}
-                </span>
-            </header>
-            {project.latestProduction && (
-                <button type="button" className="vercel-production-latest" onClick={() => onOpen(project.latestProduction!.id)}>
-                    <StateDot state={project.latestProduction.state} />
-                    The latest production build is {stateLabel(project.latestProduction.state).toLowerCase()} (
-                    {formatAgo(project.latestProduction.createdAt)}); this one still serves.
-                </button>
-            )}
-            <dl className="vercel-production-facts">
-                <div>
-                    <dt>Domain</dt>
-                    <dd>{domain ?? "—"}</dd>
-                </div>
-                <div>
-                    <dt>Status</dt>
-                    <dd>
-                        <StateDot state={production.state} /> {stateLabel(production.state)}
-                    </dd>
-                </div>
-                <div>
-                    <dt>Created</dt>
-                    <dd>
-                        {formatAgo(production.createdAt)}
-                        {current?.author ? ` by ${current.author}` : ""}
-                    </dd>
-                </div>
-                <div>
-                    <dt>Source</dt>
-                    <dd>{current ? [current.branch, current.commit?.slice(0, 7), current.message].filter(Boolean).join(" · ") || "—" : "—"}</dd>
-                </div>
-            </dl>
-        </section>
-    );
-}
-
-function Deployments({ active, team, project, onOpen }: { active: boolean; team: string; project: VercelProject; onOpen: (id: string) => void }) {
-    const deployments = useResourceEnabled(active, vercelDeploymentsR, team, project.name);
-    const underway = deployments.data?.some((each) => isUnderway(each.state)) ?? false;
-    const refresh = deployments.refresh;
-    useEffect(() => {
-        if (!active || !underway) return;
-        const timer = window.setInterval(() => void refresh(), UNDERWAY_POLL_MS);
-        return () => window.clearInterval(timer);
-    }, [active, underway, refresh]);
-
-    if (deployments.status === "error" && !deployments.data) return <p className="vercel-note">{deployments.error}</p>;
-    if (!deployments.data) return <SkeletonRows rows={6} label="Loading deployments" />;
-    if (deployments.data.length === 0) return <EmptyState message="No deployments yet." />;
-    return (
-        <div className="vercel-body">
-            <StaleNotice handle={deployments} />
-            <div className="vercel-rows">
-                {deployments.data.map((each) => (
-                    <button key={each.id} type="button" className="vercel-row deployment" onClick={() => onOpen(each.id)}>
-                        <StateDot state={each.state} />
-                        <span className="vercel-row-main">
-                            <span className="vercel-row-title">{each.message || each.url?.replace(/^https:\/\//, "") || each.id}</span>
-                            <span className="vercel-row-sub">{[each.branch, each.commit?.slice(0, 7), each.author].filter(Boolean).join(" · ")}</span>
-                        </span>
-                        <span className={`vercel-target ${each.target}`}>
-                            {each.id === project.production?.id ? "Current" : each.target === "production" ? "Production" : "Preview"}
-                        </span>
-                        <span className="vercel-row-state">
-                            {stateLabel(each.state)}
-                            {each.buildMs !== null && ` ${formatDuration(each.buildMs)}`}
-                        </span>
-                        <span className="vercel-row-age">{formatAgo(each.createdAt)}</span>
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-function DeploymentView({
-    active,
-    team,
-    id,
-    production,
-    onBack,
-}: {
-    active: boolean;
-    team: string;
-    id: string;
-    production: string | null;
-    onBack: () => void;
-}) {
-    const log = useResourceEnabled(active, vercelLogR, team, id);
-    const [busy, setBusy] = useState(false);
-    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-    const deployment = log.data?.deployment;
-    const underway = deployment ? isUnderway(deployment.state) : false;
-    const refresh = log.refresh;
-    useEffect(() => {
-        if (!active || !underway) return;
-        const timer = window.setInterval(() => void refresh(), UNDERWAY_POLL_MS);
-        return () => window.clearInterval(timer);
-    }, [active, underway, refresh]);
-
-    if (log.status === "error" && !deployment) {
-        return (
-            <section className="vercel-detail">
-                <EmptyState message={log.error ?? `Vercel could not open ${id}.`} tone="error" />
-            </section>
-        );
-    }
-    if (!deployment) {
-        return (
-            <section className="vercel-detail">
-                <SkeletonRows rows={8} label={`Loading ${id}`} />
-            </section>
-        );
-    }
-
-    const act = async (what: string, confirm: { title: string; body: string; confirmLabel: string }, run: () => Promise<VercelDeployment>) => {
-        if (busy || !(await confirmDialog(confirm))) return;
-        setBusy(true);
-        try {
-            await run();
-            notify("success", what);
-            invalidate((kind) => kind.startsWith("vercel.") && kind !== "vercel.status");
-        } catch (error) {
-            notify("error", `${confirm.confirmLabel}: ${failureMessage(error)}`);
-        } finally {
-            setBusy(false);
-        }
-    };
-    const isCurrent = deployment.id === production;
-    const name = deployment.url?.replace(/^https:\/\//, "") ?? deployment.id;
-
-    return (
-        <section className="vercel-detail" aria-label={`Deployment ${name}`}>
-            <header className="vercel-detail-head">
-                <button type="button" className="vercel-chip" onClick={onBack}>
-                    ← Deployments
-                </button>
-                <span className="vercel-actions">
-                    {deployment.url && (
-                        <button type="button" className="vercel-chip" onClick={() => visit(deployment.url!)}>
-                            Visit
-                        </button>
-                    )}
-                    {deployment.inspectorUrl && (
-                        <button type="button" className="vercel-chip" onClick={() => visit(deployment.inspectorUrl!)}>
-                            Inspect
-                        </button>
-                    )}
-                    {underway ? (
-                        <button
-                            type="button"
-                            className="vercel-chip"
-                            disabled={busy}
-                            onClick={() =>
-                                void act(
-                                    "Canceled the deployment",
-                                    { title: "Cancel this deployment?", body: `${name} stops building.`, confirmLabel: "Cancel deployment" },
-                                    () => vercelApi.cancel(team, deployment.id),
-                                )
-                            }>
-                            Cancel
-                        </button>
+                        </>
                     ) : (
-                        <button
-                            type="button"
-                            className="vercel-chip"
-                            disabled={busy}
-                            onClick={() =>
-                                void act(
-                                    "Redeploying",
-                                    {
-                                        title: "Redeploy?",
-                                        body: `Vercel builds ${name} again as a new ${deployment.target} deployment.`,
-                                        confirmLabel: "Redeploy",
-                                    },
-                                    () => vercelApi.redeploy(team, deployment.id),
-                                )
-                            }>
-                            Redeploy
-                        </button>
+                        <>
+                            <button type="button" className="vercel-nav-item active" onClick={() => open({ project: null })}>
+                                Projects
+                            </button>
+                            <div className="vercel-nav-rule" />
+                            {(projects.data ?? []).map((each) => (
+                                <button
+                                    key={each.id}
+                                    type="button"
+                                    className="vercel-nav-item project"
+                                    onClick={() => open({ project: each.name, section: "overview" })}>
+                                    <StateDot state={each.production?.state ?? "NONE"} />
+                                    {each.name}
+                                </button>
+                            ))}
+                        </>
                     )}
-                    {deployment.state === "READY" && !isCurrent && (
-                        <button
-                            type="button"
-                            className="vercel-chip primary"
-                            disabled={busy}
-                            onClick={() =>
-                                void act(
-                                    "Promoted to production",
-                                    {
-                                        title: "Promote to production?",
-                                        body: `${name} starts serving the project's production domains, without building again.`,
-                                        confirmLabel: "Promote",
-                                    },
-                                    () => vercelApi.promote(team, deployment.id),
-                                )
-                            }>
-                            Promote to production
-                        </button>
-                    )}
-                    <button type="button" className="vercel-chip" onClick={(event) => setMenu({ x: event.clientX, y: event.clientY })}>
-                        Send to agent
+                </nav>
+                <div className="vercel-side-foot">
+                    <span className="vercel-side-account">{status.account?.name || status.account?.username}</span>
+                    <button
+                        type="button"
+                        className="vercel-link"
+                        onClick={() => void vercelApi.signOut().then(refreshVercel).catch(swallow("sign out of Vercel"))}>
+                        Sign out
                     </button>
-                </span>
-            </header>
-            <div className="vercel-summary">
-                <h2 className="vercel-title">
-                    <StateDot state={deployment.state} />
-                    {deployment.message || name}
-                </h2>
-                <div className="vercel-meta">
-                    <span className={`vercel-target ${deployment.target}`}>
-                        {isCurrent ? "Current production" : deployment.target === "production" ? "Production" : "Preview"}
-                    </span>
-                    <span className="vercel-fact">
-                        {stateLabel(deployment.state)}
-                        {deployment.buildMs !== null && ` in ${formatDuration(deployment.buildMs)}`}
-                    </span>
-                    {deployment.branch && <span className="vercel-fact">{deployment.branch}</span>}
-                    {deployment.commit && (
-                        <button type="button" className="vercel-fact mono" onClick={() => copyWithNotice(deployment.commit!, "the commit")}>
-                            {deployment.commit.slice(0, 7)}
-                        </button>
-                    )}
-                    {deployment.author && <span className="vercel-fact">{deployment.author}</span>}
-                    <span className="vercel-fact">{formatAgo(deployment.createdAt)}</span>
                 </div>
-                {deployment.error && <p className="vercel-error">{deployment.error}</p>}
-            </div>
-            <h3 className="vercel-heading">Build log{log.data && log.data.skipped > 0 ? ` (last ${log.data.lines.length} lines)` : ""}</h3>
-            <div className="vercel-log" role="log" aria-label="Build log">
-                {log.data && log.data.lines.length === 0 ? (
-                    <p className="vercel-note">{underway ? "Waiting for the build to print…" : "This build printed nothing."}</p>
-                ) : (
-                    log.data?.lines.map((line, index) => (
-                        <div key={index} className={`vercel-log-line ${line.kind}${looksLikeError(line) ? " error" : ""}`}>
-                            {line.text || " "}
-                        </div>
-                    ))
-                )}
-            </div>
-            {menu && (
-                <SendToAgentMenu
-                    x={menu.x}
-                    y={menu.y}
-                    alignRight
-                    delivery={() => ({ text: deploymentForAgent(deployment, log.data) })}
-                    onClose={() => setMenu(null)}
-                />
-            )}
-        </section>
-    );
-}
-
-function Domains({ active, team, project }: { active: boolean; team: string; project: string }) {
-    const domains = useResourceEnabled(active, vercelDomainsR, team, project);
-    if (domains.status === "error" && !domains.data) return <p className="vercel-note">{domains.error}</p>;
-    if (!domains.data) return <SkeletonRows rows={3} label="Loading domains" />;
-    if (domains.data.length === 0) return <EmptyState message="No domains." />;
-    return (
-        <div className="vercel-body">
-            <div className="vercel-rows">
-                {domains.data.map((domain) => (
-                    <button key={domain.name} type="button" className="vercel-row domain" onClick={() => visit(`https://${domain.name}`)}>
-                        <span className={`vercel-dot ${domain.verified ? "ready" : "error"}`} aria-hidden="true" />
-                        <span className="vercel-row-title">{domain.name}</span>
-                        <span className="vercel-row-sub">
-                            {domain.redirect ? `redirects to ${domain.redirect}` : domain.gitBranch ? `branch ${domain.gitBranch}` : "production"}
-                        </span>
-                        <span className="vercel-row-state">{domain.verified ? "Verified" : "Not verified"}</span>
+            </aside>
+            <ResizeHandle
+                targetRef={sideRef}
+                axis="x"
+                grows={1}
+                min={SIDE_MIN}
+                max={() => SIDE_MAX}
+                size={view.sideWidth}
+                label="Resize the Vercel sidebar"
+                className="vercel-resize"
+                onResize={(size) => {
+                    if (size === null && sideRef.current) sideRef.current.style.width = "";
+                    updateVercelView(paneId, { sideWidth: size });
+                }}
+            />
+            <main className="vercel-main">
+                <header className="vercel-topbar">
+                    {project && projects.data ? (
+                        <Dropdown
+                            className="vercel-project-switch"
+                            label="Project"
+                            value={project.name}
+                            options={projects.data.map((each: VercelProject) => ({
+                                value: each.name,
+                                label: each.name,
+                                detail: each.framework ?? undefined,
+                            }))}
+                            onChange={(name) => open({ project: name })}
+                        />
+                    ) : (
+                        <span className="vercel-topbar-title">Projects</span>
+                    )}
+                    <span className="vercel-topbar-section">
+                        {project ? (view.deployment ? "Deployment Details" : SECTIONS.find((each) => each.value === view.section)?.label) : ""}
+                    </span>
+                    <button type="button" className="vercel-button" onClick={() => refreshVercel()}>
+                        Refresh
                     </button>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-function Environment({ active, team, project }: { active: boolean; team: string; project: string }) {
-    const variables = useResourceEnabled(active, vercelEnvR, team, project);
-    if (variables.status === "error" && !variables.data) return <p className="vercel-note">{variables.error}</p>;
-    if (!variables.data) return <SkeletonRows rows={5} label="Loading environment variables" />;
-    if (variables.data.length === 0) return <EmptyState message="No environment variables." />;
-    return (
-        <div className="vercel-body">
-            <p className="vercel-note">Names only. Values stay in Vercel.</p>
-            <div className="vercel-rows">
-                {variables.data.map((variable) => (
-                    <div key={variable.id} className="vercel-row env">
-                        <span className="vercel-row-title mono">{variable.key}</span>
-                        <span className="vercel-row-sub">
-                            {variable.target.join(", ")}
-                            {variable.gitBranch ? ` · ${variable.gitBranch}` : ""}
-                        </span>
-                        <span className="vercel-row-state">{variable.type}</span>
-                    </div>
-                ))}
-            </div>
+                </header>
+                <div className="vercel-page">
+                    <StaleNotice handle={projects} />
+                    {projects.status === "error" && !projects.data ? (
+                        <p className="vercel-note">{projects.error}</p>
+                    ) : !projects.data ? (
+                        <SkeletonRows rows={6} label="Loading projects" />
+                    ) : !project ? (
+                        <Projects projects={projects.data} find={view.find} onOpen={(name) => open({ project: name, section: "overview" })} />
+                    ) : view.deployment ? (
+                        <Deployment
+                            active={active}
+                            team={team}
+                            id={view.deployment}
+                            production={project.production?.id ?? null}
+                            onBack={() => open({})}
+                        />
+                    ) : view.section === "overview" ? (
+                        <Overview
+                            active={active}
+                            team={team}
+                            scopeSlug={scopeSlug}
+                            project={project}
+                            onOpen={(id) => updateVercelView(paneId, { deployment: id })}
+                            onDeployments={() => open({ section: "deployments" })}
+                        />
+                    ) : view.section === "deployments" ? (
+                        <Deployments
+                            active={active}
+                            team={team}
+                            project={project}
+                            find={view.find}
+                            environment={view.environment}
+                            status={view.status}
+                            onFilter={(patch) => updateVercelView(paneId, patch)}
+                            onOpen={(id) => updateVercelView(paneId, { deployment: id })}
+                        />
+                    ) : view.section === "env" ? (
+                        <Environment active={active} team={team} project={project.name} find={view.find} />
+                    ) : (
+                        <Domains active={active} team={team} project={project.name} />
+                    )}
+                </div>
+            </main>
         </div>
     );
 }
