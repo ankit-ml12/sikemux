@@ -4,9 +4,7 @@ import {
   askOtter,
   boardMoves,
   browserCheck,
-  chartAnswer,
   composer,
-  flipScope,
   mapleAnswers,
   openProject,
   otterMessagesMaple,
@@ -17,11 +15,6 @@ import {
 } from "../parts.mjs";
 
 const railHead = ".tab-rail .swipe-page.is-current .scope-track";
-const otterRow = {
-  selector: ".tab-rail .agent-row *",
-  text: "Line up the sidebar labels",
-  exact: false,
-};
 
 export default {
   setup: async (s) => {
@@ -56,16 +49,12 @@ export default {
     await swipeRail(s, { hold: 1500 });
     await s.zoomOut({ wait: false });
     await openProject(s, "moodboard-studio");
-    await s.zoom(railHead, { scale: 1.8, at: { x: 0.5, y: 4 }, wait: false });
-    await flipScope(s, "All projects");
-    await s.wait(1500);
+    await s.wait(500);
 
     await browserCheck(s);
-    await chartAnswer(s);
 
     await s.zoomOut({ wait: false });
-    await s.click(otterRow);
-    await s.wait(500);
+    await s.wait(400);
     await approveFromNotch(s);
 
     await s.zoomOut();
