@@ -23,11 +23,33 @@
     border-radius: 0;
     background: none;
 }
+/* The filters and the table's column names stay pinned while the rows scroll under them, solid so nothing shows through. */
+.git-framed .gha-full-page > .pr-list {
+    --list-head: 47px;
+}
 .git-framed .gha-full-page > .pr-list > .gha-list-head {
-    margin: 0 calc(-1 * var(--space-2)) var(--space-1);
-    padding: var(--space-2) var(--space-3);
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    flex: none;
+    flex-wrap: nowrap;
+    box-sizing: border-box;
+    height: var(--list-head);
+    margin: 0 calc(-1 * var(--space-2));
+    padding: 0 var(--space-3);
     border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
+    background: var(--surface);
+}
+.git-framed .gha-full-page .pr-cols {
+    position: sticky;
+    top: var(--list-head);
+    z-index: 2;
+    flex: none;
+    margin: 0 calc(-1 * var(--space-2)) var(--space-1);
+    padding: var(--space-2) calc(var(--space-2) * 2) var(--space-2);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
 }
 /* In the side panel's inbox page the panel is the card, so the list draws none of its own. */
 .git-left .git-inbox-list > .pr-list {
