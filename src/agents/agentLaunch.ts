@@ -12,10 +12,12 @@ export const MAX_AGENT_MODEL_LENGTH = 256;
 
 const SESSION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
-/** Whether `id` has the shape the agent's own sessions take, so it can never pass for a flag. Pi and OMP name a session by its transcript's path. */
+/** Whether `id` has the shape the agent's own sessions take, so it can never pass for a flag. Pi and OMP also name a session by its transcript's path. */
 export function isResumeId(type: AgentType, id: string): boolean {
-    if (type !== "pi" && type !== "omp") return SESSION_TOKEN.test(id);
-    return id.startsWith("/") && id.endsWith(".jsonl") && id.length <= 4_096 && ![...id].some((char) => char < " ");
+    if (SESSION_TOKEN.test(id)) return true;
+    return (
+        (type === "pi" || type === "omp") && id.startsWith("/") && id.endsWith(".jsonl") && id.length <= 4_096 && ![...id].some((char) => char < " ")
+    );
 }
 
 const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
