@@ -901,6 +901,26 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
               "this expression creates a reference which is immediately dereferenced",
             details: null,
           },
+          {
+            path: ".github/workflows/ci.yml",
+            startLine: 61,
+            endLine: 61,
+            level: "warning",
+            title: null,
+            message:
+              "Node.js 20 actions are deprecated. Update actions/cache to a version that runs on Node.js 24.",
+            details: null,
+          },
+          {
+            path: null,
+            startLine: null,
+            endLine: null,
+            level: "notice",
+            title: null,
+            message:
+              "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+            details: null,
+          },
         ]
       : [],
   jobSummary: ({ checkRunId }) =>

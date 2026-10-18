@@ -249,12 +249,13 @@
     min-height: 0;
 }
 .gha-log-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 0 0 auto;
-    padding-bottom: var(--space-2);
+    gap: var(--space-1);
+}
+.gha-log-count {
+    flex: none;
+    margin: 0 var(--space-2) 0 auto;
     font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--text-tertiary);
 }
 .gha-log-steps {

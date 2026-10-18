@@ -2,7 +2,17 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import { copyText, notify, swallow } from "../../plugin-api/host";
-import { EmptyState, IconCollapseAll, IconExpandAll, SkeletonRows } from "../../plugin-api/ui";
+import {
+    EmptyState,
+    IconArrowDown,
+    IconArrowUp,
+    IconCollapseAll,
+    IconCopy,
+    IconExpandAll,
+    IconRefresh,
+    IconSearch,
+    SkeletonRows,
+} from "../../plugin-api/ui";
 import { CARD_HEADER_HEIGHT, CardStream, type CardStreamHandle } from "../../ui/CardStream";
 import { failureMessage, type Job, type LogLine, type RepoRef, type Step } from "../api";
 import { stepStarts } from "../jobGraph";
@@ -352,11 +362,12 @@ export function JobLogView({ repo, job, now, active }: Props) {
 
     return (
         <div className="gha-log">
-            <div className="gha-log-head">
+            <div className="git-filter gha-log-head">
+                <IconSearch size={13} />
                 <input
-                    className="gha-log-search"
                     type="search"
                     placeholder="Search the log"
+                    aria-label="Search the log"
                     value={query}
                     spellCheck={false}
                     onChange={(event) => {
@@ -371,34 +382,43 @@ export function JobLogView({ repo, job, now, active }: Props) {
                         goTo(event.shiftKey ? match - 1 : match + 1);
                     }}
                 />
-                {needle && <span className="gha-dim gha-mono">{matches.length === 0 ? "no matches" : `${match + 1} of ${matches.length}`}</span>}
+                {needle && <span className="git-filter-count">{matches.length === 0 ? "no matches" : `${match + 1} of ${matches.length}`}</span>}
                 {matches.length > 1 && (
                     <>
-                        <button type="button" className="gha-link" onClick={() => goTo(match - 1)}>
-                            Previous
+                        <button
+                            type="button"
+                            className="git-foot-btn icon"
+                            aria-label="Previous"
+                            title="Previous match"
+                            onClick={() => goTo(match - 1)}>
+                            <IconArrowUp size={13} />
                         </button>
-                        <button type="button" className="gha-link" onClick={() => goTo(match + 1)}>
-                            Next
+                        <button type="button" className="git-foot-btn icon" aria-label="Next" title="Next match" onClick={() => goTo(match + 1)}>
+                            <IconArrowDown size={13} />
                         </button>
                     </>
                 )}
-                <span className="gha-log-spacer" />
-                <span className="gha-dim">
+                <span className="gha-log-count">
                     {lines.length} line{lines.length === 1 ? "" : "s"}
                     {running && " so far"}
                 </span>
-                <button type="button" className="merge-review-action" onClick={() => setOpened(new Set(keys))} disabled={collapsed.size === 0}>
-                    <IconExpandAll size={12} />
-                    Expand all
-                </button>
-                <button type="button" className="merge-review-action" onClick={() => setOpened(new Set())} disabled={collapsed.size === keys.length}>
-                    <IconCollapseAll size={12} />
-                    Collapse all
-                </button>
-                <button type="button" className="gha-link" onClick={copyAll}>
+                {collapsed.size === 0 ? (
+                    <button type="button" className="git-foot-btn" onClick={() => setOpened(new Set())}>
+                        <IconCollapseAll size={13} />
+                        Collapse all
+                    </button>
+                ) : (
+                    <button type="button" className="git-foot-btn" onClick={() => setOpened(new Set(keys))}>
+                        <IconExpandAll size={13} />
+                        Expand all
+                    </button>
+                )}
+                <button type="button" className="git-foot-btn" onClick={copyAll}>
+                    <IconCopy size={13} />
                     Copy
                 </button>
-                <button type="button" className="gha-link" onClick={() => void log.refresh()}>
+                <button type="button" className="git-foot-btn" onClick={() => void log.refresh()}>
+                    <IconRefresh size={13} />
                     Refresh
                 </button>
             </div>

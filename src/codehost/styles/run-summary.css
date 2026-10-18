@@ -31,8 +31,7 @@
 
 /* ---- The run's summary card, graph and menu ----------------------------- */
 
-.gha-graph-spacer,
-.gha-log-spacer {
+.gha-graph-spacer {
     flex: 1 1 auto;
 }
 .gha-avatar {
@@ -204,21 +203,6 @@ button.gha-graph-job:hover {
     color: var(--danger);
 }
 
-.gha-log-search {
-    width: 180px;
-    height: 22px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--gha-tint);
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--text-2xs);
-    outline: none;
-}
-.gha-log-search:focus-visible {
-    box-shadow: var(--focus-ring);
-}
 .gha-log-line.hit {
     background: color-mix(in oklab, var(--warn) 12%, transparent);
 }

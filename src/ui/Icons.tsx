@@ -409,6 +409,12 @@ export const IconInfo = makeSvgIcon(
         <path d="M8 7.2v3.9M8 5v.1" />
     </>,
 );
+export const IconAlertCircle = makeSvgIcon(
+    <>
+        <circle cx="8" cy="8" r="6.2" />
+        <path d="M8 4.9v3.9M8 11v.1" />
+    </>,
+);
 export const IconExternal = makeSvgIcon(
     <>
         <path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5" />
