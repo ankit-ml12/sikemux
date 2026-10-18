@@ -39,7 +39,6 @@ mod prepare;
 mod questions;
 mod remote;
 mod sandbox;
-mod sandbox;
 mod saved;
 mod saved_sessions;
 mod seen;
