@@ -241,23 +241,11 @@ const toolchainPaths = [
 for (const path of new Set(toolchainPaths))
   run("install_name_tool", ["-delete_rpath", path, destination]);
 
-// Like the voice helper, a release publishes this beside the app, so it is
-// signed here the way the bundler signs what it ships.
+// Like the voice helper, signed ad hoc to run here and signed again by the release.
 if (!args.includes("--dev")) {
-  const identity = process.env.APPLE_SIGNING_IDENTITY || "-";
-  run("codesign", [
-    "--force",
-    "--identifier",
-    "com.nodelike.sikemux.sim",
-    "--options",
-    "runtime",
-    "--entitlements",
-    join(tauriDir, "Entitlements.plist"),
-    ...(identity === "-" ? [] : ["--timestamp"]),
-    "--sign",
-    identity,
-    destination,
-  ]);
+  run("bash", [join(root, "scripts", "sign-helper.sh"), destination], {
+    env: { APPLE_SIGNING_IDENTITY: "-" },
+  });
 }
 
 if (target === hostTriple() || target === "universal-apple-darwin") {

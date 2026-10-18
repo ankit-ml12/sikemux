@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Build and validate the macOS app bundle. Tauri merges src-tauri/Info.plist
-# before signing; this script never mutates the completed .app.
+# Build and validate the macOS app bundle, ad hoc signed. Tauri merges
+# src-tauri/Info.plist before signing; this script never mutates the completed
+# .app. A release signs it afterwards with scripts/sign-mac.sh, on a machine
+# that never runs the build's dependencies.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,28 +30,23 @@ done
 BUILD_ARGS=("$@")
 BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.sidecar.conf.json")
 BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.notch.conf.json")
-# Normal developer builds do not have the updater private key, so avoid asking
-# Tauri to create an updater archive it cannot sign.
-if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-  BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
-fi
-# Only the bundling step signs the updater archive, so the compilers, build
-# scripts and frontend tooling never see the key in their environment.
-UPDATER_KEY="${TAURI_SIGNING_PRIVATE_KEY:-}"
-UPDATER_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-# Community releases and local builds use a complete ad-hoc bundle signature.
-# RELEASE_NOTARIZED=1 supplies a real Developer ID identity instead.
-if [[ "${REQUIRE_SIGNED_APP:-0}" != "1" && -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
-  export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
-fi
+BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+# No signing material reaches the build. The bundler would notarize whenever
+# Apple's credentials are set, even to empty strings.
+unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
+unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH
+export APPLE_SIGNING_IDENTITY=-
 
 "$ROOT/scripts/icons.sh"
 TARGET_ARGS=()
 [[ -n "$TARGET" ]] && TARGET_ARGS=(--target "$TARGET")
-node "$ROOT/scripts/build-voice-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
+# A release builds the voice and simulator helpers first and signs them, because
+# the app is compiled with their hashes.
+if [[ "${PREBUILT_HELPERS:-0}" != "1" ]]; then
+  node "$ROOT/scripts/build-voice-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
+  node "$ROOT/scripts/build-sim-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
+fi
 node "$ROOT/scripts/build-notch-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
-node "$ROOT/scripts/build-sim-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
 node "$ROOT/scripts/build-cli-sidecar.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
 printf '→ pnpm tauri build --no-bundle'
 printf ' %q' "${BUILD_ARGS[@]}"
@@ -58,12 +55,7 @@ pnpm tauri build --no-bundle "${BUILD_ARGS[@]}"
 printf '→ pnpm tauri bundle'
 printf ' %q' "${BUILD_ARGS[@]}"
 echo
-if [[ -n "$UPDATER_KEY" ]]; then
-  TAURI_SIGNING_PRIVATE_KEY="$UPDATER_KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$UPDATER_KEY_PASSWORD" \
-    pnpm tauri bundle "${BUILD_ARGS[@]}"
-else
-  pnpm tauri bundle "${BUILD_ARGS[@]}"
-fi
+pnpm tauri bundle "${BUILD_ARGS[@]}"
 
 TARGET_ROOT="$ROOT/src-tauri/target"
 [[ -n "$TARGET" ]] && TARGET_ROOT="$TARGET_ROOT/$TARGET"
@@ -77,38 +69,15 @@ fail() {
 }
 
 # The README and sikemux.com promise a small download, so a release that grows
-# past this fails here instead of shipping.
+# past this fails here instead of shipping. scripts/sign-mac.sh checks it again.
 DMG_BUDGET_BYTES=20000000
 
-notarize_dmg() {
-  local credentials status
-  if [[ -n "${APPLE_API_KEY:-}" ]]; then
-    credentials=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
-  else
-    credentials=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
-  fi
-  echo "→ Notarizing $1"
-  status="$(/usr/bin/xcrun notarytool submit "$1" "${credentials[@]}" --wait --output-format json |
-    node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).status ?? "")')" ||
-    fail "could not submit $1 for notarization"
-  [[ "$status" == "Accepted" ]] || fail "Apple did not accept $1 for notarization: $status"
-  /usr/bin/xcrun stapler staple "$1" || fail "could not staple the notarization ticket to $1"
-}
-
-# Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller. The
-# conversion drops the DMG's signature, so a real identity signs it again.
-# Tauri notarizes only the app, so the repacked DMG is notarized here.
+# Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller.
 shopt -s nullglob
 for DMG in "$BUNDLE"/dmg/*.dmg; do
   PACKED="${DMG%.dmg}.lzma.dmg"
   /usr/bin/hdiutil convert "$DMG" -format ULMO -o "$PACKED" -quiet -ov || fail "could not repack $DMG"
   mv -f "$PACKED" "$DMG"
-  if [[ -n "${APPLE_SIGNING_IDENTITY:-}" && "$APPLE_SIGNING_IDENTITY" != "-" ]]; then
-    /usr/bin/codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG" || fail "could not sign $DMG"
-    if [[ -n "${APPLE_ID:-}" || -n "${APPLE_API_KEY:-}" ]]; then
-      notarize_dmg "$DMG"
-    fi
-  fi
   DMG_BYTES="$(stat -f%z "$DMG")"
   ((DMG_BYTES <= DMG_BUDGET_BYTES)) || fail "$DMG is $DMG_BYTES bytes, over the $DMG_BUDGET_BYTES byte budget"
 done
@@ -212,25 +181,14 @@ if [[ "$SIM_ARCHS" == *"$(uname -m)"* ]]; then
   "$SIM_EXECUTABLE" --version | grep -Fq "sikemux-sim" || fail "signed simulator helper does not start"
 fi
 
-# Every normal build is ad-hoc signed when no Apple identity is configured.
-# Community releases require a structurally valid signature; notarized releases
-# additionally require a real certificate authority and TeamIdentifier.
+# A release requires a structurally valid ad hoc signature before it signs the app again.
 if /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH" 2>/dev/null; then
   echo "  ✓ code signature is structurally valid"
-elif [[ "${REQUIRE_VALID_SIGNATURE:-0}" == "1" || "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
+elif [[ "${REQUIRE_VALID_SIGNATURE:-0}" == "1" ]]; then
   /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH" >&2 || true
   fail "codesign verification failed"
 else
   echo "  ! local app is not fully code signed (release.sh enforces signing)" >&2
-fi
-
-if [[ "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
-  SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$APP_PATH" 2>&1)"
-  grep -q '^Authority=' <<<"$SIGNING_INFO" || fail "release app has no certificate authority (ad-hoc signature)"
-  grep -q '^TeamIdentifier=' <<<"$SIGNING_INFO" || fail "release app has no TeamIdentifier"
-  VOICE_SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$VOICE_EXECUTABLE" 2>&1)"
-  grep -q '^Authority=' <<<"$VOICE_SIGNING_INFO" || fail "release voice helper has no certificate authority (ad-hoc signature)"
-  grep -q '^Authority=' <<<"$(/usr/bin/codesign -dv --verbose=4 "$SIM_EXECUTABLE" 2>&1)" || fail "release simulator helper has no certificate authority (ad-hoc signature)"
 fi
 
 echo ""

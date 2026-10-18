@@ -9,7 +9,15 @@ git tag v0.4.1 && git push origin v0.4.1
 
 Pushes run no checks locally; CI checks every push to `main`, so tag only a commit whose CI run is green. `make preflight` launches the real app the way CI's desktop E2E job does and builds the DMG against its size limit, which otherwise surfaces only in the Release run.
 
-A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json`. The workflow reads the version from `package.json` and builds and verifies with `scripts/release.sh` while the full CI suite runs. Beside it, `pnpm build:linux` builds the x86_64 `.deb`, `.rpm` and `.AppImage` on Ubuntu 24.04. They carry no updater signature, because the update feed lists only macOS builds. Once the builds and the checks pass, `scripts/publish-release.sh` publishes them together. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
+A run is titled with its tag, so the approval names what it will publish, and it stops if the tag disagrees with `package.json` or the release already exists. The workflow reads the version from `package.json` and builds, signs and verifies the Mac release while the full CI suite runs. No job that runs the build's dependencies holds signing material, and no job that holds it runs them or anything they built:
+
+1. **Build the helpers** compiles the voice and simulator helpers (`scripts/release.sh --stage helpers`).
+2. **Sign the helpers** signs them with the Developer ID (`scripts/sign-helper.sh`). The app is compiled with their SHA-256 and refuses any other download, so they are signed before it is built.
+3. **Build the app** builds the app and the DMG around the signed helpers, ad hoc signed (`scripts/release.sh --stage app`).
+4. **Sign and notarize the app** signs the app on a fresh machine with Apple's tools and a Tauri CLI pinned by hash, notarizes it, packs and signs the updater archive, and puts the signed app back into the DMG (`scripts/sign-mac.sh`).
+5. **Verify the signed release** checks every signature, notarization ticket, hash, architecture and size, starts the signed CLI and helpers, and writes `latest.json` (`scripts/verify-release.sh`).
+
+Beside it, `pnpm build:linux` builds the x86_64 `.deb`, `.rpm` and `.AppImage` on Ubuntu 24.04. They carry no updater signature, because the update feed lists only macOS builds. Once the builds and the checks pass, `scripts/publish-release.sh` publishes them together. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
 
 If a release fails before it publishes, fix it and move the tag onto the fix. Only the owner can move a release tag, and moving it starts a fresh run:
 
@@ -25,9 +33,9 @@ Every release takes its signing material from the `release` environment:
 | `RELEASE_NOTARIZED`                                                                                                                        | variable, `1` to enable | notarized releases |
 | `APPLE_CERTIFICATE` (base64 `.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | secrets                 | notarized releases |
 
-The `release` environment holds the secrets and has no reviewer. A stable release first waits on its "Approve the stable release" job, which runs on the `approval` environment: that one holds nothing and has the owner as its required reviewer. A nightly skips the approval and publishes as soon as its checks pass. The approval can be given while the checks are still running.
+Only the two signing jobs use the `release` environment, which holds the secrets and has no reviewer. The Bitbucket, Jira and Vercel OAuth client secrets are compiled into the app, so they are repository secrets the build jobs read. A stable release first waits on its "Approve the stable release" job, which runs on the `approval` environment: that one holds nothing and has the owner as its required reviewer. A nightly skips the approval and publishes as soon as its checks pass. The approval can be given while the checks are still running.
 
-Run `scripts/release.sh` locally without `--publish` to preview a release: it builds, signs, and verifies everything without touching GitHub.
+Run `scripts/release.sh` locally without `--publish` to preview a release: it runs the same steps in order, building, signing and verifying everything without touching GitHub. The build steps never see the signing material in their environment, but they run on a Mac whose keychain holds the Developer ID, so only the workflow keeps the two apart.
 
 ## Community releases without an Apple Developer membership
 

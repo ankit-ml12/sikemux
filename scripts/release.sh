@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Build and verify a signed macOS release. --publish builds one the Release
-# workflow then publishes with scripts/publish-release.sh.
+# Build, sign and verify a macOS release, building and signing in separate steps
+# so the build's dependencies never see the signing material. The Release
+# workflow runs each step on its own machine: --stage helpers, scripts/sign-helper.sh,
+# --stage app, scripts/sign-mac.sh, then scripts/verify-release.sh. --publish
+# marks a build the workflow publishes with scripts/publish-release.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -10,14 +13,23 @@ NOTES="${2:-}"
 PUBLISH="${RELEASE_PUBLISH:-0}"
 NOTARIZED="${RELEASE_NOTARIZED:-0}"
 CHANNEL="${RELEASE_CHANNEL:-stable}"
-for arg in "${@:3}"; do
-  [[ "$arg" == "--publish" ]] && PUBLISH=1
-  [[ "$arg" == "--nightly" ]] && CHANNEL=nightly
-  [[ "$arg" != "--publish" && "$arg" != "--nightly" ]] && { echo "Unknown option: $arg" >&2; exit 2; }
+STAGE=all
+options=("${@:3}")
+for ((i = 0; i < ${#options[@]}; i++)); do
+  case "${options[$i]}" in
+    --publish) PUBLISH=1 ;;
+    --nightly) CHANNEL=nightly ;;
+    --stage) STAGE="${options[$((i + 1))]:-}"; i=$((i + 1)) ;;
+    *) echo "Unknown option: ${options[$i]}" >&2; exit 2 ;;
+  esac
 done
 
 if [[ -z "$VERSION" ]]; then
-  echo "Usage: $0 <version> <notes> [--nightly] [--publish]" >&2
+  echo "Usage: $0 <version> <notes> [--nightly] [--publish] [--stage helpers|app]" >&2
+  exit 2
+fi
+if [[ "$STAGE" != "all" && "$STAGE" != "helpers" && "$STAGE" != "app" ]]; then
+  echo "--stage must be helpers or app" >&2
   exit 2
 fi
 if ! VERSION="$VERSION" node - <<'NODE'
@@ -46,28 +58,42 @@ if [[ "$CHANNEL" == "stable" && "$VERSION_WITHOUT_BUILD" == *-* ]]; then
   exit 2
 fi
 
+SIGNING_VARS=(TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD APPLE_SIGNING_IDENTITY
+  APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH
+  APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD)
 # Load local signing configuration without printing it. Explicit environment
 # values win over .env values.
+for name in "${SIGNING_VARS[@]}"; do
+  if [[ -n "${!name+x}" ]]; then printf -v "EXPLICIT_$name" '%s' "${!name}"; fi
+done
 if [[ -f "$ROOT/.env" ]]; then
-  existing_key="${TAURI_SIGNING_PRIVATE_KEY+x}"
-  existing_password="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD+x}"
-  existing_identity="${APPLE_SIGNING_IDENTITY+x}"
-  saved_key="${TAURI_SIGNING_PRIVATE_KEY:-}"
-  saved_password="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-  saved_identity="${APPLE_SIGNING_IDENTITY:-}"
   set -a
   # shellcheck disable=SC1091
   source "$ROOT/.env"
   set +a
-  [[ -n "$existing_key" ]] && TAURI_SIGNING_PRIVATE_KEY="$saved_key"
-  [[ -n "$existing_password" ]] && TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$saved_password"
-  [[ -n "$existing_identity" ]] && APPLE_SIGNING_IDENTITY="$saved_identity"
 fi
-# The updater key goes to the bundling step alone, not to dependency installs
-# or the build tools every step below starts.
-UPDATER_KEY="${TAURI_SIGNING_PRIVATE_KEY:-}"
-UPDATER_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+# The signing material leaves the environment here, so dependency installs and
+# build tools never see it; only the signing steps get it back.
+for name in "${SIGNING_VARS[@]}"; do
+  explicit="EXPLICIT_$name"
+  if [[ -n "${!explicit+x}" ]]; then
+    printf -v "SIGNING_$name" '%s' "${!explicit}"
+  elif [[ -n "${!name+x}" ]]; then
+    printf -v "SIGNING_$name" '%s' "${!name}"
+  fi
+  unset "$explicit" "$name"
+done
+signing() (
+  for name in "${SIGNING_VARS[@]}"; do
+    value="SIGNING_$name"
+    if [[ -n "${!value+x}" ]]; then export "$name=${!value}"; fi
+  done
+  "$@"
+)
+signing_value() {
+  local value="SIGNING_$1"
+  printf '%s' "${!value:-}"
+}
 
 fail() {
   echo "Release preflight failed: $*" >&2
@@ -77,9 +103,10 @@ fail() {
 # Every potentially failing prerequisite is checked before any version file is
 # changed. A failed build later also restores the original version metadata.
 [[ "$(uname -s)" == "Darwin" ]] || fail "macOS is required"
-for command in git node pnpm python3 cargo rustc; do
+for command in git node python3 cargo rustc; do
   command -v "$command" >/dev/null || fail "missing required command: $command"
 done
+[[ "$STAGE" == "helpers" ]] || command -v pnpm >/dev/null || fail "missing required command: pnpm"
 for command in /usr/bin/codesign /usr/bin/hdiutil /usr/bin/lipo /usr/bin/plutil /usr/bin/security /usr/bin/tar; do
   [[ -x "$command" ]] || fail "missing required command: $command"
 done
@@ -98,7 +125,9 @@ else
     fail "nightly releases must be cut from main; $HEAD_SHA is not on it"
 fi
 [[ -n "$NOTES" ]] || fail "release notes must not be empty"
-pnpm install --frozen-lockfile || fail "frozen frontend dependency install failed"
+if [[ "$STAGE" != "helpers" ]]; then
+  pnpm install --frozen-lockfile || fail "frozen frontend dependency install failed"
+fi
 
 PKG_VER="$(node -p "require('./package.json').version")"
 TAURI_VER="$(node -p "require('./src-tauri/tauri.conf.json').version")"
@@ -142,31 +171,26 @@ if TAG_SHA="$(git rev-parse -q --verify "refs/tags/v$VERSION^{commit}")"; then
   [[ "$TAG_SHA" == "$HEAD_SHA" ]] || fail "tag v$VERSION already exists on $TAG_SHA"
 fi
 
-[[ -n "$UPDATER_KEY" ]] || fail "TAURI_SIGNING_PRIVATE_KEY is not set"
-if [[ "$NOTARIZED" == "1" ]]; then
-  [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]] || fail "APPLE_SIGNING_IDENTITY is not set"
-  /usr/bin/security find-identity -v -p codesigning | grep -Fq "\"$APPLE_SIGNING_IDENTITY\"" || \
-    fail "APPLE_SIGNING_IDENTITY is not available in the keychain"
-  if ! { [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]] || \
-         [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -n "${APPLE_API_KEY_PATH:-}" ]]; }; then
-    fail "Apple notarization credentials are not configured"
+if [[ "$STAGE" == "all" ]]; then
+  [[ -n "$(signing_value TAURI_SIGNING_PRIVATE_KEY)" ]] || fail "TAURI_SIGNING_PRIVATE_KEY is not set"
+  if [[ "$NOTARIZED" == "1" ]]; then
+    identity="$(signing_value APPLE_SIGNING_IDENTITY)"
+    [[ -n "$identity" ]] || fail "APPLE_SIGNING_IDENTITY is not set"
+    /usr/bin/security find-identity -v -p codesigning | grep -Fq "\"$identity\"" || \
+      fail "APPLE_SIGNING_IDENTITY is not available in the keychain"
+    if ! { [[ -n "$(signing_value APPLE_ID)" && -n "$(signing_value APPLE_PASSWORD)" && -n "$(signing_value APPLE_TEAM_ID)" ]] || \
+           [[ -n "$(signing_value APPLE_API_KEY)" && -n "$(signing_value APPLE_API_ISSUER)" && -n "$(signing_value APPLE_API_KEY_PATH)" ]]; }; then
+      fail "Apple notarization credentials are not configured"
+    fi
+  else
+    # shellcheck disable=SC2034 # signing() hands it to the signing steps
+    SIGNING_APPLE_SIGNING_IDENTITY=-
+    echo "! Community release: updater-signed and ad-hoc code signed, but not Apple-notarized." >&2
   fi
-else
-  export APPLE_SIGNING_IDENTITY="-"
-  # The bundler notarizes whenever these are set, even to an empty string, and
-  # the release workflow always sets them.
-  unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH
-  echo "! Community release: updater-signed and ad-hoc code signed, but not Apple-notarized." >&2
 fi
+# The Release workflow checks the tag and the GitHub release before it builds.
 if [[ "$PUBLISH" == "1" ]]; then
   [[ "${GITHUB_ACTIONS:-}" == "true" ]] || fail "releases publish from the Release workflow; run this locally without --publish to preview"
-  command -v gh >/dev/null || fail "gh is required with --publish"
-  gh auth status >/dev/null 2>&1 || fail "gh is not authenticated"
-  if REMOTE_TAG_SHA="$(gh api "repos/nodelike/sikemux/commits/v$VERSION" --jq .sha 2>/dev/null)"; then
-    [[ "$REMOTE_TAG_SHA" == "$HEAD_SHA" ]] || fail "remote tag v$VERSION already exists on $REMOTE_TAG_SHA"
-  fi
-  gh release view "v$VERSION" >/dev/null 2>&1 && fail "GitHub release v$VERSION already exists"
-  gh api "repos/nodelike/sikemux/commits/$HEAD_SHA" >/dev/null 2>&1 || fail "HEAD is not on the remote; push before publishing"
   export SIKEMUX_USAGE_REPORTING=1
 fi
 
@@ -188,17 +212,9 @@ for file in "${FILES[@]}"; do
 done
 SUCCESS=0
 EXPECTED=""
-EXTRACTED=""
-DMG_MOUNT=""
-DMG_ATTACHED=0
 restore_on_failure() {
   status=$?
   trap - EXIT INT TERM
-  if [[ "$DMG_ATTACHED" == "1" ]]; then
-    /usr/bin/hdiutil detach "$DMG_MOUNT" -quiet >/dev/null 2>&1 || true
-  fi
-  [[ -n "$EXTRACTED" ]] && rm -rf "$EXTRACTED"
-  [[ -n "$DMG_MOUNT" ]] && rm -rf "$DMG_MOUNT"
   if [[ "$SUCCESS" != "1" ]]; then
     echo "Release failed; restoring version metadata." >&2
     for file in "${FILES[@]}"; do
@@ -241,149 +257,53 @@ path.write_text(updated)
 PY
 # Cargo.lock records the workspace version and the sidecar builds with --locked,
 # so the bump has to reach the lock file or the build fails partway through.
-cargo metadata --manifest-path src-tauri/Cargo.toml --offline --format-version 1 >/dev/null \
-  || fail "could not refresh Cargo.lock for $VERSION"
+if [[ "$VERSION" != "$PKG_VER" ]]; then
+  cargo metadata --manifest-path src-tauri/Cargo.toml --offline --format-version 1 >/dev/null \
+    || fail "could not refresh Cargo.lock for $VERSION"
+fi
 snapshot_expected
 
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
 APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-TAR="$BUNDLE/macos/${APP_NAME}.app.tar.gz"
-SIG="$TAR.sig"
 APP="$BUNDLE/macos/${APP_NAME}.app"
-VOICE="$ROOT/src-tauri/binaries/sikemux-voice-$(rustc -vV | sed -n 's/^host: //p')"
-SIM="$ROOT/src-tauri/binaries/sikemux-sim-$(rustc -vV | sed -n 's/^host: //p')"
+HOST="$(rustc -vV | sed -n 's/^host: //p')"
+VOICE="$ROOT/src-tauri/binaries/sikemux-voice-$HOST"
+SIM="$ROOT/src-tauri/binaries/sikemux-sim-$HOST"
 # Remove stale outputs before the one release build. Their absence afterwards
 # is stronger evidence of freshness than directory mtimes, which do not change
 # when a bundler updates files in place.
-rm -rf "$APP" "$TAR" "$SIG" "$BUNDLE/dmg" "$VOICE" "$SIM"
-echo "→ Building updater-signed v$VERSION"
-TAURI_SIGNING_PRIVATE_KEY="$UPDATER_KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$UPDATER_KEY_PASSWORD" \
-  REQUIRE_VALID_SIGNATURE=1 REQUIRE_SIGNED_APP="$NOTARIZED" "$ROOT/scripts/build-mac.sh"
-
-[[ -d "$APP" ]] || fail "app bundle was not produced"
-if [[ "$NOTARIZED" == "1" ]]; then
-  /usr/sbin/spctl --assess --type execute --verbose=4 "$APP" || fail "app failed Gatekeeper assessment"
-  /usr/bin/xcrun stapler validate "$APP" || fail "app has no valid notarization ticket"
+if [[ "$STAGE" != "app" ]]; then
+  rm -f "$VOICE" "$SIM"
+  echo "→ Building the voice and simulator helpers for v$VERSION"
+  node "$ROOT/scripts/build-voice-helper.mjs"
+  node "$ROOT/scripts/build-sim-helper.mjs"
 fi
-[[ -s "$TAR" ]] || fail "updater archive was not produced"
-[[ -s "$SIG" ]] || fail "updater signature was not produced"
-shopt -s nullglob
-DMG_CANDIDATES=("$BUNDLE"/dmg/*.dmg)
-shopt -u nullglob
-[[ ${#DMG_CANDIDATES[@]} -eq 1 ]] || fail "expected exactly one DMG, found ${#DMG_CANDIDATES[@]}"
-DMG="${DMG_CANDIDATES[0]}"
-[[ -s "$DMG" ]] || fail "DMG is empty"
-/usr/bin/hdiutil verify "$DMG" >/dev/null || fail "DMG verification failed"
-node "$ROOT/scripts/verify-updater-signature.mjs" "$TAR" "$SIG"
-UPDATE_BUDGET_BYTES=$((25 * 1024 * 1024))
-TAR_BYTES="$(stat -f %z "$TAR")"
-echo "→ Updater archive is $TAR_BYTES bytes (budget $UPDATE_BUDGET_BYTES)"
-((TAR_BYTES <= UPDATE_BUDGET_BYTES)) || fail "updater archive is $TAR_BYTES bytes, over the $UPDATE_BUDGET_BYTES byte budget"
-
-EXTRACTED="$(mktemp -d)"
-/usr/bin/tar -xzf "$TAR" -C "$EXTRACTED"
-ARCHIVE_APP="$EXTRACTED/${APP_NAME}.app"
-[[ -d "$ARCHIVE_APP" ]] || fail "updater archive does not contain ${APP_NAME}.app"
-/usr/bin/codesign --verify --deep --strict --verbose=2 "$ARCHIVE_APP" || fail "archived app code signature is invalid"
-if [[ "$NOTARIZED" == "1" ]]; then
-  /usr/sbin/spctl --assess --type execute --verbose=4 "$ARCHIVE_APP" || fail "updater app failed Gatekeeper assessment"
-  /usr/bin/xcrun stapler validate "$ARCHIVE_APP" || fail "updater app has no valid notarization ticket"
+if [[ "$STAGE" == "all" ]]; then
+  signing "$ROOT/scripts/sign-helper.sh" "$VOICE" "$SIM"
 fi
-ARCHIVE_PLIST="$ARCHIVE_APP/Contents/Info.plist"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ARCHIVE_PLIST")" == "$VERSION" ]] || fail "archived app version is wrong"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$ARCHIVE_PLIST")" == "sikemux" ]] || fail "archived app icon metadata is wrong"
-EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$ARCHIVE_PLIST")"
-ARCHS="$(/usr/bin/lipo -archs "$ARCHIVE_APP/Contents/MacOS/$EXECUTABLE_NAME")"
-# The app downloads the voice helper from this release and refuses any file but
-# the one it was built with, so the published helper must carry that hash.
-[[ -x "$VOICE" ]] || fail "voice helper was not produced"
-VOICE_SHA256="$(/usr/bin/shasum -a 256 "$VOICE" | cut -d ' ' -f 1)"
-/usr/bin/grep -aqF "$VOICE_SHA256" "$ARCHIVE_APP/Contents/MacOS/$EXECUTABLE_NAME" || \
-  fail "the app does not expect the voice helper about to be published"
-[[ -x "$SIM" ]] || fail "simulator helper was not produced"
-SIM_SHA256="$(/usr/bin/shasum -a 256 "$SIM" | cut -d ' ' -f 1)"
-/usr/bin/grep -aqF "$SIM_SHA256" "$ARCHIVE_APP/Contents/MacOS/$EXECUTABLE_NAME" || \
-  fail "the app does not expect the simulator helper about to be published"
-APP_CDHASH="$(/usr/bin/codesign -dv --verbose=4 "$APP" 2>&1 | /usr/bin/sed -n 's/^CDHash=//p')"
-ARCHIVE_CDHASH="$(/usr/bin/codesign -dv --verbose=4 "$ARCHIVE_APP" 2>&1 | /usr/bin/sed -n 's/^CDHash=//p')"
-[[ -n "$APP_CDHASH" && "$ARCHIVE_CDHASH" == "$APP_CDHASH" ]] || fail "updater archive does not contain the exact signed app"
-
-DMG_MOUNT="$(mktemp -d)"
-/usr/bin/hdiutil attach -nobrowse -readonly -mountpoint "$DMG_MOUNT" "$DMG" >/dev/null || fail "could not mount DMG"
-DMG_ATTACHED=1
-DMG_APP="$DMG_MOUNT/${APP_NAME}.app"
-[[ -d "$DMG_APP" ]] || fail "DMG does not contain ${APP_NAME}.app at its root"
-/usr/bin/codesign --verify --deep --strict --verbose=2 "$DMG_APP" || fail "DMG app code signature is invalid"
-if [[ "$NOTARIZED" == "1" ]]; then
-  /usr/sbin/spctl --assess --type execute --verbose=4 "$DMG_APP" || fail "DMG app failed Gatekeeper assessment"
-  /usr/sbin/spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG" || fail "DMG failed Gatekeeper assessment"
-  /usr/bin/xcrun stapler validate "$DMG" || fail "DMG has no valid notarization ticket"
+if [[ "$STAGE" != "helpers" ]]; then
+  [[ -x "$VOICE" && -x "$SIM" ]] || fail "the signed voice and simulator helpers are missing"
+  rm -rf "$APP" "$BUNDLE/macos/${APP_NAME}.app.tar.gz" "$BUNDLE/macos/${APP_NAME}.app.tar.gz.sig" "$BUNDLE/dmg"
+  echo "→ Building v$VERSION"
+  REQUIRE_VALID_SIGNATURE=1 PREBUILT_HELPERS=1 "$ROOT/scripts/build-mac.sh"
+  [[ -d "$APP" ]] || fail "app bundle was not produced"
 fi
-DMG_CDHASH="$(/usr/bin/codesign -dv --verbose=4 "$DMG_APP" 2>&1 | /usr/bin/sed -n 's/^CDHash=//p')"
-[[ "$DMG_CDHASH" == "$APP_CDHASH" ]] || fail "DMG does not contain the exact signed app"
-DMG_PLIST="$DMG_APP/Contents/Info.plist"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$DMG_PLIST")" == "$VERSION" ]] || fail "DMG app version is wrong"
-[[ "$(/usr/bin/lipo -archs "$DMG_APP/Contents/MacOS/$EXECUTABLE_NAME")" == "$ARCHS" ]] || fail "DMG app architectures differ from updater app"
-/usr/bin/hdiutil detach "$DMG_MOUNT" -quiet
-DMG_ATTACHED=0
-rm -rf "$DMG_MOUNT" "$EXTRACTED"
-DMG_MOUNT=""
-EXTRACTED=""
-
-PLATFORMS=()
-[[ " $ARCHS " == *" arm64 "* ]] && PLATFORMS+=(darwin-aarch64)
-[[ " $ARCHS " == *" x86_64 "* ]] && PLATFORMS+=(darwin-x86_64)
-[[ ${#PLATFORMS[@]} -gt 0 ]] || fail "unsupported updater architecture set: $ARCHS"
-for arch in $ARCHS; do
-  [[ "$arch" == "arm64" || "$arch" == "x86_64" ]] || fail "unsupported executable architecture: $arch"
-done
-
-PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-# Artifacts live on a tag that never moves. The nightly release carries only
-# latest.json, because shipped clients resolve that URL and cannot be repointed.
-RELEASE_TAG="v$VERSION"
-TAR_URL="https://github.com/nodelike/sikemux/releases/download/$RELEASE_TAG/${APP_NAME}.app.tar.gz"
-# Only a stable cut owns the tracked manifest. A nightly one lands beside its
-# artifacts, which git ignores, so it cannot overwrite the stable feed.
-if [[ "$CHANNEL" == "stable" ]]; then
-  MANIFEST="$ROOT/latest.json"
-else
-  MANIFEST="$BUNDLE/latest.json"
+if [[ "$STAGE" == "all" ]]; then
+  signing "$ROOT/scripts/sign-mac.sh" "$VERSION"
+  flags=()
+  [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+  "$ROOT/scripts/verify-release.sh" "$VERSION" "$NOTES" ${flags[@]+"${flags[@]}"}
 fi
-# Credits are a nicety. Without them the What's new modal asks GitHub itself.
-CREDITS="$(node scripts/release-credits.mjs "$VERSION" "$HEAD_SHA")" || {
-  echo "! Could not gather release credits; latest.json ships without them." >&2
-  CREDITS=""
-}
-PLATFORM_LIST="${PLATFORMS[*]}" VERSION="$VERSION" NOTES="$NOTES" PUB_DATE="$PUB_DATE" SIG="$SIG" TAR_URL="$TAR_URL" MANIFEST="$MANIFEST" CREDITS="$CREDITS" python3 - <<'PY'
-import json, os, pathlib
-entry = {
-    "signature": pathlib.Path(os.environ["SIG"]).read_text().strip(),
-    "url": os.environ["TAR_URL"],
-}
-manifest = {
-    "version": os.environ["VERSION"],
-    "notes": os.environ["NOTES"],
-    "pub_date": os.environ["PUB_DATE"],
-    "platforms": {platform: dict(entry) for platform in os.environ["PLATFORM_LIST"].split()},
-}
-if os.environ["CREDITS"]:
-    manifest["credits"] = json.loads(os.environ["CREDITS"])
-pathlib.Path(os.environ["MANIFEST"]).write_text(json.dumps(manifest, indent=2) + "\n")
-PY
-python3 -m json.tool "$MANIFEST" >/dev/null
 snapshot_expected
 
 [[ "$(git rev-parse HEAD)" == "$HEAD_SHA" ]] || fail "HEAD moved during the release; rebuild from a settled tree"
-echo "✓ Verified $CHANNEL release v$VERSION ($ARCHS)"
-echo "  $DMG"
-echo "  $TAR"
-echo "  $SIG"
-echo "  $VOICE"
-echo "  $SIM"
-echo "  $MANIFEST"
+case "$STAGE" in
+  helpers) echo "✓ Built the helpers for v$VERSION; sign them with scripts/sign-helper.sh before the app" ;;
+  app) echo "✓ Built v$VERSION; sign it with scripts/sign-mac.sh" ;;
+  all) echo "✓ Verified $CHANNEL release v$VERSION" ;;
+esac
 if [[ "$PUBLISH" == "1" ]]; then
-  echo "  The Release workflow publishes these with scripts/publish-release.sh once the checks pass."
+  echo "  The Release workflow signs and verifies it, and publishes once the checks pass."
 fi
 
 SUCCESS=1

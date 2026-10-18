@@ -12,7 +12,7 @@ else
   PNPM=(corepack pnpm)
 fi
 
-bash -n scripts/build-mac.sh scripts/release.sh scripts/publish-release.sh scripts/icons.sh scripts/check-release.sh
+bash -n scripts/build-mac.sh scripts/release.sh scripts/sign-helper.sh scripts/sign-mac.sh scripts/verify-release.sh scripts/publish-release.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
 node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
@@ -117,11 +117,11 @@ if grep -E 'gh release (create|upload|edit) nightly' scripts/publish-release.sh 
   exit 1
 fi
 # shellcheck disable=SC2016
-grep -Fq 'MANIFEST="$BUNDLE/latest.json"' scripts/release.sh || {
+grep -Fq 'MANIFEST="$BUNDLE/latest.json"' scripts/verify-release.sh || {
   echo "nightly manifest is not written beside its artifacts" >&2
   exit 1
 }
-grep -Fq 'pathlib.Path("latest.json").write_text' scripts/release.sh && {
+grep -Fq 'pathlib.Path("latest.json").write_text' scripts/verify-release.sh && {
   echo "release tooling still hardcodes the repo-root manifest path" >&2
   exit 1
 }

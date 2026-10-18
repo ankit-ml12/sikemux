@@ -20,6 +20,7 @@ function run(command, commandArgs, options = {}) {
   const result = spawnSync(command, commandArgs, {
     cwd: root,
     encoding: "utf8",
+    env: { ...process.env, ...options.env },
     stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
   });
   if (result.error) fail(`${command}: ${result.error.message}`);
@@ -89,24 +90,13 @@ const toolchainPaths = [
 for (const path of new Set(toolchainPaths))
   run("install_name_tool", ["-delete_rpath", path, destination]);
 
-// A release publishes the helper beside the app instead of bundling it, so it is
-// signed here the way the bundler signs what it ships: hardened runtime, and the
-// app's microphone entitlement.
+// A release publishes the helper beside the app instead of bundling it. This
+// ad hoc signature lets it run here; the release signs it again before the app
+// that pins its hash is built.
 if (!args.includes("--dev")) {
-  const identity = process.env.APPLE_SIGNING_IDENTITY || "-";
-  run("codesign", [
-    "--force",
-    "--identifier",
-    "com.nodelike.sikemux.voice",
-    "--options",
-    "runtime",
-    "--entitlements",
-    join(tauriDir, "Entitlements.plist"),
-    ...(identity === "-" ? [] : ["--timestamp"]),
-    "--sign",
-    identity,
-    destination,
-  ]);
+  run("bash", [join(root, "scripts", "sign-helper.sh"), destination], {
+    env: { APPLE_SIGNING_IDENTITY: "-" },
+  });
 }
 
 if (target === hostTriple() || target === "universal-apple-darwin") {
