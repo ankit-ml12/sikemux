@@ -1,27 +1,26 @@
 //! The TCP ports the core's terminals, tasks and agents listen on, or anything
 //! they started. Nothing tells a program when another starts listening, so
 //! the core looks again when a session starts or ends, and every few seconds
-//! while a client has asked lately and something runs. Clients hear a
-//! `ports` change when what it found differs.
+//! while something runs and a client that asked is still connected. Clients
+//! hear a `ports` change when what it found differs.
 
 #[cfg(target_os = "macos")]
 mod darwin;
 #[cfg(target_os = "linux")]
 mod linux;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::time::Instant;
 
 use crate::protocol::SessionId;
 use crate::tasks::config::{self, ConfigLoad};
 
-use super::connection::blocking;
+use super::connection::{blocking, ClientId};
 use super::remote::unix_ms;
 use super::wake::Wake;
 use super::{Core, CoreResult};
@@ -35,8 +34,6 @@ use linux as system;
 /// in the environment it was launched with.
 const AGENT_ID_ENV: &str = "SIKEMUX_AGENT_ID";
 const MAX_ANCESTRY: usize = 64;
-/// How long after a client last asked the core keeps looking.
-const WATCHED_FOR: Duration = Duration::from_secs(60);
 const LOOK_AGAIN_MS: u64 = 5_000;
 /// A server binds its port a moment after its process starts.
 const SETTLE_MS: u64 = 1_500;
@@ -107,7 +104,8 @@ pub(crate) struct ProjectPort {
 #[derive(Default)]
 struct State {
     found: Vec<ListeningPort>,
-    watched_until: Option<Instant>,
+    /// The clients that asked.
+    watchers: HashSet<ClientId>,
 }
 
 #[derive(Default)]
@@ -123,20 +121,22 @@ impl Ports {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn watched(&self) -> bool {
-        self.lock()
-            .watched_until
-            .is_some_and(|until| Instant::now() < until)
-    }
-
     /// A session started or ended: look now, and again once a server it
     /// started has had time to bind.
     pub(crate) fn changed(&self) {
-        if self.watched() {
+        if !self.lock().watchers.is_empty() {
             self.wake.now();
             self.wake.at(unix_ms() + SETTLE_MS);
         }
     }
+}
+
+/// Whether a client that asked is still connected.
+fn watched(core: &Core) -> bool {
+    let connected: HashSet<ClientId> = core.clients().iter().map(|client| client.id).collect();
+    let mut state = core.ports.lock();
+    state.watchers.retain(|id| connected.contains(id));
+    !state.watchers.is_empty()
 }
 
 fn address_rank(address: &IpAddr) -> u8 {
@@ -328,7 +328,7 @@ fn anything_runs(core: &Core) -> bool {
 /// The work [`Ports::wake`] runs: a look while a client watches, and the
 /// next one a few seconds later while anything runs.
 pub(crate) fn settle(core: &Arc<Core>) {
-    if !core.ports.watched() {
+    if !watched(core) {
         return;
     }
     let looking = core.clone();
@@ -377,22 +377,34 @@ pub(crate) fn for_project(found: Vec<ListeningPort>, project: &Path) -> Vec<Proj
     ports
 }
 
-/// What the project's terminals, tasks and agents listen on, looked up now.
-/// Asking keeps the core looking for a while.
-pub(crate) async fn project_ports(core: &Arc<Core>, project: String) -> CoreResult<Vec<ProjectPort>> {
-    let first = {
-        let mut state = core.ports.lock();
-        let first = state
-            .watched_until
-            .is_none_or(|until| Instant::now() >= until);
-        state.watched_until = Some(Instant::now() + WATCHED_FOR);
-        first
-    };
+/// What the project's terminals, tasks and agents listen on, or everything
+/// the core's sessions do, looked up now. The core keeps looking for as long
+/// as the client that asked stays connected.
+pub(crate) async fn project_ports(
+    core: &Arc<Core>,
+    client: ClientId,
+    project: Option<String>,
+) -> CoreResult<Vec<ProjectPort>> {
+    let first = core.ports.lock().watchers.insert(client);
     if first {
         core.ports.wake.at(unix_ms() + LOOK_AGAIN_MS);
     }
     let core = core.clone();
-    blocking(move || Ok(for_project(look(&core), Path::new(&project)))).await
+    blocking(move || {
+        let found = look(&core);
+        Ok(match project {
+            Some(project) => for_project(found, Path::new(&project)),
+            None => found
+                .into_iter()
+                .map(|listening| ProjectPort {
+                    url: format!("http://localhost:{}/", listening.port),
+                    listening,
+                    preview: false,
+                })
+                .collect(),
+        })
+    })
+    .await
 }
 
 /// Whether something on this computer, not only what the core started,
