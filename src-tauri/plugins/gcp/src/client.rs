@@ -202,6 +202,10 @@ pub async fn patch(
     send(target, Method::PATCH, url, query, Some(body)).await
 }
 
+pub async fn put(target: &Target, url: &str, body: &Value) -> GcpResult<Value> {
+    send(target, Method::PUT, url, &[], Some(body)).await
+}
+
 /// Calls Google for raw bytes, such as an object's contents, the first `limit` of them when there is one.
 pub async fn bytes(
     target: &Target,

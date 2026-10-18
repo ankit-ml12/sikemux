@@ -18,6 +18,7 @@
 //   secrets  — Secret Manager secrets and versions, by name only
 //   functions — Cloud Functions of both generations
 //   metrics  — Cloud Monitoring charts for services, VMs, databases and queues
+//   errors   — Error Reporting groups, occurrences and statuses
 
 mod agent;
 mod agent_setup;
@@ -26,6 +27,7 @@ mod build;
 mod client;
 mod compute;
 mod error;
+mod errors;
 mod functions;
 mod gcloud;
 mod gke;
@@ -159,6 +161,9 @@ impl Plugin for Gcp {
                 "functions" => answer(functions::functions(params(input)?)).await,
                 "function" => answer(functions::function_detail(params(input)?)).await,
                 "metrics" => answer(metrics::chart(params(input)?)).await,
+                "errorGroups" => answer(errors::groups(params(input)?)).await,
+                "errorEvents" => answer(errors::events(params(input)?)).await,
+                "errorStatus" => answer(errors::set_status(params(input)?)).await,
                 _ => match agent::call(ctx, method, input).await {
                     Some(answer) => answer,
                     None => Err(PluginError::unknown_method(method)),
