@@ -8,7 +8,7 @@ import type { AgentDisplay } from "../state/agentStatus";
 import { activeAgentId, agentDisplayOf, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
-import { IconAgent, IconClose } from "../ui/Icons";
+import { IconAgent, IconClose, IconPin } from "../ui/Icons";
 import { RailEmpty } from "./RailEmpty";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
@@ -24,6 +24,7 @@ interface OpenAgentRow {
     display: AgentDisplay;
     sessionName: string;
     sessionId: string;
+    sessionCwd: string;
 }
 
 /** Every agent open in any project, in the order the inbox wants them. */
@@ -49,6 +50,7 @@ export function AllProjectsAgents() {
                 display: agentDisplayOf({ agentActivity, agentTasks, agentSubagents }, agentId),
                 sessionName: session.name,
                 sessionId: session.id,
+                sessionCwd: session.cwd,
             });
         return rows;
     }, [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity, agentTasks, agentSubagents]);
@@ -79,6 +81,7 @@ export function AllProjectsAgents() {
                             link={link}
                             active={row.id === shownAgentId}
                             project={{ name: row.sessionName, sessionId: row.sessionId }}
+                            sessionCwd={row.sessionCwd}
                         />
                     ),
                 )}
@@ -94,6 +97,7 @@ export function OpenAgentRow({
     link,
     active,
     project,
+    sessionCwd,
     title,
     wrap,
     onDoubleClick,
@@ -104,6 +108,7 @@ export function OpenAgentRow({
     link?: TeamLink;
     active: boolean;
     project?: { name: string; sessionId: string };
+    sessionCwd: string;
     title?: ReactNode;
     wrap?: { ref: Ref<HTMLDivElement>; "data-agent-id": string; "data-session": string };
     onDoubleClick?: () => void;
@@ -137,6 +142,7 @@ export function OpenAgentRow({
                     <AgentStateIndicator display={display} />
                 </span>
             )}
+            {agent.resumeId && <PinToggle agent={agent} chatId={agent.resumeId} project={agent.cwd || sessionCwd} />}
             <Tooltip label={`Close ${agent.title}`}>
                 <button type="button" className="row-x" aria-label={`Close ${agent.title}`} onClick={() => cmd.closeAgent(agent.id)}>
                     <IconClose size={11} />
@@ -144,5 +150,22 @@ export function OpenAgentRow({
             </Tooltip>
             <AgentRowTree agentId={agent.id} worktree={agent.worktree} runsOn={link === "head" || link === "member"} />
         </div>
+    );
+}
+
+function PinToggle({ agent, chatId, project }: { agent: Agent; chatId: string; project: string }) {
+    const pinned = useStore((s) => s.pinnedChats.some((pin) => pin.agent === agent.type && pin.id === chatId));
+    const label = `${pinned ? "Unpin" : "Pin"} ${agent.title}`;
+    return (
+        <Tooltip label={label}>
+            <button
+                type="button"
+                className={`row-pin${pinned ? " pinned" : ""}`}
+                aria-label={label}
+                aria-pressed={pinned}
+                onClick={() => (pinned ? cmd.unpinChat(agent.type, chatId) : cmd.pinChat({ agent: agent.type, id: chatId, title: agent.title, project }))}>
+                <IconPin size={12} filled={pinned} />
+            </button>
+        </Tooltip>
     );
 }

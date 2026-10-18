@@ -289,6 +289,7 @@ export function TabRailBody() {
             display={agentDisplayOf({ agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById }, a.id)}
             link={link}
             active={activeAgentId({ windows: windowsById }, session) === a.id}
+            sessionCwd={session.cwd}
             wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
             title={
                 renamingId === a.id && (

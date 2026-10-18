@@ -518,6 +518,7 @@ textarea:focus,
 }
 
 .row-x,
+.row-pin,
 .tab-x {
     display: grid;
     place-items: center;
@@ -548,6 +549,18 @@ textarea:focus,
     right: var(--row-inset);
     transform: translateY(-50%);
     border-radius: var(--radius-2);
+}
+
+.row-pin {
+    position: absolute;
+    z-index: 3;
+    top: 50%;
+    right: calc(var(--row-inset) + var(--row-slot));
+    transform: translateY(-50%);
+}
+
+.agent-row-wrap:has(> .row-pin):is(:hover, :focus-within) > .agent-row {
+    padding-right: calc(var(--row-inset) + 2 * var(--row-slot) + var(--space-1));
 }
 
 .session-row-shell > .sess-row,
@@ -637,6 +650,8 @@ textarea:focus,
    does not reveal it: a row you are looking at is not a row you are closing. */
 .session-row-shell:hover > .row-x,
 .agent-row-wrap:hover > .row-x,
+.agent-row-wrap:hover > .row-pin,
+.row-pin:focus-visible,
 .tab-wrap:hover .tab-x,
 .row-x:focus-visible,
 .tab-x:focus-visible {
@@ -731,6 +746,15 @@ textarea:focus,
 .tab-x:hover {
     color: var(--danger);
     background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.row-pin:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.row-pin.pinned {
+    color: var(--text-secondary);
 }
 
 .sess-name,

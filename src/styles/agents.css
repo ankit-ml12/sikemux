@@ -968,7 +968,8 @@
     height: var(--down, 6px);
 }
 .agent-row-wrap:has(> .agent-tree) > .row-status,
-.agent-row-wrap:has(> .agent-tree) > .row-x {
+.agent-row-wrap:has(> .agent-tree) > .row-x,
+.agent-row-wrap:has(> .agent-tree) > .row-pin {
     top: 14px;
 }
 .agent-tree .proj-child {
@@ -1017,7 +1018,8 @@
     text-overflow: ellipsis;
 }
 .agent-row-wrap:has(> .agent-row.two-line) > .row-status,
-.agent-row-wrap:has(> .agent-row.two-line) > .row-x {
+.agent-row-wrap:has(> .agent-row.two-line) > .row-x,
+.agent-row-wrap:has(> .agent-row.two-line) > .row-pin {
     top: 13px;
 }
 /* Joins the agent's mark to its tree; a team's line already does this through drawTeamLines. */
