@@ -15,7 +15,7 @@ afterEach(resetIpcTransportForTests);
 function installAgent() {
     const state = getState();
     const sid = state.activeSessionId;
-    const agent = { id: "agent-1", type: "claude" as const, title: "Claude", startup: "claude" };
+    const agent = { id: "agent-1", type: "claude" as const, title: "Claude", startup: "claude", ptyId: 7 };
     setState({
         sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project" } },
         ...withAgents(state, sid, [agent]),
@@ -24,7 +24,7 @@ function installAgent() {
 }
 
 describe("agent activity", () => {
-    it("sleeps only resumable agents and resumes a sleeping agent on selection", () => {
+    it("sleeps only resumable terminal agents and resumes a sleeping one on selection", () => {
         const id = installAgent();
         expect(sleepAgent(id)).toBe(false);
 

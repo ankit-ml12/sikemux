@@ -1,5 +1,6 @@
 import { agentApi, type AgentSession } from "../../api/agents";
 import { acpApi } from "../../api/acp";
+import { coreCall } from "../../api/core";
 import { agentNamesApi } from "../../api/agentNames";
 import type { ChatInfo } from "../../api/generated/wire";
 import { runOfAgent } from "../../agents/agentBoard";
@@ -9,6 +10,7 @@ import { canBypassPermissions, isAgentType } from "../../agents/catalog";
 import { agentSupportsChat, effectiveMode, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
+import { workspaceSent } from "../coreWorkspace";
 import { agentHasBackgroundWork, isAgentBusy, type AgentShown } from "../agentStatus";
 import { chatShown } from "../../chat/chatViews";
 import { confirmDialog } from "../dialog";
@@ -16,7 +18,6 @@ import { invalidate, peekResource } from "../resources";
 import { agentCatalogR, agentSessionsR } from "../resources.defs";
 import { getState, mutate, type StoreState } from "../store";
 import { notify, reportError, swallow } from "../toast";
-import { agentIdsWithLiveSessions } from "../agentLiveSessions";
 import { agentExecutablePath, profileOf, relaunchSpec } from "./agentLaunchCommand";
 import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId, projectSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
@@ -470,14 +471,15 @@ export async function moveAgentToProject(id: string, cwd: string): Promise<void>
     const fromCwd = agent.cwd || state.sessions[fromId].cwd;
     if (fromCwd === cwd) return;
     const resumeId = agent.resumeId;
-    const awake = agent.launchState !== "dormant";
+    /* A chat's pane starts it again in the new folder once it moves there; a terminal agent sleeps through the move. */
+    const terminal = !inChat(agent) && agent.launchState !== "dormant";
     if (resumeId) {
-        sleepAgents([id]);
+        if (terminal) sleepAgents([id]);
         try {
             await acpApi.stop(id).catch(swallow("stop chat"));
             await agentApi.relocateSession(agent.type, fromCwd, cwd, resumeId, profileOf(state, agent)?.configPath);
         } catch (error) {
-            if (awake) resumeAgent(id);
+            if (terminal) resumeAgent(id);
             reportError("move chat")(error);
             return;
         }
@@ -485,7 +487,7 @@ export async function moveAgentToProject(id: string, cwd: string): Promise<void>
     placeAgentInProject(id, cwd);
     if (resumeId) {
         invalidate((kind) => kind === "agents.sessions");
-        if (awake) resumeAgent(id);
+        if (terminal) resumeAgent(id);
     }
 }
 
@@ -663,27 +665,24 @@ export function revealAgent(id: string): void {
     selectAgent(id);
 }
 
-export function resumeAgent(id: string): void {
-    mutate((d) => {
-        const agent = d.agents[id];
-        if (!agent) return;
-        agent.launchState = "live";
-    });
+/** Whether the agent runs as a chat, whose sleep and waking are the core's, rather than in a terminal. */
+function inChat(agent: Agent): boolean {
+    return agentSupportsChat(agent.type) && agent.ptyId === undefined;
 }
 
-/**
- * Whether an agent can be put to sleep without losing anything: it can be resumed, nothing it
- * started is still running, and it is surely idle rather than guessed idle from a quiet terminal.
- */
-export function isAgentSleepable(state: StoreState, agent: Agent): boolean {
-    const shown = state.agentStatus[agent.id];
-    return (
-        agent.launchState !== "dormant" &&
-        !!agent.resumeId &&
-        !agent.keepAlive &&
-        (shown?.status === "idle" || shown?.status === "done") &&
-        !agentHasBackgroundWork(shown)
-    );
+export function resumeAgent(id: string): void {
+    const agent = getState().agents[id];
+    if (!agent) return;
+    if (inChat(agent)) {
+        void workspaceSent()
+            .then(() => acpApi.startChat(id))
+            .catch(reportError("Wake chat"));
+        return;
+    }
+    mutate((d) => {
+        const sleeping = d.agents[id];
+        if (sleeping) sleeping.launchState = "live";
+    });
 }
 
 export function sleepAgents(ids: readonly string[]): string[] {
@@ -700,19 +699,21 @@ export function sleepAgents(ids: readonly string[]): string[] {
     return slept;
 }
 
-/** Puts to sleep the agents among `ids` the core finds at rest; a chat still at work is left running. */
-export async function sleepAgentsAtRest(ids: readonly string[]): Promise<string[]> {
-    const stopped = await Promise.all(ids.map((id) => acpApi.stopIfIdle(id).catch(() => false)));
-    return sleepAgents(ids.filter((_, index) => stopped[index]));
-}
-
+/** Puts the agent to sleep; a chat the core finds still at work stays awake. */
 export function sleepAgent(id: string): boolean {
     const agent = getState().agents[id];
     if (!agent?.resumeId) {
         notify("info", "This agent is still establishing its resumable session");
         return false;
     }
-    return sleepAgents([id]).length === 1;
+    if (!inChat(agent)) return sleepAgents([id]).length === 1;
+    void acpApi
+        .stopIfIdle(id)
+        .then((stopped) => {
+            if (!stopped) notify("info", "This chat is still at work, so it stays awake");
+        })
+        .catch(reportError("Sleep chat"));
+    return true;
 }
 
 export function setAgentKeepAlive(id: string, keepAlive: boolean): void {
@@ -724,15 +725,11 @@ export function setAgentKeepAlive(id: string, keepAlive: boolean): void {
     });
 }
 
+/** Puts every idle chat to sleep now, through the core. */
 export async function sleepIdleAgents(): Promise<number> {
-    const state = getState();
-    const ids = Object.values(state.agents)
-        .filter((agent) => isAgentSleepable(state, agent))
-        .map((agent) => agent.id);
-    const live = await agentIdsWithLiveSessions(state, ids);
-    const count = (await sleepAgentsAtRest(ids.filter((id) => !live.has(id)))).length;
-    notify("info", count === 0 ? "No idle resumable agents to sleep" : `Put ${count} idle agent${count === 1 ? "" : "s"} to sleep`);
-    return count;
+    const { slept } = await coreCall<{ slept: number }>("sleepIdleChats");
+    notify("info", slept === 0 ? "No idle chats to sleep" : `Put ${slept} idle chat${slept === 1 ? "" : "s"} to sleep`);
+    return slept;
 }
 
 /** Takes how the core shows each open agent, from its device view. */

@@ -1487,7 +1487,7 @@ async fn handed(
         Reach::Asleep if notice => held = Some("is asleep"),
         Reach::Asleep if !core.window.is_open() => held = Some("is asleep while Sikemux is closed"),
         Reach::Asleep => {
-            launching::wake_chat(core, None, target.agent_id.clone())
+            launching::wake_chat(core, target.agent_id.clone())
                 .await
                 .map_err(|error| format!("{name} is asleep and did not wake: {error}"))?;
             mailbox.lock().wake_failed.remove(&target.agent_id);
@@ -1867,7 +1867,7 @@ fn deliver_later(core: &Arc<Core>, agent_id: String, pending: Pending) {
                 }
             }
             Pending::Asleep => {
-                let woke = launching::wake_chat(&core, None, agent_id.clone()).await;
+                let woke = launching::wake_chat(&core, agent_id.clone()).await;
                 let mut state = mailbox.lock();
                 match woke {
                     Ok(_) => state.wake_failed.remove(&agent_id),

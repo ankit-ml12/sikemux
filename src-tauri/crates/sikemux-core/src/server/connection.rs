@@ -691,7 +691,7 @@ async fn run_requests(
             }
             Request::AcpWake { agent_id } => {
                 tokio::spawn(async move {
-                    let result = super::launching::wake_chat(&core, Some(&client), agent_id).await;
+                    let result = super::launching::wake_chat(&core, agent_id).await;
                     client.respond(request_id, result);
                 });
             }
@@ -857,7 +857,8 @@ async fn run_requests(
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::PublishOnScreen { agent_ids, focused } => {
-                core.seen.show(client.id, agent_ids, focused);
+                let shown = core.seen.show(client.id, agent_ids, focused);
+                super::lifecycle::wake_shown(&core, shown);
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::FocusAgent { agent_id } => {

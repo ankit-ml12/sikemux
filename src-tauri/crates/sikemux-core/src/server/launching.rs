@@ -16,7 +16,7 @@ use crate::protocol::{
 use super::chat;
 use super::connection::{blocking, ClientConn};
 use super::workspace::{launcher_of, ChatChoice, ResumeChoice};
-use super::{Core, CoreError, CoreResult};
+use super::{lifecycle, Core, CoreError, CoreResult};
 
 /// Where this core's agents reach their tools; none for a core without a
 /// tool endpoint.
@@ -192,28 +192,18 @@ pub(crate) async fn start_agent(
 /// Starts an agent's chat as its record says unless it runs already, and
 /// answers once its session is ready or says why it never got there.
 pub(crate) async fn start_saved(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
-    if running(core, agent_id) {
-        return Ok(());
-    }
-    let started = start_agent(core, None, agent_id).await?;
+    lifecycle::ensure_running(core, agent_id).await?;
+    let started = core.chats.running(agent_id)?;
     chat::until_started(core, started).await.map(drop)
-}
-
-fn running(core: &Core, agent_id: &str) -> bool {
-    core.chats.get(agent_id).is_some()
 }
 
 /// Wakes an agent's chat and answers once it is ready, so a client taking it
 /// up next finds it there.
-pub(crate) async fn wake_chat(
-    core: &Arc<Core>,
-    by: Option<&Arc<ClientConn>>,
-    agent_id: String,
-) -> CoreResult<Response> {
+pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<Response> {
     let deadline = tokio::time::Instant::now() + WAKE_WAIT;
-    if !running(core, &agent_id) {
-        start_agent(core, by, &agent_id).await?;
-    }
+    tokio::time::timeout_at(deadline, lifecycle::ensure_running(core, &agent_id))
+        .await
+        .map_err(|_| CoreError::from("the chat did not wake in time"))??;
     tokio::time::timeout_at(deadline, chat::until_ready(core, &agent_id))
         .await
         .map_err(|_| CoreError::from("the chat did not wake in time"))??;

@@ -113,13 +113,6 @@ async function fetchSessions(agent: string, cwd: string, configPath?: string): P
     return p;
 }
 
-/** One session Claude Code is running now, as it reports itself. */
-export interface LiveAgentSession {
-    sessionId: string;
-    /** `busy`, `waiting`, `shell`, or `idle` — anything but `idle` still has something going. */
-    status: string;
-}
-
 /** Who one account is signed in as, in the agent's own words. */
 export interface AgentAccountStatus {
     signedIn: boolean;
@@ -199,5 +192,4 @@ export const agentApi = {
     watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
         invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),
     watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),
-    liveSessions: (configPath?: string): Promise<LiveAgentSession[]> => invoke<LiveAgentSession[]>("live_agent_sessions", { configPath }),
 };

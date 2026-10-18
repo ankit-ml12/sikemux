@@ -26,6 +26,7 @@ mod inbox;
 mod join;
 mod kept;
 mod launching;
+mod lifecycle;
 mod local_peer;
 mod messages;
 mod model_providers;
@@ -312,6 +313,7 @@ pub(crate) struct Core {
     pub(crate) shares: share::Shares,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
+    pub(crate) lifecycle: lifecycle::Lifecycle,
     pub(crate) activity_log: Arc<activity_log::ActivityLog>,
     /// Pokes the device view awake once something may be watching it.
     pub(crate) view_watched: Notify,
@@ -378,6 +380,7 @@ impl Core {
             shares: share::Shares::default(),
             workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
+            lifecycle: lifecycle::Lifecycle::default(),
             activity_log: Arc::new(activity_log::ActivityLog::new(data_dir)),
             view_watched: Notify::new(),
             view_stale: Notify::new(),
@@ -1043,6 +1046,7 @@ pub(crate) async fn run_core(
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
+        tokio::spawn(lifecycle::serve(core.clone())),
         tokio::spawn(changed::serve(core.clone())),
         tokio::spawn(tasks::publish_runs(core.clone())),
         tokio::spawn(wake::serve(

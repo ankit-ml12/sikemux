@@ -710,7 +710,7 @@ function AgentsPage() {
                             onChange={(value) => cmd.setRailDensity(value as "comfortable" | "compact")}
                         />
                     </SettingsRow>
-                    <SettingsRow label="Idle agents" desc="Put every idle agent to sleep now, freeing its process.">
+                    <SettingsRow label="Idle chats" desc="Put every idle chat to sleep now, freeing its process.">
                         <button className="settings-btn" type="button" onClick={() => void cmd.sleepIdleAgents()}>
                             Sleep now
                         </button>

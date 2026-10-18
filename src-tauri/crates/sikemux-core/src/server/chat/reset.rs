@@ -252,7 +252,7 @@ async fn resume(core: &Arc<Core>, agent_id: String) {
         resets.cancel(&agent_id);
         return;
     }
-    if let Err(error) = launching::wake_chat(core, None, agent_id.clone()).await {
+    if let Err(error) = launching::wake_chat(core, agent_id.clone()).await {
         eprintln!("sikemux core: chat {agent_id} waits to resume until it next starts: {error}");
     }
 }
