@@ -98,12 +98,12 @@ describe("graphOf", () => {
   build:
     name: Build and verify
     needs: approve
-  build-host:
-    name: Build the Linux host core (\${{ matrix.arch }})
+  build-linux:
+    name: Build Linux packages
     needs: approve
   publish:
     name: Publish
-    needs: [build, build-host, pushed-checks, checks]
+    needs: [build, build-linux, pushed-checks, checks]
 `;
     const ci = `jobs:
   changes:
@@ -112,42 +112,52 @@ describe("graphOf", () => {
     name: Frontend quality, build, and tests
   rust:
     name: Rust formatting, lint, and tests
+    needs: changes
+  linux:
+    name: Linux compile check and core tests
     needs:
       - changes
 `;
     const files = { ".github/workflows/release.yml": readJobs(release), ".github/workflows/ci.yml": readJobs(ci) };
     const shape = (graph: Graph): unknown =>
-        graph.map((column) =>
-            column.map((node) =>
-                node.inner
-                    ? { [node.title ?? ""]: shape(node.inner) }
-                    : node.title
-                      ? { [node.title]: node.jobs.map((each) => each.label) }
-                      : node.jobs[0]?.label,
-            ),
-        );
+        graph.columns.map((column) => column.map((box) => (box.jobs.length > 1 ? box.jobs.map((each) => each.label) : box.jobs[0]?.label)));
 
-    it("lays out the release run of v0.5.3-nightly.6 by what each job needs, as GitHub does", () => {
+    it("lays out the release run of v0.5.3-nightly.6 as GitHub drew it", () => {
         const jobs = [
             job(1, "Checks already run on this commit", at(0), at(1)),
             job(2, "Build and verify", at(2), at(30)),
-            job(3, "Build the Linux host core (x86_64)", at(2), at(20)),
-            job(4, "Build the Linux host core (aarch64)", at(2), at(21)),
-            { ...job(5, "Approve the stable release", at(0), at(0)), conclusion: "skipped" },
-            { ...job(6, "Checks", at(1), at(1)), conclusion: "skipped" },
-            job(7, "Publish", at(31), at(32)),
+            job(3, "Build Linux packages", at(2), at(20)),
+            { ...job(4, "Approve the stable release", at(0), at(0)), conclusion: "skipped" },
+            { ...job(5, "Checks", at(1), at(1)), conclusion: "skipped" },
+            job(6, "Publish", at(31), at(32)),
         ];
         const graph = graphOf(jobs, files, ".github/workflows/release.yml");
         expect(shape(graph)).toEqual([
-            ["Approve the stable release", "Checks already run on this commit"],
-            [
-                { Checks: [["What changed", "Frontend quality, build, and tests"], ["Rust formatting, lint, and tests"]] },
-                "Build and verify",
-                { "Build the Linux host core": ["x86_64", "aarch64"] },
-            ],
+            ["Checks already run on this commit", "Approve the stable release"],
+            ["Checks / What changed", "Checks / Frontend quality, build, and tests", ["Build and verify", "Build Linux packages"]],
+            [["Checks / Linux compile check and core tests", "Checks / Rust formatting, lint, and tests"]],
             ["Publish"],
         ]);
-        expect(graph[1]?.[0]?.inner?.flat().every((node) => node.skipped)).toBe(true);
+        expect(graph.columns[2]?.[0]?.jobs.every((each) => each.job === null && each.skipped)).toBe(true);
+        expect(graph.edges.map((edge) => edge.join(" > ")).sort()).toEqual(
+            [
+                "approve > build",
+                "build > publish",
+                "checks/changes > checks/rust",
+                "checks/frontend > publish",
+                "checks/rust > publish",
+                "pushed-checks > checks/changes",
+                "pushed-checks > checks/frontend",
+                "pushed-checks > publish",
+            ].sort(),
+        );
+    });
+
+    it("keeps a matrix job's runs in one box under its name", () => {
+        const matrix = { "m.yml": readJobs("jobs:\n  host:\n    name: Build the core (\${{ matrix.arch }})\n") };
+        const graph = graphOf([job(1, "Build the core (x86_64)", at(0), at(1)), job(2, "Build the core (aarch64)", at(0), at(1))], matrix, "m.yml");
+        expect(graph.columns[0]?.[0]?.title).toBe("Build the core");
+        expect(graph.columns[0]?.[0]?.jobs.map((each) => each.label)).toEqual(["x86_64", "aarch64"]);
     });
 
     it("reads the stages off the clock when a job is not in the file", () => {

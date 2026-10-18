@@ -1,7 +1,7 @@
-import { memo, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useId, useLayoutEffect, useMemo, useState } from "react";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import type { Job, RepoRef, Run } from "../api";
-import { edgesOf, graphOf, type Graph, type GraphJob, type GraphNode } from "../jobGraph";
+import { graphOf, type GraphBox, type GraphJob } from "../jobGraph";
 import { useHost } from "../registry";
 import { workflowJobsR } from "../resources";
 import { elapsedMs, jobsSummary, OUTCOME_LABEL, outcomeOf, type Outcome } from "../runStatus";
@@ -67,12 +67,12 @@ function JobMark({ mark }: { mark: Mark }) {
     );
 }
 
-function JobBox({ entry, node, shared }: { entry: GraphJob; node: GraphNode; shared: Shared }) {
+function JobRow({ entry, shared }: { entry: GraphJob; shared: Shared }) {
     const { job, label } = entry;
     if (!job)
         return (
-            <div className="gha-graph-job" data-idle="1" data-node={node.title ? undefined : node.id} title={label}>
-                <JobMark mark={node.skipped ? "skipped" : "idle"} />
+            <div className="gha-graph-job" data-idle="1" title={label}>
+                <JobMark mark={entry.skipped ? "skipped" : "idle"} />
                 <span className="gha-graph-job-name">{label}</span>
             </div>
         );
@@ -82,7 +82,6 @@ function JobBox({ entry, node, shared }: { entry: GraphJob; node: GraphNode; sha
         <button
             type="button"
             className="gha-graph-job"
-            data-node={node.title ? undefined : node.id}
             data-on={shared.openJob === job.id ? "1" : "0"}
             title={job.name}
             onClick={() => shared.onOpen(job.id)}>
@@ -93,31 +92,16 @@ function JobBox({ entry, node, shared }: { entry: GraphJob; node: GraphNode; sha
     );
 }
 
-function NodeBox({ node, shared }: { node: GraphNode; shared: Shared }) {
-    if (!node.title) return node.jobs[0] ? <JobBox entry={node.jobs[0]} node={node} shared={shared} /> : null;
+function Box({ box, shared }: { box: GraphBox; shared: Shared }) {
     return (
-        <div className="gha-graph-group" data-node={node.id} data-called={node.inner ? "1" : "0"}>
-            <div className="gha-graph-group-title" title={node.title}>
-                {node.title}
-            </div>
-            {node.inner ? (
-                <Columns graph={node.inner} shared={shared} />
-            ) : (
-                node.jobs.map((entry) => <JobBox key={entry.job?.id ?? entry.label} entry={entry} node={node} shared={shared} />)
-            )}
-        </div>
-    );
-}
-
-function Columns({ graph, shared }: { graph: Graph; shared: Shared }) {
-    return (
-        <div className="gha-graph-columns">
-            {graph.map((column) => (
-                <div className="gha-graph-stage" key={column.map((node) => node.id).join("|")}>
-                    {column.map((node) => (
-                        <NodeBox key={node.id} node={node} shared={shared} />
-                    ))}
+        <div className="gha-graph-box" data-node={box.id} data-many={box.title || box.jobs.length > 1 ? "1" : "0"}>
+            {box.title && (
+                <div className="gha-graph-group-title" title={box.title}>
+                    {box.title}
                 </div>
+            )}
+            {box.jobs.map((entry) => (
+                <JobRow key={entry.job?.id ?? entry.label} entry={entry} shared={shared} />
             ))}
         </div>
     );
@@ -128,6 +112,8 @@ interface Drawn {
     height: number;
     lines: string[];
     dots: [number, number][];
+    /** Where the boxes are, so a line passing behind one never shows through it. */
+    holes: { x: number; y: number; width: number; height: number }[];
 }
 
 function offsetWithin(element: HTMLElement, root: HTMLElement): { x: number; y: number } {
@@ -142,39 +128,59 @@ function offsetWithin(element: HTMLElement, root: HTMLElement): { x: number; y: 
     return { x, y };
 }
 
-/** Lines meet a box at the middle of its first row, so a tall box joins where its name is. */
+const ELBOW = 6;
+
+/** Out of a box sideways, along the middle of the gap before the box it enters, and in sideways, turning on round corners. */
+function route(x1: number, y1: number, x2: number, y2: number, turn: number): string {
+    if (Math.abs(y2 - y1) < 0.5) return `M${x1} ${y1}H${x2}`;
+    const radius = Math.max(0, Math.min(ELBOW, Math.abs(y2 - y1) / 2, turn - x1, x2 - turn));
+    const down = y2 > y1 ? 1 : -1;
+    return (
+        `M${x1} ${y1}H${turn - radius}Q${turn} ${y1} ${turn} ${y1 + down * radius}` +
+        `V${y2 - down * radius}Q${turn} ${y2} ${turn + radius} ${y2}H${x2}`
+    );
+}
+
+/** Lines meet a box at the middle of its first row, so a tall box joins where its first job is. */
 function measure(canvas: HTMLElement, edges: readonly [string, string][]): Drawn {
-    const boxes = new Map<string, HTMLElement>();
-    for (const box of canvas.querySelectorAll<HTMLElement>("[data-node]")) if (box.dataset.node) boxes.set(box.dataset.node, box);
+    const columns = [...canvas.querySelectorAll<HTMLElement>("[data-column]")].map((column) => {
+        const { x } = offsetWithin(column, canvas);
+        return { left: x, right: x + column.offsetWidth };
+    });
+    const boxes = new Map<string, { left: number; right: number; y: number; column: number }>();
+    const holes: Drawn["holes"] = [];
+    for (const box of canvas.querySelectorAll<HTMLElement>("[data-node]")) {
+        const row = box.querySelector<HTMLElement>(".gha-graph-job") ?? box;
+        const at = offsetWithin(box, canvas);
+        const middle = offsetWithin(row, canvas).y + row.offsetHeight / 2;
+        const column = Number(box.closest<HTMLElement>("[data-column]")?.dataset.column ?? 0);
+        if (box.dataset.node) boxes.set(box.dataset.node, { left: at.x, right: at.x + box.offsetWidth, y: middle, column });
+        holes.push({ x: at.x, y: at.y, width: box.offsetWidth, height: box.offsetHeight });
+    }
     const lines: string[] = [];
     const dots = new Map<string, [number, number]>();
     for (const [from, to] of edges) {
         const start = boxes.get(from);
         const end = boxes.get(to);
         if (!start || !end) continue;
-        const a = offsetWithin(start, canvas);
-        const b = offsetWithin(end, canvas);
-        const x1 = a.x + start.offsetWidth;
-        const y1 = a.y + Math.min(start.offsetHeight / 2, 14);
-        const x2 = b.x;
-        const y2 = b.y + Math.min(end.offsetHeight / 2, 14);
-        const bend = Math.max(12, (x2 - x1) / 2);
-        lines.push(`M${x1} ${y1}C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`);
-        dots.set(`${x1},${y1}`, [x1, y1]);
-        dots.set(`${x2},${y2}`, [x2, y2]);
+        const before = columns[end.column - 1]?.right ?? start.right;
+        lines.push(route(start.right, start.y, end.left, end.y, (before + end.left) / 2));
+        dots.set(`${start.right},${start.y}`, [start.right, start.y]);
+        dots.set(`${end.left},${end.y}`, [end.left, end.y]);
     }
-    return { width: canvas.offsetWidth, height: canvas.offsetHeight, lines, dots: [...dots.values()] };
+    return { width: canvas.offsetWidth, height: canvas.offsetHeight, lines, dots: [...dots.values()], holes };
 }
 
 function Edges({ canvas, edges }: { canvas: HTMLDivElement | null; edges: readonly [string, string][] }) {
     const [drawn, setDrawn] = useState<Drawn | null>(null);
+    const mask = `gha-graph-edges-${useId().replace(/[^\w-]/g, "")}`;
     useLayoutEffect(() => {
         const root = canvas;
         if (!root) return;
         let last = "";
         const draw = () => {
             const next = measure(root, edges);
-            const key = `${next.width}x${next.height}:${next.lines.join("")}`;
+            const key = `${next.width}x${next.height}:${next.lines.join("")}:${next.holes.map((hole) => `${hole.x},${hole.y},${hole.height}`).join(" ")}`;
             if (key === last) return;
             last = key;
             setDrawn(next);
@@ -188,11 +194,19 @@ function Edges({ canvas, edges }: { canvas: HTMLDivElement | null; edges: readon
     if (!drawn) return null;
     return (
         <svg className="gha-graph-edges" width={drawn.width} height={drawn.height} aria-hidden="true">
-            {drawn.lines.map((line) => (
-                <path key={line} d={line} />
-            ))}
+            <mask id={mask} maskUnits="userSpaceOnUse" x={0} y={0} width={drawn.width} height={drawn.height}>
+                <rect width={drawn.width} height={drawn.height} fill="white" />
+                {drawn.holes.map((hole) => (
+                    <rect key={`${hole.x},${hole.y}`} x={hole.x} y={hole.y} width={hole.width} height={hole.height} fill="black" />
+                ))}
+            </mask>
+            <g mask={`url(#${mask})`}>
+                {drawn.lines.map((line) => (
+                    <path key={line} d={line} />
+                ))}
+            </g>
             {drawn.dots.map(([x, y]) => (
-                <circle key={`${x},${y}`} cx={x} cy={y} r={2.5} />
+                <circle key={`${x},${y}`} cx={x} cy={y} r={3} />
             ))}
         </svg>
     );
@@ -204,7 +218,6 @@ export const JobGraph = memo(function JobGraph({ repo, run, jobs, now, active, o
     const files = useResourceEnabled(active && readable, workflowJobsR, repo, run.path ?? "", run.sha);
     const settled = !readable || !!files.data || !!files.error;
     const graph = useMemo(() => graphOf(jobs, files.data ?? null, run.path), [jobs, files.data, run.path]);
-    const edges = useMemo(() => edgesOf(graph), [graph]);
     const [canvas, setCanvas] = useState<HTMLDivElement | null>(null);
     const shared = useMemo(() => ({ now, openJob, onOpen }), [now, openJob, onOpen]);
     const name = fileName(run.path);
@@ -229,13 +242,21 @@ export const JobGraph = memo(function JobGraph({ repo, run, jobs, now, active, o
             </div>
             {!settled ? (
                 <div className="gha-graph-stages" />
-            ) : graph.length === 0 ? (
+            ) : graph.columns.length === 0 ? (
                 <div className="gha-dim gha-graph-empty">No jobs yet</div>
             ) : (
                 <div className="gha-graph-stages">
                     <div className="gha-graph-canvas" ref={setCanvas}>
-                        <Edges canvas={canvas} edges={edges} />
-                        <Columns graph={graph} shared={shared} />
+                        <Edges canvas={canvas} edges={graph.edges} />
+                        <div className="gha-graph-columns">
+                            {graph.columns.map((column, index) => (
+                                <div className="gha-graph-stage" data-column={index} key={column.map((box) => box.id).join("|")}>
+                                    {column.map((box) => (
+                                        <Box key={box.id} box={box} shared={shared} />
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}
