@@ -206,3 +206,9 @@ export const billingR = resource({
     fetch: (account: string, project: string) => gcpApi.billing(target(account, project)),
     staleAfterMs: 10 * 60_000,
 });
+
+export const snapshotsR = resource({
+    kind: "gcp.snapshots",
+    fetch: (account: string, project: string) => gcpApi.snapshots(target(account, project)),
+    staleAfterMs: 60_000,
+});

@@ -1,7 +1,7 @@
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { runInTerminal, swallow } from "../../../plugin-api/host";
 import { gcpApi, type Target, type VmDetail, type VmInstance } from "../api";
-import { instanceR, instancesR, metricsR, serialR } from "../resources";
+import { instanceR, instancesR, metricsR, serialR, snapshotsR } from "../resources";
 import { splitOpen, updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { LogStream } from "./LogStream";
@@ -51,36 +51,72 @@ export function ComputePage({ paneId, active, target }: ProductProps) {
     return <InstanceList paneId={paneId} active={active} target={target} />;
 }
 
+const LISTS = [
+    { value: "instances", label: "VM instances" },
+    { value: "snapshots", label: "Snapshots" },
+] as const;
+
 function InstanceList({ paneId, active, target }: ProductProps) {
     const view = useGcpView(paneId);
-    const instances = useResourceEnabled(active, instancesR, ...keyOf(target));
+    const list = view.list === "snapshots" ? "snapshots" : "instances";
+    const instances = useResourceEnabled(active && list === "instances", instancesR, ...keyOf(target));
     const words = view.filter.trim().toLowerCase();
     return (
         <div className="gcp-page">
-            <PageHeader title="VM instances">
+            <PageHeader title="Compute Engine">
                 <Button onClick={() => visit(consoleUrl("compute/instances", target.project))}>Create instance in Cloud console</Button>
             </PageHeader>
-            <Filter paneId={paneId} placeholder="Filter VM instances" />
-            <Loaded handle={instances} label="VM instances" empty={(rows) => (rows.length === 0 ? "No VM instances in this project." : null)}>
-                {(rows) => (
-                    <Table
-                        label="VM instances"
-                        rows={rows.filter((vm) => !words || vm.name.toLowerCase().includes(words) || vm.zone.includes(words))}
-                        rowKey={(vm) => `${vm.zone}/${vm.name}`}
-                        onOpen={(vm: VmInstance) => updateGcpView(paneId, { open: `${vm.zone}/${vm.name}`, tab: null })}
-                        columns={[
-                            { label: "Status", width: "70px", cell: (vm) => <Status state={vm.status} /> },
-                            { label: "Name", width: "minmax(140px, 1.2fr)", cell: (vm) => <span className="gcp-name">{vm.name}</span> },
-                            { label: "Zone", cell: (vm) => vm.zone },
-                            { label: "Machine type", cell: (vm) => vm.machineType },
-                            { label: "Internal IP", cell: (vm) => vm.internalIps.join(", ") || "—" },
-                            { label: "External IP", cell: (vm) => vm.externalIps.join(", ") || "—" },
-                            { label: "", width: "60px", cell: (vm) => (vm.spot ? <span className="gcp-chip">Spot</span> : null) },
-                        ]}
-                    />
-                )}
-            </Loaded>
+            <Tabs label="Compute Engine" tabs={LISTS} value={list} onChange={(value) => updateGcpView(paneId, { list: value, filter: "" })} />
+            <Filter paneId={paneId} placeholder={list === "snapshots" ? "Filter snapshots" : "Filter VM instances"} />
+            {list === "snapshots" ? (
+                <Snapshots active={active} target={target} filter={view.filter} />
+            ) : (
+                <Loaded handle={instances} label="VM instances" empty={(rows) => (rows.length === 0 ? "No VM instances in this project." : null)}>
+                    {(rows) => (
+                        <Table
+                            label="VM instances"
+                            rows={rows.filter((vm) => !words || vm.name.toLowerCase().includes(words) || vm.zone.includes(words))}
+                            rowKey={(vm) => `${vm.zone}/${vm.name}`}
+                            onOpen={(vm: VmInstance) => updateGcpView(paneId, { open: `${vm.zone}/${vm.name}`, tab: null })}
+                            columns={[
+                                { label: "Status", width: "70px", cell: (vm) => <Status state={vm.status} /> },
+                                { label: "Name", width: "minmax(140px, 1.2fr)", cell: (vm) => <span className="gcp-name">{vm.name}</span> },
+                                { label: "Zone", cell: (vm) => vm.zone },
+                                { label: "Machine type", cell: (vm) => vm.machineType },
+                                { label: "Internal IP", cell: (vm) => vm.internalIps.join(", ") || "—" },
+                                { label: "External IP", cell: (vm) => vm.externalIps.join(", ") || "—" },
+                                { label: "", width: "60px", cell: (vm) => (vm.spot ? <span className="gcp-chip">Spot</span> : null) },
+                            ]}
+                        />
+                    )}
+                </Loaded>
+            )}
         </div>
+    );
+}
+
+function Snapshots({ active, target, filter }: { active: boolean; target: Target; filter: string }) {
+    const snapshots = useResourceEnabled(active, snapshotsR, ...keyOf(target));
+    const words = filter.trim().toLowerCase();
+    return (
+        <Loaded handle={snapshots} label="snapshots" empty={(rows) => (rows.length === 0 ? "No disk snapshots in this project." : null)}>
+            {(rows) => (
+                <Table
+                    label="Snapshots"
+                    rows={rows.filter((each) => !words || each.name.includes(words) || each.disk.includes(words))}
+                    rowKey={(each) => each.name}
+                    columns={[
+                        { label: "", width: "24px", cell: (each) => <Status state={each.status} /> },
+                        { label: "Name", width: "minmax(180px, 1.6fr)", cell: (each) => each.name },
+                        { label: "Source disk", cell: (each) => each.disk },
+                        { label: "Disk size", cell: (each) => (each.sizeGb === null ? "—" : `${each.sizeGb} GB`) },
+                        { label: "Stored", cell: (each) => size(each.storageBytes) },
+                        { label: "Location", cell: (each) => each.locations?.join(", ") ?? "—" },
+                        { label: "Created", cell: (each) => ago(each.createdAt) },
+                    ]}
+                />
+            )}
+        </Loaded>
     );
 }
 
@@ -149,7 +185,7 @@ function InstancePage({
                             <span className="gcp-muted">{detail.machineType}</span>
                         </div>
                         <Tabs label={name} tabs={TABS} value={tab} onChange={(value) => updateGcpView(paneId, { tab: value })} />
-                        {tab === "details" && <InstanceFacts detail={detail} />}
+                        {tab === "details" && <InstanceFacts target={target} detail={detail} />}
                         {tab === "observability" && <InstanceCpu active={active} target={target} id={detail.id} />}
                         {tab === "serial" && <Serial active={active} target={target} zone={zone} name={name} vm={detail} />}
                         {tab === "logs" && <LogStream active={active} target={target} query={{ resource: "instance", name: detail.id }} />}
@@ -160,7 +196,8 @@ function InstancePage({
     );
 }
 
-function InstanceFacts({ detail }: { detail: VmDetail }) {
+function InstanceFacts({ target, detail }: { target: Target; detail: VmDetail }) {
+    const action = useAction();
     return (
         <div className="gcp-section">
             <Facts
@@ -185,6 +222,28 @@ function InstanceFacts({ detail }: { detail: VmDetail }) {
                     { label: "Size", cell: (disk) => (disk.sizeGb === null ? "—" : size(disk.sizeGb * 1024 ** 3)) },
                     { label: "Type", cell: (disk) => (disk.boot ? "Boot disk" : "Additional disk") },
                     { label: "Mode", cell: (disk) => disk.mode?.replace("READ_", "Read ").replace("WRITE", "write").replace("ONLY", "only") ?? "—" },
+                    {
+                        label: "",
+                        width: "110px",
+                        align: "end",
+                        cell: (disk) => (
+                            <Button
+                                disabled={action.busy}
+                                onClick={() =>
+                                    void action.run(
+                                        {
+                                            title: `Snapshot ${disk.name}?`,
+                                            body: `Compute Engine takes a snapshot of ${disk.name} as it is now. A running VM's disk is captured crash-consistent.`,
+                                            confirmLabel: "Take snapshot",
+                                        },
+                                        `Taking a snapshot of ${disk.name}`,
+                                        () => gcpApi.snapshotDisk(target, detail.zone, disk.name),
+                                    )
+                                }>
+                                Snapshot
+                            </Button>
+                        ),
+                    },
                 ]}
             />
         </div>

@@ -21,6 +21,8 @@ export function mockApi() {
         instance: vi.fn(),
         instancePower: vi.fn(),
         instanceSerial: vi.fn(),
+        snapshots: vi.fn(),
+        snapshotDisk: vi.fn(),
         clusters: vi.fn(),
         workloads: vi.fn(),
         pods: vi.fn(),
@@ -108,6 +110,7 @@ export function answerEmpty(api: ReturnType<typeof mockApi>) {
         "tables",
         "nodes",
         "podEvents",
+        "snapshots",
     ] as const)
         api[list].mockResolvedValue([]);
     api.pubsub.mockResolvedValue({ topics: [], subscriptions: [] });

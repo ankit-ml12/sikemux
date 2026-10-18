@@ -84,4 +84,18 @@ describe("Compute Engine", () => {
         fireEvent.click(await screen.findByRole("tab", { name: "Serial console" }));
         expect(await screen.findByText(/Reached target Multi-User System/)).toBeInTheDocument();
     });
+
+    it("takes a snapshot of a disk, and lists the project's snapshots", async () => {
+        api.snapshotDisk.mockResolvedValue({ operation: "op", snapshot: "web-1-2024" });
+        api.snapshots.mockResolvedValue([
+            { name: "web-1-2024", disk: "web-1", status: "READY", sizeGb: 20, storageBytes: 1073741824, locations: ["us"], createdAt: null },
+        ]);
+        renderPage();
+        fireEvent.click(await screen.findByRole("row", { name: /web-1/ }));
+        fireEvent.click(within(await screen.findByRole("table", { name: "Disks" })).getByRole("button", { name: "Snapshot" }));
+        await waitFor(() => expect(api.snapshotDisk).toHaveBeenCalledWith(target, "us-central1-a", "web-1"));
+        fireEvent.click(screen.getByRole("button", { name: "Back to VM instances" }));
+        fireEvent.click(await screen.findByRole("tab", { name: "Snapshots" }));
+        expect(await screen.findByText("web-1-2024")).toBeInTheDocument();
+    });
 });

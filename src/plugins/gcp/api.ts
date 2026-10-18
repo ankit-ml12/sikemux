@@ -151,6 +151,16 @@ export interface VmDetail extends VmInstance {
     ssh: string[];
 }
 
+export interface Snapshot {
+    name: string;
+    disk: string;
+    status: string;
+    sizeGb: number | null;
+    storageBytes: number | null;
+    locations: string[] | null;
+    createdAt: string | null;
+}
+
 export interface SerialOutput {
     contents: string;
     start: string | number | null;
@@ -611,6 +621,9 @@ export const gcpApi = {
     instanceSerial: (target: Target, zone: string, instance: string) =>
         backend.call<SerialOutput>("instanceSerial", { ...t(target), zone, instance }),
 
+    snapshots: (target: Target) => backend.call<Snapshot[]>("snapshots", t(target)),
+    snapshotDisk: (target: Target, zone: string, disk: string) =>
+        backend.call<Operation & { snapshot: string }>("snapshotDisk", { ...t(target), zone, disk }),
     clusters: (target: Target) => backend.call<GkeCluster[]>("clusters", t(target)),
     workloads: (target: Target, location: string, cluster: string) => backend.call<Workload[]>("workloads", { ...t(target), location, cluster }),
     pods: (target: Target, location: string, cluster: string, selector: string | null) =>
