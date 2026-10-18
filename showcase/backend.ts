@@ -328,12 +328,15 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("sim_watch", async ({ format, onFrame }) => {
       if (format !== "mjpeg")
         throw { category: "unavailable", message: "streamUnavailable" };
-      const frame = await (
-        await fetch("/__showcase/simulator/frame")
-      ).arrayBuffer();
       const channel = onFrame as { onmessage: (frame: ArrayBuffer) => void };
+      this.simulator = channel;
+      const frame = await (
+        await fetch(`/__showcase/simulator/frame/${this.simulatorScreen}`)
+      ).arrayBuffer();
       for (const delay of [50, 400, 1200])
-        setTimeout(() => channel.onmessage(frame.slice(0)), delay);
+        setTimeout(() => {
+          if (this.simulator === channel) channel.onmessage(frame.slice(0));
+        }, delay);
       return 1;
     });
     this.on("activity_summary", demoActivity);
@@ -742,6 +745,16 @@ export class ShowcaseBackend implements IpcTransport {
 
   private board = DEMO_BOARD;
 
+  private simulator: { onmessage: (frame: ArrayBuffer) => void } | null = null;
+  /** The phone showcase screen the demo simulator shows, by its file name. */
+  simulatorScreen = "asking";
+
+  async showSimulator(screen: string): Promise<void> {
+    this.simulatorScreen = screen;
+    const frame = await (await fetch(`/__showcase/simulator/frame/${screen}`)).arrayBuffer();
+    this.simulator?.onmessage(frame);
+  }
+
   /** The commit the demo's history starts from, so a capture can hold it still while the repository moves on. */
   historyHead = "HEAD";
 
@@ -820,6 +833,7 @@ export class ShowcaseBackend implements IpcTransport {
       durationMs: _durationMs,
       board: _board,
       browser: _browser,
+      simulator: _simulator,
       asks: _asks,
       ...update
     }: Record<string, unknown>) => update;
@@ -855,6 +869,7 @@ export class ShowcaseBackend implements IpcTransport {
             shown,
           ]);
           if (card) this.changeCard(card);
+          if (typeof update.simulator === "string") void this.showSimulator(update.simulator);
           if (page) {
             showBrowserPage(agentId, page);
             this.emit("browser-tabs-changed", null);

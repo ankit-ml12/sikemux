@@ -434,6 +434,8 @@ const wrenChecksTheCover: Update[] = [
   },
 ];
 
+const cardReply = say("Allow is the filled button now, with Deny and Always allow beside it as outlines:");
+
 /**
  * A turn a video plays when it says so, after the chat has opened. A step's
  * `board` changes a card, `browser` moves the agent's tab to a page, and
@@ -444,6 +446,38 @@ export const CUED_TURNS: Record<string, { agentId: string; updates: Update[] }> 
   "wren-is-asked-to-check-the-cover": {
     agentId: AGENTS.hero.id,
     updates: [user(COVER_PROMPT), ...wrenChecksTheCover],
+  },
+  "comet-checks-the-card": {
+    agentId: AGENTS.phone.id,
+    updates: [
+      think("Installing the build on the simulator, then opening a chat that asks for permission."),
+      tool("execute", "mcp__sikemux-tools__sim_install", {
+        rawInput: { path: "build/SikemuxDev.app" },
+        durationMs: 1_200,
+      }),
+      tool("execute", "mcp__sikemux-tools__sim_launch", {
+        rawInput: { bundleId: "com.nodelike.sikemux.dev" },
+        simulator: "home",
+        durationMs: 1_500,
+      }),
+      tool("edit", "mcp__sikemux-tools__sim_tap", {
+        rawInput: { label: "MacBook Pro" },
+        simulator: "device",
+        durationMs: 1_500,
+      }),
+      tool("edit", "mcp__sikemux-tools__sim_tap", {
+        rawInput: { label: "Add dark mode to settings" },
+        simulator: "asking",
+        durationMs: 1_600,
+      }),
+      tool("read", "mcp__sikemux-tools__sim_screenshot", { rawInput: {}, durationMs: 800 }),
+      cardReply,
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: cardReply.messageId,
+        content: { type: "image", uri: "/__showcase/simulator/frame/asking" },
+      },
+    ],
   },
   "otter-runs-the-rail-tests": {
     agentId: AGENTS.rail.id,

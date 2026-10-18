@@ -425,8 +425,10 @@ function serveDemoFiles(server: ViteDevServer | PreviewServer, port: number) {
       response.setHeader("Content-Type", "application/json");
       return response.end(JSON.stringify(await simulatorChrome()));
     }
-    if (request.url === "/simulator/frame") {
-      const frame = join(import.meta.dirname, "../mobile/showcase/out/asking.png");
+    // The phone showcase's screens, the permission card unless a screen is named.
+    const screen = request.url?.match(/^\/simulator\/frame(?:\/([\w-]+))?$/);
+    if (screen) {
+      const frame = join(import.meta.dirname, `../mobile/showcase/out/${screen[1] ?? "asking"}.png`);
       if (!existsSync(frame)) return response.writeHead(404).end();
       response.setHeader("Content-Type", "image/png");
       return response.end(readFileSync(frame));
