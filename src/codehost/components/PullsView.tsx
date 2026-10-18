@@ -34,8 +34,8 @@ import { checksSummary, isUnfinished, outcomeOf, overallOutcome, type Outcome } 
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
-import { OutcomeIcon } from "./ActionsIcon";
-import { pullState } from "../project";
+import { OutcomeIcon, SectionIcon } from "./ActionsIcon";
+import { closedIssues, pullState } from "../project";
 import { Branch, Comments, Labels, StateMark, Who } from "./Bits";
 import { useBusy } from "./hooks";
 import { useEvery, useNow } from "../../plugin-api/hooks";
@@ -75,6 +75,7 @@ function PullHeadline({
     trailing?: ReactNode;
     /** Sits at the end of the line under the title, after its branches. */
     meta?: ReactNode;
+    /** The open pull request's header: when it last changed and its labels, rather than the list's opened and updated. */
     labels?: boolean;
 }) {
     const state = pullState(pull);
@@ -89,13 +90,17 @@ function PullHeadline({
                 {trailing}
             </span>
             <span className="pr-headline-sub">
-                <span className="pr-headline-who">
-                    {pull.author ?? "someone"} · #{pull.number}
-                    <span className="pr-headline-ago">
-                        {labels ? ", updated " : " · "}
-                        {formatAgo(pull.updatedAt, now)}
+                {labels ? (
+                    <span className="pr-headline-who">
+                        {pull.author ?? "someone"} · #{pull.number}
+                        <span className="pr-headline-ago">, updated {formatAgo(pull.updatedAt, now)}</span>
                     </span>
-                </span>
+                ) : (
+                    <span className="pr-headline-who">
+                        #{pull.number} · {pull.author ?? "someone"} opened {formatAgo(pull.createdAt, now)}
+                        {formatAgo(pull.updatedAt, now) !== formatAgo(pull.createdAt, now) && <> · updated {formatAgo(pull.updatedAt, now)}</>}
+                    </span>
+                )}
                 {pull.head && <span className="pr-ref pr-ref-head">{pull.head}</span>}
                 {pull.head && pull.base && <span className="pr-ref-arrow">→</span>}
                 {pull.base && <span className="pr-ref">{pull.base}</span>}
@@ -148,24 +153,31 @@ function PullRow({
     const own = useResourceEnabled(active && !recent && !!pull.headSha, runsR, { ...repo, headSha: pull.headSha ?? "", perPage: 30 });
     const runs = recent ?? own.data?.runs;
     const ci = runs?.length ? <PullCi runs={runs} /> : null;
+    const issues = useMemo(() => closedIssues(pull.body), [pull.body]);
     return (
         <button type="button" className="pr-row pr-headline" onClick={onOpen}>
             <PullHeadline
                 pull={pull}
                 now={now}
                 title={<span className="pr-headline-title">{pull.title}</span>}
-                trailing={<Comments count={pull.comments ?? 0} />}
                 meta={ci && <span className="pr-ci-meta">{ci}</span>}
             />
-            <span className="pr-row-reviewers">
-                {pull.reviewers.map((login) => (
-                    <Face key={login} login={login} url={pull.avatars[login] ?? null} />
-                ))}
-            </span>
-            <span className="pr-row-comments">
+            <span className="pr-row-side">
+                {pull.reviewers.length > 0 && (
+                    <span className="pr-row-reviewers" title={`Reviewers: ${pull.reviewers.join(", ")}`}>
+                        {pull.reviewers.map((login) => (
+                            <Face key={login} login={login} url={pull.avatars[login] ?? null} />
+                        ))}
+                    </span>
+                )}
+                {issues.length > 0 && (
+                    <span className="pr-row-issues" title={`Closes ${issues.map((number) => `#${number}`).join(", ")}`}>
+                        <SectionIcon section="issues" size={13} />
+                        {issues.length}
+                    </span>
+                )}
                 <Comments count={pull.comments ?? 0} />
             </span>
-            <span className="pr-row-updated">{formatAgo(pull.updatedAt, now)}</span>
         </button>
     );
 }
@@ -858,12 +870,6 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                     <EmptyState icon={<IconPullRequest size={20} />} message={`No ${listState === "all" ? "" : listState} pull requests.`} />
                 ) : (
                     <div className="pr-rows">
-                        <div className="pr-cols" aria-hidden="true">
-                            <span>Pull request</span>
-                            <span>Reviewers</span>
-                            <span>Comments</span>
-                            <span>Updated</span>
-                        </div>
                         {rows.map((pull) => (
                             <PullRow
                                 key={pull.number}
