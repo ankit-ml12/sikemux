@@ -269,7 +269,7 @@ fn tools(app: &AppHandle) -> Result<Tools, String> {
         executable: crate::cli_paths::cli_executable_path()
             .ok_or("the sikemux-editor sidecar is missing; build it with node scripts/build-cli-sidecar.mjs")?,
         endpoint: crate::cli_paths::cli_endpoint_path().ok_or("CLI endpoint unavailable")?,
-        data_dir: app.path().app_data_dir().map_err(|error| error.to_string())?,
+        data_dir: app.path().app_data_dir().ok(),
     })
 }
 
@@ -287,7 +287,10 @@ async fn chat_launch(
     }
     let program = spec.program().await?;
     let providers = crate::model_providers::wiring(&spec.provider, model_provider, model).await?;
-    let skills = sikemux_core::launch::skills::ready(&tools.data_dir);
+    let skills = tools
+        .data_dir
+        .as_deref()
+        .and_then(sikemux_core::launch::skills::ready);
     let mut launch = spec.chat(program, providers, skills);
     launch
         .env
@@ -393,16 +396,6 @@ pub async fn acp_start(
         },
         false,
     );
-    let session_id = start.session_id.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::activity::record_launch(
-            &provider,
-            &cwd,
-            "chat",
-            resume_id.is_some().then_some(session_id.as_str()),
-            config_path.as_deref(),
-        )
-    });
     Ok(start)
 }
 

@@ -11,7 +11,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::sync::Notify;
@@ -19,18 +18,17 @@ use tokio::sync::Notify;
 use crate::agent_accounts::status::{self, AgentStatus};
 use crate::agent_accounts::Book;
 use crate::agent_catalog::{AgentKind, AGENTS};
-use crate::cli::protocol::{is_tool_agent_id, REVIEWER_OFFER, TOOLS_OFFER_ENV};
+use crate::cli::protocol::is_tool_agent_id;
 use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec};
 use crate::protocol::{
-    Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, Event, LauncherInfo,
-    PinnedChat, ProjectInfo, RecentInfo, RequestId, Response, SpaceInfo, Workspace, WorkspaceAgent,
-    WAKE_WAIT,
+    Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, LauncherInfo,
+    PinnedChat, ProjectInfo, RecentInfo, SpaceInfo, Workspace, WorkspaceAgent,
 };
 use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRef, RecentRequest};
 
 use super::chat;
-use super::connection::{blocking, ClientConn};
+use super::connection::blocking;
 use super::names::project_of;
 use super::wake::Wake;
 use super::{Core, CoreError, CoreResult};
@@ -78,13 +76,13 @@ pub(crate) struct Launcher {
 /// its chat signs in as, which no device sees.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Kept {
+pub(crate) struct Kept {
     #[serde(flatten)]
-    agent: WorkspaceAgent,
+    pub agent: WorkspaceAgent,
     #[serde(default)]
-    account: Option<ChatAccount>,
+    pub account: Option<ChatAccount>,
     #[serde(default)]
-    fallbacks: Vec<ChatAccount>,
+    pub fallbacks: Vec<ChatAccount>,
 }
 
 /// What survives a restart of the core.
@@ -195,7 +193,7 @@ pub(crate) struct AgentRun {
 }
 
 /// The launcher that starts `agent`: its CLI on the account it runs on.
-fn launcher_of(agent: &WorkspaceAgent) -> String {
+pub(crate) fn launcher_of(agent: &WorkspaceAgent) -> String {
     match &agent.profile_id {
         Some(profile) => format!("{}:{profile}", agent.provider),
         None => agent.provider.clone(),
@@ -733,7 +731,7 @@ impl Workspaces {
     }
 
     /// How the agent's chat was last running, to start it again.
-    fn kept_launch(&self, agent_id: &str) -> Option<Kept> {
+    pub(crate) fn kept_launch(&self, agent_id: &str) -> Option<Kept> {
         self.lock().saved.kept(agent_id).cloned()
     }
 
@@ -869,7 +867,7 @@ impl Workspaces {
     /// agent not yet named, on `provider` when one is named, and on `model`
     /// or the provider's coding model. Reads the providers' keys from the
     /// Keychain, so it blocks.
-    fn chat_launch(
+    pub(crate) fn chat_launch(
         &self,
         launcher: &Launcher,
         program: PathBuf,
@@ -907,7 +905,7 @@ impl Workspaces {
         })
     }
 
-    fn project_path(&self, id: &str) -> CoreResult<PathBuf> {
+    pub(crate) fn project_path(&self, id: &str) -> CoreResult<PathBuf> {
         self.lock()
             .saved
             .project(id)
@@ -915,7 +913,7 @@ impl Workspaces {
             .ok_or_else(|| CoreError::from("that project is not on this host"))
     }
 
-    fn launcher(&self, id: &str) -> CoreResult<Launcher> {
+    pub(crate) fn launcher(&self, id: &str) -> CoreResult<Launcher> {
         self.lock()
             .launchers
             .iter()
@@ -1060,7 +1058,11 @@ impl Workspaces {
     }
 
     /// How to start the recent chat a device chose, the way it would start a new one.
-    fn resume_choice(&self, choice: ResumeChoice, open: &[ChatInfo]) -> CoreResult<ChatChoice> {
+    pub(crate) fn resume_choice(
+        &self,
+        choice: ResumeChoice,
+        open: &[ChatInfo],
+    ) -> CoreResult<ChatChoice> {
         let published = self.lock();
         let saved = &published.saved;
         let chat = published
@@ -1448,58 +1450,6 @@ impl Workspaces {
     }
 }
 
-/// Gives `launch` to `agent_id`, with the tools that are its own.
-pub(crate) fn own_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
-    own_launch_offering(core, launch, agent_id, None);
-}
-
-/// [`own_launch`] for a reviewer Auto starts, which also gets the tools only
-/// a reviewer has.
-pub(crate) fn own_review_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
-    own_launch_offering(core, launch, agent_id, Some(REVIEWER_OFFER));
-}
-
-fn own_launch_offering(core: &Core, launch: &mut ChatLaunch, agent_id: &str, offer: Option<&str>) {
-    launch.agent_id = agent_id.to_owned();
-    launch.mcp_servers = cli_endpoint(core)
-        .and_then(|endpoint| tools_server(agent_id, &endpoint, offer))
-        .into_iter()
-        .collect();
-    if let Some(offer) = offer {
-        launch.env.insert(TOOLS_OFFER_ENV.into(), offer.to_owned());
-    }
-    launch
-        .env
-        .insert("SIKEMUX_AGENT_ID".into(), agent_id.to_owned());
-}
-
-/// The agents' own tools, served by this binary run as an MCP server, the
-/// same way the app wires them into a chat it starts.
-fn tools_server(agent_id: &str, endpoint: &Path, offer: Option<&str>) -> Option<Value> {
-    let executable = std::env::current_exe().ok()?;
-    let mut server = McpServerStdio::new("sikemux-tools", executable);
-    server.args = vec!["--tools-mcp".into()];
-    server.env = vec![
-        EnvVariable::new("SIKEMUX_TOOLS_AGENT_ID", agent_id),
-        EnvVariable::new("SIKEMUX_CLI_ENDPOINT", endpoint.to_string_lossy()),
-    ];
-    server
-        .env
-        .extend(offer.map(|offer| EnvVariable::new(TOOLS_OFFER_ENV, offer)));
-    serde_json::to_value(McpServer::Stdio(server)).ok()
-}
-
-fn cli_endpoint(core: &Core) -> Option<PathBuf> {
-    core.listening.get()?.config.cli_endpoint.clone()
-}
-
-fn running(core: &Core, agent_id: &str) -> bool {
-    core.chats
-        .list()
-        .iter()
-        .any(|chat| chat.agent_id == agent_id)
-}
-
 /// The program the core last found for `launcher`, while it is still there.
 fn still_there(launcher: &Launcher) -> Result<PathBuf, String> {
     launcher
@@ -1750,156 +1700,6 @@ async fn refresh(core: Arc<Core>, asked: u64) {
     if core.workspaces.asked.load(Ordering::SeqCst) == asked {
         core.workspaces.set_launchers(found);
         core.publish_device_view();
-    }
-}
-
-/// A chat of the app's `launcher` in `cwd`, on its program found afresh,
-/// built off the async threads.
-async fn built(core: &Arc<Core>, launcher: &str, cwd: PathBuf) -> CoreResult<(ChatLaunch, String)> {
-    let launcher = core.workspaces.launcher(launcher)?;
-    let program = launcher.agent.program().await?;
-    let core = core.clone();
-    blocking(move || {
-        let launch = core
-            .workspaces
-            .chat_launch(&launcher, program, &cwd, None, None)?;
-        Ok((launch, launcher.id))
-    })
-    .await
-}
-
-/// Starts a chat for `by`, a device the app leaves it running for when it opens.
-fn begin(
-    core: &Arc<Core>,
-    by: Option<&Arc<ClientConn>>,
-    mut launch: ChatLaunch,
-    agent_id: &str,
-    launcher: String,
-) -> CoreResult<Arc<chat::Chat>> {
-    own_launch(core, &mut launch, agent_id);
-    let started = chat::begin(core, launch, by, Some(launcher))?;
-    core.broadcast_local(&Event::ChatBegun {
-        chat: started.info(),
-    });
-    Ok(started)
-}
-
-/// Wakes a chat the app put to sleep and answers once it is ready, so a
-/// device taking it up next finds it there. The app wakes it when its
-/// window is open; otherwise the core starts it on its saved conversation.
-pub(crate) async fn wake_chat(
-    core: &Arc<Core>,
-    by: Option<&Arc<ClientConn>>,
-    agent_id: String,
-) -> CoreResult<Response> {
-    let deadline = tokio::time::Instant::now() + WAKE_WAIT;
-    if !running(core, &agent_id) {
-        match core.workspaces.published(&agent_id) {
-            None => return Err("that chat is no longer on this host".into()),
-            Some(false) => {
-                return Err(
-                    "this chat stopped on the host; open it in Sikemux there to start it again"
-                        .into(),
-                )
-            }
-            Some(true) => {}
-        }
-        if core.window.is_open() {
-            core.broadcast_local(&Event::WakeChat {
-                agent_id: agent_id.clone(),
-            });
-            while !running(core, &agent_id) {
-                if tokio::time::Instant::now() >= deadline {
-                    return Err(DID_NOT_WAKE.into());
-                }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        } else {
-            wake_here(core, by, &agent_id).await?;
-        }
-    }
-    tokio::time::timeout_at(deadline, chat::until_ready(core, &agent_id))
-        .await
-        .map_err(|_| CoreError::from(DID_NOT_WAKE))??;
-    Ok(Response::Done)
-}
-
-const DID_NOT_WAKE: &str = "the chat did not wake; open it in Sikemux on the host";
-
-async fn wake_here(
-    core: &Arc<Core>,
-    by: Option<&Arc<ClientConn>>,
-    agent_id: &str,
-) -> CoreResult<()> {
-    let (launch, launcher) = launch_of(core, agent_id).await?;
-    begin(core, by, launch, agent_id, launcher)?;
-    Ok(())
-}
-
-/// How to start an agent's chat again on its saved conversation, with its
-/// launcher.
-pub(crate) async fn launch_of(
-    core: &Arc<Core>,
-    agent_id: &str,
-) -> CoreResult<(ChatLaunch, String)> {
-    let kept = core
-        .workspaces
-        .kept_launch(agent_id)
-        .ok_or_else(|| CoreError::from("that chat is no longer on this host"))?;
-    let agent = kept.agent;
-    let (mut launch, launcher) = built(core, &launcher_of(&agent), agent.cwd).await?;
-    launch.resume_id = agent.resume_id;
-    launch.permission_mode = agent.permission_mode;
-    launch.model = agent.model;
-    launch.effort = agent.effort;
-    launch.account = kept.account;
-    launch.fallbacks = kept.fallbacks;
-    Ok((launch, launcher))
-}
-
-/// Starts the chat and answers `client` once its session is ready.
-pub(crate) fn start_chat(
-    core: &Arc<Core>,
-    client: &Arc<ClientConn>,
-    request_id: RequestId,
-    choice: ChatChoice,
-) {
-    let (core, client) = (core.clone(), client.clone());
-    tokio::spawn(async move {
-        let result = start(&core, &client, choice).await;
-        client.respond(request_id, result);
-    });
-}
-
-async fn start(
-    core: &Arc<Core>,
-    client: &Arc<ClientConn>,
-    choice: ChatChoice,
-) -> CoreResult<Response> {
-    let cwd = core.workspaces.project_path(&choice.project)?;
-    let (mut launch, launcher) = built(core, &choice.launcher, cwd).await?;
-    launch.resume_id = choice.resume_id;
-    if let Some(mode) = choice.permission_mode {
-        launch.permission_mode = mode;
-    }
-    launch.model = choice.model;
-    launch.effort = choice.effort;
-    let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
-    let started = begin(core, Some(client), launch, &agent_id, launcher)?;
-    let start = chat::until_started(core, started).await?;
-    Ok(Response::ChatBegun { agent_id, start })
-}
-
-/// Takes up a recent chat again, answering like [`start_chat`].
-pub(crate) fn resume_chat(
-    core: &Arc<Core>,
-    client: &Arc<ClientConn>,
-    request_id: RequestId,
-    choice: ResumeChoice,
-) {
-    match core.workspaces.resume_choice(choice, &core.chats.list()) {
-        Ok(choice) => start_chat(core, client, request_id, choice),
-        Err(error) => client.respond(request_id, Err(error)),
     }
 }
 

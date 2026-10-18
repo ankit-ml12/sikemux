@@ -10,7 +10,7 @@
 //!   remote mac <socket> backdrop on|off [image.jpg]  publishes the pane backdrop
 //!   remote mac <socket> palette <name=colour>…  publishes theme colours
 //!   remote mac <socket> chats              lists the chats running on the core
-//!   remote mac <socket> sleepy             keeps a sleeping chat and wakes it when asked
+//!   remote mac <socket> sleepy             keeps a sleeping chat for a device to wake
 //! As a device, keeping its key in `<key-file>`:
 //!   remote device <key-file> sessions <core-id>
 
@@ -20,9 +20,9 @@ use std::time::Duration;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, RelayMode};
 use sikemux_core::accounts::network;
-use sikemux_core::client::{ClientEvent, CoreClient};
+use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{
-    BackdropImage, ChatLaunch, DeviceAccess, Event, LaunchIdentity, SpawnTarget, TerminalSpawn,
+    BackdropImage, DeviceAccess, LaunchIdentity, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 
@@ -186,9 +186,9 @@ async fn chats(socket: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Stands in for the app: keeps one chat asleep until a device opens it.
+/// Keeps one chat asleep, which the core wakes when a device opens it.
 async fn sleepy(socket: &Path) -> Result<(), Failure> {
-    let (client, mut events) = CoreClient::connect(socket).await?;
+    let (client, _events) = CoreClient::connect(socket).await?;
     let agent_id = "agent-sleepy".to_owned();
     let agent = serde_json::json!({
         "id": agent_id,
@@ -204,28 +204,6 @@ async fn sleepy(socket: &Path) -> Result<(), Failure> {
         .call("createAgent", serde_json::json!({ "agent": agent }))
         .await?;
     println!("{agent_id} is asleep");
-    while let Some(event) = events.recv().await {
-        let ClientEvent::Event(Event::WakeChat { agent_id: woken }) = event else {
-            continue;
-        };
-        let launch = ChatLaunch {
-            agent_id: woken.clone(),
-            provider: "opencode".into(),
-            cwd: std::env::temp_dir(),
-            program: fake_agent()?,
-            args: vec!["acp".into()],
-            env: Default::default(),
-            mcp_servers: Vec::new(),
-            resume_id: None,
-            permission_mode: "workspace-write".into(),
-            model: None,
-            effort: None,
-            account: None,
-            fallbacks: Vec::new(),
-        };
-        client.acp_start(launch).await?;
-        println!("woke {woken}");
-    }
     Ok(())
 }
 

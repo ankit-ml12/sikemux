@@ -1433,6 +1433,10 @@ fn launch(
         // The agent can be started again under the chat, on another account
         // or after a sign-in, and the chat carries on through it.
         let mut begin = begin;
+        let mut first = ending.current_launch();
+        if super::launching::own_home(&owner, &mut first).await {
+            ending.set_current(first);
+        }
         let result = loop {
             let launch = ending.current_launch();
             let kind = native::Kind::of(ending.provider());
@@ -1518,6 +1522,7 @@ fn start(
     origin: Origin,
     subscriber: Option<&Arc<ClientConn>>,
 ) -> CoreResult<Arc<Chat>> {
+    super::launching::own_tools(core, &mut launch_spec);
     rebind::name_accounts(core, &mut launch_spec);
     for (key, value) in super::plugins::agent_environment(core, &launch_spec.cwd) {
         launch_spec.env.entry(key).or_insert(value);

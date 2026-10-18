@@ -18,7 +18,7 @@ use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
 use crate::server::spawn::Ending;
-use crate::server::workspace::own_review_launch;
+use crate::cli::protocol::{REVIEWER_OFFER, TOOLS_OFFER_ENV};
 use crate::server::{chat, messages, Core};
 
 const MAX_DIFF_BYTES: usize = 200 * 1024;
@@ -256,7 +256,8 @@ async fn start(core: &Arc<Core>, step: &Step, agent: &str, head: &str) -> Result
                 core.running_agents(),
             );
             core.names.make_blind(&agent);
-            own_review_launch(&core, &mut launch, &agent);
+            launch.agent_id = agent.clone();
+            launch.env.insert(TOOLS_OFFER_ENV.into(), REVIEWER_OFFER.into());
             Ok((launch, launcher, named.name))
         })
         .await

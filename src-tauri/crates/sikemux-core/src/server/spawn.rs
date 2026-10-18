@@ -23,7 +23,7 @@ use super::hosts::spawn::{self as elsewhere, Hired};
 use super::messages;
 use super::names::{self, Adopted, AgentName, Worker};
 use super::saved::{self, Saved};
-use super::workspace::{own_launch, Lead, Paid};
+use super::workspace::{Lead, Paid};
 use super::Core;
 
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
@@ -218,7 +218,7 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
         },
         running(core),
     );
-    own_launch(core, &mut launch, &plan.agent_id);
+    launch.agent_id = plan.agent_id.clone();
     let model = launch.model.clone();
     let chat = chat::begin_worker(core, launch, &plan.lead_id, launcher).map_err(|error| {
         core.names.forget(&plan.agent_id);
@@ -328,7 +328,7 @@ fn start(
             (agent_id, named)
         }
     };
-    own_launch(core, &mut launch, &agent_id);
+    launch.agent_id = agent_id.clone();
     let model = launch.model.clone();
     let paid_by = launch.env.get(ROUTED_ENV).cloned();
     let chat = chat::begin_worker(core, launch, &lead_id, launcher).map_err(|error| {

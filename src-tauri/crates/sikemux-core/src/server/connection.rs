@@ -691,7 +691,7 @@ async fn run_requests(
             }
             Request::AcpWake { agent_id } => {
                 tokio::spawn(async move {
-                    let result = workspace::wake_chat(&core, Some(&client), agent_id).await;
+                    let result = super::launching::wake_chat(&core, Some(&client), agent_id).await;
                     client.respond(request_id, result);
                 });
             }
@@ -942,7 +942,7 @@ async fn run_requests(
                     effort,
                     resume_id: None,
                 };
-                workspace::start_chat(&core, &client, request_id, choice);
+                super::launching::start_chat(&core, &client, request_id, choice);
             }
             Request::ResumeChat {
                 recent,
@@ -956,7 +956,7 @@ async fn run_requests(
                     model,
                     effort,
                 };
-                workspace::resume_chat(&core, &client, request_id, choice);
+                super::launching::resume_chat(&core, &client, request_id, choice);
             }
             Request::AnswerPairing { id, allow, access } => {
                 let result = core

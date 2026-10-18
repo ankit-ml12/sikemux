@@ -30,8 +30,9 @@ pub struct Tools {
     pub executable: PathBuf,
     /// Where the tools reach the core.
     pub endpoint: PathBuf,
-    /// The data folder, which holds the skills library and the agents' private homes.
-    pub data_dir: PathBuf,
+    /// The data folder, which holds the skills library and the agents'
+    /// private homes; without one agents get only the tools.
+    pub data_dir: Option<PathBuf>,
 }
 
 /// What a terminal agent starts with: arguments in front of the ones its
@@ -66,14 +67,18 @@ impl Tools {
         }
     }
 
-    fn state_dir(&self) -> PathBuf {
-        self.data_dir.join("browser")
+    fn state_dir(&self) -> Result<PathBuf, String> {
+        let data_dir = self
+            .data_dir
+            .as_ref()
+            .ok_or("Sikemux keeps no data folder here")?;
+        Ok(data_dir.join("browser"))
     }
 
     /// The data folder with the skills library ready in it. Without one,
     /// agents launch without Sikemux skills rather than pointed at a missing folder.
     fn skills_dir(&self) -> Option<&Path> {
-        skills::ready(&self.data_dir)
+        skills::ready(self.data_dir.as_deref()?)
     }
 
     /// What `agent_type` running `agent_program` in a terminal needs to reach
@@ -254,7 +259,7 @@ impl Tools {
     /// takes a list, so it is written as one `=` token: given a separate one
     /// it would swallow whatever plain word came next.
     fn claude_args(&self, launch: &McpLaunch) -> Result<Vec<String>, String> {
-        let directory = self.state_dir();
+        let directory = self.state_dir()?;
         std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         let path = directory.join("claude-mcp.json");
         let document = json!({ "mcpServers": { "sikemux-tools": mcp_server_document(launch) } });
@@ -363,7 +368,7 @@ impl Tools {
         config_name: &str,
         empty_config: &str,
     ) -> Result<PathBuf, String> {
-        let destination = self.state_dir().join(host).join(agent_id);
+        let destination = self.state_dir()?.join(host).join(agent_id);
         homes::private_home(&destination, source, config_name, empty_config)
             .map_err(|error| error.to_string())?;
         Ok(destination)
