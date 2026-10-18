@@ -64,3 +64,20 @@ button.gha-chip {
     background: var(--surface-active);
     color: var(--text-primary);
 }
+.gha-seg > .gha-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+}
+.gha-chip-count {
+    padding: 0 5px;
+    border-radius: var(--radius-full);
+    background: var(--surface-hover);
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 15px;
+}
+.gha-chip[data-on="1"] > .gha-chip-count {
+    color: var(--text-secondary);
+}

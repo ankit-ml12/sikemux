@@ -214,6 +214,36 @@ pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Pull>> {
         .collect())
 }
 
+#[derive(Serialize)]
+pub struct PullCounts {
+    pub open: u64,
+    pub closed: u64,
+}
+
+#[derive(Deserialize)]
+struct Total {
+    total_count: u64,
+}
+
+/// How many pull requests the repository has open and closed, as GitHub's search counts them.
+pub async fn counts(data_dir: &Path, repo: RepoRef) -> GithubResult<PullCounts> {
+    repo.checked()?;
+    let total = |state: &'static str| {
+        let terms = format!("repo:{}/{} is:pr is:{state}", repo.owner, repo.name);
+        async move {
+            let found: Total = client::get(
+                data_dir,
+                "/search/issues",
+                &[("q", terms), ("per_page", "1".to_string())],
+            )
+            .await?;
+            GithubResult::Ok(found.total_count)
+        }
+    };
+    let (open, closed) = futures::try_join!(total("open"), total("closed"))?;
+    Ok(PullCounts { open, closed })
+}
+
 #[derive(Deserialize)]
 struct CountRow {
     number: u64,

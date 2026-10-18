@@ -135,6 +135,8 @@ export interface CodeHostApi {
     watch(repo: RepoRef, runId: string, handlers: PluginStreamHandlers<RunTick>): PluginStream;
 
     pulls(repo: RepoRef, state: string): Promise<Pull[]>;
+    /** How many pull requests the repository has open and closed, for hosts that can count them cheaply. */
+    pullCounts?(repo: RepoRef): Promise<{ open: number; closed: number }>;
     pull(repo: RepoRef, number: number): Promise<Pull>;
     pullFiles(repo: RepoRef, number: number): Promise<ChangedFile[]>;
     pullCommits(repo: RepoRef, number: number): Promise<PullCommit[]>;

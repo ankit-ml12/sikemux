@@ -29,7 +29,7 @@ import { requestOpenFile, setGitView } from "../../state/commands";
 import { useStore } from "../../state/store";
 import { DEFAULT_GIT_VIEW } from "../../state/types";
 import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Run } from "../api";
-import { pullCommitsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
+import { pullCommitsR, pullCountsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
 import { checksSummary, isUnfinished, outcomeOf, overallOutcome, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
@@ -790,6 +790,7 @@ interface Props {
 export function PullsView({ paneId, repo, listState, item, composing, projectBranch, cwd, login, active }: Props) {
     const listing = item === null && !composing;
     const pulls = useResourceEnabled(active, pullsR, repo, listState);
+    const counts = useResourceEnabled(active && item === null, pullCountsR, repo).data;
     const open = useResourceEnabled(active && listing && !!projectBranch, pullsR, repo, "open");
     const recentRuns = useResourceEnabled(active && listing, runsR, { ...repo, perPage: 100 });
     const runsBySha = useMemo(() => {
@@ -846,6 +847,9 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                                 data-on={listState === state ? "1" : "0"}
                                 onClick={() => setListState(paneId, "pulls", state)}>
                                 {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+                                {counts && state !== "all" && (
+                                    <span className="gha-chip-count">{counts[state as "open" | "closed"].toLocaleString()}</span>
+                                )}
                             </button>
                         ))}
                     </div>

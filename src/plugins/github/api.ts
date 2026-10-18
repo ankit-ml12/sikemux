@@ -143,6 +143,7 @@ export const actionsApi = {
         call<GithubRunDetail>("runAttempt", { ...repo, runId: Number(runId), attempt }).then(fromDetail),
 
     pulls: (repo: RepoRef, state: string) => call<Pull[]>("pulls", { ...repo, state }),
+    pullCounts: (repo: RepoRef) => call<{ open: number; closed: number }>("pullCounts", { ...repo }),
     pull: (repo: RepoRef, number: number) => call<Pull>("pull", { ...repo, number }),
     pullFiles: (repo: RepoRef, number: number) => call<ChangedFile[]>("pullFiles", { ...repo, number, fullPatches: true }),
     pullCommits: (repo: RepoRef, number: number) => call<PullCommit[]>("pullCommits", { ...repo, number }),

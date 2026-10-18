@@ -129,6 +129,12 @@ export const pullsR = resource({
     staleAfterMs: 60_000,
 });
 
+export const pullCountsR = resource({
+    kind: "host.pullCounts",
+    fetch: (repo: RepoRef): Promise<{ open: number; closed: number } | null> => hostApi(repo.provider).pullCounts?.(repo) ?? Promise.resolve(null),
+    staleAfterMs: 60_000,
+});
+
 export const pullR = resource({
     kind: "host.pull",
     fetch: (repo: RepoRef, number: number): Promise<Pull> => hostApi(repo.provider).pull(repo, number),
