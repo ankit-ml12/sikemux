@@ -57,7 +57,8 @@ export default {
       at: { x: 0.5, y: 4 },
       wait: false,
     });
-    await swipeRail(s, { hold: 250 });
+    await s.move(railHead, { at: { x: 0.6, y: 3 } });
+    await swipeRail(s, { hold: 150 });
     await s.zoomOut({ wait: false });
     await openProject(s, "moodboard-studio");
     await s.zoom(railHead, {
@@ -69,15 +70,15 @@ export default {
     await s.wait(350);
 
     await browserCheck(s, { pace: 0.45 });
-    await chartAnswer(s, { pace: 0.6, hold: 600 });
+    await chartAnswer(s, { pace: 0.6, hold: 300 });
 
     await s.zoomOut({ wait: false });
     await s.click(otterRow);
-    await messageAndBoard(s, { pace: 0.45, hold: 650 });
+    await messageAndBoard(s, { pace: 0.45, hold: 350 });
 
     await s.zoomOut({ wait: false });
     await s.click(otterRow);
-    await approveFromNotch(s, { hold: 700 });
+    await approveFromNotch(s, { hold: 500 });
 
     s.live({ agent: MAPLE, wait: false });
     await s.zoomOut({ wait: false });

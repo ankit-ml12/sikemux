@@ -45,14 +45,14 @@ const railPage = ".tab-rail .swipe-page.is-current";
 
 /** Swipes the tab rail over to its next page and back, each in one motion. */
 export async function swipeRail(s, { hold = 500 } = {}) {
-  await s.swipe(railPage, { at: { x: 0.6, y: 0.5 } });
+  await s.swipe(railPage, { at: { x: 0.6, y: 0.2 } });
   await s.wait(hold);
-  await s.swipe(railPage, { pixels: -160, at: { x: 0.3, y: 0.5 } });
+  await s.swipe(railPage, { pixels: -160, at: { x: 0.3, y: 0.2 } });
 }
 
 /** Swipes the middle of the window across to the session's next tab, or back with a negative `pixels`. */
-export const swipeTabs = (s, { pixels = 520, duration = 340 } = {}) =>
-  s.swipe(".window-area", { pixels, duration, at: { x: 0.5, y: 0.55 } });
+export const swipeTabs = (s, { pixels = 600, duration = 360 } = {}) =>
+  s.swipe(".window-area", { pixels, duration });
 
 export const flipScope = (s, name, options) => s.click(scope(name), options);
 

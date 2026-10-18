@@ -209,6 +209,16 @@ export class Director {
     return openWindow(this.appFrame, sessionId, windowId);
   }
 
+  /** The nearest point to `point` the camera shows, so a gesture lands on something on screen. */
+  inView({ x, y }) {
+    const margin = this.view.width * 0.06;
+    const height = (this.view.width * HEIGHT) / WIDTH;
+    return {
+      x: clamp(x, this.view.x + margin, this.view.x + this.view.width - margin),
+      y: clamp(y, this.view.y + margin, this.view.y + height - margin),
+    };
+  }
+
   /** Puts the cursor somewhere at once, as if it had been resting there. */
   async place(target, at) {
     const point = await this.point(target, at);
@@ -281,7 +291,7 @@ export class Director {
       scale,
       pad = 48,
       at = { x: 0.5, y: 0.5 },
-      duration = 450,
+      duration = 1200,
       wait = true,
     } = {},
   ) {
@@ -403,8 +413,22 @@ export class Director {
    * carries on onto the next one in one motion.
    */
   async swipe(target, { pixels = 160, duration = 240, at } = {}) {
-    await this.still();
-    await this.move(target, { at });
+    // A hand already resting on the target, on screen and with room for the whole drag, swipes from where it is.
+    const box = await this.rect(target);
+    const { x, y } = this.cursor;
+    const inside = (left) => left > box.x + 40 && left < box.x + box.width - 40;
+    const resting =
+      !at &&
+      inside(x) &&
+      inside(x - pixels) &&
+      y > box.y &&
+      y < box.y + box.height &&
+      this.inView(this.cursor).x === x &&
+      this.inView(this.cursor).y === y;
+    if (!resting) {
+      await this.still();
+      await this.move(this.inView(await this.point(target, at)));
+    }
     await this.pressCursor(1, 90);
     await this.app(() => showcase.backend.emit("wheel-touch", true));
     const frames = Math.max(2, Math.round(duration / STEP));

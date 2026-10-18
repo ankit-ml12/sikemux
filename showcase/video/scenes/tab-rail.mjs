@@ -26,9 +26,10 @@ export default {
     await s.wait(500);
     await swipeTabs(s);
     await s.wait(500);
-    await swipeTabs(s, { pixels: -520 });
+    await swipeTabs(s, { pixels: -600 });
     await s.wait(500);
-    await s.zoom(railHead, { scale: 2.2, at: { x: 0.5, y: 4.5 } });
+    await s.zoom(railHead, { scale: 2.2, at: { x: 0.5, y: 4.5 }, wait: false });
+    await s.move(railHead, { at: { x: 0.6, y: 3 } });
     await swipeRail(s);
     await s.wait(300);
     await flipScope(s, "All projects");
