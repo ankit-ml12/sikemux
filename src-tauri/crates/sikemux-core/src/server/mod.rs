@@ -38,10 +38,12 @@ mod ports;
 mod prepare;
 mod questions;
 mod remote;
+mod sandbox;
 mod saved;
 mod seen;
 mod session;
 mod share;
+mod skill_library;
 mod spawn;
 mod tasks;
 mod tools;
@@ -1039,6 +1041,7 @@ pub(crate) async fn run_core(
     if let Some(data_dir) = config.data_dir.as_deref() {
         crate::git_guard::shim::install(data_dir, config.cli_endpoint.as_deref());
         tokio::spawn(workspace::refresh_launchers(core.clone()));
+        skill_library::watch_global(&core);
     }
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;

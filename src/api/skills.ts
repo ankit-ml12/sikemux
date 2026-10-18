@@ -1,4 +1,4 @@
-import { invokeCommand as invoke } from "./invoke";
+import { coreCall } from "./core";
 
 export interface Skill {
     name: string;
@@ -20,10 +20,18 @@ export interface SkillsOverview {
     clashes: string[];
 }
 
+/** A skill an agent saved into its own global folder while the host ran. */
+export interface GlobalSkillAdded {
+    agent: string;
+    name: string;
+    path: string;
+}
+
 export const skillsApi = {
-    overview: () => invoke<SkillsOverview>("skills_overview"),
-    create: (name: string, description: string, body: string) => invoke<Skill>("skills_create", { name, description, body }),
-    install: (source: string, subfolder?: string) => invoke<Skill>("skills_install", { source, subfolder: subfolder || null }),
-    remove: (name: string) => invoke<void>("skills_remove", { name }),
-    adopt: (path: string) => invoke<Skill>("skills_adopt", { path }),
+    overview: () => coreCall<SkillsOverview>("skillsOverview"),
+    create: (name: string, description: string, body: string) => coreCall<Skill>("createSkill", { name, description, body }),
+    install: (source: string, subfolder?: string) => coreCall<Skill>("installSkill", { source, subfolder: subfolder || null }),
+    remove: (name: string) => coreCall<void>("removeSkill", { name }),
+    adopt: (path: string) => coreCall<Skill>("adoptSkill", { path }),
+    added: () => coreCall<GlobalSkillAdded[]>("skillsAdded"),
 };

@@ -1,21 +1,39 @@
-//! The Skills section of Settings: the Sikemux skills library, and the
-//! person's own global skills beside it, which Sikemux never changes unless
-//! asked to move one in.
+//! The host's skills: the Sikemux library every agent here is handed, and
+//! the person's own global skills beside it, which Sikemux never changes
+//! unless asked to move one in. Any client manages them through these calls.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
-use serde::Serialize;
-use sikemux_core::skills::{self, Skill};
-use tauri::{AppHandle, Emitter, Manager};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::error::{AppError, AppResult};
+use crate::sessions::roots::{
+    agent_config_root, environment_path, grok_root, hermes_root, pi_agent_root,
+};
+use crate::skills::{self, Skill};
+
+use super::connection::blocking;
+use super::{Core, CoreError, CoreResult};
+
+pub(crate) const METHODS: [&str; 6] = [
+    "skillsOverview",
+    "createSkill",
+    "installSkill",
+    "removeSkill",
+    "adoptSkill",
+    "skillsAdded",
+];
+
+/// The most global skills kept as newly added until the person answers.
+const MAX_ADDED: usize = 64;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OwnSkills {
+struct OwnSkills {
     agent: &'static str,
     folder: PathBuf,
     skills: Vec<Skill>,
@@ -23,7 +41,7 @@ pub struct OwnSkills {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SkillsOverview {
+struct SkillsOverview {
     library: PathBuf,
     skills: Vec<Skill>,
     own: Vec<OwnSkills>,
@@ -31,10 +49,53 @@ pub struct SkillsOverview {
     clashes: Vec<String>,
 }
 
-fn data_dir(app: &AppHandle) -> AppResult<PathBuf> {
-    app.path()
-        .app_data_dir()
-        .map_err(|error| AppError::Other(format!("app data folder unavailable: {error}")))
+/// A skill that appeared in an agent's own global folder while the core ran,
+/// most likely written there by that agent's own skill maker.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GlobalSkillAdded {
+    agent: &'static str,
+    name: String,
+    path: PathBuf,
+}
+
+/// The global skills that appeared since the core started, until moved in.
+fn added() -> std::sync::MutexGuard<'static, Vec<GlobalSkillAdded>> {
+    static ADDED: Mutex<Vec<GlobalSkillAdded>> = Mutex::new(Vec::new());
+    ADDED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Each agent's own global skills folder, with the agents that read it,
+/// whether or not it exists yet. These belong to the person; Sikemux only reads them.
+fn global_folders() -> Vec<(&'static str, PathBuf)> {
+    let Some(home) = sikemux_process::paths::home() else {
+        return Vec::new();
+    };
+    let config_home = environment_path("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
+    let skills = |root: Option<PathBuf>| root.map(|root| root.join("skills"));
+    let mut folders = vec![
+        ("Claude", skills(agent_config_root("claude", None))),
+        ("Codex", skills(agent_config_root("codex", None))),
+        ("Codex and other agents", Some(home.join(".agents/skills"))),
+        ("OpenCode", Some(config_home.join("opencode/skills"))),
+        ("OMP", skills(agent_config_root("omp", None))),
+        ("Grok", skills(grok_root())),
+        ("Hermes", skills(hermes_root())),
+        ("Pi", skills(pi_agent_root())),
+    ]
+    .into_iter()
+    .filter_map(|(label, folder)| Some((label, folder?)))
+    .collect::<Vec<_>>();
+    let mut seen = Vec::new();
+    folders.retain(|(_, folder)| {
+        let real = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.clone());
+        let fresh = !seen.contains(&real);
+        seen.push(real);
+        fresh
+    });
+    folders
 }
 
 fn overview(data_dir: &Path, folders: Vec<(&'static str, PathBuf)>) -> SkillsOverview {
@@ -90,16 +151,84 @@ fn adopt(
     Ok(skill)
 }
 
-pub const GLOBAL_SKILL_ADDED_EVENT: &str = "global_skill_added";
-
-/// A skill that appeared in an agent's own global folder while Sikemux ran,
-/// most likely written there by that agent's own skill maker.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GlobalSkillAdded {
-    agent: &'static str,
+#[derive(Deserialize)]
+struct NewSkill {
     name: String,
+    description: String,
+    body: String,
+}
+
+#[derive(Deserialize)]
+struct Source {
+    source: String,
+    #[serde(default)]
+    subfolder: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Named {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct Located {
     path: PathBuf,
+}
+
+fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {
+    serde_json::from_value(params)
+        .map_err(|error| CoreError::from(format!("the call's params do not fit: {error}")))
+}
+
+pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreResult<Value> {
+    let data_dir = core
+        .workspaces
+        .data_dir()
+        .ok_or_else(|| CoreError::from("this host keeps no skills"))?
+        .to_path_buf();
+    let method = method.to_owned();
+    blocking(move || {
+        Ok(match method.as_str() {
+            "skillsOverview" => serde_json::to_value(overview(&data_dir, global_folders()))?,
+            "createSkill" => {
+                let skill: NewSkill = parse(params)?;
+                serde_json::to_value(skills::create(
+                    &data_dir,
+                    &skill.name,
+                    &skill.description,
+                    &skill.body,
+                )?)?
+            }
+            "installSkill" => {
+                let from: Source = parse(params)?;
+                let source = from.source.trim();
+                let skill = if source.starts_with('/') {
+                    skills::install_folder(&data_dir, Path::new(source))?
+                } else {
+                    let subfolder = from
+                        .subfolder
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|path| !path.is_empty());
+                    skills::install_git(&data_dir, source, subfolder)?
+                };
+                serde_json::to_value(skill)?
+            }
+            "removeSkill" => {
+                let named: Named = parse(params)?;
+                serde_json::to_value(skills::remove(&data_dir, &named.name)?)?
+            }
+            "adoptSkill" => {
+                let located: Located = parse(params)?;
+                let skill = adopt(&data_dir, &global_folders(), &located.path)?;
+                added().retain(|added| added.path != located.path);
+                serde_json::to_value(skill)?
+            }
+            "skillsAdded" => serde_json::to_value(added().clone())?,
+            _ => return Err(format!("this host does not know {method}").into()),
+        })
+    })
+    .await
 }
 
 fn added_skills(
@@ -153,13 +282,23 @@ fn concerns(path: &Path, folders: &[PathBuf]) -> bool {
         .any(|folder| path.starts_with(folder) || folder.starts_with(path))
 }
 
-/// Watches each agent's global skills folder while the app runs, including
-/// one that does not exist yet, and tells the window about a skill that shows
-/// up in one, so it can offer to move it in.
-pub fn watch_global(app: AppHandle) {
+/// Watches each agent's global skills folder while the core runs, including
+/// one that does not exist yet, and tells every client about a skill that
+/// shows up in one, so the person can move it in.
+pub(crate) fn watch_global(core: &Arc<Core>) {
+    let core = Arc::downgrade(core);
     std::thread::spawn(move || {
-        watch_folders(crate::agents::global_skill_folders(), |added| {
-            let _ = app.emit_to("main", GLOBAL_SKILL_ADDED_EVENT, added);
+        watch_folders(global_folders(), |skill| {
+            let Some(core) = core.upgrade() else {
+                return;
+            };
+            let mut kept = added();
+            if kept.len() >= MAX_ADDED {
+                kept.remove(0);
+            }
+            kept.push(skill);
+            drop(kept);
+            core.changes.changed("skills", None, None);
         });
     });
 }
@@ -198,68 +337,6 @@ fn watch_folders(folders: Vec<(&'static str, PathBuf)>, mut tell: impl FnMut(Glo
             tell(added);
         }
     }
-}
-
-#[tauri::command]
-pub async fn skills_overview(app: AppHandle) -> AppResult<SkillsOverview> {
-    let data_dir = data_dir(&app)?;
-    tokio::task::spawn_blocking(move || overview(&data_dir, crate::agents::global_skill_folders()))
-        .await
-        .map_err(|error| AppError::Other(error.to_string()))
-}
-
-#[tauri::command]
-pub async fn skills_create(
-    app: AppHandle,
-    name: String,
-    description: String,
-    body: String,
-) -> AppResult<Skill> {
-    skills::create(&data_dir(&app)?, &name, &description, &body).map_err(AppError::Other)
-}
-
-#[tauri::command]
-pub async fn skills_install(
-    app: AppHandle,
-    source: String,
-    subfolder: Option<String>,
-) -> AppResult<Skill> {
-    let data_dir = data_dir(&app)?;
-    tokio::task::spawn_blocking(move || {
-        let source = source.trim();
-        if source.starts_with('/') {
-            skills::install_folder(&data_dir, Path::new(source))
-        } else {
-            let subfolder = subfolder
-                .as_deref()
-                .map(str::trim)
-                .filter(|path| !path.is_empty());
-            skills::install_git(&data_dir, source, subfolder)
-        }
-    })
-    .await
-    .map_err(|error| AppError::Other(error.to_string()))?
-    .map_err(AppError::Other)
-}
-
-#[tauri::command]
-pub async fn skills_remove(app: AppHandle, name: String) -> AppResult<()> {
-    skills::remove(&data_dir(&app)?, &name).map_err(AppError::Other)
-}
-
-#[tauri::command]
-pub async fn skills_adopt(app: AppHandle, path: String) -> AppResult<Skill> {
-    let data_dir = data_dir(&app)?;
-    tokio::task::spawn_blocking(move || {
-        adopt(
-            &data_dir,
-            &crate::agents::global_skill_folders(),
-            Path::new(&path),
-        )
-    })
-    .await
-    .map_err(|error| AppError::Other(error.to_string()))?
-    .map_err(AppError::Other)
 }
 
 #[cfg(test)]

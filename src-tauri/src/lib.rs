@@ -40,7 +40,6 @@ mod settings;
 mod share;
 mod sim;
 mod simulator;
-mod skills;
 mod ssh;
 mod state;
 mod system;
@@ -196,7 +195,6 @@ pub fn run() {
         })
         .setup(|_app| {
             _app.manage(UiWatchdogState::start()?);
-            skills::watch_global(_app.handle().clone());
             _app.manage(PluginStreams::default());
             let sim = SimManager::default();
             _app.manage(sim.clone());
@@ -385,11 +383,6 @@ pub fn run() {
             markdown::markdown_parse,
             files::list_project_files_snapshot,
             settings::scan_project_roots,
-            skills::skills_overview,
-            skills::skills_create,
-            skills::skills_install,
-            skills::skills_remove,
-            skills::skills_adopt,
             settings::expand_path,
             settings::is_directory,
             wallpaper::wallpaper_image,

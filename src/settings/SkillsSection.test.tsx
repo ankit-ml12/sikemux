@@ -7,6 +7,7 @@ import { SkillsSection } from "./SkillsSection";
 
 let transport: MemoryIpcTransport;
 let overview: SkillsOverview;
+let core: Map<string, (params: unknown) => unknown>;
 
 const skill = (name: string, description: string, path = `/data/skills/${name}`) => ({ name, description, path });
 
@@ -28,7 +29,11 @@ beforeEach(() => {
     };
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
-    transport.register("skills_overview", () => structuredClone(overview));
+    core = new Map<string, (params: unknown) => unknown>([["skillsOverview", () => structuredClone(overview)]]);
+    transport.register("core_call", (args) => {
+        const { method, params } = args as { method: string; params: unknown };
+        return core.get(method)?.(params) ?? null;
+    });
 });
 
 afterEach(() => {
@@ -52,7 +57,7 @@ describe("SkillsSection", () => {
             overview.skills.push(skill(name, description));
             return skill(name, description);
         });
-        transport.register("skills_create", create);
+        core.set("createSkill", create);
         render(<SkillsSection />);
         await user.click(await screen.findByRole("button", { name: "New skill" }));
         await user.type(screen.getByRole("textbox", { name: "Skill name" }), "review-pr");
@@ -60,13 +65,13 @@ describe("SkillsSection", () => {
         await user.type(screen.getByRole("textbox", { name: "Instructions" }), "Read the diff.");
         await user.click(screen.getByRole("button", { name: "Create" }));
 
-        expect(create).toHaveBeenCalledWith({ name: "review-pr", description: "Reviews a PR", body: "Read the diff." }, expect.anything());
+        expect(create).toHaveBeenCalledWith({ name: "review-pr", description: "Reviews a PR", body: "Read the diff." });
         expect(await screen.findByText("Reviews a PR")).toBeInTheDocument();
     });
 
     it("says why a skill could not be made", async () => {
         const user = userEvent.setup();
-        transport.register("skills_create", () => {
+        core.set("createSkill", () => {
             throw new Error("'Bad' is not a skill name");
         });
         render(<SkillsSection />);
@@ -80,21 +85,21 @@ describe("SkillsSection", () => {
     it("moves one of the person's own skills in only after they confirm", async () => {
         const user = userEvent.setup();
         const adopt = vi.fn(() => skill("notes", "Takes notes"));
-        transport.register("skills_adopt", adopt);
+        core.set("adoptSkill", adopt);
         render(<SkillsSection />);
         await user.click(await screen.findByRole("button", { name: "Move notes into Sikemux" }));
         expect(adopt).not.toHaveBeenCalled();
         expect(screen.getByText(/Moves it out of \/home\/.claude\/skills/)).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Move" }));
-        expect(adopt).toHaveBeenCalledWith({ path: "/home/.claude/skills/notes" }, expect.anything());
+        expect(adopt).toHaveBeenCalledWith({ path: "/home/.claude/skills/notes" });
     });
 
     it("says on its row why a Remove or a Move failed", async () => {
         const user = userEvent.setup();
-        transport.register("skills_remove", () => {
+        core.set("removeSkill", () => {
             throw new Error("deploy is in use");
         });
-        transport.register("skills_adopt", () => {
+        core.set("adoptSkill", () => {
             throw new Error("A skill named notes already exists; remove it first");
         });
         render(<SkillsSection />);
@@ -112,10 +117,10 @@ describe("SkillsSection", () => {
         const remove = vi.fn(() => {
             overview.skills = [];
         });
-        transport.register("skills_remove", remove);
+        core.set("removeSkill", remove);
         render(<SkillsSection />);
         await user.click(await screen.findByRole("button", { name: "Remove deploy" }));
-        expect(remove).toHaveBeenCalledWith({ name: "deploy" }, expect.anything());
+        expect(remove).toHaveBeenCalledWith({ name: "deploy" });
         expect(await screen.findByText("None yet. They are kept in /data/skills")).toBeInTheDocument();
     });
 });

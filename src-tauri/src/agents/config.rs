@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::Value;
 pub(crate) use sikemux_core::sessions::roots::{
@@ -10,37 +10,6 @@ use sikemux_process::paths::home;
 use sikemux_pty::user_shell::user_variable;
 
 const MAX_MODEL_LENGTH: usize = 256;
-
-/// Each agent's own global skills folder, with the agents that read it,
-/// whether or not it exists yet. These belong to the person; Sikemux only reads them.
-pub(crate) fn global_skill_folders() -> Vec<(&'static str, PathBuf)> {
-    let Some(home) = home() else {
-        return Vec::new();
-    };
-    let config_home = environment_path("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
-    let skills = |root: Option<PathBuf>| root.map(|root| root.join("skills"));
-    let mut folders = vec![
-        ("Claude", skills(agent_config_root("claude", None))),
-        ("Codex", skills(agent_config_root("codex", None))),
-        ("Codex and other agents", Some(home.join(".agents/skills"))),
-        ("OpenCode", Some(config_home.join("opencode/skills"))),
-        ("OMP", skills(agent_config_root("omp", None))),
-        ("Grok", skills(grok_root())),
-        ("Hermes", skills(hermes_root())),
-        ("Pi", skills(pi_agent_root())),
-    ]
-    .into_iter()
-    .filter_map(|(label, folder)| Some((label, folder?)))
-    .collect::<Vec<_>>();
-    let mut seen = Vec::new();
-    folders.retain(|(_, folder)| {
-        let real = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.clone());
-        let fresh = !seen.contains(&real);
-        seen.push(real);
-        fresh
-    });
-    folders
-}
 
 pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) -> Option<String> {
     let home = home()?;

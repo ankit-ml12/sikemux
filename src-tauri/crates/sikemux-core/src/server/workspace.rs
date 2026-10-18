@@ -379,6 +379,11 @@ impl Workspaces {
         workspaces
     }
 
+    /// The core's data folder, which holds the skills library.
+    pub(crate) fn data_dir(&self) -> Option<&Path> {
+        self.data_dir.as_deref()
+    }
+
     /// The model providers the host's agents run on, and their keys.
     pub(crate) fn providers(&self) -> Option<&Providers> {
         self.providers.as_ref()
