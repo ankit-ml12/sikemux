@@ -46,7 +46,7 @@
         ]
       },
       "method": "agentList",
-      "description": "List one kind of resource in a project: Cloud Run services or jobs, functions, VMs, GKE clusters, buckets, SQL, Pub/Sub, builds, triggers or secrets.",
+      "description": "List one kind of resource in a project: Run, functions, VMs, GKE, buckets, SQL, Pub/Sub, builds, errors, images, cron jobs, IAM or BigQuery.",
       "properties": {
         "kind": {
           "type": "string",
@@ -61,7 +61,13 @@
             "pubsub",
             "builds",
             "triggers",
-            "secrets"
+            "secrets",
+            "errors",
+            "repositories",
+            "scheduler",
+            "iam",
+            "service_accounts",
+            "datasets"
           ]
         },
         "project": {
@@ -94,7 +100,7 @@
         ]
       },
       "method": "agentGet",
-      "description": "One resource in detail. serial is a VM's console output; objects lists a bucket folder (path); object previews path; messages peeks a subscription.",
+      "description": "One resource in detail. serial: a VM's console; objects: a bucket folder (path); messages: peek a subscription; table: dataset name, table path.",
       "properties": {
         "kind": {
           "type": "string",
@@ -110,7 +116,11 @@
             "sql",
             "build",
             "secret",
-            "messages"
+            "messages",
+            "error_group",
+            "repository",
+            "tables",
+            "table"
           ]
         },
         "project": {
@@ -307,7 +317,7 @@
         ]
       },
       "method": "agentAct",
-      "description": "Change something in Google Cloud. Only when the person asked for it. revision is a Run revision or a secret version; count scales or resizes.",
+      "description": "Change something, only when asked. revision: a Run revision or secret version; count: scale or resize; data: a message or BigQuery SQL (capped).",
       "properties": {
         "action": {
           "type": "string",
@@ -331,7 +341,16 @@
             "node_pool_resize",
             "publish",
             "secret_enable",
-            "secret_disable"
+            "secret_disable",
+            "error_resolve",
+            "error_ack",
+            "error_mute",
+            "error_open",
+            "schedule_run",
+            "schedule_pause",
+            "schedule_resume",
+            "bq_estimate",
+            "bq_query"
           ]
         },
         "project": {
@@ -363,8 +382,7 @@
         }
       },
       "required": [
-        "action",
-        "name"
+        "action"
       ]
     }
   ]

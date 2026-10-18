@@ -11,7 +11,8 @@ use crate::agent_setup;
 use crate::auth::{self, Target};
 use crate::error::{GcpError, GcpResult};
 use crate::{
-    build, compute, functions, gke, logging, metrics, projects, pubsub, run, secrets, sql, storage,
+    bigquery, build, compute, errors, functions, gke, iam, logging, metrics, projects, pubsub,
+    registry, run, scheduler, secrets, sql, storage,
 };
 
 /// A tool's input as the shape a module reads, saying which field was wrong when one was.
@@ -128,6 +129,12 @@ async fn list(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
         "builds" => answer(json!(build::builds(read(fields)?).await?)),
         "triggers" => answer(json!(build::triggers(read(fields)?).await?)),
         "secrets" => answer(json!(secrets::secrets(read(fields)?).await?)),
+        "errors" => answer(json!(errors::groups(read(fields)?).await?)),
+        "repositories" => answer(json!(registry::repositories(read(fields)?).await?)),
+        "scheduler" => answer(json!(scheduler::jobs(read(fields)?).await?)),
+        "iam" => answer(json!(iam::members(read(fields)?).await?)),
+        "service_accounts" => answer(json!(iam::service_accounts(read(fields)?).await?)),
+        "datasets" => answer(json!(bigquery::datasets(read(fields)?).await?)),
         other => Err(GcpError::BadArg(format!(
             "`{other}` is not a kind gcp_list knows"
         ))),
@@ -232,6 +239,14 @@ async fn act(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
     let target = resolve(ctx, read(input.clone())?).await?;
     needs_project(&target)?;
     let action = need(&input, "action")?;
+    if action == "bq_estimate" || action == "bq_query" {
+        let sql = need(&input, "data")?;
+        return bigquery::query(read(with_target(
+            &target,
+            json!({ "sql": sql, "dryRun": action == "bq_estimate" }),
+        ))?)
+        .await;
+    }
     let name = need(&input, "name")?;
     let location = field(&input, "location");
     let revision = field(&input, "revision");
@@ -266,6 +281,19 @@ async fn act(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
         "publish" => pubsub::publish(read(with(json!({ "topic": name, "data": need(&input, "data")? })))?).await,
         "secret_enable" | "secret_disable" => {
             secrets::set_version(read(with(json!({ "secret": name, "version": need(&input, "revision")?, "enabled": action == "secret_enable" })))?).await
+        }
+        "error_resolve" | "error_ack" | "error_mute" | "error_open" => {
+            let status = match action.as_str() {
+                "error_resolve" => "RESOLVED",
+                "error_ack" => "ACKNOWLEDGED",
+                "error_mute" => "MUTED",
+                _ => "OPEN",
+            };
+            errors::set_status(read(with(json!({ "group": name, "status": status })))?).await
+        }
+        "schedule_run" | "schedule_pause" | "schedule_resume" => {
+            let change = action.trim_start_matches("schedule_");
+            scheduler::change(read(with(json!({ "location": location, "job": name, "action": change })))?).await
         }
         other => Err(GcpError::BadArg(format!("`{other}` is not an action gcp_act knows"))),
     }
