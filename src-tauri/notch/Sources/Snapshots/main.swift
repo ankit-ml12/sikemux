@@ -5,7 +5,8 @@ import SwiftUI
 // Renders each state of the island against demo agents, to compare with
 // src-tauri/notch/design/screens.html: `swift run notch-snapshots <dir>`.
 // `--bare` leaves out the backdrop, so the showcase can lay the island over its own wallpaper;
-// `--scale 3` draws it at three pixels a point, and `--fixture <file>` reads another device view.
+// `--scale 3` draws it at three pixels a point, `--fixture <file>` reads another device view, and `--buddies`
+// draws each agent as the buddy the app's default style gives it.
 
 let fixture = #"""
 {
@@ -101,7 +102,14 @@ let dated = try! NSRegularExpression(pattern: #"AGO\((\d+)\)"#).matches(in: sour
         let seconds = Int((source as NSString).substring(with: match.range(at: 1)))!
         return (text as NSString).replacingCharacters(in: match.range, with: String(now - seconds * 1000))
     }
-let full = try! JSONDecoder().decode(DeviceView.self, from: Data(dated.utf8))
+let decoded = try! JSONDecoder().decode(DeviceView.self, from: Data(dated.utf8))
+let buddies = arguments.contains("--buddies")
+    ? Buddies(pack: "all", shape: "mixed", motion: true, agents: [:], boxes: [:])
+    : decoded.inbox.buddies
+let full = DeviceView(
+    workspace: decoded.workspace, chats: decoded.chats, sessions: decoded.sessions, attentions: decoded.attentions,
+    inbox: Inbox(items: decoded.inbox.items, working: decoded.inbox.working, buddies: buddies)
+)
 
 func view(keeping ids: Set<String>?) -> DeviceView {
     guard let ids else { return full }
@@ -111,7 +119,7 @@ func view(keeping ids: Set<String>?) -> DeviceView {
         chats: full.chats.filter { ids.contains($0.agentId) },
         sessions: full.sessions.filter { $0.agentId.map(ids.contains) ?? false },
         attentions: full.attentions.filter { ids.contains($0.agentId) },
-        inbox: Inbox(items: items, working: items.filter { $0.kind == .working }.count)
+        inbox: Inbox(items: items, working: items.filter { $0.kind == .working }.count, buddies: full.inbox.buddies)
     )
 }
 

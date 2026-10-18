@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Writes what the notch helper shares with the app: its settings from
 // src/notch/settings.json, for the app's TypeScript and the helper's Swift,
-// and its colours from src/styles/base.css. `--check` fails when one is out
-// of date instead of writing it.
+// its colours from src/styles/base.css, and the app's buddies from
+// src/buddies, which the helper runs to draw them. `--check` fails when one is
+// out of date instead of writing it.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { format, resolveConfig } from "prettier";
+import { build } from "vite";
 
 const root = resolve(import.meta.dirname, "..");
 const settingsSource = resolve(root, "src/notch/settings.json");
@@ -19,6 +21,11 @@ const settingsSwiftPath = resolve(
 const themeSwiftPath = resolve(
   root,
   "src-tauri/notch/Sources/NotchKit/Theme.generated.swift",
+);
+const buddiesSource = resolve(root, "src/buddies/notch.ts");
+const buddiesSwiftPath = resolve(
+  root,
+  "src-tauri/notch/Sources/NotchKit/Buddies.generated.swift",
 );
 const check = process.argv.includes("--check");
 
@@ -184,6 +191,31 @@ ${Object.entries(COLOURS)
 `,
 );
 
+const [bundle] = await build({
+  root,
+  configFile: false,
+  logLevel: "silent",
+  build: {
+    write: false,
+    minify: true,
+    lib: { entry: buddiesSource, formats: ["iife"], name: "SikemuxBuddies" },
+  },
+});
+const buddiesScript = bundle.output[0].code.trim();
+if (buddiesScript.includes('"""#'))
+  throw new Error("the buddies script ends the Swift string it is kept in");
+
+await emit(
+  buddiesSwiftPath,
+  `// ${banner("src/buddies")}
+
+/// Defines \`SikemuxBuddies.notchBuddy(buddies, agentId, state)\`, which returns an agent's buddy as an SVG document.
+let buddiesScript = #"""
+${buddiesScript}
+"""#
+`,
+);
+
 console.log(
-  `✓ ${entries.length} notch settings and ${Object.keys(COLOURS).length} colours`,
+  `✓ ${entries.length} notch settings, ${Object.keys(COLOURS).length} colours and ${Math.round(buddiesScript.length / 1024)} KB of buddies`,
 );

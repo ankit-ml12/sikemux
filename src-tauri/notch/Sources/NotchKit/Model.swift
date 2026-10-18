@@ -77,10 +77,13 @@ struct Inbox: Decodable, Equatable {
     let items: [InboxItem]
     /// Agents at work now, listed or not.
     let working: Int
+    /// The characters the app draws for its agents, while buddies are on there.
+    let buddies: Buddies?
 
-    init(items: [InboxItem], working: Int) {
+    init(items: [InboxItem], working: Int, buddies: Buddies? = nil) {
         self.items = items
         self.working = working
+        self.buddies = buddies
     }
 
     /// An item this build cannot read, such as one in a tier added later, is left out rather than losing the whole view.
@@ -88,14 +91,30 @@ struct Inbox: Decodable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         items = try container.decode([Readable].self, forKey: .items).compactMap(\.item)
         working = try container.decode(Int.self, forKey: .working)
+        buddies = try? container.decodeIfPresent(Buddies.self, forKey: .buddies)
     }
 
-    private enum CodingKeys: String, CodingKey { case items, working }
+    private enum CodingKeys: String, CodingKey { case items, working, buddies }
 
     private struct Readable: Decodable {
         let item: InboxItem?
         init(from decoder: Decoder) throws { item = try? InboxItem(from: decoder) }
     }
+}
+
+/// The app's buddies as it published them, handed back whole to the script that draws them.
+struct Buddies: Codable, Equatable {
+    struct Look: Codable, Equatable {
+        let pack: String
+        let shape: String
+        let color: String
+    }
+
+    let pack: String
+    let shape: String
+    let motion: Bool
+    let agents: [String: Look]
+    let boxes: [String: String]
 }
 
 struct InboxItem: Decodable, Equatable, Identifiable {

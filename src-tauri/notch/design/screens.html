@@ -169,6 +169,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .row:hover { background: rgba(255, 255, 255, 0.07); }
 .mark { width: 20px; height: 20px; flex: 0 0 auto; }
 .mark svg { width: 20px; height: 20px; display: block; }
+/* A buddy moves as a whole, as the app's do; its eyes and sparkles stay still, as the island's do. */
+.island svg { overflow: visible; }
+@media (prefers-reduced-motion: no-preference) {
+    .island .bd-bob { animation: bd-bob 0.7s ease-in-out infinite alternate; }
+    .island .bd-hop { animation: bd-hop 1.2s cubic-bezier(0.3, 0, 0.3, 1) infinite; }
+    .island .bd-shake { animation: bd-shake 0.5s steps(1) infinite; }
+}
+@keyframes bd-bob { to { transform: translateY(-0.8px); } }
+@keyframes bd-hop { 0%, 55%, 100% { transform: translateY(0); } 25% { transform: translateY(-1.8px); } }
+@keyframes bd-shake { 25% { transform: translateX(0.5px); } 50% { transform: translateX(-0.5px); } 75% { transform: translateX(0.3px); } }
 .text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sub { font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -384,6 +394,11 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             <button data-channel="prod" aria-pressed="true">Sikemux</button>
             <button data-channel="dev" aria-pressed="false">Sikemux Dev</button>
         </div>
+        <span class="label" style="margin-left:8px">Buddies</span>
+        <div class="seg" id="buddies-seg">
+            <button data-buddies="off" aria-pressed="true">Off</button>
+            <button data-buddies="on" aria-pressed="false">On</button>
+        </div>
         <span class="note">View at 100% zoom on the built-in display</span>
         <div class="jump" id="jump"></div>
     </div>
@@ -455,6 +470,10 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
             one under the pointer. In a full-screen app the island stays hidden unless an agent needs you.</td></tr>
         <tr><td>Icons</td><td>The app's own set from <code>src/ui/Icons.tsx</code>: a 16-pt grid, 1.4 stroke, round caps and joins. Port each path as a SwiftUI
             <code>Shape</code> (or an SVG asset) so the island and the app never drift apart. Agent marks come from the same file.</td></tr>
+        <tr><td>Buddies</td><td>While buddies are on in the app, the inbox carries <code>buddies</code> and every agent's mark becomes its buddy, at the mark's size,
+            in the closed wing, the peeks, the rows and the drop target. The helper runs the app's own buddy script (<code>Buddies.generated.swift</code>) in
+            JavaScriptCore and draws the SVG it returns with <code>NSImage</code>. Needs you waits, working works, done and failed show done and error. They bob,
+            hop and shake as a whole as the app's do, unless the app turned motion off or the Mac asks for less; eyes and sparkles stay still.</td></tr>
         <tr><td>Yolo</td><td>Label: <code>Text("YOLO").foregroundStyle(LinearGradient(colors: [acc, cmd, danger, warn, live, acc]))</code>. Ring: a 1-pt
             <code>strokeBorder</code> of the same gradient whose start point slides one full turn every 5 s. The bolt stays plain accent, as in the app.</td></tr>
         <tr><td>Colours</td><td>Ground pure black so it merges with the camera housing. Ink <code>#e7e5ef</code>, dim <code>#8b8898</code>, faint <code>#736f80</code>;
@@ -526,6 +545,24 @@ async function loadIcons() {
     };
 }
 const MARK = `<img src="../../../brand/mark/mark-white.svg" alt="">`;
+
+/** The buddies script the helper runs, read out of the Swift file it is generated into. */
+async function loadBuddies() {
+    const source = await (await fetch("../Sources/NotchKit/Buddies.generated.swift")).text();
+    const script = source.match(/#"""\n([\s\S]*)\n"""#/)[1];
+    return new Function(`${script}; return SikemuxBuddies;`)();
+}
+let BUDDIES = null;
+let buddiesOn = false;
+/** What the app publishes with buddies on in their default style: every pack mixed, one shape per agent. */
+const PUBLISHED = { pack: "all", shape: "mixed", motion: true, agents: {}, boxes: {} };
+const BUDDY_STATE = { blocked: "waiting", working: "working", done: "done", failed: "error" };
+
+/** The agent's buddy while buddies are on in the app, otherwise its agent's mark. */
+function face(a, state = a.state) {
+    if (!buddiesOn) return ICON[a.type];
+    return BUDDIES.notchBuddy(PUBLISHED, a.id, BUDDY_STATE[state] ?? "idle");
+}
 
 const DISPLAYS = {
     notch: { width: 1800, menu: 38, notchW: 221, notchH: 38, center: 901.5 },
@@ -739,7 +776,7 @@ class Island {
             const half = plain ? 150 : 150;
             this.layers.wings.innerHTML = `
                 <div class="wing l" style="width:${half}px;height:${d.notchH}px;gap:8px">
-                    <span class="tile">${ICON[a.type]}</span><span class="inline-text">${a.state === "failed" ? "Failed" : "Finished"}</span></div>
+                    <span class="tile">${face(a)}</span><span class="inline-text">${a.state === "failed" ? "Failed" : "Finished"}</span></div>
                 ${plain ? "" : `<div class="gap" style="width:${d.notchW}px"></div>`}
                 <div class="wing r" style="width:${half}px;height:${d.notchH}px">
                     <span class="inline-text dim">${a.title}</span>${stateMark(a.state)}</div>`;
@@ -748,7 +785,7 @@ class Island {
             const extra = listed(this.agents).length - shown.length;
             this.layers.wings.innerHTML = `
                 <div class="wing l" style="width:${wings.left + (plain ? 4 : 0)}px;height:${d.notchH}px">
-                    <span class="stack">${shown.map((a) => `<span class="tile">${ICON[a.type]}</span>`).join("")}${
+                    <span class="stack">${shown.map((a) => `<span class="tile">${face(a)}</span>`).join("")}${
                         extra > 0 ? `<span class="tile count" style="font-size:10px">+${extra}</span>` : ""}</span></div>
                 ${plain ? "" : `<div class="gap" style="width:${d.notchW}px"></div>`}
                 <div class="wing r" style="width:${wings.right + (plain ? 4 : 0)}px;height:${d.notchH}px">
@@ -768,7 +805,7 @@ class Island {
             const inner = 460 - 2 * t - 16;
             this.layers.peek.style.width = `${inner}px`;
             this.layers.peek.innerHTML = `
-                ${head(`<span class="tile lg">${ICON[a.type]}</span><span class="lead">${a.name}</span>`,
+                ${head(`<span class="tile lg">${face(a, "blocked")}</span><span class="lead">${a.name}</span>`,
                        `<span class="trail" style="color:var(--warn)">Needs you</span>${stateMark("blocked", true)}`, inner)}
                 <div style="padding:8px 0 16px">
                     <div class="text"><span class="title">${a.title}</span><span class="sub">${GLYPH.folderSmall}${a.project}<span class="dotsep">·</span>${a.what}${a.question?.via ? ` · ${a.question.via} didn't know` : ""}</span></div>
@@ -819,7 +856,7 @@ class Island {
             body = `
                 <div class="drops">
                     <div class="drop hot" data-drop="new">${GLYPH.plus}New agent with this file<span class="sub">${NAME[this.selectedType]} in sikemux</span></div>
-                    ${target ? `<div class="drop" data-drop="${target.id}">${ICON[target.type]}Send to ${NAME[target.type]}<span class="sub">${target.title}</span></div>` : ""}
+                    ${target ? `<div class="drop" data-drop="${target.id}">${face(target)}Send to ${NAME[target.type]}<span class="sub">${target.title}</span></div>` : ""}
                 </div>`;
         } else if (this.tab === "agents") {
             if (!listed(this.agents).length) {
@@ -831,7 +868,7 @@ class Island {
                     ${a.tier === "needs" ? `
                         <div class="ask">
                             <div class="ask-head">
-                                <span class="mark">${ICON[a.type]}</span>
+                                <span class="mark">${face(a, "blocked")}</span>
                                 ${rowLine({ ...a, state: "blocked" })}
                             </div>
                             ${a.question ? `<div class="question">${a.question.text}</div>${questionActions(a, " small")}` : `
@@ -843,7 +880,7 @@ class Island {
                             </div>`}
                         </div>` : `
                         <div class="row">
-                            <span class="mark">${ICON[a.type]}</span>
+                            <span class="mark">${face(a)}</span>
                             ${rowLine(a)}
                         </div>`}`).join("");
             }
@@ -1276,6 +1313,7 @@ function buildOptions() {
 }
 
 await loadIcons();
+BUDDIES = await loadBuddies();
 buildToc();
 buildFlow();
 buildStates();
@@ -1291,6 +1329,15 @@ document.getElementById("channel-seg").addEventListener("click", (e) => {
     cards.forEach(paintCard);
     live.channel = channel;
     live.render();
+});
+
+document.getElementById("buddies-seg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-buddies]");
+    if (!b) return;
+    buddiesOn = b.dataset.buddies === "on";
+    for (const x of document.querySelectorAll("[data-buddies]")) x.setAttribute("aria-pressed", x === b);
+    cards.forEach(paintCard);
+    live.render(true);
 });
 
 document.getElementById("display-seg").addEventListener("click", (e) => {
