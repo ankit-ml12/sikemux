@@ -1181,3 +1181,15 @@ button.gcp-project-row:hover {
 .gcp-cell .gcp-chip + .gcp-chip {
     margin-left: 4px;
 }
+
+.gcp-log-bar .gcp-muted {
+    white-space: normal;
+}
+
+.gcp-schema {
+    overflow-x: auto;
+}
+
+.gcp-schema-row {
+    min-width: min-content;
+}
