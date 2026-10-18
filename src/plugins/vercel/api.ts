@@ -28,6 +28,8 @@ export interface VercelStatus {
     teams: VercelTeam[];
     /** The team calls are for, by id; null for the account's own projects. */
     team: string | null;
+    /** Whether the account has projects outside its teams; newer accounts keep them in a default team. */
+    personal: boolean;
 }
 
 /** BUILDING, ERROR, INITIALIZING, QUEUED, READY or CANCELED. */

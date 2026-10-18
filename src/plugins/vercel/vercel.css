@@ -260,8 +260,7 @@ button.vercel-row:hover {
     color: var(--text-primary);
 }
 
-.vercel-log-line.stderr,
-.vercel-log-line.fatal {
+.vercel-log-line.error {
     color: var(--danger);
 }
 

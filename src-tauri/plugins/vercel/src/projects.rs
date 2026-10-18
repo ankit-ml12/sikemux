@@ -39,12 +39,22 @@ fn repo_of(link: &Value) -> Value {
     }
 }
 
+/// The shortest of a deployment's aliases, which is the domain people use; the
+/// longer ones are the branch and scope addresses Vercel adds to every deployment.
+pub fn shortest_alias(deployment: &Value) -> Option<String> {
+    at(deployment, "/alias")
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .min_by_key(|alias| alias.len())
+        .map(str::to_string)
+}
+
 /// A project as the pane and agents read it.
 pub fn project(value: &Value) -> Value {
     let production = at(value, "/targets/production");
     let link = at(value, "/link");
-    let alias = at(production, "/alias/0").as_str().map(str::to_string);
-    let url = alias.or_else(|| {
+    let url = shortest_alias(production).or_else(|| {
         production
             .get("url")
             .and_then(Value::as_str)
@@ -167,7 +177,7 @@ mod tests {
         let raw = json!({
             "id": "prj_1", "name": "web", "framework": "nextjs", "updatedAt": 5,
             "link": { "type": "github", "org": "acme", "repo": "web", "productionBranch": "main" },
-            "targets": { "production": { "id": "dpl_9", "url": "web-abc.vercel.app", "alias": ["web.acme.dev"], "readyState": "READY", "createdAt": 4 } }
+            "targets": { "production": { "id": "dpl_9", "url": "web-abc.vercel.app", "alias": ["web-git-main-acme.vercel.app", "web.acme.dev", "web-acme.vercel.app"], "readyState": "READY", "createdAt": 4 } }
         });
         let read = project(&raw);
         assert_eq!(read["repo"], "acme/web");
