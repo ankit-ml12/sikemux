@@ -40,7 +40,7 @@ vi.mock("../api/acp", () => ({
         permissionReply: vi.fn(async () => {}),
     },
 }));
-vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
+vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     attachAgentSession: mocks.attachAgentSession,
     setAgentAccount: mocks.setAgentAccount,

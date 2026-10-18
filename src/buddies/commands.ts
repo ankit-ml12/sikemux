@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { toAgentBuddy } from "../state/persist";
+import { toAgentBuddy } from "./agentBuddy";
 import { getState, mutate } from "../state/store";
 import { leastUsedColor } from "./catalogue";
 

@@ -12,7 +12,7 @@ import { chatActions } from "./acpEvents";
 import { earlierMessages, PAGE_TURNS, reachesSubagent } from "./earlier";
 import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
-import { workspaceSent } from "../state/coreWorkspace";
+import { workspaceSent } from "../state/workspaceSent";
 import type { ChatAction, ChatState } from "./types";
 
 const UPDATE_FLUSH_FALLBACK_MS = 250;

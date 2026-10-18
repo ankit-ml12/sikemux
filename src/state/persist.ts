@@ -1,4 +1,5 @@
 import { normaliseNotchSettings } from "../notch/notchSettings";
+import { toAgentBuddy } from "../buddies/agentBuddy";
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
@@ -29,7 +30,6 @@ import { isSpaceIcon, spaceName } from "./projectSpaces";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
-    AgentBuddy,
     AgentPermissionMode,
     AgentWorktree,
     AgentProvider,
@@ -468,15 +468,6 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
 /** An agent the core keeps, as the store holds it. */
 export function agentFromCore(record: WorkspaceAgent): PersistedAgent | null {
     return toPersistedAgent({ ...record, type: record.provider });
-}
-
-export function toAgentBuddy(value: unknown): AgentBuddy | null {
-    if (!isRecord(value) || !Number.isInteger(value.color) || (value.color as number) < 0 || (value.color as number) > 63) return null;
-    const buddy: AgentBuddy = { color: value.color as number };
-    const pack = boundedOptionalString(value.pack, 40);
-    const shape = boundedOptionalString(value.shape, 40);
-    if (pack && shape) Object.assign(buddy, { pack, shape });
-    return buddy;
 }
 
 /** A project's name and folder are the core's; this window keeps only which of its tabs is in front. */

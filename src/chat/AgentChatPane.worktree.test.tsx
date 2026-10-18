@@ -49,7 +49,7 @@ vi.mock("../api/acp", () => ({
         permissionReply: vi.fn(),
     },
 }));
-vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
+vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     setAgentWorktree: mocks.setAgentWorktree,
     setAgentWorktreeDefault: mocks.setAgentWorktreeDefault,

@@ -13,6 +13,7 @@ import { isSpaceIcon } from "./projectSpaces";
 import { agentIdsOf, agentWindowId, ownerSessionId } from "./selectors";
 import { getState, mutate, useStore, type StoreState } from "./store";
 import { swallow } from "./toast";
+import { allSent, changeOnItsWay } from "./workspaceSent";
 import type { Agent, PinnedChat, ProjectSpace, Session } from "./types";
 
 export const WORKSPACE_CHANGED_EVENT = "workspace_changed";
@@ -64,14 +65,6 @@ type Shared = Pick<Workspace, "projects" | "spaces" | "agents" | "pinned" | "per
 
 /** The workspace as the core last sent it. */
 let known: Workspace | null = null;
-/** Settles once what this window changed so far has reached the core. */
-let sent: Promise<void> = Promise.resolve();
-let settle: (() => void) | null = null;
-
-/** Waits until every change made here so far is in the core, such as a new agent before its chat starts. */
-export function workspaceSent(): Promise<void> {
-    return sent;
-}
 
 export function fetchCoreWorkspace(): Promise<Workspace> {
     return coreCall<Workspace>("workspace");
@@ -293,10 +286,7 @@ export function startCoreWorkspace(initial: Workspace): () => void {
             if (known) known = { ...known, ...next };
         } while (again);
         sending = false;
-        if (timer === undefined) {
-            settle?.();
-            settle = null;
-        }
+        if (timer === undefined) allSent();
         if (failed) held = await fetchCoreWorkspace().catch(() => held);
         if (held) {
             const workspace = held;
@@ -320,7 +310,7 @@ export function startCoreWorkspace(initial: Workspace): () => void {
         ) {
             return;
         }
-        if (!settle) sent = new Promise((resolve) => (settle = resolve));
+        changeOnItsWay();
         window.clearTimeout(timer);
         timer = window.setTimeout(() => {
             timer = undefined;
@@ -345,7 +335,6 @@ export function startCoreWorkspace(initial: Workspace): () => void {
         controller.abort();
         unsubscribe();
         window.clearTimeout(timer);
-        settle?.();
-        settle = null;
+        allSent();
     };
 }

@@ -9,7 +9,7 @@ import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
 import { agentWindowId, ownerSessionId } from "../state/selectors";
-import { toAgentBuddy } from "../state/persist";
+import { toAgentBuddy } from "../buddies/agentBuddy";
 import { getState, useStore } from "../state/store";
 import type { AgentBuddy } from "../state/types";
 import { mateNote, type Mate } from "./agentMentions";

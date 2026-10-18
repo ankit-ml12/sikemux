@@ -37,7 +37,7 @@ vi.mock("../api/acp", () => {
     };
 });
 
-vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
+vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 
 vi.mock("../terminal/TerminalPane", () => ({
     TerminalPane: (props: ComponentProps<typeof TerminalPane>) => (
