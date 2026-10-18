@@ -1,30 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import type { PendingHost } from '@protocol';
 
+import { formatAgo } from '@mac/lib/format';
 import { platformName } from '@mac/remote/access';
 import { approveHost, pendingHost, refuseHost } from '@/account/api';
+import { ConfirmItsYou, ReverifyCancelled, useRecentSignIn } from '@/account/ConfirmItsYou';
 import { retryHosts } from '@/account/session';
 import { haptics } from '@/ui/haptics';
+import { Icon } from '@/ui/Icon';
 import { Button, Field } from '@/ui/controls';
+import { Row, Rows } from '@/ui/list';
 import { goBack } from '@/ui/navigate';
 import { Prompt } from '@/ui/prompt';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { type Palette, typeFor, useStyles } from '@/ui/theme';
+import { type Palette, typeFor, useColors, useStyles } from '@/ui/theme';
 
 type Step = { kind: 'enter' } | { kind: 'check'; code: string; host: PendingHost } | { kind: 'done'; name: string; added: boolean };
 
-/** Signs in a host with no browser: the person types the code `sikemux login` shows there, checks the host and adds it. */
+function asked(at: string): string {
+  const ago = formatAgo(at);
+  return `Asked ${ago === 'now' ? 'just now' : ago}`;
+}
+
+function removedOn(at: string): string {
+  return new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/**
+ * Signs in a host with no browser: the person types the code `sikemux login` shows there, checks when and
+ * where the host asked from, and adds it after proving it is them. A link never fills the code in.
+ */
 export default function HostSignIn() {
   const styles = useStyles(makeStyles);
+  const colors = useColors();
   const bottom = useBottomGap();
   const { getToken } = useAuth();
-  const { code: given } = useLocalSearchParams<{ code?: string }>();
-  const [typed, setTyped] = useState(given ?? '');
+  const recent = useRecentSignIn('Add it at app.sikemux.com/host.');
+  const [typed, setTyped] = useState('');
   const [step, setStep] = useState<Step>({ kind: 'enter' });
-  const [busy, setBusy] = useState<'look' | 'add' | 'refuse' | undefined>(given ? 'look' : undefined);
+  const [busy, setBusy] = useState<'look' | 'add' | 'refuse' | undefined>();
   const [problem, setProblem] = useState<string>();
   const token = () => getToken();
 
@@ -35,6 +51,7 @@ export default function HostSignIn() {
       setStep(await work());
       haptics.success();
     } catch (error) {
+      if (error instanceof ReverifyCancelled) return;
       haptics.failure();
       setProblem(error instanceof Error ? error.message : String(error));
     } finally {
@@ -42,20 +59,6 @@ export default function HostSignIn() {
     }
   };
   const look = (code: string) => run('look', async () => ({ kind: 'check', code, host: await pendingHost(token, code) }));
-
-  useEffect(() => {
-    if (!given) return;
-    let current = true;
-    pendingHost(() => getToken(), given)
-      .then(
-        (host) => current && setStep({ kind: 'check', code: given, host }),
-        (error: unknown) => current && setProblem(error instanceof Error ? error.message : String(error)),
-      )
-      .finally(() => current && setBusy(undefined));
-    return () => {
-      current = false;
-    };
-  }, [given, getToken]);
 
   if (step.kind === 'done')
     return (
@@ -72,8 +75,20 @@ export default function HostSignIn() {
       </Screen>
     );
 
+  if (recent.verify)
+    return (
+      <ConfirmItsYou
+        verify={recent.verify}
+        onEnter={recent.enter}
+        onCheck={(entry) => void recent.check(entry)}
+        onBack={recent.cancel}
+        action={{ title: 'Add host', kind: 'primary' }}
+      />
+    );
+
   if (step.kind === 'check') {
     const { code, host } = step;
+    const near = host.requestedNear ?? host.requestedFrom;
     return (
       <Screen>
         <Nav back="Back" onBack={() => setStep({ kind: 'enter' })} />
@@ -84,6 +99,20 @@ export default function HostSignIn() {
             detail={`${platformName(host.platform)} · ${host.channel}. Only add a computer you are setting up right now.`}
           />
           <View style={styles.form}>
+            <Rows>
+              <Row mark={<Icon name="IconClock" size={18} color={colors.secondary} />} title={asked(host.requestedAt)} />
+              <Row
+                mark={<Icon name="IconGlobe" size={18} color={colors.secondary} />}
+                title={near ? `From ${near}` : 'From an unknown place'}
+                detail={host.requestedNear && host.requestedFrom ? host.requestedFrom : undefined}
+              />
+            </Rows>
+            {host.removedAt ? (
+              <Text style={styles.warning}>
+                This host was removed from your account on {removedOn(host.removedAt)}. Add it back only if you are setting it up again
+                yourself.
+              </Text>
+            ) : null}
             {problem ? <Text style={styles.problem}>{problem}</Text> : null}
             <Button
               kind="primary"
@@ -92,7 +121,7 @@ export default function HostSignIn() {
               disabled={busy !== undefined}
               onPress={() =>
                 void run('add', async () => {
-                  await approveHost(token, code);
+                  await recent.run(() => approveHost(() => getToken({ skipCache: true }), code));
                   retryHosts();
                   return { kind: 'done', name: host.name, added: true };
                 })
@@ -139,7 +168,7 @@ export default function HostSignIn() {
             autoCapitalize="characters"
             autoCorrect={false}
             autoComplete="off"
-            autoFocus={!given}
+            autoFocus
             returnKeyType="go"
             onSubmitEditing={() => entered && void look(entered)}
             accessibilityLabel="Code"
@@ -166,5 +195,6 @@ const makeStyles = (colors: Palette) => {
     mono: { ...type.mono, color: colors.ink },
     code: { ...type.mono, fontSize: 20, letterSpacing: 2, color: colors.ink },
     problem: { ...type.meta, fontSize: 13.5, color: colors.danger },
+    warning: { ...type.body, color: colors.danger },
   });
 };

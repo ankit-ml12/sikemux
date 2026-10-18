@@ -27,7 +27,7 @@ curl -fsSL https://sikemux.com/install | sh -s -- --host
 
 `--app` picks the desktop app instead, and `--yes` takes every default without asking, as cloud-init and other scripts need. With no terminal attached, the installer asks nothing and installs the core on a machine with no desktop.
 
-The core works on x86_64 and arm64 and needs no WebKit. The `sikemux` command goes in `/usr/local/bin`, or in `~/.local/bin` when you are not root. With systemd, the core then starts at boot and restarts if it crashes. Last, it offers to sign the host in and prints a code: approve it at app.sikemux.com or in Sikemux on your phone to add the host to your account. Then link it from your Mac under Settings → Devices → Computers.
+The core works on x86_64 and arm64 and needs no WebKit. The `sikemux` command goes in `/usr/local/bin`, or in `~/.local/bin` when you are not root. With systemd, the core then starts at boot and restarts if it crashes. Last, it offers to sign the host in and prints a code: type it at app.sikemux.com/host or in Sikemux on your phone to add the host to your account, as [Your phone](/getting-started/phone/#adding-a-host-with-a-code) describes. Then link it from your Mac under Settings → Devices → Computers.
 
 The host needs no open ports: it connects out to Sikemux's relays over HTTPS and to your devices over UDP, so a firewall or security group can block all inbound traffic.
 

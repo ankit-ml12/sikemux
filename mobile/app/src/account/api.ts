@@ -38,7 +38,7 @@ export class AccountProblem extends Error {
   }
 }
 
-/** The server wants a recent proof of the person's password or email before it deletes the account. */
+/** The server wants a recent proof of the person's password or email before it deletes the account or adds a host. */
 export class ReverifyNeeded extends Error {}
 
 /** The account was deleted and can still be restored, until `deletesAt`. */
