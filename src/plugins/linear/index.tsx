@@ -14,13 +14,13 @@ registerFrontendPlugin({
         {
             kind: LINEAR_ISSUES,
             title: "Linear",
-            icon: (size) => <LinearMark size={size} />,
+            icon: (size) => <LinearMark size={size} className="icon-linear" />,
             render: ({ paneId, visible }) => <LinearPane paneId={paneId} active={visible} />,
         },
     ],
     open: openLinear,
     openTitle: "Open Linear",
-    mark: (size) => <LinearMark size={size} />,
+    mark: (size) => <LinearMark size={size} className="icon-linear" />,
     linkHosts: ["linear.app"],
     useSignIn: function useServiceSignIn() {
         return signInOf(useResource(linearStatusR));

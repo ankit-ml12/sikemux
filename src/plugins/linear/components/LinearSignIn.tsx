@@ -28,7 +28,7 @@ export function LinearSignIn({ status, onSignedIn }: { status: LinearStatus | un
 
     return (
         <SignInScreen
-            mark={<LinearMark size={26} />}
+            mark={<LinearMark size={26} className="icon-linear" />}
             title="Connect Linear"
             lede="See the issues you are meant to be working on beside your code, and let agents read, comment on and move them."
             foot="Sikemux keeps your sign-in in the macOS Keychain.">

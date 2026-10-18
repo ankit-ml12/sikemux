@@ -347,7 +347,8 @@
 .sess-icon.project {
     color: var(--live);
 }
-.icon-github {
+.icon-github,
+.icon-linear {
     color: var(--text-primary);
 }
 .sess-name {
