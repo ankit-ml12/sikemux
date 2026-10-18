@@ -23,47 +23,50 @@ pub struct LocalFiles {
 
 #[derive(Clone)]
 struct Share {
+    root: PathBuf,
     port: u16,
     token: String,
 }
 
 impl LocalFiles {
-    /// A loopback address that shows `path`, serving the folder it is in.
+    /// A loopback address that shows `path`, a file or a folder's `index.html`.
     pub fn url_for(&self, path: &Path) -> Result<String, String> {
-        let path = path
+        let mut path = path
             .canonicalize()
             .map_err(|_| format!("{} does not exist", path.display()))?;
-        let (root, file) = if path.is_dir() {
-            (path, None)
-        } else {
-            let root = path
-                .parent()
-                .ok_or("that file has no folder")?
-                .to_path_buf();
-            (
-                root,
-                path.file_name()
-                    .map(|name| name.to_string_lossy().into_owned()),
-            )
-        };
-        if let Some(name) = &file {
-            if name.starts_with('.') {
-                return Err("hidden files are not shown in a tab".into());
+        if path.is_dir() {
+            path = path.join("index.html");
+            if !path.is_file() {
+                return Err(format!(
+                    "{} has no index.html to show; open a file inside it",
+                    path.parent().unwrap_or(&path).display()
+                ));
             }
         }
-        refuse_broad_root(&root)?;
-        let share = self.share(&root)?;
+        let root = path
+            .parent()
+            .ok_or("that file has no folder")?
+            .to_path_buf();
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .ok_or("that file has no name")?;
+        if name.starts_with('.') {
+            return Err("hidden files are not shown in a tab".into());
+        }
+        let only = (!serves_its_folder(&root)).then(|| path.clone());
+        let share = self.share(&root, only)?;
         let mut url =
             Url::parse(&format!("http://127.0.0.1:{}/", share.port)).expect("loopback url");
-        {
-            let mut segments = url.path_segments_mut().expect("http url has a path");
-            segments.pop_if_empty().push(&share.token);
-            segments.push(file.as_deref().unwrap_or(""));
-        }
+        url.path_segments_mut()
+            .expect("http url has a path")
+            .pop_if_empty()
+            .push(&share.token)
+            .push(&name);
         Ok(url.into())
     }
 
-    /// The file or folder a loopback address from [`Self::url_for`] shows.
+    /// The file a loopback address from [`Self::url_for`] shows.
     pub fn path_of(&self, url: &str) -> Option<PathBuf> {
         let url = Url::parse(url).ok()?;
         if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") {
@@ -76,23 +79,24 @@ impl LocalFiles {
             .shares
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        let (root, _) = shares
-            .iter()
-            .find(|(_, share)| share.port == port && share.token == token)?;
-        Some(root.join(safe_relative(rest)?))
+        let share = shares
+            .values()
+            .find(|share| share.port == port && share.token == token)?;
+        Some(share.root.join(safe_relative(rest)?))
     }
 
-    fn share(&self, root: &Path) -> Result<Share, String> {
+    fn share(&self, root: &Path, only: Option<PathBuf>) -> Result<Share, String> {
+        let key = only.clone().unwrap_or_else(|| root.to_path_buf());
         let mut shares = self
             .shares
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        if let Some(share) = shares.get(root) {
+        if let Some(share) = shares.get(&key) {
             return Ok(share.clone());
         }
         if shares.len() >= MAX_SHARES {
             return Err(format!(
-                "already showing {MAX_SHARES} local folders; restart Sikemux to show another"
+                "already showing {MAX_SHARES} local files; restart Sikemux to show another"
             ));
         }
         let listener =
@@ -101,6 +105,7 @@ impl LocalFiles {
             .set_nonblocking(true)
             .map_err(|error| error.to_string())?;
         let share = Share {
+            root: root.to_path_buf(),
             port: listener
                 .local_addr()
                 .map_err(|error| error.to_string())?
@@ -109,6 +114,7 @@ impl LocalFiles {
         };
         let folder = Folder {
             root: root.to_path_buf(),
+            only,
             token: share.token.clone(),
             port: share.port,
         };
@@ -118,29 +124,54 @@ impl LocalFiles {
             };
             folder.serve(listener).await;
         });
-        shares.insert(root.to_path_buf(), share.clone());
+        shares.insert(key, share.clone());
         Ok(share)
     }
 }
 
-/// A page can read every file under the folder it came from, so the whole disk or home folder is off limits.
-fn refuse_broad_root(root: &Path) -> Result<(), String> {
-    let home = std::env::var("HOME")
+/// A page can read every file under the folder it came from. That is fine inside a project, but
+/// Downloads, Desktop and the like gather files from anywhere, so a page there sees only itself.
+fn serves_its_folder(folder: &Path) -> bool {
+    let Some(home) = std::env::var("HOME")
         .ok()
-        .and_then(|home| Path::new(&home).canonicalize().ok());
-    let too_broad = root.parent().is_none() || home.is_some_and(|home| home.starts_with(root));
-    if too_broad {
-        return Err(format!(
-            "{} is too broad to show; open a file or folder inside a project",
-            root.display()
-        ));
+        .and_then(|home| Path::new(&home).canonicalize().ok())
+    else {
+        return false;
+    };
+    let catch_alls: Vec<PathBuf> = CATCH_ALL_FOLDERS
+        .iter()
+        .map(|name| home.join(name))
+        .chain(TEMPORARY_FOLDERS.iter().map(PathBuf::from))
+        .collect();
+    let broad = |path: &Path| {
+        path.parent().is_none() || home.starts_with(path) || catch_alls.iter().any(|f| f == path)
+    };
+    if folder
+        .ancestors()
+        .find(|ancestor| ancestor.join(".git").exists())
+        .is_some_and(|project| !broad(project))
+    {
+        return true;
     }
-    Ok(())
+    !broad(folder) && !catch_alls.iter().any(|f| folder.starts_with(f))
 }
+
+const CATCH_ALL_FOLDERS: &[&str] = &[
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Library",
+    "Movies",
+    "Music",
+    "Pictures",
+    "Public",
+];
+const TEMPORARY_FOLDERS: &[&str] = &["/private/tmp", "/private/var/folders"];
 
 #[derive(Clone)]
 struct Folder {
     root: PathBuf,
+    only: Option<PathBuf>,
     token: String,
     port: u16,
 }
@@ -148,7 +179,6 @@ struct Folder {
 #[derive(Debug, PartialEq)]
 enum Answer {
     File(PathBuf),
-    Page(String),
     Redirect(String),
     Refused(u16),
 }
@@ -172,20 +202,6 @@ impl Folder {
         let answer = self.answer(&request);
         match answer {
             Answer::File(path) => send_file(&mut stream, &path, request.range, head_only).await,
-            Answer::Page(html) => {
-                let head = response_head(
-                    200,
-                    "OK",
-                    "text/html; charset=utf-8",
-                    html.len() as u64,
-                    &[],
-                );
-                stream.write_all(head.as_bytes()).await?;
-                if !head_only {
-                    stream.write_all(html.as_bytes()).await?;
-                }
-                Ok(())
-            }
             Answer::Redirect(location) => {
                 let head = response_head(
                     301,
@@ -241,7 +257,7 @@ impl Folder {
         let Ok(found) = self.root.join(&relative).canonicalize() else {
             return Answer::Refused(404);
         };
-        if !found.starts_with(&self.root) {
+        if !found.starts_with(&self.root) || self.only.as_ref().is_some_and(|only| *only != found) {
             return Answer::Refused(404);
         }
         if found.is_file() {
@@ -254,7 +270,7 @@ impl Folder {
         if index.is_file() {
             return Answer::File(index);
         }
-        Answer::Page(listing(&found, &relative))
+        Answer::Refused(404)
     }
 }
 
@@ -269,50 +285,6 @@ fn safe_relative(rest: &str) -> Option<PathBuf> {
         relative.push(name);
     }
     Some(relative)
-}
-
-fn listing(folder: &Path, relative: &Path) -> String {
-    let mut names: Vec<(String, bool)> = std::fs::read_dir(folder)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            (!name.starts_with('.')).then(|| (name, entry.path().is_dir()))
-        })
-        .collect();
-    names.sort();
-    let title = escape_html(&format!("/{}", relative.display()));
-    let items: String = names
-        .iter()
-        .map(|(name, is_dir)| {
-            let slash = if *is_dir { "/" } else { "" };
-            let href = encode_segment(name);
-            format!(
-                "<li><a href=\"{href}{slash}\">{}{slash}</a></li>\n",
-                escape_html(name)
-            )
-        })
-        .collect();
-    format!("<!doctype html>\n<meta charset=\"utf-8\">\n<title>{title}</title>\n<h1>{title}</h1>\n<ul>\n{items}</ul>\n")
-}
-
-fn encode_segment(name: &str) -> String {
-    name.bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (byte as char).to_string()
-            }
-            _ => format!("%{byte:02X}"),
-        })
-        .collect()
-}
-
-fn escape_html(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 struct Request {
@@ -453,6 +425,7 @@ mod tests {
         std::fs::write(root.join("assets/app one.js"), "1").unwrap();
         let folder = Folder {
             root,
+            only: None,
             token: "t0k".into(),
             port: 4000,
         };
@@ -483,10 +456,20 @@ mod tests {
             get(&folder, "/t0k/assets"),
             Answer::Redirect("/t0k/assets/".into())
         );
-        let Answer::Page(listing) = get(&folder, "/t0k/assets/") else {
-            panic!("a folder without index.html lists its files");
-        };
-        assert!(listing.contains("href=\"app%20one.js\""));
+        assert_eq!(get(&folder, "/t0k/assets/"), Answer::Refused(404));
+    }
+
+    #[test]
+    fn a_file_shown_alone_serves_nothing_beside_it() {
+        let (_dir, mut folder) = folder();
+        let page = folder.root.join("index.html");
+        folder.only = Some(page.clone());
+        assert_eq!(get(&folder, "/t0k/index.html"), Answer::File(page));
+        assert_eq!(get(&folder, "/t0k/"), Answer::Refused(404));
+        assert_eq!(
+            get(&folder, "/t0k/assets/app%20one.js"),
+            Answer::Refused(404)
+        );
     }
 
     #[test]
@@ -534,14 +517,23 @@ mod tests {
     }
 
     #[test]
-    fn the_home_folder_and_the_disk_root_are_too_broad() {
+    fn only_a_project_serves_the_files_beside_a_page() {
         let home = PathBuf::from(std::env::var("HOME").unwrap())
             .canonicalize()
             .unwrap();
-        assert!(refuse_broad_root(Path::new("/")).is_err());
-        assert!(refuse_broad_root(&home).is_err());
-        assert!(refuse_broad_root(home.parent().unwrap()).is_err());
-        assert!(refuse_broad_root(&home.join("project")).is_ok());
+        assert!(!serves_its_folder(Path::new("/")));
+        assert!(!serves_its_folder(&home));
+        assert!(!serves_its_folder(&home.join("Downloads")));
+        assert!(!serves_its_folder(&home.join("Downloads/site")));
+        assert!(serves_its_folder(&home.join("project")));
+        let downloads = tempfile::tempdir().unwrap();
+        let repo = downloads.path().canonicalize().unwrap().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir(repo.join("docs")).unwrap();
+        assert!(!serves_its_folder(
+            &downloads.path().canonicalize().unwrap()
+        ));
+        assert!(serves_its_folder(&repo.join("docs")));
     }
 
     #[tokio::test]
@@ -572,9 +564,9 @@ mod tests {
             "{response}"
         );
         assert!(response.ends_with("\r\n\r\n1"), "{response}");
-        let same_folder = files.url_for(&dir.path().join("assets")).unwrap();
-        assert_eq!(Url::parse(&same_folder).unwrap().port(), Some(port));
-        assert!(same_folder.ends_with('/'), "{same_folder}");
+        let folder_page = files.url_for(dir.path()).unwrap();
+        assert!(folder_page.ends_with("/index.html"), "{folder_page}");
+        assert!(files.url_for(&dir.path().join("assets")).is_err());
         assert!(files.url_for(&dir.path().join(".env")).is_err());
         assert!(files.url_for(&dir.path().join("nope.html")).is_err());
     }
