@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { coreCall } from "../api/core";
 import { onCoreChanged } from "../api/coreChanged";
 
+
 export type TaskSourceKind = "project" | "personal" | "detected" | "rerun" | "command";
 
 /** A task the project offers, as the core lists it. */
@@ -77,6 +78,8 @@ const listeners = new Set<() => void>();
 function readRuns(): void {
     void coreCall<TaskRun[]>("taskRuns")
         .catch(() => {});
+}
+
 }
 
 function subscribeRuns(listener: () => void): () => void {

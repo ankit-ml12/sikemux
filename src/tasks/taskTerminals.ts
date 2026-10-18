@@ -25,6 +25,8 @@ export function focusWhenShown(executionId: string): void {
 
 }
 
+}
+
 /* Runs that were going when the page loaded come back in the background;
    later ones show as they start, wherever they came from. */
 function follow(runs: readonly TaskRun[], first: boolean): void {
