@@ -5,6 +5,13 @@
     padding: 14px 16px 12px;
     border-bottom: 1px solid var(--border);
 }
+/* Beside the side panel's card, a commit's header is a card of its own on the same surface. */
+.git-right-review .git-detail {
+    margin-bottom: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
+}
 .git-detail-title {
     display: flex;
     align-items: center;
