@@ -25,6 +25,9 @@ scratch/
 .scratch/
 .empryo
 
+# Marketing inspiration and outreach, its own git repo.
+marketing/
+
 # Showcase captures
 showcase/out/
 
