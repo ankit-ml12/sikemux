@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import { copyText, notify, swallow } from "../../plugin-api/host";
@@ -11,28 +11,92 @@ import { elapsedMs, outcomeOf } from "../runStatus";
 import { useEvery } from "../../plugin-api/hooks";
 import { formatDuration } from "../../lib/format";
 import { RunMark } from "./ActionsIcon";
+import { ansiCss, parseAnsi, stripAnsi, type AnsiRun } from "../../lib/ansi";
+import { CodeRun, fenceLanguage, useCodeTokens } from "../../chat/codeHighlight";
 
-/** Runner logs mark their sections with `##[...]`, which is noise on screen. */
-const MARKUP = /^##\[(?:group|endgroup|section|command)\]/u;
-const ENDGROUP = /^##\[endgroup\]/u;
+/** Runner logs mark sections, errors and warnings with `##[...]`, which is noise on screen; the line is styled instead. */
+const MARKUP = /^##\[(group|endgroup|section|command|error|warning|notice|debug)\]/u;
+
+function kindOf(text: string): string | null {
+    return MARKUP.exec(text)?.[1] ?? null;
+}
 
 function clean(text: string): string {
     return text.replace(MARKUP, "");
 }
 
+const SHELL = fenceLanguage("bash");
+
 const LIVE_REFRESH_MS = 5_000;
 const LINE_HEIGHT = 18;
+const BODY_PADDING = 4;
 /** How close to the bottom the reader must be for a running job's new lines to keep the view at the bottom. */
 const FOLLOW_SLACK = 48;
 
-function findMatches(lines: readonly LogLine[], needle: string): number[] {
+function findMatches(plain: readonly string[], needle: string): number[] {
     if (!needle) return [];
     const found: number[] = [];
-    lines.forEach((line, index) => {
-        if (line.text.toLowerCase().includes(needle)) found.push(index);
+    plain.forEach((text, index) => {
+        if (text.toLowerCase().includes(needle)) found.push(index);
     });
     return found;
 }
+
+/**
+ * The script under each `Run` a step opens with, up to the `shell:` line, as one text to colour as bash, and which
+ * line of it each log line is.
+ */
+function commandsOf(lines: readonly LogLine[], plain: readonly string[], from: number, to: number): { text: string; at: Map<number, number> } {
+    const at = new Map<number, number>();
+    const script: string[] = [];
+    let running = false;
+    for (let index = from; index < to; index += 1) {
+        const kind = kindOf(lines[index]?.text ?? "");
+        const text = plain[index] ?? "";
+        if (kind === "group" && text.startsWith("Run ")) {
+            if (script.length > 0) script.push("");
+            running = true;
+        } else if (running && (kind === "endgroup" || text.startsWith("shell: "))) {
+            running = false;
+        } else if (running) {
+            at.set(index, script.length);
+            script.push(text);
+        }
+    }
+    return { text: script.join("\n"), at };
+}
+
+function runStyle(run: AnsiRun): CSSProperties | undefined {
+    if (run.fg === null && run.bg === null && !run.bold && !run.dim && !run.italic && !run.underline) return undefined;
+    return {
+        color: run.fg === null ? undefined : ansiCss(run.fg),
+        background: run.bg === null ? undefined : ansiCss(run.bg),
+        fontWeight: run.bold ? 600 : undefined,
+        opacity: run.dim ? 0.65 : undefined,
+        fontStyle: run.italic ? "italic" : undefined,
+        textDecoration: run.underline ? "underline" : undefined,
+    };
+}
+
+/** A line in the colours the job printed it in. */
+const LogText = memo(function LogText({ text }: { text: string }) {
+    const runs = parseAnsi(text);
+    if (runs.length === 0) return " ";
+    return (
+        <>
+            {runs.map((run, index) => {
+                const style = runStyle(run);
+                return style ? (
+                    <span key={index} style={style}>
+                        {run.text}
+                    </span>
+                ) : (
+                    run.text
+                );
+            })}
+        </>
+    );
+});
 
 const needleOf = (query: string) => query.trim().toLowerCase();
 
@@ -74,6 +138,7 @@ interface Marks {
 
 interface StepLinesProps {
     lines: readonly LogLine[];
+    plain: readonly string[];
     section: Section;
     start: number;
     scroller: () => HTMLElement | null;
@@ -82,8 +147,11 @@ interface StepLinesProps {
     onJumped: () => void;
 }
 
+/** The list scrolls itself and every open step shares it, so a step's own lines never move it. */
+function leaveScrollAlone(): void {}
+
 /** An open step's lines, drawn only where the list is scrolled to, however long the step ran. */
-const StepLines = memo(function StepLines({ lines, section, start, scroller, marks, jump, onJumped }: StepLinesProps) {
+const StepLines = memo(function StepLines({ lines, plain, section, start, scroller, marks, jump, onJumped }: StepLinesProps) {
     const rows = useRef<HTMLDivElement>(null);
     const [margin, setMargin] = useState(start + CARD_HEADER_HEIGHT + BODY_PADDING);
     useLayoutEffect(() => {
@@ -96,17 +164,27 @@ const StepLines = memo(function StepLines({ lines, section, start, scroller, mar
         estimateSize: () => LINE_HEIGHT,
         overscan: 24,
         scrollMargin: margin,
+        scrollPaddingStart: CARD_HEADER_HEIGHT + LINE_HEIGHT * 2,
         getItemKey: (index) => lines[from + index]?.number ?? index,
         initialRect: { width: 1000, height: 800 },
+        initialOffset: () => scroller()?.scrollTop ?? 0,
+        scrollToFn: leaveScrollAlone,
     });
+
+    const commands = useMemo(() => commandsOf(lines, plain, from, to), [lines, plain, from, to]);
+    const coloured = useCodeTokens(commands.text, commands.text ? SHELL : null);
 
     const mine = jump?.key === section.key ? jump : null;
     useEffect(() => {
         if (!mine) return;
         const frame = window.requestAnimationFrame(() => {
+            const list = scroller();
+            const target = virtualizer.getOffsetForIndex(Math.max(0, mine.line - from), "start")?.[0];
+            if (list && target !== undefined) list.scrollTop = target;
             onJumped();
         });
         return () => window.cancelAnimationFrame(frame);
+    }, [mine, from, virtualizer, scroller, onJumped]);
 
     if (to === from) return <div className="gha-step-log gha-dim gha-step-empty">This step wrote nothing.</div>;
     return (
@@ -116,17 +194,20 @@ const StepLines = memo(function StepLines({ lines, section, start, scroller, mar
                     const index = from + row.index;
                     const line = lines[index];
                     if (!line) return null;
-                    const group = MARKUP.test(line.text) && !ENDGROUP.test(line.text) ? " group" : "";
+                    const kind = kindOf(line.text);
+                    const tokens = coloured?.[commands.at.get(index) ?? -1];
                     const hit = index === marks.current ? " hit current" : marks.matched.has(index) ? " hit" : "";
                     return (
                         <div
                             key={row.key}
                             ref={virtualizer.measureElement}
                             data-index={row.index}
-                            className={`gha-log-line${group}${hit}`}
+                            className={`gha-log-line${kind && kind !== "endgroup" ? ` ${kind}` : ""}${hit}`}
                             style={{ transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)` }}>
                             <span className="gha-log-number gha-mono">{row.index + 1}</span>
-                            <span className="gha-log-text gha-mono">{clean(line.text) || " "}</span>
+                            <span className="gha-log-text gha-mono">
+                                {tokens ? <CodeRun tokens={tokens} /> : <LogText text={clean(line.text)} />}
+                            </span>
                         </div>
                     );
                 })}
@@ -170,16 +251,56 @@ export function JobLogView({ repo, job, now, active }: Props) {
     }, [running, active]);
 
     const lines = useMemo(() => log.data?.lines ?? [], [log.data]);
+    const plain = useMemo(() => lines.map((line) => stripAnsi(clean(line.text))), [lines]);
     const starts = useMemo(() => stepStarts(lines, job.steps), [lines, job.steps]);
     const sections = useMemo(() => sectionsOf(lines, job.steps, starts), [lines, job.steps, starts]);
     const keys = useMemo(() => sections.map((section) => section.key), [sections]);
     const byKey = useMemo(() => new Map(sections.map((section) => [section.key, section])), [sections]);
     const collapsed = useMemo(() => new Set(keys.filter((key) => !opened.has(key))), [keys, opened]);
     const needle = needleOf(query);
-    const matches = useMemo(() => findMatches(lines, needle), [lines, needle]);
-    const matched = useMemo(() => new Set(matches), [matches]);
+    const matches = useMemo(() => findMatches(plain, needle), [plain, needle]);
+    const current = matches[match] ?? -1;
+    const marks = useMemo(() => ({ matched: new Set(matches), current }), [matches, current]);
 
-    const shownStep = useRef<{ number: number } | null>(null);
+    const show = useCallback(
+        (line: number) => {
+            const at = sections.findIndex((section) => line >= section.from && line < section.to);
+            const section = sections[at];
+            if (!section) return;
+            following.current = false;
+            setOpened((was) => (was.has(section.key) ? was : new Set(was).add(section.key)));
+            setJump({ key: section.key, line });
+            const list = stream.current?.scroller();
+            if (list) list.scrollTop = stream.current?.cardStart(at) ?? list.scrollTop;
+        },
+        [sections],
+    );
+
+    // GitHub's way: a step that failed opens, and the first one to fail is brought into view; a running job's newest
+    // step opens and is followed. A step that passed stays folded.
+    const seen = useRef(new Map<string, string>());
+    const broughtFailure = useRef(false);
+    useEffect(() => {
+        const opening: string[] = [];
+        let firstFailed: Section | null = null;
+        for (const section of sections) {
+            const outcome = section.step ? outcomeOf(section.step) : "log";
+            if (seen.current.get(section.key) === outcome) continue;
+            seen.current.set(section.key, outcome);
+            if (outcome === "failure") {
+                opening.push(section.key);
+                firstFailed ??= section;
+            } else if (outcome === "running" || outcome === "log") {
+                opening.push(section.key);
+            }
+        }
+        if (opening.length > 0) setOpened((was) => new Set([...was, ...opening]));
+        if (firstFailed && !broughtFailure.current && lines.length > 0) {
+            broughtFailure.current = true;
+            show(firstFailed.from);
+        }
+    }, [sections, lines.length, show]);
+
     useEffect(() => {
         if (!running || !following.current || needle) return;
         const frame = window.requestAnimationFrame(() => {
@@ -218,7 +339,7 @@ export function JobLogView({ repo, job, now, active }: Props) {
     }
 
     const copyAll = () =>
-        void copyText(lines.map((line) => clean(line.text)).join("\n"))
+        void copyText(plain.join("\n"))
             .then(() => notify("success", `Copied ${lines.length} lines`))
             .catch(swallow("copy the log"));
 
@@ -239,7 +360,7 @@ export function JobLogView({ repo, job, now, active }: Props) {
                     value={query}
                     spellCheck={false}
                     onChange={(event) => {
-                        const first = findMatches(lines, needleOf(event.target.value))[0];
+                        const first = findMatches(plain, needleOf(event.target.value))[0];
                         setQuery(event.target.value);
                         setMatch(0);
                         if (first !== undefined) show(first);
@@ -307,7 +428,9 @@ export function JobLogView({ repo, job, now, active }: Props) {
                                     {step.name}
                                 </span>
                                 <span className="acc-grow" />
-                                {took !== null && outcome !== "skipped" && <span className="merge-file-status gha-step-took">{formatDuration(took)}</span>}
+                                {took !== null && outcome !== "skipped" && (
+                                    <span className="merge-file-status gha-step-took">{formatDuration(took)}</span>
+                                )}
                             </>
                         );
                     }}
@@ -317,6 +440,7 @@ export function JobLogView({ repo, job, now, active }: Props) {
                         return (
                             <StepLines
                                 lines={lines}
+                                plain={plain}
                                 section={section}
                                 start={start}
                                 scroller={scroller}

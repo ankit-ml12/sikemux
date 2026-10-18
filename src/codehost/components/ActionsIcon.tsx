@@ -45,6 +45,15 @@ export function RingedOutcome({ outcome, size = 16 }: { outcome: Outcome; size?:
     );
 }
 
+/** How a run or step is going: a ring with its outcome once it ends, an amber dot while it waits and a spinning ring while it runs. */
+export function RunMark({ outcome, size = 16 }: { outcome: Outcome; size?: number }) {
+    if (outcome === "running" || outcome === "queued")
+        return (
+            <span className="pr-ci-pending" data-outcome={outcome} role="img" aria-label={OUTCOME_LABEL[outcome]} title={OUTCOME_LABEL[outcome]} />
+        );
+    return <RingedOutcome outcome={outcome} size={size} />;
+}
+
 export function MoreDots({ size = 13 }: { size?: number }) {
     return (
         <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

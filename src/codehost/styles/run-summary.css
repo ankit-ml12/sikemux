@@ -221,26 +221,6 @@ button.gha-graph-job:hover {
     color: var(--danger);
 }
 
-button.gha-step {
-    width: 100%;
-    padding: 0 var(--space-1);
-    border: 1px solid transparent;
-    border-radius: var(--radius-2);
-    background: none;
-    font: inherit;
-    font-size: var(--text-2xs);
-    text-align: left;
-    cursor: pointer;
-}
-button.gha-step:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-}
-button.gha-step:focus-visible {
-    box-shadow: var(--focus-ring);
-    outline: none;
-}
-
 .gha-log-search {
     width: 180px;
     height: 22px;

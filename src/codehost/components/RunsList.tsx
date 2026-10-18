@@ -16,9 +16,9 @@ import {
 import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
 import { useHost } from "../registry";
 import { pullsR, runsR, workflowsR } from "../resources";
-import { elapsedMs, isUnfinished, OUTCOME_LABEL, outcomeOf, statusParam } from "../runStatus";
+import { elapsedMs, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updateView, type HostView, type StatusFilter } from "../state";
-import { RingedOutcome } from "./ActionsIcon";
+import { RunMark } from "./ActionsIcon";
 import { RunMenu } from "./RunMenu";
 import { Face } from "./CommentThread";
 import { coarse } from "./hooks";
@@ -38,15 +38,6 @@ const FILTER_LABEL: Record<StatusFilter, string> = {
 };
 
 const EVERY_WORKFLOW = "all";
-
-/** How a run is going: a ring with its outcome once it ends, an amber dot while it waits and a spinning ring while it runs. */
-function RunMark({ outcome }: { outcome: ReturnType<typeof outcomeOf> }) {
-    if (outcome === "running" || outcome === "queued")
-        return (
-            <span className="pr-ci-pending" data-outcome={outcome} role="img" aria-label={OUTCOME_LABEL[outcome]} title={OUTCOME_LABEL[outcome]} />
-        );
-    return <RingedOutcome outcome={outcome} size={16} />;
-}
 
 /**
  * A run as GitHub lists it, with Bitbucket's face: who started it, how it went and its title, then its workflow and

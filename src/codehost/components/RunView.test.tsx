@@ -287,7 +287,7 @@ describe("a job's log", () => {
         await act(async () => {});
         expect(api.rerunJob).toHaveBeenLastCalledWith(repo, "3", false);
         expect(toasts()).toContain("Re-running build");
-        fireEvent.click(screen.getByRole("button", { name: "with debug logs" }));
+        fireEvent.click(screen.getByRole("button", { name: "With debug logs" }));
         await act(async () => {});
         expect(api.rerunJob).toHaveBeenLastCalledWith(repo, "3", true);
     });
@@ -298,7 +298,7 @@ describe("a job's log", () => {
         cleanup();
         await openJob(makeJob(), false);
         expect(screen.queryByRole("button", { name: "Re-run this job" })).toBeNull();
-        expect(screen.queryByRole("button", { name: "with debug logs" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "With debug logs" })).toBeNull();
     });
 });
 

@@ -20,7 +20,7 @@ import { useHost } from "../registry";
 import { artifactsR, runAttemptR, runR, timingR } from "../resources";
 import { elapsedMs, eventLabel, failedStep, isUnfinished, outcomeOf, OUTCOME_LABEL, summaryJobs, watchIsNewer, type Outcome } from "../runStatus";
 import { closeRun, leaveRun, showJob, updateView, useHostView, type RunTab } from "../state";
-import { OutcomeIcon } from "./ActionsIcon";
+import { OutcomeIcon, RunMark as RingedRunMark } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
@@ -301,21 +301,9 @@ const JobRows = memo(function JobRows({ paneId, jobs, openJob, now }: { paneId: 
     );
 });
 
-function StepRow({ step, now, onPick }: { step: Job["steps"][number]; now: number; onPick: (number: number) => void }) {
-    const outcome = outcomeOf(step);
-    return (
-        <button type="button" className="gha-step" data-outcome={outcome} onClick={() => onPick(step.number)} title="Show this step in the log">
-            <OutcomeIcon outcome={outcome} size={11} />
-            <span className="gha-step-name">{step.name}</span>
-            <span className="gha-dim">{formatDuration(elapsedMs(step.startedAt, step.completedAt, now))}</span>
-        </button>
-    );
-}
-
-/** One job's steps, what CI flagged in it and its log, under the job's own actions. */
+/** What CI flagged in one job and its log step by step, under the job's own actions. */
 function JobLogs({ repo, job, now, active, canWrite }: { repo: RepoRef; job: Job; now: number; active: boolean; canWrite: boolean }) {
     const host = useHost();
-    const [step, setStep] = useState<{ number: number } | null>(null);
     const [busy, runBusy] = useBusy();
     const rerun = (debug: boolean) =>
         runBusy(() =>
@@ -330,45 +318,35 @@ function JobLogs({ repo, job, now, active, canWrite }: { repo: RepoRef; job: Job
     return (
         <div className="run-logs">
             <div className="gha-job-actions">
-                <OutcomeIcon outcome={outcomeOf(job)} size={12} />
-                <span className="gha-comment-author">{job.name}</span>
-                {job.runner && <span className="gha-dim">on {job.runner}</span>}
+                <RingedRunMark outcome={outcomeOf(job)} size={14} />
+                <span className="gha-job-name">{job.name}</span>
+                {job.runner && <span className="gha-dim gha-job-runner">on {job.runner}</span>}
                 <span className="gha-page-spacer" />
                 {canWrite && host.capabilities.ci.rerunJob && job.status === "completed" && (
-                    <button type="button" className="gha-link" disabled={busy} onClick={() => rerun(false)}>
+                    <button type="button" className="git-foot-btn" disabled={busy} onClick={() => rerun(false)}>
+                        <IconRefresh size={13} />
                         Re-run this job
                     </button>
                 )}
                 {canWrite && host.capabilities.ci.rerunJob && host.capabilities.ci.debugLogs && job.status === "completed" && (
                     <button
                         type="button"
-                        className="gha-link"
+                        className="git-foot-btn"
                         disabled={busy}
                         onClick={() => rerun(true)}
                         title="Re-run with the runner's debug logging on">
-                        with debug logs
+                        With debug logs
                     </button>
                 )}
                 {job.url && (
-                    <button type="button" className="gha-link" onClick={() => void openUrl(job.url ?? "").catch(swallow(`open ${host.name}`))}>
-                        On {host.name}
+                    <button type="button" className="git-foot-btn" onClick={() => void openUrl(job.url ?? "").catch(swallow(`open ${host.name}`))}>
+                        <IconExternal size={13} />
+                        {host.name}
                     </button>
                 )}
             </div>
-            {job.steps.length > 0 && (
-                <div className="gha-steps">
-                    {job.steps.map((each) => (
-                        <StepRow
-                            key={`${each.number}-${each.name}`}
-                            step={each}
-                            now={each.completedAt ? coarse(now) : now}
-                            onPick={(number) => setStep({ number })}
-                        />
-                    ))}
-                </div>
-            )}
             {host.capabilities.ci.annotations && job.checkRunId !== null && <Annotations repo={repo} checkRunId={job.checkRunId} active={active} />}
-            <JobLogView repo={repo} job={job} active={active} step={step} />
+            <JobLogView repo={repo} job={job} now={now} active={active} />
         </div>
     );
 }

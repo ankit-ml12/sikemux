@@ -436,13 +436,14 @@ const step = (
   from: number,
   seconds: number,
   conclusion = "success",
+  after = 0,
 ) => ({
   number,
   name,
   status: "completed",
   conclusion,
-  startedAt: at(from),
-  completedAt: at(from, seconds),
+  startedAt: at(from, after),
+  completedAt: at(from, after + seconds),
 });
 
 const job = (
@@ -475,8 +476,8 @@ const RELEASE_JOBS = [
     "success",
     [
       step(1, "Set up job", 360, 2),
-      step(2, "Check out", 360, 4),
-      step(3, "Install dependencies", 360, 38),
+      step(2, "Check out", 360, 4, "success", 2),
+      step(3, "Install dependencies", 360, 38, "success", 6),
       step(4, "Lint and typecheck", 359, 52),
       step(5, "Run tests", 358, 70),
       step(6, "Complete job", 357, 1),
@@ -493,9 +494,12 @@ const CI_JOBS = [
   job(208612011001, "Frontend", 42, 3.2, "success"),
   job(208612011002, "Rust", 42, 6.1, "failure", [
     step(1, "Set up job", 42, 2),
-    step(2, "Check out", 42, 3),
-    step(3, "cargo clippy", 42, 150, "failure"),
-    step(4, "cargo test", 39, 0, "skipped"),
+    step(2, "Check out", 42, 3, "success", 2),
+    step(3, "Install dependencies", 42, 40, "success", 5),
+    step(4, "cargo fmt --check", 42, 8, "success", 45),
+    step(5, "cargo clippy", 42, 150, "failure", 53),
+    step(6, "cargo test", 42, 0, "skipped", 203),
+    step(7, "Complete job", 42, 1, "success", 203),
   ]),
   job(208612011003, "Package", 35, 0, "skipped"),
 ];
@@ -587,6 +591,61 @@ jobs:
     runs-on: macos-15
 `,
 };
+
+function stepLog(name: string, conclusion: string): string[] {
+  if (name === "Set up job")
+    return [
+      "Current runner version: '2.337.0'",
+      "##[group]Runner Image",
+      "Image: macos-15-arm64",
+      "Version: 20261012.601",
+      "##[endgroup]",
+      "Prepare workflow directory",
+      "Download action repository 'actions/checkout@v5'",
+    ];
+  if (name === "Check out")
+    return [
+      "##[group]Run actions/checkout@v5",
+      "Syncing repository: nodelike/sikemux",
+      "##[endgroup]",
+      "Fetching the repository",
+      "HEAD is now at 69ed244 fix(github): a job's own summary",
+    ];
+  if (name === "Install dependencies")
+    return [
+      "##[group]Run pnpm install --frozen-lockfile",
+      "\u001b[36;1mpnpm install --frozen-lockfile\u001b[0m",
+      "shell: /bin/bash -e {0}",
+      "##[endgroup]",
+      ...LOG_LINES.slice(7, 176),
+    ];
+  if (name === "cargo clippy")
+    return [
+      "##[group]Run flags=(--workspace)",
+      "\u001b[36;1mflags=(--workspace)\u001b[0m",
+      '\u001b[36;1m[[ "$CHANNEL" == "nightly" ]] && flags+=(--all-targets)\u001b[0m',
+      '\u001b[36;1mcargo clippy "${flags[@]}" -- -D warnings\u001b[0m',
+      "shell: /usr/bin/bash -e {0}",
+      "env:",
+      "  CARGO_TERM_COLOR: always",
+      "  CHANNEL: nightly",
+      "##[endgroup]",
+      "\u001b[1m\u001b[92m    Checking\u001b[0m sikemux-plugin-github v0.5.3 (src-tauri/plugins/github)",
+      "\u001b[0m\u001b[1m\u001b[38;5;9merror\u001b[0m\u001b[0m\u001b[1m: this expression creates a reference which is immediately dereferenced by the compiler\u001b[0m",
+      "\u001b[0m   \u001b[0m\u001b[0m\u001b[1m\u001b[38;5;12m--> \u001b[0m\u001b[0msrc-tauri/plugins/github/src/runs.rs:412:31\u001b[0m",
+      "\u001b[0m    \u001b[0m\u001b[0m\u001b[1m\u001b[38;5;12m|\u001b[0m",
+      "\u001b[0m\u001b[1m\u001b[38;5;12m412\u001b[0m\u001b[0m \u001b[0m\u001b[0m\u001b[1m\u001b[38;5;12m|\u001b[0m\u001b[0m \u001b[0m\u001b[0m    let page = client::get(&data_dir, &path).await?;\u001b[0m",
+      "\u001b[0m    \u001b[0m\u001b[0m\u001b[1m\u001b[38;5;12m|\u001b[0m\u001b[0m                            \u001b[0m\u001b[0m\u001b[1m\u001b[38;5;9m^^^^^^^^^\u001b[0m\u001b[0m \u001b[0m\u001b[0m\u001b[1m\u001b[38;5;9mhelp: change this to: `data_dir`\u001b[0m",
+      "\u001b[0m    \u001b[0m\u001b[0m\u001b[1m\u001b[38;5;12m= \u001b[0m\u001b[0m\u001b[1mnote\u001b[0m\u001b[0m: `-D clippy::needless-borrow` implied by `-D warnings`\u001b[0m",
+      "\u001b[1m\u001b[91merror\u001b[0m\u001b[1m:\u001b[0m could not compile `sikemux-plugin-github` (lib) due to 1 previous error",
+      conclusion === "failure"
+        ? "##[error]Process completed with exit code 101."
+        : "Finished",
+    ];
+  if (name === "Complete job")
+    return ["Post job cleanup.", "Cleaning up orphan processes"];
+  return [`##[group]Run ${name}`, name, "##[endgroup]", "Done"];
+}
 
 function jobsFor(runId: number) {
   return runId === 36316470001 ? CI_JOBS : RELEASE_JOBS;
@@ -802,14 +861,31 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
       (each) => each.id === jobId,
     );
     const start = Date.parse(found?.startedAt ?? iso(10));
+    const steps = (found?.steps ?? []) as ReturnType<typeof step>[];
+    if (steps.length === 0)
+      return {
+        expired: false,
+        truncated: false,
+        lines: LOG_LINES.map((text, index) => ({
+          number: index + 1,
+          timestamp: new Date(start + index * 800 + 500).toISOString(),
+          text,
+        })),
+      };
+    const lines = steps
+      .filter((each) => each.conclusion !== "skipped")
+      .flatMap((each) =>
+        stepLog(each.name, each.conclusion).map((text, index) => ({
+          text,
+          timestamp: new Date(
+            Date.parse(each.startedAt) + 300 + index * 20,
+          ).toISOString(),
+        })),
+      );
     return {
       expired: false,
       truncated: false,
-      lines: LOG_LINES.map((text, index) => ({
-        number: index + 1,
-        timestamp: new Date(start + index * 800 + 500).toISOString(),
-        text,
-      })),
+      lines: lines.map((each, index) => ({ number: index + 1, ...each })),
     };
   },
   annotations: ({ checkRunId }) =>
