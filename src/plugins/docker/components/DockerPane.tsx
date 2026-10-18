@@ -9,6 +9,7 @@ import { updateDockerView, useDockerView, type DockerSection } from "../state";
 import { ContainerDetail } from "./ContainerDetail";
 import { Containers } from "./Containers";
 import { DockerMark } from "./DockerMark";
+import { LogView } from "./LogView";
 import "../docker.css";
 
 const SIDE_MIN = 170;
@@ -137,8 +138,9 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
                             name={view.container}
                             tab={view.tab}
                             onTab={(tab) => updateDockerView(paneId, { tab })}
-                            onBack={() => updateDockerView(paneId, { container: null })}
-                        />
+                            onBack={() => updateDockerView(paneId, { container: null })}>
+                            {(detail) => (view.tab === "logs" ? <LogView container={detail} /> : null)}
+                        </ContainerDetail>
                     ) : (
                         <Containers
                             containers={containers.data}

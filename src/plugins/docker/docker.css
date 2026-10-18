@@ -406,3 +406,83 @@
     color: var(--text-secondary);
     cursor: pointer;
 }
+
+.docker-logs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+}
+
+.docker-logs-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.docker-logs-find {
+    flex: 1;
+    min-width: 160px;
+}
+
+.docker-logs-count {
+    font-variant-numeric: tabular-nums;
+}
+
+.docker-toggle {
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    font-size: var(--text-2xs);
+}
+
+.docker-toggle.on {
+    border-color: var(--acc);
+    background: var(--surface-selected);
+    color: var(--text-primary);
+}
+
+.docker-log-list {
+    height: min(62vh, 640px);
+    min-height: 200px;
+    padding: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--surface-sunken);
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+    overflow: auto;
+}
+
+.docker-log-line {
+    display: flex;
+    gap: 10px;
+    padding: 0 10px;
+    line-height: 18px;
+    white-space: pre;
+}
+
+.docker-log-list.wrap .docker-log-line {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.docker-log-line.stderr .docker-log-text {
+    color: var(--danger);
+}
+
+.docker-log-time {
+    flex: none;
+    color: var(--text-tertiary);
+}
+
+.docker-log-empty {
+    padding: 10px;
+}
+
+.docker-log-ended {
+    margin: 0;
+    font-size: var(--text-2xs);
+}

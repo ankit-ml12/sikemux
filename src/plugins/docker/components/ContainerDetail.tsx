@@ -12,7 +12,6 @@ import { Ports, StateDot } from "./parts";
 const TABS = [
     { value: "logs", label: "Logs" },
     { value: "inspect", label: "Inspect" },
-    { value: "stats", label: "Stats" },
 ] as const;
 
 const DETAIL_POLL_MS = 4_000;
