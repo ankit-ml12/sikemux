@@ -236,6 +236,30 @@
     position: absolute;
     right: 20px;
     bottom: -14px;
+    pointer-events: auto;
+    transition: transform var(--dur-2) var(--ease-out);
+.composer-buddy > .buddy:hover {
+    transform: translateY(-14px);
+}
+@media (prefers-reduced-motion: no-preference) {
+    .composer-buddy > .buddy:not(.still):hover svg {
+        animation: composer-buddy-jump 0.55s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+    }
+}
+@keyframes composer-buddy-jump {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-8px);
+    }
+    70% {
+        transform: translateY(0);
+    }
+    82% {
+        transform: translateY(-2px);
+    }
 }
 
 .dlg.buddy-dlg {
