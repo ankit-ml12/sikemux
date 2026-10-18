@@ -327,7 +327,8 @@ describe("watching a run", () => {
         const onTick = watches()[0].handlers.onItem;
         const newer = makeRun({ status: "in_progress", conclusion: null, updatedAt: "2026-01-01T12:02:00Z", title: "Ship it now" });
         act(() => onTick({ run: newer, jobs: [], error: null, finished: false, fatal: false, signedOut: false }));
-        expect(screen.getByRole("heading").textContent).toBe("Ship it now #12");
+        expect(screen.getByRole("heading").textContent).toBe("Ship it now");
+        expect(document.querySelector(".pr-headline-who")?.textContent).toContain("#12");
         expect(within(document.querySelector(".pr-files") as HTMLElement).getByText("build")).toBeTruthy();
 
         act(() => onTick({ run: newer, jobs: [makeJob({ id: "9", name: "deploy" })], error: null, finished: false, fatal: false, signedOut: false }));
