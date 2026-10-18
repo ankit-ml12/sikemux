@@ -17,7 +17,6 @@ import { watchSshLinks } from "./terminal/sshLinks";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
 import { agentApi, type AgentAccountBook } from "./api/agents";
-import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
 import { AgentInstallHost } from "./agents/AgentInstall";
 import { FilePalette } from "./palettes/FilePalette";
@@ -931,7 +930,6 @@ export default function App() {
             <NetworkBridge />
             <ProjectBridge />
             <AgentSessionSync />
-            <AgentLifecycleManager />
             <TopBar />
             <div className="body">
                 <SideRail />
