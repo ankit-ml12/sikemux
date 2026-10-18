@@ -12,6 +12,7 @@ import { isTreeSection, sameRepo, setProjectAccount, setProjectRepo, slugOf } fr
 import { SectionIcon } from "./ActionsIcon";
 import { GitNav, HostAccountButton, HostNavItems, type NavItem } from "./HostRail";
 import { sectionLabel } from "../sections";
+import { PickRepoContext } from "../pickRepo";
 
 const HostArea = lazy(() => import("./HostArea").then((module) => ({ default: module.HostArea })));
 const RepoPicker = lazy(() => import("./RepoPicker").then((module) => ({ default: module.RepoPicker })));
@@ -27,9 +28,6 @@ interface Props {
     onArea: (area: GitArea) => void;
     /** The local workbench's screens, which head the navigation. */
     local: readonly NavItem[];
-    /** The local workbench's own controls, shown in the header beside the navigation while it is open; given a way to
-     *  pick the host repository the pane shows, while there is one to pick from. */
-    tools?: (pickRepo: (() => void) | null) => ReactNode;
     /** The local workbench, shown while the area is `local` or the folder is on no known host. */
     children: ReactNode;
 }
@@ -38,7 +36,7 @@ interface Props {
  * The git pane's header and whatever it has open. The code host the folder's remote lives on adds its sections to the
  * header; a folder on no known host, or on one whose plugin is switched off, gets the local screens alone.
  */
-export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, local, tools, children }: Props) {
+export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, local, children }: Props) {
     const found = useHostRepo(cwd, fetching);
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
@@ -98,12 +96,7 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
                             {account}
                         </div>
                     ) : (
-                        <GitNav
-                            local={local}
-                            host={host && repo ? <HostNavItems area={area} onArea={onArea} /> : undefined}
-                            tools={!repo || (area === "local" && !adding) ? tools?.(host && repo ? () => setPicking(true) : null) : null}
-                            account={account}
-                        />
+                        <GitNav local={local} host={host && repo ? <HostNavItems area={area} onArea={onArea} /> : undefined} account={account} />
                     )}
                     <div className="git-shell-main">
                         {host && repo && adding ? (
@@ -117,7 +110,9 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
                                 <host.SignIn onSignedIn={added} />
                             </div>
                         ) : !host || !repo || area === "local" ? (
-                            <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
+                            <PickRepoContext.Provider value={host && repo ? () => setPicking(true) : null}>
+                                <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
+                            </PickRepoContext.Provider>
                         ) : (
                             <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
                                 <HostArea

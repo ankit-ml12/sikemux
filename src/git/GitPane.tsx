@@ -74,6 +74,7 @@ import { fileAuthors, useChangeOwners } from "./changeOwners";
 import { FileAgentFaces } from "./FileAgentFaces";
 import { CommitAgents, useCommitOwners } from "./CommitAgents";
 import { GitColumns } from "./GitColumns";
+import { usePickRepo } from "../codehost/pickRepo";
 import { SkeletonRows } from "../ui/Skeleton";
 import { EmptyState } from "../ui/Panel";
 import { AI_MODELS, AI_PROVIDER_LABEL, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPaneConstants";
@@ -1668,31 +1669,37 @@ function GitWorkbench({
         );
     }
 
-    const toolbar = (pickRepo: (() => void) | null) => (
-        <div className="git-toolbar">
-            {onLeaveRepo && (
-                <Tooltip label="Back to the repositories in this folder">
-                    <button type="button" className="git-btn git-back" onClick={onLeaveRepo}>
-                        <IconChevron size={11} className="git-back-icon" />
-                        {basenameOf(repo)}
+    const sideHead = (
+        <div className="git-side-head">
+            <div className="git-side-title">
+                {onLeaveRepo && (
+                    <Tooltip label="Back to the repositories in this folder">
+                        <button type="button" className="git-foot-btn git-back" onClick={onLeaveRepo}>
+                            <IconChevron size={11} className="git-back-icon" />
+                            {basenameOf(repo)}
+                        </button>
+                    </Tooltip>
+                )}
+                <Tooltip label="Switch branch">
+                    <button type="button" className="git-foot-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
+                        <IconGit size={13} />
+                        <span className="git-switch-name">{overviewLoading ? "…" : currentBranch || "detached"}</span>
+                        <IconChevron size={9} className="git-switch-chev" />
                     </button>
                 </Tooltip>
-            )}
-            <Tooltip label="Switch branch">
-                <button type="button" className="git-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
-                    <IconGit size={13} />
-                    <span className="git-switch-name">{overviewLoading ? "…" : currentBranch || "detached"}</span>
-                    <IconChevron size={9} className="git-switch-chev" />
-                </button>
-            </Tooltip>
-            {overviewError && <span className="git-tb-chip error">git error</span>}
-            {busy && (
-                <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
-                    {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
-                    <span>{busy}</span>
-                </span>
-            )}
-            <div className="git-btn-group" role="group" aria-label="Sync with the remote">
+                {ahead > 0 && <span className="git-side-count ahead">↑{ahead}</span>}
+                {behind > 0 && <span className="git-side-count behind">↓{behind}</span>}
+                <span className="git-tb-grow" />
+                {overviewError && <span className="git-tb-chip error">git error</span>}
+                {busy && (
+                    <span className={`git-tb-busy${busy.startsWith("✗") ? " error" : ""}`}>
+                        {!busy.startsWith("✗") && <span className="git-panel-spinner" />}
+                        <span>{busy}</span>
+                    </span>
+                )}
+                <SideMoreButton onOpen={openMoreMenu} />
+            </div>
+            <div className="git-btn-group git-side-actions" role="group" aria-label="Sync with the remote">
                 <Tooltip label="Fetch all remotes (F)">
                     <button type="button" className="git-btn" onClick={() => doFetch(null)}>
                         <IconFetch size={13} />
@@ -1716,15 +1723,13 @@ function GitWorkbench({
                         {ahead > 0 && <span className="git-btn-count">{ahead}</span>}
                     </button>
                 </Tooltip>
+                <Tooltip label="Open pull request (⌃P)">
+                    <button type="button" className="git-btn" aria-label="Pull request" onClick={openPullRequest}>
+                        <IconPullRequest size={13} />
+                        PR
+                    </button>
+                </Tooltip>
             </div>
-            <Tooltip label="Open pull request (⌃P)">
-                <button type="button" className="git-btn" onClick={openPullRequest}>
-                    <IconPullRequest size={13} />
-                    Pull request
-                </button>
-            </Tooltip>
-            <MoreButton label="Remotes, stashes and more" onOpen={(anchor) => openMoreMenu(anchor, pickRepo)} className="git-btn icon" />
-            <span className="git-tb-grow" />
         </div>
     );
 
@@ -1750,22 +1755,24 @@ function GitWorkbench({
                               },
                           ]
                         : []
-                }
-                tools={toolbar}>
+                }>
                 <GitColumns
                     paneId={paneId}
                     left={
                         <>
-                            <SwipePages
-                                label="Git lists"
-                                current={panel}
-                                onChange={(id) => setPanel(id as GitPanel)}
-                                pages={[
-                                    { id: "files", label: withShortcut("Changes", "1"), icon: <IconFile size={14} />, content: filesLeft },
-                                    { id: "commits", label: withShortcut("History", "2"), icon: <IconCommit size={14} />, content: commitsLeft },
-                                    { id: "branches", label: withShortcut("Branches", "3"), icon: <IconGit size={14} />, content: branchesLeft },
-                                ]}
-                            />
+                            <div className="git-side">
+                                {sideHead}
+                                <SwipePages
+                                    label="Git lists"
+                                    current={panel}
+                                    onChange={(id) => setPanel(id as GitPanel)}
+                                    pages={[
+                                        { id: "files", label: withShortcut("Changes", "1"), icon: <IconFile size={14} />, content: filesLeft },
+                                        { id: "commits", label: withShortcut("History", "2"), icon: <IconCommit size={14} />, content: commitsLeft },
+                                        { id: "branches", label: withShortcut("Branches", "3"), icon: <IconGit size={14} />, content: branchesLeft },
+                                    ]}
+                                />
+                            </div>
                             {cmdLogOpen && <GitCmdLogBar />}
                         </>
                     }
@@ -1788,6 +1795,12 @@ function GitWorkbench({
             <GitModalRenderer paneId={paneId} active={active} />
         </div>
     );
+}
+
+/** The side panel's menu of everything else, which can also pick the host repository the pane shows. */
+function SideMoreButton({ onOpen }: { onOpen: (anchor: HTMLElement, pickRepo: (() => void) | null) => void }) {
+    const pickRepo = usePickRepo();
+    return <MoreButton label="Remotes, stashes and more" onOpen={(anchor) => onOpen(anchor, pickRepo)} className="git-foot-btn icon" />;
 }
 
 function MoreButton({

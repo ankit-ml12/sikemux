@@ -107,15 +107,6 @@
     flex: 1 1 auto;
     min-width: 0;
 }
-.git-nav-tools > .git-toolbar {
-    height: auto;
-    padding: 0;
-    border: 0;
-    background: none;
-}
-.git-nav-tools > .git-toolbar .git-switch {
-    color: var(--text-primary);
-}
 .git-nav-signin {
     height: 28px;
     padding: 0 10px;

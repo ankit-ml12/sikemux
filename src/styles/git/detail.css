@@ -148,6 +148,11 @@
 .git-detail-facts .git-fact-behind {
     color: var(--git-renamed);
 }
+.git-foot-btn.icon {
+    justify-content: center;
+    width: 26px;
+    padding: 0;
+}
 .git-foot-chev {
     transform: rotate(90deg);
 }

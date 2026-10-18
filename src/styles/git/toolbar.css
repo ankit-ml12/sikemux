@@ -161,12 +161,47 @@
 .git-btn-count {
     font-variant-numeric: tabular-nums;
 }
-.git-toolbar .git-switch {
+/* The side panel's head: the branch with what it has to push and pull, then the sync actions across the panel. */
+.git-side-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: none;
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border);
+}
+.git-side-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+}
+.git-side-title .git-switch {
     flex: 0 1 auto;
     min-width: 0;
-    max-width: 280px;
-    padding: 0 6px 0 8px;
+    padding: 0 6px;
     color: var(--text-primary);
+}
+.git-side-count {
+    flex: none;
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+}
+.git-side-count.ahead {
+    color: var(--warn);
+}
+.git-side-count.behind {
+    color: var(--git-renamed);
+}
+.git-btn-group.git-side-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.git-side-actions > .git-btn {
+    justify-content: center;
+    height: 28px;
+    padding: 0 var(--space-1h);
 }
 .git-switch-name {
     min-width: 0;
@@ -196,7 +231,7 @@
 .git-btn-group > .git-btn.primary {
     position: relative;
 }
-.git-btn .git-switch-chev {
+.git-switch .git-switch-chev {
     width: 9px;
     height: 9px;
     transform: rotate(90deg);

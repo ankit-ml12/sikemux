@@ -48,9 +48,13 @@
     border-radius: var(--radius-3);
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
-/* The side panel's lists share one card with the icons that switch them, so
-   the lists inside it draw no card of their own. */
-.git-left > .swipe-pages {
+/* The side panel's branch and sync controls, its lists and the icons that switch them share one card, so the lists
+   inside it draw no card of their own. */
+.git-left > .git-side {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: clip;
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
