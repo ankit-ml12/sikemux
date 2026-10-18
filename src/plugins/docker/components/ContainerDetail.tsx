@@ -7,6 +7,7 @@ import { usePoll } from "../hooks";
 import { dockerContainerR } from "../resources";
 import { shortImage } from "../format";
 import type { ContainerTab } from "../state";
+import { ContainerActions } from "./ContainerActions";
 import { Ports, StateDot } from "./parts";
 
 const TABS = [
@@ -56,6 +57,7 @@ export function ContainerDetail({
                 <StateDot container={{ state: container.state.status, status: summary(container) }} />
                 <h2 className="docker-detail-name">{container.name}</h2>
                 <span className="docker-muted">{summary(container)}</span>
+                <ContainerActions container={container} onRemoved={onBack} />
             </header>
             <div className="docker-detail-facts">
                 <span className="docker-mono" title={container.image}>

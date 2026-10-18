@@ -486,3 +486,21 @@
     margin: 0;
     font-size: var(--text-2xs);
 }
+
+.docker-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.docker-button.primary {
+    border-color: var(--acc);
+    background: var(--acc);
+    color: var(--on-accent);
+}
+
+.docker-button.primary:hover:not(:disabled) {
+    background: var(--acc);
+    filter: brightness(1.08);
+}
