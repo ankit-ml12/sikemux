@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
-import { notify, reportError } from "../../plugin-api/host";
+import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { EmptyState, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
+import { EmptyState, IconExternal, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
 import { GitColumns } from "../../git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { issueR, issuesR } from "../resources";
 import { compose, setListState, showItem, updateView } from "../state";
-import { Comments, Labels, PageHead, StateMark, stateLabel, Who } from "./Bits";
-import { CommentThread } from "./CommentThread";
+import { Comments, Labels, StateMark, Who } from "./Bits";
+import { CommentThread, Face } from "./CommentThread";
+import { useHost } from "../registry";
 import { useBusy } from "./hooks";
 import { useNow } from "../../plugin-api/hooks";
 import { NewIssueForm } from "./NewIssueForm";
@@ -59,6 +60,7 @@ function IssueRow({ issue, now, selected, onOpen, work }: { issue: Issue; now: n
 }
 
 export function IssueDetail({ repo, number, active, cwd = null }: { repo: RepoRef; number: number; active: boolean; cwd?: string | null }) {
+    const host = useHost();
     const issue = useResourceEnabled(active, issueR, repo, number);
     const now = useNow(false);
     const [busy, runBusy] = useBusy();
@@ -81,45 +83,60 @@ export function IssueDetail({ repo, number, active, cwd = null }: { repo: RepoRe
         );
 
     return (
-        <div className="gha-detail">
-            <PageHead
-                mark={<StateMark kind="issue" state={found.state} reason={found.stateReason} size={14} />}
-                title={found.title}
-                number={found.number}
-                url={found.url}
-                actions={cwd && <WorkOnThis repo={repo} number={found.number} cwd={cwd} />}>
-                <span
-                    className="gha-state-word"
-                    data-kind="issue"
-                    data-state={found.state === "closed" && found.stateReason === "not_planned" ? "not_planned" : found.state}>
-                    {stateLabel("issue", found.state, false, found.stateReason)}
-                </span>
-                <Who login={found.author} avatarUrl={found.avatarUrl} />
-                <span>opened {formatAgo(found.createdAt, now)}</span>
-                {found.assignees.length > 0 && <span>→ {found.assignees.join(", ")}</span>}
-                <Labels labels={found.labels} />
-            </PageHead>
-            <CommentThread
-                repo={repo}
-                number={found.number}
-                of="issue"
-                active={active}
-                now={now}
-                opening={{
-                    key: "opening",
-                    author: found.author,
-                    avatarUrl: found.avatarUrl,
-                    association: null,
-                    at: found.createdAt,
-                    body: found.body,
-                    review: null,
-                }}
-                extraActions={
-                    <button type="button" className="gha-btn" disabled={busy} onClick={setState}>
-                        {closing ? "Close issue" : "Reopen issue"}
-                    </button>
-                }
-            />
+        <div className="pr-right">
+            <div className="git-detail">
+                <div className="pr-headline">
+                    <span className="pr-face">
+                        <Face login={found.author} url={found.avatarUrl} />
+                    </span>
+                    <span className="pr-headline-top">
+                        <StateMark kind="issue" state={found.state} reason={found.stateReason} size={14} />
+                        <h2 className="git-detail-title pr-headline-title">{found.title}</h2>
+                        <span className="issue-head-actions">
+                            {cwd && <WorkOnThis repo={repo} number={found.number} cwd={cwd} />}
+                            <Tooltip label={`Open on ${host.name}`}>
+                                <button
+                                    type="button"
+                                    className="gha-icon-btn"
+                                    aria-label={`Open on ${host.name}`}
+                                    onClick={() => void openUrl(found.url).catch(swallow(`open ${host.name}`))}>
+                                    <IconExternal size={12} />
+                                </button>
+                            </Tooltip>
+                        </span>
+                    </span>
+                    <span className="pr-headline-sub">
+                        <span className="pr-headline-who">
+                            #{found.number} · {found.author ?? "someone"} opened {formatAgo(found.createdAt, now)}
+                            {found.assignees.length > 0 && <> · assigned to {found.assignees.join(", ")}</>}
+                        </span>
+                        <Labels labels={found.labels} />
+                    </span>
+                </div>
+            </div>
+            <div className="pr-conversation">
+                <CommentThread
+                    repo={repo}
+                    number={found.number}
+                    of="issue"
+                    active={active}
+                    now={now}
+                    opening={{
+                        key: "opening",
+                        author: found.author,
+                        avatarUrl: found.avatarUrl,
+                        association: null,
+                        at: found.createdAt,
+                        body: found.body,
+                        review: null,
+                    }}
+                    extraActions={
+                        <button type="button" className="gha-btn" disabled={busy} onClick={setState}>
+                            {closing ? "Close issue" : "Reopen issue"}
+                        </button>
+                    }
+                />
+            </div>
         </div>
     );
 }
@@ -215,5 +232,5 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                 <IssueDetail repo={repo} number={item} active={active} cwd={cwd} />
             </div>
         );
-    return <GitColumns paneId={paneId} left={list} right={right} />;
+    return <GitColumns paneId={paneId} left={list} right={<div className="git-right-review">{right}</div>} />;
 }

@@ -1,9 +1,6 @@
-import type { ReactNode } from "react";
-import { openUrl, swallow } from "../../plugin-api/host";
-import { IconCheck, IconChevron, IconExternal, IconGit, IconMerge, IconPullRequest } from "../../plugin-api/ui";
+import { IconCheck, IconGit, IconMerge, IconPullRequest } from "../../plugin-api/ui";
 import type { Label } from "../api";
 import { PULL_STATE_LABEL, pullState } from "../project";
-import { useHost } from "../registry";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
 import { Face } from "./CommentThread";
 
@@ -88,48 +85,3 @@ function StateGlyph({ kind, tone, size }: { kind: "pull" | "issue"; tone: string
     return tone === "closed" ? <IconCheck size={size} /> : <SectionIcon section="issues" size={size} />;
 }
 
-export function PageHead({
-    mark,
-    title,
-    number,
-    url,
-    backLabel,
-    onBack,
-    actions,
-    children,
-}: {
-    mark: ReactNode;
-    title: string;
-    number: number;
-    url: string;
-    /** Leave both out where the list stays on screen beside the page. */
-    backLabel?: string;
-    onBack?: () => void;
-    /** Buttons before the link to the host, such as checking a pull request out. */
-    actions?: ReactNode;
-    children: ReactNode;
-}) {
-    const host = useHost();
-    return (
-        <>
-            {backLabel && onBack && (
-                <button type="button" className="gha-back" onClick={onBack}>
-                    <IconChevron size={11} /> {backLabel}
-                </button>
-            )}
-            <div className="gha-page-head">
-                {mark}
-                <div className="gha-page-title">
-                    <h2 className="gha-title">{title}</h2>
-                    <span className="gha-page-number">#{number}</span>
-                    <span className="gha-page-spacer" />
-                    {actions}
-                    <button type="button" className="gha-btn" onClick={() => void openUrl(url).catch(swallow(`open ${host.name}`))}>
-                        <IconExternal size={12} /> On {host.name}
-                    </button>
-                </div>
-                <div className="gha-page-sub">{children}</div>
-            </div>
-        </>
-    );
-}

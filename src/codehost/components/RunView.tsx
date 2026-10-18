@@ -647,7 +647,11 @@ function OpenRunView({ paneId, repo, runId, openJob, active, canWrite }: Props) 
                     />
                 </div>
             }
-            right={<RunRight paneId={paneId} repo={repo} open={open} openJob={openJob} tab={runTab} active={active} canWrite={canWrite} />}
+            right={
+                <div className="git-right-review">
+                    <RunRight paneId={paneId} repo={repo} open={open} openJob={openJob} tab={runTab} active={active} canWrite={canWrite} />
+                </div>
+            }
         />
     );
 }

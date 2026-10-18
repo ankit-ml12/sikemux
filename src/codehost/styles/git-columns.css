@@ -117,9 +117,7 @@
 .pr-back > svg {
     transform: rotate(180deg);
 }
-.pr-number {
-    color: var(--text-tertiary);
-}
+
 /* The merge box sits inside the card, so it drops its own frame and keeps only the rules between its parts. */
 .pr-card .gha-merge-box {
     border: 0;
@@ -190,9 +188,7 @@ button.git-file-row {
     height: 100%;
     min-height: 0;
 }
-.pr-right > .git-detail .pr-number {
-    color: var(--text-tertiary);
-}
+
 .pr-right > .git-detail .gha-branch > span {
     font-size: var(--text-2xs);
 }
@@ -228,11 +224,7 @@ button.git-file-row {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.run-card-tools {
-    display: inline-flex;
-    align-items: center;
-    margin-left: auto;
-}
+
 .run-job-took {
     margin-left: auto;
     padding-right: var(--space-1h);
