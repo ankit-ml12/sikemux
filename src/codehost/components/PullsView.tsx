@@ -38,7 +38,7 @@ import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
 import { SectionIcon, StatusMark } from "./ActionsIcon";
 import { closedIssues, pullState } from "../project";
-import { Branch, Comments, Labels, StateMark, Who } from "./Bits";
+import { Branch, Comments, Labels, ShellAccount, StateMark, Who } from "./Bits";
 import { useBusy } from "./hooks";
 import { useEvery, useNow } from "../../plugin-api/hooks";
 import { NewPullForm } from "./NewPullForm";
@@ -732,6 +732,8 @@ function PullColumn({
                     {found.head && <span className="pr-ref pr-ref-head">{found.head}</span>}
                     {found.head && found.base && <span className="pr-ref-arrow">→</span>}
                     {found.base && <span className="pr-ref">{found.base}</span>}
+                    <span className="gha-page-spacer" />
+                    <ShellAccount />
                 </div>
                 <div className="git-btn-group git-side-actions pr-side-actions" role="group" aria-label="Pull request">
                     <CheckoutButton cwd={cwd} repo={repo} pull={found} current={projectBranch} />
@@ -857,6 +859,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                             <IconPlus size={13} />
                         </button>
                     </Tooltip>
+                    <ShellAccount />
                 </div>
                 {offer && projectBranch && (
                     <div className="gha-callout">

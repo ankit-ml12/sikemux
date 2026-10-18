@@ -25,6 +25,7 @@ import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
 import { Face } from "./CommentThread";
+import { ShellAccount } from "./Bits";
 import { coarse, useBusy } from "./hooks";
 import { useNow } from "../../plugin-api/hooks";
 import { JobGraph } from "./JobGraph";
@@ -192,6 +193,7 @@ function RunHead({
                     </button>
                 </Tooltip>
                 <RunMenu run={run} repo={repo} canWrite={canWrite} onDeleted={onDeleted} />
+                <ShellAccount />
             </div>
             <div className="git-btn-group git-side-actions run-side-actions" role="group" aria-label="Run">
                 {canWrite && live && (

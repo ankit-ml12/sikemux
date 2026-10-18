@@ -3,6 +3,7 @@ import type { Label } from "../api";
 import { PULL_STATE_LABEL, pullState } from "../project";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
 import { Face } from "./CommentThread";
+import { useGitShell } from "../shellContext";
 
 export function Labels({ labels }: { labels: readonly Label[] }) {
     if (labels.length === 0) return null;
@@ -83,4 +84,9 @@ function StateGlyph({ kind, tone, size }: { kind: "pull" | "issue"; tone: string
     if (kind === "pull") return tone === "merged" ? <IconMerge size={size} /> : <IconPullRequest size={size} />;
     if (tone === "not_planned") return <NotPlannedIcon size={size} />;
     return tone === "closed" ? <IconCheck size={size} /> : <SectionIcon section="issues" size={size} />;
+}
+
+/** Who is signed in to the host, lent by the git pane's shell to whichever head a screen draws first. */
+export function ShellAccount() {
+    return <>{useGitShell().account}</>;
 }

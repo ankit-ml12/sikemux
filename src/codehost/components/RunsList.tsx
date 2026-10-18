@@ -21,6 +21,7 @@ import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updat
 import { StatusMark } from "./ActionsIcon";
 import { RunMenu } from "./RunMenu";
 import { Face } from "./CommentThread";
+import { ShellAccount } from "./Bits";
 import { coarse } from "./hooks";
 import { useEvery, useNow } from "../../plugin-api/hooks";
 import { formatAgo, formatDuration } from "../../lib/format";
@@ -215,6 +216,7 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                         <IconRefresh size={13} />
                     </button>
                 </Tooltip>
+                <ShellAccount />
             </div>
             {loading && <SkeletonRows rows={8} label="Loading runs" />}
             <StaleNotice handle={page} />

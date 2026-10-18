@@ -1,23 +1,14 @@
 import { useState, type ReactNode } from "react";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import {
-    EmptyState,
-    IconChevron,
-    IconExternal,
-    IconInfo,
-    IconPlus,
-    SkeletonRows,
-    StaleNotice,
-    Tooltip,
-} from "../../plugin-api/ui";
+import { EmptyState, IconChevron, IconExternal, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
 import { SwipePages } from "../../ui/SwipePages";
 import { SectionIcon } from "./ActionsIcon";
 import { GitColumns } from "../../git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { issueCountsR, issueR, issuesR, timelineR } from "../resources";
 import { compose, setListState, showItem, updateView } from "../state";
-import { Comments, Labels, StateMark } from "./Bits";
+import { Comments, Labels, ShellAccount, StateMark } from "./Bits";
 import { CommentThread, Face } from "./CommentThread";
 import { useHost } from "../registry";
 import { useBusy } from "./hooks";
@@ -311,6 +302,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                             <IconPlus size={13} />
                         </button>
                     </Tooltip>
+                    <ShellAccount />
                 </div>
                 {rows.length === 0 ? (
                     <EmptyState icon={<IconInfo size={20} />} message={`No ${listState === "all" ? "" : listState} issues.`} />
@@ -374,6 +366,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                             <IconPlus size={13} />
                         </button>
                     </Tooltip>
+                    <ShellAccount />
                 </div>
             </div>
             <SwipePages

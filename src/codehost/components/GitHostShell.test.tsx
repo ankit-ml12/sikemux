@@ -23,9 +23,12 @@ vi.mock("./HostArea", () => ({
         branch: string | null;
         cwd: string | null;
     }) => (
-        <div data-testid="host-area">
-            {props.section} {props.repo.owner}/{props.repo.name} as {String(props.repo.account)} on {String(props.branch)} in {String(props.cwd)}
-        </div>
+        <>
+            <div data-testid="host-area">
+                {props.section} {props.repo.owner}/{props.repo.name} as {String(props.repo.account)} on {String(props.branch)} in {String(props.cwd)}
+            </div>
+            <LentAccount />
+        </>
     ),
 }));
 vi.mock("./RepoPicker", () => ({

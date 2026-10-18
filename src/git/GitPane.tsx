@@ -76,6 +76,7 @@ import { FileAgentFaces } from "./FileAgentFaces";
 import { CommitAgents, useCommitOwners } from "./CommitAgents";
 import { GitColumns } from "./GitColumns";
 import { useGitShell } from "../codehost/shellContext";
+import { ShellAccount } from "../codehost/components/Bits";
 import type { Notification } from "../codehost/api";
 import { SkeletonRows } from "../ui/Skeleton";
 import { EmptyState } from "../ui/Panel";
@@ -1708,7 +1709,7 @@ function GitWorkbench({
                         <span>{busy}</span>
                     </span>
                 )}
-                <SideAccount />
+                <ShellAccount />
                 <SideMoreButton onOpen={openMoreMenu} />
             </div>
             <div className="git-btn-group git-side-actions" role="group" aria-label="Sync with the remote">
@@ -1846,11 +1847,6 @@ function GitSidePages({
     return (
         <SwipePages label="Git lists" current={inboxGone ? pages[0].id : current} onChange={onChange} pages={hasInbox ? [...pages, inbox] : pages} />
     );
-}
-
-/** Who is signed in to the host, beside the side panel's menu. */
-function SideAccount() {
-    return <>{useGitShell().account}</>;
 }
 
 /** The side panel's menu of everything else, which can also pick the host repository the pane shows. */

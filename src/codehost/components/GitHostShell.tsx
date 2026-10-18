@@ -9,9 +9,8 @@ import { useHostRepo } from "../project";
 import { commitAuthorsR, hostStatusR } from "../resources";
 import { AccountProvider, codeHost, HostProvider, type CodeHost } from "../registry";
 import { isTreeSection, sameRepo, setProjectAccount, setProjectRepo, slugOf } from "../state";
-import { SectionIcon } from "./ActionsIcon";
 import { HostAccountButton } from "./HostRail";
-import { sectionLabel, sectionsOf } from "../sections";
+import { sectionsOf } from "../sections";
 import { useStore } from "../../state/store";
 import { ShellFrameContext } from "../../git/GitColumns";
 import { PaneField } from "../../ui/ShaderField";
@@ -107,16 +106,6 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
         <HostProvider value={host && repo ? host : null}>
             <AccountProvider value={repo?.account ?? null}>
                 <div className="git-shell">
-                    {standalone && host && (
-                        <div className="git-nav-bar">
-                            <h2 className="git-standalone-title">
-                                <SectionIcon section={standalone} size={14} />
-                                {sectionLabel(host, standalone)}
-                            </h2>
-                            <div className="git-nav-tools" />
-                            {account}
-                        </div>
-                    )}
                     <div className={`git-shell-main${framed ? " git-framed" : ""}`}>
                         {framed && <PaneField enabled={paneShader} />}
                         {host && repo && adding ? (
@@ -131,16 +120,18 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
                             </div>
                         ) : standalone && host && repo ? (
                             <ShellFrameContext.Provider value={shellFrame}>
-                                <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
-                                    <HostArea
-                                        paneId={paneId}
-                                        section={standalone}
-                                        repo={repo}
-                                        branch={found.branch}
-                                        cwd={sameRepo(found.remote, repo) ? cwd : null}
-                                        active={active}
-                                    />
-                                </Suspense>
+                                <GitShellContext.Provider value={lent}>
+                                    <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
+                                        <HostArea
+                                            paneId={paneId}
+                                            section={standalone}
+                                            repo={repo}
+                                            branch={found.branch}
+                                            cwd={sameRepo(found.remote, repo) ? cwd : null}
+                                            active={active}
+                                        />
+                                    </Suspense>
+                                </GitShellContext.Provider>
                             </ShellFrameContext.Provider>
                         ) : (
                             <GitShellContext.Provider value={lent}>

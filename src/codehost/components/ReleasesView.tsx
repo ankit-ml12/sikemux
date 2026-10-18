@@ -7,7 +7,7 @@ import { hostApi, failureMessage, type Release, type RepoRef } from "../api";
 import { useHost } from "../registry";
 import { releasesR } from "../resources";
 import { SectionIcon } from "./ActionsIcon";
-import { Who } from "./Bits";
+import { ShellAccount, Who } from "./Bits";
 import { useNow } from "../../plugin-api/hooks";
 import { Prose } from "./Pictures";
 import { formatAgo, formatBytes } from "../../lib/format";
@@ -195,6 +195,7 @@ export function ReleasesView({ paneId, repo, active }: Props) {
                             <IconRefresh size={13} />
                         </button>
                     </Tooltip>
+                    <ShellAccount />
                 </div>
                 {rows.length === 0 ? (
                     <EmptyState icon={<SectionIcon section="releases" size={20} />} message="This repository has no releases." />
