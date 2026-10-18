@@ -167,10 +167,11 @@
     flex-direction: column;
     gap: var(--space-2);
     flex: none;
-    padding: var(--space-2);
+    padding-top: var(--space-2);
     border-bottom: 1px solid var(--border);
 }
 .git-side-title {
+    padding: 0 var(--space-2);
     display: flex;
     align-items: center;
     gap: var(--space-1);
@@ -198,10 +199,20 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-.git-side-actions > .git-btn {
+/* The actions run edge to edge, parted by hairlines, with the head's own line under them. */
+.git-btn-group.git-side-actions {
+    border-top: 1px solid var(--border);
+}
+.git-btn-group.git-side-actions > .git-btn {
     justify-content: center;
-    height: 28px;
+    height: 30px;
+    margin: 0;
     padding: 0 var(--space-1h);
+    border: 0;
+    border-radius: 0;
+}
+.git-btn-group.git-side-actions > .git-btn + .git-btn {
+    border-left: 1px solid var(--border);
 }
 .git-switch-name {
     min-width: 0;
