@@ -194,6 +194,22 @@ export class Director {
     );
   }
 
+  /** Plays on until `target` is on screen and has stopped growing, so a zoom frames all of it. */
+  async steady(target, { frames = 12 } = {}) {
+    await this.appear(target);
+    let last = "";
+    let same = 0;
+    await this.until(
+      async () => {
+        const box = JSON.stringify(await this.rect(target));
+        same = box === last ? same + 1 : 0;
+        last = box;
+        return same >= frames;
+      },
+      { label: `${JSON.stringify(target)} to settle` },
+    );
+  }
+
   async point(target, at = { x: 0.5, y: 0.5 }) {
     if (typeof target === "object" && "x" in target && !("width" in target))
       return target;
@@ -461,6 +477,27 @@ export class Director {
       await new Promise((done) => setTimeout(done, 5));
     await this.app(() => showcase.backend.emit("wheel-touch", false));
     await this.pressCursor(0, 140);
+  }
+
+  /** Does `change` without filming it, for a moment the picture would only flicker through, such as a menu filtering. */
+  async offCamera(change) {
+    const recording = this.recording;
+    this.recording = false;
+    try {
+      await change();
+    } finally {
+      this.recording = recording;
+    }
+  }
+
+  /** Plays the closing card on the wallpaper and holds it for `hold` ms. */
+  async endCard({ hold = 2000 } = {}) {
+    this.fadeCursor(0, 350);
+    const settled = this.page.evaluate(() => window.video.endCard());
+    let done = false;
+    settled.then(() => (done = true));
+    await this.until(() => done, { label: "the end card" });
+    await this.wait(hold);
   }
 
   /** Moves the island over the notch to one of its states, as drawn by its snapshot tool. */

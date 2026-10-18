@@ -629,6 +629,7 @@ export class ShowcaseBackend implements IpcTransport {
         agentMessages: {},
         collisions: {},
         remoteAgents: [],
+        order: [],
       };
     });
     this.on("agent_board_call", ({ method, params }) => {
@@ -784,7 +785,7 @@ export class ShowcaseBackend implements IpcTransport {
     const agents = new Set(this.liveSteps.map((step) => step.agentId).filter((id) => !agentId || id === agentId));
     while (this.stepLive(agentId) >= 0);
     for (const agentId of agents)
-      this.emit("acp_event", { agentId, kind: "turn_completed", payload: { stopReason: "end_turn" } });
+      this.emit("acp_event", { agentId, kind: "turn_completed", payload: { stopReason: "end_turn", at: Date.now() } });
   }
 
   /**
@@ -849,7 +850,7 @@ export class ShowcaseBackend implements IpcTransport {
     this.liveSteps.push({
       agentId,
       run: () =>
-        this.emit("acp_event", { agentId, kind: "turn_started", payload: {} }),
+        this.emit("acp_event", { agentId, kind: "turn_started", payload: { at: Date.now() } }),
       holdMs: 400,
     });
     let finishing: Record<string, unknown> | null = null;
@@ -910,14 +911,22 @@ export class ShowcaseBackend implements IpcTransport {
       run: () => {
         if (last)
           send([{ sessionUpdate: "tool_call_update", toolCallId: last.toolCallId, status: "completed" }]);
-        this.emit("acp_event", { agentId, kind: "turn_completed", payload: { stopReason: "end_turn" } });
+        this.emit("acp_event", { agentId, kind: "turn_completed", payload: { stopReason: "end_turn", at: Date.now() } });
       },
       holdMs: 400,
     });
   }
 
+  /** Agents whose chat a video starts at their last answer: no request still waiting and no turn queued for it. */
+  readonly settledScripts = new Set<string>();
+
   private startAgent(agentId: string, provider: string) {
-    const script = AGENT_SCRIPTS[agentId];
+    const full = AGENT_SCRIPTS[agentId];
+    const lastAnswer = full ? full.history.findLastIndex((update) => update.sessionUpdate !== "user_message_chunk") : -1;
+    const script =
+      full && this.settledScripts.has(agentId)
+        ? { ...full, history: full.history.slice(0, lastAnswer + 1), live: undefined }
+        : full;
     const setup = { configOptions: MODEL_OPTIONS[provider] ?? [] };
     const sessionId = `session-${agentId}`;
     const batch = this.batchFor(agentId);

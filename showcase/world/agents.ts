@@ -539,6 +539,13 @@ export const CUED_TURNS: Record<string, { agentId: string; updates: Update[] }> 
         rawOutput: " ✓ src/billing/ledger.test.ts (18 tests) 204ms\n Test Files  1 passed (1)",
         durationMs: 1600,
       }),
+      tool("other", "mcp__sikemux-tools__agent_send", {
+        rawInput: {
+          to: AGENTS.rail.name,
+          text: "Landed. The import reads amounts in cents and all 18 ledger tests pass, so the refunds bug is yours.",
+        },
+      }),
+      say("Told Otter the import is in. Closing the card."),
       tool("edit", "mcp__sikemux-tools__board_update", {
         rawInput: {
           card: 3,
@@ -547,13 +554,6 @@ export const CUED_TURNS: Record<string, { agentId: string; updates: Update[] }> 
         },
         board: { id: 3, status: "done", result: "Ledger rows import onto amounts in cents; 18 tests pass." },
       }),
-      tool("other", "mcp__sikemux-tools__agent_send", {
-        rawInput: {
-          to: AGENTS.rail.name,
-          text: "Landed. The import reads amounts in cents and all 18 ledger tests pass, so the refunds bug is yours.",
-        },
-      }),
-      say("Card 3 is done, and Otter knows the refunds bug can start."),
     ],
   },
   "otter-takes-refunds": {

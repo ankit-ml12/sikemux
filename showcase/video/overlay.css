@@ -32,3 +32,32 @@
   left: -7px;
   top: -14px;
 }
+
+@font-face {
+  font-family: "Figtree";
+  src: url("/fonts/Figtree-latin-wght-normal.woff2") format("woff2");
+  font-weight: 300 900;
+}
+
+/* The closing card sits in the wallpaper's dark sky, above the creature, never over its face. */
+.video-end-card {
+  position: absolute;
+  top: 19%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  pointer-events: none;
+}
+
+.video-end-card img {
+  width: 104px;
+  filter: drop-shadow(0 8px 30px rgba(0, 0, 0, 0.5));
+}
+
+.video-end-card span {
+  color: #fff;
+  font: 500 72px/1 "Figtree", system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);
+}

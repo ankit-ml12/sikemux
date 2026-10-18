@@ -142,7 +142,35 @@ const GPU = lines(
   `${c.green("edon@gpu-box")}:${c.blue("~")}$ `,
 );
 
+const WATCH = lines(
+  title("vitest --watch"),
+  `${prompt("~/code/sikemux", "main", "!3?1")}pnpm vitest --watch src/rail`,
+  "",
+  ` ${c.bold(c.cyan("DEV"))}  ${c.cyan("v4.1.10")} ${c.dim("~/code/sikemux")}`,
+  "",
+  ` ${c.green("✓")} src/rail/TabRail.test.tsx ${c.dim("(25 tests)")} ${c.dim("318ms")}`,
+  ` ${c.green("✓")} src/rail/SideRail.test.tsx ${c.dim("(16 tests)")} ${c.dim("204ms")}`,
+  "",
+  ` ${c.dim("Test Files")}  ${c.bold(c.green("2 passed"))} ${c.dim("(2)")}`,
+  `      ${c.dim("Tests")}  ${c.bold(c.green("41 passed"))} ${c.dim("(41)")}`,
+  "",
+  ` ${c.bold(c.green("PASS"))}  ${c.dim("Waiting for file changes...")}`,
+);
+
+const LOGS = lines(
+  title("tail -f core.log"),
+  `${prompt("~/code/sikemux", "main", "!3?1")}tail -f ~/Library/Logs/Sikemux/core.log`,
+  `${c.dim("09:40:02")} ${c.green("INFO")}  core: listening on 127.0.0.1:47120`,
+  `${c.dim("09:40:02")} ${c.green("INFO")}  agents: 6 chats restored`,
+  `${c.dim("09:40:11")} ${c.green("INFO")}  board: sikemux has 8 cards, 3 running`,
+  `${c.dim("09:40:19")} ${c.yellow("WARN")}  remote: Pixel 9 last seen 2h ago`,
+  `${c.dim("09:40:31")} ${c.green("INFO")}  agents: Otter sent a message to Maple`,
+);
+
 export const TERMINAL_REPLAY: Record<string, string> = {
+  "t-watch": WATCH,
+  "t-logs": LOGS,
+  "t-ssh-gpu": GPU,
   "t-gpu": GPU,
   "agent-notes": HERMES,
   "t-shell": SHELL,

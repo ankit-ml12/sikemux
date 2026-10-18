@@ -202,32 +202,69 @@ async function island(state: string) {
     Math.min(next.naturalHeight, current.naturalHeight) /
     Math.max(next.naturalHeight, current.naturalHeight);
   for (const image of [current, next]) image.style.transformOrigin = "50% 0";
-  const moving = grows
-    ? next.animate([at(0.62, ratio, 0), at(1, 1, 1)], {
-        duration: 460,
-        easing: ISLAND_EASE,
-      })
-    : current.animate([at(1, 1, 1), at(0.62, ratio, 0)], {
-        duration: 300,
-        easing: "cubic-bezier(0.4, 0, 0.7, 0.2)",
-      });
-  if (grows)
-    current.animate([{ opacity: 1 }, { opacity: 0 }], {
-      duration: 180,
+  // The old state is gone before the new one shows, so their words never sit on top of each other.
+  const leaving = current.animate(
+    grows
+      ? [{ opacity: 1 }, { opacity: 0 }]
+      : [at(1, 1, 1), at(0.62, ratio, 0)],
+    {
+      duration: grows ? 110 : 220,
+      easing: "cubic-bezier(0.4, 0, 1, 1)",
       fill: "forwards",
-    });
-  else
-    next.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: 220,
-      delay: 80,
+    },
+  );
+  const moving = next.animate(
+    grows
+      ? [at(0.62, ratio, 0), at(1, 1, 1)]
+      : [{ opacity: 0 }, { opacity: 1 }],
+    {
+      duration: grows ? 460 : 200,
+      delay: grows ? 100 : 210,
+      easing: grows ? ISLAND_EASE : "ease-out",
       fill: "backwards",
-    });
+    },
+  );
+  await leaving.finished;
   await moving.finished;
   current.remove();
 }
 
+/** The closing card: the window settles away and the mark and the site's address come up on the wallpaper. */
+function endCard(): Promise<unknown> {
+  const card = document.createElement("div");
+  card.className = "video-end-card";
+  card.innerHTML = `<img src="/brand/mark/mark-white.svg" alt="" /><span>sikemux.com</span>`;
+  document.querySelector(".stage")!.append(card);
+  const screen = [...camera.querySelectorAll<HTMLElement>("iframe, img.notch")];
+  for (const element of screen)
+    element.animate(
+      [
+        { opacity: 1, filter: "blur(0px)" },
+        { opacity: 0, filter: "blur(12px)" },
+      ],
+      {
+        duration: 700,
+        easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+        fill: "forwards",
+      },
+    );
+  return card.animate(
+    [
+      { opacity: 0, transform: "translate(-50%, -50%) scale(0.96)" },
+      { opacity: 1, transform: "translate(-50%, -50%) scale(1)" },
+    ],
+    {
+      duration: 700,
+      delay: 350,
+      easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      fill: "both",
+    },
+  ).finished;
+}
+
 Object.assign(window, {
   video: {
+    endCard,
     rect,
     show,
     island,

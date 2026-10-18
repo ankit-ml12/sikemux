@@ -340,6 +340,16 @@ function baseSnapshot(): PersistedSnapshot {
           ),
           "t-dev",
         ),
+        terminalWindow("w-sikemux-watch", pane("t-watch", SIKEMUX, "terminal", "vitest --watch"), "t-watch"),
+        terminalWindow("w-sikemux-logs", pane("t-logs", SIKEMUX, "terminal", "tail -f core.log"), "t-logs"),
+        {
+          ...terminalWindow(
+            "w-sikemux-gpu",
+            { type: "pane", id: "t-ssh-gpu", cwd: SIKEMUX, kind: "terminal", title: "gpu-box", startup: "ssh gpu-box" },
+            "t-ssh-gpu",
+          ),
+          name: "ssh gpu-box",
+        },
         {
           id: "w-sikemux-files",
           name: "editor",
@@ -355,8 +365,8 @@ function baseSnapshot(): PersistedSnapshot {
           activePaneId: "p-git",
         },
         agentWindow(AGENTS.rail),
-        agentWindow(AGENTS.phone),
         agentWindow(AGENTS.replay),
+        agentWindow(AGENTS.phone),
       ],
       "s-front": [
         terminalWindow(
