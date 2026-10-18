@@ -38,7 +38,7 @@ import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
 import { SectionIcon, StatusMark } from "./ActionsIcon";
 import { closedIssues, pullState } from "../project";
-import { Branch, Comments, Labels, ShellAccount, StateMark, Who } from "./Bits";
+import { Branch, Comments, Labels, ListTitle, ShellAccount, StateMark, Who } from "./Bits";
 import { useBusy } from "./hooks";
 import { useEvery, useNow } from "../../plugin-api/hooks";
 import { NewPullForm } from "./NewPullForm";
@@ -728,10 +728,7 @@ function PullColumn({
                         </button>
                     </Tooltip>
                     <StateMark kind="pull" state={pullState(found)} size={14} />
-                    <span className="pr-side-number">#{found.number}</span>
-                    {found.head && <span className="pr-ref pr-ref-head">{found.head}</span>}
-                    {found.head && found.base && <span className="pr-ref-arrow">→</span>}
-                    {found.base && <span className="pr-ref">{found.base}</span>}
+                    <span className="pr-side-number">Pull request #{found.number}</span>
                     <span className="gha-page-spacer" />
                     <ShellAccount />
                 </div>
@@ -838,6 +835,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
             <div className="gha-list pr-list">
                 <StaleNotice handle={pulls} />
                 <div className="gha-list-head">
+                    <ListTitle section="pulls" />
                     <div className="gha-chips gha-seg" role="group" aria-label="Which to list">
                         {LIST_STATES.map((state) => (
                             <button

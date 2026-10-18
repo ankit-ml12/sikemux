@@ -4,6 +4,9 @@ import { PULL_STATE_LABEL, pullState } from "../project";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
 import { Face } from "./CommentThread";
 import { useGitShell } from "../shellContext";
+import { useHost } from "../registry";
+import { sectionLabel } from "../sections";
+import type { Section } from "../state";
 
 export function Labels({ labels }: { labels: readonly Label[] }) {
     if (labels.length === 0) return null;
@@ -89,4 +92,15 @@ function StateGlyph({ kind, tone, size }: { kind: "pull" | "issue"; tone: string
 /** Who is signed in to the host, lent by the git pane's shell to whichever head a screen draws first. */
 export function ShellAccount() {
     return <>{useGitShell().account}</>;
+}
+
+/** A full list's name with its tree icon, at the start of its head, since the screen has no title bar of its own. */
+export function ListTitle({ section }: { section: Section }) {
+    const host = useHost();
+    return (
+        <h2 className="gha-list-title">
+            <SectionIcon section={section} size={14} />
+            {sectionLabel(host, section)}
+        </h2>
+    );
 }

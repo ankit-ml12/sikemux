@@ -8,7 +8,7 @@ import { GitColumns } from "../../git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
 import { issueCountsR, issueR, issuesR, timelineR } from "../resources";
 import { compose, setListState, showItem, updateView } from "../state";
-import { Comments, Labels, ShellAccount, StateMark } from "./Bits";
+import { Comments, Labels, ListTitle, ShellAccount, StateMark } from "./Bits";
 import { CommentThread, Face } from "./CommentThread";
 import { useHost } from "../registry";
 import { useBusy } from "./hooks";
@@ -280,6 +280,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
             <div className="gha-list pr-list">
                 <StaleNotice handle={issues} />
                 <div className="gha-list-head">
+                    <ListTitle section="issues" />
                     <div className="gha-chips gha-seg" role="group" aria-label="Which to list">
                         {LIST_STATES.map((state) => (
                             <button
@@ -334,6 +335,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
         );
 
     if (item === null) return <div className="gha-full-page">{list}</div>;
+    const openIssue = rows.find((issue) => issue.number === item);
     const side = (
         <div className="git-side">
             <div className="git-side-head">
@@ -347,8 +349,8 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                             <IconChevron size={11} />
                         </button>
                     </Tooltip>
-                    <SectionIcon section="issues" size={14} />
-                    <span className="pr-side-number">Issues</span>
+                    <StateMark kind="issue" state={openIssue?.state ?? "open"} reason={openIssue?.stateReason ?? null} size={14} />
+                    <span className="pr-side-number">Issue #{item}</span>
                     <span className="gha-page-spacer" />
                     <div className="gha-chips gha-seg issue-side-seg" role="group" aria-label="Which to list">
                         {LIST_STATES.map((state) => (

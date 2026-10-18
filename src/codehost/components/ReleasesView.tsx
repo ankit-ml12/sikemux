@@ -7,7 +7,7 @@ import { hostApi, failureMessage, type Release, type RepoRef } from "../api";
 import { useHost } from "../registry";
 import { releasesR } from "../resources";
 import { SectionIcon } from "./ActionsIcon";
-import { ShellAccount, Who } from "./Bits";
+import { ListTitle, ShellAccount, Who } from "./Bits";
 import { useNow } from "../../plugin-api/hooks";
 import { Prose } from "./Pictures";
 import { formatAgo, formatBytes } from "../../lib/format";
@@ -186,6 +186,7 @@ export function ReleasesView({ paneId, repo, active }: Props) {
             <div className="gha-list pr-list">
                 <StaleNotice handle={releases} />
                 <div className="gha-list-head">
+                    <ListTitle section="releases" />
                     <span className="gha-dim">
                         {rows.length === RELEASES_READ ? `Newest ${RELEASES_READ}` : `${rows.length} release${rows.length === 1 ? "" : "s"}`}
                     </span>

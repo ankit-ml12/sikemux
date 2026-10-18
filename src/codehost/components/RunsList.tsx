@@ -21,7 +21,7 @@ import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updat
 import { StatusMark } from "./ActionsIcon";
 import { RunMenu } from "./RunMenu";
 import { Face } from "./CommentThread";
-import { ShellAccount } from "./Bits";
+import { ListTitle, ShellAccount } from "./Bits";
 import { coarse } from "./hooks";
 import { useEvery, useNow } from "../../plugin-api/hooks";
 import { formatAgo, formatDuration } from "../../lib/format";
@@ -163,6 +163,7 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
     const left = (
         <div className="gha-runs pr-list">
             <div className="gha-list-head">
+                <ListTitle section="actions" />
                 <div className="gha-chips gha-seg" role="group" aria-label="Which runs to list">
                     {STATUS_FILTERS.map((filter) => (
                         <button

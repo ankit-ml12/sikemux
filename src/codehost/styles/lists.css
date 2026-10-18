@@ -189,3 +189,16 @@
 .gha-item-row[data-unread="0"] .gha-item-title {
     color: var(--text-secondary);
 }
+.gha-list-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+    flex: none;
+    margin: 0 var(--space-2) 0 0;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+}
+.gha-list-title > svg {
+    color: var(--text-tertiary);
+}
