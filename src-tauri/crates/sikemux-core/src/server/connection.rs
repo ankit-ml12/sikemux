@@ -856,14 +856,6 @@ async fn run_requests(
                 let result = core.workspaces.publish_palette(palette);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::PublishAgents { chats, titles } => {
-                let result = core.workspaces.publish_agents(chats, titles);
-                client.respond(request_id, result.map(|()| Response::Done));
-            }
-            Request::PublishRecent { chats } => {
-                let result = core.workspaces.publish_recent(chats);
-                client.respond(request_id, result.map(|()| Response::Done));
-            }
             Request::PublishOnScreen { agent_ids, focused } => {
                 core.seen.show(client.id, agent_ids, focused);
                 client.respond(request_id, Ok(Response::Done));
@@ -1069,9 +1061,12 @@ async fn run_requests(
 async fn spawn(
     core: Arc<Core>,
     launch: LaunchIdentity,
-    target: Box<SpawnTarget>,
+    mut target: Box<SpawnTarget>,
     started_by: Option<String>,
 ) -> CoreResult<PendingStart> {
+    if let SpawnTarget::Terminal(spawn) = target.as_mut() {
+        super::launching::terminal_agent(&core, spawn).await;
+    }
     blocking(move || {
         let mut prepared = match *target {
             SpawnTarget::Terminal(mut spawn) => {

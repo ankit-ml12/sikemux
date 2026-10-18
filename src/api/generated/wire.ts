@@ -560,29 +560,6 @@ export interface PhoneNotifications {
 
 export type NotificationState = "off" | "on" | "phoneOff" | "notReaching" | "otherAccount" | "signedOut";
 
-/** A chat as the app lists it. */
-export interface PublishedChat {
-    agentId: string;
-    provider: string;
-    /** Absent while the chat has no name beyond its agent's. */
-    title: string | null;
-    cwd: string;
-    asleep: boolean;
-}
-
-/** A saved chat as the app lists it among its recent ones. */
-export interface PublishedRecent {
-    /** The app's launcher that takes it up again. */
-    launcher: string;
-    provider: string;
-    /** The provider's own id for the session, which it loads to resume it. */
-    sessionId: string;
-    title: string;
-    cwd: string;
-    /** When it was last written to, in Unix milliseconds. */
-    activeAt: number;
-}
-
 /** A phone the person lets in ahead of it asking, by its account key. */
 export interface AllowedDevice {
     id: string;

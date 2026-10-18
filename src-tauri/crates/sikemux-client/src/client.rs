@@ -18,10 +18,9 @@ use sikemux_wire::protocol::{
     decode_output, decode_snapshot, encode_control, encode_input, read_frame, AllowedDevice,
     Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment, ChatContext,
     ChatEvent, ChatInfo, ChatLaunch, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
-    FrameKind, HostRegistration, LaunchIdentity, PublishedChat, PublishedRecent, RemoteStatus,
-    Request, RequestId, Response, RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget,
-    WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL,
-    PROTOCOL_VERSION,
+    FrameKind, HostRegistration, LaunchIdentity, RemoteStatus, Request, RequestId, Response,
+    RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
+    Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -855,19 +854,6 @@ impl CoreClient {
         palette: BTreeMap<String, String>,
     ) -> Result<(), ClientError> {
         self.request_done(Request::PublishPalette { palette }).await
-    }
-
-    pub async fn publish_agents(
-        &self,
-        chats: Vec<PublishedChat>,
-        titles: BTreeMap<String, String>,
-    ) -> Result<(), ClientError> {
-        self.request_done(Request::PublishAgents { chats, titles })
-            .await
-    }
-
-    pub async fn publish_recent(&self, chats: Vec<PublishedRecent>) -> Result<(), ClientError> {
-        self.request_done(Request::PublishRecent { chats }).await
     }
 
     pub async fn publish_on_screen(

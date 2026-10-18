@@ -21,6 +21,7 @@ mod hosts;
 mod inbox;
 mod join;
 mod kept;
+mod launching;
 mod local_peer;
 mod messages;
 mod names;

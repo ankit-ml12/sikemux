@@ -110,8 +110,6 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AllowDevices { .. }
         | Request::SignRegistration { .. }
         | Request::SetOwner { .. }
-        | Request::PublishAgents { .. }
-        | Request::PublishRecent { .. }
         | Request::PublishOnScreen { .. }
         | Request::WatchView
         | Request::FocusAgent { .. }
@@ -192,8 +190,6 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::SetDeviceAccess { .. }
         | Request::RevokeDevice { .. }
         | Request::AllowDevices { .. }
-        | Request::PublishAgents { .. }
-        | Request::PublishRecent { .. }
         | Request::PublishOnScreen { .. }
         | Request::PublishPalette { .. }
         | Request::PublishBackdrop { .. } => true,
@@ -299,7 +295,10 @@ mod tests {
             Request::SetOwner {
                 owner: Some("user_attacker".into()),
             },
-            Request::PublishRecent { chats: Vec::new() },
+            Request::PublishOnScreen {
+                agent_ids: Vec::new(),
+                focused: true,
+            },
         ] {
             assert_eq!(refusal(standing(DeviceAccess::Full), &request), LOCAL_ONLY);
         }

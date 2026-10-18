@@ -825,12 +825,20 @@ async fn a_client_on_this_host_can_watch_the_device_view_with_the_app_s_titles()
         .spawn(launch(), agent_terminal("agent-10", "sleep 1000"))
         .await
         .expect("spawn");
-    app.publish_agents(
-        Vec::new(),
-        [("agent-10".to_owned(), "Fix the login flake".to_owned())].into(),
-    )
-    .await
-    .expect("publish titles");
+    let project = serde_json::json!({ "id": "tmp", "path": std::env::temp_dir() });
+    app.call("addProject", project).await.expect("the project");
+    let agent = serde_json::json!({
+        "id": "agent-10",
+        "provider": "claude",
+        "project": "tmp",
+        "cwd": std::env::temp_dir(),
+        "title": "Fix the login flake",
+        "permissionMode": "bypass",
+        "ptyId": id,
+    });
+    app.call("createAgent", serde_json::json!({ "agent": agent }))
+        .await
+        .expect("the agent");
     app.publish_on_screen(vec!["agent-10".into()], true)
         .await
         .expect("publish what is on screen");

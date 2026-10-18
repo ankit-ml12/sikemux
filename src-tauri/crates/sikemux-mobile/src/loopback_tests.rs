@@ -186,11 +186,9 @@ fn a_phone_hears_the_mac_s_view_and_asks_it_typed_questions() {
             .await
             .expect("the phone connects");
 
-        let workspace = serde_json::json!({
-            "projects": [{ "id": "p", "name": "Project", "path": std::env::temp_dir() }],
-            "permissionMode": "bypass",
-        });
-        app.call("setWorkspace", workspace).await.expect("publish");
+        let project =
+            serde_json::json!({ "id": "p", "name": "Project", "path": std::env::temp_dir() });
+        app.call("addProject", project).await.expect("the project");
         let deadline = Instant::now() + WAIT;
         while !views.views.lock().unwrap().iter().any(|view| {
             view.workspace
@@ -316,18 +314,20 @@ fn closing_a_connection_fails_what_waits_on_it_and_tells_the_app_nothing_more() 
             .await
             .expect("the app opens its window");
         let addr = core_addr(&app).await;
-        app.publish_agents(
-            vec![sikemux_core::protocol::PublishedChat {
-                agent_id: "agent-sleepy".into(),
-                provider: "opencode".into(),
-                title: None,
-                cwd: std::env::temp_dir(),
-                asleep: true,
-            }],
-            Default::default(),
-        )
-        .await
-        .expect("publish chats");
+        let project = serde_json::json!({ "id": "p", "path": std::env::temp_dir() });
+        app.call("addProject", project).await.expect("the project");
+        let agent = serde_json::json!({
+            "id": "agent-sleepy",
+            "provider": "opencode",
+            "project": "p",
+            "cwd": std::env::temp_dir(),
+            "title": "opencode",
+            "permissionMode": "bypass",
+            "asleep": true,
+        });
+        app.call("createAgent", serde_json::json!({ "agent": agent }))
+            .await
+            .expect("the agent");
         let device = loopback_device(phone_key).await;
         let views = Arc::new(Views::default());
         let connection = device

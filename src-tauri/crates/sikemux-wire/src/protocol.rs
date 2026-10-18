@@ -353,18 +353,6 @@ pub enum Request {
     PublishPalette {
         palette: BTreeMap<String, String>,
     },
-    /// The agents the app lists, so devices show them under the app's names:
-    /// its chats, sleeping ones included, and the titles of its terminal
-    /// agents by agent id. Replaces what it published before.
-    PublishAgents {
-        chats: Vec<PublishedChat>,
-        titles: BTreeMap<String, String>,
-    },
-    /// The saved chats the app lists as recent, newest first and none it has
-    /// open, so devices can take one up again. Replaces the last list.
-    PublishRecent {
-        chats: Vec<PublishedRecent>,
-    },
     /// The agents the app shows now, replacing the last list, and whether its
     /// window is in front. An agent on screen in a window in front is never
     /// left unread, and one on screen is not put to sleep.
@@ -393,7 +381,7 @@ pub enum Request {
         model: Option<String>,
         effort: Option<String>,
     },
-    /// Takes up again one of the saved chats the app published as recent,
+    /// Takes up again one of the recent saved chats in the device view,
     /// named by its [`RecentInfo::id`], and answers like `StartChat`.
     ResumeChat {
         recent: String,
@@ -437,33 +425,6 @@ pub struct ChatAccount {
     pub id: String,
     pub label: String,
     pub env: BTreeMap<String, String>,
-}
-
-/// A chat as the app lists it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublishedChat {
-    pub agent_id: String,
-    pub provider: String,
-    /// Absent while the chat has no name beyond its agent's.
-    pub title: Option<String>,
-    pub cwd: PathBuf,
-    pub asleep: bool,
-}
-
-/// A saved chat as the app lists it among its recent ones.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublishedRecent {
-    /// The app's launcher that takes it up again.
-    pub launcher: String,
-    pub provider: String,
-    /// The provider's own id for the session, which it loads to resume it.
-    pub session_id: String,
-    pub title: String,
-    pub cwd: PathBuf,
-    /// When it was last written to, in Unix milliseconds.
-    pub active_at: u64,
 }
 
 /// What a device learns of a recent chat: never the launcher behind it.
@@ -1486,7 +1447,7 @@ pub struct DeviceView {
     pub sessions: Vec<SessionInfo>,
     pub chats: Vec<ChatInfo>,
     pub attentions: Vec<Attention>,
-    /// Saved chats the app lists as recent, newest first, none of them open.
+    /// The newest saved chats in this host's projects, none of them open.
     #[serde(default)]
     pub recent: Vec<RecentInfo>,
     /// What waits on the person, ranked, as the core's inbox JSON. Kept as

@@ -6,6 +6,7 @@ pub(crate) mod feed;
 mod history;
 mod kept;
 mod native;
+mod queue;
 mod rebind;
 pub(crate) mod reset;
 mod states;
@@ -42,6 +43,10 @@ const START_TIMEOUT: Duration = Duration::from_secs(150);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(15);
 const NOT_RUNNING: &str = "ACP session is not running";
 const STOPPED: &str = "ACP session stopped";
+
+/// No client: a message that went in on its own, which every client is told of.
+pub(crate) const NOBODY: super::connection::ClientId = 0;
+
 /// How long a stop waits for an agent's process to be gone.
 const STOP_SETTLE: Duration = Duration::from_secs(2);
 /// How long a stopped turn may keep running before the agent is killed. The
@@ -294,9 +299,13 @@ impl Chat {
                 core.note_activity(self.agent_id(), activity);
             }
             if let Some(ending) = ended {
+                let carries_on = !matches!(ending, Ending::Stopped);
                 self.feed.emit(kind, payload);
                 self.report_turn(&core, ending);
                 self.publish_state();
+                if carries_on {
+                    self.send_queued_later();
+                }
                 return;
             }
         }
@@ -388,6 +397,7 @@ impl Chat {
             }
             core.note_activity(&agent_id, Activity::Finished { cancelled: false });
             chat.report_turn(&core, Ending::Finished);
+            chat.send_queued_later();
         });
     }
 
@@ -807,7 +817,9 @@ impl Chat {
 
     pub(crate) fn discard_failed(&self) -> CoreResult<()> {
         self.offline_failed.store(false, Ordering::Release);
-        self.send(ChatCommand::DiscardFailed)
+        self.send(ChatCommand::DiscardFailed)?;
+        self.send_queued_later();
+        Ok(())
     }
 
     pub(crate) fn info(&self) -> ChatInfo {
@@ -1930,8 +1942,12 @@ pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) 
         .send(ChatCommand::SwitchAccount { account })
 }
 
+/// Stops the running turn. The messages waiting behind it go back to the
+/// person rather than out.
 pub(crate) fn cancel(core: &Core, agent_id: &str) -> CoreResult<()> {
-    core.chats.running(agent_id)?.send(ChatCommand::Cancel)
+    let chat = core.chats.running(agent_id)?;
+    chat.feed.clear_queue();
+    chat.send(ChatCommand::Cancel)
 }
 
 pub(crate) fn stop_task(core: &Core, agent_id: &str, task_id: String) -> CoreResult<()> {

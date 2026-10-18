@@ -149,11 +149,11 @@ async fn publish(app: &CoreClient, project: &Path) {
     app.call("setAgentAccounts", accounts)
         .await
         .expect("the accounts");
-    let workspace = json!({
-        "projects": [{ "id": "widget", "name": "widget", "path": project }],
-        "permissionMode": "bypass",
-    });
-    app.call("setWorkspace", workspace).await.expect("publish");
+    let project = json!({ "id": "widget", "name": "widget", "path": project });
+    app.call("addProject", project).await.expect("the project");
+    app.call("setAgentDefaults", json!({ "permissionMode": "bypass" }))
+        .await
+        .expect("the defaults");
 }
 
 async fn listening(app: &CoreClient) -> RemoteStatus {

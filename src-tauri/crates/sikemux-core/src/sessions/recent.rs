@@ -17,7 +17,7 @@ use super::AgentSession;
 use crate::agent_catalog::AgentKind;
 
 const MAX_PAGE: usize = 100;
-const MAX_PROJECTS: usize = 64;
+pub(crate) const MAX_PROJECTS: usize = 64;
 const MAX_EXCLUDED: usize = 512;
 
 #[derive(Clone, Deserialize)]
@@ -30,8 +30,8 @@ pub struct RecentProvider {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentRef {
-    agent: AgentKind,
-    id: String,
+    pub(crate) agent: AgentKind,
+    pub(crate) id: String,
 }
 
 /// Where the last page ended. Sessions are ordered newest first, then by
@@ -48,31 +48,31 @@ pub struct RecentCursor {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentRequest {
-    providers: Vec<RecentProvider>,
-    projects: Vec<String>,
-    limit: usize,
+    pub(crate) providers: Vec<RecentProvider>,
+    pub(crate) projects: Vec<String>,
+    pub(crate) limit: usize,
     #[serde(default)]
-    cursor: Option<RecentCursor>,
+    pub(crate) cursor: Option<RecentCursor>,
     #[serde(default)]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
     #[serde(default)]
-    exclude: Vec<RecentRef>,
+    pub(crate) exclude: Vec<RecentRef>,
 }
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentSession {
-    agent: &'static str,
-    id: String,
-    title: String,
-    mtime: u64,
-    project: String,
+    pub(crate) agent: &'static str,
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) mtime: u64,
+    pub(crate) project: String,
 }
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentPage {
-    sessions: Vec<RecentSession>,
+    pub(crate) sessions: Vec<RecentSession>,
     next: Option<RecentCursor>,
 }
 

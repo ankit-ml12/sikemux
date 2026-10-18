@@ -6,12 +6,11 @@
 //!   remote mac <socket> spawn
 //!   remote mac <socket> publish            offers the fake agent to devices
 //!   remote mac <socket> chat [prompt]      starts a chat with it
-//!   remote mac <socket> recent <title>…    lists saved chats of the fake agent as recent
 //!   remote mac <socket> say <agent> <text>
 //!   remote mac <socket> backdrop on|off [image.jpg]  publishes the pane backdrop
 //!   remote mac <socket> palette <name=colour>…  publishes theme colours
 //!   remote mac <socket> chats              lists the chats running on the core
-//!   remote mac <socket> sleepy             lists a sleeping chat and wakes it when asked
+//!   remote mac <socket> sleepy             keeps a sleeping chat and wakes it when asked
 //! As a device, keeping its key in `<key-file>`:
 //!   remote device <key-file> sessions <core-id>
 
@@ -23,8 +22,7 @@ use iroh::{Endpoint, EndpointAddr, RelayMode};
 use sikemux_core::accounts::network;
 use sikemux_core::client::{ClientEvent, CoreClient};
 use sikemux_core::protocol::{
-    BackdropImage, ChatLaunch, DeviceAccess, Event, LaunchIdentity, PublishedChat, PublishedRecent,
-    SpawnTarget, TerminalSpawn,
+    BackdropImage, ChatLaunch, DeviceAccess, Event, LaunchIdentity, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 
@@ -39,7 +37,6 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, "publish"] => publish(Path::new(socket)).await,
         ["mac", socket, "chat", prompt @ ..] => chat(Path::new(socket), &prompt.join(" ")).await,
         ["mac", socket, "say", agent, text @ ..] => say(Path::new(socket), agent, &text.join(" ")).await,
-        ["mac", socket, "recent", titles @ ..] => recent(Path::new(socket), titles).await,
         ["mac", socket, "sleepy"] => sleepy(Path::new(socket)).await,
         ["mac", socket, "chats"] => chats(Path::new(socket)).await,
         ["mac", socket, "palette", colours @ ..] => palette(Path::new(socket), colours).await,
@@ -107,11 +104,14 @@ async fn publish(socket: &Path) -> Result<(), Failure> {
         }],
     });
     client.call("setAgentAccounts", accounts).await?;
-    let workspace = serde_json::json!({
-        "projects": [{ "id": "tmp", "name": "tmp", "path": std::env::temp_dir() }],
-        "permissionMode": "workspace-write",
-    });
-    client.call("setWorkspace", workspace).await?;
+    let project = serde_json::json!({ "id": "tmp", "name": "tmp", "path": std::env::temp_dir() });
+    client.call("addProject", project).await?;
+    client
+        .call(
+            "setAgentDefaults",
+            serde_json::json!({ "permissionMode": "workspace-write" }),
+        )
+        .await?;
     println!("published the fake agent");
     Ok(())
 }
@@ -127,29 +127,6 @@ async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
             .acp_prompt(agent, None, prompt.into(), Vec::new(), Vec::new())
             .await?;
     }
-    Ok(())
-}
-
-/// Each title becomes a saved chat an hour older than the one before.
-async fn recent(socket: &Path, titles: &[&str]) -> Result<(), Failure> {
-    let (client, _events) = CoreClient::connect(socket).await?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_millis() as u64;
-    let chats = titles
-        .iter()
-        .enumerate()
-        .map(|(index, title)| PublishedRecent {
-            launcher: "opencode:fake".into(),
-            provider: "opencode".into(),
-            session_id: format!("saved-{index}"),
-            title: (*title).into(),
-            cwd: std::env::temp_dir(),
-            active_at: now - index as u64 * 3_600_000,
-        })
-        .collect();
-    client.publish_recent(chats).await?;
-    println!("published {} recent chats", titles.len());
     Ok(())
 }
 
@@ -213,17 +190,18 @@ async fn chats(socket: &Path) -> Result<(), Failure> {
 async fn sleepy(socket: &Path) -> Result<(), Failure> {
     let (client, mut events) = CoreClient::connect(socket).await?;
     let agent_id = "agent-sleepy".to_owned();
+    let agent = serde_json::json!({
+        "id": agent_id,
+        "provider": "opencode",
+        "project": "tmp",
+        "cwd": std::env::temp_dir(),
+        "title": "Tidy the docs",
+        "permissionMode": "workspace-write",
+        "profileId": "fake",
+        "asleep": true,
+    });
     client
-        .publish_agents(
-            vec![PublishedChat {
-                agent_id: agent_id.clone(),
-                provider: "opencode".into(),
-                title: Some("Tidy the docs".into()),
-                cwd: std::env::temp_dir(),
-                asleep: true,
-            }],
-            Default::default(),
-        )
+        .call("createAgent", serde_json::json!({ "agent": agent }))
         .await?;
     println!("{agent_id} is asleep");
     while let Some(event) = events.recv().await {

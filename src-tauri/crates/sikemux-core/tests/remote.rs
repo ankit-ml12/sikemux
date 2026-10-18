@@ -11,8 +11,8 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
-    ChatLaunch, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, PublishedChat,
-    PublishedRecent, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
+    ChatLaunch, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, RemoteStatus,
+    SessionId, SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -391,11 +391,29 @@ async fn publish_fake_agent(app: &CoreClient) {
     app.call("setAgentAccounts", accounts)
         .await
         .expect("the accounts");
-    let workspace = json!({
-        "projects": [{ "id": "sess-tmp", "name": "tmp", "path": std::env::temp_dir() }],
+    let project = json!({ "id": "sess-tmp", "name": "tmp", "path": std::env::temp_dir() });
+    app.call("addProject", project).await.expect("the project");
+    app.call("setAgentDefaults", json!({ "permissionMode": "bypass" }))
+        .await
+        .expect("the defaults");
+}
+
+/// Keeps an agent in the workspace, as the app does when it opens one.
+async fn keep_agent(app: &CoreClient, agent_id: &str, title: &str, asleep: bool) {
+    let agent = json!({
+        "id": agent_id,
+        "provider": "opencode",
+        "project": "sess-tmp",
+        "cwd": std::env::temp_dir(),
+        "title": title,
+        "renamed": true,
         "permissionMode": "bypass",
+        "profileId": "fake",
+        "asleep": asleep,
     });
-    app.call("setWorkspace", workspace).await.expect("publish");
+    app.call("createAgent", json!({ "agent": agent }))
+        .await
+        .expect("the agent");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -577,23 +595,14 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         .await
         .expect("the phone starts a chat");
 
-    let published = |agent_id: &str, title: &str, asleep: bool| PublishedChat {
-        agent_id: agent_id.into(),
-        provider: "opencode".into(),
-        title: Some(title.into()),
-        cwd: std::env::temp_dir(),
-        asleep,
-    };
-    app.publish_agents(
-        vec![
-            published(&agent_id, "Fix the replay test", false),
-            published("agent-sleepy", "Tidy the docs", true),
-            published("agent-failed", "Try Codex", false),
-        ],
-        Default::default(),
+    app.call(
+        "updateAgent",
+        json!({ "agentId": agent_id, "patch": { "title": "Fix the replay test", "renamed": true } }),
     )
     .await
-    .expect("publish chats");
+    .expect("rename the chat");
+    keep_agent(&app, "agent-sleepy", "Tidy the docs", true).await;
+    keep_agent(&app, "agent-failed", "Try Codex", false).await;
     let chats = client.acp_list().await.expect("list chats");
     let titled = |id: &str| {
         chats
@@ -680,8 +689,6 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let refused = client.publish_palette(Default::default()).await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
 
-    let refused = client.publish_agents(Vec::new(), Default::default()).await;
-    assert!(refusal(refused).contains("only Sikemux on this host"));
     let refused = client.publish_on_screen(Vec::new(), true).await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
     let refused = client.watch_view().await;
@@ -689,7 +696,7 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let refused = client.acp_wake("agent-failed".into()).await;
     assert!(refusal(refused).contains("stopped on the host"));
     let refused = client.acp_wake("agent-gone".into()).await;
-    assert!(refusal(refused).contains("no longer open"));
+    assert!(refusal(refused).contains("no longer on this host"));
 }
 
 fn fake_launch(agent_id: &str) -> ChatLaunch {
@@ -817,13 +824,10 @@ async fn a_watching_device_cannot_start_a_chat() {
     assert!(refusal(refused).contains("watch"));
     assert!(refusal(
         client
-            .call(
-                "setWorkspace",
-                json!({ "projects": [], "permissionMode": "bypass" })
-            )
+            .call("setAgentDefaults", json!({ "permissionMode": "read-only" }))
             .await
     )
-    .contains("only Sikemux on this host"));
+    .contains("only a device on this host's account"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -940,56 +944,6 @@ async fn a_device_sends_a_file_for_a_chat_and_the_agent_is_given_its_path() {
     };
     assert_eq!(prompt.payload["paths"], json!([sent]));
     until_said(&mut events, &agent_id, "look at this").await;
-}
-
-fn recent_chat(session_id: &str) -> PublishedRecent {
-    PublishedRecent {
-        launcher: "opencode:fake".into(),
-        provider: "opencode".into(),
-        session_id: session_id.into(),
-        title: "Fix the login flake".into(),
-        cwd: std::env::temp_dir(),
-        active_at: 1_700_000_000_000,
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_device_resumes_a_recent_chat_the_app_published() {
-    let core_key = SecretKey::generate();
-    let phone = Device::new("Phone", DeviceAccess::Full);
-    let watcher = Device::new("Watcher", DeviceAccess::Watch);
-    let core = start_core(&core_key, &[&phone, &watcher]);
-    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
-    publish_fake_agent(&app).await;
-    app.publish_recent(vec![recent_chat("saved-1")])
-        .await
-        .expect("publish recent");
-    let status = listening(&app).await;
-
-    let endpoint = phone.endpoint().await;
-    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
-        .await
-        .expect("the phone connects");
-    let view = until_view(&mut events, |view| !view.recent.is_empty()).await;
-    let recent = &view.recent[0];
-    assert_eq!(recent.title, "Fix the login flake");
-    assert_eq!(recent.project, "sess-tmp");
-
-    let watch_endpoint = watcher.endpoint().await;
-    let (watching, _watch_events) = remote::connect(&watch_endpoint, core_addr(&status))
-        .await
-        .expect("the watcher connects");
-    assert!(refusal(watching.resume_chat(recent.id.clone()).await).contains("watch"));
-    assert!(refusal(client.resume_chat("opencode:unknown".into()).await).contains("recent"));
-
-    let (agent_id, start) = client
-        .resume_chat(recent.id.clone())
-        .await
-        .expect("the phone resumes the chat");
-    assert_eq!(start.session_id, "saved-1");
-    let view = until_view(&mut events, |view| view.recent.is_empty()).await;
-    assert!(view.chats.iter().any(|chat| chat.agent_id == agent_id));
-    assert!(refusal(client.resume_chat(recent.id.clone()).await).contains("already open"));
 }
 
 /// The next view the core sends that `wanted` accepts.

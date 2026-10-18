@@ -2,7 +2,6 @@ mod account;
 mod acp;
 mod activity;
 mod agent_board;
-mod agent_names;
 mod core_call;
 mod agent_notification;
 mod agent_questions;
@@ -247,10 +246,7 @@ pub fn run() {
         .manage(harness::HarnessBroker::default())
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
-        .manage(remote::PublishedAgents::default())
-        .manage(remote::PublishedRecentChats::default())
         .manage(remote::PublishedOnScreen::default())
-        .manage(agent_names::AgentsInApp::default())
         .manage(remote::PublishedPalette::default())
         .manage(remote::PublishedBuddies::default())
         .manage(remote::PublishedBackdrop::default())
@@ -302,13 +298,9 @@ pub fn run() {
             account::account_link_host,
             account::account_sign_out,
             share::share_access,
-            agent_names::agent_name_call,
             core_call::core_call,
             remote::remote_answer_pairing,
             remote::remote_allow_devices,
-            remote::remote_publish_workspace,
-            remote::remote_publish_agents,
-            remote::remote_publish_recent,
             remote::remote_publish_on_screen,
             notch::notch_configure,
             remote::remote_publish_palette,
