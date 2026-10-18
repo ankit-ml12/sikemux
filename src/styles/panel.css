@@ -315,9 +315,14 @@
     min-width: 0;
     min-height: 0;
 }
-/* Side by side mid-swipe, the pages part on a hairline. */
-.swipe-page + .swipe-page {
+/* Side by side mid-swipe, the pages part on a hairline, and the outer pages close on one when pulled past the end. */
+.swipe-page {
     box-shadow: -1px 0 0 var(--border);
+}
+.swipe-page:last-child {
+    box-shadow:
+        -1px 0 0 var(--border),
+        1px 0 0 var(--border);
 }
 .swipe-pager:not([data-moving]) .swipe-page:not(.is-current) {
     visibility: hidden;
