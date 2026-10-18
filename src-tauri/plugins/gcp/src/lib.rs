@@ -5,12 +5,14 @@
 //   auth     — accounts, configurations, and the access tokens gcloud hands out
 //   client   — Google's REST APIs, pages and errors
 //   projects — the projects an account can see
+//   run      — Cloud Run services, revisions, traffic, jobs and executions
 
 mod auth;
 mod client;
 mod error;
 mod gcloud;
 mod projects;
+mod run;
 
 use std::sync::Arc;
 
@@ -53,6 +55,12 @@ impl Plugin for Gcp {
             match method {
                 "status" => reply(auth::status().await),
                 "projects" => answer(projects::projects(params(input)?)).await,
+                "runServices" => answer(run::services(params(input)?)).await,
+                "runService" => answer(run::service_detail(params(input)?)).await,
+                "runSetTraffic" => answer(run::set_traffic(params(input)?)).await,
+                "runJobs" => answer(run::jobs(params(input)?)).await,
+                "runJob" => answer(run::job_detail(params(input)?)).await,
+                "runJobExecute" => answer(run::run_job(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
