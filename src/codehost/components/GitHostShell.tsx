@@ -27,8 +27,9 @@ interface Props {
     onArea: (area: GitArea) => void;
     /** The local workbench's screens, which head the navigation. */
     local: readonly NavItem[];
-    /** The local workbench's own controls, shown in the header beside the navigation while it is open. */
-    tools?: ReactNode;
+    /** The local workbench's own controls, shown in the header beside the navigation while it is open; given a way to
+     *  pick the host repository the pane shows, while there is one to pick from. */
+    tools?: (pickRepo: (() => void) | null) => ReactNode;
     /** The local workbench, shown while the area is `local` or the folder is on no known host. */
     children: ReactNode;
 }
@@ -100,7 +101,7 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, loca
                         <GitNav
                             local={local}
                             host={host && repo ? <HostNavItems area={area} onArea={onArea} /> : undefined}
-                            tools={!repo || (area === "local" && !adding) ? tools : null}
+                            tools={!repo || (area === "local" && !adding) ? tools?.(host && repo ? () => setPicking(true) : null) : null}
                             account={account}
                         />
                     )}

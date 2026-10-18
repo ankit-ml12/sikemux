@@ -869,8 +869,9 @@ function GitWorkbench({
 
     const openHelpCheatsheet = () => openGitCheatsheet("Git pane keybindings", GIT_HELP);
 
-    const openMoreMenu = (anchor: HTMLElement) =>
+    const openMoreMenu = (anchor: HTMLElement, pickRepo: (() => void) | null) =>
         openMenuAt(anchor, [
+            ...(pickRepo ? [{ label: "Choose another repository…", icon: <IconGit size={13} />, run: pickRepo }, { sep: true as const }] : []),
             { label: "Fetch all remotes", hint: "F", icon: <IconFetch size={13} />, run: () => doFetch(null) },
             { label: "Add remote…", icon: <IconPlus size={13} />, run: openAddRemotePrompt },
             { sep: true },
@@ -1637,7 +1638,7 @@ function GitWorkbench({
         );
     }
 
-    const toolbar = (
+    const toolbar = (pickRepo: (() => void) | null) => (
         <div className="git-toolbar">
             {onLeaveRepo && (
                 <Tooltip label="Back to the repositories in this folder">
@@ -1692,7 +1693,7 @@ function GitWorkbench({
                     Pull request
                 </button>
             </Tooltip>
-            <MoreButton label="Remotes, stashes and more" onOpen={openMoreMenu} className="git-btn icon" />
+            <MoreButton label="Remotes, stashes and more" onOpen={(anchor) => openMoreMenu(anchor, pickRepo)} className="git-btn icon" />
             <span className="git-tb-grow" />
         </div>
     );
