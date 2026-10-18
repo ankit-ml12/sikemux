@@ -1,71 +1,22 @@
-/* Google Cloud console colours, light or dark as the person's theme is. The app's colour
-   names are set to them inside the pane, so the controls it borrows from the app match too. */
-.gcp-pane[data-scheme="light"] {
-    --gcp-bg: #ffffff;
-    --gcp-bar: #ffffff;
-    --gcp-nav: #ffffff;
-    --gcp-raised: #ffffff;
-    --gcp-sunken: #f8f9fa;
-    --gcp-line: #dadce0;
-    --gcp-text: #202124;
-    --gcp-text-2: #5f6368;
-    --gcp-text-3: #80868b;
-    --gcp-blue: #1a73e8;
-    --gcp-blue-text: #1967d2;
-    --gcp-blue-soft: #e8f0fe;
-    --gcp-hover: #f1f3f4;
-    --gcp-green: #1e8e3e;
-    --gcp-red: #d93025;
-    --gcp-yellow: #f9ab00;
-    --gcp-grey: #80868b;
-    --gcp-on-status: #ffffff;
-    --surface: #ffffff;
-    --surface-raised: #ffffff;
-    --surface-sunken: #f8f9fa;
-    --surface-hover: #f1f3f4;
-    --surface-chosen: #e8f0fe;
-    --border: #dadce0;
-    --border-strong: #bdc1c6;
-    --border-selected: #1a73e8;
-    --text-primary: #202124;
-    --text-secondary: #5f6368;
-    --text-tertiary: #80868b;
-    --danger: #d93025;
-    color-scheme: light;
-}
-
-.gcp-pane[data-scheme="dark"] {
-    --gcp-bg: #202124;
-    --gcp-bar: #292a2d;
-    --gcp-nav: #202124;
-    --gcp-raised: #292a2d;
-    --gcp-sunken: #1b1b1d;
-    --gcp-line: #3c4043;
-    --gcp-text: #e8eaed;
-    --gcp-text-2: #bdc1c6;
-    --gcp-text-3: #9aa0a6;
-    --gcp-blue: #8ab4f8;
-    --gcp-blue-text: #8ab4f8;
-    --gcp-blue-soft: rgba(138, 180, 248, 0.16);
-    --gcp-hover: rgba(232, 234, 237, 0.08);
-    --gcp-green: #81c995;
-    --gcp-red: #f28b82;
-    --gcp-yellow: #fdd663;
-    --gcp-grey: #9aa0a6;
-    --gcp-on-status: #202124;
-    --surface: #292a2d;
-    --surface-raised: #292a2d;
-    --surface-sunken: #1b1b1d;
-    --surface-hover: rgba(232, 234, 237, 0.08);
-    --surface-chosen: rgba(138, 180, 248, 0.16);
-    --border: #3c4043;
-    --border-strong: #5f6368;
-    --border-selected: #8ab4f8;
-    --text-primary: #e8eaed;
-    --text-secondary: #bdc1c6;
-    --text-tertiary: #9aa0a6;
-    --danger: #f28b82;
-    color-scheme: dark;
+.gcp-pane {
+    --gcp-bg: var(--surface);
+    --gcp-bar: var(--surface-raised);
+    --gcp-nav: var(--surface);
+    --gcp-raised: var(--surface-raised);
+    --gcp-sunken: var(--surface-sunken);
+    --gcp-line: var(--border);
+    --gcp-text: var(--text-primary);
+    --gcp-text-2: var(--text-secondary);
+    --gcp-text-3: var(--text-tertiary);
+    --gcp-blue: var(--accent);
+    --gcp-blue-text: var(--accent);
+    --gcp-blue-soft: var(--surface-chosen);
+    --gcp-hover: var(--surface-hover);
+    --gcp-green: var(--live);
+    --gcp-red: var(--danger);
+    --gcp-yellow: var(--warn);
+    --gcp-grey: var(--text-tertiary);
+    --gcp-on-status: var(--on-accent);
 }
 
 .gcp-pane {

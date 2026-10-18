@@ -1,5 +1,4 @@
 import { useEffect, useRef, type ComponentType } from "react";
-import { useDarkTheme } from "../../../plugin-api/hooks";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SkeletonRows } from "../../../plugin-api/ui";
 import { refreshGcp, type GcpStatus, type Target } from "../api";
@@ -113,7 +112,6 @@ function useDefaultProject(status: GcpStatus) {
 
 function Console({ paneId, active, status }: { paneId: string; active: boolean; status: GcpStatus }) {
     const view = useGcpView(paneId);
-    const dark = useDarkTheme();
     const target = useTarget();
     const sideRef = useRef<HTMLDivElement>(null);
     const sideWidth = gcpSettings.useSelect((s) => s.sideWidth);
@@ -129,7 +127,6 @@ function Console({ paneId, active, status }: { paneId: string; active: boolean; 
     return (
         <div
             className="gcp-pane"
-            data-scheme={dark ? "dark" : "light"}
             onKeyDown={(event) => {
                 if (event.key !== "Escape" || event.defaultPrevented || typing(event.target)) return;
                 if (goBack(paneId)) event.preventDefault();
