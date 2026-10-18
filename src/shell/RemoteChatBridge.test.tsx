@@ -32,10 +32,7 @@ const phoneChat = (): ChatInfo =>
         startedBy: "phone-key",
         launcher: "codex",
         permissionMode: "workspace-write",
-        model: null,
-        effort: null,
-    };
-}
+    });
 
 describe("RemoteChatBridge", () => {
     it("adds a chat a phone starts to the host without taking the screen, once", async () => {
