@@ -11,6 +11,7 @@ vi.mock("../api", async (importOriginal) => {
 import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { LoggingPage } from "./LoggingPage";
+import { histogram } from "./LogStream";
 
 const target = { account: null, project: "acme-prod" };
 const entry = (id: string, text: string, severity = "INFO") => ({
@@ -37,6 +38,24 @@ afterEach(() => {
 });
 
 describe("Logs Explorer", () => {
+    it("counts entries into time slices by how loud they are", () => {
+        const slices = histogram(
+            [
+                { at: "2024-10-18T11:00:00Z", severity: "INFO" },
+                { at: "2024-10-18T11:00:30Z", severity: "ERROR" },
+                { at: "2024-10-18T12:00:00Z", severity: "WARNING" },
+                { at: "nonsense", severity: "ERROR" },
+            ],
+            4,
+        );
+        expect(slices[0]).toEqual({ errors: 1, warnings: 0, other: 1 });
+        expect(slices[3]).toEqual({ errors: 0, warnings: 1, other: 0 });
+        expect(histogram([], 2)).toEqual([
+            { errors: 0, warnings: 0, other: 0 },
+            { errors: 0, warnings: 0, other: 0 },
+        ]);
+    });
+
     it("lists entries oldest first and opens one to its payload", async () => {
         api.logs.mockResolvedValue([entry("2", "second"), entry("1", "first", "ERROR")]);
         render(<LoggingPage paneId="logs-1" active target={target} />);

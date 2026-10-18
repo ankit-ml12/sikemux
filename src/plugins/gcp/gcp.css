@@ -1278,3 +1278,38 @@ button.gcp-project-row:hover {
     align-items: center;
     gap: 8px;
 }
+
+.gcp-histogram {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 56px;
+    padding: 6px 8px 0;
+    border: 1px solid var(--gcp-line);
+    border-radius: 4px;
+    background: var(--gcp-raised);
+}
+
+.gcp-histogram-bar {
+    display: flex;
+    flex: 1;
+    flex-direction: column-reverse;
+    height: 100%;
+}
+
+.gcp-histogram-bar i {
+    display: block;
+}
+
+.gcp-histogram-bar .other {
+    background: var(--gcp-blue);
+    opacity: 0.45;
+}
+
+.gcp-histogram-bar .warn {
+    background: var(--gcp-yellow);
+}
+
+.gcp-histogram-bar .error {
+    background: var(--gcp-red);
+}
