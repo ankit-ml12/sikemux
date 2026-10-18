@@ -5,7 +5,7 @@ import type { ConnectionLike } from '@sikemux/native';
 
 import { ACCESS_OPTIONS, platformName } from '@mac/remote/access';
 import { formatAgo } from '@mac/lib/format';
-import { type DeviceAccess, type LinkedHost, type PairedClient, type Pairing, readPairing } from '@/core/protocol';
+import { type DeviceAccess, type LinkedHost, type DeviceInfo, type RemotePairing, readPairing } from '@/core/protocol';
 import { useDeviceId } from '@/device/identity';
 import { problem as problemOf, useDevices, useLive } from '@/devices/hub';
 import { deviceName } from '@/devices/paired';
@@ -23,7 +23,7 @@ const accessLabel = (access: DeviceAccess) => ACCESS_OPTIONS.find((option) => op
 
 /** The host's pairing requests and paired devices, read with its `pairing` call and changed with the calls that answer it. */
 function usePairing(connection: ConnectionLike | undefined) {
-  const [pairing, setPairing] = useState<Pairing>();
+  const [pairing, setPairing] = useState<RemotePairing>();
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState<string>();
   const [reads, setReads] = useState(0);
@@ -85,7 +85,7 @@ function DeviceSheet({
   onClose,
   onAccess,
 }: {
-  device?: PairedClient;
+  device?: DeviceInfo;
   onClose: () => void;
   onAccess: (id: string, access: DeviceAccess | null) => void;
 }) {

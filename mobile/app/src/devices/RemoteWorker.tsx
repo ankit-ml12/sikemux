@@ -2,13 +2,13 @@ import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AGENT_LABELS } from '@mac/state/agentStatus';
-import type { RemoteAgent, RemoteStatus } from '@/core/protocol';
+import type { AgentStatus, RemoteAgent } from '@/core/protocol';
 import { AgentIcon } from '@/ui/Icon';
 import { Row } from '@/ui/list';
 import { AgentState, Dot } from '@/ui/status';
 import { useColors } from '@/ui/theme';
 
-const STATUS_LABELS: Record<RemoteStatus, string> = {
+const STATUS_LABELS: Record<AgentStatus, string> = {
   ...AGENT_LABELS,
   stopped: 'Stopped',
   starting: 'Starting…',
