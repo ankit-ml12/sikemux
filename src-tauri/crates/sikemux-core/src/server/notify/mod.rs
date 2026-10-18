@@ -1,6 +1,6 @@
-//! Tells paired phones, through the account's push service, when an agent
-//! needs the person, finishes a long turn, runs into a problem, or when a
-//! device asks to pair. Each phone chose what it hears about and gave this
+//! Tells the app's window, and paired phones through the account's push
+//! service, when an agent needs the person, finishes a long turn, runs into a
+//! problem, or when a device asks to pair. Each phone chose what it hears about and gave this
 //! host a key to seal it with (see [`crate::push`]); the host decides
 //! everything else, since it knows most.
 
@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 
 use crate::accounts::live::Push;
 use crate::accounts::protocol::PushKind;
-use crate::protocol::{Attention, NotifyPrefs, NotifyWhen, PendingDevice};
+use crate::protocol::{Attention, Event, NotifyPrefs, NotifyWhen, PendingDevice};
 use crate::push::{self, Notification, NotificationCategory, NotificationKind, MAX_PLAINTEXT};
 
 pub(crate) use presence::{Presence, SystemPresence};
@@ -761,7 +761,22 @@ fn address(draft: &Draft, host: &str, host_name: &str, target: &NotifyTarget) ->
     push::seal(&target.key, host, &target.device_id, &plaintext)
 }
 
+/// The app's window, among the places told: it shows a notice only while the
+/// person is not looking at it, and never one about a device pairing, which
+/// it asks about itself.
+const APP: &str = "";
+
 fn alert_all(core: &Core, draft: &Draft, now: u64) {
+    if draft.kind != NotificationKind::Pairing && due(core, APP, draft, now) {
+        let told = core.window.tell(Event::Notice {
+            title: draft.title.clone(),
+            body: draft.body.clone(),
+            agent_id: draft.agent_id.clone(),
+        });
+        if told {
+            sent(core, APP, draft, now);
+        }
+    }
     let Some((host, targets)) = core.remote.notify_targets() else {
         return;
     };
@@ -770,36 +785,14 @@ fn alert_all(core: &Core, draft: &Draft, now: u64) {
     let outbox = core.remote.outbox();
     for target in targets {
         let phone = target.device_id.clone();
-        let card = (phone.clone(), draft.card.clone());
         if !wants(&target.prefs, draft.kind, &draft.agent_id, away, now) {
             continue;
         }
         if draft.kind == NotificationKind::Pairing && !answers_pairing(core, &phone) {
             continue;
         }
-        {
-            let state = core.notify.lock();
-            let once = matches!(
-                draft.kind,
-                NotificationKind::Permission | NotificationKind::Input | NotificationKind::Pairing
-            );
-            if once && state.alerted.contains(&card) {
-                continue;
-            }
-            let pair = (phone.clone(), draft.agent_id.clone());
-            let recent = |last: Option<&u64>, gap: u64| {
-                last.is_some_and(|last| now.saturating_sub(*last) < gap)
-            };
-            if draft.kind == NotificationKind::Finished
-                && recent(state.finished.get(&pair), FINISHED_GAP_MS)
-            {
-                continue;
-            }
-            if draft.kind == NotificationKind::Problem
-                && recent(state.problems.get(&pair), PROBLEM_GAP_MS)
-            {
-                continue;
-            }
+        if !due(core, &phone, draft, now) {
+            continue;
         }
         if watching(core, &phone, draft) {
             continue;
@@ -814,24 +807,53 @@ fn alert_all(core: &Core, draft: &Draft, now: u64) {
             blob,
             expires_at: draft.expires_at,
         });
-        let mut state = core.notify.lock();
-        let pair = (phone, draft.agent_id.clone());
-        match draft.kind {
-            NotificationKind::Finished => {
-                state.finished.insert(pair, now);
-            }
-            NotificationKind::Problem => {
-                state.problems.insert(pair, now);
-            }
-            _ => {}
-        }
-        state.alerted.insert(card);
+        sent(core, &phone, draft, now);
     }
+}
+
+/// Whether `to` has not yet been told of this card, nor of the agent
+/// finishing or failing a moment ago.
+fn due(core: &Core, to: &str, draft: &Draft, now: u64) -> bool {
+    let state = core.notify.lock();
+    let once = matches!(
+        draft.kind,
+        NotificationKind::Permission | NotificationKind::Input | NotificationKind::Pairing
+    );
+    if once && state.alerted.contains(&(to.to_owned(), draft.card.clone())) {
+        return false;
+    }
+    let pair = (to.to_owned(), draft.agent_id.clone());
+    let recent =
+        |last: Option<&u64>, gap: u64| last.is_some_and(|last| now.saturating_sub(*last) < gap);
+    match draft.kind {
+        NotificationKind::Finished => !recent(state.finished.get(&pair), FINISHED_GAP_MS),
+        NotificationKind::Problem => !recent(state.problems.get(&pair), PROBLEM_GAP_MS),
+        _ => true,
+    }
+}
+
+fn sent(core: &Core, to: &str, draft: &Draft, now: u64) {
+    let mut state = core.notify.lock();
+    let pair = (to.to_owned(), draft.agent_id.clone());
+    match draft.kind {
+        NotificationKind::Finished => {
+            state.finished.insert(pair, now);
+        }
+        NotificationKind::Problem => {
+            state.problems.insert(pair, now);
+        }
+        _ => {}
+    }
+    state.alerted.insert((to.to_owned(), draft.card.clone()));
 }
 
 /// Takes the card off every phone that was sent it: withdrawn if it has not
 /// gone out yet, otherwise followed by a `clear`.
 fn clear_all(core: &Core, agent_id: &str, card: &str, request_id: Option<String>, now: u64) {
+    core.notify
+        .lock()
+        .alerted
+        .remove(&(APP.to_owned(), card.to_owned()));
     let Some((host, targets)) = core.remote.notify_targets() else {
         return;
     };
