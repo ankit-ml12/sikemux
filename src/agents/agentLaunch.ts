@@ -11,11 +11,11 @@ export interface AgentLaunchOptions {
 export const MAX_AGENT_MODEL_LENGTH = 256;
 
 const SESSION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
-const TRANSCRIPT_PATH = /^\/[^\0-\x1f]{1,4095}\.jsonl$/;
 
 /** Whether `id` has the shape the agent's own sessions take, so it can never pass for a flag. Pi and OMP name a session by its transcript's path. */
 export function isResumeId(type: AgentType, id: string): boolean {
-    return (type === "pi" || type === "omp" ? TRANSCRIPT_PATH : SESSION_TOKEN).test(id);
+    if (type !== "pi" && type !== "omp") return SESSION_TOKEN.test(id);
+    return id.startsWith("/") && id.endsWith(".jsonl") && id.length <= 4_096 && ![...id].some((char) => char < " ");
 }
 
 const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
