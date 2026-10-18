@@ -1058,7 +1058,7 @@ async fn run_requests(
     }
 }
 
-async fn spawn(
+pub(crate) async fn spawn(
     core: Arc<Core>,
     launch: LaunchIdentity,
     mut target: Box<SpawnTarget>,

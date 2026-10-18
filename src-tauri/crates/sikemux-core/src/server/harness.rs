@@ -27,7 +27,7 @@ use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 use super::connection::blocking;
 use super::messages::{self, Mailbox};
 use super::questions::{self, Questions};
-use super::window::{self, Call};
+use super::window::Call;
 use super::{board, follow, saved, spawn};
 use super::{session, Core};
 use crate::skills;
@@ -38,8 +38,6 @@ const START_BUDGET: Duration = Duration::from_secs(30);
 /// A little longer than the app gives its page, so the app's own timeout,
 /// which names the tool, is the one an agent sees.
 const WINDOW_REPLY_TIMEOUT: Duration = Duration::from_secs(66);
-/// A launch may wait on the person trusting `sikemux.json`.
-const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// A chatty task adds at most one output event per this long.
 const OUTPUT_EVENT_GAP: Duration = Duration::from_millis(250);
 const READY_POLL: Duration = Duration::from_millis(250);
@@ -64,7 +62,9 @@ const BLIND_REFUSED: [&str; 4] = ["agent.spawn", "agent.sessions", "agent.wrote"
 /// What agents do goes in the same journal as tasks, for `agent_wait` alone.
 pub(crate) const AGENT_EVENT: &str = "agent.";
 
-const WINDOW_CLOSED_NOTE: &str = "Sikemux's window is closed, so this lists only the runs you started and the event cursor. Panes, the tasks in sikemux.json and listening ports need the window open.";
+/// What `workspace_inspect` takes from the window: the panes it shows.
+const LAYOUT_FIELDS: [&str; 4] = ["sessionId", "active", "activeWindowId", "windows"];
+const NO_WINDOW_NOTE: &str = "No Sikemux window is open on this host, so there are no panes to list.";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
 const STARTING_NOTE: &str = "Still starting. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it runs.";
 const NOT_READY_NOTE: &str = "The task is running but readyWhen has not appeared yet. Wait with events_wait on this executionId, or task_read with search.";
@@ -207,6 +207,8 @@ impl Harness {
             run.pty_id = Some(id);
             run.label = Some(task.label.clone());
             run.command = Some(task.command.clone());
+            run.cwd = Some(task.cwd.clone());
+            run.started_at = Some(super::remote::unix_ms());
             if matches!(run.status, RunStatus::Starting | RunStatus::AwaitingTrust) {
                 state.set_status(&task.execution_id, RunStatus::Running);
             }
@@ -315,6 +317,37 @@ impl Harness {
         });
     }
 
+    /// Wakes whatever waits on the harness, for a change kept elsewhere.
+    pub(crate) fn changed(&self) {
+        self.change(|_| ());
+    }
+
+    pub(crate) fn run_of(&self, execution_id: &str) -> Option<Run> {
+        self.read(|state| state.runs.by_execution(execution_id).cloned())
+    }
+
+    pub(crate) fn run_on(&self, pty_id: SessionId) -> Option<Run> {
+        self.read(|state| state.runs.by_pty(pty_id).cloned())
+    }
+
+    pub(crate) fn all_runs(&self) -> Vec<Run> {
+        self.read(|state| state.runs.all().to_vec())
+    }
+
+    /// A run that has not spawned yet will not.
+    pub(crate) fn launch_failed(&self, execution_id: &str, message: &str) {
+        self.change(|state| {
+            let Some(run) = state.runs.by_execution_mut(execution_id) else {
+                return;
+            };
+            if run.pty_id.is_some() || !run.status.is_active() {
+                return;
+            }
+            run.error.get_or_insert_with(|| message.to_owned());
+            state.set_status(execution_id, RunStatus::Failed);
+        });
+    }
+
     pub(crate) fn awaiting_trust(&self, execution_id: &str) {
         self.change(|state| {
             if state
@@ -396,7 +429,6 @@ fn purpose(method: &str) -> &'static str {
         "workspace.inspect" => "inspect the workspace",
         "ui.open" => "open things in it",
         "app.console" => "read its console",
-        "task.start" | "task.restart" => "start tasks",
         method if is_browser_method(method) => "use the browser",
         method if is_sim_method(method) => "drive the iOS Simulator",
         _ => "use this tool",
@@ -555,40 +587,7 @@ async fn dispatch(
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,
         "task.restart" => task_start(core, &request, true).await,
-        "workspace.inspect" => {
-            let project = request.project.clone();
-            let agent_id = request.agent_id.clone();
-            let closed = || {
-                json!({
-                    "project": project,
-                    "agentId": agent_id,
-                    "window": null,
-                    "note": WINDOW_CLOSED_NOTE,
-                })
-            };
-            let mut value = if core.window.is_open() {
-                match forward(core, request).await {
-                    Ok(value) => value,
-                    Err(_) if !core.window.is_open() => closed(),
-                    Err(message) => return Err(message),
-                }
-            } else {
-                closed()
-            };
-            if let Some(object) = value.as_object_mut() {
-                core.harness.read(|state| {
-                    object.insert(
-                        "runs".into(),
-                        serde_json::to_value(state.runs.list(&project)).unwrap_or_default(),
-                    );
-                    object.insert(
-                        "cursor".into(),
-                        state.journals.cursor(&project).to_string().into(),
-                    );
-                });
-            }
-            Ok(value)
-        }
+        "workspace.inspect" => inspect(core, request).await,
         "ui.open" => {
             let kind = text(&request.params, "kind")?.map(str::to_owned);
             if kind.as_deref() == Some("terminal") {
@@ -607,6 +606,51 @@ async fn dispatch(
         }
         _ => forward(core, request).await,
     }
+}
+
+/// The project as the core knows it, with the panes the window shows when
+/// one is open.
+async fn inspect(core: &Arc<Core>, request: HarnessRequest) -> Result<Value, String> {
+    let project = request.project.clone();
+    let agent_id = request.agent_id.clone();
+    let layout = if core.window.is_open() {
+        forward(core, request).await.ok()
+    } else {
+        None
+    };
+    let mut value = {
+        let (core, project) = (core.clone(), project.clone());
+        blocking(move || Ok(super::tasks::inspect(&core, Path::new(&project))))
+            .await
+            .map_err(|error| error.to_string())?
+    };
+    if let Some(object) = value.as_object_mut() {
+        object.insert("project".into(), project.clone().into());
+        object.insert("agentId".into(), agent_id.into());
+        match layout {
+            Some(Value::Object(mut layout)) => {
+                for key in LAYOUT_FIELDS {
+                    if let Some(value) = layout.remove(key) {
+                        object.insert(key.into(), value);
+                    }
+                }
+            }
+            _ => {
+                object.insert("note".into(), NO_WINDOW_NOTE.into());
+            }
+        }
+        core.harness.read(|state| {
+            object.insert(
+                "runs".into(),
+                serde_json::to_value(state.runs.list(&project)).unwrap_or_default(),
+            );
+            object.insert(
+                "cursor".into(),
+                state.journals.cursor(&project).to_string().into(),
+            );
+        });
+    }
+    Ok(value)
 }
 
 const SKILL_LOADS: &str =
@@ -789,7 +833,7 @@ async fn plugins_wait(harness: &Harness, params: &Value) -> Result<Value, String
 }
 
 /// Stops one run and waits for its process to go.
-async fn stop_run(core: &Arc<Core>, execution_id: &str) -> Result<Run, String> {
+pub(crate) async fn stop_run(core: &Arc<Core>, execution_id: &str) -> Result<Run, String> {
     let kill = core
         .harness
         .change(|state| -> Result<Option<SessionId>, String> {
@@ -917,19 +961,21 @@ enum Begun {
     Existing(String),
     New {
         execution_id: String,
-        forwarded: HarnessRequest,
+        /// The run a restart replaces.
+        previous: Option<String>,
     },
 }
 
 fn begin_start(
     core: &Core,
-    request: &HarnessRequest,
+    project: &str,
+    agent_id: Option<&str>,
+    params: &Value,
     key: &str,
     restart: bool,
 ) -> Result<Begun, String> {
-    let project = request.project.as_str();
     core.harness.change(|state| {
-        let (task_id, mut spec) = launch_target(state, project, &request.params, restart)?;
+        let (task_id, mut spec) = launch_target(state, project, params, restart)?;
         if !restart {
             if let Some(existing) = state.runs.keyed(project, key, &task_id)? {
                 return Ok(Begun::Existing(existing));
@@ -945,31 +991,16 @@ fn begin_start(
                 return Ok(Begun::Existing(execution_id));
             }
         }
-        if !core.window.is_open() {
-            return Err(window::not_open("start tasks"));
-        }
         let previous = restart
             .then(|| state.runs.latest(project, &task_id))
             .flatten()
             .map(|run| run.execution_id.clone());
         let execution_id = uuid::Uuid::new_v4().to_string();
         let mut run = Run::new(execution_id.clone(), task_id.clone(), project.to_owned());
-        run.agent_id = request.agent_id.clone();
-        let mut params = json!({ "executionId": execution_id, "taskId": task_id });
-        if let (Some(spec), Some(fields)) = (spec.as_ref(), params.as_object_mut()) {
-            let cwd = if spec.cwd.is_empty() {
-                PathBuf::from(project)
-            } else {
-                Path::new(project).join(&spec.cwd)
-            };
-            fields.insert("command".into(), spec.command.clone().into());
-            fields.insert("cwd".into(), cwd.to_string_lossy().into_owned().into());
-            fields.insert("label".into(), spec.label.clone().into());
+        run.agent_id = agent_id.map(str::to_owned);
+        if let Some(spec) = &spec {
             run.label = Some(spec.label.clone());
             run.command = Some(spec.command.clone());
-        }
-        if let (Some(previous), Some(fields)) = (previous, params.as_object_mut()) {
-            fields.insert("previousExecutionId".into(), previous.into());
         }
         run.launch_spec = spec;
         state.runs.insert(run)?;
@@ -988,45 +1019,71 @@ fn begin_start(
         );
         Ok(Begun::New {
             execution_id,
-            forwarded: HarnessRequest {
-                id: request.id.clone(),
-                project: project.to_owned(),
-                agent_id: request.agent_id.clone(),
-                method: "task.start".into(),
-                params,
-            },
+            previous,
         })
     })
 }
 
-/// Records how the window's launch ended. A window that went away after the
-/// task started leaves it running.
-fn launch_finished(core: &Core, execution_id: &str, result: Result<Value, String>) {
+/// Records how a launch ended.
+fn launch_finished(core: &Core, execution_id: &str, result: Result<Option<String>, String>) {
     core.harness.change(|state| {
         let Some(run) = state.runs.by_execution_mut(execution_id) else {
             return;
         };
         let message = match result {
-            Ok(value) => {
+            Ok(preview_url) => {
                 run.launch = Launch::Done;
-                run.preview_url = value
-                    .get("previewUrl")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
+                run.preview_url = preview_url;
                 return;
             }
             Err(message) => message,
         };
-        if run.pty_id.is_some() && run.status == RunStatus::Running && message == WINDOW_GONE {
-            run.launch = Launch::Done;
-            return;
-        }
         run.launch = Launch::Failed(message.clone());
         run.error.get_or_insert(message);
         if run.pty_id.is_none() && run.status.is_active() {
             state.set_status(execution_id, RunStatus::Failed);
         }
     });
+}
+
+/// Launches a run in the background. `checked` says the person already saw
+/// what could stop it.
+fn launch(core: &Arc<Core>, execution_id: String, previous: Option<String>, checked: bool) {
+    let core = core.clone();
+    tokio::spawn(async move {
+        let result = super::tasks::launch(&core, &execution_id, previous, checked).await;
+        launch_finished(&core, &execution_id, result);
+    });
+}
+
+/// The person starts a task, in place of whatever else they run in that
+/// project. Answers the new run's id.
+pub(crate) fn start_for_person(core: &Arc<Core>, project: &str, task_id: &str) -> Result<String, String> {
+    let params = json!({ "taskId": task_id });
+    let key = uuid::Uuid::new_v4().to_string();
+    let Begun::New {
+        execution_id,
+        previous,
+    } = begin_start(core, project, None, &params, &key, true)?
+    else {
+        return Err("The task did not start".into());
+    };
+    let others = core.harness.read(|state| {
+        state.runs.matching(|run| {
+            run.project == project
+                && run.agent_id.is_none()
+                && run.task_id != task_id
+                && run.status.is_active()
+        })
+    });
+    let stopping = core.clone();
+    tokio::spawn(async move {
+        for other in others {
+            let _ = stop_run(&stopping, &other).await;
+        }
+    });
+    launch(core, execution_id.clone(), previous, true);
+    Ok(execution_id)
 }
 
 async fn task_start(
@@ -1047,36 +1104,21 @@ async fn task_start(
             text(&request.params, "readyWhen")?.map(str::to_owned),
         )
     };
-    let execution_id = match begin_start(core, request, &key, restart)? {
+    let begun = begin_start(
+        core,
+        &request.project,
+        request.agent_id.as_deref(),
+        &request.params,
+        &key,
+        restart,
+    )?;
+    let execution_id = match begun {
         Begun::Existing(execution_id) => execution_id,
         Begun::New {
             execution_id,
-            forwarded,
+            previous,
         } => {
-            let call = serde_json::to_value(&forwarded)
-                .map_err(|error| error.to_string())
-                .and_then(|request| {
-                    core.window
-                        .call(WindowCall::Harness { request }, "start tasks", false)
-                });
-            match call {
-                Ok(call) => {
-                    let following = core.clone();
-                    let id = execution_id.clone();
-                    tokio::spawn(async move {
-                        let result = answer_of(
-                            &following,
-                            call,
-                            LAUNCH_TIMEOUT,
-                            "Sikemux's window did not finish starting the task within 10 minutes"
-                                .into(),
-                        )
-                        .await;
-                        launch_finished(&following, &id, result);
-                    });
-                }
-                Err(message) => launch_finished(core, &execution_id, Err(message)),
-            }
+            launch(core, execution_id.clone(), previous, false);
             execution_id
         }
     };

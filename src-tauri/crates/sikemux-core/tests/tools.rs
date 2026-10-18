@@ -3,7 +3,6 @@
 //! The agents' tool endpoint the core serves over loopback TCP, driven the way
 //! the `sikemux` CLI drives it.
 
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
 use std::os::unix::net::UnixStream as StdUnixStream;
@@ -20,11 +19,10 @@ use sikemux_core::cli::protocol::{
 };
 use sikemux_core::client::{probe, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, ClientMessage, LaunchIdentity, Request, SpawnTarget,
-    WindowAnswer, WindowCall, PROTOCOL, PROTOCOL_VERSION,
+    encode_control, read_frame_sync, ClientMessage, Request, WindowAnswer, WindowCall, PROTOCOL,
+    PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
-use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const WAIT: Duration = Duration::from_secs(30);
@@ -213,8 +211,7 @@ fn kinds(events: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Answers window calls the way the app does, starting task sessions in the
-/// core under the execution id the core chose.
+/// Answers window calls the way the app does.
 async fn play_window(
     client: std::sync::Arc<CoreClient>,
     mut events: UnboundedReceiver<ClientEvent>,
@@ -230,34 +227,6 @@ async fn play_window(
                 match request.method.as_str() {
                     "workspace.inspect" => Ok(json!({ "project": request.project, "windows": [] })),
                     "ui.open" => Ok(json!({ "kind": request.params["kind"] })),
-                    "task.start" => {
-                        let params = &request.params;
-                        let text = |key: &str| params[key].as_str().unwrap_or_default().to_owned();
-                        let spawned = client
-                            .spawn(
-                                LaunchIdentity::default(),
-                                SpawnTarget::Task {
-                                    request: TaskSpawnRequest {
-                                        execution_id: text("executionId"),
-                                        terminal_key: "terminal".into(),
-                                        task_id: text("taskId"),
-                                        label: text("label"),
-                                        project: request.project.clone(),
-                                        source: TaskSource::Project,
-                                        command: text("command"),
-                                        cwd: text("cwd"),
-                                        env: HashMap::new(),
-                                        cols: 80,
-                                        rows: 24,
-                                        agent_id: request.agent_id.clone(),
-                                    },
-                                },
-                            )
-                            .await;
-                        spawned
-                            .map(|_| json!({ "previewUrl": "http://localhost:1" }))
-                            .map_err(|error| error.to_string())
-                    }
                     method => Err(format!("{method} is not played here")),
                 }
             }
@@ -292,7 +261,7 @@ async fn open_window(core: &TestCore) -> (std::sync::Arc<CoreClient>, tokio::tas
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn tools_answer_without_a_window_and_say_when_they_need_one() {
+async fn tools_answer_without_a_window() {
     let dir = tempfile::tempdir().expect("dir");
     let (_project_dir, project) = project_dir();
     let core = start_core(dir.path(), &dir.path().join("data"));
@@ -329,22 +298,10 @@ async fn tools_answer_without_a_window_and_say_when_they_need_one() {
         .await
         .unwrap();
     assert_eq!(inspect["project"], project.to_string_lossy().as_ref());
-    assert_eq!(inspect["window"], Value::Null);
     assert_eq!(inspect["runs"], json!([]));
     assert_eq!(inspect["cursor"], "0");
-    assert!(inspect["note"]
-        .as_str()
-        .unwrap()
-        .contains("need the window open"));
-    assert!(call(
-        &endpoint,
-        &project,
-        "task.start",
-        json!({ "command": "true", "idempotencyKey": "first" })
-    )
-    .await
-    .unwrap_err()
-    .contains("open Sikemux to start tasks"));
+    assert_eq!(inspect["configStatus"], "absent");
+    assert!(inspect["note"].as_str().unwrap().contains("no panes"));
 
     let (mut reader, _) = connect(&endpoint);
     send(
@@ -363,13 +320,12 @@ async fn tools_answer_without_a_window_and_say_when_they_need_one() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_task_started_through_the_window_is_read_and_stopped_after_the_window_closes() {
+async fn a_task_starts_and_stops_with_no_window_open() {
     let dir = tempfile::tempdir().expect("dir");
     let (_project_dir, project) = project_dir();
     let core = start_core(dir.path(), &dir.path().join("data"));
     let endpoint = core.endpoint.clone();
-    let (window, player) = open_window(&core).await;
-    assert!(window_open(&endpoint));
+    assert!(!window_open(&endpoint));
 
     let inspect = call(&endpoint, &project, "workspace.inspect", json!({}))
         .await
@@ -397,14 +353,6 @@ async fn a_task_started_through_the_window_is_read_and_stopped_after_the_window_
         .unwrap();
     assert_eq!(again["executionId"], execution_id);
 
-    player.abort();
-    drop(window);
-    let deadline = Instant::now() + WAIT;
-    while window_open(&endpoint) {
-        assert!(Instant::now() < deadline, "the window never left");
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-
     let read = call(
         &endpoint,
         &project,
@@ -414,7 +362,6 @@ async fn a_task_started_through_the_window_is_read_and_stopped_after_the_window_
     .await
     .unwrap();
     assert!(read["output"].as_str().unwrap().contains("READY"), "{read}");
-    assert_eq!(read["previewUrl"], "http://localhost:1");
     let history = call(
         &endpoint,
         &project,
@@ -455,7 +402,6 @@ async fn a_task_started_through_the_window_is_read_and_stopped_after_the_window_
     let inspect = call(&endpoint, &project, "workspace.inspect", json!({}))
         .await
         .unwrap();
-    assert_eq!(inspect["window"], Value::Null);
     assert_eq!(inspect["runs"][0]["executionId"], execution_id.as_str());
     assert_eq!(inspect["runs"][0]["status"], "stopped");
 }
@@ -471,23 +417,25 @@ async fn a_call_waiting_on_a_window_that_leaves_fails_and_a_new_window_takes_ove
     silent.register_window().await.expect("register");
     let pending = {
         let (endpoint, project) = (endpoint.clone(), project.clone());
-        tokio::spawn(async move { call(&endpoint, &project, "workspace.inspect", json!({})).await })
+        tokio::spawn(
+            async move { call(&endpoint, &project, "ui.open", json!({ "kind": "diff" })).await },
+        )
     };
-    let asked_to_inspect = async {
+    let asked_to_open = async {
         while let Some(event) = silent_events.recv().await {
             if let ClientEvent::WindowCall {
                 call: WindowCall::Harness { request },
                 ..
             } = event
             {
-                if request["method"] == "workspace.inspect" {
+                if request["method"] == "ui.open" {
                     return;
                 }
             }
         }
         panic!("the window closed before it was asked");
     };
-    tokio::time::timeout(WAIT, asked_to_inspect)
+    tokio::time::timeout(WAIT, asked_to_open)
         .await
         .expect("asked");
     let (replacement, _player) = open_window(&core).await;
@@ -495,10 +443,10 @@ async fn a_call_waiting_on_a_window_that_leaves_fails_and_a_new_window_takes_ove
         pending.await.unwrap(),
         Err("Sikemux's window closed before it answered".into())
     );
-    let inspect = call(&endpoint, &project, "workspace.inspect", json!({}))
+    let opened = call(&endpoint, &project, "ui.open", json!({ "kind": "diff" }))
         .await
         .unwrap();
-    assert_eq!(inspect["project"], project.to_string_lossy().as_ref());
+    assert_eq!(opened["kind"], "diff");
     drop(silent);
     assert!(
         window_open(&endpoint),

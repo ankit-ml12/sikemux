@@ -24,10 +24,9 @@ use sikemux_core::client::{
 use sikemux_core::frozen::{FrozenReply, FrozenRequest};
 use sikemux_core::protocol::{
     BuildIdentity, ChatAttachment, ChatEvent, ChatEventKind, ChatLaunch, Event, LaunchIdentity,
-    SessionId, SpawnTarget, TerminalSpawn, WindowCall, BUILD_ID_OVERRIDE_ENV,
+    SessionId, SpawnTarget, TerminalSpawn, BUILD_ID_OVERRIDE_ENV,
 };
 use sikemux_pty::output_log::OutputQuery;
-use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const CORE: &str = env!("CARGO_BIN_EXE_sikemux-core");
@@ -323,59 +322,10 @@ async fn call(core: &CoreProcess, method: &str, params: Value) -> Result<Value, 
         .expect("tool call")
 }
 
-/// Answers the window calls a task start makes, the way the app does.
-async fn play_window(client: Arc<CoreClient>, mut events: UnboundedReceiver<ClientEvent>) {
-    while let Some(event) = events.recv().await {
-        let ClientEvent::WindowCall { call_id, call } = event else {
-            continue;
-        };
-        let WindowCall::Harness { request } = call else {
-            continue;
-        };
-        let request: HarnessRequest = serde_json::from_value(request).expect("harness request");
-        let answer = match request.method.as_str() {
-            "workspace.inspect" => Ok(json!({ "project": request.project })),
-            "task.start" => {
-                let params = &request.params;
-                let text = |key: &str| params[key].as_str().unwrap_or_default().to_owned();
-                client
-                    .spawn(
-                        LaunchIdentity::default(),
-                        SpawnTarget::Task {
-                            request: TaskSpawnRequest {
-                                execution_id: text("executionId"),
-                                terminal_key: "terminal".into(),
-                                task_id: text("taskId"),
-                                label: text("label"),
-                                project: request.project.clone(),
-                                source: TaskSource::Project,
-                                command: text("command"),
-                                cwd: text("cwd"),
-                                env: HashMap::new(),
-                                cols: 80,
-                                rows: 24,
-                                agent_id: request.agent_id.clone(),
-                            },
-                        },
-                    )
-                    .await
-                    .map(|_| json!({}))
-                    .map_err(|error| error.to_string())
-            }
-            method => Err(format!("{method} is not played here")),
-        };
-        client.answer_window(call_id, answer.into());
-    }
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn an_upgrade_keeps_every_session_and_the_harness() {
     let core = CoreProcess::start("first");
     let pid = core.pid();
-    let (window, window_events) = CoreClient::connect(&core.socket).await.expect("window");
-    let window = Arc::new(window);
-    window.register_window().await.expect("register");
-    let player = tokio::spawn(play_window(window.clone(), window_events));
 
     let (client, mut stream) = connect(&core).await;
     let shell = spawn_shell(&client).await;
@@ -432,8 +382,6 @@ async fn an_upgrade_keeps_every_session_and_the_harness() {
     assert_eq!(build.commit, "second");
     assert!(core.child.id() == pid && alive(pid));
     assert!(alive(shell_pid), "the shell died in the update");
-    player.abort();
-    drop(window);
 
     let (client, mut stream) = connect(&core).await;
     let after = client.list().await.expect("list");

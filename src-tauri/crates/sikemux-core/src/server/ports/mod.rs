@@ -350,7 +350,7 @@ fn preview_port(url: &str) -> Option<u16> {
     parsed.port_or_known_default()
 }
 
-fn for_project(found: Vec<ListeningPort>, project: &Path) -> Vec<ProjectPort> {
+pub(crate) fn for_project(found: Vec<ListeningPort>, project: &Path) -> Vec<ProjectPort> {
     let project_text = project.to_string_lossy();
     let preview_url = match config::load(project) {
         ConfigLoad::Valid { config, .. } => config.preview.and_then(|preview| preview.url),
@@ -393,6 +393,29 @@ pub(crate) async fn project_ports(core: &Arc<Core>, project: String) -> CoreResu
     }
     let core = core.clone();
     blocking(move || Ok(for_project(look(&core), Path::new(&project)))).await
+}
+
+/// Whether something on this computer, not only what the core started,
+/// already listens on `port`. Connecting reaches servers on loopback or on
+/// every address, and unlike listening it never raises the macOS firewall
+/// prompt.
+pub(crate) fn in_use(port: u16) -> bool {
+    let loopback = [
+        IpAddr::from([127, 0, 0, 1]),
+        IpAddr::from(std::net::Ipv6Addr::LOCALHOST),
+    ];
+    loopback.into_iter().any(|ip| {
+        std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::new(ip, port),
+            Duration::from_millis(200),
+        )
+        .is_ok()
+    })
+}
+
+/// What listens now, for a check before a task starts.
+pub(crate) fn listening_now(core: &Core) -> Vec<ListeningPort> {
+    scan(core)
 }
 
 #[cfg(test)]
