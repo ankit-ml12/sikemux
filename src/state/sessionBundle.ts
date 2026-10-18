@@ -1,5 +1,6 @@
 import type { AgentType, SessionKind, Window } from "./types";
 import { isAgentType } from "../agents/catalog";
+import { isResumeId } from "../agents/agentLaunch";
 import { isRecord, isSessionKind, validatePersistedWindow, type LayoutValidationLimits } from "./persistValidation";
 
 export const SESSION_BUNDLE_LIMITS = {
@@ -84,6 +85,7 @@ export function parseSessionBundle(raw: string): ValidSessionBundle {
         const type = row.type as AgentType;
         const title = requiredString(row.title, `agent ${index + 1} title`);
         const resumeId = requiredString(row.resumeId, `agent ${index + 1} resume id`);
+        if (!isResumeId(type, resumeId)) throw new Error(`session bundle agent ${index + 1} resume id is invalid`);
         const claim = `${type}\0${resumeId}`;
         if (claims.has(claim)) throw new Error(`duplicate agent session claim for ${type}`);
         claims.add(claim);

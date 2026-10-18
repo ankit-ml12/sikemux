@@ -10,6 +10,14 @@ export interface AgentLaunchOptions {
 
 export const MAX_AGENT_MODEL_LENGTH = 256;
 
+const SESSION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+const TRANSCRIPT_PATH = /^\/[^\0-\x1f]{1,4095}\.jsonl$/;
+
+/** Whether `id` has the shape the agent's own sessions take, so it can never pass for a flag. Pi and OMP name a session by its transcript's path. */
+export function isResumeId(type: AgentType, id: string): boolean {
+    return (type === "pi" || type === "omp" ? TRANSCRIPT_PATH : SESSION_TOKEN).test(id);
+}
+
 const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
     claude: ["low", "medium", "high", "xhigh", "max"],
     codex: ["minimal", "low", "medium", "high", "xhigh", "max"],
@@ -112,11 +120,12 @@ export function agentLaunchArgs(type: AgentType, options: AgentLaunchOptions = {
     }
     if (options.permissionMode) providerArgs.push(...permissionArgs(type, options.permissionMode));
 
-    if (type === "codex" && options.resumeId) {
-        return ["resume", ...providerArgs, options.resumeId];
+    const resumeId = options.resumeId && isResumeId(type, options.resumeId) ? options.resumeId : undefined;
+    if (type === "codex" && resumeId) {
+        return ["resume", ...providerArgs, resumeId];
     }
 
-    const resumeArgs = options.resumeId ? resumeArgsForType(type, options.resumeId) : [];
+    const resumeArgs = resumeId ? resumeArgsForType(type, resumeId) : [];
     if (type === "hermes" && (model || effort)) providerArgs.push("--tui");
     return [...providerArgs, ...resumeArgs];
 }

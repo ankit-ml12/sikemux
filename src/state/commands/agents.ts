@@ -7,7 +7,14 @@ import { runOfAgent } from "../../agents/agentBoard";
 import type { AgentQuestion } from "../../agents/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
 import { canBypassPermissions, isAgentType } from "../../agents/catalog";
-import { agentSupportsChat, effectiveMode, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
+import {
+    agentSupportsChat,
+    effectiveMode,
+    isResumeId,
+    MAX_AGENT_MODEL_LENGTH,
+    normalizePermissionMode,
+    type ChatAgentType,
+} from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
 import { workspaceSent } from "../coreWorkspace";
@@ -140,6 +147,7 @@ export interface AddAgentOptions {
 
 export function addAgent(type: AgentType, resumeId?: string, title?: string, options: AddAgentOptions = {}): boolean {
     if ((options.model?.trim().length ?? 0) > MAX_AGENT_MODEL_LENGTH) return false;
+    if (resumeId && !isResumeId(type, resumeId)) return false;
     const detected = options.detectedExecutablePath ?? detectedExecutablePath(getState(), type);
     let attached = false;
     mutate((d) => {
@@ -421,10 +429,9 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
 }
 
 export function attachAgentSession(id: string, resumeId: string): void {
-    if (!resumeId.trim() || resumeId.length > 4_096 || /[\0\r\n]/.test(resumeId)) return;
     mutate((d) => {
         const agent = d.agents[id];
-        if (!agent || agent.resumeId === resumeId) return;
+        if (!agent || agent.resumeId === resumeId || !isResumeId(agent.type, resumeId)) return;
         agent.resumeId = resumeId;
         Object.assign(agent, relaunchSpec(d, agent));
         delete agent.baselineSessionIds;
@@ -736,8 +743,15 @@ export async function sleepIdleAgents(): Promise<number> {
 export function setAgentStatus(agents: readonly AgentShown[]): void {
     const before = getState().agentStatus;
     const same = (a: AgentShown, b: AgentShown) =>
-        a.status === b.status && a.group === b.group && a.unread === b.unread && a.subagents === b.subagents && a.tasks === b.tasks && a.activeAt === b.activeAt;
-    const next = Object.fromEntries(agents.map((shown) => [shown.agentId, before[shown.agentId] && same(before[shown.agentId], shown) ? before[shown.agentId] : shown]));
+        a.status === b.status &&
+        a.group === b.group &&
+        a.unread === b.unread &&
+        a.subagents === b.subagents &&
+        a.tasks === b.tasks &&
+        a.activeAt === b.activeAt;
+    const next = Object.fromEntries(
+        agents.map((shown) => [shown.agentId, before[shown.agentId] && same(before[shown.agentId], shown) ? before[shown.agentId] : shown]),
+    );
     const ids = Object.keys(next);
     if (ids.length === Object.keys(before).length && ids.every((id) => next[id] === before[id])) return;
     mutate((d) => {
