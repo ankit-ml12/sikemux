@@ -749,3 +749,118 @@ button.gcp-project-row:hover {
     font-size: 18px;
     font-weight: 400;
 }
+
+/* Logs */
+
+.gcp-query {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.gcp-filter {
+    flex: 1 1 360px;
+    height: 56px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    resize: vertical;
+}
+
+.gcp-logs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.gcp-log-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.gcp-input.grow {
+    flex: 1 1 220px;
+}
+
+.gcp-log-list {
+    border: 1px solid var(--gcp-line);
+    border-radius: 4px;
+    background: var(--gcp-raised);
+    max-height: 70vh;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.gcp-log-entry {
+    border-bottom: 1px solid var(--gcp-line);
+}
+
+.gcp-log-entry:last-of-type {
+    border-bottom: 0;
+}
+
+.gcp-log-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    padding: 5px 12px;
+    text-align: left;
+    color: var(--gcp-text);
+}
+
+.gcp-log-row:hover,
+.gcp-log-entry.open .gcp-log-row {
+    background: var(--gcp-hover);
+}
+
+.gcp-log-row .gcp-severity {
+    align-self: center;
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+}
+
+.gcp-log-time {
+    flex: none;
+    white-space: nowrap;
+}
+
+.gcp-http {
+    flex: none;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--gcp-sunken);
+}
+
+.gcp-http.s5 {
+    color: var(--gcp-red);
+}
+
+.gcp-http.s4 {
+    color: var(--gcp-yellow);
+}
+
+.gcp-log-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gcp-log-entry.open .gcp-log-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.gcp-log-detail {
+    margin: 0;
+    padding: 8px 12px 12px 38px;
+    overflow-x: auto;
+    color: var(--gcp-text-2);
+    user-select: text;
+}

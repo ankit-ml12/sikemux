@@ -6,6 +6,7 @@ import { refreshGcp, type GcpStatus, type Target } from "../api";
 import { gcpStatusR } from "../resources";
 import { gcpSettings, openProduct, PRODUCTS, setGcpAccount, setGcpProject, setGcpSideWidth, updateGcpView, useGcpView, type Product } from "../state";
 import { GcpMark, ProductIcon } from "./icons";
+import { LoggingPage } from "./LoggingPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -19,7 +20,9 @@ export interface ProductProps {
 }
 
 /** Each product's page; a product without one yet is left out of the sidebar. */
-const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {};
+const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
+    logging: LoggingPage,
+};
 
 const SIDE_MIN = 160;
 const SIDE_MAX = 420;
