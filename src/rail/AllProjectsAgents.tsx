@@ -163,7 +163,9 @@ function PinToggle({ agent, chatId, project }: { agent: Agent; chatId: string; p
                 className={`row-pin${pinned ? " pinned" : ""}`}
                 aria-label={label}
                 aria-pressed={pinned}
-                onClick={() => (pinned ? cmd.unpinChat(agent.type, chatId) : cmd.pinChat({ agent: agent.type, id: chatId, title: agent.title, project }))}>
+                onClick={() =>
+                    pinned ? cmd.unpinChat(agent.type, chatId) : cmd.pinChat({ agent: agent.type, id: chatId, title: agent.title, project })
+                }>
                 <IconPin size={12} filled={pinned} />
             </button>
         </Tooltip>
