@@ -11,6 +11,7 @@ pub mod hang_reports;
 pub mod headless;
 pub mod login_item;
 pub mod plugins;
+mod style;
 
 pub use plugins::provide_to_core;
 

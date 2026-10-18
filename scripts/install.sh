@@ -18,8 +18,66 @@ for arg in "$@"; do
   esac
 done
 
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+  case "${COLORTERM:-}" in
+    truecolor | 24bit) ACCENT=$(printf '\033[38;2;162;119;255m') ;;
+    *) ACCENT=$(printf '\033[35m') ;;
+  esac
+  BOLD=$(printf '\033[1m')
+  DIM=$(printf '\033[2m')
+  RED=$(printf '\033[31m')
+  RESET=$(printf '\033[0m')
+  CLEAR=$(printf '\r\033[2K')
+  LIVE=true
+else
+  ACCENT="" BOLD="" DIM="" RED="" RESET="" CLEAR="" LIVE=false
+fi
+
 say() { printf '%s\n' "$*"; }
-fail() { printf 'sikemux install: %s\n' "$*" >&2; exit 1; }
+note() { printf '  %s%s%s\n' "$DIM" "$*" "$RESET"; }
+# A finished step: what happened, then where or how in grey.
+done_step() { printf '%s  %s✓%s %-32s %s%s%s\n' "$CLEAR" "$ACCENT" "$RESET" "$1" "$DIM" "${2:-}" "$RESET"; }
+fail() {
+  printf '%s\n  %s✗%s %s\n\n' "$CLEAR" "$RED" "$RESET" "$*" >&2
+  exit 1
+}
+
+# Runs a command with a spinner beside `label`, keeping its output for when it fails.
+step() {
+  label=$1
+  shift
+  if ! $LIVE; then
+    "$@" >"$TMP/step.log" 2>&1 || { sed 's/^/    /' "$TMP/step.log" >&2; fail "$label failed"; }
+    return 0
+  fi
+  "$@" >"$TMP/step.log" 2>&1 &
+  pid=$!
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    case $((i % 10)) in
+      0) frame='⠋' ;; 1) frame='⠙' ;; 2) frame='⠹' ;; 3) frame='⠸' ;; 4) frame='⠼' ;;
+      5) frame='⠴' ;; 6) frame='⠦' ;; 7) frame='⠧' ;; 8) frame='⠇' ;; *) frame='⠏' ;;
+    esac
+    printf '%s  %s%s%s %s' "$CLEAR" "$ACCENT" "$frame" "$RESET" "$label"
+    i=$((i + 1))
+    sleep 0.08
+  done
+  if ! wait "$pid"; then
+    printf '%s' "$CLEAR"
+    sed 's/^/    /' "$TMP/step.log" >&2
+    fail "$label failed"
+  fi
+  printf '%s' "$CLEAR"
+}
+
+# Shown to the person, never used as a path, so the ~ is meant literally.
+# shellcheck disable=SC2088
+home_path() {
+  case "$1" in
+    "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 
@@ -27,7 +85,7 @@ command -v curl >/dev/null 2>&1 || fail "curl is required"
 interactive() { ! $YES && (: </dev/tty) 2>/dev/null; }
 
 ask() {
-  printf '%s' "$1" >/dev/tty
+  printf '\n  %s›%s %s ' "$ACCENT" "$RESET" "$1" >/dev/tty
   read -r answer </dev/tty || answer=
   printf '%s' "${answer:-$2}"
 }
@@ -45,7 +103,8 @@ looks_like_server() {
 choose_linux_mode() {
   [ "$MODE" = ask ] || return 0
   if [ "$(uname -m)" != x86_64 ] && [ "$(uname -m)" != amd64 ]; then
-    say "The desktop app is x86_64 only, so this installs the Sikemux core."
+    note "The desktop app is x86_64 only, so this installs the core."
+    say ""
     MODE=host
     return 0
   fi
@@ -53,25 +112,26 @@ choose_linux_mode() {
   if ! interactive; then
     MODE=$guess
     if [ "$guess" = host ]; then
-      say "No desktop on this machine, so this installs the Sikemux core. For the app instead, add --app."
+      note "No desktop here, so this installs the core. Add --app for the desktop app."
+      say ""
     fi
     return 0
   fi
   if [ "$guess" = host ]; then
-    say "This machine has no desktop, so it looks like a server."
+    say "  This machine has no desktop, so it looks like a server."
     default=1
   else
     default=2
   fi
   say ""
-  say "  1) Core only: runs agents here, starts at boot, reachable from your Mac and phone"
-  say "  2) Desktop app: the full Sikemux window"
-  say ""
-  case "$(ask "Install [$default]: " "$default")" in
+  say "    ${BOLD}1${RESET}  Core only     ${DIM}runs agents here, starts at boot, reachable from your Mac and phone${RESET}"
+  say "    ${BOLD}2${RESET}  Desktop app   ${DIM}the full Sikemux window${RESET}"
+  case "$(ask "Install [$default]:" "$default")" in
     1) MODE=host ;;
     2) MODE=app ;;
     *) fail "pick 1 or 2" ;;
   esac
+  say ""
 }
 
 latest_version() {
@@ -88,15 +148,27 @@ latest_version() {
   esac
 }
 
-VERSION=$(latest_version)
-[ -n "$VERSION" ] || fail "could not find the latest $CHANNEL version"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+VERSION=$(latest_version)
+[ -n "$VERSION" ] || fail "could not find the latest $CHANNEL version"
+
+case "$(uname -s)" in
+  Darwin) platform="macOS" ;;
+  Linux) platform="Linux" ;;
+  *) fail "Sikemux runs on macOS and Linux" ;;
+esac
+say ""
+say "  ${ACCENT}${BOLD}sikemux${RESET}  ${DIM}$VERSION · $platform $(uname -m)${RESET}"
+say ""
+
+size_of() {
+  awk -v bytes="$(wc -c <"$1" | tr -d ' ')" 'BEGIN { printf "%.1f MB", bytes / 1048576 }'
+}
 
 download() {
-  say "Downloading $1"
-  curl -fL --progress-bar -o "$TMP/$1" "$REPO/releases/download/v$VERSION/$1" ||
-    fail "v$VERSION has no $1"
+  step "Downloading $2" curl -fsSL -o "$TMP/$1" "$REPO/releases/download/v$VERSION/$1"
+  done_step "Downloaded $2" "$(size_of "$TMP/$1")"
 }
 
 as_root() {
@@ -109,36 +181,41 @@ as_root() {
 install_mac() {
   [ "$(uname -m)" = arm64 ] || fail "Sikemux needs a Mac with Apple Silicon"
   if pgrep -xq Sikemux; then fail "quit Sikemux first, then run this again"; fi
-  download Sikemux.app.tar.gz
+  download Sikemux.app.tar.gz "the app"
   tar -xzf "$TMP/Sikemux.app.tar.gz" -C "$TMP"
   dest=/Applications
   [ -w "$dest" ] || { dest="$HOME/Applications"; mkdir -p "$dest"; }
   rm -rf "$dest/Sikemux.app"
   mv "$TMP/Sikemux.app" "$dest/Sikemux.app"
-  say "Installed Sikemux $VERSION in $dest"
+  done_step "Installed Sikemux" "$(home_path "$dest")"
+  say ""
   open "$dest/Sikemux.app"
 }
 
 install_linux() {
-  [ "$(uname -m)" = x86_64 ] || fail "Sikemux for Linux needs an x86_64 machine"
+  [ "$(uname -m)" = x86_64 ] || fail "the desktop app needs an x86_64 machine; add --host for the core"
+  # sudo asks for its password here, before a spinner holds the line.
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -v; fi
   if command -v apt-get >/dev/null 2>&1; then
-    download "Sikemux_${VERSION}_amd64.deb"
-    as_root apt-get install -y "$TMP/Sikemux_${VERSION}_amd64.deb"
-  elif command -v dnf >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1; then
-    download "Sikemux-${VERSION}-1.x86_64.rpm"
-    if command -v dnf >/dev/null 2>&1; then
-      as_root dnf install -y "$TMP/Sikemux-${VERSION}-1.x86_64.rpm"
-    else
-      as_root zypper --non-interactive install --allow-unsigned-rpm "$TMP/Sikemux-${VERSION}-1.x86_64.rpm"
-    fi
+    download "Sikemux_${VERSION}_amd64.deb" "the app"
+    step "Installing with apt" as_root apt-get install -y "$TMP/Sikemux_${VERSION}_amd64.deb"
+    done_step "Installed Sikemux" "with apt"
+  elif command -v dnf >/dev/null 2>&1; then
+    download "Sikemux-${VERSION}-1.x86_64.rpm" "the app"
+    step "Installing with dnf" as_root dnf install -y "$TMP/Sikemux-${VERSION}-1.x86_64.rpm"
+    done_step "Installed Sikemux" "with dnf"
+  elif command -v zypper >/dev/null 2>&1; then
+    download "Sikemux-${VERSION}-1.x86_64.rpm" "the app"
+    step "Installing with zypper" as_root zypper --non-interactive install --allow-unsigned-rpm "$TMP/Sikemux-${VERSION}-1.x86_64.rpm"
+    done_step "Installed Sikemux" "with zypper"
   else
-    download "Sikemux_${VERSION}_amd64.AppImage"
+    download "Sikemux_${VERSION}_amd64.AppImage" "the app"
     mkdir -p "$HOME/Applications"
     mv "$TMP/Sikemux_${VERSION}_amd64.AppImage" "$HOME/Applications/Sikemux.AppImage"
     chmod +x "$HOME/Applications/Sikemux.AppImage"
-    say "Installed the AppImage as ~/Applications/Sikemux.AppImage"
+    done_step "Installed Sikemux" "$(home_path "$HOME/Applications/Sikemux.AppImage")"
   fi
-  say "Installed Sikemux $VERSION"
+  say ""
 }
 
 install_host() {
@@ -148,46 +225,66 @@ install_host() {
     *) fail "a Sikemux host needs an x86_64 or arm64 machine" ;;
   esac
   asset="sikemux-host-${VERSION}-linux-${arch}.tar.gz"
-  download "$asset"
+  download "$asset" "the core"
   tar -xzf "$TMP/$asset" -C "$TMP"
   if [ "$(id -u)" -eq 0 ]; then bin=/usr/local/bin; else bin="$HOME/.local/bin"; fi
   mkdir -p "$bin"
-  updating=false
-  [ -e "$bin/sikemux-editor" ] && updating=true
+  previous=""
+  [ -x "$bin/sikemux" ] && previous=$("$bin/sikemux" --version 2>/dev/null | sed 's/^sikemux //')
   cp "$TMP/sikemux-editor" "$bin/.sikemux-editor.new"
   chmod 755 "$bin/.sikemux-editor.new"
   mv -f "$bin/.sikemux-editor.new" "$bin/sikemux-editor"
   ln -sf sikemux-editor "$bin/sikemux"
-  say "Installed the Sikemux $VERSION core in $bin"
-  case ":$PATH:" in
-    *":$bin:"*) ;;
-    *) say "Add $bin to your PATH to run sikemux from a shell." ;;
-  esac
-
-  if systemctl --user show-environment >/dev/null 2>&1; then
-    if ! loginctl enable-linger "$(id -un)" 2>/dev/null; then
-      as_root loginctl enable-linger "$(id -un)" || say "Could not keep the core running after you log out; run: loginctl enable-linger"
-    fi
-    "$bin/sikemux" enable
-    if $updating; then
-      say "A core already running keeps its old version until you run: sikemux restart"
-    fi
+  updated=false
+  if [ -n "$previous" ] && [ "$previous" != "$VERSION" ]; then
+    updated=true
+    done_step "Updated sikemux $previous → $VERSION" "$(home_path "$bin")"
   else
-    say "No systemd user session here, so the core starts on demand and not at boot."
+    done_step "Installed sikemux" "$(home_path "$bin")"
   fi
 
+  if systemctl --user show-environment >/dev/null 2>&1; then
+    user=$(id -un)
+    loginctl enable-linger "$user" 2>/dev/null || as_root loginctl enable-linger "$user" >/dev/null 2>&1 || true
+    step "Starting the core" "$bin/sikemux" enable
+    done_step "Starts at boot" "systemd user service"
+    if [ "$(loginctl show-user "$user" -p Linger --value 2>/dev/null)" = yes ]; then
+      done_step "Keeps running after you log out" "linger on"
+    else
+      note "To keep it running after you log out, run: loginctl enable-linger"
+    fi
+  else
+    note "No systemd user session here, so the core starts on demand, not at boot."
+  fi
+
+  if $updated && "$bin/sikemux" status >/dev/null 2>&1; then
+    note "The running core keeps $previous until you run: sikemux restart"
+  fi
+  case ":$PATH:" in
+    *":$bin:"*) ;;
+    *) note "Add $(home_path "$bin") to your PATH to run sikemux from any shell." ;;
+  esac
+
   say ""
-  say "To reach this host from your Mac, sign it in to your Sikemux account, then"
-  say "link it in Sikemux under Settings → Devices → Computers."
+  say "  Next, sign this host in to your Sikemux account, then link it from"
+  say "  your Mac in ${BOLD}Settings → Devices → Computers${RESET}."
   if ! (: </dev/tty) 2>/dev/null; then
-    say "Sign it in with: sikemux login"
+    say ""
+    note "Sign in with: sikemux login"
+    say ""
     return 0
   fi
   if ! $YES; then
-    case "$(ask "Sign in now? [Y/n] " y)" in
-      [Nn]*) say "Sign it in later with: sikemux login"; return 0 ;;
+    case "$(ask "Sign in now? [Y/n]" y)" in
+      [Nn]*)
+        say ""
+        note "Sign in later with: sikemux login"
+        say ""
+        return 0
+        ;;
     esac
   fi
+  say ""
   "$bin/sikemux" login </dev/tty >/dev/tty 2>&1 || true
 }
 
@@ -200,5 +297,4 @@ case "$(uname -s)" in
     choose_linux_mode
     if [ "$MODE" = host ]; then install_host; else install_linux; fi
     ;;
-  *) fail "Sikemux runs on macOS and Linux" ;;
 esac

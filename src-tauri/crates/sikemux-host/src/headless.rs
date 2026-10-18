@@ -16,6 +16,7 @@ use sikemux_core::protocol::{AccountLinkState, DeviceAccess, Event, PendingDevic
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::login_item::{self, CoreLaunch, IDENTIFIER};
+use crate::style;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -45,7 +46,7 @@ pub fn run(command: &str, args: &[String]) -> i32 {
     match result {
         Ok(()) => 0,
         Err(message) => {
-            eprintln!("sikemux {command}: {message}");
+            eprintln!("  {} {message}", style::red("✗"));
             1
         }
     }
@@ -92,7 +93,7 @@ fn wait_until(socket: &Path, running: bool) -> bool {
 fn start() -> Result<PathBuf, String> {
     let launch = launch()?;
     if let Some(pid) = running_pid(&launch.socket) {
-        println!("The core is already running, pid {pid}.");
+        style::done("The core is already running", &format!("pid {pid}"));
         return Ok(launch.socket);
     }
     if starts_at_boot().is_some() {
@@ -104,7 +105,7 @@ fn start() -> Result<PathBuf, String> {
     }
     let hello = ensure_running(&launch.socket, &launch.binary, &launch.log, &launch.args)
         .map_err(|error| error.to_string())?;
-    println!("Started the core, pid {}.", hello.pid);
+    style::done("Started the core", &format!("pid {}", hello.pid));
     Ok(launch.socket)
 }
 
@@ -123,7 +124,7 @@ fn stop() -> Result<(), String> {
     let socket = launch()?.socket;
     let pid = match probe(&socket, PROBE_TIMEOUT) {
         Err(ProbeError::NotRunning(_)) => {
-            println!("The core is not running.");
+            style::note("The core is not running.");
             return Ok(());
         }
         Err(ProbeError::Rejected { pid, .. }) => return terminate(pid, &socket),
@@ -138,7 +139,10 @@ fn stop() -> Result<(), String> {
     if !wait_until(&socket, false) {
         return Err(format!("the core, pid {pid}, is still running"));
     }
-    println!("Stopped the core, pid {pid}, and everything it ran.");
+    style::done(
+        "Stopped the core",
+        &format!("pid {pid}, and everything it ran"),
+    );
     Ok(())
 }
 
@@ -156,7 +160,7 @@ fn terminate(pid: u32, socket: &Path) -> Result<(), String> {
     if !wait_until(socket, false) {
         return Err(format!("the core, pid {pid}, is still running"));
     }
-    println!("Stopped the core, pid {pid}.");
+    style::done("Stopped the core", &format!("pid {pid}"));
     Ok(())
 }
 
@@ -169,16 +173,16 @@ fn restart() -> Result<(), String> {
 fn enable() -> Result<(), String> {
     let launch = launch()?;
     let path = login_item::install(IDENTIFIER, &launch).map_err(|error| error.to_string())?;
-    println!("The core now starts at boot, from {}.", path.display());
+    style::done("The core starts at boot", &path.display().to_string());
     match running_pid(&launch.socket) {
         None => {
             login_item::start(IDENTIFIER);
             wait_until(&launch.socket, true);
         }
         Some(pid) if starts_by_service(pid) => {}
-        Some(pid) => println!(
-            "The core running now, pid {pid}, was started another way and is not restarted after a crash; `sikemux restart` hands it over."
-        ),
+        Some(pid) => style::note(&format!(
+            "The core running now, pid {pid}, was started another way; `sikemux restart` hands it to the service."
+        )),
     }
     Ok(())
 }
@@ -198,8 +202,11 @@ fn starts_by_service(pid: u32) -> bool {
 
 fn disable() -> Result<(), String> {
     match login_item::remove(IDENTIFIER).map_err(|error| error.to_string())? {
-        true => println!("The core no longer starts at boot. Stop it now with `sikemux stop`."),
-        false => println!("The core was not set to start at boot."),
+        true => {
+            style::done("The core no longer starts at boot", "");
+            style::note("It keeps running until `sikemux stop`.");
+        }
+        false => style::note("The core was not set to start at boot."),
     }
     Ok(())
 }
@@ -218,13 +225,13 @@ fn with_core(work: Work) -> Result<(), String> {
                     .await
                     .map_err(|error| error.to_string())?;
                 if status.owner.is_none() {
-                    println!("This host is not signed in.");
+                    style::note("This host is not signed in.");
                     return Ok(());
                 }
                 core.set_owner(None)
                     .await
                     .map_err(|error| error.to_string())?;
-                println!("Signed out. Devices already paired stay paired.");
+                style::done("Signed out", "devices already paired stay paired");
                 Ok(())
             }
             Work::Pair => pair(&core, &mut events).await,
@@ -242,20 +249,21 @@ async fn login(
         .map_err(|error| error.to_string())?
         .owner;
     if let Some(owner) = owner {
-        println!(
-            "Already signed in to {owner}. Run `sikemux logout` first to use another account."
-        );
+        style::done("Already signed in", &owner);
+        style::note("To use another account, run `sikemux logout` first.");
         return Ok(());
     }
     let account = crate::account::sign_in_by_code(core, |signing| {
         println!(
-            "To add this host to your Sikemux account, open\n\n  {}\n\nand check the code {}, or enter it in Sikemux on your phone.",
-            signing.verification_url, signing.user_code
+            "\n  Open this link to add the host to your account:\n\n    {}\n\n  and check the code {}, or enter it in Sikemux on your phone.\n",
+            style::accent(&signing.verification_url),
+            style::bold(&signing.user_code)
         );
-        println!("Waiting for approval…");
+        style::note("Waiting for approval…");
     })
     .await?;
-    println!("Signed in to {account}.\n");
+    style::done("Signed in", &account);
+    println!();
     pair(core, events).await
 }
 
@@ -272,8 +280,10 @@ async fn pair(
         return Err("this host is not signed in; run `sikemux login` first".into());
     }
     println!(
-        "Join this host from Sikemux on your phone, or link it on your Mac under Settings → Devices → Computers. Each device asks here first.\nPress Ctrl-C to stop waiting; `sikemux pair` waits again later."
+        "  Join this host from Sikemux on your phone, or link it from your Mac in\n  {}. Each device asks here first.\n",
+        style::bold("Settings → Devices → Computers")
     );
+    style::note("Waiting for devices. Press Ctrl-C to stop; `sikemux pair` waits again later.");
     let mut asked = HashSet::new();
     loop {
         asked.retain(|id| status.pending.iter().any(|request| &request.id == id));
@@ -294,7 +304,11 @@ async fn pair(
                 )
                 .await
             {
-                println!("{} could not be answered: {error}", request.name);
+                eprintln!(
+                    "  {} {} could not be answered: {error}",
+                    style::red("✗"),
+                    request.name
+                );
             }
         }
         status = next_status(events).await?;
@@ -316,8 +330,10 @@ async fn ask(request: PendingDevice) -> Result<Option<DeviceAccess>, String> {
         let mut stdout = std::io::stdout();
         let _ = write!(
             stdout,
-            "{} ({}) asks to join. Allow [f]ull control, [w]atch only, or [N]o? ",
-            request.name, request.platform
+            "\n  {} {} {} asks to join. Allow [f]ull control, [w]atch only, or [N]o? ",
+            style::accent("›"),
+            style::bold(&request.name),
+            style::dim(&format!("({})", request.platform))
         );
         let _ = stdout.flush();
         let mut line = String::new();
@@ -402,7 +418,8 @@ fn status(json: bool) -> i32 {
 }
 
 fn print_status(status: &Status) {
-    let row = |label: &str, value: String| println!("{label:<9} {value}");
+    let row =
+        |label: &str, value: String| println!("  {} {value}", style::dim(&format!("{label:<9}")));
     match (status.pid, &status.version) {
         (Some(pid), Some(version)) => row("Core", format!("running, pid {pid}, version {version}")),
         _ => row("Core", "not running; start it with `sikemux start`".into()),
