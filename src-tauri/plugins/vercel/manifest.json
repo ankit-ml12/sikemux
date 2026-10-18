@@ -68,7 +68,7 @@
       "name": "vercel_promote",
       "row": {"verb": "promote", "kind": "execute", "icon": "rocket", "target": ["{id}"]},
       "method": "promote",
-      "description": "Make a ready deployment the project's production one, without building it again. Promoting an older deployment rolls production back. Only when the person asked for it.",
+      "description": "Make a ready deployment production without building it again. Promoting an older deployment rolls production back. Only when the person asked for it.",
       "properties": {
         "id": { "type": "string", "description": "The deployment to serve in production." },
         "team": { "type": "string" }
