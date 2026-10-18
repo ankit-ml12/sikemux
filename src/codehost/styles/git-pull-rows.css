@@ -39,6 +39,7 @@
 }
 .pr-row .pr-headline-title {
     font-size: var(--text-md);
+    font-weight: var(--weight-semibold);
 }
 .pr-headline-top > :last-child:not(.pr-headline-title) {
     margin-left: auto;
