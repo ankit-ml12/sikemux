@@ -117,6 +117,8 @@
     transparent PNG at 64, 256 and 1024.
   - `brand/icon/`: the mark on the dark app gradient, or the purple "Sikemux Dev" one,
     with rounded or square corners, as SVG and PNG at 256 and 1024.
+  - `brand/wordmark/`: the name lettered in Figtree as the site's nav sets it, alone or beside
+    the mark, in white, black, or purple mark with white name, as SVG and PNG at 2048 wide.
   - `brand/macos/`: the real Dock icon (Liquid Glass) at 128 to 1024.
   - `brand/social/avatar-400.png`: profile picture.
 - The source is `src-tauri/icons/sikemux.icon`. After changing it, run `pnpm brand` to
