@@ -73,7 +73,7 @@ function PostCard({ post, now }: { post: Post; now: number }) {
             <span className="gha-tl-face">
                 <Face login={post.author} url={post.avatarUrl} />
             </span>
-            <div className="gha-comment" data-review={post.review ?? undefined}>
+            <div className="gha-comment gha-reading" data-review={post.review ?? undefined}>
                 <div className="gha-comment-head">
                     <Name login={post.author} />
                     {post.review ? (

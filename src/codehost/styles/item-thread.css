@@ -32,28 +32,28 @@
     height: 40px;
     font-size: var(--text-sm);
 }
-.gha-comment .prose {
+.gha-reading .prose {
     padding: var(--space-3) var(--space-4);
     font-size: var(--text-md);
     line-height: 1.55;
 }
-/* A conversation reads at GitHub's sizes: headings well above the text, code a step below it. */
-.gha-comment .prose h1 {
+/* A conversation and a job's summary read at GitHub's sizes: headings well above the text, code a step below it. */
+.gha-reading .prose h1 {
     font-size: var(--text-xl);
 }
-.gha-comment .prose h2 {
+.gha-reading .prose h2 {
     font-size: var(--text-lg);
 }
-.gha-comment .prose :is(h3, h4, h5, h6) {
+.gha-reading .prose :is(h3, h4, h5, h6) {
     font-size: var(--text-md);
 }
-.gha-comment .prose :is(h1, h2, h3, h4, h5, h6) {
+.gha-reading .prose :is(h1, h2, h3, h4, h5, h6) {
     margin: var(--space-4) 0 var(--space-2);
 }
-.gha-comment .prose code {
+.gha-reading .prose code {
     font-size: var(--text-xs);
 }
-.gha-comment .prose p {
+.gha-reading .prose p {
     margin: var(--space-3) 0;
 }
 .gha-comment-author {
@@ -190,7 +190,7 @@
     margin-left: calc(40px + var(--space-3));
 }
 /* A comment's own opening heading starts at the card's padding, not a heading's gap below it. */
-.gha-comment .prose > :first-child {
+.gha-reading .prose > :first-child {
     margin-top: 0;
 }
 /* Events read as GitHub's: a larger mark on the thread line, solid when it means something, and the text a size up. */
@@ -275,4 +275,28 @@
     width: 18px;
     height: 18px;
     justify-self: center;
+}
+/* Long reports, such as a security audit's, keep their tables and quotes in proportion with the larger text. */
+.gha-reading .prose :is(th, td) {
+    padding: var(--space-1h) var(--space-4) var(--space-1h) 0;
+}
+.gha-reading .prose th {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+.gha-reading .prose blockquote {
+    color: var(--text-primary);
+}
+.gha-reading .prose h3 {
+    margin-top: var(--space-5);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+.gha-reading .prose > h3:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+.gha-summary.gha-reading > .gha-summary-head {
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
 }
