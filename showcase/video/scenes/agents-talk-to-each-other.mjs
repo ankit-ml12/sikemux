@@ -23,10 +23,16 @@ export default {
     await s.live({ agent: "tab-rail", steps: 2 });
     await messageAndBoard(s, { hold: 1600 });
     await s.app(() => showcase.backend.cue("otter-takes-refunds"));
-    await s.live({ agent: "tab-rail", pace: 0.4 });
+    await s.zoom(".kanban-columns", {
+      scale: 1.2,
+      at: { x: 0.5, y: 0.55 },
+      wait: false,
+    });
+    await s.live({ agent: "tab-rail", pace: 0.3 });
+    await s.zoom(card("Totals are off by a cent"), { scale: 1.8, wait: false });
     await s.move(card("Totals are off by a cent"));
-    await s.wait(1800);
+    await s.wait(1200);
     await s.zoomOut();
-    await s.wait(900);
+    await s.wait(600);
   },
 };

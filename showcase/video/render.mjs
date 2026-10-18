@@ -128,6 +128,7 @@ for (const name of chosen) {
     page,
     app: null,
     start: start + 1000,
+    density: scale,
     capture: async () => {
       if (stillsAt && !stillsAt.includes(director.recorded)) return;
       const { data } = await cdp.send("Page.captureScreenshot", {

@@ -10,19 +10,21 @@ export default {
   },
   play: async (s) => {
     await s.wait(700);
+    await s.zoom(".git-right", { scale: 1.35, at: { x: 0.5, y: 0.2 } });
+    await s.wait(600);
     await s.zoom(".git-right", {
       scale: 1.35,
-      at: { x: 0.5, y: 0.3 },
-      wait: false,
+      at: { x: 0.5, y: 0.8 },
+      duration: 4200,
     });
-    await s.scroll(".git-right", { by: 760, duration: 5200 });
     await s.wait(500);
     await s.zoom(".git-left", {
       scale: 1.7,
       at: { x: 0.5, y: 0.25 },
-      wait: false,
     });
-    await s.swipe(".git-left .swipe-page.is-current");
+    await s.swipe(".git-left .swipe-page.is-current", {
+      at: { x: 0.5, y: 0.3 },
+    });
     await s.wait(1600);
     await s.move({
       selector: ".gg-row",
@@ -41,7 +43,7 @@ export default {
       exact: false,
     });
     await s.wait(900);
-    await s.move({ x: 1180, y: 760 });
+    await s.move(".git-right", { at: { x: 0.85, y: 0.7 } });
     await s.scroll(".git-right", { by: 1500, duration: 8000 });
     await s.wait(900);
     await s.zoomOut();

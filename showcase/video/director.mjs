@@ -48,8 +48,9 @@ function seeded(seed) {
  * sixtieth of a second, and hands the picture to `capture`.
  */
 export class Director {
-  constructor({ page, app, start, capture }) {
+  constructor({ page, app, start, capture, density = 1 }) {
     this.page = page;
+    this.density = density;
     this.appFrame = app;
     this.now = start;
     this.capture = capture;
@@ -432,6 +433,16 @@ export class Director {
     await this.pressCursor(1, 90);
     await this.app(() => showcase.backend.emit("wheel-touch", true));
     const frames = Math.max(2, Math.round(duration / STEP));
+    const before = await this.app(() => {
+      if (window.__videoWheels === undefined) {
+        window.__videoWheels = 0;
+        addEventListener("wheel", () => window.__videoWheels++, {
+          capture: true,
+          passive: true,
+        });
+      }
+      return window.__videoWheels;
+    });
     let pushed = 0;
     for (let index = 1; index <= frames; index++) {
       const progress = index / frames;
@@ -439,9 +450,15 @@ export class Director {
       const delta = next - pushed;
       pushed = next;
       this.cursor.x -= delta;
-      await this.page.mouse.wheel(delta, 0);
+      // Chrome divides a wheel's distance by the page's pixel density, so it is sent multiplied.
+      await this.page.mouse.wheel(delta * this.density, 0);
       await this.frame();
     }
+    // Chrome hands wheel events over when it gets to them, and a slow frame leaves some queued;
+    // the hand lifts only once the page has had every one, or the swipe ends short.
+    const sent = before + frames;
+    while ((await this.app(() => window.__videoWheels)) < sent)
+      await new Promise((done) => setTimeout(done, 5));
     await this.app(() => showcase.backend.emit("wheel-touch", false));
     await this.pressCursor(0, 140);
   }
