@@ -481,15 +481,6 @@ export async function changeAgentName(id: string, name: string): Promise<void> {
     setAgentName(id, named.name, named.parent);
 }
 
-export function setAgentTitle(id: string, title: string): void {
-    const value = title.trim();
-    if (!value || value.length > 200 || /[\0\r\n]/.test(value)) return;
-    mutate((d) => {
-        const agent = d.agents[id];
-        if (agent && !agent.renamed) agent.title = value;
-    });
-}
-
 /* Written the way a provider lists a session, so the name reads back unchanged. */
 function sessionName(title: string): string | null {
     const name = title.split(/\s+/).filter(Boolean).join(" ");
@@ -574,19 +565,6 @@ export async function deleteAgentSession(session: SavedSession, title: string): 
     }
     invalidate((kind) => kind === "agents.sessions");
     return true;
-}
-
-/* Stands in until the provider titles the conversation, which Claude only does
-   once the first turn ends. */
-export function titleAgentFromPrompt(id: string, text: string): void {
-    const title = text.split(/\s+/).filter(Boolean).join(" ");
-    if (!title || title.startsWith("/") || title.startsWith("<")) return;
-    mutate((d) => {
-        const agent = d.agents[id];
-        if (!agent || agent.renamed) return;
-        if (agent.title !== (profileOf(d, agent)?.name || agent.type)) return;
-        agent.title = [...title].slice(0, SESSION_TITLE_MAX).join("");
-    });
 }
 
 export function selectAgent(id: string): void {

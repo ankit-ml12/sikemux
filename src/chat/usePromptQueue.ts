@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type Dispatch, type RefObject } from 
 import { errorText } from "../lib/format";
 import { acpApi } from "../api/acp";
 import type { Agent } from "../state/types";
-import * as cmd from "../state/commands";
 import { unknownCommand } from "./composerInput";
 import type { OutgoingMessage, QueuedMessage } from "./queuedMessages";
 import type { AcpAvailableCommand, ChatAction, ChatState } from "./types";
@@ -45,10 +44,9 @@ export function usePromptQueue({
         ({ text, paths, context }: OutgoingMessage) => {
             const messageId = crypto.randomUUID();
             dispatch({ type: "local_prompt", text, paths, context, messageId });
-            cmd.titleAgentFromPrompt(agentRef.current.id, text || context[0]?.title || "");
             return messageId;
         },
-        [agentRef, dispatch],
+        [dispatch],
     );
 
     const deliver = useCallback(

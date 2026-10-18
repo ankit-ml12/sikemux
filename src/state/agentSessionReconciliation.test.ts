@@ -6,7 +6,7 @@ vi.mock("../api/agents", async (importOriginal) => {
     return { ...actual, agentApi: { ...actual.agentApi, renameSession } };
 });
 import { showingChat } from "../chat/chatViews";
-import { agentSessionMetadataPending, reconcileAgentSessions, renameAgent, setAgentTitle, titleAgentFromPrompt } from "./commands";
+import { agentSessionMetadataPending, reconcileAgentSessions, renameAgent } from "./commands";
 import { getState, setState } from "./store";
 import { agentWindowId } from "./selectors";
 import { withAgents } from "../test/agents";
@@ -57,26 +57,6 @@ describe("agent session reconciliation", () => {
         reconcileAgentSessions("codex", "/repo", undefined, [{ id: "another-session", title: "Another chat", mtime: 101 }]);
         expect(getState().agents[agentId].resumeId).toBeUndefined();
     });
-    it("names a fresh agent after its first prompt until the provider titles it", () => {
-        const state = getState();
-        const sessionId = state.activeSessionId;
-        const agentId = "acp-first-prompt";
-        setState(withAgents(state, sessionId, [{ id: agentId, type: "claude", title: "claude", startup: "claude" }]));
-
-        titleAgentFromPrompt(agentId, "/compact");
-        expect(getState().agents[agentId].title).toBe("claude");
-
-        titleAgentFromPrompt(agentId, `  Need the binary size\n  on the landing page ${"x".repeat(80)}`);
-        const title = getState().agents[agentId].title;
-        expect(title.startsWith("Need the binary size on the landing page x")).toBe(true);
-        expect(title).toHaveLength(72);
-
-        titleAgentFromPrompt(agentId, "A second prompt");
-        expect(getState().agents[agentId].title).toBe(title);
-
-        setAgentTitle(agentId, "Binary size on landing page");
-        expect(getState().agents[agentId].title).toBe("Binary size on landing page");
-    });
     it("keeps a name the user gave over every title the provider sends later", () => {
         const state = getState();
         const sessionId = state.activeSessionId;
@@ -98,8 +78,6 @@ describe("agent session reconciliation", () => {
         expect(renameSession).not.toHaveBeenCalled();
         expect(getState().windows[agentWindowId(getState(), agentId)!].name).toBe("Parser rewrite");
 
-        titleAgentFromPrompt(agentId, "Fix the parser");
-        setAgentTitle(agentId, "Parser fixes");
         reconcileAgentSessions("claude", "/repo", undefined, [{ id: transcriptId, title: "Provider title", mtime: 101 }]);
         reconcileAgentSessions("claude", "/repo", undefined, [{ id: transcriptId, title: "Newer provider title", mtime: 102 }]);
         expect(getState().agents[agentId]).toMatchObject({ resumeId: transcriptId, title: "Parser rewrite" });

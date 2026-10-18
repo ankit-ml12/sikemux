@@ -229,7 +229,7 @@ pub(crate) fn title(text: &str) -> Option<String> {
     (!title.is_empty()).then_some(title)
 }
 
-fn session_title(payload: &Value) -> Option<String> {
+pub(crate) fn session_title(payload: &Value) -> Option<String> {
     let update = payload.get("update")?;
     if update.get("sessionUpdate")?.as_str()? != "session_info_update" {
         return None;

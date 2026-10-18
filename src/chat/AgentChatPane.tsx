@@ -156,10 +156,6 @@ export function AgentChatPane({
 
     useEffect(() => onBusyChange(state.running), [onBusyChange, state.running]);
 
-    useEffect(() => {
-        if (state.title && state.title !== agent.title) cmd.setAgentTitle(agent.id, state.title);
-    }, [agent.id, agent.title, state.title]);
-
     const steerable = state.capabilities.steering === true;
 
     const { queued, send, steer, drop } = usePromptQueue({

@@ -46,6 +46,8 @@ const MAX_PINNED: usize = 256;
 const MAX_LAUNCHERS: usize = 64;
 const MAX_AGENTS: usize = 1024;
 const MAX_TITLE_CHARS: usize = 200;
+/// As long as a provider lists a session's name, so a prompt standing in for one reads back whole.
+const STAND_IN_TITLE_CHARS: usize = 72;
 const MAX_FIELD_CHARS: usize = 512;
 /// Room for a worktree or a buddy, which are a handful of short fields.
 const MAX_DETAIL_BYTES: usize = 4096;
@@ -628,6 +630,45 @@ impl Workspaces {
             }
             Ok(agent)
         })
+    }
+
+    /// Gives the agent the title its chat earned, unless the person named it.
+    /// A first prompt's words stand in only while the agent has no title of
+    /// its own, and a command never does. Answers whether the title changed.
+    fn note_title(&self, agent_id: &str, title: &str, stand_in: bool) -> bool {
+        if title.starts_with('/') || title.starts_with('<') {
+            return false;
+        }
+        let title: String = match stand_in {
+            true => title.chars().take(STAND_IN_TITLE_CHARS).collect(),
+            false => title.to_owned(),
+        };
+        self.change(|saved| {
+            let profile = |id: &str| {
+                saved
+                    .accounts
+                    .as_ref()?
+                    .profiles
+                    .iter()
+                    .find(|profile| profile.id == id)
+                    .map(|profile| profile.name.clone())
+            };
+            let Some(kept) = saved.kept(agent_id) else {
+                return Ok(false);
+            };
+            let agent = &kept.agent;
+            let untitled = agent.title.trim().is_empty()
+                || agent.title == agent.provider
+                || agent.profile_id.as_deref().and_then(profile).as_deref() == Some(&agent.title);
+            if agent.renamed || agent.title == title || (stand_in && !untitled) {
+                return Ok(false);
+            }
+            if let Some(kept) = saved.kept_mut(agent_id) {
+                kept.agent.title = title;
+            }
+            Ok(true)
+        })
+        .unwrap_or(false)
     }
 
     pub(crate) fn set_asleep(&self, agent_id: &str, asleep: bool) {
@@ -1633,6 +1674,17 @@ pub(crate) fn close_agents(core: &Core, params: CloseAgentsParams) -> CoreResult
     Ok(())
 }
 
+/// Titles the agent from what its chat said, as [`Workspaces::note_title`]
+/// does, and shows every client.
+pub(crate) fn retitle(core: &Core, agent_id: &str, title: Option<String>, stand_in: bool) {
+    let Some(title) = title else {
+        return;
+    };
+    if core.workspaces.note_title(agent_id, &title, stand_in) {
+        core.publish_device_view();
+    }
+}
+
 /// What follows agents leaving the workspace, however they left: their chats
 /// stop, and their names are free again.
 fn agents_closed(core: &Core, before: HashSet<String>) {
@@ -1950,6 +2002,49 @@ mod tests {
         assert!(workspaces
             .add_project("sikemux".into(), None, None)
             .is_err());
+    }
+
+    #[test]
+    fn a_first_prompt_names_an_agent_until_its_chat_titles_it_and_never_one_the_person_named() {
+        let workspaces = Workspaces::new(None);
+        let project = project();
+        workspaces
+            .add_project(
+                project.path.clone(),
+                Some(project.name),
+                Some(project.id.clone()),
+            )
+            .unwrap();
+        let agent = |id: &str| {
+            let agent = serde_json::json!({
+                "id": id, "provider": "claude", "project": project.id, "cwd": project.path,
+                "title": "claude", "permissionMode": "bypass",
+            });
+            workspaces
+                .put_agent(agent.as_object().unwrap().clone())
+                .unwrap();
+        };
+        let title = |id: &str| workspaces.agent(id).unwrap().title;
+        agent("agent-1");
+        assert!(!workspaces.note_title("agent-1", "/compact", true));
+        let long = format!(
+            "Need the binary size on the landing page {}",
+            "x".repeat(80)
+        );
+        assert!(workspaces.note_title("agent-1", &long, true));
+        assert_eq!(title("agent-1").chars().count(), STAND_IN_TITLE_CHARS);
+        assert!(!workspaces.note_title("agent-1", "A second prompt", true));
+        assert!(workspaces.note_title("agent-1", "Binary size on landing page", false));
+        assert_eq!(title("agent-1"), "Binary size on landing page");
+
+        agent("agent-2");
+        let mut renamed = Map::new();
+        renamed.insert("title".into(), "Parser rewrite".into());
+        renamed.insert("renamed".into(), true.into());
+        workspaces.update_agent("agent-2", renamed).unwrap();
+        assert!(!workspaces.note_title("agent-2", "Fix the parser", true));
+        assert!(!workspaces.note_title("agent-2", "Parser fixes", false));
+        assert_eq!(title("agent-2"), "Parser rewrite");
     }
 
     #[test]

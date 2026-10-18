@@ -312,6 +312,10 @@ impl Chat {
         }
         if kind == ChatEventKind::SessionUpdate {
             self.note_tool_call(&payload);
+            let title = feed::session_title(&payload);
+            if let (Some(core), true) = (self.core.upgrade(), title.is_some()) {
+                super::workspace::retitle(&core, self.agent_id(), title, false);
+            }
         }
         self.feed.emit(kind, payload);
         if kind == ChatEventKind::SessionUpdate {
@@ -1880,6 +1884,9 @@ pub(crate) fn prompt(
         bounded_text("message id", message_id, 256)?;
     }
     super::messages::worked(core, agent_id);
+    let words = context.first().map(|context| context.title.as_str());
+    let title = feed::title(if text.trim().is_empty() { words.unwrap_or_default() } else { &text });
+    super::workspace::retitle(core, agent_id, title, true);
     core.chats.running(agent_id)?.send(ChatCommand::Prompt {
         from,
         message_id,
