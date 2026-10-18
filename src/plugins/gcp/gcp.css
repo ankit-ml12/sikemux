@@ -8,9 +8,9 @@
     --gcp-text: var(--text-primary);
     --gcp-text-2: var(--text-secondary);
     --gcp-text-3: var(--text-tertiary);
-    --gcp-blue: var(--accent);
-    --gcp-blue-text: var(--accent);
-    --gcp-blue-soft: var(--surface-chosen);
+    --gcp-blue: var(--acc);
+    --gcp-blue-text: var(--acc);
+    --gcp-blue-soft: var(--surface-selected);
     --gcp-hover: var(--surface-hover);
     --gcp-green: var(--live);
     --gcp-red: var(--danger);
