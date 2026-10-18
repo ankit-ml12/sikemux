@@ -19,6 +19,7 @@
 //   functions — Cloud Functions of both generations
 //   metrics  — Cloud Monitoring charts for services, VMs, databases and queues
 //   errors   — Error Reporting groups, occurrences and statuses
+//   registry — Artifact Registry repositories, images and packages
 
 mod agent;
 mod agent_setup;
@@ -35,6 +36,7 @@ mod logging;
 mod metrics;
 mod projects;
 mod pubsub;
+mod registry;
 mod run;
 mod secrets;
 mod sql;
@@ -164,6 +166,8 @@ impl Plugin for Gcp {
                 "errorGroups" => answer(errors::groups(params(input)?)).await,
                 "errorEvents" => answer(errors::events(params(input)?)).await,
                 "errorStatus" => answer(errors::set_status(params(input)?)).await,
+                "repositories" => answer(registry::repositories(params(input)?)).await,
+                "repository" => answer(registry::contents(params(input)?)).await,
                 _ => match agent::call(ctx, method, input).await {
                     Some(answer) => answer,
                     None => Err(PluginError::unknown_method(method)),
