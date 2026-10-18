@@ -35,8 +35,11 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "pluginStream" | "pluginSignIn" | "signInCallback" => Needs::Person,
         "changeOwners" | "commitOwners" | "activitySummary" => Needs::Watch,
         "setActivityPrice" => Needs::Person,
+        "createAgentWorktree" => Needs::Person,
         "modelProviders" | "modelProviderModels" | "modelHelper" | "agentSignIns" => Needs::Full,
         "agentSignIn" | "agentSignInCode" | "cancelAgentSignIn" | "agentSignOut" => Needs::Person,
+        "skillsOverview" | "skillsAdded" => Needs::Full,
+        "createSkill" | "installSkill" | "removeSkill" | "adoptSkill" => Needs::Person,
         "modelProviderCheck" | "modelProviderConnect" | "modelProviderDisconnect"
         | "setModelHelper" => Needs::Person,
         method if method.starts_with("git.") => super::git::needs(method),
@@ -79,6 +82,8 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "modelProviderModels"
             | "modelHelper"
             | "agentSignIns"
+            | "skillsOverview"
+            | "skillsAdded"
     )
 }
 
@@ -132,7 +137,13 @@ pub(crate) async fn call(
         "createAgent" => answer(workspace::create_agent(&core, parse(params)?)?),
         "updateAgent" => answer(workspace::update_agent(&core, parse(params)?)?),
         "closeAgents" => answer(workspace::close_agents(&core, parse(params)?)?),
-        method if method.starts_with("git.") => super::git::call(method, params).await,
+        "createAgentWorktree" => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
+        method if method.starts_with("git.") => {
+            super::git::call(&core, &client.peer, method, params).await
+        }
+        method if super::skill_library::METHODS.contains(&method) => {
+            super::skill_library::call(&core, method, params).await
+        }
         method if super::agent_sign_in::METHODS.contains(&method) => {
             super::agent_sign_in::call(&core, method, params).await
         }

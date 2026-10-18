@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 use git2::{ErrorCode, Repository};
@@ -174,7 +174,9 @@ fn file_text_at(repo: &str, rev: &str, path: &str) -> Result<String, String> {
 }
 
 fn worktree_text(repo: &str, path: &str) -> Result<String, String> {
-    let full = Path::new(repo).join(path);
+    let Some(full) = inside_worktree(repo, path)? else {
+        return Ok(String::new());
+    };
     match std::fs::metadata(&full) {
         Ok(meta) if meta.len() as usize > GIT_FILE_AT_MAX_BYTES => {
             return Err(too_large_for_inline_diff(path, meta.len() as usize));
@@ -189,6 +191,33 @@ fn worktree_text(repo: &str, path: &str) -> Result<String, String> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+/// `path` resolved inside the repository's working tree, or `None` when it
+/// does not exist there. A path or link that leads out of it is refused.
+fn inside_worktree(repo: &str, path: &str) -> Result<Option<PathBuf>, String> {
+    let relative = Path::new(path);
+    if !relative
+        .components()
+        .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(format!("{path} is not a path inside the repository"));
+    }
+    let root = Repository::discover(repo)
+        .map_err(|e| e.message().to_string())?
+        .workdir()
+        .ok_or("this repository has no working tree")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let full = match Path::new(repo).join(relative).canonicalize() {
+        Ok(full) => full,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    if !full.starts_with(&root) {
+        return Err(format!("{path} leads out of the repository"));
+    }
+    Ok(Some(full))
 }
 
 pub async fn git_file_at(repo: String, rev: String, path: String) -> Result<String, String> {

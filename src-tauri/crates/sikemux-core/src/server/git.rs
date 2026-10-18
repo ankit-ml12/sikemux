@@ -1,8 +1,10 @@
 //! The git panel's methods, `git.*`, for every client, and the watch on each
 //! project that tells them all when to read again.
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
+use git2::Repository;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -10,7 +12,7 @@ use crate::git::{
     ai, blame, branches, changes, commit, log, remote, revisions, stash, status, watch, worktree,
 };
 
-use super::access::Needs;
+use super::access::{Needs, Peer};
 use super::{Core, CoreError, CoreResult};
 
 /// What a client must be allowed to call `method`.
@@ -67,7 +69,18 @@ macro_rules! methods {
     };
 }
 
-pub(crate) async fn call(method: &str, params: Value) -> CoreResult<Value> {
+pub(crate) async fn call(core: &Core, peer: &Peer, method: &str, params: Value) -> CoreResult<Value> {
+    if matches!(peer, Peer::Device { .. }) {
+        let asked = ["repo", "root"]
+            .into_iter()
+            .find_map(|key| params.get(key).and_then(Value::as_str))
+            .map(PathBuf::from)
+            .ok_or("the call names no repository")?;
+        let projects = core.workspaces.project_paths();
+        if !super::connection::blocking(move || Ok(of_a_project(&asked, &projects))).await? {
+            return Err("a device may only look at the workspace's projects".into());
+        }
+    }
     methods!(method, params;
         "git.status" => status::git_status { repo: String },
         "git.discoverRepos" => status::git_discover_repos { root: String },
@@ -123,6 +136,29 @@ pub(crate) async fn call(method: &str, params: Value) -> CoreResult<Value> {
         "git.deleteRemoteBranch" => remote::git_delete_remote_branch { repo: String, remote: String, branch: String },
         "git.setUpstream" => remote::git_set_upstream { repo: String, branch: String, upstream: Option<String> },
     )
+}
+
+/// Whether `asked` lies inside one of the projects, or is a worktree of one
+/// of their repositories.
+fn of_a_project(asked: &Path, projects: &[PathBuf]) -> bool {
+    let Ok(asked) = asked.canonicalize() else {
+        return false;
+    };
+    let shared = |path: &Path| {
+        Repository::discover(path)
+            .ok()
+            .and_then(|repo| repo.commondir().canonicalize().ok())
+    };
+    let asked_shared = shared(&asked);
+    projects.iter().any(|project| {
+        let Ok(project) = project.canonicalize() else {
+            return false;
+        };
+        asked.starts_with(&project)
+            || asked_shared
+                .as_ref()
+                .is_some_and(|common| shared(&project).as_ref() == Some(common))
+    })
 }
 
 fn unfit(error: serde_json::Error) -> CoreError {
