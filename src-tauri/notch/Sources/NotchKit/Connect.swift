@@ -1,23 +1,7 @@
 import SwiftUI
 
-/// A device signed in to the person's Sikemux account, waiting to be let in.
-struct PendingDevice: Decodable, Equatable, Identifiable {
-    let id: String
-    let name: String
-    let platform: String
-    /// When the core stops waiting, in Unix milliseconds.
-    let expiresAt: Double
-
-    var expires: Date { Date(timeIntervalSince1970: expiresAt / 1000) }
-}
-
-/// The part of the core's remote status the island shows.
-struct RemoteStatus: Decodable {
-    let pending: [PendingDevice]
-}
-
-enum DeviceAccess: String {
-    case full, watch
+extension PendingDevice: Identifiable {
+    var expires: Date { Date(timeIntervalSince1970: Double(expiresAt) / 1000) }
 }
 
 /// A device asking to connect, answered from the island.

@@ -26,11 +26,11 @@ final class BuddyArt {
         context?.evaluateScript(buddiesScript)
         return context?.objectForKeyedSubscript("SikemuxBuddies")?.objectForKeyedSubscript("notchBuddy")
     }()
-    private var drawn: Buddies?
+    private var drawn: PublishedBuddies?
     private var published: Any = NSNull()
     private var images: [String: NSImage] = [:]
 
-    func image(_ buddies: Buddies, agentId: String, state: BuddyState) -> NSImage? {
+    func image(_ buddies: PublishedBuddies, agentId: String, state: BuddyState) -> NSImage? {
         if buddies != drawn {
             drawn = buddies
             images = [:]
@@ -110,5 +110,5 @@ private struct BuddyImage: View {
 }
 
 extension EnvironmentValues {
-    @Entry var buddies: Buddies? = nil
+    @Entry var buddies: PublishedBuddies? = nil
 }

@@ -54,7 +54,7 @@ final class IslandModel {
     var provider = "claude"
     var model: String?
     var effort: String?
-    var project: Project?
+    var project: ProjectInfo?
     var yolo = true
     var attachments: [String] = []
     var dropTarget: String?

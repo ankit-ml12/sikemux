@@ -104,10 +104,10 @@ let dated = try! NSRegularExpression(pattern: #"AGO\((\d+)\)"#).matches(in: sour
     }
 let decoded = try! JSONDecoder().decode(DeviceView.self, from: Data(dated.utf8))
 let buddies = arguments.contains("--buddies")
-    ? Buddies(pack: "all", shape: "mixed", motion: true, agents: [:], boxes: [:])
+    ? PublishedBuddies(pack: "all", shape: "mixed", motion: true, agents: [:], boxes: [:])
     : decoded.inbox.buddies
 let full = DeviceView(
-    workspace: decoded.workspace, chats: decoded.chats, sessions: decoded.sessions, attentions: decoded.attentions,
+    workspace: decoded.workspace, sessions: decoded.sessions, chats: decoded.chats, attentions: decoded.attentions,
     inbox: Inbox(items: decoded.inbox.items, working: decoded.inbox.working, buddies: buddies)
 )
 
@@ -116,8 +116,8 @@ func view(keeping ids: Set<String>?) -> DeviceView {
     let items = full.inbox.items.filter { $0.agentId.map(ids.contains) ?? false }
     return DeviceView(
         workspace: full.workspace,
-        chats: full.chats.filter { ids.contains($0.agentId) },
         sessions: full.sessions.filter { $0.agentId.map(ids.contains) ?? false },
+        chats: full.chats.filter { ids.contains($0.agentId) },
         attentions: full.attentions.filter { ids.contains($0.agentId) },
         inbox: Inbox(items: items, working: items.filter { $0.kind == .working }.count, buddies: full.inbox.buddies)
     )
@@ -242,7 +242,7 @@ render("C6-hover", agents: ["a2", "a3"]) { $0.hovering = true }
 render("P1-permission", height: 260) { $0.mode = .peekAsk("permission:a1:p1") }
 render("P4-question", agents: ["a2", "a9"], height: 260) { $0.mode = .peekAsk("question:q1") }
 render("P2-finished", agents: ["a2", "a4"]) { $0.mode = .peekDone("agent:a4") }
-render("P3-connect", agents: ["a2", "a3"], height: 240, devices: [PendingDevice(id: "d1", name: "Pixel 8", platform: "android", expiresAt: (Date().timeIntervalSince1970 + 112) * 1000)]) {
+render("P3-connect", agents: ["a2", "a3"], height: 240, devices: [PendingDevice(id: "d1", name: "Pixel 8", platform: "android", expiresAt: now + 112_000)]) {
     $0.mode = .connect("d1")
 }
 render("O1-inbox", height: 520) { $0.mode = .open }

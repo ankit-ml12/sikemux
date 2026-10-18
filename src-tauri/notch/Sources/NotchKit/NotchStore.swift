@@ -239,7 +239,7 @@ final class NotchStore {
 
     struct Launch {
         let provider: String
-        let project: Project
+        let project: ProjectInfo
         let yolo: Bool
         let model: String?
         let effort: String?
@@ -247,7 +247,7 @@ final class NotchStore {
         let paths: [String]
     }
 
-    func launcher(for provider: String) -> Launcher? {
+    func launcher(for provider: String) -> LauncherInfo? {
         view.workspace.launchers.first { $0.provider == provider }
     }
 
@@ -312,7 +312,7 @@ final class NotchStore {
     }
 
     /// The project shown first when starting an agent: the one most of the inbox is in.
-    var defaultProject: Project? {
+    var defaultProject: ProjectInfo? {
         let projects = view.workspace.projects
         let counts = Dictionary(grouping: entries, by: \.project).mapValues(\.count)
         return projects.max { (counts[$0.name] ?? 0) < (counts[$1.name] ?? 0) } ?? projects.first

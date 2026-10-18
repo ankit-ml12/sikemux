@@ -1,162 +1,10 @@
 import Foundation
 
-struct DeviceView: Decodable, Equatable {
-    let workspace: Workspace
-    let chats: [ChatInfo]
-    let sessions: [SessionInfo]
-    let attentions: [Attention]
-    let inbox: Inbox
-
-    static let empty = DeviceView(workspace: Workspace(projects: [], launchers: []), chats: [], sessions: [], attentions: [], inbox: Inbox(items: [], working: 0))
-}
-
-struct Workspace: Decodable, Equatable {
-    let projects: [Project]
-    let launchers: [Launcher]
-}
-
-struct Project: Decodable, Equatable, Hashable {
-    let id: String
-    let name: String
-    let path: String
-}
-
-struct Launcher: Decodable, Equatable {
-    let id: String
-    let provider: String
-    let label: String
-    let permissionMode: String
-    let model: ConfigSelect?
-    let effort: ConfigSelect?
-}
-
-/// An open chat, and what it still has going, which the inbox does not say.
-struct ChatInfo: Decodable, Equatable {
-    let agentId: String
-    let name: String?
-    let provider: String
-    let title: String?
-    let cwd: String
-    /// Its place among the open agents, in the order the app's rail lists them: 0 first.
-    let attentionRank: Int?
-    let subagents: Int
-    let tasks: Int
-    /// The attempt the agent is retrying a failed request on, 0 when it did not say.
-    let reconnecting: Int?
-}
-
-/// A terminal, which is an open agent when it carries one.
-struct SessionInfo: Decodable, Equatable {
-    let id: UInt64
-    let running: Bool
-    let project: String?
-    let agentId: String?
-    let agentName: String?
-    let agentType: String?
-    let title: String?
-    let attentionRank: Int?
-}
-
-struct Attention: Decodable, Equatable {
-    let id: String
-    let agentId: String
-    let choices: PermissionChoices
-}
-
-/// A permission request as the core reads it for the island's three buttons.
-struct PermissionChoices: Decodable, Equatable {
-    let allowOnce: String?
-    let allowAlways: String?
-    let reject: String?
-    let command: String?
-    let title: String?
-}
-
-/// What waits on the person and what is under way, in the order the core ranks it.
-struct Inbox: Decodable, Equatable {
-    let items: [InboxItem]
-    /// Agents at work now, listed or not.
-    let working: Int
-    /// The characters the app draws for its agents, while buddies are on there.
-    let buddies: Buddies?
-
-    init(items: [InboxItem], working: Int, buddies: Buddies? = nil) {
-        self.items = items
-        self.working = working
-        self.buddies = buddies
-    }
-
-    /// An item this build cannot read, such as one in a tier added later, is left out rather than losing the whole view.
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        items = try container.decode([Readable].self, forKey: .items).compactMap(\.item)
-        working = try container.decode(Int.self, forKey: .working)
-        buddies = try? container.decodeIfPresent(Buddies.self, forKey: .buddies)
-    }
-
-    private enum CodingKeys: String, CodingKey { case items, working, buddies }
-
-    private struct Readable: Decodable {
-        let item: InboxItem?
-        init(from decoder: Decoder) throws { item = try? InboxItem(from: decoder) }
-    }
-}
-
-/// The app's buddies as it published them, handed back whole to the script that draws them.
-struct Buddies: Codable, Equatable {
-    struct Look: Codable, Equatable {
-        let pack: String
-        let shape: String
-        let color: String
-    }
-
-    let pack: String
-    let shape: String
-    let motion: Bool
-    let agents: [String: Look]
-    let boxes: [String: String]
-}
-
-struct InboxItem: Decodable, Equatable, Identifiable {
-    enum Tier: String, Decodable {
-        case needs, review, finished, progress
-        /// An open agent the inbox has nothing on; the island lists it all the same.
-        case idle
-    }
-
-    enum Kind: String, Decodable {
-        case permission, question, input, held, assumption, pullRequest, changes, failed, finished, working
-        /// One added after this build; its tier still places it.
-        case other
-
-        init(from decoder: Decoder) throws {
-            self = Kind(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .other
-        }
-    }
-
-    struct Card: Decodable, Equatable {
-        let title: String
-    }
-
-    let id: String
-    let tier: Tier
-    let kind: Kind
-    let agentId: String?
-    /// What the core calls the agent, such as Otter.
-    let name: String?
-    let cli: String?
-    let project: String?
-    let title: String?
-    /// What is needed or what happened, in the words the app and phones use.
-    let what: String
-    let detail: String?
-    let at: Double
-    /// The agent's terminal; none for a chat.
-    let session: UInt64?
-    let card: Card?
-    let requestId: String?
-    let questionId: String?
-    let url: String?
+extension DeviceView {
+    static let empty = DeviceView(
+        workspace: Workspace(projects: [], launchers: []), sessions: [], chats: [], attentions: [],
+        inbox: Inbox(items: [], working: 0, buddies: nil)
+    )
 }
 
 /// The marks beside a row and in the closed island's right wing.
@@ -234,14 +82,14 @@ struct Entry: Identifiable, Equatable {
     var provider: String { item.cli ?? "" }
     var title: String { item.title ?? item.card?.title ?? item.what }
     var isChat: Bool { item.agentId != nil && item.session == nil && item.cli != nil }
-    var since: Date? { item.at > 0 ? Date(timeIntervalSince1970: item.at / 1000) : nil }
+    var since: Date? { item.at > 0 ? Date(timeIntervalSince1970: Double(item.at) / 1000) : nil }
 
     var mark: Mark {
         switch item.tier {
         case .needs: .needs
         case .progress: .working
         case .review, .finished: item.kind == .failed ? .failed : .done
-        case .idle: .idle
+        case .unknown: .idle
         }
     }
 
@@ -295,38 +143,26 @@ extension DeviceView {
     private func idleItem(_ agentId: String) -> InboxItem? {
         if let chat = chats.first(where: { $0.agentId == agentId }) {
             return InboxItem(
-                id: "agent:\(agentId)", tier: .idle, kind: .other, agentId: agentId, name: chat.name, cli: chat.provider,
+                id: "agent:\(agentId)", tier: .unknown, kind: .unknown, agentId: agentId, name: chat.name, cli: chat.provider,
                 project: chat.cwd, title: chat.title ?? "New \(agentName(chat.provider)) chat", what: "", detail: nil, at: 0,
                 session: nil, card: nil, requestId: nil, questionId: nil, url: nil
             )
         }
         guard let session = sessions.first(where: { $0.agentId == agentId }) else { return nil }
         return InboxItem(
-            id: "agent:\(agentId)", tier: .idle, kind: .other, agentId: agentId, name: session.agentName,
+            id: "agent:\(agentId)", tier: .unknown, kind: .unknown, agentId: agentId, name: session.agentName,
             cli: session.agentType, project: session.project, title: session.title, what: "", detail: nil, at: 0,
             session: session.id, card: nil, requestId: nil, questionId: nil, url: nil
         )
     }
 }
 
-/// One choice a session offers, such as a model.
-struct ConfigChoice: Decodable, Equatable, Hashable {
-    let value: String
-    let label: String
-}
-
-struct ConfigSelect: Decodable, Equatable {
-    let id: String
-    let current: String
-    let choices: [ConfigChoice]
-}
-
 /// The model and effort pickers a launcher's last session offered, as the core reads them.
 struct LauncherConfig: Equatable {
-    let model: ConfigSelect?
-    let effort: ConfigSelect?
+    let model: ConfigPicker?
+    let effort: ConfigPicker?
 
-    init(_ launcher: Launcher?) {
+    init(_ launcher: LauncherInfo?) {
         model = launcher?.model
         effort = launcher?.effort
     }
