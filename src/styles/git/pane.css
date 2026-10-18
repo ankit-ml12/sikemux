@@ -25,6 +25,9 @@
     padding: var(--space-2);
 }
 /* A commit's or branch's card heads the framed column edge to edge, closed by a hairline, like the side panel's head. */
+.git-right.git-framed > .git-right-review {
+    overflow: visible;
+}
 .git-right.git-framed .git-right-review .git-detail {
     margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) var(--space-2);
     border: 0;
