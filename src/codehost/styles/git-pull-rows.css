@@ -37,6 +37,9 @@
     font-weight: var(--weight-medium);
     letter-spacing: -0.01em;
 }
+.pr-row .pr-headline-title {
+    font-size: var(--text-md);
+}
 .pr-headline-top > :last-child:not(.pr-headline-title) {
     margin-left: auto;
 }
