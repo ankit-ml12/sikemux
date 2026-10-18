@@ -221,7 +221,7 @@ describe("the list", () => {
         resetView("p-git");
     });
 
-    it("shows how CI went on each one's head commit", async () => {
+    it("shows how CI went on each one's head commit, asking for an older one's own runs", async () => {
         const run = (sha: string, conclusion: string): Run => ({
             id: `${sha}-${conclusion}`,
             name: "CI",
@@ -248,11 +248,17 @@ describe("the list", () => {
             { ...pull, headSha: "abc" },
             { ...pull, number: 32, title: "untested", headSha: "def" },
         ]);
-        api.runs.mockResolvedValue({ runs: [run("abc", "success"), run("abc", "failure"), run("zzz", "success")], total: 3 });
+        api.runs.mockImplementation(((query: { headSha?: string }) =>
+            Promise.resolve(
+                query.headSha === "def"
+                    ? { runs: [run("def", "success")], total: 1 }
+                    : { runs: [run("abc", "success"), run("abc", "failure"), run("zzz", "success")], total: 3 },
+            )) as unknown as () => Promise<{ runs: Run[]; total: number }>);
         render(view(null));
         await screen.findByText("the run page");
-        await waitFor(() => expect(document.querySelectorAll(".pr-row-ci")[0]).toHaveTextContent("Failed"));
-        expect(document.querySelectorAll(".pr-row-ci")[1]).toBeEmptyDOMElement();
+        const ciOf = (title: string) => screen.getByText(title).closest(".pr-row")?.querySelector(".pr-ci");
+        await waitFor(() => expect(ciOf("the run page")).toHaveAttribute("data-outcome", "failure"));
+        await waitFor(() => expect(ciOf("untested")).toHaveAttribute("data-outcome", "success"));
     });
 });
 

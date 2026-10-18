@@ -115,8 +115,26 @@ function PullCi({ runs }: { runs: readonly Run[] }) {
     );
 }
 
-function PullRow({ pull, runs, now, onOpen }: { pull: Pull; runs: readonly Run[] | undefined; now: number; onOpen: () => void }) {
-    const ci = runs ? <PullCi runs={runs} /> : null;
+function PullRow({
+    repo,
+    pull,
+    recent,
+    active,
+    now,
+    onOpen,
+}: {
+    repo: RepoRef;
+    pull: Pull;
+    /** Its commit's runs among the repository's latest, when they are there. */
+    recent: readonly Run[] | undefined;
+    active: boolean;
+    now: number;
+    onOpen: () => void;
+}) {
+    // An older pull request's commit is past the repository's latest runs, so it asks for its own, as its page does.
+    const own = useResourceEnabled(active && !recent && !!pull.headSha, runsR, { ...repo, headSha: pull.headSha ?? "", perPage: 30 });
+    const runs = recent ?? own.data?.runs;
+    const ci = runs?.length ? <PullCi runs={runs} /> : null;
     return (
         <button type="button" className="pr-row pr-headline" onClick={onOpen}>
             <PullHeadline
@@ -130,7 +148,6 @@ function PullRow({ pull, runs, now, onOpen }: { pull: Pull; runs: readonly Run[]
                     </>
                 }
             />
-            <span className="pr-row-ci">{ci}</span>
             <span className="pr-row-reviewers">
                 {pull.reviewers.map((login) => (
                     <Face key={login} login={login} url={pull.avatars[login] ?? null} />
@@ -834,7 +851,6 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                     <div className="pr-rows">
                         <div className="pr-cols" aria-hidden="true">
                             <span>Pull request</span>
-                            <span>CI</span>
                             <span>Reviewers</span>
                             <span>Comments</span>
                             <span>Updated</span>
@@ -842,8 +858,10 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                         {rows.map((pull) => (
                             <PullRow
                                 key={pull.number}
+                                repo={repo}
                                 pull={pull}
-                                runs={pull.headSha ? runsBySha.get(pull.headSha) : undefined}
+                                recent={pull.headSha ? runsBySha.get(pull.headSha) : undefined}
+                                active={active}
                                 now={now}
                                 onOpen={() => showItem(paneId, pull.number)}
                             />
