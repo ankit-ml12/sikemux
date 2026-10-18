@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
 import { formatAgo } from "../../../plugin-api/format";
 import { invalidate, type ResourceHandle } from "../../../plugin-api/resources";
@@ -10,7 +10,7 @@ import { gcpSettings } from "../state";
 export function useTarget(): Target | null {
     const account = gcpSettings.useSelect((s) => s.account);
     const project = gcpSettings.useSelect((s) => s.project);
-    return project ? { account, project } : null;
+    return useMemo(() => (project ? { account, project } : null), [account, project]);
 }
 
 /** The plain-string key resources are cached under. */
