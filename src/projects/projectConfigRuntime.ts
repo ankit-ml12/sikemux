@@ -1,7 +1,7 @@
 import type { CustomCommand } from "../commands/registry";
 import { coreCall } from "../api/core";
 import { dirname } from "../lib/paths";
-import type { ProjectAction, ProjectConfigLoadResult, ProjectWorktreeCreateHook } from "./projectConfig";
+import type { ProjectAction, ProjectConfigLoadResult } from "./projectConfig";
 import { confirmDialog, type ConfirmRequest } from "../state/dialog";
 
 export function projectActionCommand(action: ProjectAction): CustomCommand {
