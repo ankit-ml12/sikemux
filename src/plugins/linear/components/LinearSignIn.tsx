@@ -60,7 +60,7 @@ export function LinearSignIn({ status, onSignedIn }: { status: LinearStatus | un
                 <SignInWaiting onCancel={attempt.cancel}>Finish signing in in your browser</SignInWaiting>
             ) : (
                 <button type="button" className="signin-btn primary" onClick={signInWithBrowser}>
-                    <LinearMark size={14} mono />
+                    <LinearMark size={14} />
                     Continue with Linear
                 </button>
             )}
