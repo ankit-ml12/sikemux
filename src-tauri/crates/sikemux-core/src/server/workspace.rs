@@ -5,7 +5,7 @@
 //! on each of the person's accounts and finds its program itself; a launch
 //! builds its environment afresh, keys and all.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -1516,8 +1516,9 @@ pub(crate) struct RemoveProjectParams {
 
 /// Stops offering a project, and closes its agents.
 pub(crate) fn remove_project(core: &Core, params: RemoveProjectParams) -> CoreResult<()> {
+    let before = core.workspaces.agent_ids();
     core.workspaces.remove_project(&params.path)?;
-    agents_closed(core);
+    agents_closed(core, before);
     super::git::follow_projects(core);
     core.publish_device_view();
     Ok(())
@@ -1624,17 +1625,21 @@ pub(crate) struct CloseAgentsParams {
 
 /// Takes agents out of the workspace.
 pub(crate) fn close_agents(core: &Core, params: CloseAgentsParams) -> CoreResult<()> {
+    let before = core.workspaces.agent_ids();
     core.workspaces.close_agents(&params.agent_ids)?;
-    agents_closed(core);
+    agents_closed(core, before);
     core.publish_device_view();
     Ok(())
 }
 
-/// What follows agents leaving the workspace, however they left: their
-/// names are free again.
-fn agents_closed(core: &Core) {
-    core.names
-        .set_in_app(core.workspaces.agent_ids(), core.running_agents());
+/// What follows agents leaving the workspace, however they left: their chats
+/// stop, and their names are free again.
+fn agents_closed(core: &Core, before: HashSet<String>) {
+    let kept = core.workspaces.agent_ids();
+    for agent_id in before.difference(&kept) {
+        core.chats.stop(agent_id);
+    }
+    core.names.set_in_app(kept, core.running_agents());
 }
 
 /// Runs whenever the workspace changes: agents in it keep their names while

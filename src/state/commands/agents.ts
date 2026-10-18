@@ -2,8 +2,6 @@ import { agentApi, type AgentSession } from "../../api/agents";
 import { acpApi } from "../../api/acp";
 import { coreCall } from "../../api/core";
 import { agentNamesApi } from "../../api/agentNames";
-import type { ChatInfo } from "../../api/generated/wire";
-import { runOfAgent } from "../../agents/agentBoard";
 import type { AgentQuestion } from "../../agents/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
 import { canBypassPermissions, isAgentType } from "../../agents/catalog";
@@ -17,7 +15,6 @@ import {
 } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
-import { workspaceSent } from "../coreWorkspace";
 import { agentHasBackgroundWork, isAgentBusy, type AgentShown } from "../agentStatus";
 import { chatShown } from "../../chat/chatViews";
 import { confirmDialog } from "../dialog";
@@ -32,7 +29,7 @@ import { newId } from "../layout";
 import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, Session } from "../types";
 import { selectSession } from "./sessions";
 import { retitlePinnedChat } from "./settings";
-import { keepOpenedProjectInView, openProjectSession, projectSessionInBackground, withActiveSession } from "./shared";
+import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
 
 const FALLBACK_AGENT_TITLE_MAX = 13;
@@ -230,63 +227,6 @@ export function openSavedChat(chat: SavedChat, options: { background?: boolean; 
         background: options.background,
     });
     if (!options.background && project && project !== state.activeSessionId) selectSession(project);
-}
-
-/**
- * Shows a chat a paired device or another agent started among its project's agents, so the host can follow it.
- * Leaves the screen where it is: the person did not start it.
- */
-export function adoptChat(chat: ChatInfo): boolean {
-    const type = chat.provider;
-    if (!isAgentType(type) || !agentSupportsChat(type)) return false;
-    let adopted = false;
-    mutate((d) => {
-        if (d.agents[chat.agentId]) return;
-        const lead = chat.startedBy ? d.agents[chat.startedBy] : undefined;
-        const leadWindowId = lead ? agentWindowId(d, lead.id) : null;
-        const auto = lead ? null : runOfAgent(d.agentBoards, chat.agentId);
-        const sessionId =
-            (leadWindowId && ownerSessionId(d, leadWindowId)) || projectSessionInBackground(d as unknown as StoreState, auto?.project ?? chat.cwd);
-        const leadTree = lead?.worktree;
-        const run = auto?.card.auto;
-        const worktree: AgentWorktree | undefined = run
-            ? { repo: run.repo, path: run.worktree, branch: run.branch, base: run.base, startSha: run.startSha }
-            : leadTree && (chat.cwd === leadTree.path || chat.cwd.startsWith(`${leadTree.path}/`))
-              ? { ...leadTree }
-              : undefined;
-        const permissionMode = normalizePermissionMode(type, chat.permissionMode as AgentPermissionMode);
-        const profileId = profileOfLauncher(chat.launcher, d.providerProfiles, type) ?? (lead?.type === type ? lead.profileId : undefined);
-        const profile = profileOf(d, { profileId, type });
-        const model = chat.model ?? undefined;
-        const effort = (chat.effort ?? undefined) as AgentEffort | undefined;
-        const resumeId = chat.sessionId ?? undefined;
-        const agent: Agent = {
-            id: chat.agentId,
-            type,
-            ...(chat.name ? { name: chat.name } : {}),
-            ...(lead ? { lead: lead.id } : {}),
-            title: type,
-            ...relaunchSpec(d, { type, resumeId, permissionMode, profileId, executablePath: profile?.executablePath, model, effort }),
-            resumeId,
-            createdAt: Date.now(),
-            permissionMode,
-            profileId,
-            executablePath: profile?.executablePath,
-            cwd: chat.cwd,
-            model,
-            effort,
-            ...(worktree ? { worktree } : {}),
-            ...(chat.modelProvider ? { modelProvider: chat.modelProvider } : {}),
-            ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
-            launchState: "live",
-        };
-        d.agents[agent.id] = agent;
-        const win = agentWindow(agent, chat.cwd);
-        d.windows[win.id] = win;
-        d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), win.id];
-        adopted = true;
-    });
-    return adopted;
 }
 
 /** An agent another agent starts in a terminal, as the core asks the window to open it. */
@@ -677,18 +617,11 @@ function inChat(agent: Agent): boolean {
     return agentSupportsChat(agent.type) && agent.ptyId === undefined;
 }
 
+/** Shows a sleeping agent again; its pane starts it, a chat through the core. */
 export function resumeAgent(id: string): void {
-    const agent = getState().agents[id];
-    if (!agent) return;
-    if (inChat(agent)) {
-        void workspaceSent()
-            .then(() => acpApi.startChat(id))
-            .catch(reportError("Wake chat"));
-        return;
-    }
     mutate((d) => {
-        const sleeping = d.agents[id];
-        if (sleeping) sleeping.launchState = "live";
+        const agent = d.agents[id];
+        if (agent) agent.launchState = "live";
     });
 }
 

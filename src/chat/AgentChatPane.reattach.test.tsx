@@ -5,7 +5,6 @@ import { moveChat } from "../agents/accounts";
 import { resetResourcesForTests } from "../state/resources";
 import type { Agent, ProviderProfile } from "../state/types";
 import { AgentChatPane } from "./AgentChatPane";
-import { chatClaimed } from "./chatClaims";
 
 const mocks = vi.hoisted(() => ({
     listener: null as ((event: AcpEvent) => void) | null,
@@ -163,7 +162,6 @@ describe("AgentChatPane with a chat the core kept", () => {
         expect(mocks.startChat).not.toHaveBeenCalled();
         expect(mocks.stop).not.toHaveBeenCalled();
         expect(mocks.attachAgentSession).toHaveBeenCalledWith(agent.id, "session-kept");
-        expect(chatClaimed(agent.id)).toBe(true);
 
         emit("session_update", { updates: [said("agent_message_chunk", " and done")] });
         await showsText("Still working on it and done");

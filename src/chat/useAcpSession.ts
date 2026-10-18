@@ -12,7 +12,6 @@ import { chatActions } from "./acpEvents";
 import { earlierMessages, PAGE_TURNS, reachesSubagent } from "./earlier";
 import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
-import { claimChat } from "./chatClaims";
 import { workspaceSent } from "../state/coreWorkspace";
 import type { ChatAction, ChatState } from "./types";
 
@@ -185,7 +184,6 @@ export function useAcpSession({
             .then(async () => {
                 if (!mounted) return;
                 if (relaunch) await acpApi.stop(agent.id).catch(() => {});
-                claimChat(agentRef.current.id);
                 await acpApi.subscribe(handleEvent, controller.signal);
                 if (!mounted) return;
                 const current = agentRef.current;

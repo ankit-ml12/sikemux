@@ -1,9 +1,6 @@
 import { acpApi } from "../api/acp";
-import { agentBoardApi } from "../api/agentBoard";
 import { coreSessionsApi } from "../api/coreSessions";
 import type { ChatInfo, SessionInfo } from "../api/generated/wire";
-import { runOfAgent } from "../agents/agentBoard";
-import { chatClaimed } from "../chat/chatClaims";
 import { QUIT_AND_STOP_SHORTCUT } from "../commands/keybindings";
 import * as cmd from "../state/commands";
 import { agentSessionPlan, claimedSessionIds, unclaimedTerminals } from "../state/coreSessionClaims";
@@ -28,8 +25,7 @@ export interface CoreSessionRestoreDeps {
     list(): Promise<SessionInfo[]>;
     resume(agentId: string, ptyId: number): Promise<void>;
     kill(id: number): Promise<void>;
-    chats: { list(): Promise<ChatInfo[]>; stopIfIdle(agentId: string): Promise<boolean> };
-    boards(): Promise<void>;
+    chats(): Promise<ChatInfo[]>;
     schedule(callback: () => void, delayMs: number): void;
 }
 
@@ -38,19 +34,17 @@ function defaultDeps(): CoreSessionRestoreDeps {
         list: coreSessionsApi.list,
         resume: relaunchTuiAgent,
         kill: coreSessionsApi.kill,
-        chats: { list: acpApi.list, stopIfIdle: acpApi.stopIfIdle },
-        boards: () => agentBoardApi.all().then(cmd.setAgentBoards),
+        chats: acpApi.list,
         schedule: (callback, delayMs) => void window.setTimeout(callback, delayMs),
     };
 }
 
 /**
  * Takes back what the core kept while the app was closed or reloading:
- * terminal agents still running come back live, as do chats other agents or a board's Auto started, ones that crashed meanwhile
- * are resumed in their pane, chat panes take their chats back
- * as they mount, and terminals from before this page that nothing in the
- * layout names, like chats no pane took back once they are at rest, are
- * stopped after a grace, so none of them runs forever unseen.
+ * terminal agents still running come back live, ones that crashed meanwhile
+ * are resumed in their pane, and terminals from before this page that nothing
+ * in the layout names are stopped after a grace, so none of them runs forever
+ * unseen. Chats are the core's: their panes take them up as they mount.
  */
 export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = defaultDeps()): Promise<void> {
     let sessions: SessionInfo[];
@@ -59,9 +53,7 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     } catch {
         return;
     }
-    const listed = await deps.chats.list().catch(() => null);
-    const chats = listed ?? [];
-    const adopted = await adoptChats(chats, deps);
+    const chats = await deps.chats().catch(() => []);
     const plan = agentSessionPlan(getState(), sessions);
     cmd.applyAgentSessionPlan(plan);
     for (const id of plan.resume) {
@@ -81,28 +73,9 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     }
 
     const candidates = unclaimedTerminals(earlier, claimed);
-    if (candidates.length === 0 && listed?.length === 0) return;
+    if (candidates.length === 0) return;
     deps.schedule(() => {
         const stillClaimed = claimedSessionIds(getState());
         for (const id of candidates) if (!stillClaimed.has(id)) void deps.kill(id).catch(() => {});
-        const stopUnclaimed = (kept: ChatInfo[], taken: ReadonlySet<string>) => {
-            for (const chat of kept)
-                if (!taken.has(chat.agentId) && !chatClaimed(chat.agentId)) void deps.chats.stopIfIdle(chat.agentId).catch(() => {});
-        };
-        if (listed) stopUnclaimed(listed, adopted);
-        else
-            void deps.chats
-                .list()
-                .then(async (kept) => stopUnclaimed(kept, await adoptChats(kept, deps)))
-                .catch(() => {});
     }, UNCLAIMED_GRACE_MS);
-}
-
-/** Shows the chats other devices or agents started, or a board runs, and answers which they are. */
-async function adoptChats(chats: ChatInfo[], deps: CoreSessionRestoreDeps): Promise<Set<string>> {
-    if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
-    const boards = getState().agentBoards;
-    const adopted = chats.filter((chat) => chat.startedBy !== null || runOfAgent(boards, chat.agentId));
-    for (const chat of adopted) cmd.adoptChat(chat);
-    return new Set(adopted.map((chat) => chat.agentId));
 }
