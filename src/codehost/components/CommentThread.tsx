@@ -108,12 +108,18 @@ function Event({ icon, tone, children }: { icon: ReactNode; tone?: string; child
 type CommitAccounts = ReadonlyMap<string, { login: string | null; avatarUrl: string | null }>;
 
 function Commits({ commits, accounts, now }: { commits: readonly TimelineItem[]; accounts: CommitAccounts; now: number }) {
-    const authors = [...new Set(commits.map((commit) => commit.actor))];
-    const first = commits.find((commit) => commit.actor === authors[0]);
+    // Named by the account behind each commit where GitHub knows it, since a commit's own name is not a login.
+    const accountOf = (commit: TimelineItem) => (commit.sha ? accounts.get(commit.sha) : undefined);
+    const authors = [...new Set(commits.map((commit) => accountOf(commit)?.login ?? commit.actor))];
+    const first = commits.find((commit) => (accountOf(commit)?.login ?? commit.actor) === authors[0]);
+    const firstAccount = first ? accountOf(first) : undefined;
     return (
         <div className="gha-tl-commits">
             <Event icon={<IconPush size={12} />}>
-                <Actor login={authors[0] ?? null} url={first?.avatarUrl ?? null} />
+                <span className="gha-tl-actor">
+                    <CommitFace account={firstAccount} name={authors[0] ?? null} />
+                    <Name login={authors[0] ?? null} />
+                </span>
                 {authors.length > 1 && <span className="gha-dim">and others</span>}
                 <span className="gha-dim">
                     added {commits.length} commit{commits.length === 1 ? "" : "s"} {formatAgo(commits[0]?.at ?? null, now)}
