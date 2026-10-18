@@ -22,7 +22,7 @@ curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL=nightly sh
 A Linux machine with no screen, such as a VPS or a spare box, can run just the core, which keeps agents working with nobody watching. Run the same line there and pick the core, or skip the question:
 
 ```bash
-curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL=nightly sh -s -- --host
+curl -fsSL https://sikemux.com/install | sh -s -- --host
 ```
 
 `--app` picks the desktop app instead, and `--yes` takes every default without asking, as cloud-init and other scripts need. With no terminal attached, the installer asks nothing and installs the core on a machine with no desktop.

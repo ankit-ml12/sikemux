@@ -37,7 +37,7 @@ The Linux build does not update itself yet, so install each new release the same
 On a Linux server with no screen, the same line offers to install just the core, for x86_64 or arm64, and sign it in to your account. To skip the question:
 
 ```bash
-curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL=nightly sh -s -- --host
+curl -fsSL https://sikemux.com/install | sh -s -- --host
 ```
 
 ## What's inside

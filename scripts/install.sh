@@ -93,13 +93,10 @@ VERSION=$(latest_version)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# $2 is a hint for stable, where Linux builds arrive a release after nightlies.
 download() {
-  hint=""
-  [ "$CHANNEL" = stable ] && hint="${2:-}"
   say "Downloading $1"
   curl -fL --progress-bar -o "$TMP/$1" "$REPO/releases/download/v$VERSION/$1" ||
-    fail "v$VERSION has no $1${hint:+. $hint}"
+    fail "v$VERSION has no $1"
 }
 
 as_root() {
@@ -124,19 +121,18 @@ install_mac() {
 
 install_linux() {
   [ "$(uname -m)" = x86_64 ] || fail "Sikemux for Linux needs an x86_64 machine"
-  hint="Linux builds ship in nightlies first; try SIKEMUX_CHANNEL=nightly"
   if command -v apt-get >/dev/null 2>&1; then
-    download "Sikemux_${VERSION}_amd64.deb" "$hint"
+    download "Sikemux_${VERSION}_amd64.deb"
     as_root apt-get install -y "$TMP/Sikemux_${VERSION}_amd64.deb"
   elif command -v dnf >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1; then
-    download "Sikemux-${VERSION}-1.x86_64.rpm" "$hint"
+    download "Sikemux-${VERSION}-1.x86_64.rpm"
     if command -v dnf >/dev/null 2>&1; then
       as_root dnf install -y "$TMP/Sikemux-${VERSION}-1.x86_64.rpm"
     else
       as_root zypper --non-interactive install --allow-unsigned-rpm "$TMP/Sikemux-${VERSION}-1.x86_64.rpm"
     fi
   else
-    download "Sikemux_${VERSION}_amd64.AppImage" "$hint"
+    download "Sikemux_${VERSION}_amd64.AppImage"
     mkdir -p "$HOME/Applications"
     mv "$TMP/Sikemux_${VERSION}_amd64.AppImage" "$HOME/Applications/Sikemux.AppImage"
     chmod +x "$HOME/Applications/Sikemux.AppImage"
@@ -152,7 +148,7 @@ install_host() {
     *) fail "a Sikemux host needs an x86_64 or arm64 machine" ;;
   esac
   asset="sikemux-host-${VERSION}-linux-${arch}.tar.gz"
-  download "$asset" "Hosts ship in nightlies first; try SIKEMUX_CHANNEL=nightly"
+  download "$asset"
   tar -xzf "$TMP/$asset" -C "$TMP"
   if [ "$(id -u)" -eq 0 ]; then bin=/usr/local/bin; else bin="$HOME/.local/bin"; fi
   mkdir -p "$bin"
