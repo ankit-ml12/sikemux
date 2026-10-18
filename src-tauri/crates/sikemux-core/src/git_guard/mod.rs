@@ -71,7 +71,7 @@ fn refused(
 ) -> Option<String> {
     let subcommand = git_args(args);
     let touched = touches(subcommand, private_index)?;
-    if matches!(&touched, Touch::Paths { paths, .. } if paths.is_empty()) {
+    if matches!(&touched, Touch::Paths { paths, .. } | Touch::Stages(paths) if paths.is_empty()) {
         return None;
     }
     let options = args
@@ -83,6 +83,14 @@ fn refused(
     }
     let shown = format!("git {}", subcommand.join(" "));
     match touched {
+        Touch::Stages(paths) => {
+            let checkout = checkout?;
+            let names = others(&checkout.dir, &paths).filter(|names| !names.is_empty())?;
+            let names = listed(&names);
+            Some(format!(
+                "Sikemux refused `{shown}`: it takes in uncommitted lines {names} wrote there along with yours. Commit with the git_commit tool and `paths`, which takes your lines there and changes no agent wrote, or ask {names} with agent_send."
+            ))
+        }
         Touch::Everything(why) => {
             let who = match checkout.and_then(|checkout| others(&checkout.dir, &[])) {
                 Some(names) if names.is_empty() => return None,
@@ -169,6 +177,8 @@ enum Touch {
     /// `named`, they are `git checkout`'s words, the first of which may be a
     /// commit rather than a path.
     Paths { paths: Vec<String>, named: bool },
+    /// Files whose whole uncommitted changes the command stages or commits.
+    Stages(Vec<String>),
 }
 
 fn touches(args: &[String], private_index: bool) -> Option<Touch> {
@@ -177,6 +187,16 @@ fn touches(args: &[String], private_index: bool) -> Option<Touch> {
     }
     let (sub, rest) = args.split_first()?;
     let valued: &[&str] = match sub.as_str() {
+        "add" if !private_index => return Some(Touch::Stages(operands(rest, "", &[]))),
+        "commit" if !private_index => {
+            return Some(Touch::Stages(operands(rest, "mFCct", COMMIT_VALUED)));
+        }
+        "apply" if reverses(rest) => {
+            return Some(Touch::Paths {
+                paths: patched(&operands(rest, "pC", APPLY_VALUED)),
+                named: true,
+            });
+        }
         "checkout" => &["-b", "-B", "--orphan"],
         "restore" => {
             let has = |short: char, long: &str| {
@@ -212,6 +232,82 @@ fn touches(args: &[String], private_index: bool) -> Option<Touch> {
         }
     }
     Some(Touch::Paths { paths, named })
+}
+
+const COMMIT_VALUED: &[&str] = &[
+    "--message",
+    "--file",
+    "--reuse-message",
+    "--reedit-message",
+    "--template",
+    "--author",
+    "--date",
+    "--fixup",
+    "--squash",
+    "--cleanup",
+    "--trailer",
+];
+
+const APPLY_VALUED: &[&str] = &["--exclude", "--include", "--directory"];
+
+/// The words of a command's `args` that are not options or their values: its
+/// paths. `letters` are the short options that take a value, and `valued`
+/// the long ones given it as the next word.
+fn operands(args: &[String], letters: &str, valued: &[&str]) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut words = args.iter();
+    while let Some(word) = words.next() {
+        if word == "--" {
+            paths.extend(words.by_ref().cloned());
+            break;
+        }
+        if valued.contains(&word.as_str()) {
+            words.next();
+        } else if let Some(short) = word.strip_prefix('-').filter(|rest| !rest.starts_with('-')) {
+            let takes = short
+                .char_indices()
+                .find(|(_, letter)| letters.contains(*letter))
+                .is_some_and(|(at, _)| at + 1 == short.len());
+            if takes {
+                words.next();
+            }
+        } else if !word.starts_with('-') {
+            paths.push(word.clone());
+        }
+    }
+    paths
+}
+
+/// Whether `git apply` with `rest` takes a patch back out of the files on disk.
+fn reverses(rest: &[String]) -> bool {
+    let flags: Vec<&str> = flags_before_paths(rest).collect();
+    let reverse = flags
+        .iter()
+        .any(|flag| *flag == "--reverse" || (flag.starts_with("-R") && !flag.starts_with("--")));
+    reverse
+        && !flags
+            .iter()
+            .any(|flag| matches!(*flag, "--cached" | "--check" | "--stat"))
+}
+
+/// The files the patches at `patches` change, read from them. A patch read
+/// from standard input is not looked at.
+fn patched(patches: &[String]) -> Vec<String> {
+    let mut paths = Vec::new();
+    for patch in patches.iter().filter(|patch| *patch != "-") {
+        let Ok(text) = std::fs::read_to_string(patch) else {
+            continue;
+        };
+        for line in text.lines() {
+            let named = line
+                .strip_prefix("+++ b/")
+                .or_else(|| line.strip_prefix("--- a/"));
+            if let Some(path) = named.filter(|path| !paths.iter().any(|seen| seen == path)) {
+                paths.push(path.to_owned());
+            }
+        }
+    }
+    paths
 }
 
 /// `names` as one would say them: "Otter", "Otter and Briar", "Otter, Briar and Moss".
@@ -348,4 +444,43 @@ fn segments(line: &str) -> Vec<Vec<String>> {
     end_word(&mut word, &mut segments);
     segments.retain(|words| !words.is_empty());
     segments
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn staging_or_undoing_a_file_with_another_agents_lines_is_refused() {
+        let top = tempfile::tempdir().unwrap();
+        let top = top.path();
+        let git = |args: &[&str]| {
+            let mut git = sikemux_process::user_environment::command("git");
+            assert!(git.args(args).current_dir(top).status().unwrap().success());
+        };
+        git(&["init", "-q"]);
+        std::fs::write(top.join("store.ts"), "x\n").unwrap();
+        let patch = top.join("undo.patch");
+        std::fs::write(
+            &patch,
+            "--- a/store.ts\n+++ b/store.ts\n@@ -1 +1 @@\n-x\n+y\n",
+        )
+        .unwrap();
+        let others = |_: &Path, paths: &[String]| {
+            Some(match paths.iter().any(|path| path == "store.ts") {
+                true => vec!["Cowslip".to_owned()],
+                false => Vec::new(),
+            })
+        };
+        let refused = |command: &str| refusal(command, top, &others).is_some();
+        assert!(refused("git add store.ts"));
+        assert!(refused("git commit -qm 'fix: store' -- store.ts"));
+        assert!(refused(&format!("git apply -R {}", patch.display())));
+        assert!(!refused("git commit -m store.ts"));
+        assert!(!refused("git add other.ts"));
+        assert!(!refused(&format!(
+            "git apply -R --cached {}",
+            patch.display()
+        )));
+    }
 }
