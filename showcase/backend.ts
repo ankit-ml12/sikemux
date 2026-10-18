@@ -604,10 +604,13 @@ export class ShowcaseBackend implements IpcTransport {
       Object.values(AGENTS).map((agent) => [agent.id, agent.name]),
     );
     const spareNames = ["Lark", "Fern", "Quartz", "Dune", "Pika", "Aster"];
-    this.on("agent_name_call", ({ method, params }) => {
-      if (method === "agentsInApp") return null;
-      if (method === "agentSessions")
-        return sessionSearch(params as { query: string; limit?: number });
+    this.on("agent_name_call", constant(null));
+    this.onCore(["chatStates"], constant([]));
+    this.onCore(["stopChatIfIdle"], constant({ stopped: false }));
+    this.onCore(["agentSessions"], ({ params }) =>
+      sessionSearch(params as { query: string; limit?: number }),
+    );
+    this.onCore(["nameAgent", "renameAgent"], ({ method, params }) => {
       const { agentId, name } = params as { agentId: string; name?: string };
       if (method === "renameAgent" && name) demoNames.set(agentId, name);
       if (!demoNames.has(agentId))
@@ -645,13 +648,25 @@ export class ShowcaseBackend implements IpcTransport {
           id?: number;
           status?: BoardCard["status"];
         };
-      if (method === "boardRemove")
-        this.board = {
-          ...this.board,
-          cards: this.board.cards.filter((card) => card.id !== id),
-        };
-      return this.board;
-    });
+        if (method === "boards") return [this.board];
+        if (method === "boardUpdate" && id !== undefined)
+          this.changeCard({ id, ...(status ? { status } : {}) });
+        if (method === "boardSettings")
+          this.board = {
+            ...this.board,
+            settings: { ...this.board.settings, ...(params as object) },
+          };
+        if (method === "boardRemove")
+          this.board = {
+            ...this.board,
+            cards: this.board.cards.filter((card) => card.id !== id),
+          };
+        return this.board;
+      },
+    );
+    this.on("core_call", ({ method, params }) =>
+      this.coreMethods.get(method as string)?.({ method, params: params as Args }) ?? null,
+    );
     this.on("acp_start", ({ agentId, provider }) =>
       this.startAgent(agentId as string, provider as string),
     );
