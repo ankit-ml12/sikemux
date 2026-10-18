@@ -7,17 +7,32 @@ import { Workspace } from "./Workspace";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 
-vi.mock("../api/acp", () => ({
-    acpApi: {
-        subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => ({ status: "missing" })),
-        start: vi.fn(() => new Promise(() => {})),
-        stop: vi.fn(async () => {}),
-        prompt: vi.fn(async () => {}),
-        cancel: vi.fn(async () => {}),
-        permissionReply: vi.fn(async () => {}),
-    },
-}));
+vi.mock("../api/acp", () => {
+    /* The core starting a chat, which the pane then takes up by attaching once. */
+    let started: object | null = null;
+    const start = vi.fn(() => new Promise<never>(() => {}));
+    return {
+        acpApi: {
+            subscribe: vi.fn(async () => () => {}),
+            attach: vi.fn(async () => {
+                const begun = started;
+                started = null;
+                return begun
+                    ? { status: "live", start: begun, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
+                    : { status: "missing" };
+            }),
+            startChat: vi.fn(async () => {
+                started = await start();
+            }),
+            stop: vi.fn(async () => {}),
+            prompt: vi.fn(async () => {}),
+            cancel: vi.fn(async () => {}),
+            permissionReply: vi.fn(async () => {}),
+        },
+    };
+});
+
+vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
 
 vi.mock("../terminal/TerminalPane", () => ({
     TerminalPane: (props: ComponentProps<typeof TerminalPane>) => (

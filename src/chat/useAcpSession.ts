@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
 import { errorText } from "../lib/format";
-import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
-import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
+import { acpApi, type AcpEvent } from "../api/acp";
+import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { getState } from "../state/store";
-import { acpAccount, takeMove } from "../agents/accounts";
+import { takeMove } from "../agents/accounts";
 import { noteSignedOut } from "../agents/statusRefresh";
 import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
@@ -13,6 +13,7 @@ import { earlierMessages, PAGE_TURNS, reachesSubagent } from "./earlier";
 import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
 import { claimChat } from "./chatClaims";
+import { workspaceSent } from "../state/coreWorkspace";
 import type { ChatAction, ChatState } from "./types";
 
 const UPDATE_FLUSH_FALLBACK_MS = 250;
@@ -50,10 +51,11 @@ export function useAcpSession({
     const updateTimerRef = useRef<number | null>(null);
     const agentRef = useRef(agent);
     agentRef.current = agent;
-    const profileRef = useRef(profile);
-    profileRef.current = profile;
     const sessionIdRef = useRef<string | null>(null);
     const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
+    /* What the chat was last started with; the person changing it, as in an
+       empty chat's agent picker, starts it again on the new launch. */
+    const launchRef = useRef<string | null>(null);
     /* Set when the core came back still running this chat: the session is
        taken up again rather than stopped and started. */
     const reattachingRef = useRef(false);
@@ -88,6 +90,9 @@ export function useAcpSession({
         const reattaching = reattachingRef.current;
         reattachingRef.current = false;
         takeMove(agent.id, undefined);
+        const launch = JSON.stringify([agent.type, agent.profileId, agent.modelProvider, agent.executablePath, cwd, profile?.configPath, profile?.executablePath, environmentKeys]);
+        const relaunch = launchRef.current !== null && launchRef.current !== launch && !reattaching;
+        launchRef.current = launch;
         const hold = Boolean(agentRef.current.resumeId) || reattaching;
         dispatch({ type: "reset", hold });
         setReplaying(hold);
@@ -179,6 +184,7 @@ export function useAcpSession({
             .catch(() => {})
             .then(async () => {
                 if (!mounted) return;
+                if (relaunch) await acpApi.stop(agent.id).catch(() => {});
                 claimChat(agentRef.current.id);
                 await acpApi.subscribe(handleEvent, controller.signal);
                 if (!mounted) return;
@@ -186,38 +192,26 @@ export function useAcpSession({
                 /* A chat the core kept running through a reload or a quit is
                    taken up where it is: its replay rebuilds the transcript the
                    same way a resumed session's history does. */
-                const attached = await acpApi.attach({ agentId: current.id, provider: current.type, cwd, configPath: profile?.configPath });
+                const attach = () => acpApi.attach({ agentId: current.id, provider: current.type, cwd, configPath: profile?.configPath });
+                let attached = await attach();
                 if (!mounted) return;
-                let response: AcpStartResponse;
-                let appliedMode: AgentPermissionMode;
+                if (attached.status !== "live") {
+                    await workspaceSent();
+                    await acpApi.startChat(current.id);
+                    if (!mounted) return;
+                    attached = await attach();
+                    if (!mounted) return;
+                    if (attached.status !== "live") throw new Error("The chat stopped as soon as it started");
+                }
                 const history = historyRef.current;
-                if (attached.status === "live" && attached.olderBefore !== null && history) {
+                if (attached.olderBefore !== null && history) {
                     history.cursor = { feed: attached.feed, before: attached.olderBefore };
                     history.held = history.held.filter((action) => reachesSubagent(action, attached.start.sessionId));
                     setEarlier("idle");
                 } else historyRef.current = null;
-                if (attached.status === "live") {
-                    response = attached.start;
-                    appliedMode = attached.permissionMode;
-                    if (attached.turned && current.resumeId !== response.sessionId) cmd.attachAgentSession(current.id, response.sessionId);
-                } else {
-                    appliedMode = permissionModeOf(current);
-                    const account = profileRef.current;
-                    response = await acpApi.start({
-                        agentId: current.id,
-                        provider: current.type,
-                        cwd,
-                        resumeId: current.resumeId,
-                        permissionMode: appliedMode,
-                        configPath: profile?.configPath,
-                        executablePath: profile?.executablePath || current.executablePath,
-                        model: current.model,
-                        effort: current.effort,
-                        environmentKeys: JSON.parse(environmentKeys) as string[],
-                        account: account ? acpAccount(account) : undefined,
-                        modelProvider: current.modelProvider,
-                    });
-                }
+                const response = attached.start;
+                const appliedMode = attached.permissionMode;
+                if (attached.turned && current.resumeId !== response.sessionId) cmd.attachAgentSession(current.id, response.sessionId);
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
                 flushUpdates();
@@ -225,7 +219,7 @@ export function useAcpSession({
                     type: "ready",
                     capabilities: response.capabilities,
                     setup: response.setup,
-                    running: attached.status === "live" ? attached.running : undefined,
+                    running: attached.running,
                 });
                 setReplaying(false);
                 setAppliedPermissionMode(appliedMode);
@@ -253,7 +247,7 @@ export function useAcpSession({
             queuedUpdatesRef.current = [];
             controller.abort();
             if (takeMove(agent.id, agentRef.current.profileId)) reattachingRef.current = true;
-            lifecycleRef.current = reattachingRef.current ? lifecycle : lifecycle.finally(() => acpApi.stop(agent.id).catch(() => {}));
+            lifecycleRef.current = lifecycle;
         };
     }, [
         active,

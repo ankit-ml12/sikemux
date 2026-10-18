@@ -9,7 +9,8 @@ import { draftOf, typeDraft } from "../test/draft";
 
 const mocks = vi.hoisted(() => ({
     prompt: vi.fn(async () => {}),
-    start: vi.fn(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
+    start: vi.fn(async (_agentId: string) => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
+    started: null as { sessionId: string; capabilities: object; setup: object } | null,
     create: vi.fn(),
     setAgentWorktree: vi.fn(),
     setAgentWorktreeDefault: vi.fn(),
@@ -23,8 +24,16 @@ vi.mock("../agents/agentWorktree", () => ({ createAgentWorktree: mocks.create })
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => ({ status: "missing" })),
-        start: mocks.start,
+        attach: vi.fn(async () => {
+            const start = mocks.started;
+            mocks.started = null;
+            return start
+                ? { status: "live", start, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
+                : { status: "missing" };
+        }),
+        startChat: vi.fn(async (agentId: string) => {
+            mocks.started = await mocks.start(agentId);
+        }),
         setPermissionMode: vi.fn(async () => {}),
         setConfig: vi.fn(),
         stop: vi.fn(async () => {}),
@@ -35,6 +44,7 @@ vi.mock("../api/acp", () => ({
         permissionReply: vi.fn(),
     },
 }));
+vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     setAgentWorktree: mocks.setAgentWorktree,
     setAgentWorktreeDefault: mocks.setAgentWorktreeDefault,
@@ -77,7 +87,7 @@ function renderPane() {
 
 async function sendFirstMessage(text: string): Promise<HTMLElement> {
     const editor = screen.getByRole("textbox", { name: "Message agent" });
-    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ cwd: "/repo" })));
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     const toggle = await screen.findByRole("button", { name: "worktree" });
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
@@ -88,6 +98,7 @@ async function sendFirstMessage(text: string): Promise<HTMLElement> {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.started = null;
     resetResourcesForTests();
     setState({ agentWorktreeDefaults: {} });
     mocks.create.mockImplementation(
@@ -116,7 +127,7 @@ describe("AgentChatPane in a worktree", () => {
 
         resolveCreate({ worktree, cwd: worktree.path, setupError: null });
         await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Fix the flaky PTY test", [], [], expect.any(String)));
-        expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: worktree.path }));
+        expect(mocks.start).toHaveBeenCalledTimes(2);
         expect(mocks.prompt).toHaveBeenCalledTimes(1);
         expect(await screen.findByRole("note")).toHaveTextContent("Working in worktree sikemux/fix-the-flaky-pty-test");
         expect(await screen.findByRole("button", { name: "sikemux/fix-the-flaky-pty-test" })).toBeDisabled();

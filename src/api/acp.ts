@@ -4,23 +4,6 @@ import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentPermissionMode, AgentType } from "../state/types";
 
-export interface AcpStartOptions {
-    agentId: string;
-    provider: AgentType;
-    cwd: string;
-    resumeId?: string;
-    permissionMode: AgentPermissionMode;
-    configPath?: string;
-    executablePath?: string;
-    model?: string;
-    effort?: string;
-    environmentKeys?: string[];
-    /** The account the agent signs in as. */
-    account?: AcpAccount;
-    /** The model provider the chat runs on, by catalogue id, in place of its maker's account. */
-    modelProvider?: string;
-}
-
 /** One of the person's accounts with the chat's provider: a profile, by its directory. */
 export interface AcpAccount {
     id: string;
@@ -81,21 +64,8 @@ export interface AcpEvent {
 }
 
 export const acpApi = {
-    start: (options: AcpStartOptions): Promise<AcpStartResponse> =>
-        invoke<AcpStartResponse>("acp_start", {
-            agentId: options.agentId,
-            provider: options.provider,
-            cwd: options.cwd,
-            resumeId: options.resumeId ?? null,
-            permissionMode: options.permissionMode,
-            configPath: options.configPath ?? null,
-            executablePath: options.executablePath ?? null,
-            model: options.model ?? null,
-            effort: options.effort ?? null,
-            environmentKeys: options.environmentKeys ?? [],
-            account: options.account ?? null,
-            modelProvider: options.modelProvider ?? null,
-        }),
+    /** Starts the agent's chat as the core keeps it, unless it runs already; answers once its session is ready. */
+    startChat: (agentId: string): Promise<void> => coreCall<void>("startChat", { agentId }),
     attach: (options: AcpAttachOptions): Promise<AcpAttachment> =>
         invoke<AcpAttachment>("acp_attach", {
             agentId: options.agentId,

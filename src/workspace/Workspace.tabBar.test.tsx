@@ -11,18 +11,33 @@ import { withAgents } from "../test/agents";
 import { acceptDialog, useDialogs } from "../state/dialog";
 import { draftOf, typeDraft } from "../test/draft";
 
-vi.mock("../api/acp", () => ({
-    acpApi: {
-        subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => ({ status: "missing" })),
-        start: vi.fn(async () => ({ sessionId: "session-only", capabilities: {}, setup: {} })),
-        setPermissionMode: vi.fn(async () => {}),
-        stop: vi.fn(async () => {}),
-        prompt: vi.fn(async () => {}),
-        cancel: vi.fn(async () => {}),
-        permissionReply: vi.fn(async () => {}),
-    },
-}));
+vi.mock("../api/acp", () => {
+    /* The core starting a chat, which the pane then takes up by attaching once. */
+    let started: object | null = null;
+    const start = vi.fn(async () => ({ sessionId: "session-only", capabilities: {}, setup: {} }));
+    return {
+        acpApi: {
+            subscribe: vi.fn(async () => () => {}),
+            attach: vi.fn(async () => {
+                const begun = started;
+                started = null;
+                return begun
+                    ? { status: "live", start: begun, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
+                    : { status: "missing" };
+            }),
+            startChat: vi.fn(async () => {
+                started = await start();
+            }),
+            setPermissionMode: vi.fn(async () => {}),
+            stop: vi.fn(async () => {}),
+            prompt: vi.fn(async () => {}),
+            cancel: vi.fn(async () => {}),
+            permissionReply: vi.fn(async () => {}),
+        },
+    };
+});
+
+vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
 
 vi.mock("../terminal/TerminalPane", () => ({
     TerminalPane: (props: ComponentProps<typeof TerminalPane>) => (
@@ -147,7 +162,7 @@ describe("workspace tab bars", () => {
     it("keeps the ACP session alive while its tab is hidden", async () => {
         const sessionId = projectWithAgent(false);
         render(<Stage />);
-        await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(acpApi.startChat).toHaveBeenCalledTimes(1));
         await act(async () => {
             setState((state) => ({
                 sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: state.windowsBySession[sessionId][0] } },
@@ -159,7 +174,7 @@ describe("workspace tab bars", () => {
                 sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: agentWindowId(state, "agent-only")! } },
             }));
         });
-        expect(acpApi.start).toHaveBeenCalledTimes(1);
+        expect(acpApi.startChat).toHaveBeenCalledTimes(1);
     });
 
     it("changes the harness in place before the first message and preserves the draft", async () => {
@@ -170,8 +185,8 @@ describe("workspace tab bars", () => {
         typeDraft(editor, "Keep this draft");
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
         fireEvent.click(within(screen.getByRole("group", { name: "Agent" })).getByRole("button", { name: /Claude/ }));
-        await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(2));
-        expect(acpApi.start).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: "agent-only", provider: "claude", resumeId: undefined }));
+        await waitFor(() => expect(acpApi.startChat).toHaveBeenCalledTimes(2));
+        expect(acpApi.startChat).toHaveBeenLastCalledWith("agent-only");
         expect(acpApi.stop).toHaveBeenCalledWith("agent-only");
         expect(agentIdsOf(getState(), sessionId)).toEqual(["agent-only"]);
         expect(getState().agents["agent-only"]).toMatchObject({ type: "claude", title: "Claude" });

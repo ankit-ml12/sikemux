@@ -94,6 +94,10 @@ pub(crate) async fn call(
         "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
         "stopChatIfIdle" => answer(stop_chat_if_idle(&core, parse(params)?)),
+        "startChat" => {
+            let params: AgentParams = parse(params)?;
+            answer(super::launching::start_saved(&core, &params.agent_id).await?)
+        }
         "activitySummary" => answer(activity_summary(&core, parse(params)?).await?),
         "setActivityPrice" => {
             let params: ActivityPriceParams = parse(params)?;

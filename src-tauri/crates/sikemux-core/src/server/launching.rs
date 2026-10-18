@@ -189,6 +189,16 @@ pub(crate) async fn start_agent(
     start(core, by, chosen).await
 }
 
+/// Starts an agent's chat as its record says unless it runs already, and
+/// answers once its session is ready or says why it never got there.
+pub(crate) async fn start_saved(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
+    if running(core, agent_id) {
+        return Ok(());
+    }
+    let started = start_agent(core, None, agent_id).await?;
+    chat::until_started(core, started).await.map(drop)
+}
+
 fn running(core: &Core, agent_id: &str) -> bool {
     core.chats.get(agent_id).is_some()
 }

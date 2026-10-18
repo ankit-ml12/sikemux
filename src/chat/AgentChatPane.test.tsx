@@ -24,7 +24,9 @@ const mocks = vi.hoisted(() => ({
     setAgentModelPreferences: vi.fn(),
     attachAgentSession: vi.fn(),
     setAgentPermissionMode: vi.fn(),
-    start: vi.fn(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
+    /* Stands for the core starting the chat; the pane takes it up by attaching once. */
+    start: vi.fn(async (_agentId: string) => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
+    started: null as { sessionId: string; capabilities: object; setup: object } | null,
     pathKinds: vi.fn(async (paths: string[]): Promise<(string | null)[]> => paths.map(() => null)),
     revealInFinder: vi.fn(async () => {}),
     requestOpenFile: vi.fn(),
@@ -54,8 +56,16 @@ vi.mock("../api/acp", () => ({
                 mocks.eventListener = null;
             };
         }),
-        attach: vi.fn(async () => ({ status: "missing" })),
-        start: mocks.start,
+        attach: vi.fn(async () => {
+            const start = mocks.started;
+            mocks.started = null;
+            return start
+                ? { status: "live", start, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
+                : { status: "missing" };
+        }),
+        startChat: vi.fn(async (agentId: string) => {
+            mocks.started = await mocks.start(agentId);
+        }),
         setPermissionMode: mocks.setPermissionMode,
         setConfig: mocks.setConfig,
         stop: vi.fn(async () => {}),
@@ -69,6 +79,8 @@ vi.mock("../api/acp", () => ({
         permissionReply: vi.fn(async () => {}),
     },
 }));
+
+vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
 
 vi.mock("../state/commands", () => ({
     requestOpenFile: mocks.requestOpenFile,
@@ -182,6 +194,7 @@ beforeEach(() => {
     forgetPathState();
     mocks.pathKinds.mockImplementation(async (paths: string[]) => paths.map(() => null));
     mocks.eventListener = null;
+    mocks.started = null;
     resizeCallbacks.clear();
     globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver;
 });
@@ -383,7 +396,7 @@ describe("AgentChatPane", () => {
         expect(mocks.start).toHaveBeenCalledTimes(1);
     });
 
-    it("passes the configured executable, model and effort to ACP without restarting for equivalent profile arrays", async () => {
+    it("does not start the chat again for equivalent profile arrays", async () => {
         const profile = {
             id: "custom",
             provider: "codex" as const,
@@ -394,11 +407,7 @@ describe("AgentChatPane", () => {
         };
         const props = { agent: { ...agent, model: "custom-model", effort: "high" as const }, cwd: "/repo", active: true, onBusyChange: () => {} };
         const { rerender } = render(<AgentChatPane {...props} profile={profile} />);
-        await waitFor(() =>
-            expect(mocks.start).toHaveBeenCalledWith(
-                expect.objectContaining({ executablePath: "/custom/codex", model: "custom-model", effort: "high" }),
-            ),
-        );
+        await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
         rerender(<AgentChatPane {...props} profile={{ ...profile, environmentKeys: ["CUSTOM_KEY"] }} />);
         await act(async () => {});
         expect(mocks.start).toHaveBeenCalledTimes(1);
@@ -1201,7 +1210,6 @@ describe("AgentChatPane", () => {
 
             fireEvent.click(screen.getByRole("button", { name: "Retry" }));
             await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
-            expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeId: "session-1" }));
             expect(screen.getByText("Resuming…")).toBeInTheDocument();
 
             await act(async () => resumed());
@@ -1239,7 +1247,6 @@ describe("AgentChatPane", () => {
 
             fireEvent.click(screen.getByRole("button", { name: "Retry" }));
             await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
-            expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeId: undefined }));
         });
 
         it("sends a message written while it resumes once it is back", async () => {

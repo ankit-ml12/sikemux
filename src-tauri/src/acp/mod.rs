@@ -1,11 +1,9 @@
 //! Chat agents run in the background core, so a turn keeps going when the
-//! window reloads or the app quits. The app prepares each launch — the agent
-//! binary, the browser tools and the environment the agent gets — and
-//! forwards every command to the core. The core's events come back on its
-//! connection and reach the page as `acp_event`.
+//! window reloads or the app quits. The core starts each chat from the agent
+//! it keeps; the app forwards every command to it, and its events come back
+//! on its connection and reach the page as `acp_event`.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -13,11 +11,9 @@ use serde_json::{json, Value};
 use sikemux_core::acp::bounded_text;
 use sikemux_core::agent_accounts;
 use sikemux_core::client::{ClientError, CoreClient, Reply};
-use sikemux_core::launch::tools::Tools;
-use sikemux_core::launch::{AgentLaunch, AgentSpec};
 use sikemux_core::protocol::{
-    ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch,
-    ChatStart, Request, Response,
+    ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatStart,
+    Request, Response,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -60,31 +56,11 @@ impl StreamMark {
 
 #[derive(Default)]
 pub struct AcpManager {
-    /// Launches being prepared, which a stop cancels. The id tells a launch
-    /// from a later one for the same agent.
-    preparing: Mutex<HashMap<String, uuid::Uuid>>,
     /// The chats this app shows, which hear the core's events for them.
     shown: Mutex<HashMap<String, StreamMark>>,
 }
 
 impl AcpManager {
-    fn preparing(&self) -> std::sync::MutexGuard<'_, HashMap<String, uuid::Uuid>> {
-        self.preparing
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    /// Ends `launch_id`'s preparation, and says whether it was still going,
-    /// that is, whether no stop came for it.
-    fn finish_preparing(&self, agent_id: &str, launch_id: uuid::Uuid) -> bool {
-        let mut preparing = self.preparing();
-        let current = preparing.get(agent_id) == Some(&launch_id);
-        if current {
-            preparing.remove(agent_id);
-        }
-        current
-    }
-
     fn show(&self, agent_id: &str, mark: StreamMark, streaming: bool) {
         mark.set(streaming);
         if let Ok(mut shown) = self.shown.lock() {
@@ -261,142 +237,6 @@ fn failure(error: ClientError) -> String {
 
 async fn core(pty: &PtyManager) -> Result<Arc<CoreClient>, String> {
     pty.client().await.map_err(|error| error.to_string())
-}
-
-/// Where the app's chats reach Sikemux's tools.
-fn tools(app: &AppHandle) -> Result<Tools, String> {
-    Ok(Tools {
-        executable: crate::cli_paths::cli_executable_path()
-            .ok_or("the sikemux-editor sidecar is missing; build it with node scripts/build-cli-sidecar.mjs")?,
-        endpoint: crate::cli_paths::cli_endpoint_path().ok_or("CLI endpoint unavailable")?,
-        data_dir: app.path().app_data_dir().ok(),
-    })
-}
-
-/// How the app starts `spec` as a chat, on `model_provider` when one is named,
-/// with the skills library and, for Hermes and Grok, a private home of its own.
-async fn chat_launch(
-    tools: &Tools,
-    agent_id: &str,
-    spec: &AgentSpec,
-    model_provider: Option<String>,
-    model: Option<String>,
-) -> Result<AgentLaunch, String> {
-    if let Some(path) = spec.config_path.as_deref() {
-        bounded_text("config path", path, 4_096)?;
-    }
-    let program = spec.program().await?;
-    let providers = crate::model_providers::wiring(&spec.provider, model_provider, model).await?;
-    let skills = tools
-        .data_dir
-        .as_deref()
-        .and_then(sikemux_core::launch::skills::ready);
-    let mut launch = spec.chat(program, providers, skills);
-    launch
-        .env
-        .insert(crate::ports::AGENT_ID_ENV.into(), agent_id.to_owned());
-    tools
-        .chat_home(agent_id, &spec.provider, &launch.program, &mut launch.env)
-        .await;
-    Ok(launch)
-}
-
-#[allow(clippy::too_many_arguments)]
-#[tauri::command]
-pub async fn acp_start(
-    app: AppHandle,
-    manager: State<'_, AcpManager>,
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    provider: String,
-    cwd: String,
-    resume_id: Option<String>,
-    permission_mode: String,
-    config_path: Option<String>,
-    executable_path: Option<String>,
-    model: Option<String>,
-    effort: Option<String>,
-    environment_keys: Vec<String>,
-    account: Option<AccountRequest>,
-    model_provider: Option<String>,
-) -> Result<ChatStart, String> {
-    bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
-    bounded_text("provider", &provider, 64)?;
-    bounded_text("working directory", &cwd, 4_096)?;
-    let launch_id = uuid::Uuid::new_v4();
-    manager.preparing().insert(agent_id.clone(), launch_id);
-    let spec = AgentSpec {
-        provider: provider.clone(),
-        executable_path,
-        config_path: config_path.clone(),
-        environment_keys,
-    };
-    let tools = tools(&app)?;
-    let prepared = chat_launch(&tools, &agent_id, &spec, model_provider, model.clone()).await;
-    let prepared = match prepared {
-        Ok(prepared) => prepared,
-        Err(error) => {
-            manager.finish_preparing(&agent_id, launch_id);
-            return Err(error);
-        }
-    };
-    // A session that cannot be told about the tools still runs.
-    let mcp_servers = match tools.chat_server(&agent_id, None) {
-        Ok(server) => vec![server],
-        Err(error) => {
-            eprintln!("Sikemux tools are unavailable to this agent: {error}");
-            Vec::new()
-        }
-    };
-    let launch = ChatLaunch {
-        agent_id: agent_id.clone(),
-        provider: provider.clone(),
-        cwd: PathBuf::from(&cwd),
-        program: prepared.program,
-        args: prepared.args,
-        env: prepared.env,
-        mcp_servers,
-        resume_id: resume_id.clone(),
-        permission_mode,
-        model,
-        effort,
-        account: account
-            .as_ref()
-            .map(|account| chat_account(&provider, account)),
-        fallbacks: Vec::new(),
-    };
-    let client = core(&pty).await?;
-    let started = client
-        .submit(
-            Request::AcpStart {
-                launch: Box::new(launch),
-            },
-            |reply| match reply {
-                Ok(Reply::Response(Response::ChatStarted { start })) => Ok(start),
-                Ok(_) => Err(ClientError::UnexpectedReply),
-                Err(error) => Err(error),
-            },
-        )
-        .map_err(failure)?;
-    // A stop that came while the launch was prepared reaches the core after
-    // the start, whichever of the two it raced.
-    let stopped = !manager.finish_preparing(&agent_id, launch_id);
-    if stopped {
-        let _ = client.acp_stop(agent_id).await;
-        return Err("ACP session stopped before initialization completed".into());
-    }
-    let start = started.await.map_err(failure)?.map_err(failure)?;
-    manager.show(
-        &agent_id,
-        StreamMark {
-            provider: provider.clone(),
-            cwd: cwd.clone(),
-            config_path: config_path.clone(),
-            session_id: start.session_id.clone(),
-        },
-        false,
-    );
-    Ok(start)
 }
 
 /// What the page hears back from an attach. The replay itself arrives as
@@ -668,7 +508,6 @@ pub async fn acp_stop(
     pty: State<'_, PtyManager>,
     agent_id: String,
 ) -> Result<(), String> {
-    manager.preparing().remove(&agent_id);
     manager.forget(&agent_id);
     core(&pty).await?.acp_stop(agent_id).await.map_err(failure)
 }

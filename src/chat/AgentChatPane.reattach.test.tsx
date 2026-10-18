@@ -10,7 +10,7 @@ import { chatClaimed } from "./chatClaims";
 const mocks = vi.hoisted(() => ({
     listener: null as ((event: AcpEvent) => void) | null,
     attach: vi.fn(),
-    start: vi.fn(async () => ({ sessionId: "session-new", capabilities: {}, setup: {} })),
+    startChat: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     switchAccount: vi.fn(async () => {}),
     attachAgentSession: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("../api/acp", () => ({
             return () => {};
         }),
         attach: mocks.attach,
-        start: mocks.start,
+        startChat: mocks.startChat,
         stop: mocks.stop,
         switchAccount: mocks.switchAccount,
         setPermissionMode: vi.fn(async () => {}),
@@ -41,6 +41,7 @@ vi.mock("../api/acp", () => ({
         permissionReply: vi.fn(async () => {}),
     },
 }));
+vi.mock("../state/coreWorkspace", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     attachAgentSession: mocks.attachAgentSession,
     setAgentAccount: mocks.setAgentAccount,
@@ -159,7 +160,7 @@ describe("AgentChatPane with a chat the core kept", () => {
         expect(transcript()).toContain("Earlier answer");
         expect(screen.getByRole("region", { name: "Permission required for Touch a file" })).toBeInTheDocument();
         expect(mocks.attach).toHaveBeenCalledWith({ agentId: agent.id, provider: "claude", cwd: "/repo", configPath: undefined });
-        expect(mocks.start).not.toHaveBeenCalled();
+        expect(mocks.startChat).not.toHaveBeenCalled();
         expect(mocks.stop).not.toHaveBeenCalled();
         expect(mocks.attachAgentSession).toHaveBeenCalledWith(agent.id, "session-kept");
         expect(chatClaimed(agent.id)).toBe(true);
@@ -168,10 +169,11 @@ describe("AgentChatPane with a chat the core kept", () => {
         await showsText("Still working on it and done");
     });
 
-    it("starts the chat on its saved session when the core has none", async () => {
-        mocks.attach.mockResolvedValue({ status: "missing" });
+    it("has the core start the chat when it has none, then takes it up", async () => {
+        mocks.attach.mockResolvedValueOnce({ status: "missing" }).mockResolvedValue(live);
         renderPane();
-        await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id, resumeId: "session-old" })));
+        await waitFor(() => expect(mocks.startChat).toHaveBeenCalledWith(agent.id));
+        await waitFor(() => expect(mocks.attach).toHaveBeenCalledTimes(2));
         expect(mocks.stop).not.toHaveBeenCalled();
     });
 
@@ -188,15 +190,16 @@ describe("AgentChatPane with a chat the core kept", () => {
         await showsText("Still working on it");
         expect(transcript().split("Earlier answer")).toHaveLength(2);
         expect(mocks.stop).not.toHaveBeenCalled();
-        expect(mocks.start).not.toHaveBeenCalled();
+        expect(mocks.startChat).not.toHaveBeenCalled();
     });
 
-    it("stops the chat when the pane goes away", async () => {
+    it("leaves the chat running when the pane goes away", async () => {
         mocks.attach.mockResolvedValue(live);
         const view = renderPane();
         await waitFor(() => expect(mocks.attach).toHaveBeenCalled());
         view.unmount();
-        await waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(agent.id));
+        await act(async () => {});
+        expect(mocks.stop).not.toHaveBeenCalled();
     });
 
     it("takes a chat moved to another account up where it is, mid-turn, without stopping it", async () => {
@@ -217,6 +220,6 @@ describe("AgentChatPane with a chat the core kept", () => {
         await waitFor(() => expect(mocks.attach).toHaveBeenCalledTimes(2));
         await showsText("Still working on it");
         expect(mocks.stop).not.toHaveBeenCalled();
-        expect(mocks.start).not.toHaveBeenCalled();
+        expect(mocks.startChat).not.toHaveBeenCalled();
     });
 });
