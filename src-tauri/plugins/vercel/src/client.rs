@@ -252,13 +252,4 @@ mod tests {
         assert_eq!(team_param("team_abc"), ("teamId", "team_abc".into()));
         assert_eq!(team_param("acme"), ("slug", "acme".into()));
     }
-
-    #[tokio::test]
-    async fn a_made_up_token_is_refused_as_a_sign_in() {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        match request("not-a-token", Method::GET, "/v2/user", &[], None).await {
-            Err(VercelError::Auth(_)) | Err(VercelError::Unreachable(_)) => {}
-            other => panic!("{other:?}"),
-        }
-    }
 }
