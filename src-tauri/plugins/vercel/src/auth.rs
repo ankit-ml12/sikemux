@@ -61,32 +61,52 @@ pub struct Status {
     pub teams: Vec<Team>,
     /// The team calls use when they name none, by id; none for the account's own projects.
     pub team: Option<String>,
+    /// Whether the account has projects of its own beside its teams. Newer accounts
+    /// keep theirs in a default team instead, which is then the team chosen.
+    pub personal: bool,
 }
 
 /// Who is signed in, whether the token still works, and the teams it can see.
 pub async fn status(data_dir: &Path) -> Status {
     let config = config::load(data_dir);
-    let base = |ok: bool, auth_failed: bool, message: Option<String>, teams: Vec<Team>| Status {
+    let base = |ok: bool,
+                auth_failed: bool,
+                message: Option<String>,
+                teams: Vec<Team>,
+                default_team: Option<String>| Status {
         configured: config.account.is_some(),
         ok,
         auth_failed,
         message,
         account: config.account.clone(),
+        personal: default_team.is_none(),
+        team: config.team.clone().or(default_team),
         teams,
-        team: config.team.clone(),
     };
     let session = match Session::of(data_dir, Some("")).await {
         Ok(session) => session,
-        Err(VercelError::Unconfigured) => return base(false, false, None, Vec::new()),
-        Err(error) => return base(false, false, Some(error.to_string()), Vec::new()),
+        Err(VercelError::Unconfigured) => return base(false, false, None, Vec::new(), None),
+        Err(error) => return base(false, false, Some(error.to_string()), Vec::new(), None),
     };
-    match session.get("/v2/teams", &[("limit", "100".into())]).await {
-        Ok(data) => base(true, false, None, teams_of(&data)),
-        Err(error @ VercelError::Auth(_)) => base(false, true, Some(error.to_string()), Vec::new()),
-        Err(error @ VercelError::RateLimited) => {
-            base(true, false, Some(error.to_string()), Vec::new())
+    let answered = futures::future::try_join(
+        session.get("/v2/user", &[]),
+        session.get("/v2/teams", &[("limit", "100".into())]),
+    )
+    .await;
+    match answered {
+        Ok((user, teams)) => {
+            let teams = teams_of(&teams);
+            let default_team = Some(text(&user, "/user/defaultTeamId"))
+                .filter(|id| teams.iter().any(|team| &team.id == id));
+            base(true, false, None, teams, default_team)
         }
-        Err(error) => base(false, false, Some(error.to_string()), Vec::new()),
+        Err(error @ VercelError::Auth(_)) => {
+            base(false, true, Some(error.to_string()), Vec::new(), None)
+        }
+        Err(error @ VercelError::RateLimited) => {
+            base(true, false, Some(error.to_string()), Vec::new(), None)
+        }
+        Err(error) => base(false, false, Some(error.to_string()), Vec::new(), None),
     }
 }
 

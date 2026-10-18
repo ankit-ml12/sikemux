@@ -3,7 +3,7 @@ import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../.
 import { formatAgo } from "../../../plugin-api/format";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, Seg, SendToAgentMenu, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, refreshVercel, vercelApi, type VercelDeployment, type VercelProject, type VercelStatus } from "../api";
+import { failureMessage, refreshVercel, vercelApi, type VercelDeployment, type VercelLogLine, type VercelProject, type VercelStatus } from "../api";
 import { vercelDeploymentsR, vercelDomainsR, vercelEnvR, vercelLogR, vercelProjectsR, vercelStatusR } from "../resources";
 import { deploymentForAgent, isUnderway, updateVercelView, useVercelView, type VercelTab } from "../state";
 import { VercelSignIn } from "./VercelSignIn";
@@ -33,6 +33,9 @@ function stateLabel(state: string): string {
     };
     return known[state] ?? state;
 }
+
+/** Builds print plenty to stderr that is not a failure, so only lines that say so are marked. */
+const looksLikeError = (line: VercelLogLine) => line.kind === "fatal" || /\b(error|failed)\b|ERR!/i.test(line.text);
 
 const visit = (url: string) => void openUrl(url).catch(swallow("open the page"));
 
@@ -65,7 +68,9 @@ function VercelAccountView({ paneId, active, status }: { paneId: string; active:
                         label="Team"
                         value={team}
                         options={[
-                            { value: "", label: status.account?.name || status.account?.username || "Personal", detail: "Personal account" },
+                            ...(status.personal
+                                ? [{ value: "", label: status.account?.name || status.account?.username || "Personal", detail: "Personal account" }]
+                                : []),
                             ...status.teams.map((each) => ({ value: each.id, label: each.name, detail: each.slug })),
                         ]}
                         onChange={chooseTeam}
@@ -390,7 +395,7 @@ function DeploymentView({
                     <p className="vercel-note">{underway ? "Waiting for the build to print…" : "This build printed nothing."}</p>
                 ) : (
                     log.data?.lines.map((line, index) => (
-                        <div key={index} className={`vercel-log-line ${line.kind}`}>
+                        <div key={index} className={`vercel-log-line ${line.kind}${looksLikeError(line) ? " error" : ""}`}>
                             {line.text || " "}
                         </div>
                     ))

@@ -32,6 +32,7 @@ const signedIn: VercelStatus = {
     account: { id: "u1", username: "ankit", name: "Ankit", email: "a@example.com" },
     teams: [{ id: "team_1", slug: "acme", name: "Acme" }],
     team: "team_1",
+    personal: true,
 };
 
 const project: VercelProject = {
@@ -106,7 +107,7 @@ beforeEach(() => {
 
 describe("the Vercel pane", () => {
     it("asks for an access token when no account is signed in", async () => {
-        api.status.mockResolvedValue({ ...signedIn, configured: false, account: null, teams: [], team: null });
+        api.status.mockResolvedValue({ ...signedIn, configured: false, account: null, teams: [], team: null, personal: true });
         renderPane();
         expect(await screen.findByRole("heading", { name: "Connect Vercel" })).toBeInTheDocument();
         fireEvent.change(screen.getByPlaceholderText("Paste a Vercel token"), { target: { value: "tok_123" } });
