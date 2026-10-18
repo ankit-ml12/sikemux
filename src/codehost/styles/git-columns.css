@@ -41,7 +41,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--surface);
 }
-.git-framed .gha-full-page .pr-rows {
+.git-framed .gha-full-page :is(.pr-rows, .gha-run-rows) {
     margin: 0 calc(-1 * var(--space-2));
 }
 /* In the side panel's inbox page the panel is the card, so the list draws none of its own. */
