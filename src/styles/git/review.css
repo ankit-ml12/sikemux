@@ -90,6 +90,11 @@
     border-radius: calc(var(--radius-2) - 1px) calc(var(--radius-2) - 1px) 0 0;
     background: var(--surface);
 }
+/* Folded, the header is the whole card, and the card's own edge closes it. */
+.merge-review-item:not(.open) > .merge-file-header {
+    border-radius: calc(var(--radius-2) - 1px);
+    box-shadow: none;
+}
 .merge-file-dir {
     color: var(--text-tertiary);
 }
