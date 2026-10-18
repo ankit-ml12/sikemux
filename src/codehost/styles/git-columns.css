@@ -42,7 +42,8 @@
 }
 .git-framed .gha-full-page .pr-cols {
     position: sticky;
-    top: var(--list-head);
+    /* Tucked a pixel under the filters' line, so no hairline of the rows shows between the two at any scale. */
+    top: calc(var(--list-head) - 1px);
     z-index: 2;
     flex: none;
     margin: 0 calc(-1 * var(--space-2)) var(--space-1);
