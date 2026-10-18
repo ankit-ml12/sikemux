@@ -1,6 +1,5 @@
 import { useRef } from "react";
 import { notify, swallow } from "../../../plugin-api/host";
-import { useDarkTheme } from "../../../plugin-api/hooks";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { failureMessage, refreshVercel, vercelApi, type VercelProject, type VercelStatus } from "../api";
@@ -37,7 +36,6 @@ const SECTIONS: { value: VercelSection; label: string }[] = [
 function Dashboard({ paneId, active, status }: { paneId: string; active: boolean; status: VercelStatus }) {
     const view = useVercelView(paneId);
     const sideRef = useRef<HTMLDivElement>(null);
-    const dark = useDarkTheme();
     const team = status.team ?? "";
     const scopeSlug = status.teams.find((each) => each.id === team)?.slug ?? status.account?.username ?? "";
     const projects = useResourceEnabled(active, vercelProjectsR, team);
@@ -54,7 +52,7 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
     const open = (patch: Parameters<typeof updateVercelView>[1]) => updateVercelView(paneId, { deployment: null, ...patch });
 
     return (
-        <div className="vercel-pane" data-scheme={dark ? "dark" : "light"}>
+        <div className="vercel-pane">
             <aside className="vercel-side" ref={sideRef} style={view.sideWidth ? { width: view.sideWidth } : undefined}>
                 <Dropdown
                     className="vercel-team"

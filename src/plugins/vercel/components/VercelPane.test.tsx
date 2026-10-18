@@ -20,8 +20,6 @@ const api = vi.hoisted(() => ({
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), vercelApi: api }));
 const confirmDialog = vi.hoisted(() => vi.fn());
 vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), confirmDialog }));
-const theme = vi.hoisted(() => ({ dark: true }));
-vi.mock("../../../plugin-api/hooks", async (importOriginal) => ({ ...(await importOriginal<object>()), useDarkTheme: () => theme.dark }));
 
 import { invalidate } from "../../../plugin-api/resources";
 import { deploymentForAgent } from "../state";
@@ -106,7 +104,6 @@ afterEach(() => {
 beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
     confirmDialog.mockReset().mockResolvedValue(true);
-    theme.dark = true;
     api.status.mockResolvedValue(signedIn);
     api.projects.mockResolvedValue([project]);
     api.deployments.mockResolvedValue([failed, redeploy, live, before]);
@@ -212,16 +209,5 @@ describe("the Vercel pane", () => {
         const handle = await screen.findByRole("separator", { name: "Resize the Vercel sidebar" });
         fireEvent.keyDown(handle, { key: "ArrowRight" });
         await waitFor(() => expect(screen.getByRole("complementary")).toHaveStyle({ width: "180px" }));
-    });
-
-    it("takes Vercel's light colours in a light theme and its dark ones in a dark theme", async () => {
-        theme.dark = false;
-        const { container, rerender } = render(<VercelPane paneId="vercel-scheme" active />);
-        await screen.findByRole("separator", { name: "Resize the Vercel sidebar" });
-        const pane = container.querySelector(".vercel-pane")!;
-        expect(pane).toHaveAttribute("data-scheme", "light");
-        theme.dark = true;
-        rerender(<VercelPane paneId="vercel-scheme" active />);
-        expect(pane).toHaveAttribute("data-scheme", "dark");
     });
 });

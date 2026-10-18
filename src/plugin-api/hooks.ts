@@ -1,11 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type DependencyList } from "react";
-import { currentTheme, subscribeTheme } from "../themes/bus";
+import { useEffect, useRef, useState, type DependencyList } from "react";
 import type { PluginStream } from "./backend";
-
-/** Whether the person's theme is dark, kept up to date as they switch themes. */
-export function useDarkTheme(): boolean {
-    return useSyncExternalStore(subscribeTheme, () => currentTheme().dark);
-}
 
 /** The current time, read again every `intervalMs` while `ticking`. */
 export function useNow(ticking: boolean, intervalMs = 1_000): number {
