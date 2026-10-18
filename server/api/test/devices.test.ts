@@ -286,9 +286,11 @@ describe("removing a device", () => {
       method: "POST",
       json: await registration(mac, "user_a", token),
     });
-    const response = await call(`/v1/devices/${mac.key}`, token, {
-      method: "DELETE",
-    });
+    const response = await call(
+      `/v1/devices/${mac.key}`,
+      await sessionToken("user_a", { claims: { sid: "sess_web" } }),
+      { method: "DELETE" },
+    );
     expect(response.status).toBe(204);
     const list = await body(await call("/v1/devices", token), "DeviceList");
     expect(list.devices).toEqual([]);
@@ -310,7 +312,7 @@ describe("removing a device", () => {
     });
     const response = await call(
       `/v1/devices/${mac.key}`,
-      await macToken("user_a"),
+      await sessionToken("user_a", { claims: { sid: "sess_web" } }),
       { method: "DELETE" },
     );
     expect(response.status).toBe(404);

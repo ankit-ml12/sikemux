@@ -5,7 +5,10 @@ import type { Tables } from "../db.ts";
 import { pruneChallenges } from "../devices/challenge.ts";
 import type { Logger } from "../log.ts";
 
-/** How long each kind of history is kept. */
+/**
+ * How long each kind of history is kept. A host someone removed keeps its record until its
+ * account is purged, so it cannot add itself back.
+ */
 export const RETENTION_DAYS = {
   events: 400,
   removedDevices: 30,
@@ -125,6 +128,7 @@ export async function pruneHistory(
     table: "removed_devices" | "audit",
     column: "removed_at" | "at",
     days: number,
+    kept = sql<boolean>`false`,
   ) =>
     inBatches(async () => {
       const { rows } = await sql<{ n: string }>`
@@ -132,6 +136,7 @@ export async function pruneHistory(
           delete from ${sql.table(table)} where ctid in (
             select ctid from ${sql.table(table)}
             where ${sql.ref(column)} < now() - make_interval(days => ${days})
+              and not (${kept})
             limit ${BATCH}
           )
           returning 1
@@ -143,6 +148,7 @@ export async function pruneHistory(
     "removed_devices",
     "removed_at",
     RETENTION_DAYS.removedDevices,
+    sql<boolean>`reason = 'removed' and role = 'host'`,
   );
   const audit = await olderThan("audit", "at", RETENTION_DAYS.audit);
   const shares = await inBatches(async () => {

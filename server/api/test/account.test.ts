@@ -535,7 +535,7 @@ describe("purging", () => {
 
   it("prunes old history and remembers how far, so returning devices reset", async () => {
     const { mac, iphone } = await accountWithDevices("user_a");
-    await call(`/v1/devices/${iphone.key}`, await macToken("user_a"), {
+    await call(`/v1/devices/${iphone.key}`, await sessionToken("user_a"), {
       method: "DELETE",
     });
     await database.pool.query(

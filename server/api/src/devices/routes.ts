@@ -7,7 +7,12 @@ import { Hono } from "hono";
 
 import type { ClerkBackend } from "../account/clerk.ts";
 import { revokeRemovedSession } from "../account/deletion.ts";
-import { requireIdentity, type AuthEnv, type Verifier } from "../auth.ts";
+import {
+  requireIdentity,
+  requireSession,
+  type AuthEnv,
+  type Verifier,
+} from "../auth.ts";
 import type { Database } from "../db.ts";
 import { ApiFailure, readBody } from "../http.ts";
 import { joinRoutes } from "../join/routes.ts";
@@ -52,7 +57,7 @@ export function deviceRoutes(
       );
       return c.json(toDevice(row), added ? 201 : 200);
     })
-    .delete("/:key", perUser("remove", 30), async (c) => {
+    .delete("/:key", requireSession(), perUser("remove", 30), async (c) => {
       const { userId, via, sessionId } = c.get("identity");
       const key = c.req.param("key");
       const { device, reason } = await db.transaction().execute(async (trx) => {

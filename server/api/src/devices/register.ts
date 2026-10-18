@@ -106,6 +106,21 @@ export async function registerDevice(
         `This device is already registered as a ${existing.role}.`,
       );
     }
+    if (!existing && via === "mac") {
+      const removed = await trx
+        .selectFrom("removed_devices")
+        .select("reason")
+        .where("key", "=", registration.key)
+        .where("user_id", "=", userId)
+        .where("role", "=", "host")
+        .executeTakeFirst();
+      if (removed?.reason === "removed")
+        throw new ApiFailure(
+          403,
+          "forbidden",
+          "This host was removed from your account, so it cannot add itself back. Run `sikemux login` on it and enter the code it shows at app.sikemux.com/host or in Sikemux on your phone.",
+        );
+    }
     const fields = {
       name,
       platform: registration.platform,
