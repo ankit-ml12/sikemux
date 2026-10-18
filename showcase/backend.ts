@@ -42,7 +42,7 @@ import {
 } from "./world/projects";
 import { terminalReplay } from "./world/terminals";
 import { PtyOutput, type PtyChannel } from "./ptyOutput";
-import { AGENTS, demoSnapshot } from "./world/workspace";
+import { AGENTS, demoSnapshot, demoWorkspace } from "./world/workspace";
 import { DEMO_BOARD, DEMO_MESSAGES } from "./world/board";
 import type { BoardCard } from "../src/agents/agentBoard";
 
@@ -603,7 +603,8 @@ export class ShowcaseBackend implements IpcTransport {
     );
     const spareNames = ["Lark", "Fern", "Quartz", "Dune", "Pika", "Aster"];
     this.on("agent_name_call", constant(null));
-    this.onCore(["chatStates"], constant([]));
+    this.onCore(["chatStates", "questions", "shares"], constant([]));
+    this.onCore(["answerQuestion", "answerQuestions"], constant({ answered: true }));
     this.onCore(["stopChatIfIdle"], constant({ stopped: false }));
     this.onCore(["agentSessions"], ({ params }) =>
       sessionSearch(params as { query: string; limit?: number }),
@@ -637,6 +638,7 @@ export class ShowcaseBackend implements IpcTransport {
         collisions: {},
         remoteAgents: [],
         order: [],
+        agents: [],
       };
     });
     this.onCore(
@@ -662,6 +664,7 @@ export class ShowcaseBackend implements IpcTransport {
         return this.board;
       },
     );
+    this.onCore(["workspace"], constant(demoWorkspace()));
     this.on("core_call", ({ method, params }) =>
       this.coreMethods.get(method as string)?.({ method, params: params as Args }) ?? null,
     );
@@ -811,14 +814,19 @@ export class ShowcaseBackend implements IpcTransport {
     this.queueLiveTurn(agentId, read, this.batchFor(agentId), true);
   }
 
+  // A picture is shrunk to a screenshot's size first, or the chat keeps it only by name.
   private async withPicture(update: Record<string, unknown>): Promise<Record<string, unknown>> {
     const content = update.content as { type?: string; uri?: string } | undefined;
     if (content?.type !== "image" || !content.uri) return update;
-    const bytes = new Uint8Array(await (await fetch(content.uri)).arrayBuffer());
+    const picture = await createImageBitmap(await (await fetch(content.uri)).blob());
+    const scale = Math.min(1, 1280 / picture.width);
+    const canvas = new OffscreenCanvas(Math.round(picture.width * scale), Math.round(picture.height * scale));
+    canvas.getContext("2d")!.drawImage(picture, 0, 0, canvas.width, canvas.height);
+    const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 })).arrayBuffer());
     let binary = "";
     for (let at = 0; at < bytes.length; at += 0x8000)
       binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-    return { ...update, content: { type: "image", mimeType: "image/png", data: btoa(binary) } };
+    return { ...update, content: { type: "image", mimeType: "image/jpeg", data: btoa(binary) } };
   }
 
   private batchFor(agentId: string) {
