@@ -22,10 +22,12 @@
 //   registry — Artifact Registry repositories, images and packages
 //   scheduler — Cloud Scheduler jobs, run now, paused or resumed
 //   iam      — who holds which role, and service accounts
+//   bigquery — datasets, tables, previews and capped queries
 
 mod agent;
 mod agent_setup;
 mod auth;
+mod bigquery;
 mod build;
 mod client;
 mod compute;
@@ -176,6 +178,10 @@ impl Plugin for Gcp {
                 "schedulerChange" => answer(scheduler::change(params(input)?)).await,
                 "iamMembers" => answer(iam::members(params(input)?)).await,
                 "serviceAccounts" => answer(iam::service_accounts(params(input)?)).await,
+                "datasets" => answer(bigquery::datasets(params(input)?)).await,
+                "tables" => answer(bigquery::tables(params(input)?)).await,
+                "table" => answer(bigquery::table(params(input)?)).await,
+                "query" => answer(bigquery::query(params(input)?)).await,
                 _ => match agent::call(ctx, method, input).await {
                     Some(answer) => answer,
                     None => Err(PluginError::unknown_method(method)),
