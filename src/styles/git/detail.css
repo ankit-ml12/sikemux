@@ -50,6 +50,22 @@
 .git-detail-actions .git-btn {
     height: 26px;
 }
+/* A card is wide enough to keep its actions at the right of the subject and its details. */
+.git-right-review .git-detail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-4);
+    align-items: center;
+}
+.git-right-review .git-detail > :not(.git-detail-actions) {
+    grid-column: 1;
+}
+.git-right-review .git-detail-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    flex-wrap: nowrap;
+    margin-top: 0;
+}
 .git-chip {
     height: 18px;
     padding: 0 6px;
