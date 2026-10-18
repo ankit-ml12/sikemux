@@ -314,18 +314,29 @@ async fn as_host<T: DeserializeOwned>(
         Some(body) => serde_json::to_vec(body)?,
         None => Vec::new(),
     };
-    let mut issued = ISSUED
-        .get_or_init(|| tokio::sync::Mutex::new(None))
-        .lock()
-        .await;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or(0);
-    if let Some((token, expires)) = issued.as_ref() {
-        if *expires > now + 120 && subject(token).ok().as_deref() == Some(saved.user_id.as_str()) {
-            return Ok(Some(token.clone()));
-        }
+    let time = profile::now();
+    let signed = core
+        .call(
+            "signHostRequest",
+            serde_json::json!({
+                "method": method.as_str(),
+                "path": path,
+                "time": time,
+                "bodySha256": hex::encode(Sha256::digest(&body)),
+            }),
+        )
+        .await
+        .map_err(core_error)?;
+    let HostSignature { key, signature } = serde_json::from_value(signed)?;
+    let mut request = http()
+        .request(method, api(path))
+        .header(AUTHORIZATION, format!("SikemuxHost {key}.{time}.{signature}"));
+    if !body.is_empty() {
+        request = request.header(CONTENT_TYPE, "application/json").body(body);
+    }
+    let response = request.send().await?;
+    if !response.status().is_success() {
+        return Err(api_failure(response).await);
     }
     Ok(response.json().await?)
 }
