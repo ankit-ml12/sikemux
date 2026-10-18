@@ -4,12 +4,13 @@ import { EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../pl
 import { formatBytes } from "../../../plugin-api/format";
 import { refreshDocker, type DockerStatus } from "../api";
 import { usePoll } from "../hooks";
-import { dockerContainersR, dockerStatusR } from "../resources";
+import { dockerContainersR, dockerStatsR, dockerStatusR } from "../resources";
 import { updateDockerView, useDockerView, type DockerSection } from "../state";
 import { ContainerDetail } from "./ContainerDetail";
 import { Containers } from "./Containers";
 import { DockerMark } from "./DockerMark";
 import { LogView } from "./LogView";
+import { STATS_POLL_MS, StatsView } from "./StatsView";
 import "../docker.css";
 
 const SIDE_MIN = 170;
@@ -51,6 +52,9 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
     const sideRef = useRef<HTMLDivElement>(null);
     const containers = useResourceEnabled(active, dockerContainersR);
     usePoll(active, LIST_POLL_MS, containers.refresh);
+    const listing = active && view.section === "containers" && !view.container;
+    const stats = useResourceEnabled(listing, dockerStatsR);
+    usePoll(listing, STATS_POLL_MS, stats.refresh);
     const engine = status.engine;
     const running = containers.data?.filter((each) => each.state === "running").length ?? engine?.running ?? 0;
     const total = containers.data?.length ?? engine?.containers ?? 0;
@@ -139,11 +143,12 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
                             tab={view.tab}
                             onTab={(tab) => updateDockerView(paneId, { tab })}
                             onBack={() => updateDockerView(paneId, { container: null })}>
-                            {(detail) => (view.tab === "logs" ? <LogView container={detail} /> : null)}
+                            {(detail) => (view.tab === "logs" ? <LogView container={detail} /> : <StatsView active={active} container={detail} />)}
                         </ContainerDetail>
                     ) : (
                         <Containers
                             containers={containers.data}
+                            stats={stats.data}
                             find={view.find}
                             filter={view.stateFilter}
                             onFilter={(stateFilter) => updateDockerView(paneId, { stateFilter })}

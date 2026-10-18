@@ -1,6 +1,7 @@
 import { Seg } from "../../../plugin-api/ui";
 import { formatAgo } from "../../../plugin-api/format";
-import type { Container } from "../api";
+import { formatBytes } from "../../../plugin-api/format";
+import type { Container, ContainerStats } from "../api";
 import { isRunning, shortImage } from "../format";
 import type { StateFilter } from "../state";
 import { Ports, StateDot } from "./parts";
@@ -17,12 +18,15 @@ export function matches(container: Container, find: string, filter: StateFilter)
 
 export function Containers({
     containers,
+    stats,
     find,
     filter,
     onFilter,
     onOpen,
 }: {
     containers: Container[];
+    /** The running containers' load, once it has been measured. */
+    stats?: ContainerStats[];
     find: string;
     filter: StateFilter;
     onFilter: (filter: StateFilter) => void;
@@ -52,6 +56,8 @@ export function Containers({
                             <th>Image</th>
                             <th>Status</th>
                             <th>Ports</th>
+                            <th className="docker-num">CPU</th>
+                            <th className="docker-num">Memory</th>
                             <th>Created</th>
                         </tr>
                     </thead>
@@ -84,6 +90,7 @@ export function Containers({
                                 <td>
                                     <Ports ports={container.ports} />
                                 </td>
+                                <Load stats={stats?.find((each) => each.id === container.id)} />
                                 <td className="docker-muted">{formatAgo(container.created * 1000)}</td>
                             </tr>
                         ))}
@@ -91,5 +98,22 @@ export function Containers({
                 </table>
             )}
         </section>
+    );
+}
+
+function Load({ stats }: { stats: ContainerStats | undefined }) {
+    if (!stats) {
+        return (
+            <>
+                <td className="docker-num docker-muted">—</td>
+                <td className="docker-num docker-muted">—</td>
+            </>
+        );
+    }
+    return (
+        <>
+            <td className="docker-num">{stats.cpuPercent.toFixed(1)}%</td>
+            <td className="docker-num">{formatBytes(stats.memory)}</td>
+        </>
     );
 }
