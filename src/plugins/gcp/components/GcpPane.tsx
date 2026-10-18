@@ -17,6 +17,7 @@ import { PubSubPage } from "./PubSubPage";
 import { BuildPage } from "./BuildPage";
 import { SecretsPage } from "./SecretsPage";
 import { FunctionsPage } from "./FunctionsPage";
+import { ErrorsPage } from "./ErrorsPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -41,6 +42,7 @@ const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     build: BuildPage,
     secrets: SecretsPage,
     logging: LoggingPage,
+    errors: ErrorsPage,
 };
 
 const SIDE_MIN = 160;

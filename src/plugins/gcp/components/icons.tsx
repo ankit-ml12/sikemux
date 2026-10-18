@@ -29,6 +29,12 @@ const PATHS: Record<Product, string> = {
     secrets:
         "M12 2a5 5 0 0 0-5 5v3H5v12h14V10h-2V7a5 5 0 0 0-5-5m0 2a3 3 0 0 1 3 3v3H9V7a3 3 0 0 1 3-3m0 9a2 2 0 0 1 1 3.7V19h-2v-2.3A2 2 0 0 1 12 13",
     logging: "M4 5h16v2H4zm0 4h10v2H4zm0 4h16v2H4zm0 4h10v2H4z",
+    bigquery:
+        "M10.5 3a7.5 7.5 0 1 0 4.6 13.4l4.5 4.5 1.4-1.4-4.5-4.5A7.5 7.5 0 0 0 10.5 3m0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11M8 10h1.5v4H8zm2.3-2h1.5v6h-1.5zm2.2 3H14v3h-1.5z",
+    registry: "M4 7 12 3l8 4v10l-8 4-8-4zm2 1.2v7.6l6 3 6-3V8.2l-6 3zm6 1.1 5.2-2.6L12 4.1 6.8 6.7z",
+    scheduler: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16m-1 3v6l5 3 1-1.6-4-2.4V7z",
+    iam: "M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5zm0 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6m0 8c2 0 4 1 4.6 2.4A7 7 0 0 1 12 19.4a7 7 0 0 1-4.6-3C8 15 10 14 12 14",
+    errors: "M12 2 1 21h22zm0 4 7.5 13h-15zm-1 4v4h2v-4zm0 6v2h2v-2z",
 };
 
 export function ProductIcon({ product, size = 18 }: { product: Product; size?: number }) {

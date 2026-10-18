@@ -136,3 +136,55 @@ export const recentErrorsR = resource({
 });
 
 export const agentPicksR = resource({ kind: "gcp.agentPicks", fetch: (folder: string | null) => gcpApi.agentPicks(folder), staleAfterMs: 60_000 });
+
+export const errorGroupsR = resource({
+    kind: "gcp.errors",
+    fetch: (account: string, project: string, since: string) => gcpApi.errorGroups(target(account, project), since),
+    staleAfterMs: 60_000,
+});
+export const errorEventsR = resource({
+    kind: "gcp.errors.events",
+    fetch: (account: string, project: string, group: string) => gcpApi.errorEvents(target(account, project), group),
+    staleAfterMs: 60_000,
+});
+export const repositoriesR = resource({
+    kind: "gcp.repositories",
+    fetch: (account: string, project: string) => gcpApi.repositories(target(account, project)),
+    staleAfterMs: 60_000,
+});
+export const repositoryR = resource({
+    kind: "gcp.repository",
+    fetch: (account: string, project: string, location: string, repository: string) =>
+        gcpApi.repository(target(account, project), location, repository),
+    staleAfterMs: 60_000,
+});
+export const schedulerJobsR = resource({
+    kind: "gcp.scheduler",
+    fetch: (account: string, project: string) => gcpApi.schedulerJobs(target(account, project)),
+    staleAfterMs: 30_000,
+});
+export const iamMembersR = resource({
+    kind: "gcp.iam",
+    fetch: (account: string, project: string) => gcpApi.iamMembers(target(account, project)),
+    staleAfterMs: 5 * 60_000,
+});
+export const serviceAccountsR = resource({
+    kind: "gcp.iam.accounts",
+    fetch: (account: string, project: string) => gcpApi.serviceAccounts(target(account, project)),
+    staleAfterMs: 5 * 60_000,
+});
+export const datasetsR = resource({
+    kind: "gcp.bq.datasets",
+    fetch: (account: string, project: string) => gcpApi.datasets(target(account, project)),
+    staleAfterMs: 5 * 60_000,
+});
+export const tablesR = resource({
+    kind: "gcp.bq.tables",
+    fetch: (account: string, project: string, dataset: string) => gcpApi.tables(target(account, project), dataset),
+    staleAfterMs: 5 * 60_000,
+});
+export const tableR = resource({
+    kind: "gcp.bq.table",
+    fetch: (account: string, project: string, dataset: string, table: string) => gcpApi.table(target(account, project), dataset, table),
+    staleAfterMs: 5 * 60_000,
+});

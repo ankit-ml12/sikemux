@@ -3,7 +3,23 @@ import { definePaneViews } from "../../plugin-api/paneViews";
 import { definePluginSettings } from "../../plugin-api/settings";
 import { GCP_CONSOLE, GCP_PLUGIN_ID } from "./kinds";
 
-export type Product = "overview" | "run" | "functions" | "compute" | "gke" | "storage" | "sql" | "pubsub" | "build" | "secrets" | "logging";
+export type Product =
+    | "overview"
+    | "run"
+    | "functions"
+    | "compute"
+    | "gke"
+    | "storage"
+    | "sql"
+    | "bigquery"
+    | "pubsub"
+    | "build"
+    | "registry"
+    | "scheduler"
+    | "secrets"
+    | "iam"
+    | "logging"
+    | "errors";
 
 export const PRODUCTS: { id: Product; label: string; group: string }[] = [
     { id: "overview", label: "Dashboard", group: "" },
@@ -13,10 +29,15 @@ export const PRODUCTS: { id: Product; label: string; group: string }[] = [
     { id: "gke", label: "Kubernetes Engine", group: "Compute" },
     { id: "storage", label: "Cloud Storage", group: "Storage" },
     { id: "sql", label: "SQL", group: "Databases" },
+    { id: "bigquery", label: "BigQuery", group: "Analytics" },
     { id: "pubsub", label: "Pub/Sub", group: "Analytics" },
     { id: "build", label: "Cloud Build", group: "CI/CD" },
+    { id: "registry", label: "Artifact Registry", group: "CI/CD" },
+    { id: "scheduler", label: "Cloud Scheduler", group: "Integration" },
     { id: "secrets", label: "Secret Manager", group: "Security" },
+    { id: "iam", label: "IAM", group: "Security" },
     { id: "logging", label: "Logging", group: "Operations" },
+    { id: "errors", label: "Error Reporting", group: "Operations" },
 ];
 
 export interface GcpSettings {

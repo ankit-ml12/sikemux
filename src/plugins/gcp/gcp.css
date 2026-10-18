@@ -1008,3 +1008,48 @@ button.gcp-project-row:hover {
     padding: 0 0 0 24px;
     color: var(--gcp-text-2);
 }
+
+.gcp-occurrences {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.gcp-timeline {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 1px;
+    width: 72px;
+    height: 18px;
+}
+
+.gcp-timeline i {
+    flex: 1;
+    min-height: 2px;
+    background: var(--gcp-red);
+    opacity: 0.7;
+}
+
+.gcp-error-status {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--gcp-sunken);
+    color: var(--gcp-text-2);
+}
+
+.gcp-error-status.OPEN {
+    background: rgba(217, 48, 37, 0.12);
+    color: var(--gcp-red);
+}
+
+.gcp-error-status.ACKNOWLEDGED {
+    background: var(--gcp-blue-soft);
+    color: var(--gcp-blue-text);
+}
+
+.gcp-error-status.RESOLVED {
+    background: rgba(30, 142, 62, 0.12);
+    color: var(--gcp-green);
+}

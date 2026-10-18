@@ -415,6 +415,120 @@ export interface Series {
     points: { at: string; value: number }[];
 }
 
+export interface ErrorSample {
+    message: string;
+    at: string | null;
+    service: string | null;
+    version: string | null;
+    file: string | null;
+    line: number | null;
+    function: string | null;
+    request: { method: string | null; url: string | null; status: number | null } | null;
+    user: string | null;
+}
+
+export type ErrorStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED" | "MUTED";
+
+export interface ErrorGroup {
+    id: string;
+    title: string;
+    status: ErrorStatus;
+    count: number | null;
+    users: number | null;
+    firstSeen: string | null;
+    lastSeen: string | null;
+    services: string[];
+    timeline: number[];
+    issue: string | null;
+    sample: ErrorSample;
+}
+
+export interface Repository {
+    name: string;
+    location: string;
+    format: string;
+    mode: string | null;
+    description: string | null;
+    sizeBytes: number | null;
+    updatedAt: string | null;
+}
+
+export interface DockerImage {
+    digest: string;
+    image: string;
+    uri: string;
+    tags: string[];
+    sizeBytes: number | null;
+    uploadedAt: string | null;
+    builtAt: string | null;
+}
+
+export type RepositoryContents =
+    { format: "DOCKER"; images: DockerImage[] } | { format: string; packages: { name: string; updatedAt: string | null }[] };
+
+export interface SchedulerJob {
+    name: string;
+    location: string;
+    description: string | null;
+    schedule: string | null;
+    timeZone: string | null;
+    state: string;
+    target: { kind: "http"; method: string; uri: string } | { kind: "pubsub"; topic: string } | { kind: "appEngine"; uri: string } | null;
+    lastRunAt: string | null;
+    nextRunAt: string | null;
+    lastRunOk: boolean | null;
+    lastRunError: string | null;
+}
+
+export interface IamMember {
+    member: string;
+    kind: string;
+    roles: string[];
+}
+
+export interface ServiceAccount {
+    email: string;
+    name: string | null;
+    description: string | null;
+    disabled: boolean;
+}
+
+export interface BqField {
+    name: string;
+    type: string;
+    mode: string;
+    description: string | null;
+    fields: BqField[];
+}
+
+export interface BqTable {
+    id: string;
+    type: string;
+    description: string | null;
+    rows: number | null;
+    bytes: number | null;
+    location: string | null;
+    modifiedAt: number | null;
+    partitionedBy: string | null;
+    clusteredBy: string[] | null;
+    view: string | null;
+    schema: BqField[];
+    preview: Record<string, unknown>[] | null;
+}
+
+export type BqResult =
+    | { dryRun: true; bytes: number; costUsd: number; schema: BqField[] }
+    | {
+          dryRun: false;
+          schema: BqField[];
+          rows: Record<string, unknown>[];
+          totalRows: number | null;
+          bytes: number;
+          costUsd: number;
+          cached: boolean;
+          job: string;
+      };
+
 export interface AgentPick {
     account: string | null;
     project: string | null;
@@ -513,6 +627,28 @@ export const gcpApi = {
             { ...t(target), ...query },
             { onItem: handlers.onEntries, onError: (error) => handlers.onError(error.message) },
         ),
+
+    errorGroups: (target: Target, since: string) => backend.call<ErrorGroup[]>("errorGroups", { ...t(target), since }),
+    errorEvents: (target: Target, group: string) => backend.call<ErrorSample[]>("errorEvents", { ...t(target), group }),
+    errorStatus: (target: Target, group: string, status: ErrorStatus) =>
+        backend.call<{ id: string; status: ErrorStatus }>("errorStatus", { ...t(target), group, status }),
+
+    repositories: (target: Target) => backend.call<Repository[]>("repositories", t(target)),
+    repository: (target: Target, location: string, repository: string) =>
+        backend.call<RepositoryContents>("repository", { ...t(target), location, repository }),
+
+    schedulerJobs: (target: Target) => backend.call<SchedulerJob[]>("schedulerJobs", t(target)),
+    schedulerChange: (target: Target, location: string, job: string, action: "run" | "pause" | "resume") =>
+        backend.call<SchedulerJob>("schedulerChange", { ...t(target), location, job, action }),
+
+    iamMembers: (target: Target) => backend.call<IamMember[]>("iamMembers", t(target)),
+    serviceAccounts: (target: Target) => backend.call<ServiceAccount[]>("serviceAccounts", t(target)),
+
+    datasets: (target: Target) => backend.call<{ id: string; location: string | null; name: string | null }[]>("datasets", t(target)),
+    tables: (target: Target, dataset: string) =>
+        backend.call<{ id: string; type: string; partitioned: boolean }[]>("tables", { ...t(target), dataset }),
+    table: (target: Target, dataset: string, table: string) => backend.call<BqTable>("table", { ...t(target), dataset, table }),
+    query: (target: Target, sql: string, dryRun: boolean) => backend.call<BqResult>("query", { ...t(target), sql, dryRun }),
 
     metrics: (target: Target, chart: ChartKind, name: string, since: string) => backend.call<Series>("metrics", { ...t(target), chart, name, since }),
 
