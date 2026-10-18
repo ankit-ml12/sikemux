@@ -906,3 +906,47 @@ button.gcp-project-row:hover {
     overflow-wrap: anywhere;
     user-select: text;
 }
+
+.gcp-crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    font-size: 14px;
+}
+
+.gcp-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.gcp-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px 16px;
+    border: 1px solid var(--gcp-line);
+    border-radius: 4px;
+    background: var(--gcp-raised);
+    position: sticky;
+    top: 68px;
+}
+
+.gcp-panel header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.gcp-panel h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.gcp-panel .gcp-facts {
+    grid-template-columns: 1fr;
+}

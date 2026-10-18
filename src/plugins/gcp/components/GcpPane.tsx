@@ -10,6 +10,7 @@ import { LoggingPage } from "./LoggingPage";
 import { RunPage } from "./RunPage";
 import { ComputePage } from "./ComputePage";
 import { GkePage } from "./GkePage";
+import { StoragePage } from "./StoragePage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -27,6 +28,7 @@ const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     run: RunPage,
     compute: ComputePage,
     gke: GkePage,
+    storage: StoragePage,
     logging: LoggingPage,
 };
 
