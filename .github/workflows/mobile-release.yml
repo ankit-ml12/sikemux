@@ -2,7 +2,7 @@ name: Mobile release
 run-name: Mobile release ${{ github.ref_name }}
 
 # A phone release starts from a mobile-v* tag, separate from the Mac's v* tags. A stable one waits
-# for the owner's approval on the release environment; a nightly publishes once its checks pass.
+# for the owner's approval on the approval environment; a nightly publishes once its checks pass.
 on:
   push:
     tags: ["mobile-v*"]
@@ -25,23 +25,19 @@ jobs:
       - name: Approved
         run: echo "Approved ${GITHUB_REF_NAME}" >>"$GITHUB_STEP_SUMMARY"
 
-  android:
-    name: Build, verify, and publish Android
+  plan:
+    name: Plan the release
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    environment: release
-    needs: approve
-    if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
-    permissions:
-      contents: write
-      actions: write
-    env:
-      APP_VARIANT: production
-      # The Play upload key's certificate; a release signed with anything else is refused.
-      UPLOAD_CERT_SHA256: 4b29a5636b54e630aee1a7037c2cf4f182b7a140ffed36c6a38cafdd2529b32b
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
+      commit: ${{ steps.plan.outputs.commit }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Resolve version and channel
         id: plan
@@ -53,13 +49,40 @@ jobs:
             exit 1
           fi
           if [[ "$version" == *-* ]]; then channel=nightly; else channel=stable; fi
-          echo "version=$version" >>"$GITHUB_OUTPUT"
-          echo "channel=$channel" >>"$GITHUB_OUTPUT"
-          echo "SIKEMUX_MOBILE_VERSION=$version" >>"$GITHUB_ENV"
-          echo "SIKEMUX_MOBILE_CHANNEL=$channel" >>"$GITHUB_ENV"
-          # The account sheet shows which commit the build's own code came from.
-          echo "EXPO_PUBLIC_COMMIT=$(git rev-parse --short=7 HEAD)" >>"$GITHUB_ENV"
-          echo "Releasing Android $channel $version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
+          {
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "commit=$(git rev-parse --short=7 HEAD)"
+          } >>"$GITHUB_OUTPUT"
+          echo "Releasing $channel $version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
+
+      # Google Play takes the notes with the bundle at the end of the run; a stale or overlong file
+      # would only fail there, after the build.
+      - name: Check the release notes
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: node mobile/app/scripts/play-release.mjs notes "$VERSION"
+
+  # No job that installs or builds the dependencies holds a signing key, and no job that holds one
+  # runs them or anything they built: the builds come out unsigned, and the jobs on the release
+  # environment sign and upload them with the Android SDK, the JDK and Xcode alone.
+  android-build:
+    name: Build Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs: [approve, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
+    env:
+      APP_VARIANT: production
+      SIKEMUX_MOBILE_VERSION: ${{ needs.plan.outputs.version }}
+      SIKEMUX_MOBILE_CHANNEL: ${{ needs.plan.outputs.channel }}
+      # The account sheet shows which commit the build's own code came from.
+      EXPO_PUBLIC_COMMIT: ${{ needs.plan.outputs.commit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
@@ -71,17 +94,6 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            mobile/pnpm-lock.yaml
-
-      # Google Play takes the notes with the bundle at the end of the run; a stale or overlong file
-      # would only fail there, after the build.
-      - name: Check the release notes
-        env:
-          VERSION: ${{ steps.plan.outputs.version }}
-        run: node mobile/app/scripts/play-release.mjs notes "$VERSION"
 
       - name: Use the runner's Java 17 and Android NDK
         run: |
@@ -94,12 +106,6 @@ jobs:
           rustup toolchain install "$channel" --profile minimal --no-self-update \
             --target aarch64-linux-android --target x86_64-linux-android
           cargo install cargo-ndk --locked
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src-tauri
-          shared-key: mobile-android
 
       # The phone shares chat and UI code with the desktop app, which needs its packages to typecheck.
       - name: Install the desktop app's dependencies
@@ -121,14 +127,10 @@ jobs:
         working-directory: mobile/app
         run: node scripts/run.mjs prebuild android production
 
-      - name: Build the signed APK and app bundle
+      # Without the upload keystore, plugins/release-signing.js leaves both unsigned.
+      - name: Build the unsigned APK and app bundle
         working-directory: mobile/app/android
-        env:
-          ANDROID_UPLOAD_KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
-          SIKEMUX_UPLOAD_PASSWORD: ${{ secrets.ANDROID_UPLOAD_PASSWORD }}
         run: |
-          export SIKEMUX_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.keystore"
-          base64 --decode <<<"$ANDROID_UPLOAD_KEYSTORE" >"$SIKEMUX_UPLOAD_KEYSTORE"
           # The generated project gives Gradle 512 MB of metaspace, which a release build outgrows.
           # The file has no newline at its end, so the setting starts on a line of its own.
           sed -i '/^org.gradle.jvmargs=/d' gradle.properties
@@ -138,32 +140,86 @@ jobs:
           # phones, so arm64 alone; Play hands each device its own part of the bundle.
           ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
           ./gradlew bundleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
-          rm "$SIKEMUX_UPLOAD_KEYSTORE"
+          mkdir -p "$RUNNER_TEMP/unsigned"
+          cp app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/unsigned/app.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/unsigned/app.aab"
+
+      - name: Keep the unsigned APK and app bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-unsigned
+          path: ${{ runner.temp }}/unsigned/*
+          if-no-files-found: error
+
+  android-sign:
+    name: Sign Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    needs: [plan, android-build]
+    env:
+      # The Play upload key's certificate; a release signed with anything else is refused.
+      UPLOAD_CERT_SHA256: 4b29a5636b54e630aee1a7037c2cf4f182b7a140ffed36c6a38cafdd2529b32b
+    steps:
+      - name: Fetch android-unsigned
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android-unsigned
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Sign the APK and app bundle with the upload key
+        env:
+          ANDROID_UPLOAD_KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
+          SIKEMUX_UPLOAD_PASSWORD: ${{ secrets.ANDROID_UPLOAD_PASSWORD }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64" PATH="$JAVA_HOME_17_X64/bin:$PATH"
+          tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          keystore="$RUNNER_TEMP/upload.keystore"
+          base64 --decode <<<"$ANDROID_UPLOAD_KEYSTORE" >"$keystore"
+          key_cert="$(keytool -list -v -keystore "$keystore" -alias upload -storepass:env SIKEMUX_UPLOAD_PASSWORD | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
+          if [[ "$key_cert" != "$UPLOAD_CERT_SHA256" ]]; then
+            echo "::error::The keystore holds $key_cert, not the upload key"
+            exit 1
+          fi
+          mkdir -p dist
+          apk="dist/Sikemux_${VERSION}_android.apk"
+          aab="dist/Sikemux_${VERSION}_android.aab"
+          # Android 15 loads native libraries from 16 KB pages, so they are aligned to them.
+          "$tools/zipalign" -P 16 -f 4 "$RUNNER_TEMP/unsigned/app.apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias upload \
+            --ks-pass env:SIKEMUX_UPLOAD_PASSWORD --key-pass env:SIKEMUX_UPLOAD_PASSWORD --out "$apk" "$RUNNER_TEMP/aligned.apk"
+          cp "$RUNNER_TEMP/unsigned/app.aab" "$aab"
+          jarsigner -keystore "$keystore" -storepass:env SIKEMUX_UPLOAD_PASSWORD -keypass:env SIKEMUX_UPLOAD_PASSWORD "$aab" upload >/dev/null
+          rm "$keystore"
 
       - name: Check both are signed with the upload key
         env:
-          VERSION: ${{ steps.plan.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          outputs=mobile/app/android/app/build/outputs
-          apksigner="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n 1)"
-          apk_cert="$("$apksigner" verify --print-certs "$outputs/apk/release/app-release.apk" | sed -n 's/.*certificate SHA-256 digest: //p' | sort -u)"
-          aab_cert="$(keytool -printcert -jarfile "$outputs/bundle/release/app-release.aab" | sed -n 's/^\s*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
+          export PATH="$JAVA_HOME_17_X64/bin:$PATH"
+          tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          apk="dist/Sikemux_${VERSION}_android.apk"
+          aab="dist/Sikemux_${VERSION}_android.aab"
+          "$tools/zipalign" -c -P 16 4 "$apk"
+          grep -qx 'jar verified.' <<<"$(jarsigner -verify "$aab")"
+          apk_cert="$("$tools/apksigner" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | sort -u)"
+          aab_cert="$(keytool -printcert -jarfile "$aab" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
           for cert in "$apk_cert" "$aab_cert"; do
             if [[ "$cert" != "$UPLOAD_CERT_SHA256" ]]; then
               echo "::error::A release is signed with $cert, not the upload key"
               exit 1
             fi
           done
-          mkdir -p dist
-          cp "$outputs/apk/release/app-release.apk" "dist/Sikemux_${VERSION}_android.apk"
-          cp "$outputs/bundle/release/app-release.aab" "dist/Sikemux_${VERSION}_android.aab"
           ls -l dist >>"$GITHUB_STEP_SUMMARY"
 
       # Over-the-air updates for a runtime no release was built for are not published, so each
       # release says which runtime its build has.
       - name: Record the build's runtime version
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          runtime="$(unzip -p mobile/app/android/app/build/outputs/apk/release/app-release.apk assets/fingerprint)"
+          runtime="$(unzip -p "dist/Sikemux_${VERSION}_android.apk" assets/fingerprint)"
           if [[ ! "$runtime" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::The APK carries no runtime version"
             exit 1
@@ -174,15 +230,41 @@ jobs:
       - name: Keep the APK and app bundle on the run
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sikemux-android-${{ steps.plan.outputs.version }}
+          name: sikemux-android-${{ needs.plan.outputs.version }}
           path: dist/*
           if-no-files-found: error
+
+  android-publish:
+    name: Publish Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    needs: [plan, android-sign]
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Fetch sikemux-android-${{ needs.plan.outputs.version }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sikemux-android-${{ needs.plan.outputs.version }}
+          path: dist
 
       - name: Publish the APK
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.plan.outputs.version }}
-          CHANNEL: ${{ steps.plan.outputs.channel }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
         run: |
           # Never the latest release: sikemux.com takes its Mac download from that one.
           flags=(--latest=false --verify-tag)
@@ -201,7 +283,7 @@ jobs:
       # Updates pushed to main while this release was building were skipped, as no release had
       # their runtime yet. Publishing main again now lets this build take them.
       - name: Publish main's update for this build
-        if: steps.plan.outputs.channel == 'nightly'
+        if: needs.plan.outputs.channel == 'nightly'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -217,37 +299,26 @@ jobs:
       - name: Put the app bundle on Google Play
         env:
           PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
-          VERSION: ${{ steps.plan.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: node mobile/app/scripts/play-release.mjs upload "$VERSION" "dist/Sikemux_${VERSION}_android.aab"
 
-  ios:
-    name: Build iOS and send it to TestFlight
+  ios-build:
+    name: Build iOS
     runs-on: macos-26
     timeout-minutes: 120
-    environment: release
-    needs: approve
-    if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
+    needs: [approve, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     env:
       APP_VARIANT: production
+      SIKEMUX_MOBILE_VERSION: ${{ needs.plan.outputs.version }}
+      SIKEMUX_MOBILE_CHANNEL: ${{ needs.plan.outputs.channel }}
+      # The account sheet shows which commit the build's own code came from.
+      EXPO_PUBLIC_COMMIT: ${{ needs.plan.outputs.commit }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Resolve version and channel
-        id: plan
-        run: |
-          version="${GITHUB_REF_NAME#mobile-v}"
-          base="$(node -p "require('./mobile/app/app.json').expo.version")"
-          if [[ "${version%%-*}" != "$base" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME is not a release of $base, the version in mobile/app/app.json"
-            exit 1
-          fi
-          if [[ "$version" == *-* ]]; then channel=nightly; else channel=stable; fi
-          echo "version=$version" >>"$GITHUB_OUTPUT"
-          echo "SIKEMUX_MOBILE_VERSION=$version" >>"$GITHUB_ENV"
-          echo "SIKEMUX_MOBILE_CHANNEL=$channel" >>"$GITHUB_ENV"
-          echo "EXPO_PUBLIC_COMMIT=$(git rev-parse --short=7 HEAD)" >>"$GITHUB_ENV"
-          echo "Releasing iOS $channel $version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
+        with:
+          persist-credentials: false
 
       # The newest Xcode on the image, leaving betas out.
       - name: Choose Xcode
@@ -266,22 +337,12 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            mobile/pnpm-lock.yaml
 
       - name: Setup Rust
         run: |
           channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
           rustup toolchain install "$channel" --profile minimal --no-self-update \
             --target aarch64-apple-ios --target aarch64-apple-ios-sim
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src-tauri
-          shared-key: mobile-ios
 
       - name: Install the desktop app's dependencies
         run: pnpm install --frozen-lockfile
@@ -298,8 +359,101 @@ jobs:
         working-directory: mobile/app
         run: node scripts/run.mjs prebuild ios production
 
-      # Xcode signs with the App Store Connect API key: it makes or fetches the certificate and the
-      # profiles for the app and its notification extension, and sends the build to TestFlight.
+      # Export takes each bundle's entitlements from the archive's signatures, so the archive is
+      # signed ad hoc with them; export then signs it for the App Store.
+      - name: Archive, signed ad hoc
+        working-directory: mobile/app/ios
+        run: |
+          archive="$RUNNER_TEMP/Sikemux.xcarchive"
+          build=(-workspace Sikemux.xcworkspace -scheme Sikemux -configuration Release -destination generic/platform=iOS)
+          xcodebuild "${build[@]}" -archivePath "$archive" CODE_SIGNING_ALLOWED=NO archive
+          entitlements="$RUNNER_TEMP/entitlements"
+          xcodebuild -project Sikemux.xcodeproj -alltargets -configuration Release -sdk iphoneos \
+            -showBuildSettings -json >"$RUNNER_TEMP/settings.json"
+          node - "$RUNNER_TEMP/settings.json" "$entitlements" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const [settingsPath, out] = process.argv.slice(2);
+          fs.mkdirSync(out, { recursive: true });
+          for (const { buildSettings: s } of JSON.parse(fs.readFileSync(settingsPath, 'utf8'))) {
+            if (!s.CODE_SIGN_ENTITLEMENTS) continue;
+            const text = fs
+              .readFileSync(path.resolve(s.SRCROOT, s.CODE_SIGN_ENTITLEMENTS), 'utf8')
+              .replaceAll('$(AppIdentifierPrefix)', 'D577WD6Z5U.')
+              .replaceAll('$(TeamIdentifierPrefix)', 'D577WD6Z5U.');
+            if (text.includes('$(')) throw new Error(`${s.CODE_SIGN_ENTITLEMENTS} uses a setting this step does not fill in`);
+            fs.writeFileSync(path.join(out, `${s.FULL_PRODUCT_NAME}.plist`), text);
+          }
+          NODE
+          app="$archive/Products/Applications/Sikemux.app"
+          [[ -f "$entitlements/Sikemux.app.plist" ]] || { echo "::error::The app has no entitlements"; exit 1; }
+          find "$app" -depth -mindepth 1 \( -name '*.framework' -o -name '*.dylib' -o -name '*.appex' \) -print0 |
+            while IFS= read -r -d '' code; do
+              args=()
+              [[ -f "$entitlements/$(basename "$code").plist" ]] && args=(--entitlements "$entitlements/$(basename "$code").plist")
+              codesign --force --sign - --generate-entitlement-der "${args[@]}" "$code"
+            done
+          codesign --force --sign - --generate-entitlement-der --entitlements "$entitlements/Sikemux.app.plist" "$app"
+          codesign --verify --deep --strict "$app"
+          COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -cf "$RUNNER_TEMP/archive.tar" -C "$RUNNER_TEMP" Sikemux.xcarchive
+
+      - name: Keep the archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-archive
+          path: ${{ runner.temp }}/archive.tar
+          if-no-files-found: error
+
+  ios-sign:
+    name: Sign iOS and send it to TestFlight
+    runs-on: macos-26
+    timeout-minutes: 90
+    environment: release
+    needs: [plan, ios-build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The newest Xcode on the image, leaving betas out.
+      - name: Choose Xcode
+        run: |
+          xcode="$(printf '%s\n' /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -n 1)"
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version | head -n 1 >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Fetch ios-archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-archive
+          path: ${{ runner.temp }}/download
+
+      # A link out of the archive could point the signing at files outside it.
+      - name: Unpack the archive
+        run: |
+          tar -xf "$RUNNER_TEMP/download/archive.tar" -C "$RUNNER_TEMP"
+          archive="$(cd "$RUNNER_TEMP/Sikemux.xcarchive" && pwd -P)"
+          while IFS= read -r -d '' link; do
+            target="$(realpath "$link" 2>/dev/null)" || target=""
+            if [[ "$target" != "$archive"/* ]]; then
+              echo "::error::$link points outside the archive"
+              exit 1
+            fi
+          done < <(find "$archive" -type l -print0)
+          if [[ -n "$(find "$archive" ! -type f ! -type d ! -type l -print -quit)" ]]; then
+            echo "::error::The archive holds something other than files, folders and links"
+            exit 1
+          fi
+          codesign --verify --deep --strict "$archive/Products/Applications/Sikemux.app"
+
+      # Xcode makes or fetches the distribution certificate and the profiles for the app and its
+      # notification extension with the App Store Connect API key, and sends the build to TestFlight.
       - name: Revoke the development certificates earlier runs made
         working-directory: mobile/app
         env:
@@ -307,9 +461,9 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: node scripts/testflight-release.mjs prune-certificates
-      - name: Archive, sign and send to TestFlight
+
+      - name: Sign and send to TestFlight
         id: upload
-        working-directory: mobile/app/ios
         env:
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -320,8 +474,6 @@ jobs:
           auth=(-allowProvisioningUpdates -authenticationKeyPath "$key"
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID")
           archive="$RUNNER_TEMP/Sikemux.xcarchive"
-          xcodebuild -workspace Sikemux.xcworkspace -scheme Sikemux -configuration Release \
-            -destination generic/platform=iOS -archivePath "$archive" "${auth[@]}" archive
           cat >"$RUNNER_TEMP/export.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -349,6 +501,6 @@ jobs:
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          VERSION: ${{ steps.plan.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
           BUILD: ${{ steps.upload.outputs.build }}
         run: node scripts/testflight-release.mjs submit "$VERSION" "$BUILD"
