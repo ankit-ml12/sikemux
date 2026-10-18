@@ -7,7 +7,7 @@ import { CommitAgents, type CommitOwners } from "./CommitAgents";
 
 export { authorColor, initials } from "./AuthorAvatar";
 
-const ROW_H = 26;
+const ROW_H = 32;
 /** Beyond two, refs crowd the subject out of the row entirely. */
 const LANE_W = 14; // horizontal gap between lanes
 const X0 = 14; // x of lane 0's centre
