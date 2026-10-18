@@ -32,7 +32,7 @@ export function Docs(props: {
   kind: "landing" | "page" | "missing";
   children?: ReactNode;
 }) {
-  const tree = useMemo(() => ({ ...props.tree, children: props.tree.children.map(withAgentMarks) }), [props.tree]);
+  const tree = useMemo(() => withIntroduction({ ...props.tree, children: props.tree.children.map(withAgentMarks) }), [props.tree]);
   const agent = agentOf(props.pathname);
   return (
     <RootProvider
@@ -113,6 +113,13 @@ export function Docs(props: {
       </DocsLayout>
     </RootProvider>
   );
+}
+
+function withIntroduction(tree: Root): Root {
+  const [first, ...rest] = tree.children;
+  if (first?.type !== "folder") return tree;
+  const introduction: Node = { type: "page", name: "Introduction", url: "/" };
+  return { ...tree, children: [{ ...first, children: [introduction, ...first.children] }, ...rest] };
 }
 
 function withAgentMarks(node: Node): Node {
