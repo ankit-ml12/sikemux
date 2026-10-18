@@ -61,6 +61,7 @@ pub fn deployment(value: &Value) -> Value {
         "commit": git(meta, "Sha"),
         "message": first_line(git(meta, "Message")),
         "author": author,
+        "redeployOf": at(meta, "/originalDeploymentId"),
         "inspectorUrl": at(value, "/inspectorUrl"),
         "aliases": at(value, "/alias"),
         "error": value.get("errorMessage").cloned().unwrap_or(Value::Null),
@@ -332,7 +333,7 @@ mod tests {
         let raw = json!({
             "uid": "dpl_1", "name": "web", "url": "web-abc.vercel.app", "state": "ERROR", "target": null, "created": 10, "buildingAt": 1000, "ready": 46000,
             "creator": { "username": "ankit" },
-            "meta": { "githubCommitRef": "fix-nav", "githubCommitSha": "abc123", "githubCommitMessage": "Fix the nav\n\nlonger body", "githubCommitAuthorName": "Ankit" },
+            "meta": { "originalDeploymentId": "dpl_0", "githubCommitRef": "fix-nav", "githubCommitSha": "abc123", "githubCommitMessage": "Fix the nav\n\nlonger body", "githubCommitAuthorName": "Ankit" },
             "inspectorUrl": "https://vercel.com/acme/web/1"
         });
         let read = deployment(&raw);
@@ -344,6 +345,7 @@ mod tests {
         assert_eq!(read["message"], "Fix the nav");
         assert_eq!(read["author"], "Ankit");
         assert_eq!(read["buildMs"], 45000);
+        assert_eq!(read["redeployOf"], "dpl_0");
     }
 
     #[test]
