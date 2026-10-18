@@ -266,12 +266,19 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
       ),
       tool("read", "mcp__sikemux-tools__jira_issue", {
         rawInput: { key: "ACME-412" },
+        rawOutput:
+          "ACME-412 · Checkout returns 500 for saved cards\nIn Progress · High · reported by Edon Ramos\n\nSince 09:12 about one checkout in twenty fails with a 500 when paying with a saved card. New cards go through.",
         durationMs: 700,
       }),
       tool("read", "mcp__sikemux-tools__signoz_logs", {
         rawInput: { service: "billing-service", severities: "error" },
+        rawOutput:
+          "09:12:04  ERROR  charge failed: card token signed with retired key v2\n09:12:31  ERROR  POST /checkout 500 · 212 ms\n09:13:02  ERROR  charge failed: card token signed with retired key v2\n09:13:40  ERROR  POST /checkout 500 · 198 ms\n… 118 more in the last hour",
         durationMs: 1_300,
       }),
+      say(
+        "Saved cards still carry tokens signed with the retired v2 key, so the charge call refuses them and checkout answers 500. I'll make the charge read both keys, then check it in the browser.",
+      ),
       tool("execute", "mcp__sikemux-tools__task_start", {
         rawInput: { taskId: "dev" },
         durationMs: 400,
@@ -397,6 +404,7 @@ const SHOP = {
   title: "Shop the drop · Moodboard Studio",
   picture: "/showcase/pages/moodboard-shop.png",
 };
+export const COVER_PROMPT = "Open the dev server in your tab and show me Shop the drop.";
 const coverReply = say("The cover buttons share the row now, and Shop the drop opens the shop:");
 const railTests = tool(
   "execute",
@@ -405,35 +413,37 @@ const railTests = tool(
   "in_progress",
 );
 
+const wrenChecksTheCover: Update[] = [
+  think("Opening the cover in my tab first."),
+  tool("fetch", "mcp__sikemux-tools__browser_navigate", {
+    rawInput: { url: COVER.url },
+    browser: COVER,
+    durationMs: 1_600,
+  }),
+  tool("edit", "mcp__sikemux-tools__browser_click", {
+    rawInput: { text: "Shop the drop" },
+    browser: SHOP,
+    durationMs: 1_400,
+  }),
+  tool("read", "mcp__sikemux-tools__browser_screenshot", { rawInput: {}, durationMs: 900 }),
+  coverReply,
+  {
+    sessionUpdate: "agent_message_chunk",
+    messageId: coverReply.messageId,
+    content: { type: "image", uri: SHOP.picture },
+  },
+];
+
 /**
  * A turn a video plays when it says so, after the chat has opened. A step's
  * `board` changes a card, `browser` moves the agent's tab to a page, and
  * `asks` makes a command wait for the person's permission.
  */
 export const CUED_TURNS: Record<string, { agentId: string; updates: Update[] }> = {
-  "wren-checks-the-cover": {
+  "wren-checks-the-cover": { agentId: AGENTS.hero.id, updates: wrenChecksTheCover },
+  "wren-is-asked-to-check-the-cover": {
     agentId: AGENTS.hero.id,
-    updates: [
-      user("Open the dev server in your tab, check the cover buttons, then show me Shop the drop."),
-      think("Opening the cover in my tab first."),
-      tool("fetch", "mcp__sikemux-tools__browser_navigate", {
-        rawInput: { url: COVER.url },
-        browser: COVER,
-        durationMs: 1_600,
-      }),
-      tool("edit", "mcp__sikemux-tools__browser_click", {
-        rawInput: { text: "Shop the drop" },
-        browser: SHOP,
-        durationMs: 1_400,
-      }),
-      tool("read", "mcp__sikemux-tools__browser_screenshot", { rawInput: {}, durationMs: 900 }),
-      coverReply,
-      {
-        sessionUpdate: "agent_message_chunk",
-        messageId: coverReply.messageId,
-        content: { type: "image", uri: SHOP.picture },
-      },
-    ],
+    updates: [user(COVER_PROMPT), ...wrenChecksTheCover],
   },
   "otter-runs-the-rail-tests": {
     agentId: AGENTS.rail.id,

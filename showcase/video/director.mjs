@@ -364,19 +364,28 @@ export class Director {
     }
   }
 
-  /** A two-finger swipe over `target`: the hand lands, pushes `pixels` sideways and lifts. */
-  async swipe(target, { pixels = 220, duration = 380 } = {}) {
-    await this.move(target);
+  /**
+   * A two-finger swipe over `target`, drawn as the cursor pressing and dragging
+   * the page along. The hand speeds up and lifts while still moving, so the page
+   * carries on onto the next one in one motion.
+   */
+  async swipe(target, { pixels = 160, duration = 240, at } = {}) {
+    await this.move(target, { at });
+    await this.pressCursor(1, 90);
     await this.app(() => showcase.backend.emit("wheel-touch", true));
-    const frames = Math.round(duration / STEP);
+    const frames = Math.max(2, Math.round(duration / STEP));
     let pushed = 0;
     for (let index = 1; index <= frames; index++) {
-      const next = pixels * outEase(index / frames);
-      await this.page.mouse.wheel(next - pushed, 0);
+      const progress = index / frames;
+      const next = (pixels * (progress + progress * progress)) / 2;
+      const delta = next - pushed;
       pushed = next;
+      this.cursor.x -= delta;
+      await this.page.mouse.wheel(delta, 0);
       await this.frame();
     }
     await this.app(() => showcase.backend.emit("wheel-touch", false));
+    await this.pressCursor(0, 140);
   }
 
   /** Moves the island over the notch to one of its states, as drawn by its snapshot tool. */
