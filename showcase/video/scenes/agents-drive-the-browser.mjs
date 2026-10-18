@@ -13,7 +13,7 @@ export default {
     await s.place({ x: 760, y: 700 });
   },
   play: async (s) => {
-    await s.wait(500);
+    await s.wait(1200);
     await s.zoom(composer, { scale: 1.6, wait: false });
     await s.click(composer);
     await s.type("Open the dev server in your tab and show me Shop the drop.");
@@ -23,8 +23,9 @@ export default {
     await s.zoomOut({ wait: false });
     await s.live({ agent: WREN, steps: 2 });
     await browserCheck(s);
-    await s.wait(1800);
+    await s.wait(700);
     await s.zoomOut();
-    await s.wait(900);
+    await s.wait(600);
+    await s.endCard();
   },
 };

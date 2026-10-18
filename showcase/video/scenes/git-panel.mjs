@@ -9,9 +9,9 @@ export default {
     await s.place({ x: 1250, y: 860 });
   },
   play: async (s) => {
-    await s.wait(700);
+    await s.wait(1200);
     await s.zoom(".git-right", { scale: 1.35, at: { x: 0.5, y: 0.2 } });
-    await s.wait(600);
+    await s.wait(1500);
     await s.zoom(".git-right", {
       scale: 1.35,
       at: { x: 0.5, y: 0.8 },
@@ -31,7 +31,7 @@ export default {
       text: "the terminals page",
       exact: false,
     });
-    await s.wait(700);
+    await s.wait(1500);
     await s.zoom(".git-right", {
       scale: 1.3,
       at: { x: 0.5, y: 0.2 },
@@ -45,8 +45,9 @@ export default {
     await s.wait(900);
     await s.move(".git-right", { at: { x: 0.85, y: 0.7 } });
     await s.scroll(".git-right", { by: 1500, duration: 8000 });
-    await s.wait(900);
+    await s.wait(1500);
     await s.zoomOut();
-    await s.wait(700);
+    await s.wait(600);
+    await s.endCard();
   },
 };

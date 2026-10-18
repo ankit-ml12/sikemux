@@ -19,7 +19,7 @@ export default {
     await s.place({ x: 760, y: 700 });
   },
   play: async (s) => {
-    await s.wait(500);
+    await s.wait(1200);
     await s.zoom(composer, { scale: 1.6, wait: false });
     await s.click(composer);
     await s.type(
@@ -36,12 +36,13 @@ export default {
       wait: false,
     });
     await s.live({ agent: COMET, steps: 3 });
-    await s.wait(900);
+    await s.wait(1500);
     await s.live({ agent: COMET, steps: 3, pace: 0.6 });
     await s.zoom({ selector: ".chat-image", last: true }, { scale: 1.5 });
     s.live({ agent: COMET, wait: false });
-    await s.wait(1800);
+    await s.wait(2200);
     await s.zoomOut();
-    await s.wait(800);
+    await s.wait(600);
+    await s.endCard();
   },
 };

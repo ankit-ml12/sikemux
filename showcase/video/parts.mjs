@@ -83,7 +83,7 @@ export async function boardMoves(s, { hold = 1500 } = {}) {
   await s.click({ selector: ".side-rail *", text: "Board" });
   const otterLane = ".kanban-columns";
   await s.steady(otterLane, { frames: 6 });
-  s.zoom(otterLane, { pad: 40 });
+  s.zoom(otterLane, { pad: 40, wait: false });
   await s.move(card("Ledger import onto amounts"));
   await s.still();
   await s.live({ agent: MAPLE, steps: 1, pace: 0, shortest: 0 });

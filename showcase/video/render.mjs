@@ -131,6 +131,15 @@ for (const name of chosen) {
     density: scale,
     capture: async () => {
       if (stillsAt && !stillsAt.includes(director.recorded)) return;
+      // The page's own clock is held still, so the browser's real frames are waited on: a busy page,
+      // laying out a board or blurring the window, would otherwise be captured a frame behind.
+      await page.evaluate(
+        () =>
+          new Promise((painted) => {
+            const frame = globalThis.__pwClock.builtins.requestAnimationFrame;
+            frame(() => frame(painted));
+          }),
+      );
       const { data } = await cdp.send("Page.captureScreenshot", {
         format: "png",
         optimizeForSpeed: !stillsAt,

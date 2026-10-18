@@ -91,7 +91,18 @@ export class Director {
     }
   }
 
-  async frame() {
+  /**
+   * Moves on one frame. Beats waiting side by side share each frame rather
+   * than each advancing the clock, so time moves one step per picture.
+   */
+  frame() {
+    this.framing ??= this.advance().finally(() => {
+      this.framing = null;
+    });
+    return this.framing;
+  }
+
+  async advance() {
     this.frames += 1;
     this.now += STEP;
     const at = this.frames * STEP;
@@ -331,6 +342,8 @@ export class Director {
       width,
     };
     const start = { ...this.view };
+    // One camera: a new move takes over from wherever the last one had got to, instead of both writing every frame.
+    if (this.lens) this.tweens.delete(this.lens);
     const tween = this.tween(duration, (progress) => {
       const p = lensEase(progress);
       this.view.width = start.width * (end.width / start.width) ** p;
@@ -342,6 +355,7 @@ export class Director {
       this.view.x = lerp(start.x, end.x, along);
       this.view.y = lerp(start.y, end.y, along);
     });
+    this.lens = tween;
     if (wait) await this.until(() => !this.tweens.has(tween));
   }
 
