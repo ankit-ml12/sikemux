@@ -70,6 +70,19 @@ pub(crate) struct TrustAsk {
     grant: Grant,
 }
 
+/// A trust question put to the person.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Asked {
+    id: String,
+    project: String,
+    /// The run that waits on the answer, when one does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    execution_id: Option<String>,
+    #[serde(flatten)]
+    ask: TrustAsk,
+}
+
 #[derive(Clone, Debug)]
 enum Grant {
     Config(TrustedConfig),
@@ -79,8 +92,8 @@ enum Grant {
 #[derive(Default)]
 struct State {
     trust: TrustRecord,
-    /// Runs waiting on the person, by execution id.
-    asking: HashMap<String, TrustAsk>,
+    /// Questions waiting on the person, by id.
+    asking: HashMap<String, Asked>,
     /// Results a finished test run left, by execution id.
     tests: HashMap<String, TestResults>,
     /// Ports a detected task's app moved to, by project and task id.
@@ -149,7 +162,6 @@ impl Tasks {
     fn retain(&self, known: impl Fn(&str) -> bool) {
         let mut state = self.lock();
         state.tests.retain(|id, _| known(id));
-        state.asking.retain(|id, _| known(id));
     }
 }
 
@@ -403,6 +415,7 @@ pub(crate) async fn trust_project(core: &Arc<Core>, project: String, fingerprint
         core.tasks
             .grant(Grant::Config(TrustedConfig { path, fingerprint }));
         core.harness.changed();
+        core.changes.changed("tasks", Some(&project), None);
         Ok(())
     })
     .await
@@ -505,8 +518,19 @@ pub(crate) fn inspect(core: &Core, project: &Path) -> Value {
     value
 }
 
-/// The latest test results each module's test task left, failures first.
-fn test_results(project: &Path, tasks: &[Definition]) -> Vec<Value> {
+/// The latest results each module's test task left in `project`, worded as
+/// `workspace_inspect` gives them.
+pub(crate) async fn module_tests(core: &Arc<Core>, project: String) -> CoreResult<Value> {
+    let core = core.clone();
+    blocking(move || {
+        let project = PathBuf::from(project);
+        let Offered { tasks, .. } = offered(&core, &project);
+        Ok(Value::Array(test_results(&project, &tasks)))
+    })
+    .await
+}
+
+fn test_modules(tasks: &[Definition]) -> Vec<&Path> {
     let mut modules: Vec<&Path> = tasks
         .iter()
         .filter(|task| detect::is_test_task(&task.id))
@@ -514,6 +538,11 @@ fn test_results(project: &Path, tasks: &[Definition]) -> Vec<Value> {
         .collect();
     modules.dedup();
     modules
+}
+
+/// The latest test results each module's test task left, failures first.
+fn test_results(project: &Path, tasks: &[Definition]) -> Vec<Value> {
+    test_modules(tasks)
         .into_iter()
         .filter_map(|cwd| {
             let found = results::read(cwd)?;
@@ -642,22 +671,37 @@ fn trust_for(core: &Core, project: &Path, task: &Definition, config: &ConfigLoad
     }
 }
 
-/// Waits for the person to answer `ask`. False when they refused, the run
-/// was stopped, or nobody answered in time.
-async fn trusted(core: &Arc<Core>, execution_id: &str, ask: TrustAsk) -> bool {
-    core.tasks.lock().asking.insert(execution_id.to_owned(), ask.clone());
-    core.harness.awaiting_trust(execution_id);
+/// Puts `ask` to the person and waits for the answer. False when they
+/// refused, the run waiting on it was stopped, or nobody answered in time.
+async fn ask_person(core: &Arc<Core>, project: &str, ask: TrustAsk, execution_id: Option<&str>) -> bool {
+    let id = uuid::Uuid::new_v4().to_string();
+    let grant = ask.grant.clone();
+    core.tasks.lock().asking.insert(
+        id.clone(),
+        Asked {
+            id: id.clone(),
+            project: project.to_owned(),
+            execution_id: execution_id.map(str::to_owned),
+            ask,
+        },
+    );
+    if let Some(execution_id) = execution_id {
+        core.harness.awaiting_trust(execution_id);
+    }
+    core.changes.changed("trust", None, None);
     let until = Instant::now() + TRUST_WAIT;
     let answer = loop {
         let mut changed = core.harness.subscribe();
-        if core.tasks.trusts(&ask.grant) {
+        if core.tasks.trusts(&grant) {
             break true;
         }
-        let active = core
-            .harness
-            .run_of(execution_id)
-            .is_some_and(|run| run.status.is_active());
-        if !active || Instant::now() >= until {
+        let waiting = core.tasks.lock().asking.contains_key(&id)
+            && execution_id.is_none_or(|execution_id| {
+                core.harness
+                    .run_of(execution_id)
+                    .is_some_and(|run| run.status.is_active())
+            });
+        if !waiting || Instant::now() >= until {
             break false;
         }
         tokio::select! {
@@ -665,26 +709,36 @@ async fn trusted(core: &Arc<Core>, execution_id: &str, ask: TrustAsk) -> bool {
             _ = tokio::time::sleep_until(until) => {}
         }
     };
-    core.tasks.lock().asking.remove(execution_id);
-    core.harness.changed();
+    core.tasks.lock().asking.remove(&id);
+    core.changes.changed("trust", None, None);
     answer
 }
 
-/// The person answers a run's trust question.
-pub(crate) fn answer_trust(core: &Core, execution_id: &str, trust: bool) -> CoreResult<()> {
-    let ask = core
+/// The trust questions waiting on the person.
+pub(crate) fn asks(core: &Core) -> Vec<Value> {
+    core.tasks
+        .lock()
+        .asking
+        .values()
+        .map(|asked| serde_json::to_value(asked).unwrap_or_default())
+        .collect()
+}
+
+/// The person answers a trust question.
+pub(crate) fn answer_trust(core: &Core, id: &str, trust: bool) -> CoreResult<()> {
+    let asked = core
         .tasks
         .lock()
         .asking
-        .get(execution_id)
-        .cloned()
-        .ok_or("That task no longer waits on you")?;
+        .remove(id)
+        .ok_or("Nothing waits on that answer any more")?;
     if trust {
-        core.tasks.grant(ask.grant);
-        core.harness.changed();
-    } else {
+        core.tasks.grant(asked.ask.grant);
+        core.changes.changed("tasks", Some(&asked.project), None);
+    } else if let Some(execution_id) = &asked.execution_id {
         core.harness.launch_failed(execution_id, "Project configuration was not approved");
     }
+    core.harness.changed();
     Ok(())
 }
 
@@ -747,7 +801,7 @@ pub(crate) async fn launch(core: &Arc<Core>, execution_id: &str, previous: Optio
     let (mut task, config) = resolved;
     if !bypasses(core, run.agent_id.as_deref()) {
         if let Some(ask) = trust_for(core, &project, &task, &config) {
-            if !trusted(core, execution_id, ask).await {
+            if !ask_person(core, &run.project, ask, Some(execution_id)).await {
                 return Err("Project configuration was not approved".into());
             }
             if let ConfigLoad::Valid { fingerprint, .. } = &config {
@@ -1046,9 +1100,6 @@ pub(crate) fn runs(core: &Core) -> Vec<Value> {
                     "terminalKey".into(),
                     terminal_key(&run.project, &run.task_id).into(),
                 );
-                if let Some(ask) = state.asking.get(&run.execution_id) {
-                    object.insert("trust".into(), serde_json::to_value(ask).unwrap_or_default());
-                }
                 if let Some(tests) = state.tests.get(&run.execution_id) {
                     object.insert("tests".into(), serde_json::to_value(tests).unwrap_or_default());
                 }

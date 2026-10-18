@@ -179,8 +179,12 @@ pub(crate) async fn call(
         "commitOwners" => answer(who_wrote::call(&core, parse(params)?).await?),
         "inbox" => answer(inbox(&core).await?),
         "ports" => {
+            let params: PortsParams = parse(params)?;
+            answer(super::ports::project_ports(&core, client.id, params.project).await?)
+        }
+        "testResults" => {
             let params: ProjectParams = parse(params)?;
-            answer(super::ports::project_ports(&core, params.project).await?)
+            answer(super::tasks::module_tests(&core, params.project).await?)
         }
         "projectConfig" => {
             let params: ProjectParams = parse(params)?;
@@ -202,9 +206,10 @@ pub(crate) async fn call(
             super::harness::stop_run(&core, &params.execution_id).await?;
             answer(())
         }
-        "answerTaskTrust" => {
-            let params: TaskTrustParams = parse(params)?;
-            answer(super::tasks::answer_trust(&core, &params.execution_id, params.trust)?)
+        "trustAsks" => answer(super::tasks::asks(&core)),
+        "answerTrust" => {
+            let params: TrustAnswerParams = parse(params)?;
+            answer(super::tasks::answer_trust(&core, &params.id, params.trust)?)
         }
         "addTask" => answer(super::tasks::add(&core, parse(params)?).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
@@ -244,6 +249,12 @@ struct ProjectParams {
 }
 
 #[derive(Deserialize)]
+struct PortsParams {
+    #[serde(default)]
+    project: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct TrustProjectParams {
     project: String,
     fingerprint: String,
@@ -256,9 +267,8 @@ struct RunParams {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TaskTrustParams {
-    execution_id: String,
+struct TrustAnswerParams {
+    id: String,
     trust: bool,
 }
 
