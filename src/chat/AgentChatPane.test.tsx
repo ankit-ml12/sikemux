@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => ({
     setAgentModelPreferences: vi.fn(),
     attachAgentSession: vi.fn(),
     setAgentPermissionMode: vi.fn(),
-    noteAcpAgentState: vi.fn(),
     noteAgentBackgroundWork: vi.fn(),
     start: vi.fn(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
     pathKinds: vi.fn(async (paths: string[]): Promise<(string | null)[]> => paths.map(() => null)),
@@ -78,7 +77,6 @@ vi.mock("../state/commands", () => ({
     setAgentModelPreferences: mocks.setAgentModelPreferences,
     setAgentTitle: vi.fn(),
     titleAgentFromPrompt: vi.fn(),
-    noteAcpAgentState: mocks.noteAcpAgentState,
     noteAgentBackgroundWork: mocks.noteAgentBackgroundWork,
     toggleAgentSkipPermissions: vi.fn(),
 }));

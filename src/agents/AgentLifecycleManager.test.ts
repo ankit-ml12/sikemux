@@ -16,6 +16,7 @@ import {
 import { agentIdsWithLiveSessions } from "../state/agentLiveSessions";
 
 vi.mock("../api/agents", () => ({ agentApi: { liveSessions: vi.fn(async () => []) } }));
+vi.mock("../api/acp", () => ({ acpApi: { stopIfIdle: vi.fn(async () => true) } }));
 
 const liveSessions = vi.mocked(agentApi.liveSessions);
 

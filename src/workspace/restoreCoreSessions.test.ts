@@ -52,13 +52,13 @@ function chat(agentId: string, startedBy: string | null = null): AcpChat {
 function deps(sessions: CoreSession[], chats: AcpChat[] = []) {
     const scheduled: Array<() => void> = [];
     const kill = vi.fn(async (_id: number) => {});
-    const stopChat = vi.fn(async (_agentId: string) => {});
+    const stopChat = vi.fn(async (_agentId: string) => true);
     const resume = vi.fn(async (_agentId: string, _ptyId: number) => {});
     const restore: CoreSessionRestoreDeps = {
         list: async () => sessions,
         resume,
         kill,
-        chats: { list: async () => chats, stop: stopChat },
+        chats: { list: async () => chats, stopIfIdle: stopChat },
         boards: async () => {},
         tasks: { watch: vi.fn(), adoptDeckTask: vi.fn(), showHarnessTerminal: vi.fn() },
         schedule: (callback, delay) => {

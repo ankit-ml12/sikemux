@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { acpApi } from "../api/acp";
 import { agentApi } from "../api/agents";
 import { getIpcTransport } from "../api/transport";
 import { fetchResource } from "../state/resources";
@@ -134,6 +135,11 @@ export function AgentSessionSync() {
                 },
                 { signal: controller.signal },
             )
+            /* Chats running from before this page say what they are doing only when it changes. */
+            .then(() => acpApi.states())
+            .then((states) => {
+                if (!controller.signal.aborted) for (const state of states) cmd.noteAgentActivity(state.agentId, state);
+            })
             .catch((error: unknown) => {
                 if (!controller.signal.aborted) swallow("agent state listener")(error);
             });

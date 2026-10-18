@@ -92,7 +92,7 @@ export function AgentLifecycleManager() {
         /* The ask takes a moment, and the agent may have woken, been picked, or
            started a turn while it ran, so the list is worked out again. */
         const settled = agentIdsToAutoSleep(getState(), hiddenSinceRef.current, Date.now()).filter((id) => !live.has(id));
-        const slept = cmd.sleepAgents(settled);
+        const slept = await cmd.sleepAgentsAtRest(settled);
         if (slept.length > 0) performanceTelemetry.incrementCounter("agent.sleep.auto", slept.length);
         if (live.size > 0) performanceTelemetry.incrementCounter("agent.sleep.held", live.size);
     }, []);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
-import { activityText, backendState, lostConnectionText } from "./chatStatus";
+import { activityText, lostConnectionText } from "./chatStatus";
 import type { Agent } from "../state/types";
 import type { AcpPermissionRequest, ChatMessage, ChatState } from "./types";
 
@@ -16,26 +16,6 @@ describe("permissionModeOf", () => {
     it("reads the old skip flag when no mode was chosen", () => {
         expect(permissionModeOf(agent({ skipPermissions: true }))).toBe("bypass");
         expect(permissionModeOf(agent({}))).toBe("workspace-write");
-    });
-});
-
-describe("backendState", () => {
-    const at = (connection: ChatState["connection"], awaitingPermission = false, running = false) =>
-        backendState({ connection, awaitingPermission, running });
-
-    it("reports a dropped session as stopped whatever else is going on", () => {
-        expect(at("error", true, true)).toBe("stopped");
-        expect(at("stopped")).toBe("stopped");
-    });
-
-    it("reports a permission ask before a running turn", () => {
-        expect(at("ready", true, true)).toBe("blocked");
-        expect(at("ready", false, true)).toBe("working");
-    });
-
-    it("is idle when ready and unknown while still connecting", () => {
-        expect(at("ready")).toBe("idle");
-        expect(at("connecting")).toBe("unknown");
     });
 });
 

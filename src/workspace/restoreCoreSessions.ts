@@ -30,7 +30,7 @@ export interface CoreSessionRestoreDeps {
     list(): Promise<CoreSession[]>;
     resume(agentId: string, ptyId: number): Promise<void>;
     kill(id: number): Promise<void>;
-    chats: { list(): Promise<AcpChat[]>; stop(agentId: string): Promise<void> };
+    chats: { list(): Promise<AcpChat[]>; stopIfIdle(agentId: string): Promise<boolean> };
     boards(): Promise<void>;
     tasks: TaskAdoptionTargets;
     schedule(callback: () => void, delayMs: number): void;
@@ -42,7 +42,7 @@ function defaultDeps(): CoreSessionRestoreDeps {
         list: coreSessionsApi.list,
         resume: relaunchTuiAgent,
         kill: coreSessionsApi.kill,
-        chats: { list: acpApi.list, stop: acpApi.stop },
+        chats: { list: acpApi.list, stopIfIdle: acpApi.stopIfIdle },
         boards: () => agentBoardApi.all().then(cmd.setAgentBoards),
         tasks: {
             watch: (ptyId) => backend.watch(ptyId),
@@ -62,8 +62,8 @@ function defaultDeps(): CoreSessionRestoreDeps {
  * are resumed in their pane, running tasks rejoin the
  * command deck or reopen their terminals, chat panes take their chats back
  * as they mount, and terminals from before this page that nothing in the
- * layout names, like chats no pane took back, are stopped after a grace, so
- * none of them runs forever unseen.
+ * layout names, like chats no pane took back once they are at rest, are
+ * stopped after a grace, so none of them runs forever unseen.
  */
 export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = defaultDeps()): Promise<void> {
     let sessions: CoreSession[];
@@ -99,7 +99,8 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
         const stillClaimed = claimedSessionIds(getState());
         for (const id of candidates) if (!stillClaimed.has(id)) void deps.kill(id).catch(() => {});
         const stopUnclaimed = (kept: AcpChat[], taken: ReadonlySet<string>) => {
-            for (const chat of kept) if (!taken.has(chat.agentId) && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
+            for (const chat of kept)
+                if (!taken.has(chat.agentId) && !chatClaimed(chat.agentId)) void deps.chats.stopIfIdle(chat.agentId).catch(() => {});
         };
         if (listed) stopUnclaimed(listed, adopted);
         else

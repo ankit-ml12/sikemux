@@ -1,5 +1,6 @@
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
+import type { AgentStateEvent } from "../state/agentStatus";
 import type { AgentPermissionMode, AgentType } from "../state/types";
 
 export interface AcpStartOptions {
@@ -141,6 +142,11 @@ export const acpApi = {
     permissionReply: (agentId: string, requestId: string, optionId?: string): Promise<void> =>
         invoke<void>("acp_permission_reply", { agentId, requestId, optionId: optionId ?? null }),
     stop: (agentId: string): Promise<void> => invoke<void>("acp_stop", { agentId }),
+    /** Stops the chat unless its agent is still at work, which only the person stops. Answers whether it stopped. */
+    stopIfIdle: (agentId: string): Promise<boolean> =>
+        invoke<{ stopped: boolean }>("agent_name_call", { method: "stopChatIfIdle", params: { agentId } }).then(({ stopped }) => stopped),
+    /** What every chat the core runs is doing now. */
+    states: (): Promise<AgentStateEvent[]> => invoke<AgentStateEvent[]>("agent_name_call", { method: "chatStates", params: {} }),
     switchAccount: (agentId: string, provider: AgentType, account: AcpAccount): Promise<void> =>
         invoke<void>("acp_switch_account", { agentId, provider, account }),
     subscribe: (listener: (event: AcpEvent) => void, signal?: AbortSignal): Promise<IpcUnsubscribe> =>

@@ -729,6 +729,12 @@ export function sleepAgents(ids: readonly string[]): string[] {
     return slept;
 }
 
+/** Puts to sleep the agents among `ids` the core finds at rest; a chat still at work is left running. */
+export async function sleepAgentsAtRest(ids: readonly string[]): Promise<string[]> {
+    const stopped = await Promise.all(ids.map((id) => acpApi.stopIfIdle(id).catch(() => false)));
+    return sleepAgents(ids.filter((_, index) => stopped[index]));
+}
+
 export function sleepAgent(id: string): boolean {
     const agent = getState().agents[id];
     if (!agent?.resumeId) {
@@ -753,20 +759,9 @@ export async function sleepIdleAgents(): Promise<number> {
         .filter((agent) => isAgentSleepable(state, agent))
         .map((agent) => agent.id);
     const live = await agentIdsWithLiveSessions(state, ids);
-    const count = sleepAgents(ids.filter((id) => !live.has(id))).length;
+    const count = (await sleepAgentsAtRest(ids.filter((id) => !live.has(id)))).length;
     notify("info", count === 0 ? "No idle resumable agents to sleep" : `Put ${count} idle agent${count === 1 ? "" : "s"} to sleep`);
     return count;
-}
-
-export function noteAcpAgentState(id: string, state: import("../types").AgentBackendState): void {
-    noteAgentActivity(id, {
-        agentId: id,
-        state,
-        sequence: (getState().agentActivity[id]?.sequence ?? 0) + 1,
-        source: "acp",
-        confidence: "high",
-        reason: "ACP session state",
-    });
 }
 
 export function noteAgentActivity(id: string, event: "working" | "complete" | import("../agentStatus").AgentStateEvent): void {

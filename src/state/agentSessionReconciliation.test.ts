@@ -5,7 +5,7 @@ vi.mock("../api/agents", async (importOriginal) => {
     const actual = await importOriginal<typeof import("../api/agents")>();
     return { ...actual, agentApi: { ...actual.agentApi, renameSession } };
 });
-import { agentSessionMetadataPending, reconcileAgentSessions, noteAcpAgentState, renameAgent, setAgentTitle, titleAgentFromPrompt } from "./commands";
+import { agentSessionMetadataPending, reconcileAgentSessions, noteAgentActivity, renameAgent, setAgentTitle, titleAgentFromPrompt } from "./commands";
 import { getState, setState } from "./store";
 import { agentWindowId } from "./selectors";
 import { withAgents } from "../test/agents";
@@ -52,13 +52,22 @@ describe("agent session reconciliation", () => {
                 { id: agentId, type: "codex", title: "codex", startup: "codex", createdAt: 100_000, baselineSessionIds: [] },
             ]),
         });
-        noteAcpAgentState(agentId, "working");
+        const noteChat = (state: "working" | "blocked" | "idle", sequence: number) =>
+            noteAgentActivity(agentId, {
+                agentId,
+                state,
+                sequence,
+                source: "acp",
+                confidence: "high",
+                reason: "the chat's turn as the core runs it",
+            });
+        noteChat("working", 1);
         reconcileAgentSessions("codex", "/repo", undefined, [{ id: "another-session", title: "Another chat", mtime: 101 }]);
         expect(getState().agents[agentId].resumeId).toBeUndefined();
         expect(getState().agentActivity[agentId]).toMatchObject({ backendState: "working", source: "acp", confidence: "high" });
-        noteAcpAgentState(agentId, "blocked");
+        noteChat("blocked", 2);
         expect(getState().agentActivity[agentId].backendState).toBe("blocked");
-        noteAcpAgentState(agentId, "idle");
+        noteChat("idle", 3);
         expect(getState().agentActivity[agentId]).toMatchObject({ state: "done", unread: true });
     });
     it("names a fresh agent after its first prompt until the provider titles it", () => {

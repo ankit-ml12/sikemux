@@ -1,30 +1,10 @@
-import type { Agent, AgentBackendState } from "../state/types";
+import type { Agent } from "../state/types";
 import type { ChatState } from "./types";
 
 export function knownEffort(effort: string | undefined): Agent["effort"] {
     return ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(effort ?? "")
         ? (effort as Agent["effort"])
         : undefined;
-}
-
-export function backendState({
-    connection,
-    awaitingPermission,
-    running,
-}: {
-    connection: ChatState["connection"];
-    awaitingPermission: boolean;
-    running: boolean;
-}): AgentBackendState {
-    return connection === "error" || connection === "stopped"
-        ? "stopped"
-        : awaitingPermission
-          ? "blocked"
-          : running
-            ? "working"
-            : connection === "ready"
-              ? "idle"
-              : "unknown";
 }
 
 export function connectingLabel(connection: ChatState["connection"]): string | null {
