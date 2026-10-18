@@ -4,10 +4,12 @@
 //   engine — finding the engine's socket, and HTTP over it
 //   status     — whether an engine is running, which one, and how much it holds
 //   containers — listing and reading containers, starting, stopping and removing them
+//   compose    — Compose stacks from their containers' labels, and acting on a whole stack
 //   logs       — a container's logs, read once or followed as they are written
 //   images     — images, the containers made from each, removing and pruning them
 //   volumes    — volumes, their sizes and the containers that mount them, removing and pruning them
 
+mod compose;
 mod containers;
 mod engine;
 mod error;
@@ -88,6 +90,11 @@ impl Plugin for Docker {
                     answer(|engine| async move { images::remove(&engine, params).await }).await
                 }
                 "pruneImages" => answer(|engine| async move { images::prune(&engine).await }).await,
+                "stacks" => answer(|engine| async move { compose::list(&engine).await }).await,
+                "actOnStack" => {
+                    let params = params(input)?;
+                    answer(|engine| async move { compose::act(&engine, params).await }).await
+                }
                 "volumes" => answer(|engine| async move { volumes::list(&engine).await }).await,
                 "removeVolume" => {
                     let params = params(input)?;
