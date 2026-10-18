@@ -243,8 +243,9 @@
 
 .gcp-page-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 4px 8px;
     min-height: 56px;
     margin: 0 -24px;
     padding: 0 24px;
@@ -256,10 +257,14 @@
 }
 
 .gcp-page-title {
+    min-width: 0;
     margin: 0;
+    overflow: hidden;
     font-size: 20px;
     font-weight: 400;
     color: var(--gcp-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .gcp-page-actions {
@@ -421,7 +426,7 @@
 .gcp-table {
     border: 1px solid var(--gcp-line);
     border-radius: 4px;
-    overflow: hidden;
+    overflow-x: auto;
     background: var(--gcp-raised);
 }
 
@@ -431,6 +436,7 @@
     align-items: center;
     gap: 16px;
     width: 100%;
+    min-width: min-content;
     min-height: 44px;
     padding: 0 16px;
     text-align: left;
@@ -489,7 +495,11 @@ button.gcp-table-row:hover {
 .gcp-tabs button {
     height: 40px;
     padding: 0 16px;
+    border: 0;
     border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
     font-size: 13px;
     font-weight: 500;
     color: var(--gcp-text-2);
@@ -894,6 +904,7 @@ button.gcp-project-row:hover {
 .gcp-terminal {
     margin: 0;
     padding: 12px;
+    border: 1px solid var(--gcp-line);
     border-radius: 4px;
     background: #202124;
     color: #e8eaed;

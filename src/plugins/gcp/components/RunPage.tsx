@@ -219,7 +219,6 @@ function Revisions({ detail, busy, onSendAll }: { detail: RunServiceDetail; busy
                 { label: "Traffic", width: "minmax(70px, 0.5fr)", cell: (revision) => (revision.percent > 0 ? `${revision.percent}%` : "—") },
                 { label: "Tags", width: "minmax(80px, 0.6fr)", cell: (revision) => revision.tags.join(", ") || "—" },
                 { label: "Deployed", width: "minmax(90px, 0.6fr)", cell: (revision) => ago(revision.createdAt) },
-                { label: "Image", width: "minmax(160px, 1.4fr)", cell: (revision) => <span className="gcp-muted">{revision.image ?? "—"}</span> },
                 {
                     label: "",
                     width: "minmax(130px, auto)",
@@ -231,6 +230,7 @@ function Revisions({ detail, busy, onSendAll }: { detail: RunServiceDetail; busy
                             </Button>
                         ),
                 },
+                { label: "Image", width: "minmax(160px, 1.4fr)", cell: (revision) => <span className="gcp-muted">{revision.image ?? "—"}</span> },
             ]}
         />
     );
