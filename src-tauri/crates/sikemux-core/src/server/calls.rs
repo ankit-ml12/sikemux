@@ -32,6 +32,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "moveProject" | "setSpaces" | "setPinnedChats" | "setAgentDefaults" | "createAgent"
         | "updateAgent" | "closeAgents" => Needs::Person,
         "changeOwners" | "commitOwners" => Needs::Watch,
+        method if method.starts_with("git.") => super::git::needs(method),
         _ => Needs::Local,
     }
 }
@@ -39,6 +40,9 @@ pub(crate) fn needs(method: &str) -> Needs {
 /// Whether only Sikemux's own window or notch may call `method` from this
 /// host; another program here may only read.
 pub(crate) fn for_person(method: &str) -> bool {
+    if method.starts_with("git.") {
+        return super::git::for_person(method);
+    }
     !matches!(
         method,
         "chatFile"
@@ -87,6 +91,7 @@ pub(crate) async fn call(
         "createAgent" => answer(workspace::create_agent(&core, parse(params)?)?),
         "updateAgent" => answer(workspace::update_agent(&core, parse(params)?)?),
         "closeAgents" => answer(workspace::close_agents(&core, parse(params)?)?),
+        method if method.starts_with("git.") => super::git::call(method, params).await,
         method if crate::agent_accounts::METHODS.contains(&method) => {
             super::agent_accounts::call(&core, method, params).await
         }
@@ -394,29 +399,12 @@ struct CheckoutParams {
     dir: PathBuf,
     #[serde(default)]
     staged: bool,
-    /// The asker's name for the checkout's current state, when it watches it.
-    #[serde(default)]
-    generation: Option<String>,
-    #[serde(default)]
-    moved: Option<edits::Moved>,
 }
 
 /// Which agent wrote each uncommitted line of a checkout.
 async fn change_owners(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<Owners> {
     let core = core.clone();
-    blocking(move || {
-        Ok(match &params.generation {
-            Some(generation) => edits::owners_at(
-                &core,
-                &params.dir,
-                params.staged,
-                generation,
-                params.moved.as_ref(),
-            ),
-            None => edits::owners(&core, &params.dir, params.staged),
-        }?)
-    })
-    .await
+    blocking(move || Ok(edits::owners_at(&core, &params.dir, params.staged)?)).await
 }
 
 #[derive(Deserialize)]
