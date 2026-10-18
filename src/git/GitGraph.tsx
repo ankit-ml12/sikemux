@@ -7,9 +7,8 @@ import { CommitAgents, type CommitOwners } from "./CommitAgents";
 
 export { authorColor, initials } from "./AuthorAvatar";
 
-const ROW_H = 30;
+const ROW_H = 26;
 /** Beyond two, refs crowd the subject out of the row entirely. */
-const MAX_ROW_REFS = 2;
 const LANE_W = 14; // horizontal gap between lanes
 const X0 = 14; // x of lane 0's centre
 const NODE_R = 4;
@@ -372,14 +371,7 @@ export const GitGraph = memo(function GitGraph({
                             <AuthorAvatar name={c.author} email={c.author_email} />
                             {refs.length > 0 && (
                                 <span className="gg-refs">
-                                    {refs.slice(0, MAX_ROW_REFS).map((r) => (
-                                        <RefBadge key={r} label={r} />
-                                    ))}
-                                    {refs.length > MAX_ROW_REFS && (
-                                        <span className="gg-ref more" title={refs.slice(MAX_ROW_REFS).join(", ")}>
-                                            +{refs.length - MAX_ROW_REFS}
-                                        </span>
-                                    )}
+                                    <RefBadge label={refs[0]} />
                                 </span>
                             )}
                             <span className="gg-subj">{withoutScope(c.subject)}</span>

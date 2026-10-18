@@ -71,14 +71,14 @@
     font-variant-numeric: tabular-nums;
 }
 .gg-avatar {
-    width: 18px;
-    height: 18px;
+    width: 15px;
+    height: 15px;
     flex: none;
     display: grid;
     place-items: center;
     border-radius: 50%;
     color: var(--on-accent);
-    font-size: 8px;
+    font-size: 7px;
     font-weight: var(--weight-semibold);
     letter-spacing: 0.02em;
 }
@@ -96,10 +96,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    flex: 0 1 auto;
-    min-width: 0;
+    flex: none;
     max-width: 45%;
-    overflow: hidden;
 }
 .gg-ref {
     font-size: var(--text-3xs);
@@ -123,9 +121,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-.gg-ref.more {
-    flex: none;
 }
 .gg-ref::before {
     content: "";
