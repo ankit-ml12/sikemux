@@ -74,6 +74,8 @@ pub(crate) async fn call(
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
         "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
+        "stopChatIfIdle" => answer(stop_chat_if_idle(&core, parse(params)?)),
+        "chatStates" => answer(core.chats.states()),
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
         "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),
         "addProject" => answer(workspace::add_project(&core, parse(params)?).await?),
@@ -245,6 +247,27 @@ struct NameAgentParams {
     provider: Option<String>,
     #[serde(default)]
     resume_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentParams {
+    agent_id: String,
+}
+
+/// Stops a chat the app has no more use for, such as one it puts to sleep,
+/// unless the agent is still at work: a running agent is only ever stopped by
+/// the person.
+fn stop_chat_if_idle(core: &Arc<Core>, params: AgentParams) -> Value {
+    let chat = core.chats.get(&params.agent_id);
+    if let Some(chat) = &chat {
+        core.workspaces.note_stopping(chat);
+    }
+    let stopped = core.chats.stop_if_idle(&params.agent_id);
+    if stopped && chat.is_some() {
+        core.note_agent_gone(&params.agent_id);
+    }
+    json!({ "stopped": stopped })
 }
 
 /// The name the core gave an agent the app starts or opens again, given now

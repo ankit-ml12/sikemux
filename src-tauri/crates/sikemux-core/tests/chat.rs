@@ -542,6 +542,48 @@ async fn stopping_a_chat_ends_it() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_chat_at_work_is_not_stopped_by_a_stop_meant_for_idle_chats() {
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    client
+        .acp_start(chat_launch("agent-s", "workspace-write"))
+        .await
+        .expect("start");
+    client
+        .acp_prompt("agent-s".into(), None, "ask".into(), Vec::new(), Vec::new())
+        .await
+        .expect("prompt");
+    let request = chat.until_kind(ChatEventKind::PermissionRequest).await;
+    let request_id = request.payload["requestId"]
+        .as_str()
+        .expect("request id")
+        .to_owned();
+
+    let states = client.call("chatStates", json!({})).await.expect("states");
+    assert_eq!(states[0]["state"], "blocked", "{states}");
+    let refused = client
+        .call("stopChatIfIdle", json!({ "agentId": "agent-s" }))
+        .await
+        .expect("stop if idle");
+    assert_eq!(refused["stopped"], false);
+    assert_eq!(client.acp_list().await.expect("list").len(), 1);
+
+    client
+        .acp_permission_reply("agent-s".into(), request_id, Some("allow".into()))
+        .await
+        .expect("reply");
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    let states = client.call("chatStates", json!({})).await.expect("states");
+    assert_eq!(states[0]["state"], "idle", "{states}");
+    let stopped = client
+        .call("stopChatIfIdle", json!({ "agentId": "agent-s" }))
+        .await
+        .expect("stop if idle");
+    assert_eq!(stopped["stopped"], true);
+    assert!(client.acp_list().await.expect("list").is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn an_agent_that_dies_carries_on_until_it_has_died_too_often() {
     let core = TestCore::start();
     let (client, mut chat) = core.connect().await;

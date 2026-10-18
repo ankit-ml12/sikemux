@@ -56,6 +56,27 @@ fn next_sequence() -> u64 {
     sequence().fetch_add(1, Ordering::AcqRel)
 }
 
+/// A chat's state, from the core that runs it, so it reads the same in every
+/// app whether or not one has the chat open. A chat's permission requests
+/// already notify, so its state stays out of the notices.
+pub(crate) fn publish_chat_state(core: &Core, agent_id: &str, state: &str) {
+    core.agents_changed();
+    let event = Event::AgentState(chat_state(agent_id, state));
+    core.broadcast_to(&event, |client| client.peer.is_local());
+}
+
+pub(crate) fn chat_state(agent_id: &str, state: &str) -> AgentStateEvent {
+    AgentStateEvent {
+        agent_id: agent_id.to_owned(),
+        state: state.to_owned(),
+        sequence: next_sequence(),
+        source: "acp".into(),
+        confidence: "high".into(),
+        reason: "the chat's turn as the core runs it".into(),
+        matched_rule: None,
+    }
+}
+
 pub(crate) fn sequence_mark() -> u64 {
     sequence().load(Ordering::Acquire)
 }

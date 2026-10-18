@@ -224,6 +224,8 @@ pub(crate) struct Chat {
     agent: Mutex<Option<KeptAgent>>,
     /// When the agent was lately started again after it stopped by itself.
     restarts: Mutex<std::collections::VecDeque<std::time::Instant>>,
+    /// What every app was last told the chat is doing.
+    published: Mutex<&'static str>,
 }
 
 impl Chat {
@@ -294,6 +296,7 @@ impl Chat {
             if let Some(ending) = ended {
                 self.feed.emit(kind, payload);
                 self.report_turn(&core, ending);
+                self.publish_state();
                 return;
             }
         }
@@ -303,6 +306,44 @@ impl Chat {
         self.feed.emit(kind, payload);
         if kind == ChatEventKind::SessionUpdate {
             self.finish_held();
+        } else {
+            self.publish_state();
+        }
+    }
+
+    /// What the chat is doing, in the words every app shows an agent by.
+    pub(crate) fn state_now(&self) -> &'static str {
+        if self.permissions.lock().is_ok_and(|held| !held.is_empty()) {
+            "blocked"
+        } else if self.turn_running()
+            || self.held.load(Ordering::Acquire)
+            || self.feed.running_subagents() > 0
+        {
+            "working"
+        } else if self.feed.start().is_some() {
+            "idle"
+        } else {
+            "unknown"
+        }
+    }
+
+    /// Tells every app what the chat is doing whenever that changes, so none
+    /// has to work it out from the transcript a pane happens to hold.
+    pub(crate) fn publish_state(&self) {
+        self.publish(self.state_now());
+    }
+
+    fn publish(&self, state: &'static str) {
+        let Ok(mut published) = self.published.lock() else {
+            return;
+        };
+        if *published == state {
+            return;
+        }
+        *published = state;
+        drop(published);
+        if let Some(core) = self.core.upgrade() {
+            super::agent::publish_chat_state(&core, self.agent_id(), state);
         }
     }
 
@@ -623,6 +664,7 @@ impl Chat {
             core.note_activity(self.agent_id(), Activity::NeedsYou);
         }
         self.announce(&Event::Attention { attention });
+        self.publish_state();
         true
     }
 
@@ -698,6 +740,7 @@ impl Chat {
             id: request_id.to_owned(),
             agent_id: self.launch.agent_id.clone(),
         });
+        self.publish_state();
     }
 
     pub(crate) fn cancel_permissions(&self) {
@@ -1214,6 +1257,25 @@ impl Chats {
         true
     }
 
+    /// Stops the chat only when nothing in it is running: no turn, question,
+    /// subagent or background task. Answers whether it stopped.
+    pub(crate) fn stop_if_idle(&self, agent_id: &str) -> bool {
+        let Some(chat) = self.get(agent_id) else {
+            return true;
+        };
+        let busy =
+            matches!(chat.state_now(), "working" | "blocked") || chat.feed.running_tasks() > 0;
+        !busy && self.stop(agent_id)
+    }
+
+    /// What every chat is doing now, for an app that has just started.
+    pub(crate) fn states(&self) -> Vec<crate::protocol::AgentStateEvent> {
+        self.all()
+            .iter()
+            .map(|chat| super::agent::chat_state(chat.agent_id(), chat.state_now()))
+            .collect()
+    }
+
     pub(crate) fn stop_all(&self) {
         for chat in self.take_all() {
             Self::halt(&chat);
@@ -1286,6 +1348,7 @@ impl Chats {
             keeper,
             agent: Mutex::new(None),
             restarts: Mutex::new(Default::default()),
+            published: Mutex::new("unknown"),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1408,6 +1471,7 @@ fn launch(
             owner.note_agent_gone(ending.agent_id());
         }
         ending.cancel_permissions();
+        ending.publish("stopped");
     });
     if let Ok(mut slot) = chat.task.lock() {
         *slot = Some(task);
