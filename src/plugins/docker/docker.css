@@ -653,3 +653,19 @@
     text-decoration: none;
     cursor: default;
 }
+
+.docker-disk-total {
+    margin: 0;
+}
+
+.docker-disk-total strong {
+    font-size: var(--text-lg);
+    font-weight: var(--weight-medium);
+}
+
+.docker-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 0;
+    margin: 2px 0 0 -10px;
+}

@@ -4,10 +4,11 @@ import { EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../pl
 import { formatBytes } from "../../../plugin-api/format";
 import { refreshDocker, type DockerStatus } from "../api";
 import { usePoll } from "../hooks";
-import { dockerContainersR, dockerImagesR, dockerStacksR, dockerStatsR, dockerStatusR, dockerVolumesR } from "../resources";
+import { dockerContainersR, dockerDiskR, dockerImagesR, dockerStacksR, dockerStatsR, dockerStatusR, dockerVolumesR } from "../resources";
 import { updateDockerView, useDockerView, type DockerSection } from "../state";
 import { ContainerDetail } from "./ContainerDetail";
 import { Containers } from "./Containers";
+import { Disk } from "./Disk";
 import { DockerMark } from "./DockerMark";
 import { Images } from "./Images";
 import { LogView } from "./LogView";
@@ -53,6 +54,7 @@ const SECTIONS: { value: DockerSection; label: string }[] = [
     { value: "stacks", label: "Compose" },
     { value: "images", label: "Images" },
     { value: "volumes", label: "Volumes" },
+    { value: "disk", label: "Disk use" },
 ];
 
 function Engine({ paneId, active, status }: { paneId: string; active: boolean; status: DockerStatus }) {
@@ -68,6 +70,7 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
     usePoll(stacking, LIST_POLL_MS, stacks.refresh);
     const images = useResourceEnabled(active, dockerImagesR);
     const volumes = useResourceEnabled(active, dockerVolumesR);
+    const disk = useResourceEnabled(active && view.section === "disk", dockerDiskR);
     const engine = status.engine;
     const running = containers.data?.filter((each) => each.state === "running").length ?? engine?.running ?? 0;
     const total = containers.data?.length ?? engine?.containers ?? 0;
@@ -76,7 +79,7 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
         stacks: stacks.data ? String(stacks.data.length) : "",
         images: images.data ? String(images.data.length) : "",
         volumes: volumes.data ? String(volumes.data.length) : "",
-        disk: "",
+        disk: disk.data ? formatBytes(disk.data.images.size + disk.data.containers.size + disk.data.volumes.size + disk.data.buildCache.size) : "",
     };
 
     return (
@@ -158,6 +161,14 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
                             onBack={() => updateDockerView(paneId, { container: null })}>
                             {(detail) => (view.tab === "logs" ? <LogView container={detail} /> : <StatsView active={active} container={detail} />)}
                         </ContainerDetail>
+                    ) : view.section === "disk" ? (
+                        disk.data ? (
+                            <Disk disk={disk.data} onSection={(section) => updateDockerView(paneId, { section, container: null })} />
+                        ) : disk.status === "error" ? (
+                            <p className="docker-note">{disk.error}</p>
+                        ) : (
+                            <SkeletonRows rows={4} label="Measuring disk use" />
+                        )
                     ) : view.section === "volumes" ? (
                         volumes.data ? (
                             <Volumes volumes={volumes.data} find={view.find} onOpen={(container) => updateDockerView(paneId, { container })} />
