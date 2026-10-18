@@ -15,6 +15,7 @@
 //   build    — Cloud Build builds, logs, triggers, retries and cancels
 //   secrets  — Secret Manager secrets and versions, by name only
 //   functions — Cloud Functions of both generations
+//   metrics  — Cloud Monitoring charts for services, VMs, databases and queues
 
 mod auth;
 mod build;
@@ -25,6 +26,7 @@ mod functions;
 mod gcloud;
 mod gke;
 mod logging;
+mod metrics;
 mod projects;
 mod pubsub;
 mod run;
@@ -126,6 +128,7 @@ impl Plugin for Gcp {
                 "secretVersion" => answer(secrets::set_version(params(input)?)).await,
                 "functions" => answer(functions::functions(params(input)?)).await,
                 "function" => answer(functions::function_detail(params(input)?)).await,
+                "metrics" => answer(metrics::chart(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
