@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { agentCwd } from "../agents/agentPtyContext";
 import { effectiveMode } from "../agents/agentLaunch";
 import { agentNamesApi, type AgentRun, type NameRequest } from "../api/agentNames";
+import { wearBuddy } from "../buddies/commands";
 import { launcherId } from "../remote/workspace";
 import * as cmd from "../state/commands";
 import { agentIdsOf } from "../state/selectors";
@@ -18,7 +19,16 @@ function nameRequests(state: Pick<StoreState, "agents" | "windows" | "sessions" 
             const agent = state.agents[agentId];
             const cwd = agent && agentCwd(agent, session);
             if (!agent || !cwd) return [];
-            return [{ agentId, cwd, provider: agent.type, ...(agent.resumeId ? { resumeId: agent.resumeId } : {}) }];
+            return [
+                {
+                    agentId,
+                    cwd,
+                    provider: agent.type,
+                    ...(agent.resumeId ? { resumeId: agent.resumeId } : {}),
+                    ...(agent.buddy ? { buddy: agent.buddy } : {}),
+                    ...(agent.title ? { title: agent.title } : {}),
+                },
+            ];
         });
     });
 }
@@ -36,7 +46,7 @@ function heldAgents(agents: StoreState["agents"]): { agentIds: string[]; runs: R
 /**
  * Tells the core every agent the app holds, so a closed one's name is free again, then asks for each one's name. The
  * core names an agent as it starts; this also names the ones restored from before and those opened again from Recent,
- * which get a new name, and tells the core which provider session each runs.
+ * which get a new name unless the person named them, and tells the core which provider session each runs and how each looks.
  */
 export function AgentNameBridge() {
     const agents = useStore((s) => s.agents);
@@ -67,7 +77,10 @@ export function AgentNameBridge() {
             told.current
                 .then(() => agentNamesApi.name(request))
                 .then(
-                    (named) => cmd.setAgentName(request.agentId, named.name, named.parent),
+                    (named) => {
+                        cmd.setAgentName(request.agentId, named.name, named.parent);
+                        if (named.buddy) wearBuddy(request.agentId, named.buddy);
+                    },
                     (error: unknown) => {
                         asked.current.delete(request.agentId);
                         swallow("name an agent")(error);

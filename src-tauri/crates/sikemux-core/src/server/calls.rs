@@ -13,7 +13,7 @@ use super::access::{Needs, Peer};
 use super::attachments;
 use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
-use super::names::{project_of, AgentName};
+use super::names::{project_of, AgentName, ClosedAgent, Starting};
 use super::workspace::{self, AgentRun};
 use super::{
     board, inbox, messages, plugins, questions, remote, saved, share, who_wrote, Core, CoreError,
@@ -72,6 +72,7 @@ pub(crate) async fn call(
         "nameAgent" => answer(name_agent(&core, parse(params)?).await?),
         "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
+        "closedAgents" => answer(closed_agents(&core, parse(params)?).await?),
         "publishBuddies" => answer(core.workspaces.publish_buddies(parse(params)?)?),
         "agentNames" => answer(agent_names(&core).await?),
         "stopChatIfIdle" => answer(stop_chat_if_idle(&core, parse(params)?)),
@@ -246,6 +247,22 @@ struct NameAgentParams {
     provider: Option<String>,
     #[serde(default)]
     resume_id: Option<String>,
+    /// How the app draws it, kept for when it is opened again.
+    #[serde(default)]
+    buddy: Option<Value>,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+/// An agent's name, with the character it wore before it closed when it
+/// opens again under a name the person chose.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NamedAgent {
+    #[serde(flatten)]
+    named: AgentName,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    buddy: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -271,7 +288,7 @@ fn stop_chat_if_idle(core: &Arc<Core>, params: AgentParams) -> Value {
 
 /// The name the core gave an agent the app starts or opens again, given now
 /// when it has none.
-async fn name_agent(core: &Arc<Core>, params: NameAgentParams) -> CoreResult<AgentName> {
+async fn name_agent(core: &Arc<Core>, params: NameAgentParams) -> CoreResult<NamedAgent> {
     if !crate::cli::protocol::is_tool_agent_id(&params.agent_id) {
         return Err("that is not an agent id".into());
     }
@@ -279,16 +296,51 @@ async fn name_agent(core: &Arc<Core>, params: NameAgentParams) -> CoreResult<Age
         return Err("an agent's folder must be an absolute path".into());
     }
     let core = core.clone();
-    let named = blocking(move || {
-        Ok(core.name_agent(
+    blocking(move || {
+        let starting = Starting {
+            agent_id: &params.agent_id,
+            project: project_of(&params.cwd, &core.workspaces.project_paths()),
+            provider: params.provider.as_deref(),
+            resume_id: params.resume_id.as_deref(),
+        };
+        let kept = core.names.reopen(&starting, core.running_agents());
+        let named = core.name_agent(
             &params.agent_id,
             &params.cwd,
             params.provider.as_deref(),
             params.resume_id.as_deref(),
-        ))
+        );
+        let buddy = match kept {
+            Some(kept) => kept,
+            None => {
+                core.names
+                    .note_look(&params.agent_id, params.buddy, params.title);
+                None
+            }
+        };
+        Ok(NamedAgent { named, buddy })
     })
-    .await?;
-    Ok(named)
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClosedAgentsParams {
+    cwd: PathBuf,
+}
+
+/// The closed agents of the project at `cwd` that keep the names the person
+/// gave them, newest first.
+async fn closed_agents(
+    core: &Arc<Core>,
+    params: ClosedAgentsParams,
+) -> CoreResult<Vec<ClosedAgent>> {
+    let core = core.clone();
+    blocking(move || {
+        let project = project_of(&params.cwd, &core.workspaces.project_paths());
+        Ok(core.names.closed(&project, core.running_agents()))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
