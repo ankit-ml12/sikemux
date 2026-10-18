@@ -4,10 +4,6 @@ import { performanceTelemetry } from "../lib/performance";
 import type { ProjectConfigLoadResult } from "./projectConfig";
 import { ProjectControllerRuntime, type ProjectControllerRuntimeServices } from "./controllerRuntime";
 
-function watchToken(sequence: number): string {
-    return `00000000-0000-4000-8000-${sequence.toString().padStart(12, "0")}`;
-}
-
 function deferred<T>() {
     let resolve!: (value: T) => void;
     let reject!: (reason?: unknown) => void;
@@ -40,7 +36,6 @@ function worktree(path: string): GitWorktree {
 }
 
 function services() {
-    let watchSequence = 0;
     type ChangeListener = Parameters<ProjectControllerRuntimeServices["subscribeFsChanged"]>[0];
     const fsListeners = new Set<ChangeListener>();
     const gitListeners = new Set<ChangeListener>();
@@ -49,9 +44,6 @@ function services() {
     const api = {
         loadConfig: vi.fn<(root: string) => Promise<ProjectConfigLoadResult>>().mockImplementation(async (root) => config(root)),
         loadWorktrees: vi.fn<(root: string) => Promise<readonly GitWorktree[]>>().mockImplementation(async (root) => [worktree(root)]),
-        newWatchLeaseToken: vi.fn(() => watchToken((watchSequence += 1))),
-        watchStart: vi.fn<ProjectControllerRuntimeServices["watchStart"]>().mockResolvedValue(undefined),
-        watchStop: vi.fn<ProjectControllerRuntimeServices["watchStop"]>().mockResolvedValue(undefined),
         subscribeFsChanged: vi.fn<ProjectControllerRuntimeServices["subscribeFsChanged"]>().mockImplementation((listener) => {
             fsListeners.add(listener);
             fsHistory.push(listener);
@@ -100,22 +92,13 @@ describe("ProjectControllerRuntime", () => {
         await runtime.start();
         await runtime.reconcile(["relative", "/alpha", "/alpha", "/beta", "/ignored"], "/beta");
 
-        expect(harness.api.watchStart.mock.calls).toEqual([
-            ["/alpha", watchToken(1)],
-            ["/beta", watchToken(2)],
-        ]);
         expect(harness.api.loadConfig.mock.calls).toEqual([["/alpha"], ["/beta"]]);
         expect(runtime.getActiveSnapshot()).toMatchObject({ cwd: "/beta", status: "ready", retainCount: 1, revision: 1 });
         expect(listener).toHaveBeenCalled();
         expect(performanceTelemetry.snapshot().counters["project.runtime.roots.rejected"]).toBe(3);
 
-        await runtime.reconcile(["/beta", "/alpha", "/beta"], "/beta");
-        expect(harness.api.watchStart).toHaveBeenCalledTimes(2);
-        expect(harness.api.watchStop).not.toHaveBeenCalled();
-
         runtime.stop();
         await flushMicrotasks();
-        expect(harness.api.watchStop.mock.calls).toEqual([[watchToken(1)], [watchToken(2)]]);
         expect(runtime.getActiveSnapshot()).toBeNull();
     });
 
@@ -200,8 +183,6 @@ describe("ProjectControllerRuntime", () => {
             revision: 1,
         });
         expect(listener).toHaveBeenCalledTimes(notificationsBeforeStaleCompletion);
-        expect(harness.api.watchStart).toHaveBeenCalledTimes(2);
-        expect(harness.api.watchStop).toHaveBeenCalledTimes(1);
     });
 
     it("stops idempotently, ignores stale event callbacks, and can restart with fresh owners", async () => {
@@ -217,14 +198,12 @@ describe("ProjectControllerRuntime", () => {
         staleFsListener("/repo");
         await flushMicrotasks();
         expect(harness.api.loadConfig).not.toHaveBeenCalled();
-        expect(harness.api.watchStop).toHaveBeenCalledTimes(1);
         expect(runtime.getActiveSnapshot()).toBeNull();
 
         await runtime.start();
         await runtime.reconcile(["/repo"], "/repo");
         expect(harness.api.subscribeFsChanged).toHaveBeenCalledTimes(2);
         expect(harness.api.subscribeGitRefresh).toHaveBeenCalledTimes(2);
-        expect(harness.api.watchStart).toHaveBeenCalledTimes(2);
         expect(runtime.getActiveSnapshot()).toMatchObject({ cwd: "/repo", status: "ready", retainCount: 1 });
         harness.api.loadConfig.mockClear();
         staleFsListener("/repo");
@@ -234,7 +213,6 @@ describe("ProjectControllerRuntime", () => {
         runtime.dispose();
         runtime.dispose();
         await flushMicrotasks();
-        expect(harness.api.watchStop).toHaveBeenCalledTimes(2);
     });
 
     it("contains service and subscription failures without leaking partial ownership", async () => {
@@ -249,13 +227,11 @@ describe("ProjectControllerRuntime", () => {
         expect(runtime.isStarted).toBe(false);
         expect(harness.fsListeners.size).toBe(0);
         await runtime.reconcile(["/repo"], "/repo");
-        expect(harness.api.watchStart).not.toHaveBeenCalled();
         expect(performanceTelemetry.snapshot().counters["project.runtime.start.failures"]).toBe(1);
 
         await runtime.start();
         await runtime.reconcile(["/repo"], "/repo");
         expect(runtime.getActiveSnapshot()).toMatchObject({ status: "error", error: "config failed", retainCount: 1 });
-        harness.api.watchStop.mockRejectedValueOnce(new Error("stop failed"));
         runtime.stop();
         await flushMicrotasks();
         expect(runtime.getActiveSnapshot()).toBeNull();

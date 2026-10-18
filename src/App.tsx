@@ -119,10 +119,9 @@ import {
     subscribeApplicationActions,
 } from "./actions/bridge";
 import { projectControllerBridge } from "./projects/controllerBridge";
-import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
+import { onCoreChanged, type CoreChange } from "./api/coreChanged";
 import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
-import { recordAgentTurns } from "./state/activityRecorder";
 import { watchInbox } from "./rail/useInbox";
 import { useInstalledPlugins } from "./plugins/installed";
 import { useRailDock } from "./rail/railMotion";
@@ -182,21 +181,15 @@ export function gitChangeInvalidates(kind: string, args: unknown[], repo: string
     return kind === "git.overview" || kind === "git.status" || kind === "git.discoveredRepos" || kind === "git.changeOwners";
 }
 
-export function subscribeGitChanged(signal?: AbortSignal): Promise<IpcUnsubscribe> {
-    return getIpcTransport().subscribe<{ repo: string; paths: string[] | null }>(
-        "git_changed",
-        (event) => {
-            const repo = event.payload.repo || "";
-            filesApi.invalidate(repo || undefined);
-            invalidate((kind, args) => gitChangeInvalidates(kind, args, repo, event.payload.paths));
-            // An empty array would mean "these zero paths changed", and the scoped
-            // consumers would refresh nothing. Absent or empty both mean "unknown",
-            // which has to fall back to refreshing everything.
-            const paths = event.payload.paths;
-            emit({ type: "fs-changed", repo, ...(paths?.length ? { paths } : {}) });
-        },
-        { signal },
-    );
+/** Reads again what the core says moved in a project: the paths, with `.git` standing for its git state, which anything may depend on. */
+export function onGitChanged({ project, paths }: CoreChange): void {
+    const repo = project ?? "";
+    // An empty list would mean "these zero paths changed", and the scoped
+    // consumers would refresh nothing, so it means "unknown" as none does.
+    const moved = paths?.length && !paths.includes(".git") ? [...paths] : null;
+    filesApi.invalidate(repo || undefined);
+    invalidate((kind, args) => gitChangeInvalidates(kind, args, repo, moved));
+    emit({ type: "fs-changed", repo, ...(moved ? { paths: moved } : {}) });
 }
 
 interface TreeDropTarget {
@@ -819,7 +812,6 @@ export default function App() {
         [],
     );
 
-    useEffect(() => recordAgentTurns(), []);
     useEffect(watchInbox, []);
 
     useEffect(() => watchTerminalAgentExits(), []);
@@ -860,15 +852,7 @@ export default function App() {
         };
     }, []);
 
-    useEffect(() => {
-        const controller = new AbortController();
-        void subscribeGitChanged(controller.signal).catch((error: unknown) => {
-            if (!controller.signal.aborted) swallow("git change listener")(error);
-        });
-        return () => {
-            controller.abort();
-        };
-    }, []);
+    useEffect(() => onCoreChanged("git", onGitChanged), []);
 
     useEffect(() => {
         if (import.meta.env.DEV || !UPDATES_IN_APP) return;

@@ -24,9 +24,6 @@ type ProjectChangeListener = (repo: string, paths?: readonly string[]) => void;
 export interface ProjectControllerRuntimeServices {
     readonly loadConfig: (cwd: string) => Promise<ProjectConfigLoadResult>;
     readonly loadWorktrees: (cwd: string) => Promise<readonly GitWorktree[]>;
-    readonly newWatchLeaseToken: () => string;
-    readonly watchStart: (cwd: string, token: string) => void | PromiseLike<void>;
-    readonly watchStop: (token: string) => void | PromiseLike<void>;
     readonly subscribeFsChanged: (listener: ProjectChangeListener) => () => void;
     readonly subscribeGitRefresh: (listener: ProjectChangeListener) => () => void;
 }
@@ -56,15 +53,7 @@ function isBoundedAbsoluteRoot(value: unknown): value is string {
 
 function requireServices(services: ProjectControllerRuntimeServices): ProjectControllerRuntimeServices {
     if (typeof services !== "object" || services === null) throw new TypeError("project controller runtime services are required");
-    const keys = [
-        "loadConfig",
-        "loadWorktrees",
-        "newWatchLeaseToken",
-        "watchStart",
-        "watchStop",
-        "subscribeFsChanged",
-        "subscribeGitRefresh",
-    ] as const;
+    const keys = ["loadConfig", "loadWorktrees", "subscribeFsChanged", "subscribeGitRefresh"] as const;
     for (const key of keys) {
         if (typeof services[key] !== "function") throw new TypeError(`project controller runtime service ${key} must be a function`);
     }
@@ -89,16 +78,12 @@ function invokeService<Result>(operation: () => Result | PromiseLike<Result>): P
 const productionServices: ProjectControllerRuntimeServices = Object.freeze({
     loadConfig: (cwd: string) => loadProjectConfig(cwd),
     loadWorktrees: (cwd: string) => git.worktrees(cwd),
-    newWatchLeaseToken: () => globalThis.crypto.randomUUID(),
-    watchStart: (cwd: string, token: string) => git.watchStart(cwd, token),
-    watchStop: (token: string) => git.watchStop(token),
     subscribeFsChanged: (listener: ProjectChangeListener) => subscribeBus("fs-changed", (event) => listener(event.repo, event.paths)),
     subscribeGitRefresh: (listener: ProjectChangeListener) => subscribeBus("git-refresh", (event) => listener(event.repo)),
 });
 
 /**
- * Frontend owner for every open local project's config, worktrees, and native
- * watcher lease. Importing the runtime is side-effect free; callers explicitly
+ * Frontend owner for every open local project's config and worktrees. Importing the runtime is side-effect free; callers explicitly
  * start it and reconcile the current set of project roots.
  */
 export class ProjectControllerRuntime {
@@ -120,9 +105,6 @@ export class ProjectControllerRuntime {
         this.controllerServices = Object.freeze({
             loadConfig: (cwd: string) => invokeService(() => this.services.loadConfig(cwd)),
             loadWorktrees: (cwd: string) => invokeService(() => this.services.loadWorktrees(cwd)),
-            newWatchLeaseToken: () => this.services.newWatchLeaseToken(),
-            watchStart: (cwd: string, token: string) => invokeService(() => this.services.watchStart(cwd, token)),
-            watchStop: (token: string) => invokeService(() => this.services.watchStop(token)),
         });
     }
 

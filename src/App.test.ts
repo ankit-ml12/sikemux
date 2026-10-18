@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activeTaskControls, gitChangeInvalidates, subscribeGitChanged } from "./App";
+import { activeTaskControls, gitChangeInvalidates, onGitChanged } from "./App";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "./api/transport";
 import { subscribe } from "./state/bus";
 import type { ResolvedTaskDefinition, TaskControllerSnapshot, TaskLifecycleState } from "./tasks/taskRegistry";
@@ -91,22 +91,17 @@ describe("Git change IPC subscription", () => {
         expect(gitChangeInvalidates("git.overview", ["/work/internal-old/web"], folder, null)).toBe(false);
     });
 
-    it("routes through the installed transport and aborts idempotently", async () => {
+    it("tells the page what moved, and everything when git's own state did", () => {
         const changed = vi.fn();
         const unsubscribeBus = subscribe("fs-changed", changed);
-        const controller = new AbortController();
-        const unsubscribe = await subscribeGitChanged(controller.signal);
 
-        expect(transport.eventListenerCount).toBe(1);
-        transport.emit("git_changed", { repo: "/repo", paths: null });
+        onGitChanged({ topic: "git", project: "/repo", paths: null });
         expect(changed).toHaveBeenCalledWith({ type: "fs-changed", repo: "/repo" });
-        transport.emit("git_changed", { repo: "/repo", paths: ["src/file.ts"] });
+        onGitChanged({ topic: "git", project: "/repo", paths: ["src/file.ts"] });
         expect(changed).toHaveBeenLastCalledWith({ type: "fs-changed", repo: "/repo", paths: ["src/file.ts"] });
+        onGitChanged({ topic: "git", project: "/repo", paths: [".git", "src/file.ts"] });
+        expect(changed).toHaveBeenLastCalledWith({ type: "fs-changed", repo: "/repo" });
 
-        controller.abort();
-        controller.abort();
-        unsubscribe();
-        expect(transport.eventListenerCount).toBe(0);
         unsubscribeBus();
     });
 });

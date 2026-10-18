@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { git, type GitBranch, type GitCommit, type GitFile, type GitRemote, type GitRemoteBranch, type GitStash } from "../api/git";
+import { portsApi } from "../api/ports";
 import { remoteRepoR } from "../codehost/project";
 import { gitChangeOwnersR, gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
@@ -136,7 +137,7 @@ const gitCalls = [
     "remoteRemove",
     "push",
     "pull",
-    "prOpen",
+    "pullRequestUrl",
     "commit",
     "aiMessage",
 ] as const;
@@ -157,6 +158,7 @@ beforeEach(() => {
     h.owners = resource({ authors: [], files: [] });
     h.copyText.mockReset().mockResolvedValue(undefined);
     for (const name of gitCalls) vi.spyOn(git, name).mockResolvedValue("" as never);
+    vi.spyOn(portsApi, "openExternal").mockResolvedValue(undefined);
     vi.spyOn(git, "status").mockResolvedValue({ branch: "main", upstream: null, ahead: 0, behind: 0, files: files() });
     setState({ gitViews: {}, gitModal: null, pickerOpen: false, gitCmdLogOpen: false });
     useGitWorkbench.setState({ drafts: {}, operations: {}, provider: "hermes", model: "openai/gpt-5.5" });

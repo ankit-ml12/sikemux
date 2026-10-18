@@ -138,7 +138,7 @@ fn run_command_with_timeout(
 
 /// Every git process the core starts for a client goes through here. A repo's own config can
 /// name an fsmonitor program, which git would otherwise run on any status read.
-pub(crate) fn git_command(repo: &str) -> Command {
+pub fn git_command(repo: &str) -> Command {
     let mut command = sikemux_process::user_environment::command("git");
     command
         .env("GIT_TERMINAL_PROMPT", "0")

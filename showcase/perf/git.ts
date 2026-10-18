@@ -31,7 +31,8 @@ async function scroll(by: number, count: number, from: number) {
 
 /** Diffs built from the files themselves, a line in seven added and one in nine removed, so they colour like real code. */
 function serveDiffs(backend: ShowcaseBackend): void {
-  backend.on("git_file_diff", async ({ repo, path }) => {
+  backend.onCore(["git.fileDiff"], async ({ params }) => {
+    const { repo, path } = params as { repo: string; path: string };
     const response = await fetch("/__showcase/read_file", {
       method: "POST",
       body: JSON.stringify({ path: `${repo}/${path}` }),

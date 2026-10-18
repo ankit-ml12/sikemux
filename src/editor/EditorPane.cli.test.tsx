@@ -38,7 +38,6 @@ describe("EditorPane CLI queue", () => {
                 };
             }
             if (command === "cli_open_result") return undefined;
-            if (command === "repo_watch_start") return 1;
             return null;
         });
         setState({

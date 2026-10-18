@@ -22,7 +22,6 @@ it("loads restored tabs only when they are shown, and reloads a changed one", as
     invoke.mockImplementation(async (command: string) => {
         if (command === "read_file_versioned") return { content, version: "1" };
         if (command === "read_file") return content;
-        if (command === "repo_watch_start") return 1;
         if (command === "diff_hunks") return [];
         return null;
     });

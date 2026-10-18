@@ -161,7 +161,7 @@ fn mark_ignored(listings: &mut [DirListing]) {
     }
     let ignored: std::collections::HashSet<String> = by_repo
         .into_iter()
-        .flat_map(|(root, paths)| crate::git::ignored_paths(&root.to_string_lossy(), &paths))
+        .flat_map(|(root, paths)| sikemux_core::git::ignored_paths(&root.to_string_lossy(), &paths))
         .collect();
     if ignored.is_empty() {
         return;

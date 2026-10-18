@@ -107,7 +107,7 @@ export async function generateGitDraft(repo: string): Promise<boolean> {
     const { provider, model, drafts } = useGitWorkbench.getState();
     const draft = drafts[repo] ?? "";
     return runRepositoryGit(repo, `Generate message with ${provider}`, async () => {
-        const message = await git.aiMessage(repo, provider, model, () => {});
+        const message = await git.aiMessage(repo, provider, model);
         if (!message.trim()) throw new Error("The provider returned an empty message. Your draft was kept.");
         if ((useGitWorkbench.getState().drafts[repo] ?? "") !== draft)
             throw new Error("Your draft changed during generation. It was kept; generate again when ready.");

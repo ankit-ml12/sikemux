@@ -52,7 +52,6 @@ toml = "1"
 base64 = "0.23"
 sha2 = "0.11"
 hex = "0.4"
-git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 notify = "8"
 ignore = "0.4"
@@ -64,7 +63,6 @@ regex = "1"
 rayon = "1"
 url = "2"
 tempfile = "3"
-hashlink = "0.12"
 thiserror = "1"
 time = { version = "0.3", features = ["formatting", "macros"] }
 uuid = { version = "1", features = ["v4", "v7"] }

@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 use ignore::WalkBuilder;
 use serde::Serialize;
 
+pub(crate) use sikemux_core::git::watch::{repo_key as canonical_repo_key, should_skip_dir};
+
 use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
 
 // Watcher deltas keep a snapshot current, while this TTL remains a periodic
@@ -30,7 +32,6 @@ const MAX_PROJECT_FILES: usize = 250_000;
 // allocated without limit.
 const MAX_PROJECT_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_PROJECT_ENCODED_PATH_BYTES: usize = MAX_PROJECT_SNAPSHOT_BYTES - 1024;
-pub(crate) const MAX_REPO_PATH_BYTES: usize = 4 * 1024;
 const MAX_PROJECT_CACHE_ENTRIES: usize = 128;
 const FULL_SCAN_SLOW_THRESHOLD: Duration = Duration::from_millis(100);
 const INCREMENTAL_SLOW_THRESHOLD: Duration = Duration::from_millis(16);
@@ -88,37 +89,6 @@ fn next_cache_access() -> u64 {
     NEXT_CACHE_ACCESS.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Canonical repository identity shared by snapshots and native watchers.
-/// Raw aliases remain a frontend routing concern; retaining only this key keeps
-/// symlinks, `.` components, and trailing separators from multiplying native
-/// cache/watcher ownership.
-pub(crate) fn canonical_repo_key(repo: &str) -> Result<String, String> {
-    if repo.is_empty()
-        || repo.len() > MAX_REPO_PATH_BYTES
-        || repo.contains('\0')
-        || !Path::new(repo).is_absolute()
-    {
-        return Err(format!(
-            "repository path must be an absolute path of at most {MAX_REPO_PATH_BYTES} bytes"
-        ));
-    }
-    let canonical = std::fs::canonicalize(repo)
-        .map_err(|error| format!("canonicalize repository path: {error}"))?;
-    if !canonical.is_dir() {
-        return Err("repository path is not a directory".into());
-    }
-    let canonical = canonical
-        .into_os_string()
-        .into_string()
-        .map_err(|_| "canonical repository path is not valid UTF-8".to_string())?;
-    if canonical.len() > MAX_REPO_PATH_BYTES {
-        return Err(format!(
-            "canonical repository path exceeds {MAX_REPO_PATH_BYTES} bytes"
-        ));
-    }
-    Ok(canonical)
-}
-
 /// Lookups clone a cell's `Arc` only while holding the map's lock, so under it
 /// a count of one means nobody is using the cell.
 fn evict_one_idle_project_cache_from(caches: &mut HashMap<String, Arc<ProjectCache>>) -> bool {
@@ -157,53 +127,6 @@ fn project_cache(repo: &str) -> Result<Arc<ProjectCache>, String> {
     project_cache_from(cache(), repo, MAX_PROJECT_CACHE_ENTRIES)
 }
 
-/// Explicit invalidation keeps compatibility with callers that need the next
-/// read to be a complete scan. The per-project lock object is retained so an
-/// in-flight scan and invalidation cannot split across different cache cells.
-pub fn invalidate(repo: &str) {
-    let project = lock_caches(cache()).get(repo).cloned();
-    if let Some(project) = project {
-        *project.lock() = None;
-    }
-}
-
-// Directories we never descend into. Keep this list conservative — anything
-// here is permanently invisible to the file palette.
-pub fn should_skip_dir(name: &str) -> bool {
-    matches!(
-        name,
-        // dependency / package managers
-        "node_modules" | "bower_components" | "vendor"
-        | ".pnpm-store" | ".yarn" | ".npm" | ".pnpm" | ".bun" | ".deno"
-        // VCS
-        | ".git" | ".hg" | ".svn"
-        // build outputs (js / rust / generic)
-        | "target" | "dist" | "build" | "out" | "_build"
-        | ".next" | ".nuxt" | ".svelte-kit" | ".vercel" | ".turbo" | ".astro"
-        | ".output"
-        // caches (js / generic)
-        | ".cache" | ".parcel-cache" | ".eslintcache" | ".vite"
-        | "coverage" | ".nyc_output"
-        // go
-        | ".gocache" | ".go-cache" | "gocache" | "go-build"
-        // rust
-        | ".cargo" | ".rustup"
-        // python
-        | ".venv" | "venv" | ".env_venv" | "__pycache__"
-        | ".pytest_cache" | ".mypy_cache" | ".ruff_cache" | ".tox"
-        // jvm / scala
-        | ".gradle" | ".m2" | ".bloop" | ".metals" | ".bsp"
-        // infra / cloud
-        | ".terraform" | ".serverless" | ".firebase" | ".vagrant"
-        // ios / xcode
-        | "Pods" | "Carthage" | "DerivedData" | "xcuserdata"
-        // editor / OS junk
-        | ".idea" | ".vscode-test" | ".DS_Store"
-        // cmake / clion
-        | "cmake-build-debug" | "cmake-build-release"
-    )
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectFilesSnapshot {
@@ -218,16 +141,6 @@ impl Entry {
             files: (*self.files).clone(),
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum WatcherChange {
-    /// Reconcile the current on-disk type: insert a file, replace a directory
-    /// subtree, or remove a path which no longer exists.
-    Reconcile(PathBuf),
-    /// Remove the exact path and any cached descendants without consulting a
-    /// potentially reused on-disk rename source.
-    Remove(PathBuf),
 }
 
 enum FullScanReason {
@@ -654,6 +567,18 @@ pub(crate) fn moved(
     });
 }
 
+/// Applies the paths the core's watcher saw move to a cached sorted snapshot,
+/// or none for anything. Ambiguous, outside-root, oversized, or unreadable
+/// changes fall back to one full scan. A missing cache remains missing so the
+/// next command performs its normal complete scan rather than doing duplicate
+/// work here.
+pub(crate) fn apply_moved(repo: &str, moved: Option<&[String]>) {
+    let force_full_rescan = moved.is_none();
+    let changes: Vec<&String> = moved
+        .unwrap_or_default()
+        .iter()
+        .filter(|path| path.as_str() != sikemux_core::git::watch::GIT_STATE)
+        .collect();
     let observer = global_observability();
     let mut metadata = Metadata::new();
     metadata.insert("change_count".to_owned(), ScalarValue::from(changes.len()));
@@ -695,10 +620,7 @@ pub(crate) fn moved(
     let mut remaining_files = MAX_INCREMENTAL_FILES;
 
     for change in changes {
-        let path = match &change {
-            WatcherChange::Reconcile(path) | WatcherChange::Remove(path) => path,
-        };
-        let relative = match normalized_relative(repo_root, path) {
+        let relative = match normalized_relative(repo_root, &repo_root.join(change)) {
             Ok(Some(relative)) => relative,
             Ok(None) => continue,
             Err(()) => {
@@ -708,10 +630,6 @@ pub(crate) fn moved(
         };
         relevant_changes = relevant_changes.saturating_add(1);
         removals.push(relative.clone());
-
-        if matches!(change, WatcherChange::Remove(_)) {
-            continue;
-        }
 
         let absolute = repo_root.join(&relative);
         let metadata = match std::fs::symlink_metadata(&absolute) {
@@ -852,28 +770,20 @@ mod tests {
         write(&temp.path().join("a.txt"), "a");
         write(&temp.path().join(".DS_Store"), "junk");
         write(&temp.path().join("target/ignored.txt"), "ignored");
-        let (repo, root) = canonical_temp_root(&temp);
+        let (repo, _) = canonical_temp_root(&temp);
 
         let first = snapshot_blocking(&repo).unwrap();
         assert_eq!(first.files, vec!["a.txt", "z.txt"]);
         assert_eq!(snapshot_blocking(&repo).unwrap().scan_id, first.scan_id);
 
         write(&temp.path().join("b.txt"), "b");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(root.join("b.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["b.txt".to_owned()]));
         let second = snapshot_blocking(&repo).unwrap();
         assert!(second.scan_id > first.scan_id);
         assert_eq!(second.files, vec!["a.txt", "b.txt", "z.txt"]);
 
         write(&temp.path().join("b.txt"), "modified");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(root.join("b.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["b.txt".to_owned()]));
         let after_modify = snapshot_blocking(&repo).unwrap();
         assert!(after_modify.scan_id > second.scan_id);
         assert_eq!(after_modify.files, second.files);
@@ -889,11 +799,7 @@ mod tests {
         let directory = root.join("nested");
         write(&directory.join("one.txt"), "one");
         write(&directory.join("deep/two.txt"), "two");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(directory.clone())],
-            false,
-        );
+        apply_moved(&repo, Some(&["nested".to_owned()]));
         let after_directory = snapshot_blocking(&repo).unwrap();
         assert!(after_directory.scan_id > initial.scan_id);
         assert_eq!(
@@ -904,16 +810,12 @@ mod tests {
         let old = root.join("old.txt");
         let renamed = root.join("renamed.txt");
         std::fs::rename(&old, &renamed).unwrap();
-        apply_watcher_batch(
+        apply_moved(
             &repo,
-            vec![
-                WatcherChange::Remove(old),
-                WatcherChange::Reconcile(renamed),
-            ],
-            false,
+            Some(&["old.txt".to_owned(), "renamed.txt".to_owned()]),
         );
         std::fs::remove_dir_all(&directory).unwrap();
-        apply_watcher_batch(&repo, vec![WatcherChange::Remove(directory)], false);
+        apply_moved(&repo, Some(&["nested".to_owned()]));
 
         let final_snapshot = snapshot_blocking(&repo).unwrap();
         assert!(final_snapshot.scan_id > after_directory.scan_id);
@@ -923,23 +825,18 @@ mod tests {
     #[test]
     fn outside_path_and_forced_batches_use_full_scan_fallback() {
         let temp = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
         write(&temp.path().join("initial.txt"), "initial");
         let (repo, _root) = canonical_temp_root(&temp);
         let initial = snapshot_blocking(&repo).unwrap();
 
         write(&temp.path().join("missed.txt"), "missed");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(outside.path().join("outside.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["../outside.txt".to_owned()]));
         let after_outside = snapshot_blocking(&repo).unwrap();
         assert!(after_outside.scan_id > initial.scan_id);
         assert_eq!(after_outside.files, vec!["initial.txt", "missed.txt"]);
 
         write(&temp.path().join("forced.txt"), "forced");
-        apply_watcher_batch(&repo, Vec::new(), true);
+        apply_moved(&repo, None);
         let after_forced = snapshot_blocking(&repo).unwrap();
         assert!(after_forced.scan_id > after_outside.scan_id);
         assert_eq!(
@@ -952,43 +849,12 @@ mod tests {
     fn cache_miss_defers_work_until_the_next_snapshot() {
         let temp = tempfile::tempdir().unwrap();
         write(&temp.path().join("one.txt"), "one");
-        let (repo, root) = canonical_temp_root(&temp);
+        let (repo, _) = canonical_temp_root(&temp);
 
-        invalidate(&repo);
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(root.join("one.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["one.txt".to_owned()]));
         let snapshot = snapshot_blocking(&repo).unwrap();
         assert_eq!(snapshot.files, vec!["one.txt"]);
         assert!(snapshot.scan_id > 0);
-    }
-
-    #[test]
-    fn canonical_repo_keys_collapse_aliases_and_bound_input() {
-        let temp = tempfile::tempdir().unwrap();
-        let canonical = canonical_repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
-        let dotted = temp.path().join(".");
-        assert_eq!(
-            canonical_repo_key(dotted.to_string_lossy().as_ref()).unwrap(),
-            canonical
-        );
-        assert!(canonical_repo_key("relative/repo").is_err());
-        assert!(canonical_repo_key(&format!("/{}", "x".repeat(MAX_REPO_PATH_BYTES))).is_err());
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-
-            let parent = tempfile::tempdir().unwrap();
-            let alias = parent.path().join("repo-alias");
-            symlink(temp.path(), &alias).unwrap();
-            assert_eq!(
-                canonical_repo_key(alias.to_string_lossy().as_ref()).unwrap(),
-                canonical
-            );
-        }
     }
 
     #[test]

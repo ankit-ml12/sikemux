@@ -11,6 +11,7 @@ import {
     type GitRemoteBranch,
     type GitStash,
 } from "../api/git";
+import { portsApi } from "../api/ports";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, toggleGitCmdLog } from "../state/git";
 import { invalidate, useCachedResourceEnabled } from "../state/resources";
@@ -860,7 +861,8 @@ function GitWorkbench({
             return;
         }
         void run("opening PR…", async () => {
-            const url = await git.prOpen(repo);
+            const url = await git.pullRequestUrl(repo);
+            await portsApi.openExternal(url);
             return `Opened the pull request page · ${url}`;
         });
     };
