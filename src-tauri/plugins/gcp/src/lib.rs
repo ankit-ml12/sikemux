@@ -13,6 +13,7 @@
 //   sql      — Cloud SQL instances, databases, users, backups and power
 //   pubsub   — Pub/Sub topics, subscriptions, publishing and peeking
 //   build    — Cloud Build builds, logs, triggers, retries and cancels
+//   secrets  — Secret Manager secrets and versions, by name only
 
 mod auth;
 mod build;
@@ -25,6 +26,7 @@ mod logging;
 mod projects;
 mod pubsub;
 mod run;
+mod secrets;
 mod sql;
 mod storage;
 
@@ -117,6 +119,9 @@ impl Plugin for Gcp {
                 "buildChange" => answer(build::change(params(input)?)).await,
                 "triggers" => answer(build::triggers(params(input)?)).await,
                 "triggerRun" => answer(build::run_trigger(params(input)?)).await,
+                "secrets" => answer(secrets::secrets(params(input)?)).await,
+                "secret" => answer(secrets::secret_detail(params(input)?)).await,
+                "secretVersion" => answer(secrets::set_version(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
