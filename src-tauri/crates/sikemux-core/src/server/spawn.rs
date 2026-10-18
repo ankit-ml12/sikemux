@@ -30,7 +30,7 @@ const MAX_PROMPT_BYTES: usize = 64 * 1024;
 const MAX_MODEL_CHARS: usize = 200;
 const MAX_SESSION_ID_CHARS: usize = 4_096;
 /// How much of a worker's final answer its lead is sent.
-const MAX_REPORT_BYTES: usize = 4 * 1024;
+const MAX_REPORT_BYTES: usize = 6 * 1024;
 
 /// The window call that opens a terminal agent another agent started.
 const OPEN_TERMINAL_METHOD: &str = "agent.terminal";
@@ -818,17 +818,25 @@ fn report(core: &Core, worker: &str, ending: Ending, answer: Option<TerminalAnsw
     text
 }
 
+/// `answer` within the report's size, its start and its end kept: a report
+/// ends with what is left undone, which its lead most needs.
 fn cut(answer: &str) -> String {
     if answer.len() <= MAX_REPORT_BYTES {
         return answer.to_owned();
     }
-    let mut end = MAX_REPORT_BYTES;
+    let half = MAX_REPORT_BYTES / 2;
+    let mut end = half;
     while !answer.is_char_boundary(end) {
         end -= 1;
     }
+    let mut start = answer.len() - half;
+    while !answer.is_char_boundary(start) {
+        start += 1;
+    }
     format!(
-        "{}\n\n[Cut to its first {} KB; ask it for the rest.]",
+        "{}\n\n[{} KB in the middle left out; read it with agent_read.]\n\n{}",
         answer[..end].trim_end(),
-        MAX_REPORT_BYTES / 1024
+        (start - end).div_ceil(1024),
+        answer[start..].trim_start()
     )
 }

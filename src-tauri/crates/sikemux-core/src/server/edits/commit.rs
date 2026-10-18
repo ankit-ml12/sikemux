@@ -358,7 +358,8 @@ fn locks_for(lock: &str, manifest: &str) -> bool {
 struct Planner<'a> {
     owners: &'a Owners,
     diff: &'a Diff,
-    /// The authors that stand for the committing agent.
+    /// The authors that stand for the committing agent, with agents at work
+    /// together that include it.
     mine: HashSet<usize>,
     by_path: HashMap<&'a str, &'a FileOwners>,
     before: HashMap<String, (String, String)>,
@@ -378,8 +379,15 @@ impl Planner<'_> {
         )
     }
 
+    /// Whether `author` is the committing agent, or agents at work together
+    /// that include it when the commit names the file and so claims them.
+    fn is_mine(&self, author: usize, claimed: bool) -> bool {
+        self.mine.contains(&author) && (claimed || self.owners.authors[author].shared.is_empty())
+    }
+
     /// Plans what the commit takes of `path`: all of it when `may_whole` and
-    /// no other agent wrote there for certain, else the committing agent's lines.
+    /// no other agent wrote there for certain, else the committing agent's
+    /// lines, with those others may have written only when `may_whole`.
     fn take(
         &self,
         path: &str,
@@ -415,7 +423,7 @@ impl Planner<'_> {
                 by: by.into_iter().collect(),
             });
         };
-        if !whole && !authors.iter().any(|author| self.mine.contains(author)) {
+        if !whole && !authors.iter().any(|author| self.is_mine(*author, may_whole)) {
             leave(authors.iter().map(|at| Some(*at)).collect(), left);
             return Ok(());
         }
@@ -472,7 +480,7 @@ impl Planner<'_> {
         let owner = |line| owner_of.get(&line).copied();
         let removal = |line| removed_by.get(&line).copied();
         let mine = |author: Option<usize>| {
-            whole || author.is_some_and(|author| self.mine.contains(&author))
+            whole || author.is_some_and(|author| self.is_mine(author, may_whole))
         };
         let theirs = |author: Option<usize>| !whole && author.is_some_and(|at| self.theirs(at));
         let mut tally = Tally::default();
@@ -839,5 +847,37 @@ mod tests {
         let (changes, _) = plan(&owners, &diff, mine, &["Cargo.toml".to_owned()]).unwrap();
         let taken: Vec<&str> = changes.iter().map(|change| change.path.as_str()).collect();
         assert_eq!(taken, ["Cargo.toml", "Cargo.lock"]);
+    }
+
+    #[test]
+    fn lines_others_may_have_written_go_in_only_from_a_named_file() {
+        let top = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(top.path()).unwrap();
+        let files = ["seen.rs", "protocol.rs"];
+        for file in files {
+            std::fs::write(top.join(file), "x\n").unwrap();
+        }
+        let git = |args: &[&str]| run(&top, args, None, None).unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]);
+        for file in files {
+            std::fs::write(top.join(file), "x\ny\n").unwrap();
+        }
+        let owners = Owners {
+            authors: vec![author("towhee", &[]), author("", &["towhee", "dolphin"])],
+            files: vec![appended("protocol.rs", 1), appended("seen.rs", 0)],
+        };
+        let diff = super::super::owners::read_diff(&top, false, false, None, false).unwrap();
+        let taken = |named: &[&str]| {
+            let named: Vec<String> = named.iter().map(|path| (*path).to_owned()).collect();
+            let (changes, _) = plan(&owners, &diff, HashSet::from([0, 1]), &named).unwrap();
+            changes
+                .into_iter()
+                .map(|change| change.path)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(taken(&[]), ["seen.rs"]);
+        assert_eq!(taken(&["protocol.rs"]), ["protocol.rs"]);
     }
 }

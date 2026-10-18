@@ -1630,8 +1630,9 @@ fn idle_from(core: &Core, agent_id: &str) -> Option<u64> {
 }
 
 /// Tells each idle agent another agent started of the open cards of its team
-/// that nobody holds and nothing holds up, once per card. Answers when an
-/// agent that has such cards will have been idle long enough.
+/// that nobody holds and nothing holds up, once per card, unless its lead is
+/// at work and so may hand it one itself. Answers when an agent that has such
+/// cards will have been idle long enough.
 fn offer(core: &Arc<Core>) -> Option<u64> {
     forget_stale_offers(core);
     let now = unix_ms();
@@ -1640,8 +1641,8 @@ fn offer(core: &Arc<Core>) -> Option<u64> {
         .iter()
         .filter_map(|agent| {
             let named = core.names.get(agent)?;
-            named.parent.as_ref()?;
-            Some((agent.clone(), named.project))
+            let lead = named.parent.as_ref()?;
+            idle_from(core, lead).is_some().then(|| (agent.clone(), named.project))
         })
         .collect();
     if workers.is_empty() {
