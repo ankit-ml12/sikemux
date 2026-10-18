@@ -35,7 +35,8 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "pluginStream" | "pluginSignIn" | "signInCallback" => Needs::Person,
         "changeOwners" | "commitOwners" | "activitySummary" => Needs::Watch,
         "setActivityPrice" => Needs::Person,
-        "modelProviders" | "modelProviderModels" | "modelHelper" => Needs::Full,
+        "modelProviders" | "modelProviderModels" | "modelHelper" | "agentSignIns" => Needs::Full,
+        "agentSignIn" | "agentSignInCode" | "cancelAgentSignIn" | "agentSignOut" => Needs::Person,
         "modelProviderCheck" | "modelProviderConnect" | "modelProviderDisconnect"
         | "setModelHelper" => Needs::Person,
         method if method.starts_with("git.") => super::git::needs(method),
