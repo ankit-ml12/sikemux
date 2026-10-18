@@ -9,7 +9,10 @@ import type { ShareOptions } from "./options.ts";
 /** What the relay needs of a host's connection. */
 export interface HostLink {
   readonly key: string;
+  readonly userId: string;
   send(message: ShareServerMessage): void;
+  /** The host is no longer on its account: close its connection. */
+  removed(): void;
 }
 
 /** What the relay needs of a viewer's connection. */
@@ -25,6 +28,7 @@ export interface ViewerLink {
 /** One open share: its frames since the last snapshot, its host when connected, and its viewers. */
 export class Room {
   readonly id: string;
+  readonly userId: string;
   readonly hostKey: string;
   readonly expiresAt: Date;
   host: HostLink | null = null;
@@ -37,11 +41,13 @@ export class Room {
 
   constructor(
     id: string,
+    userId: string,
     hostKey: string,
     expiresAt: Date,
     onExpired: (room: Room) => void,
   ) {
     this.id = id;
+    this.userId = userId;
     this.hostKey = hostKey;
     this.expiresAt = expiresAt;
     const wait = Math.max(0, expiresAt.getTime() - Date.now());

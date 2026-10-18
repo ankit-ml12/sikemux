@@ -11,7 +11,11 @@ import { addressOf, type RateLimiter } from "../limits.ts";
 import type { Logger } from "../log.ts";
 import type { Pusher } from "../push/send.ts";
 import { Hub } from "./hub.ts";
-import { listenForEvents, type Listener } from "./listener.ts";
+import {
+  listenForEvents,
+  type AccountWatcher,
+  type Listener,
+} from "./listener.ts";
 import { SHARE_PATH } from "../share/options.ts";
 import { LIVE_OPTIONS, type LiveOptions } from "./options.ts";
 import { failedHelloKeys, LiveSocket } from "./socket.ts";
@@ -24,6 +28,8 @@ export interface LiveServices {
   log: Logger;
   appOrigin: string;
   pusher: Pusher;
+  /** Told of every account change the hub hears of. */
+  watchers?: AccountWatcher[];
   options?: Partial<LiveOptions>;
 }
 
@@ -125,11 +131,18 @@ export function attachLive(server: Server, services: LiveServices): Live {
   };
   server.on("upgrade", onUpgrade);
 
+  const watchers = services.watchers ?? [];
   let listener: Listener | undefined = listenForEvents(
     services.databaseUrl,
     log,
-    (userId) => hub.wake(userId),
-    () => hub.wakeAll(),
+    (userId) => {
+      hub.wake(userId);
+      for (const watcher of watchers) watcher.changed(userId);
+    },
+    () => {
+      hub.wakeAll();
+      for (const watcher of watchers) watcher.missed();
+    },
   );
   const sweep = setInterval(() => {
     hub

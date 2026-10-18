@@ -22,6 +22,7 @@ export interface Removed {
 /**
  * Takes a device off its account: the row moves to a tombstone that keeps its cursor, so a
  * device that was offline still learns why it is gone, and the account hears device.revoked.
+ * A host's shared chats end with it.
  */
 export async function removeDevice(
   trx: Transaction<Tables>,
@@ -47,6 +48,13 @@ export async function removeDevice(
         reason === "removed" && row.clerk_session_id ? sql<Date>`now()` : null,
     })
     .execute();
+  if (row.role === "host")
+    await trx
+      .updateTable("shares")
+      .set({ ended_at: sql<Date>`now()`, ended_reason: "stopped" })
+      .where("host_key", "=", key)
+      .where("ended_at", "is", null)
+      .execute();
   await appendEvent(trx, {
     userId,
     type: "device.revoked",

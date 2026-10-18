@@ -103,15 +103,6 @@ export function startServer(config: Config, log: Logger) {
     (address) =>
       log.info({ host: address.address, port: address.port }, "listening"),
   ) as Server;
-  const live = attachLive(server, {
-    database,
-    databaseUrl: config.databaseUrl,
-    verifier,
-    limiter,
-    log,
-    appOrigin: config.appOrigin,
-    pusher,
-  });
   const shares = attachShares(server, {
     database,
     verifier,
@@ -120,6 +111,16 @@ export function startServer(config: Config, log: Logger) {
     appOrigin: config.appOrigin,
   });
 
+  const live = attachLive(server, {
+    database,
+    databaseUrl: config.databaseUrl,
+    verifier,
+    limiter,
+    log,
+    appOrigin: config.appOrigin,
+    pusher,
+    watchers: [shares],
+  });
   let sweeping = false;
   const clerkSweep = setInterval(() => {
     if (!clerk || sweeping) return;

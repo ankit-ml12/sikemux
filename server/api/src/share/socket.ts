@@ -54,19 +54,80 @@ export async function endShare(
   context.log.info({ share: id, reason }, "a share ended");
 }
 
+/** The account each of `keys` is a host on, for those still on an account that stands. */
+async function hostAccounts(
+  db: Kysely<Tables>,
+  keys: string[],
+): Promise<Map<string, string>> {
+  if (!keys.length) return new Map();
+  const rows = await db
+    .selectFrom("devices")
+    .innerJoin("users", "users.id", "devices.user_id")
+    .select(["devices.key", "devices.user_id"])
+    .where("devices.key", "in", keys)
+    .where("devices.role", "=", "host")
+    .where("users.deleted_at", "is", null)
+    .execute();
+  return new Map(rows.map((row) => [row.key, row.user_id]));
+}
+
+/**
+ * After an account changed, or after changes may have been missed when `userId` is undefined:
+ * ends the rooms whose shares ended in the database, as removing their host does, and closes
+ * the connections of hosts no longer on their account.
+ */
+export async function recheckShares(
+  context: Pick<ShareContext, "db" | "relay">,
+  userId?: string,
+) {
+  const { db, relay } = context;
+  const ours = (owner: string) => userId === undefined || owner === userId;
+  const rooms = [...relay.rooms.values()].filter((room) => ours(room.userId));
+  const ended = rooms.length
+    ? await db
+        .selectFrom("shares")
+        .select(["id", "ended_reason"])
+        .where(
+          "id",
+          "in",
+          rooms.map((room) => room.id),
+        )
+        .where("ended_at", "is not", null)
+        .execute()
+    : [];
+  for (const row of ended) {
+    const room = relay.rooms.get(row.id);
+    relay.rooms.delete(row.id);
+    room?.end(row.ended_reason === "expired" ? "expired" : "stopped");
+  }
+  const hosts = [...relay.hosts.values()].filter((host) => ours(host.userId));
+  const standing = await hostAccounts(
+    db,
+    hosts.map((host) => host.key),
+  );
+  for (const host of hosts)
+    if (standing.get(host.key) !== host.userId) host.removed();
+}
+
 /** The room for an open share, made from its row when this process has not held it yet. */
 function roomFor(
   context: ShareContext,
-  row: { id: string; host_key: string; expires_at: Date },
+  row: { id: string; user_id: string; host_key: string; expires_at: Date },
 ): Room {
   const { relay } = context;
   let room = relay.rooms.get(row.id);
   if (!room) {
-    room = new Room(row.id, row.host_key, row.expires_at, (expired) => {
-      endShare(context, expired.id, "expired").catch((error: unknown) =>
-        context.log.error({ err: error }, "ending an expired share failed"),
-      );
-    });
+    room = new Room(
+      row.id,
+      row.user_id,
+      row.host_key,
+      row.expires_at,
+      (expired) => {
+        endShare(context, expired.id, "expired").catch((error: unknown) =>
+          context.log.error({ err: error }, "ending an expired share failed"),
+        );
+      },
+    );
     relay.rooms.set(row.id, room);
     const host = relay.hosts.get(row.host_key);
     if (host) room.attachHost(host);
@@ -82,7 +143,7 @@ function roomFor(
 export class ShareSocket implements HostLink, ViewerLink {
   readonly id = randomBytes(9).toString("base64url");
   key = "";
-  private userId = "";
+  userId = "";
   private role: "host" | "viewer" | null = null;
   private phase: "hello" | "proving" | "open" | "closing" = "hello";
   private room: Room | null = null;
@@ -153,6 +214,10 @@ export class ShareSocket implements HostLink, ViewerLink {
     this.send({ type: "ended", share: this.room.id, reason });
     this.room = null;
     this.close(ShareCloseCode.ended, "the share ended");
+  }
+
+  removed() {
+    this.close(ShareCloseCode.unauthenticated, "the host left its account");
   }
 
   bye(reconnectAfterMs: number) {
@@ -326,18 +391,13 @@ export class ShareSocket implements HostLink, ViewerLink {
       !signedBy(hello.key, shareMessage(this.nonce, hello.key), hello.signature)
     )
       throw new HelloRefused("the signature does not match");
-    const device = await db
-      .selectFrom("devices")
-      .innerJoin("users", "users.id", "devices.user_id")
-      .select(["devices.user_id", "devices.role", "users.deleted_at"])
-      .where("devices.key", "=", hello.key)
-      .executeTakeFirst();
-    if (!device || device.role !== "host" || device.deleted_at)
+    const account = (await hostAccounts(db, [hello.key])).get(hello.key);
+    if (!account)
       throw new HelloRefused("the key is not a host on any account");
     if (this.phase === "closing") return;
 
     this.key = hello.key;
-    this.userId = device.user_id;
+    this.userId = account;
     this.role = "host";
     const older = relay.hosts.get(this.key);
     if (older instanceof ShareSocket)
@@ -356,7 +416,14 @@ export class ShareSocket implements HostLink, ViewerLink {
     await checkStanding(db, identity);
     const row = await db
       .selectFrom("shares")
-      .select(["id", "host_key", "expires_at", "ended_at", "ended_reason"])
+      .select([
+        "id",
+        "user_id",
+        "host_key",
+        "expires_at",
+        "ended_at",
+        "ended_reason",
+      ])
       .where("id", "=", hello.share)
       .executeTakeFirst();
     if (this.phase === "closing") return;
@@ -406,6 +473,10 @@ export class ShareSocket implements HostLink, ViewerLink {
 
   private async open(message: ShareOpen) {
     const { db, relay, options } = this.context;
+    if ((await hostAccounts(db, [this.key])).get(this.key) !== this.userId) {
+      this.removed();
+      return;
+    }
     const expiresAt = new Date(message.expiresAt);
     if (
       expiresAt.getTime() <= Date.now() ||
@@ -459,6 +530,7 @@ export class ShareSocket implements HostLink, ViewerLink {
     if (this.phase !== "open") return;
     const room = roomFor(this.context, {
       id: message.share,
+      user_id: this.userId,
       host_key: this.key,
       expires_at: existing?.expires_at ?? expiresAt,
     });

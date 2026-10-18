@@ -6,11 +6,12 @@ import { WebSocketServer } from "ws";
 import type { Verifier } from "../auth.ts";
 import type { Database } from "../db.ts";
 import { addressOf, type RateLimiter } from "../limits.ts";
+import type { AccountWatcher } from "../live/listener.ts";
 import { refuse } from "../live/server.ts";
 import type { Logger } from "../log.ts";
 import { SHARE_OPTIONS, SHARE_PATH, type ShareOptions } from "./options.ts";
 import { Relay } from "./relay.ts";
-import { failedShareHelloKeys, ShareSocket } from "./socket.ts";
+import { failedShareHelloKeys, recheckShares, ShareSocket } from "./socket.ts";
 
 /** The Mac app's window, which watches a shared chat from its own page. */
 const MAC_ORIGIN = "tauri://localhost";
@@ -24,7 +25,7 @@ export interface ShareServices {
   options?: Partial<ShareOptions>;
 }
 
-export interface Shares {
+export interface Shares extends AccountWatcher {
   relay: Relay;
   stop(): Promise<void>;
 }
@@ -100,8 +101,19 @@ export function attachShares(server: Server, services: ShareServices): Shares {
   };
   server.on("upgrade", onUpgrade);
 
+  const recheck = (userId?: string) => {
+    recheckShares(context, userId).catch((error: unknown) =>
+      log.error(
+        { err: error },
+        "rechecking shares after an account change failed",
+      ),
+    );
+  };
+
   return {
     relay,
+    changed: (userId) => recheck(userId),
+    missed: () => recheck(),
     async stop() {
       if (stopping) return;
       stopping = true;
