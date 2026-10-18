@@ -30,7 +30,7 @@ import { useStore } from "../../state/store";
 import { DEFAULT_GIT_VIEW } from "../../state/types";
 import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Run } from "../api";
 import { pullCommitsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
-import { checksSummary, isUnfinished, OUTCOME_LABEL, overallOutcome, type Outcome } from "../runStatus";
+import { checksSummary, isUnfinished, outcomeOf, overallOutcome, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
@@ -66,12 +66,15 @@ function PullHeadline({
     now,
     title,
     trailing,
+    meta,
     labels = false,
 }: {
     pull: Pull;
     now: number;
     title: ReactNode;
     trailing?: ReactNode;
+    /** Sits at the end of the line under the title, after its branches. */
+    meta?: ReactNode;
     labels?: boolean;
 }) {
     const state = pullState(pull);
@@ -97,6 +100,7 @@ function PullHeadline({
                 {pull.head && pull.base && <span className="pr-ref-arrow">→</span>}
                 {pull.base && <span className="pr-ref">{pull.base}</span>}
                 {labels && <Labels labels={pull.labels} />}
+                {meta}
             </span>
         </>
     );
@@ -105,11 +109,14 @@ function PullHeadline({
 function PullCi({ runs }: { runs: readonly Run[] }) {
     const outcome = overallOutcome(runs);
     const summary = checksSummary(runs);
+    const passed = runs.filter((run) => ["success", "skipped"].includes(outcomeOf(run))).length;
     return (
         <Tooltip label={summary === "all passed" ? "All checks passed" : `Checks: ${summary}`}>
             <span className="pr-ci" data-outcome={outcome}>
                 <OutcomeIcon outcome={outcome} size={12} />
-                <span className="pr-ci-label">{OUTCOME_LABEL[outcome]}</span>
+                <span className="pr-ci-count">
+                    {passed}/{runs.length}
+                </span>
             </span>
         </Tooltip>
     );
@@ -141,12 +148,8 @@ function PullRow({
                 pull={pull}
                 now={now}
                 title={<span className="pr-headline-title">{pull.title}</span>}
-                trailing={
-                    <>
-                        {ci}
-                        <Comments count={pull.comments ?? 0} />
-                    </>
-                }
+                trailing={<Comments count={pull.comments ?? 0} />}
+                meta={ci && <span className="pr-ci-meta">{ci}</span>}
             />
             <span className="pr-row-reviewers">
                 {pull.reviewers.map((login) => (

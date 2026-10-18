@@ -52,11 +52,20 @@
 .pr-headline-top > .pr-ci {
     margin-left: auto;
 }
-/* In the table the comments have a column of their own, so CI follows the title rather than the far edge. */
-@container (min-width: 760px) {
-    .pr-row .pr-headline-top > .pr-ci {
-        margin-left: 0;
-    }
+/* CI closes the line under the title, after the branches, as how many checks passed of all. */
+.pr-ci-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+}
+.pr-ci-meta::before {
+    content: "·";
+    color: var(--text-disabled);
+}
+.pr-ci-count {
+    font-variant-numeric: tabular-nums;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
 }
 .pr-headline-top > .pr-ci ~ :last-child {
     margin-left: 0;
