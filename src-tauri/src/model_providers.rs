@@ -154,14 +154,6 @@ async fn blocking<T: Send + 'static>(
         .map_err(|error| error.to_string())
 }
 
-/// The keys `agent` should start with, under the names it looks for.
-pub async fn environment(agent: &str) -> BTreeMap<String, String> {
-    let agent = agent.to_owned();
-    blocking(move |store| store.environment(&agent))
-        .await
-        .unwrap_or_default()
-}
-
 /// The key of a connected provider.
 pub(crate) async fn key(id: &str) -> Option<String> {
     let id = id.to_owned();

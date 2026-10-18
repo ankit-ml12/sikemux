@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use sikemux_core::acp::bounded_text;
 use sikemux_core::agent_accounts;
 use sikemux_core::client::{ClientError, CoreClient, Reply};
+use sikemux_core::launch::tools::Tools;
 use sikemux_core::launch::{AgentLaunch, AgentSpec};
 use sikemux_core::protocol::{
     ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch,
@@ -262,11 +263,21 @@ async fn core(pty: &PtyManager) -> Result<Arc<CoreClient>, String> {
     pty.client().await.map_err(|error| error.to_string())
 }
 
+/// Where the app's chats reach Sikemux's tools.
+fn tools(app: &AppHandle) -> Result<Tools, String> {
+    Ok(Tools {
+        executable: crate::cli_paths::cli_executable_path()
+            .ok_or("the sikemux-editor sidecar is missing; build it with node scripts/build-cli-sidecar.mjs")?,
+        endpoint: crate::cli_paths::cli_endpoint_path().ok_or("CLI endpoint unavailable")?,
+        data_dir: app.path().app_data_dir().map_err(|error| error.to_string())?,
+    })
+}
+
 /// How the app starts `spec` as a chat, on `model_provider` when one is named,
 /// with the skills library and, for Hermes and Grok, a private home of its own.
 async fn chat_launch(
-    app: &AppHandle,
-    agent_id: Option<&str>,
+    tools: &Tools,
+    agent_id: &str,
     spec: &AgentSpec,
     model_provider: Option<String>,
     model: Option<String>,
@@ -276,24 +287,14 @@ async fn chat_launch(
     }
     let program = spec.program().await?;
     let providers = crate::model_providers::wiring(&spec.provider, model_provider, model).await?;
-    let mut launch = spec.chat(
-        program,
-        providers,
-        crate::browser::agents::skills_data_dir(app).as_deref(),
-    );
-    if let Some(agent_id) = agent_id {
-        launch
-            .env
-            .insert(crate::ports::AGENT_ID_ENV.into(), agent_id.to_owned());
-        crate::browser::agents::chat_home(
-            app,
-            agent_id,
-            &spec.provider,
-            &launch.program,
-            &mut launch.env,
-        )
+    let skills = sikemux_core::launch::skills::ready(&tools.data_dir);
+    let mut launch = spec.chat(program, providers, skills);
+    launch
+        .env
+        .insert(crate::ports::AGENT_ID_ENV.into(), agent_id.to_owned());
+    tools
+        .chat_home(agent_id, &spec.provider, &launch.program, &mut launch.env)
         .await;
-    }
     Ok(launch)
 }
 
@@ -327,7 +328,8 @@ pub async fn acp_start(
         config_path: config_path.clone(),
         environment_keys,
     };
-    let prepared = chat_launch(&app, Some(&agent_id), &spec, model_provider, model.clone()).await;
+    let tools = tools(&app)?;
+    let prepared = chat_launch(&tools, &agent_id, &spec, model_provider, model.clone()).await;
     let prepared = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
@@ -335,12 +337,11 @@ pub async fn acp_start(
             return Err(error);
         }
     };
-    // The tools this agent can drive its own browser tabs with. A session
-    // that cannot be told about them still runs.
-    let mcp_servers = match crate::browser::agents::acp_browser_server(&app, &agent_id) {
-        Ok(server) => serde_json::to_value(server).into_iter().collect(),
+    // A session that cannot be told about the tools still runs.
+    let mcp_servers = match tools.chat_server(&agent_id, None) {
+        Ok(server) => vec![server],
         Err(error) => {
-            eprintln!("Sikemux browser tools are unavailable to this agent: {error}");
+            eprintln!("Sikemux tools are unavailable to this agent: {error}");
             Vec::new()
         }
     };

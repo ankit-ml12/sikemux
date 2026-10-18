@@ -7,6 +7,7 @@ pub mod homes;
 pub mod model_feed;
 pub mod providers;
 pub mod skills;
+pub mod tools;
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use sikemux_core::client::{Attached, ClientError, Reply};
-use sikemux_core::launch::AgentSpec;
 use sikemux_core::protocol::{
     Continuation, LaunchIdentity, Request, Response as CoreResponse, SessionExit, SessionId,
     SessionInfo, SpawnTarget, TerminalSpawn,
@@ -51,7 +50,6 @@ fn finish<T>(
 pub async fn pty_spawn(
     app: AppHandle,
     manager: State<'_, PtyManager>,
-    browser: State<'_, crate::browser::BrowserManager>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -60,7 +58,6 @@ pub async fn pty_spawn(
     context: Option<PtyContext>,
     continues: Option<Continuation>,
 ) -> AppResult<SessionId> {
-    let mut direct_command = direct_command;
     let agent_launch = match (direct_command.as_ref(), context.as_ref()) {
         (Some(command), Some(context)) => {
             match (context.agent_type.clone(), context.project.clone()) {
@@ -78,52 +75,18 @@ pub async fn pty_spawn(
         }
         _ => None,
     };
-    // An agent can only reach the browser tools if its own host is told they
-    // exist, and every host is told differently (see browser::agents). A host
-    // that cannot be told still launches, without them.
-    let mut env: Vec<(String, String)> = match (direct_command.as_mut(), context.as_ref()) {
-        (Some(command), Some(context)) => {
-            match (context.agent_id.as_deref(), context.agent_type.as_deref()) {
-                (Some(agent_id), Some(agent_type))
-                    if crate::browser::agents::is_supported(agent_type) =>
-                {
-                    match browser
-                        .agent_integration(&app, agent_id, agent_type, &command.program)
-                        .await
-                    {
-                        Ok(integration) => integration.apply(&mut command.args),
-                        Err(error) => {
-                            eprintln!("Sikemux browser integration is unavailable: {error}");
-                            Default::default()
-                        }
-                    }
-                }
-                _ => Default::default(),
-            }
-        }
-        _ => Default::default(),
-    };
-    let agent = direct_command.as_ref().zip(
-        context
+    let agent = direct_command.is_some()
+        && context
             .as_ref()
-            .and_then(|context| context.agent_type.as_deref()),
-    );
-    match agent {
-        Some((command, agent_type)) => {
-            let profile = command.profile.as_ref();
-            let spec = AgentSpec {
-                provider: agent_type.to_owned(),
-                executable_path: None,
-                config_path: profile.and_then(|profile| profile.config_path.clone()),
-                environment_keys: profile
-                    .map(|profile| profile.environment_keys.clone())
-                    .unwrap_or_default(),
-            };
-            let providers = crate::model_providers::environment(agent_type).await;
-            env.extend(spec.launch(command.program.clone().into(), providers).env);
-        }
-        None => env.extend(crate::system::child_path().map(|path| ("PATH".to_owned(), path))),
-    }
+            .is_some_and(|context| context.agent_type.is_some());
+    let env: Vec<(String, String)> = if agent {
+        Vec::new()
+    } else {
+        crate::system::child_path()
+            .map(|path| ("PATH".to_owned(), path))
+            .into_iter()
+            .collect()
+    };
     let client = manager.client().await?;
     let id = client
         .spawn(

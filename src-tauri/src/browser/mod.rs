@@ -8,8 +8,6 @@
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
 pub mod address;
-mod agent_skills;
-pub mod agents;
 mod burst;
 mod discard;
 mod documents;
@@ -1284,30 +1282,11 @@ impl BrowserManager {
         }
     }
 
-    pub fn mcp_launch(&self) -> AppResult<BrowserMcpLaunch> {
-        let executable = crate::cli_paths::cli_executable_path().ok_or_else(|| {
-            AppError::Other(
-                "the sikemux-editor sidecar is missing; build it with node scripts/build-cli-sidecar.mjs"
-                    .into(),
-            )
-        })?;
-        Ok(BrowserMcpLaunch {
-            command: executable.to_string_lossy().into_owned(),
-            args: vec![crate::cli_client::TOOLS_MCP_FLAG.into()],
-        })
-    }
-
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, AgentBrowser>> {
         self.agents
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct BrowserMcpLaunch {
-    pub command: String,
-    pub args: Vec<String>,
 }
 
 fn drop_view(view: Webview) {
