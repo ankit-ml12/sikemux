@@ -6,6 +6,7 @@
 //   containers — listing and reading containers, starting, stopping and removing them
 //   compose    — Compose stacks from their containers' labels, and acting on a whole stack
 //   logs       — a container's logs, read once or followed as they are written
+//   stats      — CPU, memory, network and disk of each running container
 //   images     — images, the containers made from each, removing and pruning them
 //   volumes    — volumes, their sizes and the containers that mount them, removing and pruning them
 
@@ -15,6 +16,7 @@ mod engine;
 mod error;
 mod images;
 mod logs;
+mod stats;
 mod status;
 mod volumes;
 
@@ -90,6 +92,10 @@ impl Plugin for Docker {
                     answer(|engine| async move { images::remove(&engine, params).await }).await
                 }
                 "pruneImages" => answer(|engine| async move { images::prune(&engine).await }).await,
+                "stats" => {
+                    let params = params(input)?;
+                    answer(|engine| async move { stats::read(&engine, params).await }).await
+                }
                 "stacks" => answer(|engine| async move { compose::list(&engine).await }).await,
                 "actOnStack" => {
                     let params = params(input)?;
@@ -166,6 +172,11 @@ mod tests {
             .await
             .expect("volumes");
         println!("volumes: {}", volumes.as_array().map_or(0, Vec::len));
+        let stats = plugin
+            .call(&ctx, "stats", serde_json::json!({}))
+            .await
+            .expect("stats");
+        println!("stats: {stats:#}");
     }
 
     #[test]
