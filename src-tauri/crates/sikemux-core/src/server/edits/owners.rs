@@ -76,6 +76,10 @@ pub(crate) struct Author {
     pub feed: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub shared: Vec<String>,
+    /// Whether the agent is still open here; lines of one closed since block
+    /// nobody who names their file.
+    #[serde(skip)]
+    pub open: bool,
 }
 
 impl Author {
@@ -131,7 +135,9 @@ pub(crate) fn owners(core: &Core, dir: &Path, staged: bool) -> Result<Owners, St
 /// watcher has seen nothing move, and bringing an earlier read up to date by
 /// asking git again only of the paths that moved since.
 pub(crate) fn owners_at(core: &Core, dir: &Path, staged: bool) -> Result<Owners, String> {
-    let Some((key, generation)) = dir.to_str().and_then(crate::git::status::watched_generation)
+    let Some((key, generation)) = dir
+        .to_str()
+        .and_then(crate::git::status::watched_generation)
     else {
         return owners(core, dir, staged);
     };
@@ -501,6 +507,7 @@ fn author(core: &Core, edit: &Edit) -> Author {
         model: edit.model.clone(),
         feed: edit.feed.clone(),
         shared: edit.shared.clone(),
+        open: core.names.get(&edit.agent_id).is_some(),
     }
 }
 

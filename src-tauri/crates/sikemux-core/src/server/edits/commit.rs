@@ -366,10 +366,11 @@ struct Planner<'a> {
 }
 
 impl Planner<'_> {
-    /// Whether `author` is another agent for certain, not agents at work
-    /// together that may include the committing one.
+    /// Whether `author` is another agent still open, for certain, not agents
+    /// at work together that may include the committing one.
     fn theirs(&self, author: usize) -> bool {
-        !self.mine.contains(&author) && self.owners.authors[author].shared.is_empty()
+        let writer = &self.owners.authors[author];
+        !self.mine.contains(&author) && writer.shared.is_empty() && writer.open
     }
 
     fn name(&self, author: Option<usize>) -> String {
@@ -794,6 +795,7 @@ mod tests {
             model: None,
             feed: String::new(),
             shared: shared.iter().map(|id| (*id).to_owned()).collect(),
+            open: true,
         }
     }
 
