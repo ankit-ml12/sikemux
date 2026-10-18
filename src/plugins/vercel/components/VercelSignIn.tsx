@@ -18,7 +18,7 @@ export function VercelSignIn({ status, onSignedIn }: { status: VercelStatus | un
 
     return (
         <SignInScreen
-            mark={<VercelMark size={26} />}
+            mark={<VercelMark size={26} className="icon-vercel" />}
             title="Connect Vercel"
             lede="See your projects, deployments and build logs beside your code, and let agents read them, redeploy and promote."
             foot="Sikemux keeps your token in the macOS Keychain.">

@@ -14,13 +14,13 @@ registerFrontendPlugin({
         {
             kind: VERCEL_PROJECTS,
             title: "Vercel",
-            icon: (size) => <VercelMark size={size} />,
+            icon: (size) => <VercelMark size={size} className="icon-vercel" />,
             render: ({ paneId, visible }) => <VercelPane paneId={paneId} active={visible} />,
         },
     ],
     open: openVercel,
     openTitle: "Open Vercel",
-    mark: (size) => <VercelMark size={size} />,
+    mark: (size) => <VercelMark size={size} className="icon-vercel" />,
     linkHosts: ["vercel.com"],
     useSignIn: function useServiceSignIn() {
         return signInOf(useResource(vercelStatusR));

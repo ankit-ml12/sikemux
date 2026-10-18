@@ -348,7 +348,8 @@
     color: var(--live);
 }
 .icon-github,
-.icon-linear {
+.icon-linear,
+.icon-vercel {
     color: var(--text-primary);
 }
 .sess-name {
