@@ -81,16 +81,16 @@ function IssueRow({ issue, now, selected, onOpen }: { issue: Issue; now: number;
     return (
         <button
             type="button"
-            className="issue-side-row"
+            className="side-row"
             data-on={selected ? "1" : "0"}
             ref={(node) => {
                 if (node && selected) node.scrollIntoView({ block: "nearest" });
             }}
             onClick={onOpen}>
             <StateMark kind="issue" state={issue.state} reason={issue.stateReason} size={13} />
-            <span className="issue-side-title">{issue.title}</span>
+            <span className="side-row-title">{issue.title}</span>
             <Comments count={issue.comments} />
-            <span className="issue-side-sub">
+            <span className="side-row-sub">
                 #{issue.number} · {issue.author ?? "someone"} · {formatAgo(issue.updatedAt, now)}
             </span>
         </button>
@@ -352,7 +352,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                     <StateMark kind="issue" state={openIssue?.state ?? "open"} reason={openIssue?.stateReason ?? null} size={14} />
                     <span className="pr-side-number">#{item}</span>
                     <span className="gha-page-spacer" />
-                    <div className="gha-chips gha-seg issue-side-seg" role="group" aria-label="Which to list">
+                    <div className="gha-chips gha-seg side-seg" role="group" aria-label="Which to list">
                         {LIST_STATES.map((state) => (
                             <button
                                 key={state}
@@ -388,7 +388,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                         label: "Issues",
                         icon: <SectionIcon section="issues" size={14} />,
                         content: (
-                            <div className="git-list issue-side-list">
+                            <div className="git-list side-list">
                                 {rows.map((issue) => (
                                     <IssueRow
                                         key={issue.number}

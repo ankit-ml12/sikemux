@@ -208,9 +208,7 @@ button.git-file-row {
     overflow-y: auto;
     padding: var(--space-4) 16px var(--space-6);
 }
-.pr-conversation > .gha-thread,
-.pr-conversation > .release-notes,
-.pr-conversation > .release-assets {
+.pr-conversation > .gha-thread {
     max-width: 880px;
     margin: 0 auto;
 }

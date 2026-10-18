@@ -389,6 +389,8 @@ export interface Release {
     prerelease: boolean;
     publishedAt: string | null;
     author: string | null;
+    /** The author's picture, sent by hosts that have one, a bot's included. */
+    avatarUrl?: string | null;
     assets: ReleaseAsset[];
     url: string;
 }
