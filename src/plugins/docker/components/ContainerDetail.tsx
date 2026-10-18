@@ -68,7 +68,7 @@ export function ContainerDetail({
                         {container.compose.project} · {container.compose.service}
                     </span>
                 ) : null}
-                <Ports ports={container.ports} />
+                {container.ports.length > 0 ? <Ports ports={container.ports} /> : null}
             </div>
             <Seg label="View" options={TABS} value={tab} onChange={onTab} />
             {tab === "inspect" ? <Inspect container={container} /> : children?.(container)}

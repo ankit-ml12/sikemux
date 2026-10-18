@@ -469,8 +469,8 @@
     overflow-wrap: anywhere;
 }
 
-.docker-log-line.stderr .docker-log-text {
-    color: var(--danger);
+.docker-log-line.stderr {
+    box-shadow: inset 2px 0 var(--danger);
 }
 
 .docker-log-time {
