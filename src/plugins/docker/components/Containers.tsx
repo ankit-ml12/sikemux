@@ -1,9 +1,11 @@
-import { Seg } from "../../../plugin-api/ui";
+import { useState } from "react";
+import { ContextMenu, Seg } from "../../../plugin-api/ui";
+import { containerMenu } from "../actions";
 import { formatAgo } from "../../../plugin-api/format";
 import { formatBytes } from "../../../plugin-api/format";
 import type { Container, ContainerStats } from "../api";
 import { isRunning, shortImage } from "../format";
-import type { StateFilter } from "../state";
+import type { ContainerTab, StateFilter } from "../state";
 import { Ports, StateDot } from "./parts";
 
 export function matches(container: Container, find: string, filter: StateFilter): boolean {
@@ -30,8 +32,9 @@ export function Containers({
     find: string;
     filter: StateFilter;
     onFilter: (filter: StateFilter) => void;
-    onOpen: (name: string) => void;
+    onOpen: (name: string, tab?: ContainerTab) => void;
 }) {
+    const [menu, setMenu] = useState<{ x: number; y: number; container: Container } | null>(null);
     const shown = containers.filter((container) => matches(container, find, filter));
     const found = containers.filter((container) => matches(container, find, "all"));
     const running = found.filter(isRunning).length;
@@ -69,6 +72,10 @@ export function Containers({
                                 tabIndex={0}
                                 aria-label={container.name}
                                 onClick={() => onOpen(container.name)}
+                                onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    setMenu({ x: event.clientX, y: event.clientY, container });
+                                }}
                                 onKeyDown={(event) => {
                                     if (event.key === "Enter") onOpen(container.name);
                                 }}>
@@ -97,6 +104,14 @@ export function Containers({
                     </tbody>
                 </table>
             )}
+            {menu ? (
+                <ContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    items={containerMenu(menu.container, (tab) => onOpen(menu.container.name, tab))}
+                    onClose={() => setMenu(null)}
+                />
+            ) : null}
         </section>
     );
 }

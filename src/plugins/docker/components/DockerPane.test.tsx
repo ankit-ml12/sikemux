@@ -84,6 +84,15 @@ describe("the Docker pane", () => {
         expect(await screen.findByRole("table", { name: "Containers" })).toBeInTheDocument();
     });
 
+    it("opens a container's inspect view from its right-click menu", async () => {
+        api.container.mockRejectedValue({ category: "not-found", message: "docker: gone" });
+        renderPane();
+        fireEvent.contextMenu(await screen.findByRole("row", { name: "redis" }));
+        fireEvent.click(await screen.findByRole("menuitem", { name: /Inspect/ }));
+        expect(await screen.findByText("docker: gone")).toBeInTheDocument();
+        expect(api.container).toHaveBeenCalledWith("redis");
+    });
+
     it("opens a published port in the browser", async () => {
         renderPane();
         fireEvent.click(await screen.findByRole("button", { name: "localhost:3000" }));

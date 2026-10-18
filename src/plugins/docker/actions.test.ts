@@ -9,7 +9,8 @@ const host = vi.hoisted(() => ({
 }));
 vi.mock("../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), ...host }));
 
-import { act, openShell, remove, shellArgv } from "./actions";
+import { act, containerMenu, openShell, remove, shellArgv } from "./actions";
+import { REDIS, SHOP_DB } from "./testing";
 
 beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
@@ -46,5 +47,42 @@ describe("acting on a container", () => {
         openShell("web");
         expect(host.runInTerminal).toHaveBeenCalledWith("Shell in web", shellArgv("web"));
         expect(shellArgv("web").slice(0, 4)).toEqual(["docker", "exec", "-it", "web"]);
+    });
+});
+
+describe("a container's menu", () => {
+    const labels = (items: ReturnType<typeof containerMenu>) =>
+        items.filter((item) => !item.sep).map((item) => `${item.label}${item.disabled ? " (off)" : ""}`);
+
+    it("offers stopping, a shell and the rest for a running container", () => {
+        expect(labels(containerMenu(REDIS, () => {}))).toEqual([
+            "Logs",
+            "Inspect",
+            "Stop",
+            "Restart",
+            "Pause",
+            "Open shell",
+            "Copy name",
+            "Copy ID",
+            "Remove…",
+        ]);
+    });
+
+    it("offers starting a stopped one, and keeps what needs it running out of reach", () => {
+        const open = vi.fn();
+        const items = containerMenu(SHOP_DB, open);
+        expect(labels(items)).toEqual([
+            "Logs",
+            "Inspect",
+            "Start",
+            "Restart (off)",
+            "Pause (off)",
+            "Open shell (off)",
+            "Copy name",
+            "Copy ID",
+            "Remove…",
+        ]);
+        items[1]!.run!();
+        expect(open).toHaveBeenCalledWith("inspect");
     });
 });

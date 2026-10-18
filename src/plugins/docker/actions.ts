@@ -1,5 +1,7 @@
-import { confirmDialog, notify, runInTerminal, swallow } from "../../plugin-api/host";
-import { dockerApi, failureMessage, refreshDocker, type ContainerAction } from "./api";
+import { confirmDialog, copyWithNotice, notify, runInTerminal, swallow } from "../../plugin-api/host";
+import type { ContextMenuItem } from "../../plugin-api/ui";
+import { dockerApi, failureMessage, refreshDocker, type Container, type ContainerAction } from "./api";
+import { isRunning } from "./format";
 
 const DONE: Record<ContainerAction, string> = {
     start: "Started",
@@ -69,4 +71,26 @@ export function shellArgv(name: string): string[] {
 
 export function openShell(name: string): void {
     void runInTerminal(`Shell in ${name}`, shellArgv(name)).catch(swallow("open a shell in the container"));
+}
+
+/** What a container's row offers when right-clicked, most likely first. */
+export function containerMenu(container: Container, open: (tab: "logs" | "inspect") => void): ContextMenuItem[] {
+    const running = isRunning(container);
+    const paused = container.state === "paused";
+    return [
+        { label: "Logs", run: () => open("logs") },
+        { label: "Inspect", run: () => open("inspect") },
+        { sep: true },
+        running ? { label: "Stop", run: () => void act(container.name, "stop") } : { label: "Start", run: () => void act(container.name, "start") },
+        { label: "Restart", disabled: !running, run: () => void act(container.name, "restart") },
+        paused
+            ? { label: "Resume", run: () => void act(container.name, "unpause") }
+            : { label: "Pause", disabled: !running, run: () => void act(container.name, "pause") },
+        { label: "Open shell", disabled: !running || paused, run: () => openShell(container.name) },
+        { sep: true },
+        { label: "Copy name", run: () => copyWithNotice(container.name, "Container name") },
+        { label: "Copy ID", run: () => copyWithNotice(container.id, "Container ID") },
+        { sep: true },
+        { label: "Remove…", danger: true, run: () => void remove(container.name, running) },
+    ];
 }

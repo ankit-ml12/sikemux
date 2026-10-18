@@ -194,7 +194,7 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
                             find={view.find}
                             filter={view.stateFilter}
                             onFilter={(stateFilter) => updateDockerView(paneId, { stateFilter })}
-                            onOpen={(container) => updateDockerView(paneId, { container })}
+                            onOpen={(container, tab) => updateDockerView(paneId, tab ? { container, tab } : { container })}
                         />
                     )}
                 </div>
