@@ -159,7 +159,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
             <div className="gha-list pr-list">
                 <StaleNotice handle={issues} />
                 <div className="gha-list-head">
-                    <div className="gha-chips">
+                    <div className="gha-chips gha-seg" role="group" aria-label="Which to list">
                         {LIST_STATES.map((state) => (
                             <button
                                 key={state}

@@ -15,6 +15,20 @@
     border-radius: var(--radius-3);
     background: var(--gha-tint);
 }
+/* Inside a framed host screen the frame is the card, so the full-page list runs edge to edge with no card of its own. */
+.git-framed .gha-full-page > .pr-list {
+    margin: 0;
+    padding: 0 var(--space-2) var(--space-2);
+    border: 0;
+    border-radius: 0;
+    background: none;
+}
+.git-framed .gha-full-page > .pr-list > .gha-list-head {
+    margin: 0 calc(-1 * var(--space-2)) var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
+}
 /* In the side panel's inbox page the panel is the card, so the list draws none of its own. */
 .git-left .git-inbox-list > .pr-list {
     margin: 0;

@@ -801,7 +801,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
             <div className="gha-list pr-list">
                 <StaleNotice handle={pulls} />
                 <div className="gha-list-head">
-                    <div className="gha-chips">
+                    <div className="gha-chips gha-seg" role="group" aria-label="Which to list">
                         {LIST_STATES.map((state) => (
                             <button
                                 key={state}
