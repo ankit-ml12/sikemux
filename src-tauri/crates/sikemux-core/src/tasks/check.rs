@@ -96,9 +96,11 @@ impl CheckItem {
 
     fn worded(self) -> Check {
         let (title, detail) = match &self {
-            Self::BuildTool { ok: true, name, program } => {
-                (name.clone(), format!("{program} is installed"))
-            }
+            Self::BuildTool {
+                ok: true,
+                name,
+                program,
+            } => (name.clone(), format!("{program} is installed")),
             Self::BuildTool { name, program, .. } => (
                 format!("{name} isn't installed"),
                 format!("This task runs {program}"),

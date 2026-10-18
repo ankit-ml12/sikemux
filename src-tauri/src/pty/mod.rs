@@ -18,7 +18,7 @@ use sikemux_core::client::{
     CoreClient, Reply,
 };
 use sikemux_core::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
-use sikemux_core::protocol::{BuildIdentity, Request, SessionId, SessionInfo, SessionKind};
+use sikemux_core::protocol::{BuildIdentity, Request, SessionInfo, SessionKind};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -82,23 +82,6 @@ pub(crate) fn core_error(error: ClientError) -> AppError {
         }
         other => AppError::Pty(other.to_string()),
     }
-}
-
-/// What a PTY was opened for, so a process found under it can be traced back
-/// to a terminal pane, an agent or a task.
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PtyOwner {
-    pub project: Option<String>,
-    pub pane_id: Option<String>,
-    pub agent_id: Option<String>,
-    pub task_execution_id: Option<String>,
-}
-
-pub(crate) struct PtyProcess {
-    pub pid: u32,
-    pub pty_id: SessionId,
-    pub owner: PtyOwner,
 }
 
 #[derive(serde::Serialize)]
@@ -285,7 +268,7 @@ impl PtyManager {
     }
 
     /// Sends every pane its screen again from the updated core, followed by
-    /// the live output, and tells tasks that ended meanwhile.
+    /// the live output.
     async fn reattach(&self, client: &Arc<CoreClient>) {
         for id in self.streams.core_subscribed() {
             let streams = self.streams.clone();
@@ -312,33 +295,10 @@ impl PtyManager {
                 // A dropped connection is not the session ending; the next
                 // reconnect deals with it.
                 Err(ClientError::Disconnected) => {}
-                _ => sink::report_exited(&streams, id, sink::task_exit(None, None)),
+                _ => sink::report_exited(&streams, id),
             });
             if let Ok(replied) = submitted {
                 let _ = replied.await;
-            }
-        }
-        let watched = self.streams.watched_tasks();
-        if watched.is_empty() {
-            return;
-        }
-        let Ok(sessions) = client.list().await else {
-            return;
-        };
-        for id in watched {
-            let session = sessions.iter().find(|session| session.id == id);
-            if session.is_some_and(|session| session.running) {
-                continue;
-            }
-            let exit = session.and_then(|session| session.exit.clone());
-            let exit_channel = self
-                .streams
-                .lock()
-                .ok()
-                .and_then(|mut guard| guard.take_task_exit(id));
-            if let Some(channel) = exit_channel {
-                let (code, signal) = exit.map_or((None, None), |exit| (exit.code, exit.signal));
-                let _ = channel.send(sink::task_exit(code, signal));
             }
         }
     }
@@ -451,27 +411,6 @@ impl PtyManager {
 
     pub(crate) async fn sessions(&self) -> AppResult<Vec<SessionInfo>> {
         self.client().await?.list().await.map_err(core_error)
-    }
-
-    pub(crate) async fn live_processes(&self) -> AppResult<Vec<PtyProcess>> {
-        Ok(self
-            .sessions()
-            .await?
-            .into_iter()
-            .filter(|session| session.running)
-            .filter_map(|session| {
-                Some(PtyProcess {
-                    pid: session.pid?,
-                    pty_id: session.id,
-                    owner: PtyOwner {
-                        project: session.project,
-                        pane_id: session.pane_id,
-                        agent_id: session.agent_id,
-                        task_execution_id: session.task_execution_id,
-                    },
-                })
-            })
-            .collect())
     }
 
     pub async fn diagnostics(&self) -> PtyDiagnostics {

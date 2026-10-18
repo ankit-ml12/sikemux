@@ -13,13 +13,13 @@ use serde_json::{json, Value};
 use tokio::time::Instant;
 
 use crate::protocol::{SessionId, SpawnTarget};
-use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use crate::tasks::check::{self, Check, CheckItem, Checked, Listening};
 use crate::tasks::config::{self, ConfigLoad, TrustCommand};
 use crate::tasks::detect::{self, AddedTask, PERSONAL_PREFIX};
 use crate::tasks::java::{self, JavaChoice};
 use crate::tasks::results::{self, TestResults};
 use crate::tasks::tools;
+use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 
 use super::connection::blocking;
 use super::kept::Kept;
@@ -269,7 +269,14 @@ fn offered(core: &Core, project: &Path) -> Offered {
                 java,
             }
         })
-        .chain(state.reruns.get(&project_key).into_iter().flatten().cloned())
+        .chain(
+            state
+                .reruns
+                .get(&project_key)
+                .into_iter()
+                .flatten()
+                .cloned(),
+        )
         .collect();
     for task in &mut found {
         if let Some((variable, port)) = state.moved.get(&(project_key.clone(), task.id.clone())) {
@@ -397,7 +404,11 @@ pub(crate) async fn project_config(core: &Arc<Core>, project: String) -> CoreRes
 }
 
 /// The person trusts `sikemux.json` as it is now on this host.
-pub(crate) async fn trust_project(core: &Arc<Core>, project: String, fingerprint: String) -> CoreResult<()> {
+pub(crate) async fn trust_project(
+    core: &Arc<Core>,
+    project: String,
+    fingerprint: String,
+) -> CoreResult<()> {
     let core = core.clone();
     blocking(move || {
         let config = config::load(Path::new(&project));
@@ -508,7 +519,10 @@ pub(crate) fn inspect(core: &Core, project: &Path) -> Value {
     });
     if let Some(object) = value.as_object_mut() {
         if let ConfigLoad::Invalid { errors, .. } = &config {
-            object.insert("configErrors".into(), serde_json::to_value(errors).unwrap_or_default());
+            object.insert(
+                "configErrors".into(),
+                serde_json::to_value(errors).unwrap_or_default(),
+            );
         }
         let found = test_results(project, &tasks);
         if !found.is_empty() {
@@ -614,7 +628,12 @@ fn checks(core: &Core, task: &Definition) -> Vec<Check> {
 }
 
 /// What a run starts, found again from what its project offers now.
-fn resolve(core: &Core, project: &Path, task_id: &str, spec: Option<&crate::harness::runs::CommandLaunch>) -> Result<(Definition, ConfigLoad), String> {
+fn resolve(
+    core: &Core,
+    project: &Path,
+    task_id: &str,
+    spec: Option<&crate::harness::runs::CommandLaunch>,
+) -> Result<(Definition, ConfigLoad), String> {
     if let Some(spec) = spec {
         let cwd = if spec.cwd.is_empty() {
             project.to_path_buf()
@@ -630,7 +649,12 @@ fn resolve(core: &Core, project: &Path, task_id: &str, spec: Option<&crate::harn
             source: Source::Command,
             java: None,
         };
-        return Ok((definition, ConfigLoad::Absent { path: String::new() }));
+        return Ok((
+            definition,
+            ConfigLoad::Absent {
+                path: String::new(),
+            },
+        ));
     }
     let Offered { config, tasks } = offered(core, project);
     if let Some(task) = tasks.into_iter().find(|task| task.id == task_id) {
@@ -640,7 +664,9 @@ fn resolve(core: &Core, project: &Path, task_id: &str, spec: Option<&crate::harn
         return Err("No task with this id in the project's build files; call workspace_inspect for the current list".into());
     }
     Err(match config {
-        ConfigLoad::Absent { .. } => "Project has no sikemux.json; add one that defines tasks".into(),
+        ConfigLoad::Absent { .. } => {
+            "Project has no sikemux.json; add one that defines tasks".into()
+        }
         ConfigLoad::Invalid { errors, .. } => format!(
             "sikemux.json is invalid: {}",
             errors
@@ -660,7 +686,12 @@ fn bypasses(core: &Core, agent_id: Option<&str>) -> bool {
         .is_some_and(|run| run.permission_mode == "bypass")
 }
 
-fn trust_for(core: &Core, project: &Path, task: &Definition, config: &ConfigLoad) -> Option<TrustAsk> {
+fn trust_for(
+    core: &Core,
+    project: &Path,
+    task: &Definition,
+    config: &ConfigLoad,
+) -> Option<TrustAsk> {
     match task.source {
         Source::Project => config_needs(core, config),
         Source::Personal => {
@@ -673,7 +704,12 @@ fn trust_for(core: &Core, project: &Path, task: &Definition, config: &ConfigLoad
 
 /// Puts `ask` to the person and waits for the answer. False when they
 /// refused, the run waiting on it was stopped, or nobody answered in time.
-async fn ask_person(core: &Arc<Core>, project: &str, ask: TrustAsk, execution_id: Option<&str>) -> bool {
+async fn ask_person(
+    core: &Arc<Core>,
+    project: &str,
+    ask: TrustAsk,
+    execution_id: Option<&str>,
+) -> bool {
     let id = uuid::Uuid::new_v4().to_string();
     let grant = ask.grant.clone();
     core.tasks.lock().asking.insert(
@@ -717,7 +753,11 @@ async fn ask_person(core: &Arc<Core>, project: &str, ask: TrustAsk, execution_id
 /// Whether `agent_id`, or the person when there is none, may run the
 /// commands in `project`'s `sikemux.json`, asking the person when they have
 /// not trusted it on this host yet.
-pub(crate) async fn config_trusted(core: &Arc<Core>, project: &Path, agent_id: Option<&str>) -> bool {
+pub(crate) async fn config_trusted(
+    core: &Arc<Core>,
+    project: &Path,
+    agent_id: Option<&str>,
+) -> bool {
     if bypasses(core, agent_id) {
         return true;
     }
@@ -756,7 +796,8 @@ pub(crate) fn answer_trust(core: &Core, id: &str, trust: bool) -> CoreResult<()>
         core.tasks.grant(asked.ask.grant);
         core.changes.changed("tasks", Some(&asked.project), None);
     } else if let Some(execution_id) = &asked.execution_id {
-        core.harness.launch_failed(execution_id, "Project configuration was not approved");
+        core.harness
+            .launch_failed(execution_id, "Project configuration was not approved");
     }
     core.harness.changed();
     Ok(())
@@ -806,14 +847,21 @@ async fn spawn(core: &Arc<Core>, request: TaskSpawnRequest) -> Result<SessionId,
 /// to trust it when it must, checks it can start, and spawns it. `checked`
 /// is set when the person already saw the checks pass or chose to run anyway.
 /// Answers the run's preview URL.
-pub(crate) async fn launch(core: &Arc<Core>, execution_id: &str, previous: Option<String>, checked: bool) -> Result<Option<String>, String> {
-    let run = core
-        .harness
-        .run_of(execution_id)
-        .ok_or("The run is gone")?;
+pub(crate) async fn launch(
+    core: &Arc<Core>,
+    execution_id: &str,
+    previous: Option<String>,
+    checked: bool,
+) -> Result<Option<String>, String> {
+    let run = core.harness.run_of(execution_id).ok_or("The run is gone")?;
     let project = PathBuf::from(&run.project);
     let resolved = {
-        let (core, project, task_id, spec) = (core.clone(), project.clone(), run.task_id.clone(), run.launch_spec.clone());
+        let (core, project, task_id, spec) = (
+            core.clone(),
+            project.clone(),
+            run.task_id.clone(),
+            run.launch_spec.clone(),
+        );
         blocking(move || Ok(resolve(&core, &project, &task_id, spec.as_ref())))
             .await
             .map_err(|error| error.to_string())??
@@ -826,7 +874,8 @@ pub(crate) async fn launch(core: &Arc<Core>, execution_id: &str, previous: Optio
             }
             if let ConfigLoad::Valid { fingerprint, .. } = &config {
                 let now = config::load(&project);
-                if !matches!(&now, ConfigLoad::Valid { fingerprint: latest, .. } if latest == fingerprint) {
+                if !matches!(&now, ConfigLoad::Valid { fingerprint: latest, .. } if latest == fingerprint)
+                {
                     return Err("Project configuration changed; inspect and retry".into());
                 }
             }
@@ -858,7 +907,16 @@ pub(crate) async fn launch(core: &Arc<Core>, execution_id: &str, previous: Optio
         });
         let rest: Vec<Check> = found
             .into_iter()
-            .filter(|check| !matches!(check.item, CheckItem::Port { free_port: Some(_), env_var: Some(_), .. }))
+            .filter(|check| {
+                !matches!(
+                    check.item,
+                    CheckItem::Port {
+                        free_port: Some(_),
+                        env_var: Some(_),
+                        ..
+                    }
+                )
+            })
             .collect();
         if let Some(problems) = check::problems(&rest) {
             return Err(format!("{} can't start yet:\n{problems}", task.label));
@@ -876,6 +934,11 @@ pub(crate) async fn launch(core: &Arc<Core>, execution_id: &str, previous: Optio
         Source::Project | Source::Command => TaskSource::Project,
         Source::Personal | Source::Detected | Source::Rerun => TaskSource::BuiltIn,
     };
+    let mut env: std::collections::HashMap<String, String> = task.env.into_iter().collect();
+    if let Some(path) = sikemux_process::user_environment::var_os("PATH") {
+        env.entry("PATH".into())
+            .or_insert_with(|| path.to_string_lossy().into_owned());
+    }
     spawn(
         core,
         TaskSpawnRequest {
@@ -887,7 +950,7 @@ pub(crate) async fn launch(core: &Arc<Core>, execution_id: &str, previous: Optio
             source,
             command: task.command.clone(),
             cwd: task.cwd.to_string_lossy().into_owned(),
-            env: task.env.into_iter().collect(),
+            env,
             cols: COLS,
             rows: ROWS,
             agent_id: run.agent_id.clone(),
@@ -977,7 +1040,12 @@ fn install_dependencies(cwd: &Path, install: &str) -> Result<(), String> {
 pub(crate) async fn start(core: &Arc<Core>, params: StartParams) -> CoreResult<Value> {
     let project = PathBuf::from(&params.project);
     if !params.force {
-        let (core, project, task_id, fixing) = (core.clone(), project.clone(), params.task_id.clone(), params.fix);
+        let (core, project, task_id, fixing) = (
+            core.clone(),
+            project.clone(),
+            params.task_id.clone(),
+            params.fix,
+        );
         let found = blocking(move || {
             let (task, _) = resolve(&core, &project, &task_id, None)?;
             if fixing {
@@ -1062,7 +1130,11 @@ pub(crate) async fn rerun_failed(core: &Arc<Core>, params: RerunParams) -> CoreR
         .tests_of(&params.execution_id)
         .map(|tests| tests.failures)
         .unwrap_or_default();
-    let (core_ref, project, task_id) = (core.clone(), PathBuf::from(&run.project), run.task_id.clone());
+    let (core_ref, project, task_id) = (
+        core.clone(),
+        PathBuf::from(&run.project),
+        run.task_id.clone(),
+    );
     let rerun = blocking(move || {
         let (task, _) = resolve(&core_ref, &project, &task_id, None)?;
         let command = results::rerun_failed_command(&task.command, &failures)
@@ -1121,7 +1193,10 @@ pub(crate) fn runs(core: &Core) -> Vec<Value> {
                     terminal_key(&run.project, &run.task_id).into(),
                 );
                 if let Some(tests) = state.tests.get(&run.execution_id) {
-                    object.insert("tests".into(), serde_json::to_value(tests).unwrap_or_default());
+                    object.insert(
+                        "tests".into(),
+                        serde_json::to_value(tests).unwrap_or_default(),
+                    );
                 }
             }
             value

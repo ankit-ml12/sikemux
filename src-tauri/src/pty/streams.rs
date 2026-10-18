@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use sikemux_core::protocol::SessionId;
-use sikemux_pty::task::TaskProcessExit;
 use tauri::ipc::{Channel, Response};
 
 use crate::error::{AppError, AppResult};
@@ -21,8 +20,7 @@ struct Subscriber {
     unacked: usize,
 }
 
-/// The app's side of one core session: the webview channels showing it, and
-/// the channel waiting for a task's exit.
+/// The app's side of one core session: the webview channels showing it.
 #[derive(Default)]
 struct Streams {
     subscribers: HashMap<u32, Subscriber>,
@@ -32,7 +30,6 @@ struct Streams {
     /// What the core believes the app still owes it, so acks can be
     /// forwarded as the slowest channel catches up.
     core_unacked: usize,
-    task_exit: Option<Channel<TaskProcessExit>>,
 }
 
 impl Streams {
@@ -45,10 +42,7 @@ impl Streams {
     }
 
     fn is_unused(&self) -> bool {
-        self.subscribers.is_empty()
-            && self.pending_attaches == 0
-            && !self.core_subscribed
-            && self.task_exit.is_none()
+        self.subscribers.is_empty() && self.pending_attaches == 0 && !self.core_subscribed
     }
 }
 
@@ -145,29 +139,23 @@ impl StreamTable {
         .flatten()
     }
 
-    /// Takes the session's exit channel and the channels to tell, then forgets
-    /// it if nothing else holds it.
-    pub(super) fn exited(&self, id: SessionId) -> (Option<Channel<TaskProcessExit>>, Delivery) {
-        self.with(|guard| {
-            let Some(streams) = guard.sessions.get_mut(&id) else {
-                return (None, Vec::new());
-            };
-            let task_exit = streams.task_exit.take();
-            let channels = streams
-                .subscribers
-                .iter()
-                .map(|(sub_id, subscriber)| (*sub_id, subscriber.channel.clone()))
-                .collect();
-            guard.forget_if_unused(id);
-            (task_exit, channels)
-        })
-        .map(|(task_exit, channels)| (task_exit, Delivery { channels }))
-        .unwrap_or((
-            None,
-            Delivery {
-                channels: Vec::new(),
-            },
-        ))
+    /// Takes the channels to tell the session is gone, then forgets it if
+    /// nothing else holds it.
+    pub(super) fn exited(&self, id: SessionId) -> Delivery {
+        let channels = self
+            .with(|guard| {
+                let streams = guard.sessions.get_mut(&id)?;
+                let channels = streams
+                    .subscribers
+                    .iter()
+                    .map(|(sub_id, subscriber)| (*sub_id, subscriber.channel.clone()))
+                    .collect();
+                guard.forget_if_unused(id);
+                Some(channels)
+            })
+            .flatten()
+            .unwrap_or_default();
+        Delivery { channels }
     }
 
     pub(super) fn channels(&self, id: SessionId) -> Delivery {
@@ -191,7 +179,7 @@ impl StreamTable {
 
     /// Forgets every session at once, returning what must hear that their
     /// processes are gone.
-    pub(super) fn take_all(&self) -> Vec<(Option<Channel<TaskProcessExit>>, Delivery)> {
+    pub(super) fn take_all(&self) -> Vec<Delivery> {
         self.with(|guard| {
             std::mem::take(&mut *guard.sessions)
                 .into_values()
@@ -201,7 +189,7 @@ impl StreamTable {
                         .into_iter()
                         .map(|(sub_id, subscriber)| (sub_id, subscriber.channel))
                         .collect();
-                    (streams.task_exit, Delivery { channels })
+                    Delivery { channels }
                 })
                 .collect()
         })
@@ -228,19 +216,6 @@ impl StreamTable {
                 .sessions
                 .iter()
                 .filter(|(_, streams)| streams.core_subscribed)
-                .map(|(id, _)| *id)
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    /// Tasks whose exit a channel waits for.
-    pub(super) fn watched_tasks(&self) -> Vec<SessionId> {
-        self.with(|guard| {
-            guard
-                .sessions
-                .iter()
-                .filter(|(_, streams)| streams.task_exit.is_some())
                 .map(|(id, _)| *id)
                 .collect()
         })
@@ -276,16 +251,6 @@ pub(super) struct StreamGuard<'a> {
 }
 
 impl StreamGuard<'_> {
-    pub(super) fn register_task(&mut self, id: SessionId, exit: Channel<TaskProcessExit>) {
-        self.sessions.entry(id).or_default().task_exit = Some(exit);
-    }
-
-    pub(super) fn take_task_exit(&mut self, id: SessionId) -> Option<Channel<TaskProcessExit>> {
-        let exit = self.sessions.get_mut(&id)?.task_exit.take();
-        self.forget_if_unused(id);
-        exit
-    }
-
     pub(super) fn begin_attach(&mut self, id: SessionId) -> AppResult<()> {
         let streams = self.sessions.entry(id).or_default();
         let full = streams.subscribers.len() + streams.pending_attaches >= MAX_CHANNELS_PER_SESSION;
@@ -465,54 +430,22 @@ mod tests {
     }
 
     #[test]
-    fn a_task_exit_is_delivered_once_and_the_session_is_then_forgotten() {
-        let table = StreamTable::default();
-        let (exit, _) = {
-            let received = Arc::new(Mutex::new(0));
-            let counter = received.clone();
-            (
-                tauri::ipc::Channel::new(move |_| {
-                    *counter.lock().expect("count") += 1;
-                    Ok(())
-                }),
-                received,
-            )
-        };
-        table.lock().expect("lock").register_task(9, exit);
-        let (task_exit, delivery) = table.exited(9);
-        assert!(task_exit.is_some());
-        assert!(delivery.is_empty());
-        let (again, _) = table.exited(9);
-        assert!(again.is_none());
-        assert!(table.take_all().is_empty());
-    }
-
-    #[test]
     fn releasing_everything_names_only_what_the_core_streams_to_the_app() {
         let table = StreamTable::default();
         let _ = attached(&table, 4);
-        table.lock().expect("lock").register_task(
-            8,
-            tauri::ipc::Channel::<sikemux_pty::task::TaskProcessExit>::new(|_| Ok(())),
-        );
         assert_eq!(table.release_all(), vec![4]);
         assert!(table.take_all().is_empty());
     }
 
     #[test]
-    fn a_reconnect_finds_what_the_core_streamed_and_the_tasks_still_watched() {
+    fn a_reconnect_finds_what_the_core_streamed() {
         let table = StreamTable::default();
         let (fast, _) = attached(&table, 2);
         let _ = attached(&table, 4);
-        table.lock().expect("lock").register_task(
-            9,
-            tauri::ipc::Channel::<sikemux_pty::task::TaskProcessExit>::new(|_| Ok(())),
-        );
         table.output(2, &[0; 10]);
         let mut streamed = table.core_subscribed();
         streamed.sort_unstable();
         assert_eq!(streamed, vec![2, 4]);
-        assert_eq!(table.watched_tasks(), vec![9]);
 
         table.restart(2);
         assert_eq!(

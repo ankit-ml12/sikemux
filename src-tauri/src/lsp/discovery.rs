@@ -109,11 +109,12 @@ const JDTLS_MIN_JAVA: u32 = 21;
 
 /// jdtls runs on the Java in `JAVA_HOME`, so one set for an older project would stop it starting.
 fn jdtls_java_home() -> Option<PathBuf> {
-    let current = crate::toolchains::default_java()?;
+    let current = sikemux_core::tasks::java::default_java()?;
     if current.major >= JDTLS_MIN_JAVA {
         return None;
     }
-    crate::toolchains::java_at_least(JDTLS_MIN_JAVA).map(|runtime| PathBuf::from(runtime.home))
+    sikemux_core::tasks::java::java_at_least(JDTLS_MIN_JAVA)
+        .map(|runtime| PathBuf::from(runtime.home))
 }
 
 pub(super) fn server_env(language: &str) -> Vec<(&'static str, PathBuf)> {
@@ -194,7 +195,7 @@ pub(super) fn install_gopls() -> AppResult<String> {
 }
 
 pub(super) fn install_jdtls() -> AppResult<String> {
-    crate::system::brew_install("jdtls").map_err(AppError::Lsp)?;
+    sikemux_core::tasks::tools::brew_install("jdtls").map_err(AppError::Lsp)?;
     executable_in_path("jdtls").map(path_string).ok_or_else(|| {
         AppError::Lsp("jdtls installed, but Sikemux could not locate it in PATH".into())
     })

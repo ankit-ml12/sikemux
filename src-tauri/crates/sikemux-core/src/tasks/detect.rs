@@ -729,12 +729,13 @@ fn with_task(existing: Option<&Value>, id: &str, task: Value) -> Value {
 }
 
 fn write(path: &Path, content: &str) -> Result<(), String> {
-    sikemux_process::files::write_atomic(path, content.as_bytes(), false).map_err(|error| format!("{}: {error}", path.display()))
+    sikemux_process::files::write_atomic(path, content.as_bytes(), false)
+        .map_err(|error| format!("{}: {error}", path.display()))
 }
 
 fn write_json(path: &Path, object: Map<String, Value>) -> Result<(), String> {
-    let text = serde_json::to_string_pretty(&Value::Object(object))
-        .map_err(|error| error.to_string())?;
+    let text =
+        serde_json::to_string_pretty(&Value::Object(object)).map_err(|error| error.to_string())?;
     write(path, &format!("{text}\n"))
 }
 

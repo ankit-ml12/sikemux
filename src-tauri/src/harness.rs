@@ -236,19 +236,6 @@ pub fn harness_reply(
     );
 }
 
-/// The page is asking the person to trust `sikemux.json` before a launch.
-#[tauri::command]
-pub async fn harness_awaiting_trust(
-    manager: State<'_, PtyManager>,
-    execution_id: String,
-) -> AppResult<()> {
-    let client = manager.client().await?;
-    client
-        .harness_awaiting_trust(execution_id)
-        .await
-        .map_err(crate::pty::core_error)
-}
-
 /// Stops the harness runs that match every field given, and waits for them.
 #[tauri::command]
 pub async fn harness_stop_runs(

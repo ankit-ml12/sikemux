@@ -29,7 +29,6 @@ mod notch;
 pub mod observability;
 mod pages;
 mod plugins;
-mod ports;
 mod preview;
 mod pty;
 mod relaunch;
@@ -43,7 +42,6 @@ mod simulator;
 mod ssh;
 mod state;
 mod system;
-mod toolchains;
 mod transparency;
 mod updates;
 mod usage;
@@ -262,7 +260,6 @@ pub fn run() {
             acp::acp_stop,
             acp::acp_switch_account,
             pty::commands::pty_spawn,
-            pty::commands::task_spawn,
             pty::commands::pty_unsubscribe,
             pty::commands::pty_ack,
             pty::commands::pty_attach,
@@ -271,8 +268,6 @@ pub fn run() {
             pty::commands::pty_reset_modes,
             pty::commands::pty_shell_at_prompt,
             pty::commands::pty_kill,
-            ports::listening_ports,
-            ports::ports_in_use,
             pty::commands::pty_sessions,
             remote::remote_status,
             remote::remote_pairing,
@@ -296,7 +291,6 @@ pub fn run() {
             remote::remote_publish_palette,
             remote::remote_publish_buddies,
             remote::remote_publish_backdrop,
-            pty::commands::task_watch,
             pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,
             pty::commands::agent_detection_manifests,
@@ -317,10 +311,6 @@ pub fn run() {
             system::battery_status,
             system::runtime_diagnostics,
             system::integration_health,
-            system::build_tool_installed,
-            system::install_build_tool,
-            toolchains::java_runtimes,
-            toolchains::install_java,
             observability::observability_ui_heartbeat,
             observability::observability_ui_activity,
             updates::update_check,
@@ -398,7 +388,6 @@ pub fn run() {
             harness::harness_resolve_path,
             harness::harness_claim,
             harness::harness_reply,
-            harness::harness_awaiting_trust,
             harness::harness_stop_runs,
             cli_open::cli_frontend_ready,
             cli_open::cli_claim_open_requests,

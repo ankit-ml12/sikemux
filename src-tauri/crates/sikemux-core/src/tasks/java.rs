@@ -129,8 +129,8 @@ pub fn default_java() -> Option<JavaRuntime> {
             .filter(|output| output.status.success())?;
         return runtime_at(Path::new(String::from_utf8_lossy(&output.stdout).trim()));
     }
-    let java = std::fs::canonicalize(sikemux_process::user_environment::find_executable("java")?)
-        .ok()?;
+    let java =
+        std::fs::canonicalize(sikemux_process::user_environment::find_executable("java")?).ok()?;
     runtime_at(java.parent()?.parent()?)
 }
 
