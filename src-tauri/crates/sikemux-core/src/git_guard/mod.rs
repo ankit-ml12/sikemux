@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 /// cannot say.
 pub(crate) type Others<'a> = dyn Fn(&Path, &[String]) -> Option<Vec<String>> + 'a;
 
-const SWEEP_HELP: &str = "Commit with the git_commit tool: it takes the lines you wrote, and with `paths`, every change in those files or folders that holds no other agent's lines, such as files your own scripts made. Or stage files by name with `git add <paths>`. In a clone or git worktree of your own these commands are allowed.";
+const SWEEP_HELP: &str = "Commit with the git_commit tool: it takes the lines you wrote, and with `paths`, only those files or folders, with every change there no other agent wrote, such as files your own scripts made. In a clone or git worktree of your own these commands are allowed.";
 
 /// Why `command`, a shell command line run in `cwd`, may not run, if it may not.
 pub(crate) fn refusal(command: &str, cwd: &Path, others: &Others) -> Option<String> {
