@@ -3,6 +3,7 @@ mod activity;
 pub(crate) mod activity_log;
 mod agent;
 mod agent_accounts;
+mod agent_sign_in;
 mod attachments;
 mod board;
 mod callers;

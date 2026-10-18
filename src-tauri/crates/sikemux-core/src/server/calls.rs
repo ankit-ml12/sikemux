@@ -77,6 +77,7 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "modelProviders"
             | "modelProviderModels"
             | "modelHelper"
+            | "agentSignIns"
     )
 }
 
@@ -127,6 +128,9 @@ pub(crate) async fn call(
         "updateAgent" => answer(workspace::update_agent(&core, parse(params)?)?),
         "closeAgents" => answer(workspace::close_agents(&core, parse(params)?)?),
         method if method.starts_with("git.") => super::git::call(method, params).await,
+        method if super::agent_sign_in::METHODS.contains(&method) => {
+            super::agent_sign_in::call(&core, method, params).await
+        }
         method if super::model_providers::METHODS.contains(&method) => {
             super::model_providers::call(&core, method, params).await
         }

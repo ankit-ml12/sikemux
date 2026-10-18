@@ -1,6 +1,7 @@
 import { coreCall } from "../api/core";
 import type { PinnedChat as CorePinnedChat, ProjectInfo, SpaceInfo, Workspace, WorkspaceAgent } from "../api/generated/wire";
 import { getIpcTransport } from "../api/transport";
+import { agentSupportsChat } from "../agents/agentLaunch";
 import { isAgentType } from "../agents/catalog";
 import { isPluginId } from "../plugins/kinds";
 import { dropAgents, dropSession } from "./commands";
@@ -228,6 +229,8 @@ export function applyCoreWorkspace(workspace: Workspace): void {
             const windowId = agentWindowId(d, record.id);
             const current = d.agents[record.id];
             if (current && windowId) {
+                const launchState = record.asleep ? "dormant" : "live";
+                if (agentSupportsChat(current.type) && current.launchState !== launchState) current.launchState = launchState;
                 const owner = d.sessions[ownerSessionId(d, windowId) ?? ""];
                 if (owner && !changed(coreAgentOf(current, owner, record), record, AGENT_FIELDS)) continue;
                 const fields = current as unknown as Record<string, unknown>;

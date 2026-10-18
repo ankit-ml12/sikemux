@@ -1,6 +1,7 @@
 import { coreCall } from "./core";
+import { onCoreChanged } from "./coreChanged";
 import { invokeCommand as invoke } from "./invoke";
-import { getIpcTransport, type IpcUnsubscribe } from "./transport";
+import type { IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import type { AccountAgentType } from "../agents/catalog";
 import type { AgentEffort, AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
@@ -163,14 +164,30 @@ export const agentApi = {
     /** Lets go of the prompt a failed turn stopped, so nothing sends it again. */
     discardFailed: (agentId: string): Promise<void> => accountCall("discardFailed", { agentId }),
     signIn: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
-        invoke<void>("agent_account_sign_in", { agent, executablePath, configPath }),
+        coreCall<void>("agentSignIn", { agent, executablePath, configPath }),
     signInCode: (agent: AgentType, configPath: string | undefined, code: string): Promise<void> =>
-        invoke<void>("agent_account_sign_in_code", { agent, configPath, code }),
-    cancelSignIn: (agent: AgentType, configPath?: string): Promise<void> => invoke<void>("agent_account_sign_in_cancel", { agent, configPath }),
+        coreCall<void>("agentSignInCode", { agent, configPath, code }),
+    cancelSignIn: (agent: AgentType, configPath?: string): Promise<void> => coreCall<void>("cancelAgentSignIn", { agent, configPath }),
     signOut: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
-        invoke<void>("agent_account_sign_out", { agent, executablePath, configPath }),
-    onSignInPage: (listener: (page: AgentSignInPage) => void, signal?: AbortSignal): Promise<IpcUnsubscribe> =>
-        getIpcTransport().subscribe<AgentSignInPage>("agent_account_sign_in", (event) => listener(event.payload), { signal }),
+        coreCall<void>("agentSignOut", { agent, executablePath, configPath }),
+    /** Each page a sign-in on the host opens, once, for when the person is not at the host's browser. */
+    onSignInPage: (listener: (page: AgentSignInPage) => void, signal?: AbortSignal): Promise<IpcUnsubscribe> => {
+        const shown = new Set<string>();
+        const read = () =>
+            coreCall<AgentSignInPage[]>("agentSignIns").then(
+                (pages) => {
+                    for (const page of pages) {
+                        if (shown.has(page.url) || signal?.aborted) continue;
+                        shown.add(page.url);
+                        listener(page);
+                    }
+                },
+                () => {},
+            );
+        const stop = onCoreChanged("agentSignIn", () => void read());
+        signal?.addEventListener("abort", stop, { once: true });
+        return Promise.resolve(stop);
+    },
     sessions: fetchSessions,
     recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => invoke<RecentChatsPage>("agent_recent_sessions", { request }),
     renameSession: (agent: AgentType, cwd: string, sessionId: string, title: string, executablePath?: string, configPath?: string): Promise<void> =>

@@ -1,4 +1,3 @@
-pub(crate) mod accounts;
 pub(crate) mod config;
 pub(crate) mod executable;
 pub(crate) mod sessions;
