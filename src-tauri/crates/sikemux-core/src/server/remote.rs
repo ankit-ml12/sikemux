@@ -41,6 +41,8 @@ const LEAVE_WAIT: Duration = Duration::from_millis(300);
 const NETWORK_REFRESH: Duration = Duration::from_secs(4 * 60 * 60);
 const NETWORK_RETRY: Duration = Duration::from_secs(5 * 60);
 const SIGNED_OUT: &str = "sign in to use Sikemux on your phone";
+/// How far a signed request's time may be from now; the server allows the same.
+const HOST_REQUEST_SKEW_SECS: u64 = 60;
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -468,14 +470,7 @@ impl Remote {
         user_id: &str,
     ) -> CoreResult<(String, String)> {
         crate::accounts::check_registration(nonce, user_id).map_err(CoreError::from)?;
-        let inner = self.lock();
-        let secret = inner
-            .secret
-            .as_ref()
-            .ok_or_else(|| CoreError::from("the core's key has not loaded"))?;
-        let key = secret.public().to_string();
-        let message = crate::accounts::registration_message(nonce, user_id, &key);
-        Ok((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
+        self.sign_with_key(|key| crate::accounts::registration_message(nonce, user_id, key))
     }
 
     fn sign_live(&self, nonce: &str) -> Option<(String, String)> {
@@ -1688,6 +1683,33 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn host_requests_sign_the_text_the_server_checks() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../server/protocol/vectors/host-request.json"
+        ))
+        .unwrap();
+        let text = |name: &str| vector[name].as_str().unwrap().to_owned();
+        let request: crate::accounts::HostRequest = serde_json::from_value(vector.clone()).unwrap();
+        assert_eq!(
+            hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+                text("body").as_bytes()
+            )),
+            request.body_sha256
+        );
+        assert_eq!(request.message(), text("message"));
+        let remote = Remote::default();
+        remote.lock().secret = secret_from_hex(&text("secretKey"));
+        assert!(remote.sign_host_request(&request).is_err());
+        let (key, signature) = remote.sign_with_key(|_| request.message()).unwrap();
+        assert_eq!(key, text("key"));
+        assert_eq!(signature, text("signature"));
+        assert_eq!(
+            format!("SikemuxHost {key}.{}.{signature}", request.time),
+            text("authorization")
+        );
     }
 
     /// The same vector the server's tests verify, so both sides sign and

@@ -185,6 +185,14 @@ pub(crate) async fn call(
         "shares" => answer(share::list(&core)),
         "pairing" => answer(remote::pairing(&core)),
         "linkHost" => answer(super::hosts::link_host(&core, parse(params)?).await?),
+        "signHostRequest" => {
+            let request: crate::accounts::HostRequest = parse(params)?;
+            answer(signed(core.remote.sign_host_request(&request)?))
+        }
+        "signShareViewer" => {
+            let params: NonceParams = parse(params)?;
+            answer(signed(core.remote.sign_share_viewer(&params.nonce)?))
+        }
         "answerPairing" => answer(remote::answer_pairing(&core, parse(params)?)?),
         "changeDevice" => answer(remote::change_device(&core, parse(params)?)?),
         "questions" => answer(questions::views(&core)),
@@ -294,6 +302,14 @@ fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {
 
 fn answer(result: impl Serialize) -> CoreResult<Value> {
     Ok(serde_json::to_value(result)?)
+}
+
+fn signed((key, signature): (String, String)) -> Value {
+    json!({ "key": key, "signature": signature })
+}
+
+struct NonceParams {
+    nonce: String,
 }
 
 #[derive(Deserialize)]
