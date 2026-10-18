@@ -10,6 +10,7 @@
 //   compute  — Compute Engine VMs, their power, serial output and SSH
 //   gke      — GKE clusters, node pools, workloads, pods, services and pod logs
 //   storage  — Cloud Storage buckets, folders, previews and downloads
+//   sql      — Cloud SQL instances, databases, users, backups and power
 
 mod auth;
 mod client;
@@ -20,6 +21,7 @@ mod gke;
 mod logging;
 mod projects;
 mod run;
+mod sql;
 mod storage;
 
 use std::sync::Arc;
@@ -100,6 +102,9 @@ impl Plugin for Gcp {
                 "objects" => answer(storage::objects(params(input)?)).await,
                 "objectPreview" => answer(storage::preview(params(input)?)).await,
                 "objectDownload" => answer(storage::download(params(input)?)).await,
+                "sqlInstances" => answer(sql::instances(params(input)?)).await,
+                "sqlInstance" => answer(sql::instance_detail(params(input)?)).await,
+                "sqlChange" => answer(sql::change(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
