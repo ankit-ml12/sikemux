@@ -36,7 +36,7 @@ import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
 import { OutcomeIcon } from "./ActionsIcon";
 import { pullState } from "../project";
-import { Branch, Comments, Labels, StateMark, stateLabel, Who } from "./Bits";
+import { Branch, Comments, Labels, StateMark, Who } from "./Bits";
 import { useBusy } from "./hooks";
 import { useEvery, useNow } from "../../plugin-api/hooks";
 import { NewPullForm } from "./NewPullForm";
@@ -81,9 +81,7 @@ function PullHeadline({
                 <Face login={pull.author} url={pull.avatarUrl} />
             </span>
             <span className="pr-headline-top">
-                <span className="gha-state-word pr-state" data-kind="pull" data-state={state}>
-                    {stateLabel("pull", state)}
-                </span>
+                <StateMark kind="pull" state={state} size={14} />
                 {title}
                 {trailing}
             </span>

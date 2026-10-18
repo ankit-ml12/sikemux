@@ -58,13 +58,6 @@
 .pr-headline-top > .pr-ci .pr-ci-label {
     display: none;
 }
-.gha-state-word.pr-state {
-    flex: none;
-    height: 18px;
-    padding: 0 6px;
-    border: 1px solid color-mix(in oklab, var(--state) 40%, transparent);
-    border-radius: var(--radius-1);
-}
 .pr-headline-sub {
     display: flex;
     align-items: center;
