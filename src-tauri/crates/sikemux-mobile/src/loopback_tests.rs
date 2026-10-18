@@ -303,6 +303,19 @@ async fn until(what: &str, done: impl Fn() -> bool) {
     }
 }
 
+/// An agent that starts but never answers, so waking it waits.
+fn slow_agent(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join("slow-agent");
+    std::fs::write(
+        &path,
+        "#!/bin/sh\n[ \"$1\" = acp ] && exec sleep 600\nexit 0\n",
+    )
+    .expect("the slow agent");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("runnable");
+    path
+}
+
 #[test]
 fn closing_a_connection_fails_what_waits_on_it_and_tells_the_app_nothing_more() {
     let core_key = SecretKey::generate();
@@ -316,6 +329,30 @@ fn closing_a_connection_fails_what_waits_on_it_and_tells_the_app_nothing_more() 
         let addr = core_addr(&app).await;
         let project = serde_json::json!({ "id": "p", "path": std::env::temp_dir() });
         app.call("addProject", project).await.expect("the project");
+        let accounts = serde_json::json!({
+            "profiles": [{
+                "id": "slow",
+                "name": "Slow",
+                "provider": "opencode",
+                "accent": "#a277ff",
+                "executablePath": slow_agent(core._dir.path()),
+            }],
+        });
+        app.call("setAgentAccounts", accounts)
+            .await
+            .expect("the accounts");
+        let deadline = Instant::now() + WAIT;
+        while !app
+            .workspace()
+            .await
+            .expect("the workspace")
+            .launchers
+            .iter()
+            .any(|launcher| launcher.id == "opencode:slow")
+        {
+            assert!(Instant::now() < deadline, "the slow agent is never offered");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         let agent = serde_json::json!({
             "id": "agent-sleepy",
             "provider": "opencode",
@@ -323,6 +360,7 @@ fn closing_a_connection_fails_what_waits_on_it_and_tells_the_app_nothing_more() 
             "cwd": std::env::temp_dir(),
             "title": "opencode",
             "permissionMode": "bypass",
+            "profileId": "slow",
             "asleep": true,
         });
         app.call("createAgent", serde_json::json!({ "agent": agent }))
