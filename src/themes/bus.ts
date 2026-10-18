@@ -1,7 +1,7 @@
 import { readableColor } from "../lib/themeContrast";
 import type { EditorView } from "@codemirror/view";
 import type { ITheme, Terminal } from "@xterm/xterm";
-import { DEFAULT_THEME_ID, themeById, type Theme } from ".";
+import { DEFAULT_THEME_ID, TERMINAL_KEYS, themeById, type Theme } from ".";
 
 let current: Theme = themeById(DEFAULT_THEME_ID);
 let currentOpacity = 1;
@@ -156,6 +156,7 @@ function applyChrome(theme: Theme) {
     for (const [key, color] of Object.entries(theme.highlight)) root.setProperty(`--syntax-${key}`, color);
     root.setProperty("--cmd", theme.highlight.function);
     root.setProperty("--terminal-background", theme.terminal.background);
+    TERMINAL_KEYS.slice(TERMINAL_KEYS.indexOf("black")).forEach((key, index) => root.setProperty(`--terminal-ansi-${index}`, theme.terminal[key]));
 
     applyTransparentState();
 }
