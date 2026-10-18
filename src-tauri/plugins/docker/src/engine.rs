@@ -162,6 +162,11 @@ fn context_host(around: &Surroundings, name: &str) -> Option<String> {
     })
 }
 
+pub struct Opened {
+    pub content_type: Option<String>,
+    pub body: Incoming,
+}
+
 /// One engine, reached over its socket. Each request opens its own connection,
 /// so a log being followed never holds up the rest of the pane.
 #[derive(Debug, Clone)]
@@ -194,6 +199,25 @@ impl Engine {
 
     pub async fn delete(&self, path: &str) -> DockerResult<()> {
         self.send(Method::DELETE, path, None).await.map(drop)
+    }
+
+    /// The answer's body as it arrives, and its content type, for logs.
+    pub async fn open(&self, path: &str) -> DockerResult<Opened> {
+        let response = self.request(Method::GET, path, None).await?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.into_body().collect().await?.to_bytes();
+            return Err(refusal(status, &body));
+        }
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        Ok(Opened {
+            content_type,
+            body: response.into_body(),
+        })
     }
 
     async fn send(&self, method: Method, path: &str, body: Option<Value>) -> DockerResult<Bytes> {

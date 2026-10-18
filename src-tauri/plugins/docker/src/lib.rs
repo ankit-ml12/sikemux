@@ -4,10 +4,12 @@
 //   engine — finding the engine's socket, and HTTP over it
 //   status     — whether an engine is running, which one, and how much it holds
 //   containers — listing and reading containers, starting, stopping and removing them
+//   logs       — a container's logs, read once or followed as they are written
 
 mod containers;
 mod engine;
 mod error;
+mod logs;
 mod status;
 
 use std::sync::Arc;
@@ -15,7 +17,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
+    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
 use crate::engine::Engine;
@@ -69,6 +71,25 @@ impl Plugin for Docker {
                     let params = params(input)?;
                     answer(|engine| async move { containers::remove(&engine, params).await }).await
                 }
+                "logs" => {
+                    let params = params(input)?;
+                    answer(|engine| async move { logs::read(&engine, params).await }).await
+                }
+                _ => Err(PluginError::unknown_method(method)),
+            }
+        })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        _ctx: &'a PluginContext,
+        method: &'a str,
+        input: Value,
+        sink: StreamSink,
+    ) -> PluginFuture<'a, ()> {
+        Box::pin(async move {
+            match method {
+                "followLogs" => logs::follow(&Engine::find()?, params(input)?, &sink).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -102,6 +123,15 @@ mod tests {
                 .await
                 .expect("container");
             println!("{detail:#}");
+            let logs = plugin
+                .call(
+                    &ctx,
+                    "logs",
+                    serde_json::json!({ "id": first["id"], "tail": 5 }),
+                )
+                .await
+                .expect("logs");
+            println!("{logs:#}");
         }
     }
 
