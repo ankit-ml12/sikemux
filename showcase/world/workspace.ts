@@ -2,7 +2,8 @@ import type {
   PersistedAgent,
   PersistedSnapshot,
 } from "../../src/state/types/persisted";
-import type { LayoutNode, Window } from "../../src/state/types";
+import type { Workspace } from "../../src/api/generated/wire";
+import type { LayoutNode, Session, Window } from "../../src/state/types";
 import { VERSION } from "../../src/state/persist";
 import { DEFAULT_PROVIDER_PROFILES } from "../../src/state/types/domain";
 import { DEMO_HOME, DEMO_PROJECTS, FRONT, MOODBOARD, SIKEMUX } from "./projects";
@@ -138,6 +139,49 @@ const MORE_TERMINALS = [
 const oneTerminal = (sessionId: string, cwd: string, title: string): Window[] => [
   terminalWindow(`w-${sessionId}`, pane(`t-${sessionId}`, cwd, "terminal", title), `t-${sessionId}`),
 ];
+
+const PROJECT_SPACES: Record<string, string> = {
+  [SIKEMUX]: "space-personal",
+  [FRONT]: "space-personal",
+  [MOODBOARD]: "space-personal",
+  [`${DEMO_HOME}/work/billing-service`]: "space-acme",
+};
+
+/** The workspace the demo's core keeps: its projects, spaces and agents. */
+export function demoWorkspace(): Workspace {
+  const projects = baseSnapshot().sessions.filter(
+    (session): session is Session => session.kind === "project" && "cwd" in session,
+  );
+  return {
+    projects: projects.map((session) => ({
+      id: session.id,
+      name: session.name,
+      path: session.cwd,
+      pinned: session.pinned,
+      space: PROJECT_SPACES[session.cwd],
+    })),
+    spaces: [
+      { id: "space-acme", name: "Acme", icon: "building" },
+      { id: "space-personal", name: "Personal", icon: "leaf" },
+    ],
+    agents: agents.map((agent) => ({
+      ...agent,
+      provider: agent.type,
+      project: projects.find((session) => session.cwd === agent.cwd)?.id ?? "s-sikemux",
+      cwd: agent.cwd ?? SIKEMUX,
+      renamed: false,
+      permissionMode: agent.permissionMode ?? "workspace-write",
+      keepAlive: agent.keepAlive === true,
+      asleep: false,
+      createdAt: 0,
+    })),
+    pinned: [],
+    permissionMode: "bypass",
+    launchers: [],
+    palette: {},
+    backdrop: { texture: false, image: null },
+  };
+}
 
 export function demoSnapshot(): PersistedSnapshot {
   const snapshot = baseSnapshot();
@@ -489,7 +533,6 @@ function baseSnapshot(): PersistedSnapshot {
         },
       ],
     },
-    agents,
     sessionOrder: [
       "s-sikemux",
       "s-front",
@@ -525,16 +568,6 @@ function baseSnapshot(): PersistedSnapshot {
       agentNotifications: false,
       lastReleaseNotes: null,
       lastSeenVersion: "0.5.3",
-      spaces: [
-        { id: "space-acme", name: "Acme", icon: "building" },
-        { id: "space-personal", name: "Personal", icon: "leaf" },
-      ],
-      projectSpaces: {
-        [SIKEMUX]: "space-personal",
-        [FRONT]: "space-personal",
-        [MOODBOARD]: "space-personal",
-        [`${DEMO_HOME}/work/billing-service`]: "space-acme",
-      },
       activeSpaceId: null,
       providerProfiles: DEFAULT_PROVIDER_PROFILES.flatMap((profile) =>
         profile.id === "builtin-claude"
