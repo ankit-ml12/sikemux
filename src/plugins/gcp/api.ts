@@ -220,6 +220,31 @@ export interface KubeService {
     ports: string[];
 }
 
+export interface KubeNode {
+    name: string;
+    ready: boolean;
+    pressure: string[];
+    unschedulable: boolean;
+    pool: string | null;
+    machineType: string | null;
+    zone: string | null;
+    spot: boolean;
+    cpu: string | null;
+    memory: string | null;
+    pods: string | null;
+    version: string | null;
+    createdAt: string | null;
+}
+
+export interface KubeEvent {
+    type: string;
+    reason: string;
+    message: string;
+    count: number;
+    lastAt: string | null;
+    source: string | null;
+}
+
 export interface PodLogLine {
     at: string | null;
     text: string;
@@ -581,6 +606,9 @@ export const gcpApi = {
         backend.call<Pod[]>("pods", { ...t(target), location, cluster, selector }),
     kubeServices: (target: Target, location: string, cluster: string) =>
         backend.call<KubeService[]>("kubeServices", { ...t(target), location, cluster }),
+    nodes: (target: Target, location: string, cluster: string) => backend.call<KubeNode[]>("nodes", { ...t(target), location, cluster }),
+    podEvents: (target: Target, location: string, cluster: string, namespace: string, pod: string) =>
+        backend.call<KubeEvent[]>("podEvents", { ...t(target), location, cluster, namespace, pod }),
     podLogs: (target: Target, location: string, cluster: string, namespace: string, pod: string, previous: boolean) =>
         backend.call<{ lines: PodLogLine[] }>("podLogs", { ...t(target), location, cluster, namespace, pod, previous, tail: 1000 }),
     deploymentRestart: (target: Target, location: string, cluster: string, namespace: string, deployment: string) =>

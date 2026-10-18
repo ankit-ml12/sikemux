@@ -25,6 +25,8 @@ export function mockApi() {
         pods: vi.fn(),
         kubeServices: vi.fn(),
         podLogs: vi.fn(),
+        nodes: vi.fn(),
+        podEvents: vi.fn(),
         deploymentRestart: vi.fn(),
         deploymentScale: vi.fn(),
         nodePoolResize: vi.fn(),
@@ -101,6 +103,8 @@ export function answerEmpty(api: ReturnType<typeof mockApi>) {
         "serviceAccounts",
         "datasets",
         "tables",
+        "nodes",
+        "podEvents",
     ] as const)
         api[list].mockResolvedValue([]);
     api.pubsub.mockResolvedValue({ topics: [], subscriptions: [] });

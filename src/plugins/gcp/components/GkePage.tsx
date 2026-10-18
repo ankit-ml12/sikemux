@@ -3,7 +3,7 @@ import { notify, promptDialog } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
 import { failureMessage, gcpApi, type GkeCluster, type Pod, type PodLogLine, type Target, type Workload } from "../api";
-import { clustersR, kubeServicesR, podsR, workloadsR } from "../resources";
+import { clustersR, kubeServicesR, nodesR, podEventsR, podsR, workloadsR } from "../resources";
 import { splitOpen, updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
 import { LogStream } from "./LogStream";
@@ -104,7 +104,12 @@ function ClusterPage({
                     updateGcpView(paneId, { tab: value });
                 }}
             />
-            {tab === "nodes" && <NodePools target={target} cluster={cluster} />}
+            {tab === "nodes" && (
+                <>
+                    <NodePools target={target} cluster={cluster} />
+                    <Nodes active={active} target={target} cluster={cluster} />
+                </>
+            )}
             {tab === "workloads" && (
                 <Workloads
                     active={active}
@@ -148,8 +153,45 @@ async function change(run: () => Promise<unknown>, done: string, failed: string)
     }
 }
 
+function Nodes({ active, target, cluster }: { active: boolean; target: Target; cluster: GkeCluster }) {
+    const nodes = useResourceEnabled(active, nodesR, ...keyOf(target), cluster.location, cluster.name);
+    return (
+        <>
+            <h2 className="gcp-section-title">Nodes</h2>
+            <Loaded handle={nodes} label="nodes" empty={(rows) => (rows.length === 0 ? "The cluster has no nodes right now." : null)}>
+                {(rows) => (
+                    <Table
+                        label="Nodes"
+                        rows={rows}
+                        rowKey={(node) => node.name}
+                        columns={[
+                            {
+                                label: "Status",
+                                width: "70px",
+                                cell: (node) => (
+                                    <Status state={!node.ready ? "FAILED" : node.pressure.length > 0 || node.unschedulable ? "DEGRADED" : "READY"} />
+                                ),
+                            },
+                            {
+                                label: "Name",
+                                width: "minmax(200px, 1.6fr)",
+                                cell: (node) => <span title={node.pressure.join(", ") || undefined}>{node.name}</span>,
+                            },
+                            { label: "Pool", cell: (node) => node.pool ?? "—" },
+                            { label: "Machine", cell: (node) => `${node.machineType ?? "—"}${node.spot ? " (Spot)" : ""}` },
+                            { label: "CPU", cell: (node) => node.cpu ?? "—" },
+                            { label: "Memory", cell: (node) => node.memory ?? "—" },
+                            { label: "Zone", cell: (node) => node.zone ?? "—" },
+                        ]}
+                    />
+                )}
+            </Loaded>
+        </>
+    );
+}
+
 function NodePools({ target, cluster }: { target: Target; cluster: GkeCluster }) {
-    if (cluster.autopilot) return <EmptyState message="Autopilot manages this cluster's nodes for you." />;
+    if (cluster.autopilot) return <EmptyState message="Autopilot manages this cluster's node pools for you." />;
     const resize = async (pool: GkeCluster["nodePools"][number]) => {
         const nodes = await askCount(`Resize ${pool.name}`, "How many nodes the pool runs in each of its zones.", pool.nodes ?? 0);
         if (nodes !== null)
@@ -360,6 +402,7 @@ function PodLogs({ target, cluster, pod, onBack }: { target: Target; cluster: Gk
                     ["Restarts", pod.restarts],
                 ]}
             />
+            <PodEvents target={target} cluster={cluster} pod={pod} />
             {error ? (
                 <EmptyState message={error} tone="error" />
             ) : !lines ? (
@@ -370,6 +413,32 @@ function PodLogs({ target, cluster, pod, onBack }: { target: Target; cluster: Gk
                 <pre className="gcp-terminal">{lines.map((line) => `${line.at ? `${line.at.slice(11, 19)}  ` : ""}${line.text}`).join("\n")}</pre>
             )}
         </div>
+    );
+}
+
+function PodEvents({ target, cluster, pod }: { target: Target; cluster: GkeCluster; pod: Pod }) {
+    const events = useResourceEnabled(true, podEventsR, ...keyOf(target), cluster.location, cluster.name, pod.namespace, pod.name);
+    if (!events.data || events.data.length === 0) return null;
+    return (
+        <>
+            <h2 className="gcp-section-title">Events</h2>
+            <Table
+                label="Events"
+                rows={events.data}
+                rowKey={(event) => `${event.reason}-${event.lastAt ?? ""}-${event.message}`}
+                columns={[
+                    {
+                        label: "Type",
+                        width: "80px",
+                        cell: (event) => <span className={event.type === "Warning" ? "gcp-error-text" : undefined}>{event.type}</span>,
+                    },
+                    { label: "Reason", width: "minmax(110px, auto)", cell: (event) => event.reason },
+                    { label: "Message", width: "minmax(220px, 3fr)", cell: (event) => <span title={event.message}>{event.message}</span> },
+                    { label: "Count", width: "60px", cell: (event) => event.count },
+                    { label: "Last seen", width: "90px", cell: (event) => ago(event.lastAt) },
+                ]}
+            />
+        </>
     );
 }
 

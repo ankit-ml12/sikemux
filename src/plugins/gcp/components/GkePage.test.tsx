@@ -80,6 +80,26 @@ beforeEach(() => {
     api.workloads.mockResolvedValue([api_]);
     api.pods.mockResolvedValue([crashing]);
     api.kubeServices.mockResolvedValue([]);
+    api.nodes.mockResolvedValue([
+        {
+            name: "gke-prod-default-pool-a1",
+            ready: true,
+            pressure: ["MemoryPressure"],
+            unschedulable: false,
+            pool: "default-pool",
+            machineType: "e2-standard-4",
+            zone: "us-central1-a",
+            spot: false,
+            cpu: "3920m",
+            memory: "13Gi",
+            pods: "110",
+            version: "v1.30",
+            createdAt: null,
+        },
+    ]);
+    api.podEvents.mockResolvedValue([
+        { type: "Warning", reason: "BackOff", message: "Back-off restarting failed container api", count: 31, lastAt: null, source: "kubelet" },
+    ]);
     api.podLogs.mockResolvedValue({ lines: [{ at: "2024-10-18T11:00:00Z", text: "panic: db unreachable" }] });
     api.deploymentRestart.mockResolvedValue(api_);
     api.deploymentScale.mockResolvedValue({ replicas: 5 });
@@ -98,8 +118,9 @@ const openCluster = async () => {
 };
 
 describe("Kubernetes Engine", () => {
-    it("resizes a node pool to the count the person gives", async () => {
+    it("resizes a node pool to the count the person gives, beside the nodes themselves", async () => {
         await openCluster();
+        expect(await screen.findByText("gke-prod-default-pool-a1")).toBeInTheDocument();
         fireEvent.click(within(await screen.findByRole("table", { name: "Node pools" })).getByRole("button", { name: "Resize" }));
         await waitFor(() => expect(api.nodePoolResize).toHaveBeenCalledWith(target, "us-central1", "prod", "default-pool", 5));
     });
@@ -124,6 +145,7 @@ describe("Kubernetes Engine", () => {
         expect(within(pods).getByText("CrashLoopBackOff")).toBeInTheDocument();
         fireEvent.click(within(pods).getByRole("row", { name: /api-7d9-x1/ }));
         expect(await screen.findByText(/panic: db unreachable/)).toBeInTheDocument();
+        expect(await screen.findByText("Back-off restarting failed container api")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Previous run" }));
         await waitFor(() => expect(api.podLogs).toHaveBeenLastCalledWith(target, "us-central1", "prod", "shop", "api-7d9-x1", true));
     });

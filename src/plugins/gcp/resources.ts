@@ -188,3 +188,15 @@ export const tableR = resource({
     fetch: (account: string, project: string, dataset: string, table: string) => gcpApi.table(target(account, project), dataset, table),
     staleAfterMs: 5 * 60_000,
 });
+
+export const nodesR = resource({
+    kind: "gcp.kube.nodes",
+    fetch: (account: string, project: string, location: string, cluster: string) => gcpApi.nodes(target(account, project), location, cluster),
+    staleAfterMs: 30_000,
+});
+export const podEventsR = resource({
+    kind: "gcp.kube.events",
+    fetch: (account: string, project: string, location: string, cluster: string, namespace: string, pod: string) =>
+        gcpApi.podEvents(target(account, project), location, cluster, namespace, pod),
+    staleAfterMs: 10_000,
+});
