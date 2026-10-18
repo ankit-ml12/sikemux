@@ -189,3 +189,7 @@
 .gha-thread > .gha-tl-tail {
     margin-left: calc(40px + var(--space-3));
 }
+/* A comment's own opening heading starts at the card's padding, not a heading's gap below it. */
+.gha-comment .prose > :first-child {
+    margin-top: 0;
+}

@@ -47,9 +47,10 @@ function ProseImage({ src, alt, title, inLink }: { src: string; alt: string; tit
     }, [load, src]);
 
     if (loaded?.src === src) return <img src={loaded.url} alt={alt} title={title} />;
-    // Inside a link the link's own words name it, so a picture with no description adds nothing until it arrives.
-    if (inLink) return <>{alt}</>;
-    return <ProseLink href={src}>{alt || src}</ProseLink>;
+    // A picture with no description, such as a logo beside a name, adds nothing until it arrives; spelling out its
+    // address would push the words around it aside.
+    if (!alt) return null;
+    return inLink ? <>{alt}</> : <ProseLink href={src}>{alt}</ProseLink>;
 }
 
 const COMPONENTS: MarkdownComponents = { link: ProseLink };
