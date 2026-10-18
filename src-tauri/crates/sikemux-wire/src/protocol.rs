@@ -1612,6 +1612,21 @@ fn frame_length(header: [u8; 4], max_payload: usize) -> io::Result<usize> {
     Ok(length)
 }
 
+/// A frame is read in chunks that double from this size, so a peer that
+/// declares a long frame without sending it never gets room made for it.
+const FIRST_CHUNK_BYTES: usize = 64 * 1024;
+
+/// Grows `body` toward `length` and answers with the new room to read into.
+fn next_chunk(body: &mut Vec<u8>, length: usize) -> Option<&mut [u8]> {
+    let start = body.len();
+    if start >= length {
+        return None;
+    }
+    let end = (start * 2).max(FIRST_CHUNK_BYTES).min(length);
+    body.resize(end, 0);
+    body.get_mut(start..)
+}
+
 fn split_frame(mut body: Vec<u8>) -> io::Result<Frame> {
     let kind = body
         .first()
@@ -1632,8 +1647,11 @@ pub fn read_frame_sync<R: Read>(reader: &mut R) -> io::Result<Option<Frame>> {
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0u8; frame_length(header, MAX_FRAME_BYTES)?];
-    reader.read_exact(&mut body)?;
+    let length = frame_length(header, MAX_FRAME_BYTES)?;
+    let mut body = Vec::new();
+    while let Some(chunk) = next_chunk(&mut body, length) {
+        reader.read_exact(chunk)?;
+    }
     split_frame(body).map(Some)
 }
 
@@ -1644,7 +1662,7 @@ pub async fn read_frame<R: tokio::io::AsyncRead + Unpin>(
     read_frame_within(reader, MAX_FRAME_BYTES).await
 }
 
-/// Refuses a frame longer than `max_payload` before allocating room for it.
+/// Refuses a frame longer than `max_payload` before reading it.
 #[cfg(unix)]
 pub async fn read_frame_within<R: tokio::io::AsyncRead + Unpin>(
     reader: &mut R,
@@ -1657,8 +1675,11 @@ pub async fn read_frame_within<R: tokio::io::AsyncRead + Unpin>(
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error),
     }
-    let mut body = vec![0u8; frame_length(header, max_payload)?];
-    reader.read_exact(&mut body).await?;
+    let length = frame_length(header, max_payload)?;
+    let mut body = Vec::new();
+    while let Some(chunk) = next_chunk(&mut body, length) {
+        reader.read_exact(chunk).await?;
+    }
     split_frame(body).map(Some)
 }
 
