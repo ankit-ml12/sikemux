@@ -350,7 +350,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                         </button>
                     </Tooltip>
                     <StateMark kind="issue" state={openIssue?.state ?? "open"} reason={openIssue?.stateReason ?? null} size={14} />
-                    <span className="pr-side-number">Issue #{item}</span>
+                    <span className="pr-side-number">#{item}</span>
                     <span className="gha-page-spacer" />
                     <div className="gha-chips gha-seg issue-side-seg" role="group" aria-label="Which to list">
                         {LIST_STATES.map((state) => (

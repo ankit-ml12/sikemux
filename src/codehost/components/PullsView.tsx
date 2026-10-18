@@ -728,7 +728,7 @@ function PullColumn({
                         </button>
                     </Tooltip>
                     <StateMark kind="pull" state={pullState(found)} size={14} />
-                    <span className="pr-side-number">Pull request #{found.number}</span>
+                    <span className="pr-side-number">#{found.number}</span>
                     <span className="gha-page-spacer" />
                     <ShellAccount />
                 </div>
