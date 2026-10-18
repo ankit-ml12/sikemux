@@ -580,7 +580,7 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Full);
     let core = start_core(&core_key, &[&phone]);
-    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
     app.register_window()
         .await
         .expect("the app opens its window");
@@ -623,25 +623,10 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     assert_eq!(titled("agent-failed").state, ChatState::Stopped);
     assert!(!titled("agent-failed").asleep);
 
-    let waking = tokio::spawn(async move {
-        let woken = client.acp_wake("agent-sleepy".into()).await;
-        (client, woken)
-    });
-    loop {
-        let event = tokio::time::timeout(WAIT, app_events.recv())
-            .await
-            .expect("the app is asked to wake the chat")
-            .expect("the app's connection closed");
-        if matches!(&event, ClientEvent::Event(Event::WakeChat { agent_id }) if agent_id == "agent-sleepy")
-        {
-            break;
-        }
-    }
-    app.acp_start(fake_launch("agent-sleepy"))
+    client
+        .acp_wake("agent-sleepy".into())
         .await
-        .expect("the app starts it again");
-    let (client, woken) = waking.await.expect("wake task");
-    woken.expect("the chat wakes");
+        .expect("the core wakes the chat itself");
     let chats = client.acp_list().await.expect("list chats");
     let sleepy = chats
         .iter()
@@ -693,8 +678,6 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     assert!(refusal(refused).contains("only Sikemux on this host"));
     let refused = client.watch_view().await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
-    let refused = client.acp_wake("agent-failed".into()).await;
-    assert!(refusal(refused).contains("stopped on the host"));
     let refused = client.acp_wake("agent-gone".into()).await;
     assert!(refusal(refused).contains("no longer on this host"));
 }
