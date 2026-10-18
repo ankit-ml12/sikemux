@@ -11,6 +11,7 @@
 //   gke      — GKE clusters, node pools, workloads, pods, services and pod logs
 //   storage  — Cloud Storage buckets, folders, previews and downloads
 //   sql      — Cloud SQL instances, databases, users, backups and power
+//   pubsub   — Pub/Sub topics, subscriptions, publishing and peeking
 
 mod auth;
 mod client;
@@ -20,6 +21,7 @@ mod gcloud;
 mod gke;
 mod logging;
 mod projects;
+mod pubsub;
 mod run;
 mod sql;
 mod storage;
@@ -105,6 +107,9 @@ impl Plugin for Gcp {
                 "sqlInstances" => answer(sql::instances(params(input)?)).await,
                 "sqlInstance" => answer(sql::instance_detail(params(input)?)).await,
                 "sqlChange" => answer(sql::change(params(input)?)).await,
+                "topics" => answer(pubsub::topics(params(input)?)).await,
+                "publish" => answer(pubsub::publish(params(input)?)).await,
+                "peek" => answer(pubsub::peek(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
