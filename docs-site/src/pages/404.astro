@@ -7,7 +7,7 @@ const title = "Page not found";
 const description = "This page isn't in the docs. It may have moved, or the link has a typo.";
 ---
 
-<Layout title={`${title} · Sikemux`} description={description}>
+<Layout title={`${title} · Sikemux`} description={description} noindex>
   <Docs
     client:load
     tree={source.getPageTree()}
