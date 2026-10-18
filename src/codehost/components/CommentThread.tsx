@@ -220,11 +220,13 @@ function ItemView({ item, now, base }: { item: TimelineItem; now: number; base: 
         case "merged":
             return (
                 <Event icon={<IconMerge size={12} />} tone="acc">
-                    {who}{" "}
-                    <span className="gha-dim">
-                        merged {short ? `commit ${short} ` : ""}into {base ?? "the base branch"}
-                    </span>{" "}
-                    {when}
+                    {who} <span className="gha-dim">merged</span>
+                    {short && (
+                        <>
+                            <span className="gha-dim">commit</span> <span className="gha-tl-sha-word">{short}</span>
+                        </>
+                    )}
+                    <span className="gha-dim">into</span> <span className="gha-tl-branch">{base ?? "the base branch"}</span> {when}
                 </Event>
             );
         case "closed":
