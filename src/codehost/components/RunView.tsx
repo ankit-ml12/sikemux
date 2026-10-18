@@ -24,7 +24,7 @@ import { OutcomeIcon } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
-import { Branch, Who } from "./Bits";
+import { Face } from "./CommentThread";
 import { coarse, useBusy } from "./hooks";
 import { useNow } from "../../plugin-api/hooks";
 import { JobGraph } from "./JobGraph";
@@ -466,45 +466,48 @@ function RunRight({
     return (
         <div className="pr-right">
             <div className="git-detail">
-                <div className="pr-title-row">
-                    <h2 className="git-detail-title">
-                        {run.title || run.name} <span className="pr-number">#{run.runNumber}</span>
-                    </h2>
-                    <Tooltip label={`Open on ${host.name}`}>
-                        <button
-                            type="button"
-                            className="gha-icon-btn"
-                            aria-label={`Open on ${host.name}`}
-                            onClick={() => void openUrl(run.url).catch(swallow(`open ${host.name}`))}>
-                            <IconExternal size={12} />
-                        </button>
-                    </Tooltip>
-                </div>
-                <div className="git-detail-meta">
-                    {run.actor && <Who login={run.actor} avatarUrl={run.avatarUrl} />}
-                    <span>
-                        {eventLabel(run.event)} {formatAgo(run.createdAt, open.now)}
+                <div className="pr-headline">
+                    <span className="pr-face">
+                        <Face login={run.actor} url={run.avatarUrl} />
                     </span>
-                    <Tooltip label="Copy the commit">
-                        <button
-                            type="button"
-                            className="gha-link gha-mono"
-                            onClick={() =>
-                                void copyText(run.sha)
-                                    .then(() => notify("success", `Copied ${run.shortSha}`))
-                                    .catch(swallow("copy the commit"))
-                            }>
-                            {run.shortSha}
-                        </button>
-                    </Tooltip>
-                    {run.branch && <Branch name={run.branch} />}
-                    {run.pullRequests.map((number) => (
-                        <span key={number} className="gha-item-number">
-                            #{number}
+                    <span className="pr-headline-top">
+                        <RunMark outcome={outcomeOf(run)} />
+                        <h2 className="git-detail-title pr-headline-title">{run.title || run.name}</h2>
+                        <Tooltip label={`Open on ${host.name}`}>
+                            <button
+                                type="button"
+                                className="gha-icon-btn"
+                                aria-label={`Open on ${host.name}`}
+                                onClick={() => void openUrl(run.url).catch(swallow(`open ${host.name}`))}>
+                                <IconExternal size={12} />
+                            </button>
+                        </Tooltip>
+                    </span>
+                    <span className="pr-headline-sub">
+                        <span className="pr-headline-who">
+                            {run.name} #{run.runNumber} · {run.actor ?? "someone"} · {eventLabel(run.event).toLowerCase()}{" "}
+                            {formatAgo(run.createdAt, open.now)}
+                            {run.attempt > 1 ? ` · attempt ${run.attempt}` : ""}
                         </span>
-                    ))}
-                    {run.name !== run.title && <span>{run.name}</span>}
-                    {run.attempt > 1 && <span>attempt {run.attempt}</span>}
+                        <Tooltip label="Copy the commit">
+                            <button
+                                type="button"
+                                className="pr-ref gha-mono run-head-sha"
+                                onClick={() =>
+                                    void copyText(run.sha)
+                                        .then(() => notify("success", `Copied ${run.shortSha}`))
+                                        .catch(swallow("copy the commit"))
+                                }>
+                                {run.shortSha}
+                            </button>
+                        </Tooltip>
+                        {run.branch && <span className="pr-ref pr-ref-head">{run.branch}</span>}
+                        {run.pullRequests.map((number) => (
+                            <span key={number} className="pr-ref">
+                                #{number}
+                            </span>
+                        ))}
+                    </span>
                 </div>
                 <div className="git-detail-actions" role="tablist" aria-label="Run">
                     {tabs.map((each) => (
