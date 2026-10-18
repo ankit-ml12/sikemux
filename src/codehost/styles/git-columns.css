@@ -26,6 +26,7 @@
 /* The filters and the table's column names stay pinned while the rows scroll under them, solid so nothing shows through. */
 .git-framed .gha-full-page > .pr-list {
     --list-head: 47px;
+    gap: 0;
 }
 .git-framed .gha-full-page > .pr-list > .gha-list-head {
     position: sticky;
