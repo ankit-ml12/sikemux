@@ -138,7 +138,12 @@ export const agentApi = {
     available: fetchAvailable,
     /** The accounts the core keeps; `null` until the app first gives it some. */
     accounts: (): Promise<AgentAccountBook | null> => accountCall("agentAccounts"),
-    setAccounts: (book: AgentAccountBook): Promise<void> => accountCall("setAgentAccounts", { ...book }),
+    /** Keeps the account, in place of the one with its id; each of these answers with the accounts as they are now. */
+    saveAccount: (profile: ProviderProfile): Promise<AgentAccountBook> => accountCall("saveAgentAccount", { profile }),
+    removeAccount: (id: string): Promise<AgentAccountBook> => accountCall("removeAgentAccount", { id }),
+    /** Makes the account the one `provider` runs on, and moves its open chats there. */
+    selectAccount: (provider: AgentType, id: string): Promise<AgentAccountBook> => accountCall("selectAgentAccount", { provider, id }),
+    setAutoSwitch: (provider: AgentType, on: boolean): Promise<AgentAccountBook> => accountCall("setAccountAutoSwitch", { provider, on }),
     /** Forgets every agent's status, so the next look asks each one again. */
     refreshStatuses: (): Promise<void> => accountCall("forgetAgentStatus"),
     /** Forgets one account's sign-in and usage, after they changed. */

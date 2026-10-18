@@ -9,16 +9,31 @@ const mocks = vi.hoisted(() => ({
     signOut: vi.fn(),
 }));
 
-vi.mock("../api/agents", () => ({
-    agentApi: {
-        account: mocks.account,
-        addAccount: mocks.addAccount,
-        signIn: mocks.signIn,
-        signOut: mocks.signOut,
-        forgetAccount: () => Promise.resolve(),
-        onSignInPage: () => Promise.resolve(() => {}),
-    },
-}));
+/* The core keeps the accounts; it answers each change with the whole of them, as these do. */
+vi.mock("../api/agents", async () => {
+    const { getState } = await import("../state/store");
+    const book = (patch: object) => ({
+        profiles: getState().providerProfiles,
+        selected: getState().selectedProviderProfileIds,
+        autoSwitch: getState().accountAutoSwitch,
+        ...patch,
+    });
+    return {
+        agentApi: {
+            account: mocks.account,
+            addAccount: mocks.addAccount,
+            signIn: mocks.signIn,
+            signOut: mocks.signOut,
+            forgetAccount: () => Promise.resolve(),
+            onSignInPage: () => Promise.resolve(() => {}),
+            saveAccount: async (profile: { id: string }) =>
+                book({ profiles: [...getState().providerProfiles.filter((kept) => kept.id !== profile.id), profile] }),
+            removeAccount: async (id: string) => book({ profiles: getState().providerProfiles.filter((kept) => kept.id !== id) }),
+            selectAccount: async (provider: string, id: string) => book({ selected: { ...getState().selectedProviderProfileIds, [provider]: id } }),
+            setAutoSwitch: async (provider: string, on: boolean) => book({ autoSwitch: { ...getState().accountAutoSwitch, [provider]: on } }),
+        },
+    };
+});
 
 import { invalidate } from "../state/resources";
 import { getState, setState } from "../state/store";
@@ -94,10 +109,10 @@ describe("accounts in Settings", () => {
         render(<AccountsSections />);
 
         await user.click(await screen.findByRole("button", { name: "Use" }));
-        expect(getState().selectedProviderProfileIds.claude).toBe("claude-work");
+        await waitFor(() => expect(getState().selectedProviderProfileIds.claude).toBe("claude-work"));
 
         await user.click(screen.getByRole("switch", { name: "Auto-rotate Claude accounts at limits" }));
-        expect(getState().accountAutoSwitch.claude).toBe(true);
+        await waitFor(() => expect(getState().accountAutoSwitch.claude).toBe(true));
 
         await user.click(screen.getByRole("button", { name: "More for Work" }));
         await user.click(screen.getByRole("menuitem", { name: "Sign out" }));

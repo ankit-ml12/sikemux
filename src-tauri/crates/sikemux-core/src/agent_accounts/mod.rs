@@ -62,6 +62,9 @@ pub struct Book {
     pub auto_switch: BTreeMap<String, bool>,
 }
 
+/// What the ids of the accounts each agent starts with begin with.
+const BUILT_IN: &str = "builtin-";
+
 impl Book {
     pub fn check(&self) -> Result<(), String> {
         let long = |text: &str| text.len() > MAX_TEXT;
@@ -90,6 +93,38 @@ impl Book {
             return Err("the app sent more agent accounts than the core keeps".into());
         }
         Ok(())
+    }
+
+    pub fn profile(&self, id: &str) -> Option<&Profile> {
+        self.profiles.iter().find(|profile| profile.id == id)
+    }
+
+    /// Keeps `profile`, in place of the one with its id. A selection of it
+    /// for another provider goes.
+    pub fn save(&mut self, profile: Profile) {
+        self.selected
+            .retain(|provider, id| id != &profile.id || provider == &profile.provider);
+        self.profiles.retain(|kept| kept.id != profile.id);
+        self.profiles.push(profile);
+    }
+
+    /// Forgets the account, and that it was chosen. A built-in one stays.
+    pub fn remove(&mut self, id: &str) -> Result<(), String> {
+        if id.starts_with(BUILT_IN) {
+            return Err("a built-in account cannot be removed".into());
+        }
+        self.profiles.retain(|profile| profile.id != id);
+        self.selected.retain(|_, selected| selected != id);
+        Ok(())
+    }
+
+    /// The account `provider`'s agents run on when none is named: the one
+    /// chosen, else the built-in one.
+    pub fn chosen(&self, provider: &str) -> String {
+        self.selected
+            .get(provider)
+            .cloned()
+            .unwrap_or_else(|| format!("{BUILT_IN}{provider}"))
     }
 
     /// The agent `provider` on the account in `config_path`.
@@ -192,9 +227,13 @@ pub fn cli(
 }
 
 /// The core's calls about accounts and their limits, all of them the app's own.
-pub const METHODS: [&str; 12] = [
+pub const METHODS: [&str; 16] = [
     "agentAccounts",
     "setAgentAccounts",
+    "saveAgentAccount",
+    "removeAgentAccount",
+    "selectAgentAccount",
+    "setAccountAutoSwitch",
     "addAgentAccount",
     "agentStatus",
     "agentAccountStatus",
@@ -206,3 +245,34 @@ pub const METHODS: [&str; 12] = [
     "discardFailed",
     "authenticateChat",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_account_moved_to_another_agent_is_no_longer_that_agents_choice() {
+        let local = |provider: &str| Profile {
+            id: "local".into(),
+            name: "Local".into(),
+            provider: provider.into(),
+            accent: "#abcdef".into(),
+            executable_path: None,
+            config_path: None,
+            environment_keys: Vec::new(),
+        };
+        let mut book = Book {
+            profiles: vec![local("claude")],
+            selected: BTreeMap::from([("claude".to_owned(), "local".to_owned())]),
+            ..Book::default()
+        };
+        book.save(local("codex"));
+        assert!(!book.selected.contains_key("claude"));
+        assert_eq!(book.profiles.len(), 1);
+        assert_eq!(
+            book.profile("local")
+                .map(|profile| profile.provider.as_str()),
+            Some("codex")
+        );
+    }
+}

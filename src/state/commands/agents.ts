@@ -1,5 +1,6 @@
 import { agentApi, type AgentSession } from "../../api/agents";
 import { acpApi } from "../../api/acp";
+import { acpAccount } from "../../agents/accounts";
 import { coreCall } from "../../api/core";
 import { agentNamesApi } from "../../api/agentNames";
 import type { AgentQuestion } from "../../agents/agentQuestions";
@@ -59,6 +60,11 @@ export function agentSessionMetadataPending(agent: Agent): boolean {
 /** Moves a chat with nothing in it to another agent, account or model provider.
     `model` picks its model there, on `modelProvider` when one is named. */
 export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string): void {
+    const before = getState().agents[id];
+    const account = profileId ? profileOf(getState(), { profileId, type }) : undefined;
+    /* Its pane starts it again for another agent; another account of the same agent is the core's to move it to. */
+    if (before && account && before.type === type && before.profileId !== account.id && inChat(before))
+        void acpApi.switchAccount(id, type, acpAccount(account)).catch(reportError("Switch account"));
     mutate((d) => {
         const agent = d.agents[id];
         if (!agent || isAgentBusy(d.agentStatus[id])) return;
@@ -86,17 +92,6 @@ export function setAgentModelPreferences(id: string, model: string | undefined, 
         if (!agent) return;
         agent.model = model;
         agent.effort = effort;
-        Object.assign(agent, relaunchSpec(d, agent));
-    });
-}
-
-/** Puts the agent on another of the person's accounts, keeping its session: the chat moved there and carries on. */
-export function setAgentAccount(id: string, profileId: string): void {
-    mutate((d) => {
-        const agent = d.agents[id];
-        const profile = agent ? profileOf(d, { profileId, type: agent.type }) : undefined;
-        if (!agent || !profile || agent.profileId === profile.id) return;
-        agent.profileId = profile.id;
         Object.assign(agent, relaunchSpec(d, agent));
     });
 }

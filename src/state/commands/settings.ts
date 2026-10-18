@@ -1,9 +1,11 @@
+import { agentApi, type AgentAccountBook } from "../../api/agents";
 import { checkForUpdateNow } from "../../api/updater";
+import { adoptAgentAccounts } from "../persist";
+import { reportError } from "../toast";
 import { invalidate } from "../resources";
 import { projectRootsScanR } from "../resources.defs";
 import { getState, setState } from "../store";
 import type { AccountAgentType } from "../../agents/catalog";
-import type { AgentType } from "../types";
 
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
@@ -27,36 +29,19 @@ export const setUiTextScale = (value: number): void => setState({ uiTextScale: [
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
 export const setMidTurnSend = (value: import("../types").MidTurnSend): void => setState({ midTurnSend: value });
 export const setTabRailAllAgents = (value: boolean): void => setState({ tabRailAllAgents: value });
-export const setAccountAutoSwitch = (provider: AccountAgentType, on: boolean): void =>
-    setState((s) => ({ accountAutoSwitch: { ...s.accountAutoSwitch, [provider]: on } }));
 export const setTabRailScope = (value: import("../types").TabRailScope): void => setState({ tabRailScope: value });
 export const setTabRailPage = (value: import("../types").TabRailPage): void => setState({ tabRailPage: value });
 export const setDefaultAgentPermissionMode = (value: import("../types").AgentPermissionMode): void =>
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });
-export function selectProviderProfile(type: AgentType, profileId: string): void {
-    setState((state) => ({ selectedProviderProfileIds: { ...state.selectedProviderProfileIds, [type]: profileId } }));
-}
-export function saveProviderProfile(profile: import("../types").ProviderProfile): void {
-    setState((state) => {
-        const selectedProviderProfileIds = { ...state.selectedProviderProfileIds };
-        for (const [type, selected] of Object.entries(selectedProviderProfileIds)) {
-            if (selected === profile.id && type !== profile.provider) delete selectedProviderProfileIds[type as AgentType];
-        }
-        return {
-            providerProfiles: [...state.providerProfiles.filter((item) => item.id !== profile.id), profile],
-            selectedProviderProfileIds,
-        };
-    });
-}
-export function deleteProviderProfile(id: string): void {
-    if (id.startsWith("builtin-")) return;
-    setState((state) => {
-        const selectedProviderProfileIds = { ...state.selectedProviderProfileIds };
-        for (const [type, selected] of Object.entries(selectedProviderProfileIds)) {
-            if (selected === id) delete selectedProviderProfileIds[type as AgentType];
-        }
-        return { providerProfiles: state.providerProfiles.filter((profile) => profile.id !== id), selectedProviderProfileIds };
-    });
+/* The person's accounts are the core's; each change goes there and the accounts it answers with come back. */
+const keepAccounts = (change: Promise<AgentAccountBook>, what: string): Promise<void> => change.then(adoptAgentAccounts).catch(reportError(what));
+export const setAccountAutoSwitch = (provider: AccountAgentType, on: boolean): Promise<void> =>
+    keepAccounts(agentApi.setAutoSwitch(provider, on), "Switch accounts at limits");
+export const saveProviderProfile = (profile: import("../types").ProviderProfile): Promise<void> =>
+    keepAccounts(agentApi.saveAccount(profile), "Save account");
+export function deleteProviderProfile(id: string): Promise<void> {
+    if (id.startsWith("builtin-")) return Promise.resolve();
+    return keepAccounts(agentApi.removeAccount(id), "Remove account");
 }
 export const checkForUpdates = (): Promise<void> => checkForUpdateNow();
 

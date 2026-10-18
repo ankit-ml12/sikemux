@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, setAgentPermissionMode } from "./commands";
+import { addAgent, closeAgentPalette, focusAgents, setAgentPermissionMode } from "./commands";
 import { getState, setState } from "./store";
 import { activeAgentId, agentIdsOf } from "./selectors";
 
@@ -52,17 +52,6 @@ describe("agent launch commands", () => {
 
         expect(activeAgentId(getState(), getState().sessions.project)).toBe(agentIdsOf(getState(), "project")[0]);
         expect(getState().agentPaletteOpen).toBe(false);
-    });
-
-    it("clears a default selection when a custom profile changes provider", () => {
-        setState({
-            providerProfiles: [{ id: "local", name: "Local", provider: "claude", accent: "#abcdef" }],
-            selectedProviderProfileIds: { claude: "local" },
-        });
-
-        saveProviderProfile({ id: "local", name: "Local Codex", provider: "codex", accent: "#abcdef" });
-
-        expect(getState().selectedProviderProfileIds.claude).toBeUndefined();
     });
 
     it("does not attach a mismatched provider profile to a launch", () => {

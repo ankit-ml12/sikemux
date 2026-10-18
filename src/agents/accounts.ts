@@ -1,13 +1,11 @@
 import { useSyncExternalStore } from "react";
 import { agentApi, type AgentAccountStatus } from "../api/agents";
 import { acpApi, type AcpAccount } from "../api/acp";
-import { fetchResource, invalidate } from "../state/resources";
-import { agentAccountR } from "../state/resources.defs";
-import { getState } from "../state/store";
+import { invalidate } from "../state/resources";
 import { reportError } from "../state/toast";
 import { hasAccounts, type AccountAgentType } from "./catalog";
+import { adoptAgentAccounts } from "../state/persist";
 import { DEFAULT_PROVIDER_PROFILES, type Agent, type AgentProvider, type AgentType, type ProviderProfile } from "../state/types";
-import * as cmd from "../state/commands";
 
 /* An account is a provider profile: its directory holds one sign-in. */
 
@@ -32,52 +30,15 @@ export function acpAccount(profile: ProviderProfile): AcpAccount {
     return { id: profile.id, label: profile.name, configPath: profile.configPath };
 }
 
-/* Chats the core has just moved to another account, by agent, with the
-   account. Their pane takes them up where they are rather than starting them
-   again on it. */
-const moved = new Map<string, string>();
-
-/** Whether `agentId` was moved to `profileId`, asked once by its pane as it lets the chat go. */
-export function takeMove(agentId: string, profileId: string | undefined): boolean {
-    const to = moved.get(agentId);
-    moved.delete(agentId);
-    return to !== undefined && to === profileId;
-}
-
 /** Carries the chat on to `account`. A turn in progress stops and carries on there. */
 export function moveChat(agent: Agent, account: ProviderProfile): void {
-    void acpApi.switchAccount(agent.id, agent.type, acpAccount(account)).then(() => {
-        if (getState().agents[agent.id]?.profileId === account.id) return;
-        moved.set(agent.id, account.id);
-        cmd.setAgentAccount(agent.id, account.id);
-    }, reportError("Switch account"));
+    void acpApi.switchAccount(agent.id, agent.type, acpAccount(account)).catch(reportError("Switch account"));
 }
 
-/** Makes `account` the one `provider` runs on: new chats start there, open
-    ones move there with any turn carrying on, and sleeping ones wake there.
-    Chats kept where the account cannot see them, and agents in a terminal,
-    stay where they are. */
+/** Makes `account` the one `provider` runs on: new chats start there, and the core moves open ones there with any
+    turn carrying on. Chats kept where the account cannot see them, and agents in a terminal, stay where they are. */
 export async function switchAccount(provider: AccountProvider, account: ProviderProfile): Promise<void> {
-    cmd.selectProviderProfile(provider, account.id);
-    const state = getState();
-    const builtin = DEFAULT_PROVIDER_PROFILES.find((profile) => profile.provider === provider);
-    const agents = Object.values(state.agents).filter(
-        (agent) => agent.type === provider && agent.ptyId === undefined && (cmd.profileOf(state, agent) ?? builtin)?.id !== account.id,
-    );
-    if (agents.length === 0) return;
-    const sessions = (profile: ProviderProfile | undefined) =>
-        fetchResource(agentAccountR, provider, profile?.configPath).then(
-            (status) => status.sessions,
-            () => null,
-        );
-    const [target, chats] = await Promise.all([sessions(account), acpApi.list().catch(() => [])]);
-    if (!target) return;
-    const live = new Set(chats.filter((chat) => chat.state !== "stopped").map((chat) => chat.agentId));
-    for (const agent of agents) {
-        if ((await sessions(cmd.profileOf(state, agent))) !== target) continue;
-        if (live.has(agent.id)) moveChat(agent, account);
-        else cmd.setAgentAccount(agent.id, account.id);
-    }
+    adoptAgentAccounts(await agentApi.selectAccount(provider, account.id));
 }
 
 const sameDirectory = (a: string | null | undefined, b: string | null | undefined) => (a || null) === (b || null);
@@ -174,7 +135,7 @@ export async function addAccount(provider: AccountProvider, name: string, accent
         configPath,
         environmentKeys: [],
     };
-    cmd.saveProviderProfile(profile);
+    adoptAgentAccounts(await agentApi.saveAccount(profile));
     return profile;
 }
 

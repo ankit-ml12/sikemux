@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::connection::blocking;
 use super::workspace::refresh_launchers;
 use super::{Core, CoreError, CoreResult};
-use crate::agent_accounts::{folders, status, usage};
+use crate::agent_accounts::{chat_account, folders, status, usage, Book, Profile};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +43,28 @@ struct Authenticate {
 }
 
 #[derive(Deserialize)]
+struct Saving {
+    profile: Profile,
+}
+
+#[derive(Deserialize)]
+struct Removing {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct Choosing {
+    provider: String,
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct Switching {
+    provider: String,
+    on: bool,
+}
+
+#[derive(Deserialize)]
 struct Adding {
     provider: String,
     name: String,
@@ -65,6 +87,57 @@ async fn program(core: &Core, account: &Account) -> CoreResult<PathBuf> {
     Ok(spec.program().await?)
 }
 
+/// Changes the person's accounts, offers agents on them afresh and tells
+/// every client, answering with the accounts as they are now.
+async fn change(
+    core: &Arc<Core>,
+    edit: impl FnOnce(&mut Book) -> Result<(), String>,
+) -> CoreResult<Book> {
+    let mut book = core.workspaces.accounts().unwrap_or_default();
+    edit(&mut book)?;
+    core.workspaces.set_accounts(book.clone())?;
+    refresh_launchers(core.clone()).await;
+    core.changes.changed("agentAccounts", None, None);
+    Ok(book)
+}
+
+/// Moves `provider`'s chats onto the account `id` the person chose, where it
+/// keeps their chats too, with a turn at work carrying on there. Agents in a
+/// terminal stay where they are.
+fn move_chats(core: &Core, book: &Book, provider: &str, id: &str) {
+    let Some(target) = book
+        .profile(id)
+        .filter(|profile| profile.provider == provider)
+    else {
+        return;
+    };
+    let chosen = book.chosen(provider);
+    for agent_id in core.workspaces.agent_ids() {
+        let Some(agent) = core.workspaces.agent(&agent_id) else {
+            continue;
+        };
+        let on = agent.profile_id.clone().unwrap_or_else(|| chosen.clone());
+        if agent.provider != provider || agent.pty_id.is_some() || on == id {
+            continue;
+        }
+        let from = book
+            .profile(&on)
+            .and_then(|profile| profile.config_path.as_deref());
+        if !folders::sessions_shared(provider, from, target.config_path.as_deref()) {
+            continue;
+        }
+        let account = chat_account(
+            provider,
+            &target.id,
+            &target.name,
+            target.config_path.as_deref(),
+        );
+        if let Err(error) = super::chat::switch_account(core, &agent_id, account) {
+            eprintln!("sikemux core: {agent_id} stayed on its account: {error}");
+        }
+    }
+}
+
 pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreResult<Value> {
     match method {
         "agentAccounts" => answer(core.workspaces.accounts()),
@@ -72,6 +145,35 @@ pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreR
             core.workspaces.set_accounts(parse(params)?)?;
             refresh_launchers(core.clone()).await;
             answer(())
+        }
+        "saveAgentAccount" => {
+            let saving: Saving = parse(params)?;
+            answer(change(core, |book| Ok(book.save(saving.profile))).await?)
+        }
+        "removeAgentAccount" => {
+            let removing: Removing = parse(params)?;
+            answer(change(core, |book| book.remove(&removing.id)).await?)
+        }
+        "selectAgentAccount" => {
+            let choosing: Choosing = parse(params)?;
+            let (provider, id) = (choosing.provider.clone(), choosing.id.clone());
+            let book = change(core, move |book| {
+                book.selected.insert(provider, id);
+                Ok(())
+            })
+            .await?;
+            move_chats(core, &book, &choosing.provider, &choosing.id);
+            answer(book)
+        }
+        "setAccountAutoSwitch" => {
+            let switching: Switching = parse(params)?;
+            answer(
+                change(core, move |book| {
+                    book.auto_switch.insert(switching.provider, switching.on);
+                    Ok(())
+                })
+                .await?,
+            )
         }
         "addAgentAccount" => {
             let adding: Adding = parse(params)?;

@@ -29,6 +29,15 @@ vi.mock("../api/agents", () => ({
         onSignInPage: () => Promise.resolve(() => {}),
         renameSession: mocks.renameSession,
         deleteSession: mocks.deleteSession,
+        selectAccount: async (provider: string, id: string) => {
+            const { getState } = await import("../state/store");
+            const state = getState();
+            return {
+                profiles: state.providerProfiles,
+                selected: { ...state.selectedProviderProfileIds, [provider]: id },
+                autoSwitch: state.accountAutoSwitch,
+            };
+        },
     },
 }));
 
@@ -532,7 +541,7 @@ describe("tab rail", () => {
         await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
         await user.click(screen.getByRole("menuitem", { name: /^Work/ }));
 
-        expect(getState().selectedProviderProfileIds.codex).toBe("codex-work");
+        await waitFor(() => expect(getState().selectedProviderProfileIds.codex).toBe("codex-work"));
         await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "~/.codex-work"));
         await waitFor(() =>
             expect(mocks.recent).toHaveBeenCalledWith(expect.objectContaining({ providers: [{ agent: "codex", configPath: "~/.codex-work" }] })),

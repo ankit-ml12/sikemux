@@ -3,8 +3,6 @@ import { errorText } from "../lib/format";
 import { acpApi, type AcpEvent } from "../api/acp";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
-import { getState } from "../state/store";
-import { takeMove } from "../agents/accounts";
 import { noteSignedOut } from "../agents/statusRefresh";
 import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
@@ -50,10 +48,13 @@ export function useAcpSession({
     const updateTimerRef = useRef<number | null>(null);
     const agentRef = useRef(agent);
     agentRef.current = agent;
+    const profileRef = useRef(profile);
+    profileRef.current = profile;
     const sessionIdRef = useRef<string | null>(null);
     const lifecycleRef = useRef<Promise<unknown>>(Promise.resolve());
     /* What the chat was last started with; the person changing it, as in an
-       empty chat's agent picker, starts it again on the new launch. */
+       empty chat's agent picker, starts it again on the new launch. Its
+       account is not part of it: the core moves a chat between accounts. */
     const launchRef = useRef<string | null>(null);
     /* Set when the core came back still running this chat: the session is
        taken up again rather than stopped and started. */
@@ -65,7 +66,6 @@ export function useAcpSession({
     const [replaying, setReplaying] = useState(false);
     const historyRef = useRef<History | null>(null);
     const [earlier, setEarlier] = useState<EarlierTurns>("none");
-    const environmentKeys = JSON.stringify(profile?.environmentKeys ?? []);
     const permissionMode = permissionModeOf(agent);
 
     const updateRecovery = useCallback((next: Recovery | null) => {
@@ -88,8 +88,7 @@ export function useAcpSession({
         let mounted = true;
         const reattaching = reattachingRef.current;
         reattachingRef.current = false;
-        takeMove(agent.id, undefined);
-        const launch = JSON.stringify([agent.type, agent.profileId, agent.modelProvider, agent.executablePath, cwd, profile?.configPath, profile?.executablePath, environmentKeys]);
+        const launch = JSON.stringify([agent.type, agent.modelProvider, cwd]);
         const relaunch = launchRef.current !== null && launchRef.current !== launch && !reattaching;
         launchRef.current = launch;
         const hold = Boolean(agentRef.current.resumeId) || reattaching;
@@ -133,15 +132,6 @@ export function useAcpSession({
                 updateRecovery({ phase: "failed", detail: typeof event.payload.message === "string" ? event.payload.message : null });
         };
 
-        /* The chat already runs on the new account, so the agent is taken up
-           where it is rather than started again on it. */
-        const noteAccount = (profileId: string) => {
-            const known = getState().providerProfiles.some((item) => item.id === profileId && item.provider === agentRef.current.type);
-            if (!known || agentRef.current.profileId === profileId) return;
-            reattachingRef.current = true;
-            cmd.setAgentAccount(agent.id, profileId);
-        };
-
         const handleEvent = (event: AcpEvent) => {
             if (!mounted || event.agentId !== agent.id) return;
             if (event.kind !== "session_update") flushUpdates();
@@ -162,7 +152,6 @@ export function useAcpSession({
             for (const action of actions) {
                 if (action.type === "session_update") {
                     const { update } = action;
-                    if (update.sessionUpdate === "account_switched" && typeof update.account === "string") noteAccount(update.account);
                     queueUpdate(action.sessionId, update);
                     /* The saved history is all in while the agent is still starting,
                        so the transcript shows now rather than when the agent answers. */
@@ -174,7 +163,7 @@ export function useAcpSession({
                 }
                 dispatch(action);
                 if (action.type === "error" && action.failure?.kind === "signIn")
-                    void noteSignedOut(agentRef.current.type, profile?.configPath).catch(swallow("mark agent signed out"));
+                    void noteSignedOut(agentRef.current.type, profileRef.current?.configPath).catch(swallow("mark agent signed out"));
             }
             if (event.kind === "status") noteEnd(event);
         };
@@ -190,7 +179,7 @@ export function useAcpSession({
                 /* A chat the core kept running through a reload or a quit is
                    taken up where it is: its replay rebuilds the transcript the
                    same way a resumed session's history does. */
-                const attach = () => acpApi.attach({ agentId: current.id, provider: current.type, cwd, configPath: profile?.configPath });
+                const attach = () => acpApi.attach({ agentId: current.id, provider: current.type, cwd, configPath: profileRef.current?.configPath });
                 let attached = await attach();
                 if (!mounted) return;
                 if (attached.status !== "live") {
@@ -244,25 +233,9 @@ export function useAcpSession({
             updateTimerRef.current = null;
             queuedUpdatesRef.current = [];
             controller.abort();
-            if (takeMove(agent.id, agentRef.current.profileId)) reattachingRef.current = true;
             lifecycleRef.current = lifecycle;
         };
-    }, [
-        active,
-        agent.id,
-        agent.type,
-        agent.profileId,
-        agent.modelProvider,
-        agent.executablePath,
-        cwd,
-        profile?.configPath,
-        profile?.executablePath,
-        environmentKeys,
-        restartKey,
-        foldMemory,
-        dispatch,
-        updateRecovery,
-    ]);
+    }, [active, agent.id, agent.type, agent.modelProvider, cwd, restartKey, foldMemory, dispatch, updateRecovery]);
 
     useEffect(() => {
         const sessionId = sessionIdRef.current;

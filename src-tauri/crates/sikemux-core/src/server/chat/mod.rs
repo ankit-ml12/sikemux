@@ -312,10 +312,7 @@ impl Chat {
         }
         if kind == ChatEventKind::SessionUpdate {
             self.note_tool_call(&payload);
-            let title = feed::session_title(&payload);
-            if let (Some(core), true) = (self.core.upgrade(), title.is_some()) {
-                super::workspace::retitle(&core, self.agent_id(), title, false);
-            }
+            self.note_session(&payload);
         }
         self.feed.emit(kind, payload);
         if kind == ChatEventKind::SessionUpdate {
@@ -323,6 +320,29 @@ impl Chat {
         } else {
             self.publish_state();
         }
+    }
+
+    /// Keeps on the agent's record what the session says of it: the title the
+    /// agent gave it, and the account it moved to.
+    fn note_session(&self, payload: &Value) {
+        let kind = payload
+            .pointer("/update/sessionUpdate")
+            .and_then(Value::as_str);
+        if !matches!(kind, Some("session_info_update" | "account_switched")) {
+            return;
+        }
+        let Some(core) = self.core.upgrade() else {
+            return;
+        };
+        if let Some(account) = payload.pointer("/update/account").and_then(Value::as_str) {
+            let patch =
+                serde_json::Map::from_iter([("profileId".to_owned(), Value::from(account))]);
+            if core.workspaces.update_agent(self.agent_id(), patch).is_ok() {
+                core.publish_device_view();
+            }
+        }
+        let title = feed::session_title(payload);
+        super::workspace::retitle(&core, self.agent_id(), title, false);
     }
 
     /// What the chat is doing, in the words every app shows an agent by.
@@ -1951,11 +1971,17 @@ pub(crate) async fn letter(core: &Core, agent_id: &str, text: String) -> CoreRes
     answer.await.map_err(|_| CoreError::from(STOPPED))
 }
 
+/// Moves the agent's chat to `account`, a turn at work carrying on there. An
+/// agent with no chat running starts on it next time.
 pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) -> CoreResult<()> {
     validate_account(&account)?;
-    core.chats
-        .running(agent_id)?
-        .send(ChatCommand::SwitchAccount { account })
+    if let Some(chat) = core.chats.get(agent_id) {
+        return chat.send(ChatCommand::SwitchAccount { account });
+    }
+    let patch = serde_json::Map::from_iter([("profileId".to_owned(), Value::from(account.id))]);
+    core.workspaces.update_agent(agent_id, patch)?;
+    core.publish_device_view();
+    Ok(())
 }
 
 /// Stops the running turn. The messages waiting behind it go back to the

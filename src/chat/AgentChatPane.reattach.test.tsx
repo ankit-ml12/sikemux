@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
     stop: vi.fn(async () => {}),
     switchAccount: vi.fn(async () => {}),
     attachAgentSession: vi.fn(),
-    setAgentAccount: vi.fn(),
 }));
 
 vi.mock("../api/agents", () => ({
@@ -43,7 +42,6 @@ vi.mock("../api/acp", () => ({
 vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     attachAgentSession: mocks.attachAgentSession,
-    setAgentAccount: mocks.setAgentAccount,
     setAgentPermissionMode: vi.fn(),
     setAgentModelPreferences: vi.fn(),
     setAgentTitle: vi.fn(),
@@ -210,12 +208,12 @@ describe("AgentChatPane with a chat the core kept", () => {
 
         const work: ProviderProfile = { id: "work", name: "Work", provider: "claude", accent: "#000", configPath: "~/.claude-work" };
         moveChat(agent, work);
-        await waitFor(() => expect(mocks.setAgentAccount).toHaveBeenCalledWith(agent.id, "work"));
         expect(mocks.switchAccount).toHaveBeenCalledWith(agent.id, "claude", { id: "work", label: "Work", configPath: "~/.claude-work" });
         view.rerender(<AgentChatPane agent={{ ...agent, profileId: "work" }} profile={work} cwd="/repo" active visible onBusyChange={() => {}} />);
         measure();
+        await act(async () => {});
 
-        await waitFor(() => expect(mocks.attach).toHaveBeenCalledTimes(2));
+        expect(mocks.attach).toHaveBeenCalledTimes(1);
         await showsText("Still working on it");
         expect(mocks.stop).not.toHaveBeenCalled();
         expect(mocks.startChat).not.toHaveBeenCalled();
