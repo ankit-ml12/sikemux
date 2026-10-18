@@ -162,4 +162,17 @@ describe("the Vercel pane", () => {
         expect(screen.getByText("production, preview")).toBeInTheDocument();
         expect(screen.getByText("Names only. Values stay in Vercel.")).toBeInTheDocument();
     });
+
+    it("rolls production back to the deployment before it once the person confirms", async () => {
+        const live = { ...ready, id: "dpl_live", target: "production" as const, message: "Ship the redesign" };
+        const before = { ...ready, id: "dpl_before", target: "production" as const, message: "Last week's build" };
+        api.deployments.mockResolvedValue([live, failed, before]);
+        renderPane();
+        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
+        expect(await screen.findByText("fix-nav · abc1234 · Ship the redesign")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Instant Rollback" }));
+        await waitFor(() => expect(useDialogs.getState().dialog).toMatchObject({ kind: "confirm", title: "Roll back production?" }));
+        act(() => acceptDialog(useDialogs.getState().dialog!.id));
+        await waitFor(() => expect(api.promote).toHaveBeenCalledWith("team_1", "dpl_before"));
+    });
 });
