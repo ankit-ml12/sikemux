@@ -26,7 +26,6 @@ if (process.env.SIKEMUX_SHOWCASE) {
     '@clerk/expo/apple': path.join(showcase, 'clerk.ts'),
     '@clerk/expo/google': path.join(showcase, 'clerk.ts'),
     '@clerk/expo/resource-cache': path.join(showcase, 'clerk.ts'),
-    '@clerk/expo/token-cache': path.join(showcase, 'clerk.ts'),
   };
   config.watchFolders.push(showcase);
   const resolve = config.resolver.resolveRequest;

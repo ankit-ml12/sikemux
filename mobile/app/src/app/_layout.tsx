@@ -9,9 +9,9 @@ import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
 
 import { ClerkProvider, useAuth } from '@clerk/expo';
 import { resourceCache } from '@clerk/expo/resource-cache';
-import { tokenCache } from '@clerk/expo/token-cache';
 
 import { CLERK_PUBLISHABLE_KEY } from '@/account/config';
+import { tokenCache } from '@/account/tokenCache';
 import { useAccountHostsFeed, useAccountSequence, useConnectArrivals } from '@/account/session';
 import { goOffline } from '@/device/identity';
 import { useDevices } from '@/devices/hub';

@@ -39,5 +39,4 @@ export const useSignIn = () => ({ isLoaded: true, signIn: null, setActive: async
 export const useSignUp = () => ({ isLoaded: true, signUp: null, setActive: async () => {} });
 export const useSignInWithApple = () => ({ startAppleAuthenticationFlow: async () => ({ createdSessionId: null }) });
 export const useSignInWithGoogle = () => ({ startGoogleAuthenticationFlow: async () => ({ createdSessionId: null }) });
-export const tokenCache = undefined;
 export const resourceCache = undefined;
