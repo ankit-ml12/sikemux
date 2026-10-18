@@ -44,6 +44,7 @@ const project: VercelProject = {
     gitProvider: "github",
     productionBranch: "main",
     production: { id: "dpl_live", url: "https://web.acme.dev", state: "READY", createdAt: Date.now() - 3_600_000 },
+    latestProduction: null,
 };
 
 const failed: VercelDeployment = {
@@ -170,9 +171,18 @@ describe("the Vercel pane", () => {
         renderPane();
         fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
         expect(await screen.findByText("fix-nav · abc1234 · Ship the redesign")).toBeInTheDocument();
+        expect(screen.queryByText(/still serves/)).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Instant Rollback" }));
         await waitFor(() => expect(useDialogs.getState().dialog).toMatchObject({ kind: "confirm", title: "Roll back production?" }));
         act(() => acceptDialog(useDialogs.getState().dialog!.id));
         await waitFor(() => expect(api.promote).toHaveBeenCalledWith("team_1", "dpl_before"));
+    });
+
+    it("says when a newer production build failed while the one before it still serves", async () => {
+        api.projects.mockResolvedValue([{ ...project, latestProduction: { id: "dpl_bad", state: "ERROR", createdAt: Date.now() - 120_000 } }]);
+        renderPane();
+        fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev/ }));
+        fireEvent.click(await screen.findByRole("button", { name: /latest production build is error/ }));
+        expect(await screen.findByText("Type error: nav is not defined")).toBeInTheDocument();
     });
 });

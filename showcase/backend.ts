@@ -17,6 +17,7 @@ import { BRANCHES, FILE_DIFFS, GIT_STATUS } from "./world/git";
 import { RUNDECK, rundeckStream } from "./world/rundeck";
 import { GITHUB } from "./world/github";
 import { JIRA } from "./world/jira";
+import { VERCEL } from "./world/vercel";
 import { SIGNOZ, signozTail } from "./world/signoz";
 import { AWS, awsLogLines } from "./world/aws";
 import { demoActivity } from "./world/activity";
@@ -279,6 +280,7 @@ export class ShowcaseBackend implements IpcTransport {
           ["bruno", "Bruno"],
           ["github", "GitHub"],
           ["database", "Database"],
+          ["vercel", "Vercel"],
         ].map(([id, name]) => ({
           id: `sikemux.${id}`,
           name,
@@ -638,6 +640,7 @@ export class ShowcaseBackend implements IpcTransport {
       "sikemux.github": GITHUB,
       "sikemux.database": DATABASE,
       "sikemux.jira": JIRA,
+      "sikemux.vercel": VERCEL,
     };
     this.on("plugin_call", ({ plugin, method, params }) => {
       const answer = plugins[plugin as string]?.[method as string];

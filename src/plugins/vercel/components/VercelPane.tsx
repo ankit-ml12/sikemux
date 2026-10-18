@@ -253,6 +253,13 @@ function ProductionCard({ active, team, project, onOpen }: { active: boolean; te
                     )}
                 </span>
             </header>
+            {project.latestProduction && (
+                <button type="button" className="vercel-production-latest" onClick={() => onOpen(project.latestProduction!.id)}>
+                    <StateDot state={project.latestProduction.state} />
+                    The latest production build is {stateLabel(project.latestProduction.state).toLowerCase()} (
+                    {formatAgo(project.latestProduction.createdAt)}); this one still serves.
+                </button>
+            )}
             <dl className="vercel-production-facts">
                 <div>
                     <dt>Domain</dt>

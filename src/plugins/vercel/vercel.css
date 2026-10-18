@@ -349,3 +349,20 @@ button.vercel-row:hover {
     color: var(--text-primary);
     overflow-wrap: anywhere;
 }
+
+.vercel-production-latest {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-xs);
+    text-align: left;
+    color: var(--text-secondary);
+}
+
+.vercel-production-latest:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}

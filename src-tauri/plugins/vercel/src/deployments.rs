@@ -152,18 +152,24 @@ pub async fn detail(data_dir: &Path, input: DeploymentRef) -> VercelResult<Value
     Ok(deployment(&read(&session, &input.id).await?))
 }
 
-/// Drops the colour codes a build prints, which mean nothing outside a terminal.
+/// Drops the colour codes and other control characters a build prints, which mean nothing outside a terminal.
 pub fn plain(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '\u{1b}' && chars.peek() == Some(&'[') {
-            chars.next();
-            for c in chars.by_ref() {
-                if c.is_ascii_alphabetic() {
-                    break;
+        if c == '\u{1b}' {
+            if chars.next_if_eq(&'[').is_some() {
+                for c in chars.by_ref() {
+                    if c.is_ascii_alphabetic() {
+                        break;
+                    }
                 }
+            } else {
+                chars.next();
             }
+            continue;
+        }
+        if c.is_control() && c != '\t' {
             continue;
         }
         out.push(c);
@@ -350,7 +356,7 @@ mod tests {
             { "type": "delimiter", "created": 1, "payload": { "text": "Build" } },
             { "type": "command", "created": 2, "payload": { "text": "npm run build" } },
             { "type": "stdout", "created": 3, "payload": { "text": "\u{1b}[32mok\u{1b}[0m\nnext" } },
-            { "type": "stderr", "created": 4, "text": "Error: boom" }
+            { "type": "stderr", "created": 4, "text": "Error: boom\u{7}\r" }
         ]);
         let lines = log_lines(&events);
         let texts: Vec<&str> = lines
