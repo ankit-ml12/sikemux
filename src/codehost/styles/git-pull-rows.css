@@ -253,48 +253,68 @@
     height: 20px;
     padding: 0 var(--space-2);
 }
-/* The issue's details page: GitHub's sidebar, as sections under small labels. */
+/* The issue's details page: GitHub's sidebar, each fact a row with its name beside its value, a hairline between. */
 .issue-facts {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    padding: var(--space-3);
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
 }
-.issue-facts > section {
+.issue-fact {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-1h);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 40px;
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border);
     font-size: var(--text-xs);
 }
-.issue-facts-label {
-    margin: 0;
+.issue-fact-name {
+    flex: none;
     color: var(--text-tertiary);
-    font-size: var(--text-2xs);
-    font-weight: var(--weight-medium);
 }
-.issue-facts-person,
-.issue-facts-link {
+.issue-fact-value {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--space-1h);
+    min-width: 0;
+    color: var(--text-primary);
+}
+.issue-fact-person {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1h);
-    max-width: 100%;
+}
+.issue-fact-faces > .gha-avatar,
+.issue-fact-person > .gha-avatar {
+    width: 18px;
+    height: 18px;
+}
+.issue-fact-faces {
+    gap: 0;
+}
+.issue-fact-faces > .gha-avatar + .gha-avatar {
+    margin-left: -5px;
+    box-shadow: 0 0 0 2px var(--surface);
+}
+.issue-fact-block {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+}
+.issue-fact-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    min-width: 0;
     color: var(--text-primary);
 }
-.issue-facts-link-title {
+.issue-fact-link-title {
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-.issue-facts-faces {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-}
-.issue-facts-faces > .gha-avatar,
-.issue-facts-person > .gha-avatar {
-    width: 20px;
-    height: 20px;
 }

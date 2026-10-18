@@ -1,7 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { EmptyState, IconChevron, IconExternal, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
+import {
+    EmptyState,
+    IconChevron,
+    IconExternal,
+    IconInfo,
+    IconPlus,
+    SkeletonRows,
+    StaleNotice,
+    Tooltip,
+} from "../../plugin-api/ui";
 import { SwipePages } from "../../ui/SwipePages";
 import { SectionIcon } from "./ActionsIcon";
 import { GitColumns } from "../../git/GitColumns";
@@ -97,7 +106,7 @@ function IssueRow({ issue, now, selected, onOpen }: { issue: Issue; now: number;
     );
 }
 
-/** What GitHub keeps in an issue's sidebar: who it is on, its labels, the pull requests that mention it and who took part. */
+/** What GitHub keeps in an issue's sidebar, each fact a row with its name beside it: who it is on, its labels, who took part and the pull requests that mention it. */
 function IssueFacts({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
     const issue = useResourceEnabled(active, issueR, repo, number).data;
     const timeline = useResourceEnabled(active, timelineR, repo, number, "issue").data ?? [];
@@ -109,46 +118,54 @@ function IssueFacts({ repo, number, active }: { repo: RepoRef; number: number; a
         ).values(),
     ];
     return (
-        <div className="git-list issue-facts">
-            <section>
-                <h3 className="issue-facts-label">Assignees</h3>
-                {issue.assignees.length === 0 ? (
-                    <span className="gha-dim">No one</span>
-                ) : (
-                    issue.assignees.map((login) => (
-                        <span key={login} className="issue-facts-person">
-                            <Face login={login} url={null} />
-                            {login}
-                        </span>
-                    ))
-                )}
-            </section>
-            <section>
-                <h3 className="issue-facts-label">Labels</h3>
-                {issue.labels.length === 0 ? <span className="gha-dim">None yet</span> : <Labels labels={issue.labels} />}
-            </section>
-            <section>
-                <h3 className="issue-facts-label">Linked pull requests</h3>
-                {linked.length === 0 ? (
-                    <span className="gha-dim">None</span>
-                ) : (
-                    linked.map((item) => (
-                        <span key={item.source?.number} className="issue-facts-link">
-                            <StateMark kind="pull" state={item.source?.merged ? "merged" : (item.source?.state ?? "open")} size={13} />
-                            <span className="issue-facts-link-title">{item.subject}</span>
-                            <span className="gha-dim">#{item.source?.number}</span>
-                        </span>
-                    ))
-                )}
-            </section>
-            <section>
-                <h3 className="issue-facts-label">Participants</h3>
-                <span className="issue-facts-faces">
+        <div className="issue-facts">
+            <div className="issue-fact">
+                <span className="issue-fact-name">Assignees</span>
+                <span className="issue-fact-value">
+                    {issue.assignees.length === 0 ? (
+                        <span className="gha-dim">No one</span>
+                    ) : (
+                        issue.assignees.map((login) => (
+                            <span key={login} className="issue-fact-person">
+                                <Face login={login} url={null} />
+                                {login}
+                            </span>
+                        ))
+                    )}
+                </span>
+            </div>
+            <div className="issue-fact">
+                <span className="issue-fact-name">Labels</span>
+                <span className="issue-fact-value">
+                    {issue.labels.length === 0 ? <span className="gha-dim">None</span> : <Labels labels={issue.labels} />}
+                </span>
+            </div>
+            <div className="issue-fact">
+                <span className="issue-fact-name">Participants</span>
+                <span className="issue-fact-value issue-fact-faces" title={people.join(", ")}>
                     {people.map((login) => (
                         <Face key={login} login={login} url={null} />
                     ))}
                 </span>
-            </section>
+            </div>
+            <div className="issue-fact">
+                <span className="issue-fact-name">Comments</span>
+                <span className="issue-fact-value">{issue.comments}</span>
+            </div>
+            <div className="issue-fact issue-fact-block">
+                <span className="issue-fact-name">Linked pull requests</span>
+                {linked.length === 0 ? (
+                    <span className="gha-dim">None</span>
+                ) : (
+                    linked.map((item) => (
+                        <span key={item.source?.number} className="issue-fact-link">
+                            <StateMark kind="pull" state={item.source?.merged ? "merged" : (item.source?.state ?? "open")} size={13} />
+                            <span className="issue-fact-link-title">{item.subject}</span>
+                            <span className="gha-dim">#{item.source?.number}</span>
+                        </span>
+                    ))
+                )}
+            </div>
         </div>
     );
 }
@@ -249,7 +266,7 @@ interface Props {
 
 export function IssuesView({ paneId, repo, listState, item, composing, page, cwd, active }: Props) {
     const issues = useResourceEnabled(active && !composing, issuesR, repo, listState, page);
-    const [sidePage, setSidePage] = useState("list");
+    const [sidePage, setSidePage] = useState("facts");
     const counts = useResourceEnabled(active && !composing && item === null, issueCountsR, repo).data;
     const now = useNow(false);
 
@@ -365,6 +382,12 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                 onChange={setSidePage}
                 pages={[
                     {
+                        id: "facts",
+                        label: "Details",
+                        icon: <IconInfo size={14} />,
+                        content: <IssueFacts repo={repo} number={item} active={active} />,
+                    },
+                    {
                         id: "list",
                         label: "Issues",
                         icon: <SectionIcon section="issues" size={14} />,
@@ -381,12 +404,6 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                                 ))}
                             </div>
                         ),
-                    },
-                    {
-                        id: "facts",
-                        label: "Details",
-                        icon: <IconInfo size={14} />,
-                        content: <IssueFacts repo={repo} number={item} active={active} />,
                     },
                 ]}
             />
