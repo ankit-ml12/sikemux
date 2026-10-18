@@ -1,7 +1,52 @@
+/* Vercel's own colours, light or dark as the person's theme is. The app's colour names are
+   set to them inside the pane, so the controls it borrows from the app match too. */
+.vercel-pane[data-scheme="light"] {
+    --v-page: #fafafa;
+    --v-ready: #50e3c2;
+    --v-error: #e5484d;
+    --v-building: #f5a623;
+    --v-blue: #0070f3;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-sunken: #fafafa;
+    --surface-hover: #f2f2f2;
+    --surface-chosen: #ebebeb;
+    --border: #ebebeb;
+    --border-strong: #d9d9d9;
+    --border-selected: #a8a8a8;
+    --text-primary: #171717;
+    --text-secondary: #666666;
+    --text-tertiary: #8f8f8f;
+    --danger: #e5484d;
+    color-scheme: light;
+}
+
+.vercel-pane[data-scheme="dark"] {
+    --v-page: #000000;
+    --v-ready: #50e3c2;
+    --v-error: #ff6166;
+    --v-building: #f5a623;
+    --v-blue: #0072f5;
+    --surface: #0a0a0a;
+    --surface-raised: #0a0a0a;
+    --surface-sunken: #0a0a0a;
+    --surface-hover: #1a1a1a;
+    --surface-chosen: #232323;
+    --border: #2e2e2e;
+    --border-strong: #3d3d3d;
+    --border-selected: #5c5c5c;
+    --text-primary: #ededed;
+    --text-secondary: #a1a1a1;
+    --text-tertiary: #878787;
+    --danger: #ff6166;
+    color-scheme: dark;
+}
+
 .vercel-pane {
     display: flex;
     height: 100%;
     min-height: 0;
+    background: var(--v-page);
     color: var(--text-primary);
     font-size: var(--text-sm);
 }
@@ -290,17 +335,17 @@
 }
 
 .vercel-dot.ready {
-    background: #50e3c2;
+    background: var(--v-ready);
 }
 
 .vercel-dot.error {
-    background: #ee5555;
+    background: var(--v-error);
 }
 
 .vercel-dot.building,
 .vercel-dot.initializing,
 .vercel-dot.queued {
-    background: #f5a623;
+    background: var(--v-building);
     animation: vercel-pulse 1.2s ease-in-out infinite;
 }
 
@@ -335,8 +380,8 @@
 }
 
 .vercel-env.current {
-    border-color: #0070f3;
-    background: #0070f3;
+    border-color: var(--v-blue);
+    background: var(--v-blue);
     color: #fff;
 }
 
@@ -746,4 +791,10 @@
     flex: 1;
     font-size: var(--text-sm);
     font-weight: var(--weight-semibold);
+}
+
+.vercel-source-part > .vercel-mono {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
