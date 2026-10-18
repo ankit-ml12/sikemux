@@ -1,17 +1,18 @@
-//! What waits on the person, as the core ranks it for every device. The app
-//! watches the core's device view and hands the page its inbox whenever it
-//! changes.
+//! What waits on the person, as the core ranks it for every device, and the
+//! workspace every client shares. The app watches the core's device view and
+//! hands the page each of them whenever it changes.
 
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::Request;
+use sikemux_core::protocol::{DeviceView, Request};
 use tauri::{AppHandle, Emitter};
 
 use crate::pty::core_error;
 
-const CHANGED_EVENT: &str = "inbox_changed";
+const INBOX_EVENT: &str = "inbox_changed";
+const WORKSPACE_EVENT: &str = "workspace_changed";
 
 /// Asks a core the app just connected to for its device view as it changes.
 pub(crate) async fn connected(client: &Arc<CoreClient>) {
@@ -28,20 +29,28 @@ pub(crate) async fn connected(client: &Arc<CoreClient>) {
     }
 }
 
-/// The inbox last handed to the page, so an unchanged one is not sent again.
+/// The inbox and workspace last handed to the page, so an unchanged one is
+/// not sent again.
 #[derive(Default)]
-pub(crate) struct LastInbox(Mutex<Value>);
+pub(crate) struct LastView {
+    inbox: Mutex<Value>,
+    workspace: Mutex<Value>,
+}
 
-impl LastInbox {
-    pub(crate) fn changed(&self, app: &AppHandle, inbox: Value) {
-        let Ok(mut last) = self.0.lock() else {
-            return;
-        };
-        if *last == inbox {
-            return;
+impl LastView {
+    pub(crate) fn changed(&self, app: &AppHandle, view: DeviceView) {
+        emit_changed(app, &self.inbox, INBOX_EVENT, view.inbox);
+        if let Ok(workspace) = serde_json::to_value(view.workspace) {
+            emit_changed(app, &self.workspace, WORKSPACE_EVENT, workspace);
         }
-        if app.emit_to("main", CHANGED_EVENT, &inbox).is_ok() {
-            *last = inbox;
-        }
+    }
+}
+
+fn emit_changed(app: &AppHandle, last: &Mutex<Value>, event: &str, value: Value) {
+    let Ok(mut last) = last.lock() else {
+        return;
+    };
+    if *last != value && app.emit_to("main", event, &value).is_ok() {
+        *last = value;
     }
 }

@@ -114,7 +114,7 @@ export function setPluginEnabled(id: string, enabled: boolean): void {
         const st = getState();
         for (const sessionId of st.sessionOrder) {
             const kind = st.sessions[sessionId]?.kind;
-            if (kind && isPluginKind(kind) && pluginIdOf(kind) === id) closeSessionNow(sessionId);
+            if (kind && isPluginKind(kind) && pluginIdOf(kind) === id) dropSession(sessionId);
         }
     }
     setState((s) => ({ disabledPlugins: enabled ? s.disabledPlugins.filter((known) => known !== id) : [...new Set([...s.disabledPlugins, id])] }));
@@ -228,11 +228,12 @@ export function closeSession(id: string): void {
     if (!st.sessions[id] || st.sessionOrder.length <= 1) return;
     const name = st.sessions[id].name;
     guardStopAgents(agentIdsOf(st, id), `Close ${name}?`, () =>
-        guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id)),
+        guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => dropSession(id)),
     );
 }
 
-function closeSessionNow(id: string): void {
+/** Closes a session without asking, such as a project another client removed. */
+export function dropSession(id: string): void {
     const beforeClose = getState();
     const closingCwd = beforeClose.sessions[id]?.cwd;
     const closingAgentIds = agentIdsOf(beforeClose, id);

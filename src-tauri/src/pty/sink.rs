@@ -8,7 +8,7 @@ use sikemux_pty::shell_protocol::{SshLink, PTY_SHELL_METADATA_EVENT};
 use sikemux_pty::task::TaskProcessExit;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::inbox::LastInbox;
+use crate::inbox::LastView;
 use crate::observability::{global_observability, Metadata, ScalarValue};
 
 use super::streams::StreamTable;
@@ -53,7 +53,7 @@ struct PtyExited {
 pub(super) struct AppSink {
     app: AppHandle,
     streams: Arc<StreamTable>,
-    inbox: LastInbox,
+    view: LastView,
 }
 
 impl AppSink {
@@ -61,7 +61,7 @@ impl AppSink {
         Self {
             app,
             streams,
-            inbox: LastInbox::default(),
+            view: LastView::default(),
         }
     }
 
@@ -202,7 +202,7 @@ impl EventSink for AppSink {
                 crate::harness::bring_to_front(&self.app);
                 self.emit("focus_agent", agent_id);
             }
-            Event::DeviceView { view } => self.inbox.changed(&self.app, view.inbox),
+            Event::DeviceView { view } => self.view.changed(&self.app, view),
             Event::Changed {
                 topic,
                 project,

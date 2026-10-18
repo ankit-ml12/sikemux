@@ -4,17 +4,14 @@ import type { KeybindingOverrides } from "../../commands/keybindings";
 import type { HeldRelease } from "../../api/releases";
 import type {
     Agent,
-    AgentPermissionMode,
     AgentType,
     ProjectRoot,
-    ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
     RailDensity,
     MidTurnSend,
     TabRailScope,
     TabRailPage,
-    PinnedChat,
     RecentEntry,
     Session,
     Window,
@@ -22,7 +19,8 @@ import type {
 import type { EditorPaneView } from "./view";
 import type { PersistedWorkbenchItemEnvelope } from "../../workbench/registry";
 
-export type PersistedSession = Session;
+/** A project's name and folder are the core's, so a window keeps only which of its tabs is in front. */
+export type PersistedSession = Session | Pick<Session, "id" | "kind" | "activeWindowId">;
 
 /** Safe restart record. Startup commands and runtime evidence are never serialized. */
 export type PersistedAgent = Pick<
@@ -52,10 +50,6 @@ export interface PersistedSnapshot {
     version: number;
     sessions: PersistedSession[];
     windowsBySession: Record<string, Window[]>;
-    /** Launch records for the agent windows above; the window says which session owns it. */
-    agents: PersistedAgent[];
-    /** v3-v7 input; agents lived beside their session rather than in a window. */
-    agentsBySession?: Record<string, PersistedAgent[]>;
     sessionOrder: string[];
     activeSessionId: string;
     recent: RecentEntry[];
@@ -93,8 +87,6 @@ export interface PersistedPrefs {
     pluginSettings?: Record<string, unknown>;
     disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
-    spaces?: ProjectSpace[];
-    projectSpaces?: Record<string, string>;
     activeSpaceId?: string | null;
     agentNotifications?: boolean;
     notch?: unknown;
@@ -108,7 +100,6 @@ export interface PersistedPrefs {
     tabRailAllAgents?: boolean;
     tabRailScope?: TabRailScope;
     tabRailPage?: TabRailPage;
-    pinnedChats?: PinnedChat[];
     onboardingComplete?: boolean;
     lastSeenVersion?: string;
     customCommands?: CustomCommand[];
@@ -119,7 +110,6 @@ export interface PersistedPrefs {
     /** Non-secret provider launch profiles. Credential values are never part of this shape. */
     providerProfiles?: ProviderProfile[];
     selectedProviderProfileIds?: ProviderProfileSelection;
-    defaultAgentPermissionMode?: AgentPermissionMode;
     lastAgentType?: AgentType | null;
     languageServerTrust?: Record<string, boolean>;
     agentWorktreeDefaults?: Record<string, boolean>;

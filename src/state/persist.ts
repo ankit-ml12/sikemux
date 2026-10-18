@@ -8,6 +8,7 @@ import { clampEditorTextScale } from "../editor/textScale";
 import { isTheme } from "../themes";
 import { parseReleaseCredits } from "../api/releases";
 import type { AgentAccountBook } from "../api/agents";
+import type { ProjectInfo, Workspace, WorkspaceAgent } from "../api/generated/wire";
 import { normaliseKeybindingOverrides } from "../commands/keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
@@ -15,7 +16,7 @@ import { effectiveMode, normalizePermissionMode } from "../agents/agentLaunch";
 import { ACCOUNT_AGENT_TYPES, AGENT_TYPES, hasAccounts, isAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
 import { clampPaneStrength, mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
-import { agentInWindow } from "./selectors";
+import { agentInWindow, agentPaneId } from "./selectors";
 import { collectPanes, newId, removePane } from "./layout";
 import { BROWSER_ACTIVE, deskEditorId, deskView, fileKey, simulatorKey } from "./desks";
 import { agentExecutablePath, relaunchSpec } from "./commands/agentLaunchCommand";
@@ -24,7 +25,7 @@ import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
 import { isCoreSessionId, isSessionKind, validatePersistedLayout } from "./persistValidation";
 import { isPluginId, isPluginKind } from "../plugins/kinds";
-import { DEFAULT_SPACE_ICON, isSpaceIcon, spaceName, type SpaceIcon } from "./projectSpaces";
+import { isSpaceIcon, spaceName } from "./projectSpaces";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
     Agent,
@@ -75,7 +76,6 @@ function deriveRole(w: Window): WindowRole {
 export const VERSION = 21;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
-const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
 const PLUGIN_KIND_MIGRATION_VERSION = 10;
 const PLUGIN_SETTINGS_MIGRATION_VERSION = 11;
 const ONE_BRUNO_SESSION_MIGRATION_VERSION = 12;
@@ -85,7 +85,6 @@ const RUNDECK_GROUPS_MIGRATION_VERSION = 15;
 const DESK_MIGRATION_VERSION = 16;
 const GITHUB_IN_GIT_PANE_MIGRATION_VERSION = 17;
 const CORE_SESSION_MIGRATION_VERSION = 18;
-const SPACE_ICON_MIGRATION_VERSION = 19;
 const PANE_TITLE_MIGRATION_VERSION = 20;
 const TAB_RAIL_MIGRATION_VERSION = 21;
 const RETRY_MS = 1500;
@@ -135,8 +134,6 @@ const PERSISTED_KEYS = [
     "pluginSettings",
     "disabledPlugins",
     "restoreAgentTabs",
-    "spaces",
-    "projectSpaces",
     "activeSpaceId",
     "agentNotifications",
     "notch",
@@ -150,7 +147,6 @@ const PERSISTED_KEYS = [
     "tabRailAllAgents",
     "tabRailScope",
     "tabRailPage",
-    "pinnedChats",
     "onboardingComplete",
     "lastSeenVersion",
     "customCommands",
@@ -158,7 +154,6 @@ const PERSISTED_KEYS = [
     "shareUsageData",
     "lastReleaseNotes",
     "recentCommandKeys",
-    "defaultAgentPermissionMode",
     "lastAgentType",
     "languageServerTrust",
     "agentWorktreeDefaults",
@@ -207,8 +202,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         pluginSettings: s.pluginSettings,
         disabledPlugins: [...s.disabledPlugins],
         restoreAgentTabs: s.restoreAgentTabs,
-        spaces: [...s.spaces],
-        projectSpaces: s.projectSpaces,
         activeSpaceId: s.activeSpaceId,
         agentNotifications: s.agentNotifications,
         notch: s.notch,
@@ -222,7 +215,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         tabRailAllAgents: s.tabRailAllAgents,
         tabRailScope: s.tabRailScope,
         tabRailPage: s.tabRailPage,
-        pinnedChats: s.pinnedChats,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
         customCommands: s.customCommands,
@@ -230,7 +222,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         shareUsageData: s.shareUsageData,
         lastReleaseNotes: s.lastReleaseNotes,
         recentCommandKeys: s.recentCommandKeys,
-        defaultAgentPermissionMode: s.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
         lastAgentType: s.lastAgentType,
         languageServerTrust: s.languageServerTrust,
         agentWorktreeDefaults: s.agentWorktreeDefaults,
@@ -439,7 +430,6 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (typeof value.title !== "string" || !value.title.trim()) return null;
     const resumeId = typeof value.resumeId === "string" && value.resumeId.trim() ? value.resumeId : undefined;
     const ptyId = isCoreSessionId(value.ptyId) ? value.ptyId : undefined;
-    if (!resumeId && ptyId === undefined) return null;
     const agent: PersistedAgent = { id: value.id, type: value.type as AgentType, title: value.title.slice(0, 200) };
     if (resumeId) agent.resumeId = resumeId;
     if (ptyId !== undefined) agent.ptyId = ptyId;
@@ -477,6 +467,11 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     return agent;
 }
 
+/** An agent the core keeps, as the store holds it. */
+export function agentFromCore(record: WorkspaceAgent): PersistedAgent | null {
+    return toPersistedAgent({ ...record, type: record.provider });
+}
+
 export function toAgentBuddy(value: unknown): AgentBuddy | null {
     if (!isRecord(value) || !Number.isInteger(value.color) || (value.color as number) < 0 || (value.color as number) > 63) return null;
     const buddy: AgentBuddy = { color: value.color as number };
@@ -486,12 +481,13 @@ export function toAgentBuddy(value: unknown): AgentBuddy | null {
     return buddy;
 }
 
+/** A project's name and folder are the core's; this window keeps only which of its tabs is in front. */
 function persistedSession(sess: Session): PersistedSession {
-    return sess;
+    return sess.kind === "project" ? { id: sess.id, kind: sess.kind, activeWindowId: sess.activeWindowId } : sess;
 }
 
-/** Startup commands are rebuilt from the type and resume id on restore, never saved. */
-function persistedAgent(agent: Agent): PersistedAgent {
+/** The fields of an agent the core keeps. Startup commands are rebuilt from the type and resume id, never saved. */
+export function persistedAgent(agent: Agent): PersistedAgent {
     const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
     return {
         id: agent.id,
@@ -541,8 +537,7 @@ function withoutEmptyDesks(window: Window): Window | null {
 function durableWindow(s: StoreState, id: string): Window | null {
     const window = s.windows[id];
     if (!window || window.transient) return null;
-    const agent = agentInWindow(s.agents, window);
-    if (window.role === "agent" && !agent?.resumeId && agent?.ptyId === undefined) return null;
+    if (window.role === "agent" && !agentInWindow(s.agents, window)) return null;
     return withoutEmptyDesks(window);
 }
 
@@ -571,7 +566,6 @@ function snapshot(): string {
             return persistedSession({ ...sess, activeWindowId });
         });
     const windowsBySession: Record<string, Window[]> = {};
-    const agents: PersistedAgent[] = [];
     const itemStates: PersistedSnapshot["itemStates"] = {};
     for (const sess of sessions) {
         windowsBySession[sess.id] = (s.windowsBySession[sess.id] ?? []).flatMap((id) => {
@@ -579,8 +573,6 @@ function snapshot(): string {
             return window ? [window] : [];
         });
         for (const window of windowsBySession[sess.id]) {
-            const agent = agentInWindow(s.agents, window);
-            if (agent) agents.push(persistedAgent(agent));
             const pending = [window.root];
             while (pending.length > 0) {
                 const node = pending.pop()!;
@@ -601,7 +593,6 @@ function snapshot(): string {
         version: VERSION,
         sessions,
         windowsBySession,
-        agents,
         sessionOrder: sessions.map((s) => s.id),
         activeSessionId: s.activeSessionId,
         recent: s.recent,
@@ -689,75 +680,10 @@ function forgetCoreSessions(decoded: Record<string, unknown>): void {
             }
         }
     }
-    const agentRows = [
-        ...(Array.isArray(decoded.agents) ? decoded.agents : []),
-        ...Object.values(isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {}).flatMap((rows) => (Array.isArray(rows) ? rows : [])),
-    ];
-    for (const row of agentRows) if (isRecord(row)) delete row.ptyId;
 }
 
 /** Before v16 an agent's side pane held only its browser, as a "browser" pane whose saved state had no files. */
 /** Before v17 GitHub had a session of its own. It lives in each project's git pane now, so that session has nothing left to show. */
-const SPACE_ICON_FOR_EMOJI: Record<string, SpaceIcon> = {
-    "📁": "folder",
-    "📂": "folder",
-    "🗂️": "folder",
-    "👤": "user",
-    "🙂": "user",
-    "😀": "user",
-    "🌍": "globe",
-    "🌎": "globe",
-    "🌏": "globe",
-    "🌐": "globe",
-    "💻": "laptop",
-    "🖥️": "laptop",
-    "🏢": "building",
-    "🏬": "building",
-    "🏛️": "building",
-    "🏠": "home",
-    "🏡": "home",
-    "💼": "briefcase",
-    "🧑‍💻": "code",
-    "👨‍💻": "code",
-    "👩‍💻": "code",
-    "🧪": "flask",
-    "⚗️": "flask",
-    "🔬": "flask",
-    "🚀": "rocket",
-    "⭐": "star",
-    "🌟": "star",
-    "✨": "star",
-    "❤️": "heart",
-    "💜": "heart",
-    "💙": "heart",
-    "💚": "heart",
-    "🧡": "heart",
-    "💛": "heart",
-    "📚": "book",
-    "📖": "book",
-    "⚡": "bolt",
-    "🌱": "leaf",
-    "🌿": "leaf",
-    "🍃": "leaf",
-    "🌳": "leaf",
-    "📦": "cube",
-    "⌨️": "terminal",
-    "🎵": "music",
-    "🎶": "music",
-    "🎧": "music",
-    "🎸": "music",
-};
-
-/** Spaces used to take an emoji; a familiar one becomes the matching icon and any other becomes a folder. */
-function swapSpaceEmojiForIcons(decoded: Record<string, unknown>): void {
-    const spaces = isRecord(decoded.prefs) ? decoded.prefs.spaces : undefined;
-    if (!Array.isArray(spaces)) return;
-    for (const row of spaces) {
-        if (!isRecord(row) || typeof row.icon !== "string") continue;
-        row.icon = row.icon ? (SPACE_ICON_FOR_EMOJI[row.icon] ?? DEFAULT_SPACE_ICON) : "";
-    }
-}
-
 const PANE_TITLE_RENAMES: Record<string, string> = {
     shell: "Terminal",
     editor: "Files",
@@ -1003,7 +929,15 @@ export function adoptAgentAccounts(book: AgentAccountBook): void {
 }
 
 /** Applies the saved workspace, after the agent accounts the core keeps, which restoring its agents needs. */
-export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): HydrationResult {
+function projectSession(project: ProjectInfo, activeWindowId: string): Session {
+    return { id: project.id, name: project.name, kind: "project", cwd: project.path, pinned: project.pinned, activeWindowId };
+}
+
+/**
+ * Restores what this window saved of its own, around the workspace the core keeps: the projects, agents, spaces and
+ * pinned chats come from `workspace`, and the tabs, layout and settings from `raw`.
+ */
+export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, workspace?: Workspace): HydrationResult {
     if (accounts) adoptAgentAccounts(accounts);
     if (!raw) return "empty";
     let decoded: unknown;
@@ -1025,15 +959,21 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
     if (decoded.version < DESK_MIGRATION_VERSION) moveBrowserPanesOntoDesks(decoded);
     if (decoded.version < GITHUB_IN_GIT_PANE_MIGRATION_VERSION) closeGithubSessions(decoded);
     if (decoded.version < CORE_SESSION_MIGRATION_VERSION) forgetCoreSessions(decoded);
-    if (decoded.version < SPACE_ICON_MIGRATION_VERSION) swapSpaceEmojiForIcons(decoded);
     if (decoded.version < PANE_TITLE_MIGRATION_VERSION) capitalisePaneTitles(decoded);
     if (decoded.version < TAB_RAIL_MIGRATION_VERSION) renameAgentRailPrefs(decoded);
 
+    const projects = new Map((workspace?.projects ?? []).map((project) => [project.id, project]));
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
+        if (isRecord(row) && row.kind === "project") {
+            const project = typeof row.id === "string" ? projects.get(row.id) : undefined;
+            if (project) sessions[project.id] ??= projectSession(project, typeof row.activeWindowId === "string" ? row.activeWindowId : "");
+            continue;
+        }
         const session = toSession(row);
         if (session && !sessions[session.id]) sessions[session.id] = session;
     }
+    for (const project of projects.values()) sessions[project.id] ??= projectSession(project, "");
     if (Object.keys(sessions).length === 0) return "invalid";
 
     const windows: Record<string, Window> = {};
@@ -1065,30 +1005,13 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
     const cur = getState();
     const providerProfiles = cur.providerProfiles;
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
-    const spaces = normaliseSpaces(prefs.spaces);
-    // Before v8 an agent sat beside its session rather than in a window, and
-    // the session recorded which agent it was looking at. Each becomes a window
-    // here, and that focus becomes the active window.
-    const agentRows: Array<{ sid: string | null; row: unknown }> =
-        decoded.version >= 8
-            ? (Array.isArray(decoded.agents) ? decoded.agents : []).map((row) => ({ sid: null, row }))
-            : Object.entries(isRecord(decoded.agentsBySession) ? decoded.agentsBySession : {}).flatMap(([sid, rows]) =>
-                  Array.isArray(rows) ? rows.map((row) => ({ sid, row })) : [],
-              );
-    const legacyAgentFocus = new Map<string, string>();
-    if (decoded.version < 8) {
-        for (const row of decoded.sessions) {
-            if (isRecord(row) && typeof row.id === "string" && row.view === "agent" && typeof row.activeAgentId === "string") {
-                legacyAgentFocus.set(row.id, row.activeAgentId);
-            }
-        }
-    }
+    const spaces = normaliseSpaces(workspace?.spaces);
+    const placed = new Set(Object.values(windows).flatMap((win) => (win.role === "agent" ? (agentPaneId(win) ?? []) : [])));
     const claimedResumeIds = new Set<string>();
     if (restoreAgentTabs) {
-        for (const { sid, row } of agentRows) {
-            if (sid !== null && sessions[sid]?.kind !== "project") continue;
-            const saved = toPersistedAgent(row);
-            if (!saved || agents[saved.id]) continue;
+        for (const record of workspace?.agents ?? []) {
+            const saved = agentFromCore(record);
+            if (!saved || agents[saved.id] || sessions[record.project]?.kind !== "project") continue;
             if (saved.resumeId) {
                 const claim = `${saved.type}\0${saved.resumeId}`;
                 if (claimedResumeIds.has(claim)) continue;
@@ -1106,14 +1029,13 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
                 permissionMode,
                 executablePath,
                 ...launch,
+                createdAt: record.createdAt,
                 launchState: "dormant",
             };
-            if (sid !== null) {
-                const session = sessions[sid];
-                const win = agentWindow(agents[saved.id], saved.cwd ?? session.cwd);
+            if (!placed.has(saved.id)) {
+                const win = agentWindow(agents[saved.id], record.cwd);
                 windows[win.id] = win;
-                windowsBySession[sid].push(win.id);
-                if (legacyAgentFocus.get(sid) === saved.id) sessions[sid] = { ...session, activeWindowId: win.id };
+                windowsBySession[record.project].push(win.id);
             }
         }
     }
@@ -1242,7 +1164,10 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         disabledPlugins: Array.isArray(prefs.disabledPlugins) ? [...new Set(prefs.disabledPlugins.filter(isPluginId))] : [],
         restoreAgentTabs,
         spaces,
-        projectSpaces: normaliseProjectSpaces(prefs.projectSpaces, spaces),
+        projectSpaces: normaliseProjectSpaces(
+            Object.fromEntries((workspace?.projects ?? []).flatMap((project) => (project.space ? [[project.path, project.space]] : []))),
+            spaces,
+        ),
         activeSpaceId: spaces.some((space) => space.id === prefs.activeSpaceId) ? (prefs.activeSpaceId as string) : null,
         agentNotifications: typeof prefs.agentNotifications === "boolean" ? prefs.agentNotifications : cur.agentNotifications,
         notch: normaliseNotchSettings(prefs.notch),
@@ -1256,7 +1181,9 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         tabRailAllAgents: prefs.tabRailAllAgents === true,
         tabRailScope: prefs.tabRailScope === "all" ? "all" : "project",
         tabRailPage: prefs.tabRailPage === "terminals" || prefs.tabRailPage === "files" ? prefs.tabRailPage : "agents",
-        pinnedChats: Array.isArray(prefs.pinnedChats) ? prefs.pinnedChats.filter(isPinnedChat) : [],
+        pinnedChats: (workspace?.pinned ?? [])
+            .map((chat) => ({ agent: chat.provider, id: chat.sessionId, title: chat.title, project: chat.project }))
+            .filter(isPinnedChat),
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"
                 ? prefs.onboardingComplete
@@ -1279,14 +1206,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         recentCommandKeys: Array.isArray(prefs.recentCommandKeys)
             ? prefs.recentCommandKeys.filter((value): value is string => typeof value === "string").slice(0, 20)
             : [],
-        // Every save wrote this boundary out, so an older snapshot cannot say
-        // whether it was chosen or just inherited. Adopt today's default once.
-        defaultAgentPermissionMode:
-            prefs.defaultAgentPermissionMode === undefined || decoded.version < AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION
-                ? cur.defaultAgentPermissionMode
-                : prefs.defaultAgentPermissionMode === "bypass"
-                  ? "bypass"
-                  : "workspace-write",
+        defaultAgentPermissionMode: !workspace ? cur.defaultAgentPermissionMode : workspace.permissionMode === "bypass" ? "bypass" : "workspace-write",
         lastAgentType: isAgentType(prefs.lastAgentType) ? prefs.lastAgentType : null,
         languageServerTrust: booleansByPath(prefs.languageServerTrust),
         agentWorktreeDefaults: booleansByPath(prefs.agentWorktreeDefaults),

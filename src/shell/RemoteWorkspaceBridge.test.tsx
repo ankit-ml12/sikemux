@@ -31,7 +31,6 @@ beforeEach(() => {
     setState(initial, true);
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
-    transport.register("core_call", () => null);
 });
 
 afterEach(() => {

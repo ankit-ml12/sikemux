@@ -19,6 +19,8 @@ import { collectPanes } from "./layout";
 import { deskEditorId } from "./desks";
 import { agentWindow } from "./agentWindow";
 import { withAgents } from "../test/agents";
+import type { Workspace } from "../api/generated/wire";
+import { localWorkspace } from "./coreWorkspace";
 import type { Agent } from "./types";
 import { useToasts } from "./toast";
 
@@ -37,6 +39,22 @@ function deferred<T>() {
 }
 
 const initial = getState();
+
+/** The workspace the core keeps for what the store holds now, which a restart takes back. */
+function shared(changes: Partial<Workspace> = {}): Workspace {
+    return { ...localWorkspace(getState()), launchers: [], palette: {}, backdrop: { texture: false, image: null }, ...changes };
+}
+
+/** Makes the open session a project in /repo holding `agents`, and shows the first. */
+function projectWith(agents: Agent[]): string {
+    const sid = getState().activeSessionId;
+    setState((s) => {
+        const slices = withAgents(s, sid, agents);
+        const front = agents[0] ? agentWindowId(slices, agents[0].id)! : s.sessions[sid].activeWindowId;
+        return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", cwd: "/repo", activeWindowId: front } } };
+    });
+    return sid;
+}
 
 beforeEach(() => {
     vi.useRealTimers();
@@ -95,17 +113,19 @@ describe("frontend persistence", () => {
         expect(raw).not.toContain("externalPty");
     });
 
-    it("keeps pinned chats across a restart, and drops ones it cannot read", async () => {
+    it("takes pinned chats from the core across a restart, and drops ones it cannot read", async () => {
         invoke.mockResolvedValue(undefined);
         cmd.pinChat({ agent: "claude", id: "s-1", title: "Release checklist", project: "/work/demo" });
         cmd.pinChat({ agent: "claude", id: "s-1", title: "Again", project: "/work/demo" });
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls.at(-1)![1].data as string);
-        expect(saved.prefs.pinnedChats).toEqual([{ agent: "claude", id: "s-1", title: "Release checklist", project: "/work/demo" }]);
+        expect(saved.prefs).not.toHaveProperty("pinnedChats");
+        const workspace = shared();
+        expect(workspace.pinned).toEqual([{ provider: "claude", sessionId: "s-1", title: "Release checklist", project: "/work/demo" }]);
 
         setState({ pinnedChats: [] });
-        saved.prefs.pinnedChats.push({ agent: "nobody", id: "x", title: "x", project: "/x" }, { agent: "codex", id: "", title: "y", project: "/y" });
-        expect(applyHydrate(JSON.stringify(saved))).toBe("applied");
+        workspace.pinned.push({ provider: "nobody", sessionId: "x", title: "x", project: "/x" }, { provider: "codex", sessionId: "", title: "y", project: "/y" });
+        expect(applyHydrate(JSON.stringify(saved), undefined, workspace)).toBe("applied");
         expect(getState().pinnedChats).toEqual([{ agent: "claude", id: "s-1", title: "Release checklist", project: "/work/demo" }]);
 
         cmd.retitlePinnedChat("claude", "s-1", "Release");
@@ -239,9 +259,11 @@ describe("frontend persistence", () => {
         expect(getState().agentWorktreeDefaults).toEqual({ "/code/app": true });
     });
 
-    it("remembers the spaces, each project's space and which space is shown", async () => {
+    it("takes the spaces and each project's space from the core, and remembers which space is shown", async () => {
         const work = cmd.createSpace("Work", "briefcase")!;
         const side = cmd.createSpace("Side projects", "")!;
+        cmd.createProjectSession("/office");
+        cmd.createProjectSession("/side");
         cmd.setProjectSpace("/office", work);
         cmd.setProjectSpace("/side", side);
         cmd.showSpace(work);
@@ -249,16 +271,18 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.prefs.spaces).toEqual([
+        expect(saved.prefs).not.toHaveProperty("spaces");
+        const workspace = shared();
+        expect(workspace.spaces).toEqual([
             { id: work, name: "Work", icon: "briefcase" },
             { id: side, name: "Side projects", icon: "" },
         ]);
 
         setState({ spaces: [], projectSpaces: {}, activeSpaceId: null });
-        saved.prefs.projectSpaces["/gone"] = "space-that-was-deleted";
-        saved.prefs.spaces.push({ id: "blank", name: "   ", icon: "" });
-        saved.prefs.spaces[1].icon = "not-an-icon";
-        applyHydrate(JSON.stringify(saved));
+        workspace.projects.push({ id: "gone", name: "gone", path: "/gone", pinned: false, space: "space-that-was-deleted" });
+        workspace.spaces.push({ id: "blank", name: "   ", icon: "" });
+        workspace.spaces[1].icon = "not-an-icon";
+        applyHydrate(JSON.stringify(saved), undefined, workspace);
 
         expect(getState().spaces.map((space) => [space.name, space.icon])).toEqual([
             ["Work", "briefcase"],
@@ -296,39 +320,7 @@ describe("frontend persistence", () => {
         expect(getState()).toMatchObject({ sideRailWidth: 180, tabRailWidth: 560 });
     });
 
-    it("never persists or hydrates live agent commands", async () => {
-        const sid = getState().activeSessionId;
-        const terminalWindowId = getState().sessions[sid].activeWindowId;
-        const agent: Agent = { id: "agent-live", type: "claude", title: "live", startup: "claude --resume should-never-auto-run" };
-        setState((s) => {
-            const slices = withAgents(s, sid, [agent]);
-            return {
-                ...slices,
-                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
-            };
-        });
-        invoke.mockResolvedValue(undefined);
-
-        expect(await flushPersist()).toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        // With no resume id there is nothing to come back to, so neither the
-        // agent nor its window is written, and the session falls back to a
-        // window that is.
-        expect(saved.agents).toEqual([]);
-        expect(saved.windowsBySession[sid].map((w: { role: string }) => w.role)).not.toContain("agent");
-        expect(saved.sessions[0].activeWindowId).toBe(terminalWindowId);
-        expect(JSON.stringify(saved)).not.toContain("should-never-auto-run");
-
-        saved.agents = [agent];
-        saved.windowsBySession[sid].push(agentWindow(agent, "/repo"));
-        applyHydrate(JSON.stringify(saved));
-        expect(agentIdsOf(getState(), sid)).toEqual([]);
-        expect(getState().agents).toEqual({});
-        expect(getState().windows[getState().sessions[sid].activeWindowId].role).not.toBe("agent");
-    });
-
-    it("restores confirmed agent sessions asleep without trusting saved startup", async () => {
-        const sid = getState().activeSessionId;
+    it("restores the core's agents asleep in their saved tabs, building their commands afresh", async () => {
         const agent = {
             id: "agent-resumable",
             type: "codex" as const,
@@ -340,54 +332,51 @@ describe("frontend persistence", () => {
             renamed: true,
             worktree: { repo: "/repo", path: "/repo.worktrees/fix", branch: "sikemux/fix", base: "main", startSha: "abc123" },
         };
-        setState((s) => {
-            const slices = withAgents(s, sid, [agent]);
-            return {
-                ...slices,
-                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
-            };
-        });
+        const sid = projectWith([agent]);
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const raw = invoke.mock.calls[0][1].data as string;
         expect(raw).not.toContain("malicious saved startup");
         const saved = JSON.parse(raw);
-        expect(saved.agents).toEqual([
+        expect(saved).not.toHaveProperty("agents");
+        expect(saved.sessions[0]).toEqual({ id: sid, kind: "project", activeWindowId: agentWindowId(getState(), agent.id) });
+        expect(saved.windowsBySession[sid].map((w: { role: string }) => w.role)).toContain("agent");
+        const workspace = shared();
+        expect(workspace.agents).toEqual([
             {
                 id: agent.id,
-                type: "codex",
+                provider: "codex",
+                project: sid,
+                cwd: "/repo",
                 title: agent.title,
+                renamed: true,
                 resumeId: agent.resumeId,
                 permissionMode: "workspace-write",
                 keepAlive: true,
-                renamed: true,
+                asleep: false,
                 worktree: agent.worktree,
+                createdAt: 0,
             },
         ]);
-        expect(saved.windowsBySession[sid].map((w: { role: string }) => w.role)).toContain("agent");
 
-        saved.agents[0].startup = "still malicious";
-        applyHydrate(JSON.stringify(saved));
+        applyHydrate(JSON.stringify(saved), undefined, {
+            ...workspace,
+            agents: workspace.agents.map((record) => ({ ...record, startup: "still malicious" })),
+        });
         const restored = getState().agents[agent.id];
         expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true, renamed: true, worktree: agent.worktree });
         expect(restored.startup).toMatch(/^codex resume\b/);
         expect(restored.startup).toContain("session-123");
         expect(restored.startup).not.toContain("still malicious");
+        expect(agentIdsOf(getState(), sid)).toEqual([agent.id]);
         expect(activeAgentId(getState(), getState().sessions[sid])).toBe(agent.id);
     });
 
     /* A desk is a leaf like any other, but the browser behind it dies with the
        app, so what comes back is the pane plus the pages and files it held. */
     it("saves an agent's pages and files and hands them back to the desk that was showing them", async () => {
-        const sid = getState().activeSessionId;
         const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
-        setState((s) => {
-            const slices = withAgents(s, sid, [agent]);
-            return {
-                ...slices,
-                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
-            };
-        });
+        const sid = projectWith([agent]);
         cmd.openDesk(agent.id);
         const windowId = agentWindowId(getState(), agent.id)!;
         const paneId = collectPanes(getState().windows[windowId].root).find((pane) => pane.kind === "desk")!.id;
@@ -414,7 +403,7 @@ describe("frontend persistence", () => {
             state: { agentId: agent.id, tabs: [{ url: "https://example.com/docs", title: "Docs" }], activeIndex: 0, files: ["/repo/src/a.ts"] },
         });
 
-        applyHydrate(JSON.stringify(saved));
+        applyHydrate(JSON.stringify(saved), undefined, shared());
 
         expect(getState().deskPanes[paneId]).toBe(agent.id);
         expect(getState().deskRestores[paneId].tabs).toEqual([{ url: "https://example.com/docs", title: "Docs" }]);
@@ -456,15 +445,8 @@ describe("frontend persistence", () => {
     });
 
     it("drops a desk with nothing left to open, and one whose agent did not come back", async () => {
-        const sid = getState().activeSessionId;
         const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
-        setState((s) => {
-            const slices = withAgents(s, sid, [agent]);
-            return {
-                ...slices,
-                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
-            };
-        });
+        const sid = projectWith([agent]);
         cmd.openDesk(agent.id);
         const windowId = agentWindowId(getState(), agent.id)!;
         invoke.mockResolvedValue(undefined);
@@ -493,7 +475,7 @@ describe("frontend persistence", () => {
             version: 1,
             state: { agentId: "agent-that-is-gone", tabs: [{ url: "https://example.com", title: "Example" }], activeIndex: 0, files: [] },
         };
-        applyHydrate(JSON.stringify(saved));
+        applyHydrate(JSON.stringify(saved), undefined, shared());
 
         expect(getState().deskPanes).toEqual({});
         expect(getState().deskRestores).toEqual({});
@@ -507,17 +489,18 @@ describe("frontend persistence", () => {
         const agent: Agent = { id: "agent-tui", type: "pi", title: "pi in its terminal", startup: "pi" };
         setState((s) => {
             const slices = withAgents(s, sid, [agent]);
-            return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project" } } };
+            return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", cwd: "/repo" } } };
         });
         cmd.setAgentPty(agent.id, 1_759_300_000_002);
         invoke.mockResolvedValue(undefined);
 
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.agents).toEqual([expect.objectContaining({ id: agent.id, ptyId: 1_759_300_000_002 })]);
-        expect(saved.agents[0]).not.toHaveProperty("resumeId");
+        const workspace = shared();
+        expect(workspace.agents).toEqual([expect.objectContaining({ id: agent.id, ptyId: 1_759_300_000_002 })]);
+        expect(workspace.agents[0]).not.toHaveProperty("resumeId");
 
-        applyHydrate(JSON.stringify(saved));
+        applyHydrate(JSON.stringify(saved), undefined, workspace);
         expect(collectPanes(getState().windows[terminalWindowId].root)[0].ptyId).toBe(1_759_300_000_001);
         expect(getState().agents[agent.id]).toMatchObject({ ptyId: 1_759_300_000_002, launchState: "dormant" });
         expect(agentIdsOf(getState(), sid)).toEqual([agent.id]);
@@ -561,15 +544,8 @@ describe("frontend persistence", () => {
     });
 
     it("moves a v15 browser pane onto a desk with the pages it held", async () => {
-        const sid = getState().activeSessionId;
         const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
-        setState((s) => {
-            const slices = withAgents(s, sid, [agent]);
-            return {
-                ...slices,
-                sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", activeWindowId: agentWindowId(slices, agent.id)! } },
-            };
-        });
+        const sid = projectWith([agent]);
         const windowId = agentWindowId(getState(), agent.id)!;
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
@@ -594,7 +570,7 @@ describe("frontend persistence", () => {
             state: { agentId: agent.id, tabs: [{ url: "https://example.com", title: "Example" }], activeIndex: 0 },
         };
 
-        expect(applyHydrate(JSON.stringify(saved))).toBe("applied");
+        expect(applyHydrate(JSON.stringify(saved), undefined, shared())).toBe("applied");
 
         expect(collectPanes(getState().windows[windowId].root).map((pane) => pane.kind)).toEqual(["agent", "desk"]);
         expect(getState().deskPanes[paneId]).toBe(agent.id);
@@ -627,14 +603,14 @@ describe("frontend persistence", () => {
             },
         };
         setState((state) => ({
-            sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project" } },
+            sessions: { ...state.sessions, [sid]: { ...state.sessions[sid], kind: "project", cwd: "/repo" } },
             ...withAgents(state, sid, [agents.omp, agents.grok]),
         }));
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
 
-        applyHydrate(JSON.stringify(saved));
+        applyHydrate(JSON.stringify(saved), undefined, shared());
         expect(getState().agents[agents.omp.id]).toMatchObject({ type: "omp", effort: "off", launchState: "dormant" });
         expect(getState().agents[agents.grok.id]).toMatchObject({ type: "grok", effort: "minimal", launchState: "dormant" });
     });
@@ -651,7 +627,7 @@ describe("frontend persistence", () => {
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
         expect(saved.prefs.providerProfiles).toBeUndefined();
         expect(saved.prefs.selectedProviderProfileIds).toBeUndefined();
-        expect(saved.prefs.defaultAgentPermissionMode).toBe("workspace-write");
+        expect(saved.prefs).not.toHaveProperty("defaultAgentPermissionMode");
 
         const kept = {
             id: "codex-work",
@@ -664,12 +640,15 @@ describe("frontend persistence", () => {
             apiKey: "must-not-hydrate",
         };
         const bad = { id: "bad", name: "Bad", provider: "unknown", accent: "red", token: "do-not-hydrate" };
-        saved.prefs.defaultAgentPermissionMode = "unbounded";
-        applyHydrate(JSON.stringify(saved), {
-            profiles: [kept, bad] as never,
-            selected: { codex: "codex-work", claude: "bad", unknown: "codex-work" } as never,
-            autoSwitch: {},
-        });
+        applyHydrate(
+            JSON.stringify(saved),
+            {
+                profiles: [kept, bad] as never,
+                selected: { codex: "codex-work", claude: "bad", unknown: "codex-work" } as never,
+                autoSwitch: {},
+            },
+            shared({ permissionMode: "unbounded" }),
+        );
         expect(getState().providerProfiles).toEqual([
             {
                 id: "codex-work",
@@ -686,79 +665,36 @@ describe("frontend persistence", () => {
         expect(JSON.stringify(getState().providerProfiles)).not.toContain("hydrate");
     });
 
-    it("adopts the current default safety boundary for snapshots saved before the migration", async () => {
-        setState({ defaultAgentPermissionMode: "bypass" });
+    it("discards an agent's profile when its provider no longer matches", async () => {
+        const sid = projectWith([]);
         invoke.mockResolvedValue(undefined);
         expect(await flushPersist()).toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-
-        saved.version = 8;
-        saved.prefs.defaultAgentPermissionMode = "workspace-write";
-        setState({ defaultAgentPermissionMode: "bypass" });
-        applyHydrate(JSON.stringify(saved));
-        expect(getState().defaultAgentPermissionMode).toBe("bypass");
-
-        saved.version = 9;
-        applyHydrate(JSON.stringify(saved));
-        expect(getState().defaultAgentPermissionMode).toBe("workspace-write");
-    });
-
-    it("migrates legacy permission bypass and drops retired worktree metadata", async () => {
-        const sid = getState().activeSessionId;
-        const session = getState().sessions[sid];
-        const legacy = {
-            id: "agent-worktree",
-            type: "claude" as const,
-            title: "isolated task",
-            resumeId: "resume-worktree",
-            skipPermissions: true,
-            profileId: "builtin-claude",
-            cwd: "/repo/.worktrees/isolated",
-            worktreePath: "/repo/.worktrees/isolated",
-        };
-        invoke.mockResolvedValue(undefined);
-        expect(await flushPersist()).toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        saved.version = 7;
-        saved.sessions[0] = { ...session, kind: "project", view: "agent", activeAgentId: legacy.id };
-        saved.agentsBySession = { [sid]: [legacy] };
-
-        applyHydrate(JSON.stringify(saved));
-        expect(activeAgentId(getState(), getState().sessions[sid])).toBe(legacy.id);
-        expect(getState().agents[legacy.id]).toMatchObject({
-            permissionMode: "bypass",
-            skipPermissions: true,
-            profileId: "builtin-claude",
-            cwd: legacy.cwd,
-            launchState: "dormant",
+        const workspace = shared();
+        workspace.agents.push({
+            id: "claude-agent",
+            provider: "claude",
+            project: sid,
+            cwd: "/repo",
+            title: "Claude",
+            renamed: false,
+            resumeId: "resume-claude",
+            permissionMode: "workspace-write",
+            profileId: "moved-profile",
+            keepAlive: false,
+            asleep: true,
+            createdAt: 0,
         });
-        expect(getState().agents[legacy.id]).not.toHaveProperty("worktreePath");
-        expect(getState().agents[legacy.id].startup).toContain("--dangerously-skip-permissions");
-    });
 
-    it("discards a saved agent profile when its provider no longer matches", async () => {
-        const sid = getState().activeSessionId;
-        const session = getState().sessions[sid];
-        invoke.mockResolvedValue(undefined);
-        expect(await flushPersist()).toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        saved.prefs.providerProfiles = [
-            { id: "moved-profile", name: "Now Codex", provider: "codex", accent: "#abcdef", executablePath: "/opt/codex" },
-        ];
-        saved.sessions[0] = { ...session, kind: "project" };
-        saved.agents = [
+        applyHydrate(
+            JSON.stringify(saved),
             {
-                id: "claude-agent",
-                type: "claude",
-                title: "Claude",
-                resumeId: "resume-claude",
-                permissionMode: "workspace-write",
-                profileId: "moved-profile",
+                profiles: [{ id: "moved-profile", name: "Now Codex", provider: "codex", accent: "#abcdef", executablePath: "/opt/codex" }],
+                selected: {},
+                autoSwitch: {},
             },
-        ];
-        saved.windowsBySession[sid].push(agentWindow({ id: "claude-agent", title: "Claude" }, "/repo"));
-
-        applyHydrate(JSON.stringify(saved));
+            workspace,
+        );
 
         expect(getState().agents["claude-agent"].profileId).toBeUndefined();
         expect(getState().agents["claude-agent"].startup).toMatch(/^claude /);
@@ -921,42 +857,6 @@ describe("frontend persistence", () => {
         expect(JSON.parse(migrated).version).toBe(21);
     });
 
-    /*
-     * Before v8 an agent sat beside its session and the session named the one it
-     * was looking at. Each becomes a window, and that one becomes the active window.
-     */
-    it("migrates v7 agents into windows and keeps the one being looked at active", async () => {
-        const sid = getState().activeSessionId;
-        const session = getState().sessions[sid];
-        const window = getState().windows[session.activeWindowId];
-        const legacyAgent = (id: string) => ({ id, type: "codex", title: `task ${id}`, resumeId: `resume-${id}`, permissionMode: "workspace-write" });
-        applyHydrate(
-            JSON.stringify({
-                version: 7,
-                sessions: [{ ...session, kind: "project", cwd: "/repo", view: "agent", activeAgentId: "a2" }],
-                windowsBySession: { [sid]: [window] },
-                agentsBySession: { [sid]: [legacyAgent("a1"), legacyAgent("a2")] },
-                sessionOrder: [sid],
-                activeSessionId: sid,
-                prefs: {},
-                itemStates: {},
-            }),
-        );
-
-        expect(agentIdsOf(getState(), sid)).toEqual(["a1", "a2"]);
-        expect(activeAgentId(getState(), getState().sessions[sid])).toBe("a2");
-        expect(getState().windowsBySession[sid][0]).toBe(window.id);
-        expect(getState().agents.a1).toMatchObject({ launchState: "dormant", resumeId: "resume-a1" });
-
-        invoke.mockResolvedValue(undefined);
-        expect(await flushPersist()).toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(21);
-        expect(saved.agents.map((agent: { id: string }) => agent.id)).toEqual(["a1", "a2"]);
-        expect(saved).not.toHaveProperty("agentsBySession");
-        expect(saved.sessions[0]).not.toHaveProperty("view");
-    });
-
     it("moves v9 Rundeck sessions, windows, panes and command contexts onto the plugin's kind", () => {
         const project = getState().sessions[getState().activeSessionId];
         const rundeckPane = { type: "pane", id: "pane-rundeck", cwd: "", kind: "rundeck", title: "rundeck" };
@@ -1000,6 +900,8 @@ describe("frontend persistence", () => {
                 prefs: { rundeck: { activeProject: "channeliq", activeEnvFolder: "dev", prodEnvs: ["prod"] } },
                 itemStates: {},
             }),
+            undefined,
+            shared({ projects: [{ id: project.id, name: "api", path: "/repo/api", pinned: false }] }),
         );
 
         expect(rundeckSettings.get()).toEqual({
@@ -1010,22 +912,6 @@ describe("frontend persistence", () => {
             notifyWhenDone: true,
         });
         expect(getState().sessions[project.id]).not.toHaveProperty("deploy");
-    });
-
-    it("turns a v18 space's emoji into the matching icon, or a folder when none matches", async () => {
-        cmd.createSpace("Work");
-        invoke.mockResolvedValue(undefined);
-        await expect(flushPersist()).resolves.toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        saved.version = 18;
-        saved.prefs.spaces = [
-            { id: "a", name: "Office", icon: "🏢" },
-            { id: "b", name: "Odd", icon: "🦄" },
-            { id: "c", name: "Plain", icon: "" },
-        ];
-        applyHydrate(JSON.stringify(saved));
-
-        expect(getState().spaces.map((space) => space.icon)).toEqual(["building", "folder", ""]);
     });
 
     it("folds v11 Bruno sessions, one per workspace, into the one Bruno session and keeps every folder", () => {
@@ -1231,6 +1117,8 @@ describe("frontend persistence", () => {
                 activeSessionId: sid,
                 prefs: {},
             }),
+            undefined,
+            shared({ projects: [{ id: sid, name: "demo", path: "/work/demo", pinned: false }] }),
         );
 
         expect(getState().windows[window.id]).toMatchObject({ role: "git" });

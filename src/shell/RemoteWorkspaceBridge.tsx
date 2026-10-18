@@ -1,6 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useState } from "react";
-import { coreCall } from "../api/core";
 import { publishBuddies, type PublishedBuddies } from "../buddies/published";
 import { remoteApi } from "../api/remote";
 import { backdropPicture, grainDotColor } from "../remote/backdrop";
@@ -15,13 +14,11 @@ import { useStore } from "../state/store";
 export const PUBLISH_DELAY_MS = 400;
 
 /**
- * Tells the core the mode agents start in, the buddies the app draws for the notch and paired devices, and which agent
- * is on screen. While remote access is on, also the theme and backdrop devices draw in.
+ * Tells the core the buddies the app draws for the notch and paired devices, and which agent is on screen. While remote access is on, also the theme and backdrop devices draw in.
  */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
     const [themeChanges, setThemeChanges] = useState(0);
-    const permissionMode = useStore((s) => s.defaultAgentPermissionMode);
     const agents = useStore((s) => s.agents);
     const buddiesOn = useStore((s) => s.buddies);
     const buddyPack = useStore((s) => s.buddyPack);
@@ -69,10 +66,6 @@ export function RemoteWorkspaceBridge() {
         }, PUBLISH_DELAY_MS);
         return () => window.clearTimeout(timer);
     }, [enabled, themeChanges]);
-
-    useEffect(() => {
-        coreCall("setAgentDefaults", { permissionMode }).catch(swallow("tell the core the mode agents start in"));
-    }, [permissionMode]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {

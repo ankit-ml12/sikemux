@@ -69,6 +69,8 @@ import * as cmd from "./state/commands";
 import { offerSavedSessions, restoreCoreSessions } from "./workspace/restoreCoreSessions";
 import { startSpareShells } from "./terminal/spareShell";
 import { coreSessionsApi } from "./api/coreSessions";
+import type { Workspace as SharedWorkspace } from "./api/generated/wire";
+import { fetchCoreWorkspace, startCoreWorkspace } from "./state/coreWorkspace";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
     dispatchFolder,
@@ -721,6 +723,7 @@ export default function App() {
         let unsub = () => {};
         let stopSpareShells = () => {};
         let stopAccountSync = () => {};
+        let stopWorkspaceSync = () => {};
         let bootFinished = false;
         let hydrationResult: HydrationResult | null = null;
         const bootSpan = performanceTelemetry.startTrace("startup.boot");
@@ -732,14 +735,16 @@ export default function App() {
         };
         void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
         let accounts: AgentAccountBook | null | undefined;
-        Promise.all([invoke<BootInfo>("boot_init"), agentApi.accounts().catch(() => undefined)])
-            .then(([boot, book]) => {
+        let workspace: SharedWorkspace | undefined;
+        Promise.all([invoke<BootInfo>("boot_init"), agentApi.accounts().catch(() => undefined), fetchCoreWorkspace()])
+            .then(([boot, book, shared]) => {
                 if (disposed) return;
                 accounts = book;
+                workspace = shared;
                 const hydrateSpan = performanceTelemetry.startSpan(bootSpan, "startup.hydrate");
                 try {
                     cmd.setHome(boot.home);
-                    hydrationResult = applyHydrate(boot.state, accounts);
+                    hydrationResult = applyHydrate(boot.state, accounts, workspace);
                     const st = getState();
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
@@ -784,6 +789,7 @@ export default function App() {
                         return;
                     }
                     unsub = subscribePersist();
+                    if (workspace) stopWorkspaceSync = startCoreWorkspace(workspace);
                     stopAccountSync = syncAgentAccounts(accounts);
                     setBootReady(true);
                     introduceNotifications();
@@ -796,6 +802,7 @@ export default function App() {
             disposed = true;
             finishBoot("cancelled");
             unsub();
+            stopWorkspaceSync();
             stopAccountSync();
             stopSpareShells();
             workbenchRuntime.stop();
