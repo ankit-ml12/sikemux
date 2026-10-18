@@ -477,7 +477,7 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     return agent;
 }
 
-function toAgentBuddy(value: unknown): AgentBuddy | null {
+export function toAgentBuddy(value: unknown): AgentBuddy | null {
     if (!isRecord(value) || !Number.isInteger(value.color) || (value.color as number) < 0 || (value.color as number) > 63) return null;
     const buddy: AgentBuddy = { color: value.color as number };
     const pack = boundedOptionalString(value.pack, 40);

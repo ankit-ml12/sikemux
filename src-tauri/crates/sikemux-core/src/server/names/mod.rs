@@ -1,7 +1,8 @@
 //! What each agent is called: a word the core gives it from a built-in list
 //! when it starts. No two open agents of a project share one. An agent holds
 //! its name while it is open and lets it go when it closes; opened again, it
-//! gets a new one. Kept in `agent-names.json` in the data folder, so names
+//! gets a new one. A name the person chose stays the agent's after it closes,
+//! and comes back when its chat is opened again. Kept in `agent-names.json` in the data folder, so names
 //! outlive a window reload, a restart and an update.
 
 mod words;
@@ -11,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::remote::unix_ms;
 use words::WORDS;
@@ -26,6 +28,8 @@ const MAX_CHILDREN: usize = 6;
 const MAX_SPAWNED_PER_PROJECT: usize = 20;
 /// How many closed agents' sessions are kept, newest first.
 const MAX_CLOSED_SESSIONS: usize = 512;
+const MAX_TITLE_CHARS: usize = 200;
+const MAX_BUDDY_BYTES: usize = 512;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +62,16 @@ struct Entry {
     /// It has been open since it was named, so closing lets its name go.
     #[serde(default)]
     seen: bool,
+    /// The person named it, so it keeps its name after it closes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    chosen: bool,
+    /// The character the app last drew for it, which it wears again when
+    /// opened again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    buddy: Option<Value>,
+    /// What it was last working on, as the app titled it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
 }
 
 impl Entry {
@@ -113,6 +127,18 @@ pub(crate) struct AgentName {
     pub name: String,
     pub project: String,
     pub parent: Option<String>,
+}
+
+/// A closed agent the person named, which can be opened again under its name.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClosedAgent {
+    pub agent_id: String,
+    pub name: String,
+    pub provider: String,
+    pub session_id: String,
+    pub title: Option<String>,
+    pub buddy: Option<Value>,
 }
 
 /// An agent another agent starts.
@@ -237,6 +263,9 @@ impl Names {
             above,
             at: unix_ms(),
             seen: false,
+            chosen: false,
+            buddy: None,
+            title: None,
         };
         let named = entry.view();
         book.agents.push(entry);
@@ -356,6 +385,9 @@ impl Names {
             above: 0,
             at: unix_ms(),
             seen: false,
+            chosen: false,
+            buddy: None,
+            title: None,
         };
         let named = entry.view();
         book.agents.push(entry);
@@ -537,9 +569,87 @@ impl Names {
             .entry_mut(agent_id)
             .ok_or("Sikemux has not named that agent yet")?;
         entry.name = name;
+        entry.chosen = true;
         let named = entry.view();
         self.save(&book);
         Ok(named)
+    }
+
+    /// Gives a new agent opening a closed agent's chat again that agent's
+    /// name, when the person chose it, and the character it wore. `running`
+    /// holds the agents running here.
+    pub(crate) fn reopen(
+        &self,
+        starting: &Starting<'_>,
+        running: HashSet<String>,
+    ) -> Option<Option<Value>> {
+        let session = starting.resume_id?;
+        let mut book = self.lock();
+        if book.entry_mut(starting.agent_id).is_some() {
+            return None;
+        }
+        let open = book.open(self.open_with(running));
+        let entry = book.agents.iter_mut().find(|entry| {
+            entry.chosen
+                && entry.project == starting.project
+                && !open.contains(&entry.agent_id)
+                && entry.session_id.as_deref() == Some(session)
+                && starting
+                    .provider
+                    .is_none_or(|provider| entry.provider.as_deref() == Some(provider))
+        })?;
+        entry.agent_id = starting.agent_id.to_owned();
+        entry.seen = false;
+        entry.at = unix_ms();
+        let buddy = entry.buddy.clone();
+        self.save(&book);
+        Some(buddy)
+    }
+
+    /// Keeps how the app draws the agent and what it works on, for when it is
+    /// opened again after closing. What the app leaves out stays as it was.
+    pub(crate) fn note_look(&self, agent_id: &str, buddy: Option<Value>, title: Option<String>) {
+        let buddy = buddy.filter(|buddy| buddy.to_string().len() <= MAX_BUDDY_BYTES);
+        let title = title.filter(|title| title.chars().count() <= MAX_TITLE_CHARS);
+        let mut book = self.lock();
+        let Some(entry) = book.entry_mut(agent_id) else {
+            return;
+        };
+        let buddy = buddy.or_else(|| entry.buddy.clone());
+        let title = title.or_else(|| entry.title.clone());
+        if entry.buddy == buddy && entry.title == title {
+            return;
+        }
+        entry.buddy = buddy;
+        entry.title = title;
+        self.save(&book);
+    }
+
+    /// The closed agents of `project` the person named, newest first.
+    pub(crate) fn closed(&self, project: &str, running: HashSet<String>) -> Vec<ClosedAgent> {
+        let book = self.lock();
+        let open = book.open(self.open_with(running));
+        let mut closed: Vec<&Entry> = book
+            .agents
+            .iter()
+            .filter(|entry| {
+                entry.chosen && entry.project == project && !open.contains(&entry.agent_id)
+            })
+            .collect();
+        closed.sort_by_key(|entry| std::cmp::Reverse(entry.at));
+        closed
+            .into_iter()
+            .filter_map(|entry| {
+                Some(ClosedAgent {
+                    agent_id: entry.agent_id.clone(),
+                    name: entry.name.clone(),
+                    provider: entry.provider.clone()?,
+                    session_id: entry.session_id.clone()?,
+                    title: entry.title.clone(),
+                    buddy: entry.buddy.clone(),
+                })
+            })
+            .collect()
     }
 
     fn save(&self, book: &Book) {
@@ -707,6 +817,9 @@ impl Book {
             above: 0,
             at: unix_ms(),
             seen: false,
+            chosen: false,
+            buddy: None,
+            title: None,
         };
         let named = entry.view();
         self.agents.push(entry);
@@ -756,6 +869,7 @@ impl Book {
             .filter(|(_, entry)| {
                 entry.project == project
                     && entry.agent_id != agent_id
+                    && !entry.chosen
                     && !open.contains(&entry.agent_id)
             })
             .min_by_key(|(_, entry)| entry.at)
@@ -787,7 +901,7 @@ impl Book {
                 entry.seen = true;
                 return false;
             }
-            entry.seen || now.saturating_sub(entry.at) >= STARTING_MS
+            !entry.chosen && (entry.seen || now.saturating_sub(entry.at) >= STARTING_MS)
         });
         removed || seen
     }

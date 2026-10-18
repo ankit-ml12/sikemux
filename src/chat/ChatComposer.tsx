@@ -337,6 +337,11 @@ export function ChatComposer({
         ...contexts.flatMap((item) =>
             item.tag && item.tracked ? [{ text: item.tag, kind: item.tracked.kind, label: contextChip(item).title }] : [],
         ),
+        ...contexts.flatMap(({ tag, earlier }) =>
+            tag && earlier?.named
+                ? [{ text: tag, kind: "agent" as const, agent: { id: earlier.named.agentId, type: earlier.chat.agent, buddy: earlier.named.buddy } }]
+                : [],
+        ),
         ...fileTags.map((file) => ({ text: file.tag, kind: "file" as const, label: basename(file.path) })),
         ...mates.map((mate) => ({ text: `@${mate.name}`, kind: "agent" as const, agent: mate })),
     ];
@@ -379,6 +384,12 @@ export function ChatComposer({
     };
 
     const selectEarlier = (earlier: EarlierChat, uri: string) => {
+        if (earlier.named) {
+            const tag = `@${earlier.named.name}`;
+            writeTag(tag);
+            setContexts((current) => mergeContext(current, [{ uri, title: earlier.chat.title, text: null, tracked: null, earlier, tag }]));
+            return;
+        }
         takeToken();
         setContexts((current) => mergeContext(current, [{ uri, title: earlier.chat.title, text: null, tracked: null, earlier }]));
         onError(null);

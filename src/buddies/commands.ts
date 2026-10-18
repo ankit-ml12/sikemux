@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toAgentBuddy } from "../state/persist";
 import { getState, mutate } from "../state/store";
 import { leastUsedColor } from "./catalogue";
 
@@ -27,6 +28,16 @@ export function setAgentBuddyColor(id: string, color: number): void {
     mutate((d) => {
         const agent = d.agents[id];
         if (agent) agent.buddy = { ...agent.buddy, color };
+    });
+}
+
+/** Puts back the character an agent wore before it closed, as the core kept it. */
+export function wearBuddy(id: string, kept: unknown): void {
+    const buddy = toAgentBuddy(kept);
+    if (!buddy) return;
+    mutate((d) => {
+        const agent = d.agents[id];
+        if (agent) agent.buddy = buddy;
     });
 }
 

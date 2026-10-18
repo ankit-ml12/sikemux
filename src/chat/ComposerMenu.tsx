@@ -21,7 +21,7 @@ import {
     type ProjectEntry,
 } from "./composerInput";
 import { ContextMark } from "./ContextChip";
-import { earlierUri, useEarlierChats, type EarlierChat } from "./earlierChats";
+import { earlierUri, useClosedNamed, useEarlierChats, type EarlierChat } from "./earlierChats";
 import type { TrackedMatches } from "./TrackedSource";
 import type { AcpAvailableCommand } from "./types";
 
@@ -138,7 +138,10 @@ export default function ComposerMenu({
         [entries, cwd, trigger, needle],
     );
     const mateMatches = useMemo(() => (trigger === "@" ? matchMates(mates, needle, MAX_MENU_ENTRIES) : []), [mates, trigger, needle]);
-    const earlierMatches = useEarlierChats(agentId, trigger === "@" ? needle : null).filter((earlier) => !taken.includes(earlierUri(earlier)));
+    const closedNamed = useClosedNamed(agentId, trigger === "@" ? needle : null).filter((earlier) => !taken.includes(earlierUri(earlier)));
+    const earlierMatches = useEarlierChats(agentId, trigger === "@" ? needle : null).filter(
+        (earlier) => !taken.includes(earlierUri(earlier)) && !closedNamed.some((named) => earlierUri(named) === earlierUri(earlier)),
+    );
     const trackedEmpty = tracked.state === "unavailable" ? tracked.message : null;
 
     const menu: MenuModel | null =
@@ -168,7 +171,7 @@ export default function ComposerMenu({
                     label: "Agents and earlier chats",
                     aside: "mention",
                     variant: "entries",
-                    empty: mates.length === 0 && !needle ? "No other agent yet" : "No agent or earlier chat matches",
+                    empty: mates.length === 0 && closedNamed.length === 0 && !needle ? "No other agent yet" : "No agent or earlier chat matches",
                     loading: false,
                     rows: [
                         ...mateMatches.map((mate): MenuRow => ({
@@ -190,6 +193,32 @@ export default function ComposerMenu({
                                     <span className="chat-menu-mate">
                                         <span>{mate.title}</span>
                                         {mate.display && <AgentStateIndicator display={mate.display} />}
+                                    </span>
+                                </>
+                            ),
+                        })),
+                        ...closedNamed.slice(0, MAX_MENU_ENTRIES).map((earlier): MenuRow => ({
+                            key: earlierUri(earlier),
+                            group: "Closed",
+                            pick: { kind: "earlier", earlier, uri: earlierUri(earlier) },
+                            content: (
+                                <>
+                                    <span className="chat-menu-mark">
+                                        <AgentFace
+                                            agent={{
+                                                id: earlier.named?.agentId ?? earlier.chat.id,
+                                                type: earlier.chat.agent,
+                                                buddy: earlier.named?.buddy,
+                                            }}
+                                            size={13}
+                                            logoSize={13}
+                                            logoClass={`agent-glyph ${earlier.chat.agent}`}
+                                            buddyClass="agent-glyph buddy-mark"
+                                        />
+                                    </span>
+                                    <code>@{earlier.named?.name}</code>
+                                    <span className="chat-menu-mate">
+                                        <span>{earlier.chat.title}</span>
                                     </span>
                                 </>
                             ),

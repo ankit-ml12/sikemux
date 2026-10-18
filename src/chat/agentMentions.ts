@@ -44,12 +44,14 @@ export function useMates(agentId: string): Mate[] {
     }, [agentId, agents, sessions, windows, windowsBySession, sessionOrder, status]);
 }
 
-export function mateNote(mate: Mate, status: string, earlier?: string): string {
+export function mateNote(mate: Mate, status: string, earlier?: string, keptName = false): string {
     return [
         mate.project
             ? `@${mate.name} is an agent in another project, ${mate.project}, not the person.`
             : `@${mate.name} is another agent in this project, not the person.`,
-        ...(earlier ? [`Sikemux opened its earlier chat "${earlier}" again for this message, under this new name.`] : []),
+        ...(earlier
+            ? [`Sikemux opened its earlier chat "${earlier}" again for this message, ${keptName ? "under the name it had" : "under this new name"}.`]
+            : []),
         `Agent id: ${mate.id}`,
         `CLI: ${agentLabel(mate.type)}`,
         `Status: ${status}`,
