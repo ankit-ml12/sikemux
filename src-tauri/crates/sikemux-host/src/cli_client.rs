@@ -55,12 +55,6 @@ fn run_inner() -> Result<i32, String> {
         print!("{}", overview());
         return Ok(0);
     }
-    if invoked_as_editor {
-        let Some(open) = parse_open_args(args, true)? else {
-            return Ok(0);
-        };
-        return execute_open(open);
-    }
     let command = args[0].as_str();
     let wants_help = args[1..].iter().any(|arg| arg == "-h" || arg == "--help");
     match command {
@@ -88,10 +82,10 @@ fn run_inner() -> Result<i32, String> {
         "open" => {
             args.remove(0);
         }
-        word if looks_like_command(word) => return Err(unknown_word(word)),
+        word if !invoked_as_editor && looks_like_command(word) => return Err(unknown_word(word)),
         _ => {}
     }
-    let Some(open) = parse_open_args(args, false)? else {
+    let Some(open) = parse_open_args(args, invoked_as_editor)? else {
         return Ok(0);
     };
     execute_open(open)
