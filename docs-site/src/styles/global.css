@@ -921,49 +921,225 @@ body {
 
 /* Search */
 
-[role="dialog"]:has([role="option"], input) {
+.search-overlay {
+  background: color-mix(in oklab, var(--surface-sunken) 68%, transparent);
+  backdrop-filter: none;
+}
+
+.search-dialog {
+  top: 13vh;
+  width: min(600px, calc(100% - 24px));
+  max-width: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-4);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
   box-shadow: var(--shadow-4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
 }
 
-[role="dialog"] input {
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.search-head-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.search-head input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   font-size: 15px;
+  color: var(--text-primary);
+  outline: none;
+  box-shadow: none;
 }
 
-[role="dialog"] [role="option"] {
+.search-head input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.search-dialog kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--surface-sunken);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.search-list {
+  max-height: min(440px, 56vh);
+}
+
+.search-list #fd-search-list {
+  max-height: min(440px, 56vh);
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.search-list > p[role="status"]:empty {
+  display: none;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
   border-radius: var(--radius-2);
   font-size: 13px;
-  line-height: 1.5;
   color: var(--text-secondary);
 }
 
-[role="dialog"] [role="option"] .prose {
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-[role="dialog"] [role="option"][aria-selected="true"] {
+.search-row[aria-selected="true"] {
   background: var(--surface-chosen);
   color: var(--text-primary);
 }
 
-[role="dialog"] [role="option"] code {
-  padding: 1px 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  font-size: 0.9em;
+.search-row[data-kind="page"] {
+  font-weight: 500;
 }
 
-[role="dialog"] ::highlight(fd-search) {
+.search-row:not([data-kind="page"]) + .search-row[data-kind="page"] {
+  margin-top: 6px;
+}
+
+.search-row:not([data-kind="page"]) {
+  position: relative;
+  height: 30px;
+  padding-left: 18px;
+  color: var(--text-tertiary);
+}
+
+.search-row:not([data-kind="page"])[aria-selected="true"] {
+  color: var(--text-primary);
+}
+
+.search-row:not([data-kind="page"])::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 18px;
+  width: 1px;
+  background: var(--tree-spine);
+}
+
+.search-tick {
+  position: relative;
+  flex: none;
+  width: 9px;
+  height: 1px;
+  margin-right: 0;
+  background: var(--tree-tick);
+}
+
+.search-row[data-last] .search-tick {
+  background: none;
+}
+
+.search-row[data-last] .search-tick::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 9px;
+  height: 6px;
+  border-left: 1px solid var(--tree-spine);
+  border-bottom: 1px solid var(--tree-tick);
+  border-bottom-left-radius: 4px;
+}
+
+.search-row[data-last]::before {
+  bottom: calc(50% + 5px);
+}
+
+.search-row:not([data-kind="page"])[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 15px;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--acc);
+}
+
+.search-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.search-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-section {
+  flex: none;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.search-dialog ::highlight(fd-search) {
   background: color-mix(in oklab, var(--acc) 26%, transparent);
   color: var(--text-primary);
   text-decoration: none;
 }
 
-[role="dialog"] kbd {
-  border-radius: var(--radius-1);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+.search-empty {
+  padding: 28px 16px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.search-foot {
+  display: flex;
+  gap: 16px;
+  padding: 8px 14px;
+  background: none;
   font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.search-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.search-foot kbd {
+  min-width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 640px) {
+  .search-foot {
+    display: none;
+  }
 }
