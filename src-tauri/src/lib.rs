@@ -283,6 +283,7 @@ pub fn run() {
             account::account_link_host,
             account::account_sign_out,
             share::share_access,
+            share::share_viewer_hello,
             core_call::core_call,
             remote::remote_answer_pairing,
             remote::remote_allow_devices,

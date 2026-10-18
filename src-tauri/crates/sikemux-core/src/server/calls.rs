@@ -308,6 +308,7 @@ fn signed((key, signature): (String, String)) -> Value {
     json!({ "key": key, "signature": signature })
 }
 
+#[derive(Debug, Deserialize)]
 struct NonceParams {
     nonce: String,
 }

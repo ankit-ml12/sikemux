@@ -1,23 +1,27 @@
 //! Signing this host in to a Sikemux account, so devices on the same account
 //! find it. Sign-in happens in the person's browser (OAuth with PKCE), which
-//! hands back to a one-time listener on 127.0.0.1. The refresh token stays in
-//! the Keychain; the core keeps which account owns it, and holds the live
-//! connection that tells it when the account lets this host go. A host with no
-//! browser signs in by a code approved elsewhere instead, and keeps no token.
+//! hands back to a one-time listener on 127.0.0.1. That sign-in's token only
+//! registers the core's key with the account and is then dropped; every later
+//! request is signed with the key, so taking the host off the account cuts it
+//! off. The Keychain keeps who signed in; the core keeps which account owns
+//! it, and holds the live connection that tells it when the account lets this
+//! host go. A host with no browser signs in by a code approved elsewhere.
 
 mod profile;
 
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use reqwest::Response;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use reqwest::{Method, Response};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sikemux_core::accounts::protocol::{
-    Challenge, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
+    AccountProfile, Challenge, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
 };
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{AccountLinkState, DeviceInfo, RemoteStatus};
@@ -41,7 +45,7 @@ const CLIENT_ID: &str = "I4QXaIf3c7zntZR8";
 const CLERK: &str = "https://immense-llama-6668.clerk.accounts.dev";
 #[cfg(debug_assertions)]
 const CLIENT_ID: &str = "IfRz79s1n2WGOt3J";
-const SCOPES: &str = "email profile offline_access";
+const SCOPES: &str = "email profile";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PROFILE_RETRY: Duration = Duration::from_secs(15 * 60);
 
@@ -63,13 +67,11 @@ fn key_account() -> &'static str {
 /// the app asking, such as this host being removed from it elsewhere.
 pub const ACCOUNT_CHANGED_EVENT: &str = "account_changed";
 
-/// What the Keychain entry holds. Only the refresh token is secret, but
-/// keeping it all in one entry means there is never half an account.
+/// Who signed this host in from the browser, so the top bar can name them.
 #[derive(Serialize, Deserialize)]
 struct Saved {
     user_id: String,
     email: Option<String>,
-    refresh_token: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -193,19 +195,8 @@ fn released(remote: &RemoteStatus, user_id: &str) -> bool {
     !remote.core_id.is_empty() && remote.owner.as_deref() != Some(user_id)
 }
 
-/// Drops the saved sign-in, and asks the account service to drop its
-/// refresh token too, best effort.
-async fn forget(app: &AppHandle, saved: &Saved) -> AppResult<()> {
+async fn forget(app: &AppHandle) -> AppResult<()> {
     delete_saved().await?;
-    let _ = http()
-        .post(format!("{CLERK}/oauth/token/revoke"))
-        .form(&[
-            ("token", saved.refresh_token.as_str()),
-            ("token_type_hint", "refresh_token"),
-            ("client_id", CLIENT_ID),
-        ])
-        .send()
-        .await;
     profile::forget(&profile_dir(app)?).await?;
     Ok(())
 }
@@ -226,7 +217,7 @@ pub async fn account_status(
         return Ok(AccountStatus::owned_by(owner));
     };
     if remote.is_some_and(|remote| released(&remote, &saved.user_id)) {
-        forget(&app, &saved).await?;
+        forget(&app).await?;
         return Ok(AccountStatus::owned_by(owner));
     }
     Ok(status_of(&profile_dir(&app)?, saved).await)
@@ -263,8 +254,8 @@ pub fn notice_remote(app: &AppHandle, remote: &RemoteStatus) {
             (None, _) => {}
             (Some(saved), Some(owner)) if saved.user_id == *owner => return,
             (Some(_), None) if !removed => return,
-            (Some(saved), _) => {
-                if let Err(error) = forget(&app, &saved).await {
+            (Some(_), _) => {
+                if let Err(error) = forget(&app).await {
                     eprintln!("sikemux: could not forget the account: {error}");
                     return;
                 }
@@ -293,15 +284,14 @@ pub async fn account_refresh_profile(
     let tried_lately = last_try.is_some_and(|at| at.elapsed() < PROFILE_RETRY);
     if stale && !tried_lately {
         *last_try = Some(Instant::now());
-        if let Ok(access_token) = refreshed_access_token(&saved).await {
-            if let Some(info) = user_info(&access_token).await {
-                let fresh = info.into_profile(saved.user_id.clone(), profile::now());
+        if let Ok(core) = manager.client().await {
+            if let Ok(account) = account_profile(&core).await {
+                let fresh = profile::from_account(account, saved.user_id.clone(), profile::now());
                 let _ = profile::save(&dir, &fresh).await;
             }
         }
     }
     drop(last_try);
-    let saved = read_saved().await?.unwrap_or(saved);
     Ok(status_of(&dir, saved).await)
 }
 
@@ -328,52 +318,11 @@ pub(crate) async fn access_token() -> AppResult<Option<String>> {
             return Ok(Some(token.clone()));
         }
     }
-    let token = refreshed_access_token(&saved).await?;
-    *issued = Some((token.clone(), expiry(&token).unwrap_or(now)));
-    Ok(Some(token))
+    Ok(response.json().await?)
 }
 
-fn expiry(access_token: &str) -> Option<u64> {
-    #[derive(Deserialize)]
-    struct Claims {
-        exp: u64,
-    }
-    let payload = access_token.split('.').nth(1)?;
-    let bytes = URL_SAFE_NO_PAD.decode(payload).ok()?;
-    Some(serde_json::from_slice::<Claims>(&bytes).ok()?.exp)
-}
-
-/// A new access token for the saved account. When the account service hands
-/// back a new refresh token too, it replaces the saved one.
-async fn refreshed_access_token(saved: &Saved) -> AppResult<String> {
-    let response = http()
-        .post(format!("{CLERK}/oauth/token"))
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", saved.refresh_token.as_str()),
-            ("client_id", CLIENT_ID),
-        ])
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        return Err(AppError::Other(format!(
-            "the account service did not renew the sign-in ({})",
-            response.status()
-        )));
-    }
-    let tokens: Tokens = response.json().await?;
-    if let Some(next) = tokens
-        .refresh_token
-        .filter(|next| *next != saved.refresh_token)
-    {
-        write_saved(&Saved {
-            user_id: saved.user_id.clone(),
-            email: saved.email.clone(),
-            refresh_token: next,
-        })
-        .await?;
-    }
-    Ok(tokens.access_token)
+async fn account_profile(core: &CoreClient) -> AppResult<AccountProfile> {
+    as_host(core, Method::GET, "/v1/account/profile", None).await
 }
 
 /// Opens sign-in in the browser, waits for it, then registers this host's
@@ -385,6 +334,7 @@ pub async fn account_sign_in(
     manager: State<'_, PtyManager>,
     pending: State<'_, PendingSignIn>,
 ) -> AppResult<AccountStatus> {
+    let core = manager.client().await?;
     let (cancel, cancelled) = oneshot::channel();
     pending.replace(Some(cancel));
     let signed_in = tokio::select! {
@@ -396,19 +346,14 @@ pub async fn account_sign_in(
     };
     pending.replace(None);
     let tokens = signed_in?;
+    let registered = register_host(&core, &tokens.access_token).await;
+    revoke(tokens.refresh_token).await;
+    let user_id = registered?;
 
-    let user_id = subject(&tokens.access_token)?;
-    let info = user_info(&tokens.access_token).await.unwrap_or_default();
-    let email = info.email.clone();
-    let refresh_token = tokens.refresh_token.ok_or_else(|| {
-        AppError::Other("the sign-in did not give this host a way to stay signed in".into())
-    })?;
-    let core = manager.client().await?;
-    register_host(&core, &tokens.access_token, &user_id).await?;
+    let account = account_profile(&core).await.ok();
     let saved = Saved {
         user_id: user_id.clone(),
-        email: email.clone(),
-        refresh_token,
+        email: account.as_ref().and_then(|account| account.email.clone()),
     };
     write_saved(&saved).await?;
     if let Err(error) = core.set_owner(Some(user_id.clone())).await {
@@ -417,57 +362,57 @@ pub async fn account_sign_in(
     }
     let dir = profile_dir(&app)?;
     let _ = profile::forget(&dir).await;
-    let _ = profile::save(&dir, &info.into_profile(user_id, profile::now())).await;
+    if let Some(account) = account {
+        let _ = profile::save(&dir, &profile::from_account(account, user_id, profile::now())).await;
+    }
     Ok(status_of(&dir, saved).await)
+}
+
+/// Clerk hands out a refresh token only for offline access, which this app
+/// does not ask for; should one come anyway, it is revoked at once.
+async fn revoke(refresh_token: Option<String>) {
+    let Some(token) = refresh_token else {
+        return;
+    };
+    let _ = http()
+        .post(format!("{CLERK}/oauth/token/revoke"))
+        .form(&[
+            ("token", token.as_str()),
+            ("token_type_hint", "refresh_token"),
+            ("client_id", CLIENT_ID),
+        ])
+        .send()
+        .await;
+}
+
+/// The core's status, while an account owns this host.
+async fn owned(core: &CoreClient) -> AppResult<Option<RemoteStatus>> {
+    let remote = core.remote_status().await.map_err(core_error)?;
+    Ok((remote.owner.is_some() && !remote.core_id.is_empty()).then_some(remote))
 }
 
 /// The phones on the account this host has not paired, newest first, so the
 /// person can let them in right after signing in.
 #[tauri::command]
 pub async fn account_phones(manager: State<'_, PtyManager>) -> AppResult<Vec<Device>> {
-    let Some(saved) = read_saved().await? else {
+    let core = manager.client().await?;
+    let Some(remote) = owned(&core).await? else {
         return Ok(Vec::new());
     };
-    let access_token = refreshed_access_token(&saved).await?;
-    let response = http()
-        .get(api("/v1/devices"))
-        .query(&[("role", "client")])
-        .bearer_auth(access_token)
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        return Err(api_failure(response).await);
-    }
-    let list: DeviceList = response.json().await?;
-    let paired = manager
-        .client()
-        .await?
-        .remote_status()
-        .await
-        .map_err(core_error)?
-        .devices;
-    Ok(unpaired_phones(list.devices, &paired))
+    let list: DeviceList = as_host(&core, Method::GET, "/v1/devices?role=client", None).await?;
+    Ok(unpaired_phones(list.devices, &remote.devices))
 }
 
 /// The other hosts on the account that this one has not linked with, newest
 /// first.
 #[tauri::command]
 pub async fn account_hosts(manager: State<'_, PtyManager>) -> AppResult<Vec<Device>> {
-    let Some(token) = access_token().await? else {
+    let core = manager.client().await?;
+    let Some(remote) = owned(&core).await? else {
         return Ok(Vec::new());
     };
-    let response = http()
-        .get(api("/v1/devices"))
-        .query(&[("role", "host")])
-        .bearer_auth(token)
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        return Err(api_failure(response).await);
-    }
-    let list: DeviceList = response.json().await?;
-    let core = manager.client().await?;
-    let own = core.remote_status().await.map_err(core_error)?.core_id;
+    let list: DeviceList = as_host(&core, Method::GET, "/v1/devices?role=host", None).await?;
+    let own = remote.core_id;
     let pairing = core
         .call("pairing", serde_json::Value::Null)
         .await
@@ -496,24 +441,18 @@ pub async fn account_link_host(
     name: String,
     platform: String,
 ) -> AppResult<serde_json::Value> {
-    let token = access_token()
-        .await?
-        .ok_or_else(|| AppError::Other("sign in to link this computer with another".into()))?;
     let core = manager.client().await?;
-    let own = core.remote_status().await.map_err(core_error)?.core_id;
-    if own.is_empty() {
-        return Err(AppError::Other("the core's key has not loaded".into()));
-    }
-    let response = http()
-        .post(api(&format!("/v1/devices/{own}/join")))
-        .bearer_auth(token)
-        .json(&serde_json::json!({ "host": key }))
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        return Err(api_failure(response).await);
-    }
-    let ticket: JoinTicket = response.json().await?;
+    let own = owned(&core)
+        .await?
+        .ok_or_else(|| AppError::Other("sign in to link this host with another".into()))?
+        .core_id;
+    let ticket: JoinTicket = as_host(
+        &core,
+        Method::POST,
+        &format!("/v1/devices/{own}/join"),
+        Some(&serde_json::json!({ "host": key })),
+    )
+    .await?;
     core.call(
         "linkHost",
         serde_json::json!({ "ticket": ticket, "name": name, "platform": platform }),
@@ -546,8 +485,8 @@ pub async fn account_sign_out(
 ) -> AppResult<AccountStatus> {
     let core = manager.client().await?;
     core.set_owner(None).await.map_err(core_error)?;
-    if let Some(saved) = read_saved().await? {
-        forget(&app, &saved).await?;
+    if read_saved().await?.is_some() {
+        forget(&app).await?;
     }
     Ok(AccountStatus::signed_out())
 }
@@ -742,25 +681,14 @@ fn subject(access_token: &str) -> AppResult<String> {
     Ok(payload.sub)
 }
 
-/// The account's email, name and picture. Missing them does not stop sign-in.
-async fn user_info(access_token: &str) -> Option<profile::UserInfo> {
-    let response = http()
-        .get(format!("{CLERK}/oauth/userinfo"))
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    response.json().await.ok()
-}
-
 async fn api_failure(response: Response) -> AppError {
     AppError::Other(sikemux_host::account::refusal(response).await)
 }
 
-async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> AppResult<Device> {
+/// Registers the core's key with the account the browser signed in to, the
+/// one thing the sign-in's token is used for. Answers with the account.
+async fn register_host(core: &CoreClient, access_token: &str) -> AppResult<String> {
+    let user_id = subject(access_token)?;
     let response = http()
         .post(api("/v1/devices/challenge"))
         .bearer_auth(access_token)
@@ -771,7 +699,7 @@ async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> 
     }
     let challenge: Challenge = response.json().await?;
     let signed = core
-        .sign_registration(challenge.nonce.clone(), user_id.to_owned())
+        .sign_registration(challenge.nonce.clone(), user_id.clone())
         .await
         .map_err(core_error)?;
     let registration = DeviceRegistration {
@@ -792,7 +720,7 @@ async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> 
     if !response.status().is_success() {
         return Err(api_failure(response).await);
     }
-    Ok(response.json().await?)
+    Ok(user_id)
 }
 
 #[cfg(test)]
@@ -805,7 +733,6 @@ mod tests {
         let saved = Saved {
             user_id: "user_1".into(),
             email: Some("someone@example.com".into()),
-            refresh_token: "rt.abc-def_ghi".into(),
         };
         let text = encode_saved(&saved).expect("encode");
         assert!(text
@@ -814,7 +741,6 @@ mod tests {
         let back = decode_saved(&text).expect("decode");
         assert_eq!(back.user_id, "user_1");
         assert_eq!(back.email.as_deref(), Some("someone@example.com"));
-        assert_eq!(back.refresh_token, "rt.abc-def_ghi");
     }
 
     #[test]
@@ -851,7 +777,7 @@ mod tests {
             URL_SAFE_NO_PAD.encode(Sha256::digest(pkce.verifier.as_bytes()))
         );
         assert_eq!(params["state"], pkce.state);
-        assert!(params["scope"].contains("offline_access"));
+        assert!(!params["scope"].contains("offline_access"));
     }
 
     #[test]

@@ -12,6 +12,7 @@ use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sikemux_core::accounts::protocol::AccountProfile;
 
 use crate::release_credits::image_type;
 
@@ -41,37 +42,16 @@ impl Profile {
     }
 }
 
-/// What Clerk's `/oauth/userinfo` answers for the `email profile` scopes.
-#[derive(Debug, Default, Deserialize)]
-pub struct UserInfo {
-    pub email: Option<String>,
-    name: Option<String>,
-    given_name: Option<String>,
-    family_name: Option<String>,
-    picture: Option<String>,
-}
-
-impl UserInfo {
-    pub fn into_profile(self, user_id: String, now: u64) -> Profile {
-        let joined = [self.given_name, self.family_name]
-            .into_iter()
-            .flatten()
-            .map(|part| part.trim().to_owned())
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ");
-        let name = self
+pub fn from_account(account: AccountProfile, user_id: String, now: u64) -> Profile {
+    Profile {
+        user_id,
+        name: account
             .name
             .map(|name| name.trim().to_owned())
-            .filter(|name| !name.is_empty())
-            .or_else(|| (!joined.is_empty()).then_some(joined));
-        Profile {
-            user_id,
-            name,
-            email: self.email,
-            picture: self.picture.filter(|url| picture_url_allowed(url)),
-            checked_at: now,
-        }
+            .filter(|name| !name.is_empty()),
+        email: account.email,
+        picture: account.image_url.filter(|url| picture_url_allowed(url)),
+        checked_at: now,
     }
 }
 
@@ -297,21 +277,6 @@ mod tests {
         let mut huge = PNG.to_vec();
         huge.resize(MAX_PICTURE_BYTES + 1, 0);
         assert_eq!(data_url(&huge), None);
-    }
-
-    #[test]
-    fn the_name_falls_back_to_given_and_family_names() {
-        let info = UserInfo {
-            email: Some("a@b.c".into()),
-            name: Some("  ".into()),
-            given_name: Some("Ada".into()),
-            family_name: Some("Lovelace".into()),
-            picture: Some("http://insecure.example/p.png".into()),
-        };
-        let profile = info.into_profile("user_1".into(), 7);
-        assert_eq!(profile.name.as_deref(), Some("Ada Lovelace"));
-        assert_eq!(profile.picture, None);
-        assert_eq!(profile.checked_at, 7);
     }
 
     #[tokio::test]
