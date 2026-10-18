@@ -3,13 +3,15 @@ ZERO='0000000000000000000000000000000000000000'
 root="$(git rev-parse --show-toplevel)"
 refs="$(cat)"
 
-ranges=()
+# Only commits no remote has yet: a new tag or branch carries old ones too.
+pushed=()
+known=()
 while read -r _ local_sha _ remote_sha; do
   [ -n "$local_sha" ] && [ "$local_sha" != "$ZERO" ] || continue
+  pushed+=("$local_sha")
   if [ "$remote_sha" != "$ZERO" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
-    ranges+=("$remote_sha..$local_sha")
-  else
-    ranges+=("origin/main..$local_sha")
+    known+=("$remote_sha")
   fi
 done <<<"$refs"
-exec "$root/scripts/commit-credits.sh" "${ranges[@]}"
+[ "${#pushed[@]}" -gt 0 ] || exit 0
+exec "$root/scripts/commit-credits.sh" "${pushed[@]}" --not --remotes "${known[@]}"
