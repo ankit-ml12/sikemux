@@ -1,6 +1,7 @@
 // Google Cloud: a console over the projects the person's gcloud accounts can
 // see, and gcp_* tools for agents.
 //
+//   agent       — the gcp_* tools agents call
 //   agent_setup — the account and project agents' shells start on
 //   gcloud   — the gcloud CLI, which holds the sign-in; nothing here stores a credential
 //   auth     — accounts, configurations, and the access tokens gcloud hands out
@@ -18,6 +19,7 @@
 //   functions — Cloud Functions of both generations
 //   metrics  — Cloud Monitoring charts for services, VMs, databases and queues
 
+mod agent;
 mod agent_setup;
 mod auth;
 mod build;
@@ -70,7 +72,7 @@ struct PickParams {
     pick: agent_setup::Pick,
 }
 
-fn now_secs() -> u64 {
+pub(crate) fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
@@ -157,7 +159,10 @@ impl Plugin for Gcp {
                 "functions" => answer(functions::functions(params(input)?)).await,
                 "function" => answer(functions::function_detail(params(input)?)).await,
                 "metrics" => answer(metrics::chart(params(input)?)).await,
-                _ => Err(PluginError::unknown_method(method)),
+                _ => match agent::call(ctx, method, input).await {
+                    Some(answer) => answer,
+                    None => Err(PluginError::unknown_method(method)),
+                },
             }
         })
     }
@@ -203,5 +208,23 @@ mod tests {
     fn its_manifest_parses() {
         let plugin = plugin().expect("manifest parses");
         assert_eq!(plugin.manifest().id, "sikemux.gcp");
+        let names: Vec<&str> = plugin
+            .manifest()
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "gcp_projects",
+                "gcp_list",
+                "gcp_get",
+                "gcp_logs",
+                "gcp_metrics",
+                "gcp_kube",
+                "gcp_act"
+            ]
+        );
     }
 }
