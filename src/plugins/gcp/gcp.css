@@ -1053,3 +1053,120 @@ button.gcp-project-row:hover {
     background: rgba(30, 142, 62, 0.12);
     color: var(--gcp-green);
 }
+
+/* BigQuery */
+
+.gcp-studio {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.gcp-explorer {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--gcp-line);
+    border-radius: 4px;
+    background: var(--gcp-raised);
+    max-height: 75vh;
+    overflow-y: auto;
+}
+
+.gcp-explorer-head {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--gcp-line);
+    font-weight: 500;
+}
+
+.gcp-explorer-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gcp-explorer-item.nested,
+.gcp-explorer-nested {
+    padding-left: 30px;
+}
+
+.gcp-explorer-item:hover {
+    background: var(--gcp-hover);
+}
+
+.gcp-explorer-item.on {
+    background: var(--gcp-blue-soft);
+    color: var(--gcp-blue-text);
+}
+
+.gcp-studio-main {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+
+.gcp-sql {
+    height: 140px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.gcp-grid-wrap {
+    border: 1px solid var(--gcp-line);
+    border-radius: 4px;
+    max-height: 55vh;
+    overflow: auto;
+}
+
+.gcp-grid {
+    border-collapse: collapse;
+    font-size: 12px;
+    width: max-content;
+    min-width: 100%;
+}
+
+.gcp-grid th,
+.gcp-grid td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--gcp-line);
+    text-align: left;
+    white-space: nowrap;
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gcp-grid th {
+    position: sticky;
+    top: 0;
+    background: var(--gcp-sunken);
+    font-weight: 500;
+    color: var(--gcp-text-2);
+}
+
+.gcp-schema {
+    border: 1px solid var(--gcp-line);
+    border-radius: 4px;
+}
+
+.gcp-schema-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1.2fr) 110px 100px minmax(120px, 1.6fr);
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--gcp-line);
+}
+
+.gcp-schema-row.head {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--gcp-text-2);
+}

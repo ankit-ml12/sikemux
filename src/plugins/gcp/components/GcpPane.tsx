@@ -18,6 +18,7 @@ import { BuildPage } from "./BuildPage";
 import { SecretsPage } from "./SecretsPage";
 import { FunctionsPage } from "./FunctionsPage";
 import { ErrorsPage } from "./ErrorsPage";
+import { BigQueryPage } from "./BigQueryPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -38,6 +39,7 @@ const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     gke: GkePage,
     storage: StoragePage,
     sql: SqlPage,
+    bigquery: BigQueryPage,
     pubsub: PubSubPage,
     build: BuildPage,
     secrets: SecretsPage,
