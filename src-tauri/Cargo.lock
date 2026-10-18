@@ -5851,8 +5851,10 @@ dependencies = [
 name = "sikemux-loopback"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "getrandom 0.3.4",
  "hex",
+ "sha2 0.11.0",
  "tokio",
  "url",
  "workspace-hack",
@@ -6042,13 +6044,11 @@ dependencies = [
 name = "sikemux-plugin-linear"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.1",
  "futures",
  "reqwest",
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "sikemux-keychain",
  "sikemux-loopback",
  "sikemux-plugin-api",
