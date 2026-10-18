@@ -143,10 +143,10 @@
     min-width: 0;
 }
 .git-detail-facts .git-fact-ahead {
-    color: var(--warn);
+    color: var(--live);
 }
 .git-detail-facts .git-fact-behind {
-    color: var(--git-renamed);
+    color: var(--warn);
 }
 .git-foot-btn.icon {
     justify-content: center;

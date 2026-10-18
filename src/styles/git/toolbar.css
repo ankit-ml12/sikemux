@@ -193,11 +193,12 @@
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
 }
+/* The same colours as the top bar's branch: to push in green, to pull in amber. */
 .git-side-count.ahead {
-    color: var(--warn);
+    color: var(--live);
 }
 .git-side-count.behind {
-    color: var(--git-renamed);
+    color: var(--warn);
 }
 .git-btn-group.git-side-actions {
     display: grid;
