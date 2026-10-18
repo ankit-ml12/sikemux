@@ -1,11 +1,12 @@
 import { agentHandle } from "../agents/AgentLabel";
+import { AgentMark } from "../agents/AgentMark";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { isAgentType } from "../agents/catalog";
 import type { TeamLink, TeamMember } from "../agents/teams";
 import type { RemoteAgent, RemoteAgentStatus } from "../api/inbox";
 import { agentDisplay } from "../state/agentStatus";
 import type { AgentPresentationState } from "../state/types";
-import { AgentIcon, IconAgent } from "../ui/Icons";
+import { IconAgent } from "../ui/Icons";
 
 export interface RemoteWorker extends TeamMember {
     readonly remote: RemoteAgent;
@@ -40,7 +41,7 @@ export function RemoteAgentRow({ agent, link }: { agent: RemoteAgent; link?: Tea
         <div className={teamWrapClass(link)}>
             <div className="agent-row remote" title={agent.reachable ? `Runs on ${agent.host}` : `${agent.host} is out of reach`}>
                 <span className={`agent-glyph ${agent.cli}`}>
-                    {isAgentType(agent.cli) ? <AgentIcon type={agent.cli} size={20} /> : <IconAgent size={20} />}
+                    {isAgentType(agent.cli) ? <AgentMark agentId={agent.agentId} cli={agent.cli} size={20} /> : <IconAgent size={20} />}
                 </span>
                 <span className="agent-title">
                     <span className="agent-name">{agentHandle(agent.name)}</span>{" "}

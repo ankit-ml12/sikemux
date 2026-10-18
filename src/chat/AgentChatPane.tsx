@@ -500,6 +500,7 @@ export function AgentChatPane({
                                     answering={
                                         questions.writing && questions.composing
                                             ? {
+                                                  agentId: questions.composing.agentId,
                                                   name: questions.composing.name,
                                                   cli: questions.composing.cli,
                                                   question: questions.composing.text,

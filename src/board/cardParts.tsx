@@ -11,7 +11,7 @@ export function Owner({ id, name, cli, paidBy }: { id: string; name: string | nu
     const display = agent && agent.launchState !== "dormant" ? agentDisplay(state) : null;
     return (
         <span className="board-owner">
-            <AgentMark cli={agent?.type ?? cli} />
+            <AgentMark agentId={id} cli={cli} />
             <b>{agent?.name ? agentHandle(agent.name) : name ? agentHandle(name) : "An agent"}</b>
             {paidBy && (
                 <span className="board-owner-paid" title={`Paid with ${paidBy}`}>
