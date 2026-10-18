@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as cmd from "../commands";
-import { agentIdsOf } from "../selectors";
+import { acceptDialog, useDialogs } from "../dialog";
+import { agentIdsOf, projectSessionId } from "../selectors";
 import { getState, setState } from "../store";
 import type { Agent, Session } from "../types";
 
@@ -25,6 +26,7 @@ describe("agent deep links", () => {
     });
 
     it("opens the project and resumes the conversation the link names", () => {
+        cmd.createProjectSession(project.cwd);
         const link = cmd.agentLink(agent("session-42"), project)!;
         expect(cmd.routeDeepLink(link)).toBe(true);
         const state = getState();
@@ -34,7 +36,18 @@ describe("agent deep links", () => {
         expect(opened).toEqual([expect.objectContaining({ type: "claude", resumeId: "session-42" })]);
     });
 
+    it("asks before starting an agent in a folder that is not a project yet", async () => {
+        const link = cmd.agentLink(agent("session-42"), project)!;
+        expect(cmd.routeDeepLink(link)).toBe(true);
+        expect(projectSessionId(getState(), project.cwd)).toBeNull();
+        acceptDialog(useDialogs.getState().dialog!.id);
+        await Promise.resolve();
+        const state = getState();
+        expect(agentIdsOf(state, projectSessionId(state, project.cwd)!)).toHaveLength(1);
+    });
+
     it("focuses the agent already open on that conversation instead of opening another", () => {
+        cmd.createProjectSession(project.cwd);
         const link = cmd.agentLink(agent("session-42"), project)!;
         cmd.routeDeepLink(link);
         cmd.routeDeepLink(link);
@@ -46,6 +59,8 @@ describe("agent deep links", () => {
         expect(cmd.routeDeepLink("sikemux://agent/nobody/1?project=%2Ftmp")).toBe(false);
         expect(cmd.routeDeepLink("sikemux://agent/claude?project=%2Ftmp")).toBe(false);
         expect(cmd.routeDeepLink("sikemux://agent/claude/1")).toBe(false);
+        expect(cmd.routeDeepLink("sikemux://agent/claude/--settings=x?project=%2Ftmp")).toBe(false);
+        expect(cmd.routeDeepLink("sikemux://agent/claude/1?project=tmp")).toBe(false);
         expect(cmd.routeDeepLink("https://example.com/")).toBe(false);
         expect(cmd.routeDeepLink("not a link")).toBe(false);
     });
