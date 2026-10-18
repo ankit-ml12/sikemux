@@ -36,6 +36,8 @@ const SHUTDOWN_FLUSH: Duration = Duration::from_secs(1);
 pub(crate) struct ClientConn {
     pub id: ClientId,
     pub peer: Peer,
+    /// The process on the other end, for a client on this host.
+    pub pid: Option<u32>,
     frames: mpsc::UnboundedSender<Arc<[u8]>>,
     queued: AtomicUsize,
     closed: AtomicBool,
@@ -72,6 +74,7 @@ impl ClientConn {
         let client = Arc::new(Self {
             id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
             peer,
+            pid: None,
             frames,
             queued: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
@@ -95,6 +98,7 @@ impl ClientConn {
         let client = Arc::new(Self {
             id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
             peer,
+            pid: None,
             frames,
             queued: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
@@ -280,13 +284,15 @@ async fn handshake(
 
 pub(crate) async fn serve_local(core: Arc<Core>, stream: UnixStream) {
     let peer = local_peer::identify(&stream).await;
+    let pid = local_peer::pid(&stream);
     let (read_half, write_half) = stream.into_split();
-    serve_client(core, peer, Box::new(read_half), Box::new(write_half)).await;
+    serve_client(core, peer, pid, Box::new(read_half), Box::new(write_half)).await;
 }
 
 pub(crate) async fn serve_client(
     core: Arc<Core>,
     peer: Peer,
+    pid: Option<u32>,
     read_half: Box<dyn AsyncRead + Send + Unpin>,
     write_half: Box<dyn AsyncWrite + Send + Unpin>,
 ) {
@@ -299,6 +305,7 @@ pub(crate) async fn serve_client(
     let client = Arc::new(ClientConn {
         id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
         peer,
+        pid,
         frames,
         queued: AtomicUsize::new(0),
         closed: AtomicBool::new(false),

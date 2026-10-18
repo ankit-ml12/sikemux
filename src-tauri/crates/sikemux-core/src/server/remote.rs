@@ -1594,6 +1594,7 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
     serve_client(
         core.clone(),
         Peer::Device { id: id.clone() },
+        None,
         Box::new(recv),
         Box::new(send),
     )

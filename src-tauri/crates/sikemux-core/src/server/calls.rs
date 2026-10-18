@@ -33,7 +33,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "moveProject" | "setSpaces" | "setPinnedChats" | "setAgentDefaults" | "createAgent"
         | "updateAgent" | "closeAgents" | "plugin" | "pluginManifests" | "pluginSetDisabled"
         | "pluginStream" | "pluginSignIn" | "signInCallback" => Needs::Person,
-        "changeOwners" | "commitOwners" | "activitySummary" => Needs::Watch,
+        "changeOwners" | "commitOwners" | "activitySummary" | "showCi" => Needs::Watch,
         "setActivityPrice" => Needs::Person,
         "createAgentWorktree" => Needs::Person,
         "modelProviders" | "modelProviderModels" | "modelHelper" | "agentSignIns" => Needs::Full,
@@ -41,7 +41,9 @@ pub(crate) fn needs(method: &str) -> Needs {
         "skillsOverview" | "skillsAdded" | "savedSessions" | "recentSessions" => Needs::Full,
         "renameSession" | "deleteSession" | "relocateSession" => Needs::Person,
         "createSkill" | "installSkill" | "removeSkill" | "adoptSkill" => Needs::Person,
-        "modelProviderCheck" | "modelProviderConnect" | "modelProviderDisconnect"
+        "modelProviderCheck"
+        | "modelProviderConnect"
+        | "modelProviderDisconnect"
         | "setModelHelper" => Needs::Person,
         method if method.starts_with("git.") => super::git::needs(method),
         _ => Needs::Local,
@@ -70,6 +72,7 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "edits"
             | "changeOwners"
             | "commitOwners"
+            | "showCi"
             | "inbox"
             | "digest"
             | "activitySummary"
@@ -121,11 +124,18 @@ pub(crate) async fn call(
         }
         "steerQueued" => {
             let params: QueuedParams = parse(params)?;
-            answer(super::chat::queue::steer(&core, &params.agent_id, params.ids, params.message).await?)
+            answer(
+                super::chat::queue::steer(&core, &params.agent_id, params.ids, params.message)
+                    .await?,
+            )
         }
         "dropQueued" => {
             let params: QueuedParams = parse(params)?;
-            answer(super::chat::queue::remove(&core, &params.agent_id, &params.ids)?)
+            answer(super::chat::queue::remove(
+                &core,
+                &params.agent_id,
+                &params.ids,
+            )?)
         }
         "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
         "workspace" => answer(core.workspaces.view()),
@@ -228,6 +238,10 @@ pub(crate) async fn call(
             answer(())
         }
         "trustAsks" => answer(super::tasks::asks(&core)),
+        "showCi" => {
+            super::ci::show(&core, client.id, parse(params)?);
+            answer(())
+        }
         "answerTrust" => {
             let params: TrustAnswerParams = parse(params)?;
             answer(super::tasks::answer_trust(&core, &params.id, params.trust)?)
@@ -241,9 +255,27 @@ pub(crate) async fn call(
             answer(())
         }
         "pluginStream" => answer(plugins::stream_ticket(parse(params)?)?),
-        "pluginSignIn" => answer(plugins::sign_in_ticket(parse(params)?)?),
-        "signInCallback" => answer(plugins::sign_in_callback(parse(params)?)?),
+        "pluginSignIn" => {
+            not_an_agent(client).await?;
+            answer(plugins::sign_in_ticket(parse(params)?)?)
+        }
+        "signInCallback" => {
+            not_an_agent(client).await?;
+            answer(plugins::sign_in_callback(parse(params)?)?)
+        }
         _ => Err(format!("this host does not know {method}").into()),
+    }
+}
+
+/// Refuses a program an agent started: it could sign the person's plugin in
+/// to an account of its own choosing.
+async fn not_an_agent(client: &ClientConn) -> CoreResult<()> {
+    let Some(pid) = client.pid else {
+        return Ok(());
+    };
+    match blocking(move || Ok(super::callers::agent_of(pid))).await? {
+        Some(_) => Err("an agent cannot sign the person in to a service; the person runs this".into()),
+        None => Ok(()),
     }
 }
 
@@ -414,9 +446,10 @@ async fn activity_summary(
 ) -> CoreResult<super::activity_log::ActivitySummary> {
     let core = core.clone();
     blocking(move || {
-        Ok(core
-            .activity_log
-            .summary(params.utc_offset_minutes * 60_000, params.project.as_deref()))
+        Ok(core.activity_log.summary(
+            params.utc_offset_minutes * 60_000,
+            params.project.as_deref(),
+        ))
     })
     .await
 }

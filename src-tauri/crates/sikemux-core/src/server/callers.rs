@@ -186,6 +186,23 @@ pub(crate) fn identify(peer: SocketAddr, port: u16) -> Option<String> {
     agent
 }
 
+/// The agent whose process tree `pid` belongs to, if any. Blocks while it
+/// reads the process table.
+pub(crate) fn agent_of(pid: u32) -> Option<String> {
+    let roots: HashMap<u32, (u64, String)> = {
+        let mut known = known();
+        known
+            .roots
+            .retain(|pid, root| platform::started(*pid) == Some(root.started));
+        known
+            .roots
+            .iter()
+            .map(|(pid, root)| (*pid, (root.started, root.agent_id.clone())))
+            .collect()
+    };
+    agent_above(pid, &roots)
+}
+
 fn remember(pid: u32) {
     let Some(started) = platform::started(pid) else {
         return;

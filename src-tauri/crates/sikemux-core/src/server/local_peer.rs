@@ -75,6 +75,11 @@ fn app_paths_beside(own: &Path) -> Vec<PathBuf> {
     paths
 }
 
+/// The process on the other end of a connection from this host.
+pub(crate) fn pid(stream: &UnixStream) -> Option<u32> {
+    platform::credentials(stream.as_raw_fd()).map(|credentials| credentials.pid())
+}
+
 pub(crate) async fn identify(stream: &UnixStream) -> Peer {
     let Some(credentials) = platform::credentials(stream.as_raw_fd()) else {
         return Peer::Local;
