@@ -11,6 +11,9 @@
 //!
 //! A `git commit` the core runs itself is no agent, but its hooks may ask once
 //! for the commit's footer while it runs.
+//!
+//! A Sikemux started from an agent's shell, such as a build of it being worked
+//! on, runs agents of its own, and their calls are not the outer agent's.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
@@ -22,6 +25,8 @@ use std::time::{Duration, Instant};
 const RECENT_CALLERS: usize = 32;
 /// Deeper than any agent's tree, short of a loop in a table read mid-change.
 const MAX_DEPTH: usize = 64;
+/// The names Sikemux's app and core run under.
+const SIKEMUX_PROCESSES: [&str; 2] = ["sikemux", "sikemux-editor"];
 
 struct Root {
     started: u64,
@@ -193,12 +198,19 @@ fn remember(pid: u32) {
     known.recent.push_front((pid, started));
 }
 
-/// The nearest agent process at or above `pid`.
+/// The nearest agent process at or above `pid`, short of a Sikemux between
+/// them. `pid` itself may be one, as an agent's tool server is.
 fn agent_above(mut pid: u32, roots: &HashMap<u32, (u64, String)>) -> Option<String> {
+    let caller = pid;
     for _ in 0..MAX_DEPTH {
         let (parent, started) = platform::parent(pid)?;
         if let Some((root_started, agent_id)) = roots.get(&pid) {
             return (*root_started == started).then(|| agent_id.clone());
+        }
+        if pid != caller
+            && platform::name(pid).is_some_and(|name| SIKEMUX_PROCESSES.contains(&name.as_str()))
+        {
+            return None;
         }
         if parent <= 1 {
             return None;
@@ -279,6 +291,17 @@ mod platform {
 
     pub(super) fn parent(pid: u32) -> Option<(u32, u64)> {
         bsd_info(pid).map(|info| (info.pbi_ppid, start_of(&info)))
+    }
+
+    pub(super) fn name(pid: u32) -> Option<String> {
+        let info = bsd_info(pid)?;
+        let bytes: Vec<u8> = info
+            .pbi_comm
+            .iter()
+            .take_while(|byte| **byte != 0)
+            .map(|byte| *byte as u8)
+            .collect();
+        String::from_utf8(bytes).ok()
     }
 
     pub(super) fn processes() -> Vec<(u32, u32, u64)> {
@@ -394,6 +417,12 @@ mod platform {
         stat(pid)
     }
 
+    pub(super) fn name(pid: u32) -> Option<String> {
+        fs::read_to_string(format!("/proc/{pid}/comm"))
+            .ok()
+            .map(|name| name.trim_end().to_owned())
+    }
+
     pub(super) fn processes() -> Vec<(u32, u32, u64)> {
         let Ok(entries) = fs::read_dir("/proc") else {
             return Vec::new();
@@ -453,6 +482,10 @@ mod platform {
     }
 
     pub(super) fn parent(_pid: u32) -> Option<(u32, u64)> {
+        None
+    }
+
+    pub(super) fn name(_pid: u32) -> Option<String> {
         None
     }
 
