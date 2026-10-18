@@ -1476,6 +1476,7 @@ function hostStatus() {
     ["status", "--json"],
     isolatedEnvironment,
     2_000,
+    "sikemux",
   );
   try {
     return JSON.parse(status.stdout);
