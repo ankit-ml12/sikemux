@@ -24,6 +24,7 @@
 //   iam      — who holds which role, and service accounts
 //   bigquery — datasets, tables, previews and capped queries
 //   billing  — whether the project bills, to which account, and its budgets
+//   network  — VPC networks, subnets and firewall rules
 
 mod agent;
 mod agent_setup;
@@ -41,6 +42,7 @@ mod gke;
 mod iam;
 mod logging;
 mod metrics;
+mod network;
 mod projects;
 mod pubsub;
 mod registry;
@@ -193,6 +195,8 @@ impl Plugin for Gcp {
                 "iamMembers" => answer(iam::members(params(input)?)).await,
                 "serviceAccounts" => answer(iam::service_accounts(params(input)?)).await,
                 "billing" => answer(billing::billing(params(input)?)).await,
+                "network" => answer(network::overview(params(input)?)).await,
+                "firewallToggle" => answer(network::set_firewall(params(input)?)).await,
                 "datasets" => answer(bigquery::datasets(params(input)?)).await,
                 "tables" => answer(bigquery::tables(params(input)?)).await,
                 "table" => answer(bigquery::table(params(input)?)).await,
