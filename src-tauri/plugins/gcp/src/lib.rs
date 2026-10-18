@@ -25,15 +25,19 @@
 //   bigquery — datasets, tables, previews and capped queries
 //   billing  — whether the project bills, to which account, and its budgets
 //   network  — VPC networks, subnets and firewall rules
+//   dns      — Cloud DNS zones and records
+//   alerting — alert policies, uptime checks and notification channels
 
 mod agent;
 mod agent_setup;
+mod alerting;
 mod auth;
 mod bigquery;
 mod billing;
 mod build;
 mod client;
 mod compute;
+mod dns;
 mod error;
 mod errors;
 mod functions;
@@ -197,6 +201,10 @@ impl Plugin for Gcp {
                 "billing" => answer(billing::billing(params(input)?)).await,
                 "network" => answer(network::overview(params(input)?)).await,
                 "firewallToggle" => answer(network::set_firewall(params(input)?)).await,
+                "dnsZones" => answer(dns::zones(params(input)?)).await,
+                "dnsRecords" => answer(dns::records(params(input)?)).await,
+                "alerting" => answer(alerting::alerting(params(input)?)).await,
+                "alertPolicyToggle" => answer(alerting::set_policy(params(input)?)).await,
                 "datasets" => answer(bigquery::datasets(params(input)?)).await,
                 "tables" => answer(bigquery::tables(params(input)?)).await,
                 "table" => answer(bigquery::table(params(input)?)).await,
