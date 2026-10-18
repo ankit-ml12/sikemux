@@ -554,3 +554,107 @@ async fn event_cursors_outlive_the_core_and_the_endpoint_file_goes_with_it() {
     assert!(data.join("journal").read_dir().unwrap().count() == 1);
     assert!(data.join("agent-tool-calls.json").exists());
 }
+
+async fn run_status(endpoint: &Path, project: &Path, execution_id: &str, until: &str) -> Value {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let read = call(
+            endpoint,
+            project,
+            "task.read",
+            json!({ "executionId": execution_id, "plain": true }),
+        )
+        .await
+        .unwrap();
+        if read["status"] == until {
+            return read;
+        }
+        assert!(Instant::now() < deadline, "never {until}: {read}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sikemux_json_task_runs_once_the_person_trusts_the_file_and_asks_again_when_it_changes() {
+    let dir = tempfile::tempdir().expect("dir");
+    let (_project_dir, project) = project_dir();
+    let core = start_core(dir.path(), &dir.path().join("data"));
+    let endpoint = core.endpoint.clone();
+    let (person, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let start = |key: &str| json!({ "taskId": "hello", "idempotencyKey": key });
+
+    let absent = call(&endpoint, &project, "task.start", start("absent")).await;
+    assert!(absent.unwrap_err().contains("has no sikemux.json"));
+    std::fs::write(project.join("sikemux.json"), "{").unwrap();
+    let invalid = call(&endpoint, &project, "task.start", start("invalid")).await;
+    assert!(invalid.unwrap_err().contains("sikemux.json is invalid"));
+
+    let config = json!({
+        "version": 1,
+        "tasks": [{ "id": "hello", "label": "Hello", "command": "printf 'HELLO\\n'; sleep 30" }],
+    });
+    std::fs::write(project.join("sikemux.json"), config.to_string()).unwrap();
+    let waiting = call(&endpoint, &project, "task.start", start("first"))
+        .await
+        .unwrap();
+    assert_eq!(waiting["status"], "awaiting-trust", "{waiting}");
+    let execution_id = waiting["executionId"].as_str().unwrap().to_owned();
+    let asks = person.call("trustAsks", Value::Null).await.unwrap();
+    assert_eq!(asks[0]["executionId"], execution_id.as_str(), "{asks}");
+    assert!(asks[0]["commands"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("HELLO"));
+    person
+        .call("answerTrust", json!({ "id": asks[0]["id"], "trust": true }))
+        .await
+        .unwrap();
+    let running = run_status(&endpoint, &project, &execution_id, "running").await;
+    assert_eq!(running["label"], "Hello");
+
+    let restarted = call(
+        &endpoint,
+        &project,
+        "task.restart",
+        json!({ "taskId": "hello" }),
+    )
+    .await
+    .unwrap();
+    assert_ne!(restarted["executionId"], execution_id.as_str());
+    assert_eq!(restarted["status"], "running", "{restarted}");
+    run_status(&endpoint, &project, &execution_id, "stopped").await;
+    let replaced = restarted["executionId"].as_str().unwrap().to_owned();
+    call(
+        &endpoint,
+        &project,
+        "task.stop",
+        json!({ "executionId": replaced }),
+    )
+    .await
+    .unwrap();
+
+    std::fs::write(project.join("sikemux.json"), format!("{config}\n")).unwrap();
+    let again = call(&endpoint, &project, "task.start", start("changed"))
+        .await
+        .unwrap();
+    assert_eq!(again["status"], "awaiting-trust", "{again}");
+    let asks = person.call("trustAsks", Value::Null).await.unwrap();
+    person
+        .call(
+            "answerTrust",
+            json!({ "id": asks[0]["id"], "trust": false }),
+        )
+        .await
+        .unwrap();
+    let refused = run_status(
+        &endpoint,
+        &project,
+        again["executionId"].as_str().unwrap(),
+        "failed",
+    )
+    .await;
+    assert!(
+        refused["error"].as_str().unwrap().contains("not approved"),
+        "{refused}"
+    );
+}
