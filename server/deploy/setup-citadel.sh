@@ -56,6 +56,8 @@ EOF
 fi
 chown root:sikemux /etc/sikemux/api.env
 chmod 640 /etc/sikemux/api.env
+grep -q '^GEOIP_DIR=' /etc/sikemux/api.env ||
+  echo 'GEOIP_DIR=/var/lib/sikemux-places' >>/etc/sikemux/api.env
 
 step "database, reachable only by the sikemux users through the local socket"
 psql -U "$PG_ADMIN" -d postgres -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -96,9 +98,14 @@ step "service"
 install -m 644 "$here/sikemux-api.service" /etc/systemd/system/sikemux-api.service
 install -m 644 "$here/sikemux-purge.service" /etc/systemd/system/sikemux-purge.service
 install -m 644 "$here/sikemux-purge.timer" /etc/systemd/system/sikemux-purge.timer
+install -m 644 "$here/sikemux-places.service" /etc/systemd/system/sikemux-places.service
+install -m 644 "$here/sikemux-places.timer" /etc/systemd/system/sikemux-places.timer
+install -D -m 755 -o root -g root "$here/update-places" /usr/local/lib/sikemux/update-places
 systemctl daemon-reload
 systemctl enable sikemux-api >/dev/null
 systemctl enable --now sikemux-purge.timer >/dev/null
+systemctl enable --now sikemux-places.timer >/dev/null
+[ -f /var/lib/sikemux-places/dbip-asn-lite.mmdb ] || systemctl start sikemux-places
 
 step "backups: nightly, encrypted to an offline age key, sent to R2"
 if ! command -v age >/dev/null || ! command -v rclone >/dev/null; then
@@ -198,6 +205,20 @@ if ! /usr/local/lib/sikemux/iroh-relay --version 2>/dev/null | grep -qx "iroh-re
   relay_changed=1
 fi
 install -d -m 750 -o root -g sikemux-relay /etc/sikemux-relay
+# One token, so the API knows the relay is the one asking which devices may use it.
+if [ ! -f /etc/sikemux-relay/relay.env ]; then
+  printf 'IROH_RELAY_HTTP_BEARER_TOKEN=%s\n' "$(openssl rand -hex 32)" >/etc/sikemux-relay/relay.env
+  relay_changed=1
+fi
+chown root:sikemux-relay /etc/sikemux-relay/relay.env
+chmod 640 /etc/sikemux-relay/relay.env
+relay_token="$(sed -n 's/^IROH_RELAY_HTTP_BEARER_TOKEN=//p' /etc/sikemux-relay/relay.env)"
+if ! grep -qx "RELAY_ACCESS_TOKEN=$relay_token" /etc/sikemux/api.env; then
+  sed -i '/^RELAY_ACCESS_TOKEN=/d' /etc/sikemux/api.env
+  echo "RELAY_ACCESS_TOKEN=$relay_token" >>/etc/sikemux/api.env
+  systemctl restart sikemux-api
+fi
+unset relay_token
 cmp -s "$here/sikemux-relay.toml" /etc/sikemux-relay/relay.toml || relay_changed=1
 install -m 640 -o root -g sikemux-relay "$here/sikemux-relay.toml" /etc/sikemux-relay/relay.toml
 install -m 755 -o root -g root "$here/relay-certificate" /usr/local/lib/sikemux/relay-certificate

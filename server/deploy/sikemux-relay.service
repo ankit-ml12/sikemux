@@ -11,6 +11,7 @@ Group=sikemux-relay
 # --dev only turns off the relay's own HTTPS; Caddy terminates TLS in front of it.
 ExecStart=/usr/local/lib/sikemux/iroh-relay --dev --config-path /etc/sikemux-relay/relay.toml
 Environment=RUST_LOG=info
+EnvironmentFile=/etc/sikemux-relay/relay.env
 KillSignal=SIGINT
 TimeoutStopSec=10
 Restart=always

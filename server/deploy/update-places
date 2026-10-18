@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Fetches DB-IP's free country and network databases (CC BY 4.0) into the folder the API reads
+# them from (GEOIP_DIR), so a host asking to sign in shows where it asked from. DB-IP publishes
+# each month's files early in the month; until then the last month's stand.
+set -euo pipefail
+
+dir="${1:?usage: update-places <dir>}"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+fetch() {
+  local name="$1" month
+  for month in "$(date -u +%Y-%m)" "$(date -u -d '-1 month' +%Y-%m)"; do
+    if curl -fsSL --max-time 120 -o "$work/$name.gz" \
+      "https://download.db-ip.com/free/dbip-$name-$month.mmdb.gz"; then
+      gunzip -c "$work/$name.gz" >"$work/dbip-$name.mmdb"
+      return
+    fi
+  done
+  echo "could not download dbip-$name" >&2
+  return 1
+}
+
+fetch country-lite
+fetch asn-lite
+for name in country-lite asn-lite; do
+  install -m 644 "$work/dbip-$name.mmdb" "$dir/dbip-$name.mmdb.new"
+  mv -f "$dir/dbip-$name.mmdb.new" "$dir/dbip-$name.mmdb"
+done

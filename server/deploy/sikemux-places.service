@@ -1,0 +1,32 @@
+[Unit]
+Description=Sikemux API: refresh the IP location databases a host's sign-in is shown with
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sikemux
+Group=sikemux
+StateDirectory=sikemux-places
+StateDirectoryMode=0755
+ExecStart=/usr/local/lib/sikemux/update-places /var/lib/sikemux-places
+TimeoutStartSec=10min
+MemoryMax=256M
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native

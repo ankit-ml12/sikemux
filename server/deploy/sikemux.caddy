@@ -13,6 +13,9 @@ api.sikemux.com {
 	request_body {
 		max_size 1MB
 	}
+	# Only the relay, on this machine, asks the API at /internal.
+	@internal path /internal/*
+	respond @internal 404
 	# /v1/live is one WebSocket per device. A reload leaves open ones up to 5 minutes before
 	# closing them, so devices reconnect spread out instead of all at once.
 	reverse_proxy 127.0.0.1:4000 {
@@ -29,9 +32,13 @@ api.sikemux.com {
 
 app.sikemux.com {
 	import sikemux_headers
+	# Clerk's script, sign-in, pictures and bot check, the API and its sockets, and the
+	# markdown parser's WebAssembly. A shared chat's key stays in the link's #, so it never
+	# reaches a server; the share's id is cut from the log below.
 	header {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "DENY"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://clerk.sikemux.com https://challenges.cloudflare.com; connect-src 'self' https://clerk.sikemux.com https://api.sikemux.com wss://api.sikemux.com; img-src 'self' data: blob: https://img.clerk.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; frame-src https://challenges.cloudflare.com; form-action 'self' https://clerk.sikemux.com http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
 	}
 	root * /srv/sikemux/current/app
 	encode zstd gzip
@@ -46,7 +53,13 @@ app.sikemux.com {
 			roll_size 10MiB
 			roll_keep 5
 		}
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp ^/s/[^/?#]+ /s/-
+				request>headers>Referer delete
+			}
+		}
 	}
 }
 

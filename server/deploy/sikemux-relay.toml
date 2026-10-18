@@ -6,7 +6,10 @@ http_bind_addr = "127.0.0.1:3340"
 enable_quic_addr_discovery = true
 enable_metrics = true
 metrics_bind_addr = "127.0.0.1:9342"
-access = "everyone"
+# The relay asks the API whether each device that connects is on an account, and carries traffic
+# only for those. Its token is IROH_RELAY_HTTP_BEARER_TOKEN in /etc/sikemux-relay/relay.env, the
+# same as RELAY_ACCESS_TOKEN in the API's.
+access.http = { url = "http://127.0.0.1:4000/internal/relay-access" }
 
 [tls]
 # QUIC listens on every address, since phones and hosts reach it directly over UDP.
