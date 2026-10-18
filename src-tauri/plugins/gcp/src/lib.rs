@@ -20,6 +20,8 @@
 //   metrics  — Cloud Monitoring charts for services, VMs, databases and queues
 //   errors   — Error Reporting groups, occurrences and statuses
 //   registry — Artifact Registry repositories, images and packages
+//   scheduler — Cloud Scheduler jobs, run now, paused or resumed
+//   iam      — who holds which role, and service accounts
 
 mod agent;
 mod agent_setup;
@@ -32,12 +34,14 @@ mod errors;
 mod functions;
 mod gcloud;
 mod gke;
+mod iam;
 mod logging;
 mod metrics;
 mod projects;
 mod pubsub;
 mod registry;
 mod run;
+mod scheduler;
 mod secrets;
 mod sql;
 mod storage;
@@ -168,6 +172,10 @@ impl Plugin for Gcp {
                 "errorStatus" => answer(errors::set_status(params(input)?)).await,
                 "repositories" => answer(registry::repositories(params(input)?)).await,
                 "repository" => answer(registry::contents(params(input)?)).await,
+                "schedulerJobs" => answer(scheduler::jobs(params(input)?)).await,
+                "schedulerChange" => answer(scheduler::change(params(input)?)).await,
+                "iamMembers" => answer(iam::members(params(input)?)).await,
+                "serviceAccounts" => answer(iam::service_accounts(params(input)?)).await,
                 _ => match agent::call(ctx, method, input).await {
                     Some(answer) => answer,
                     None => Err(PluginError::unknown_method(method)),
