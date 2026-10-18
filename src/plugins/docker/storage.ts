@@ -1,6 +1,6 @@
 import { confirmDialog, notify, runInTerminal, swallow } from "../../plugin-api/host";
 import { formatBytes } from "../../plugin-api/format";
-import { dockerApi, failureMessage, refreshDocker, type Image } from "./api";
+import { dockerApi, failureMessage, isPluginFailure, refreshDocker, type Image, type Volume } from "./api";
 
 export function imageName(image: Pick<Image, "tags" | "id">): string {
     return image.tags[0] ?? image.id;
@@ -49,6 +49,47 @@ export async function pruneImages(): Promise<void> {
         );
     } catch (error) {
         notify("error", `Remove untagged images: ${failureMessage(error)}`);
+    } finally {
+        refreshDocker();
+    }
+}
+
+export async function removeVolume(volume: Volume): Promise<void> {
+    const sure = await confirmDialog({
+        title: `Remove the volume ${volume.name}?`,
+        body: "Everything stored in it is deleted, and can't be brought back.",
+        confirmLabel: "Delete its data",
+        destructive: true,
+    });
+    if (!sure) return;
+    try {
+        await dockerApi.removeVolume(volume.name);
+        notify("success", `Removed ${volume.name}`);
+    } catch (error) {
+        notify("error", isPluginFailure(error, "conflict") ? failureMessage(error) : `Remove ${volume.name}: ${failureMessage(error)}`);
+    } finally {
+        refreshDocker();
+    }
+}
+
+export async function pruneVolumes(): Promise<void> {
+    const sure = await confirmDialog({
+        title: "Remove unused anonymous volumes?",
+        body: "Only volumes no container uses that were never given a name. Named ones stay, since a Compose stack looks for them again.",
+        confirmLabel: "Remove",
+        destructive: true,
+    });
+    if (!sure) return;
+    try {
+        const pruned = await dockerApi.pruneVolumes();
+        notify(
+            "success",
+            pruned.deleted.length === 0
+                ? "Nothing to remove"
+                : `Removed ${pruned.deleted.length} volumes, freeing ${formatBytes(pruned.spaceReclaimed)}`,
+        );
+    } catch (error) {
+        notify("error", `Remove unused volumes: ${failureMessage(error)}`);
     } finally {
         refreshDocker();
     }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Image } from "./api";
 
-const api = vi.hoisted(() => ({ removeImage: vi.fn(), pruneImages: vi.fn() }));
+const api = vi.hoisted(() => ({ removeImage: vi.fn(), pruneImages: vi.fn(), removeVolume: vi.fn() }));
 vi.mock("./api", async (importOriginal) => ({ ...(await importOriginal<object>()), dockerApi: api }));
 const host = vi.hoisted(() => ({
     confirmDialog: vi.fn(),
@@ -10,7 +10,7 @@ const host = vi.hoisted(() => ({
 }));
 vi.mock("../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), ...host }));
 
-import { imageName, pruneImages, removeImage, runImage } from "./storage";
+import { imageName, pruneImages, removeImage, removeVolume, runImage } from "./storage";
 
 const postgres: Image = { id: "2f9c0b6e8a13", tags: ["postgres:16"], created: 0, size: 1000, containers: 1, dangling: false };
 
@@ -42,5 +42,17 @@ describe("images", () => {
         api.pruneImages.mockResolvedValueOnce({ deleted: 2, spaceReclaimed: 2048 });
         await pruneImages();
         expect(host.notify).toHaveBeenLastCalledWith("success", "Removed 2 images, freeing 2.0 KB");
+    });
+});
+
+describe("volumes", () => {
+    it("say their data goes with them, and pass on why the engine refused", async () => {
+        api.removeVolume.mockRejectedValueOnce({
+            category: "conflict",
+            message: "docker: volume is in use. Remove the containers that use it first",
+        });
+        await removeVolume({ name: "shop_pgdata", driver: "local", created: null, size: null, usedBy: [], anonymous: false, composeProject: null });
+        expect(host.confirmDialog).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: "Delete its data", destructive: true }));
+        expect(host.notify).toHaveBeenLastCalledWith("error", "docker: volume is in use. Remove the containers that use it first");
     });
 });

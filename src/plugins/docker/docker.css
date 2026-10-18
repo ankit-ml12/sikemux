@@ -643,3 +643,13 @@
 .docker-link.danger {
     color: var(--danger);
 }
+
+.docker-link-inline {
+    margin: 0 10px 0 0;
+}
+
+.docker-link:disabled {
+    color: var(--text-tertiary);
+    text-decoration: none;
+    cursor: default;
+}
