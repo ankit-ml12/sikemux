@@ -1,5 +1,8 @@
+import { useContext } from "react";
+import { AgentMark } from "../agents/AgentMark";
 import type { AgentType } from "../state/types";
-import { AgentIcon, IconChevron } from "../ui/Icons";
+import { IconChevron } from "../ui/Icons";
+import { ChatAgentContext } from "./chatAgent";
 import { callsLabel, workedLabel } from "./toolView";
 
 export function WorkSummary({
@@ -17,11 +20,12 @@ export function WorkSummary({
     open: boolean;
     onToggle: () => void;
 }) {
+    const agentId = useContext(ChatAgentContext).id;
     return (
         <div className="chat-work">
             <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={onToggle}>
                 <span className={`chat-work-mark agent-glyph ${agent}`} aria-hidden="true">
-                    <AgentIcon type={agent} size={17} />
+                    <AgentMark agentId={agentId} cli={agent} size={17} />
                 </span>
                 <span>{workedLabel(took, thought)}</span>
                 {calls > 0 && (

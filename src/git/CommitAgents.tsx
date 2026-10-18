@@ -64,7 +64,7 @@ export function CommitAgents({ owners, repo, compact = false }: { owners: Commit
                         openOwner(owner, repo);
                     }}
                     onDoubleClick={(event) => event.stopPropagation()}>
-                    <AgentMark cli={owner.cli} size={11} />
+                    <AgentMark agentId={owner.chat} cli={owner.cli} size={11} />
                     {!marksOnly && <AgentLabel agent={{ title: owner.title ?? owner.name, name: owner.title ? owner.name : undefined }} />}
                 </button>
             ))}

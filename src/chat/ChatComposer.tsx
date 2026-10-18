@@ -162,6 +162,7 @@ function ComposerContextChip({ item, onRemove }: { item: ComposerContext; onRemo
 }
 
 export interface ComposerAnswering {
+    agentId: string;
     name: string;
     cli: string;
     question: string;
@@ -556,7 +557,7 @@ export function ChatComposer({
                             <Chip
                                 answering
                                 title={answering.question}
-                                mark={<AgentMark cli={answering.cli} />}
+                                mark={<AgentMark agentId={answering.agentId} cli={answering.cli} />}
                                 label={`Answering ${answering.name} · ${answering.question}`}
                                 removeLabel="Stop answering"
                                 onRemove={answering.onRemove}

@@ -7,10 +7,10 @@ import type { AnswerLetter } from "./agentLetters";
 import { ChatAgentContext } from "./chatAgent";
 
 /** Who is asking, above the question itself. */
-export function AskedBy({ cli, ticket, children }: { cli: string; ticket?: string; children: ReactNode }) {
+export function AskedBy({ agentId, cli, ticket, children }: { agentId?: string; cli: string; ticket?: string; children: ReactNode }) {
     return (
         <div className="chat-ask-who">
-            <AgentMark cli={cli} size={16} />
+            <AgentMark agentId={agentId} cli={cli} size={16} />
             <span>{children}</span>
             {ticket && <span className="chat-ask-ticket">{ticket}</span>}
         </div>
@@ -24,10 +24,11 @@ export function AskedBy({ cli, ticket, children }: { cli: string; ticket?: strin
 export function AnsweredQuestion({ letter }: { letter: AnswerLetter }) {
     const chatId = useContext(ChatAgentContext).id;
     const own = useStore((s) => s.agents[chatId]?.name === letter.asker);
+    const askerId = useStore((s) => Object.values(s.agents).find((agent) => agent.name === letter.asker)?.id);
     return (
         <>
             {!own && (
-                <AskedBy cli={letter.cli}>
+                <AskedBy agentId={askerId} cli={letter.cli}>
                     <b>{letter.asker}</b> asked you
                 </AskedBy>
             )}

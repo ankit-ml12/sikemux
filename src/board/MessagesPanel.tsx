@@ -61,12 +61,11 @@ export function MessagesPanel({ folder, onClose }: { folder: string; onClose: ()
 }
 
 function Message({ row }: { row: MessageRow }) {
-    const cli = useStore((s) => (row.from ? s.agents[row.from]?.type : undefined));
     const tone = messageTone(row.outcome);
     return (
         <li className={`board-message${tone ? ` ${tone}` : ""}`}>
             <span className="board-message-who">
-                {cli && <AgentMark cli={cli} />}
+                {row.from && <AgentMark agentId={row.from} cli={null} />}
                 <b>{row.fromName}</b>
                 <span className="board-message-to">to</span>
                 <b>{row.toName}</b>

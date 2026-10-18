@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { AgentMark } from "../agents/AgentMark";
 import type { Agent } from "../state/types";
-import { AgentIcon } from "../ui/Icons";
+import { ChatAgentContext } from "./chatAgent";
 import { elapsedLabel } from "./durationLabel";
 import { Shimmer } from "./Shimmer";
 
 /* Keeps its own clock so a ticking second redraws this row alone, not the
    whole transcript. */
 export function ChatActivity({ label, agentType }: { label: string; agentType: Agent["type"] }) {
+    const agentId = useContext(ChatAgentContext).id;
     const [seconds, setSeconds] = useState(0);
     useEffect(() => {
         const started = Date.now();
@@ -16,7 +18,7 @@ export function ChatActivity({ label, agentType }: { label: string; agentType: A
     return (
         <div className="chat-activity" role="status">
             <span className={`chat-activity-mark agent-glyph ${agentType}`} aria-hidden="true">
-                <AgentIcon type={agentType} size={21} />
+                <AgentMark agentId={agentId} cli={agentType} size={21} />
             </span>
             <span className="chat-activity-label chat-shimmer">
                 <Shimmer>{label}</Shimmer>

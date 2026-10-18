@@ -319,6 +319,5 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
 }
 
 function TeamMark({ id, cli }: { id: string; cli: string | null }) {
-    const type = useStore((s) => s.agents[id]?.type);
-    return <AgentMark cli={type ?? cli} />;
+    return <AgentMark agentId={id} cli={cli} />;
 }

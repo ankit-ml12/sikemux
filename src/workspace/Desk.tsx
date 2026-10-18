@@ -20,7 +20,7 @@ import { notify, reportError } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { fsapi } from "../api/fs";
 import { deskTabMenu } from "./deskTabMenu";
-import { AgentIcon, IconChevron, IconEditor, IconGlobe, IconPhone, IconPlus, IconRefresh, IconTerminal, WindowIcon } from "../ui/Icons";
+import { IconChevron, IconEditor, IconGlobe, IconPhone, IconPlus, IconRefresh, IconTerminal, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { IS_MACOS } from "../lib/platform";
 import { FileIcon } from "../ui/FileIcon";
@@ -29,6 +29,7 @@ import { AddressBar } from "./AddressBar";
 import { FloatingAddress } from "./FloatingAddress";
 import { forgetPageStill, usePageStill, useStillUpkeep } from "./pageStills";
 import { TabBar, type TabDescriptor } from "./TabBar";
+import { AgentMark } from "../agents/AgentMark";
 import { getState, useStore } from "../state/store";
 import { refreshBrowserStrip } from "../state/browserStrips";
 import { useSimulatorActing } from "../state/simulatorAgents";
@@ -330,7 +331,7 @@ function DeskSession({
                 icon: <SiteIcon src={tab.favicon} />,
                 accessory: tab.acting ? (
                     <span className={`agent-glyph ${agentType}`} role="img" aria-label={`${agentType} is working in this tab`}>
-                        <AgentIcon type={agentType} size={16} />
+                        <AgentMark agentId={agentId} cli={agentType} size={16} />
                     </span>
                 ) : tab.loading ? (
                     <span className="agent-activity state-working" role="img" aria-label="Loading">
@@ -400,7 +401,7 @@ function DeskSession({
                         <IconChevron size={9} className="desk-device-chev" />
                         {simulatorActing && (
                             <span className={`agent-glyph ${agentType}`} role="img" aria-label={`${agentType} is working on this device`}>
-                                <AgentIcon type={agentType} size={16} />
+                                <AgentMark agentId={agentId} cli={agentType} size={16} />
                             </span>
                         )}
                     </button>

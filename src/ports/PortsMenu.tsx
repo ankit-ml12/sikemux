@@ -1,8 +1,9 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { ENTER_GLYPH } from "../commands/keybindings";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
+import { AgentMark } from "../agents/AgentMark";
 import { useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconCopy, IconExternal, IconGlobe, IconRun, IconTerminal, IconWindow } from "../ui/Icons";
+import { IconAgent, IconCopy, IconExternal, IconGlobe, IconRun, IconTerminal, IconWindow } from "../ui/Icons";
 import { ThemeIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
 import { copyPortUrl, openPortExternally, openPortOnDesk, revealPortOwner } from "./portActions";
@@ -43,8 +44,8 @@ function ProcessIcon({ process }: { process: string }) {
 }
 
 function OwnerIcon({ owner }: { owner: ProjectPort["owner"] }) {
-    const agentType = useStore((state) => (owner.reveal?.kind === "agent" ? state.agents[owner.reveal.agentId]?.type : undefined));
-    if (agentType) return <AgentIcon type={agentType} size={11} className={`agent-glyph ${agentType}`} />;
+    const agentId = useStore((state) => (owner.reveal?.kind === "agent" && state.agents[owner.reveal.agentId] ? owner.reveal.agentId : undefined));
+    if (agentId) return <AgentMark agentId={agentId} cli={null} size={11} />;
     if (owner.kind === "task") return <IconRun size={11} />;
     if (owner.kind === "agent") return <IconAgent size={11} />;
     return <IconTerminal size={11} />;
