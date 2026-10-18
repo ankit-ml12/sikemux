@@ -197,8 +197,22 @@ impl Engine {
         self.send(Method::POST, path, body).await.map(drop)
     }
 
+    pub async fn post_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: Option<Value>,
+    ) -> DockerResult<T> {
+        let answer = self.send(Method::POST, path, body).await?;
+        Ok(serde_json::from_slice(&answer)?)
+    }
+
     pub async fn delete(&self, path: &str) -> DockerResult<()> {
         self.send(Method::DELETE, path, None).await.map(drop)
+    }
+
+    pub async fn delete_json<T: DeserializeOwned>(&self, path: &str) -> DockerResult<T> {
+        let answer = self.send(Method::DELETE, path, None).await?;
+        Ok(serde_json::from_slice(&answer)?)
     }
 
     /// The answer's body as it arrives, and its content type, for logs.

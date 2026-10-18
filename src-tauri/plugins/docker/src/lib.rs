@@ -5,10 +5,12 @@
 //   status     — whether an engine is running, which one, and how much it holds
 //   containers — listing and reading containers, starting, stopping and removing them
 //   logs       — a container's logs, read once or followed as they are written
+//   images     — images, the containers made from each, removing and pruning them
 
 mod containers;
 mod engine;
 mod error;
+mod images;
 mod logs;
 mod status;
 
@@ -75,6 +77,15 @@ impl Plugin for Docker {
                     let params = params(input)?;
                     answer(|engine| async move { logs::read(&engine, params).await }).await
                 }
+                "images" => {
+                    let params = params(input)?;
+                    answer(|engine| async move { images::list(&engine, params).await }).await
+                }
+                "removeImage" => {
+                    let params = params(input)?;
+                    answer(|engine| async move { images::remove(&engine, params).await }).await
+                }
+                "pruneImages" => answer(|engine| async move { images::prune(&engine).await }).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
