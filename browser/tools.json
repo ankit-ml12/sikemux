@@ -508,7 +508,6 @@
         },
         "status": {
           "type": "string",
-          "pattern_comment": "",
           "minLength": 1,
           "maxLength": 8
         },
