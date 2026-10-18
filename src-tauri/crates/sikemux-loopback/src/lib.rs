@@ -5,9 +5,12 @@
 // landed on is handed in with `relay`.
 
 use std::fmt;
+use std::io::ErrorKind;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use base64::Engine;
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -44,8 +47,20 @@ pub fn new_state() -> LoopbackResult<String> {
     Ok(hex::encode(bytes))
 }
 
+/// The PKCE secret the browser never sees: the service hands out tokens only to whoever holds it,
+/// so a code caught on its way back is useless.
+pub fn new_verifier() -> LoopbackResult<String> {
+    Ok(format!("{}{}", new_state()?, new_state()?))
+}
+
+/// What the browser carries to the service in place of the verifier.
+pub fn challenge(verifier: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
 /// Listens on both loopback addresses, since a browser may try `localhost`
-/// as either. Bound before the browser is opened, so the answer cannot arrive first.
+/// as either. Both are held before the browser is opened, so no other program
+/// can be listening on one of them for the code.
 pub struct Callback {
     v4: TcpListener,
     v6: Option<TcpListener>,
@@ -88,12 +103,19 @@ pub fn relay(landed: &str) -> LoopbackResult<()> {
 
 impl Callback {
     pub async fn bind(path: &'static str, service: &'static str) -> LoopbackResult<Self> {
-        let v4 = TcpListener::bind(("127.0.0.1", PORT)).await.map_err(|_| {
+        let taken = || {
             LoopbackError(format!(
                 "port {PORT} is taken, by another sign-in that is still waiting or by another app"
             ))
-        })?;
-        let v6 = TcpListener::bind(("::1", PORT)).await.ok();
+        };
+        let v4 = TcpListener::bind(("127.0.0.1", PORT))
+            .await
+            .map_err(|_| taken())?;
+        let v6 = match TcpListener::bind(("::1", PORT)).await {
+            Ok(v6) => Some(v6),
+            Err(error) if error.kind() == ErrorKind::AddrNotAvailable => None,
+            Err(_) => return Err(taken()),
+        };
         let (sender, relayed) = unbounded_channel();
         waiting().push((path, sender));
         Ok(Self {
@@ -128,7 +150,8 @@ impl Callback {
             let accepted = tokio::select! {
                 accepted = self.accept() => accepted,
                 Some(target) = relayed.recv() => match answer_of(&target, self.path, state) {
-                    Some(answer) => return answer,
+                    Some(Answer::Done(answer)) => return answer,
+                    Some(Answer::Stray) => return Err(not_this_sign_in()),
                     None => continue,
                 },
             };
@@ -142,7 +165,10 @@ impl Callback {
             };
             match answer_of(&target, self.path, state) {
                 None => respond(&mut stream, "404 Not Found", "Nothing here.").await,
-                Some(Ok(code)) => {
+                Some(Answer::Stray) => {
+                    respond(&mut stream, "400 Bad Request", &not_this_sign_in().0).await
+                }
+                Some(Answer::Done(Ok(code))) => {
                     let message = format!(
                         "Signed in to {}. You can close this tab and go back to Sikemux.",
                         self.service
@@ -150,7 +176,7 @@ impl Callback {
                     respond(&mut stream, "200 OK", &message).await;
                     return Ok(code);
                 }
-                Some(Err(error)) => {
+                Some(Answer::Done(Err(error))) => {
                     respond(&mut stream, "400 Bad Request", &error.0).await;
                     return Err(error);
                 }
@@ -184,8 +210,19 @@ async fn request_target(stream: &mut TcpStream) -> std::io::Result<String> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum Answer {
+    Done(LoopbackResult<String>),
+    /// Any page can send the browser here, so a callback without this sign-in's state changes nothing.
+    Stray,
+}
+
+fn not_this_sign_in() -> LoopbackError {
+    LoopbackError("the browser came back from a sign-in this app did not start".into())
+}
+
 /// What a request to the port says: `None` when it is not this sign-in's callback at all.
-fn answer_of(target: &str, path: &str, state: &str) -> Option<LoopbackResult<String>> {
+fn answer_of(target: &str, path: &str, state: &str) -> Option<Answer> {
     let url = url::Url::parse(&format!("http://localhost{target}")).ok()?;
     if url.path() != path {
         return None;
@@ -195,17 +232,17 @@ fn answer_of(target: &str, path: &str, state: &str) -> Option<LoopbackResult<Str
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.into_owned())
     };
-    if let Some(error) = value("error") {
-        return Some(Err(LoopbackError(
-            value("error_description").unwrap_or(error),
-        )));
-    }
     if value("state").as_deref() != Some(state) {
-        return Some(Err(LoopbackError(
-            "the browser came back from a sign-in this app did not start".into(),
-        )));
+        return Some(Answer::Stray);
     }
-    Some(value("code").ok_or_else(|| LoopbackError("the browser came back without a code".into())))
+    if let Some(error) = value("error") {
+        return Some(Answer::Done(Err(LoopbackError(
+            value("error_description").unwrap_or(error),
+        ))));
+    }
+    Some(Answer::Done(value("code").ok_or_else(|| {
+        LoopbackError("the browser came back without a code".into())
+    })))
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, message: &str) {
@@ -228,27 +265,34 @@ mod tests {
     #[test]
     fn the_callback_carries_the_code_when_the_state_matches() {
         let answer = answer_of("/jira/callback?code=abc&state=s1", "/jira/callback", "s1");
-        assert_eq!(answer, Some(Ok("abc".into())));
+        assert_eq!(answer, Some(Answer::Done(Ok("abc".into()))));
     }
 
     #[test]
-    fn a_code_for_someone_elses_sign_in_is_refused() {
-        let answer = answer_of(
+    fn a_callback_for_someone_elses_sign_in_changes_nothing() {
+        for target in [
             "/jira/callback?code=abc&state=other",
-            "/jira/callback",
-            "s1",
-        );
-        assert!(matches!(answer, Some(Err(_))));
+            "/jira/callback?error=access_denied",
+            "/jira/callback?error=access_denied&state=other",
+        ] {
+            assert_eq!(
+                answer_of(target, "/jira/callback", "s1"),
+                Some(Answer::Stray)
+            );
+        }
     }
 
     #[test]
     fn saying_no_in_the_browser_reads_as_a_refusal() {
         let answer = answer_of(
-            "/jira/callback?error=access_denied&error_description=The+user+denied",
+            "/jira/callback?error=access_denied&error_description=The+user+denied&state=s1",
             "/jira/callback",
             "s1",
         );
-        assert_eq!(answer, Some(Err(LoopbackError("The user denied".into()))));
+        assert_eq!(
+            answer,
+            Some(Answer::Done(Err(LoopbackError("The user denied".into()))))
+        );
     }
 
     #[test]

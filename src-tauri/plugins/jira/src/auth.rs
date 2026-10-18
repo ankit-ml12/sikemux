@@ -112,13 +112,14 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> JiraRes
     }
     let callback = oauth::listen().await?;
     let state = oauth::new_state()?;
-    sink.send(json!({ "url": oauth::authorize_url(&state) }))
+    let verifier = oauth::new_verifier()?;
+    sink.send(json!({ "url": oauth::authorize_url(&state, &verifier) }))
         .map_err(|_| JiraError::Auth("the sign-in was closed".into()))?;
     let code = tokio::time::timeout(BROWSER_WAIT, oauth::code(&callback, &state))
         .await
         .map_err(|_| JiraError::Auth("nobody finished signing in".into()))??;
     drop(callback);
-    let tokens = oauth::exchange(&code).await?;
+    let tokens = oauth::exchange(&code, &verifier).await?;
     let cloud_sites = oauth::sites(&tokens.access_token).await?;
     let Some(first) = cloud_sites.first() else {
         return Err(JiraError::Auth(

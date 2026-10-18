@@ -1,14 +1,15 @@
 // Signing in through the browser with an Atlassian account. Atlassian sends the
 // browser back to this machine with a one-time code, traded for an access token
 // and a refresh token. Atlassian has no flow for apps that cannot keep a secret,
-// so the client secret is compiled in, as Bitbucket's is.
+// so the client secret is compiled in, as Bitbucket's is; PKCE is what keeps a
+// code caught on its way back from being traded by anyone else.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sikemux_loopback::{redirect_uri, Callback, LoopbackError};
+use sikemux_loopback::{challenge, redirect_uri, Callback, LoopbackError};
 
 use crate::client;
 use crate::config::{self, Site};
@@ -55,6 +56,10 @@ pub fn new_state() -> JiraResult<String> {
     sikemux_loopback::new_state().map_err(refused)
 }
 
+pub fn new_verifier() -> JiraResult<String> {
+    sikemux_loopback::new_verifier().map_err(refused)
+}
+
 pub async fn listen() -> JiraResult<Callback> {
     Callback::bind(CALLBACK_PATH, "Jira").await.map_err(refused)
 }
@@ -63,7 +68,7 @@ pub async fn code(callback: &Callback, state: &str) -> JiraResult<String> {
     callback.code(state).await.map_err(refused)
 }
 
-pub fn authorize_url(state: &str) -> String {
+pub fn authorize_url(state: &str, verifier: &str) -> String {
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("audience", "api.atlassian.com")
         .append_pair("client_id", CLIENT_ID)
@@ -72,6 +77,8 @@ pub fn authorize_url(state: &str) -> String {
         .append_pair("response_type", "code")
         .append_pair("prompt", "consent")
         .append_pair("state", state)
+        .append_pair("code_challenge", &challenge(verifier))
+        .append_pair("code_challenge_method", "S256")
         .finish();
     format!("{AUTHORIZE_URL}?{query}")
 }
@@ -108,11 +115,12 @@ async fn token_request(mut body: Value) -> JiraResult<Tokens> {
     Err(JiraError::Auth(reason))
 }
 
-pub async fn exchange(code: &str) -> JiraResult<Tokens> {
+pub async fn exchange(code: &str, verifier: &str) -> JiraResult<Tokens> {
     token_request(json!({
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": redirect_uri(CALLBACK_PATH),
+        "code_verifier": verifier,
     }))
     .await
 }
@@ -232,13 +240,14 @@ mod tests {
     fn the_browser_asks_for_jira_and_a_refresh_token_and_comes_back_to_jiras_path() -> JiraResult<()>
     {
         let state = new_state()?;
-        let url = authorize_url(&state);
+        let url = authorize_url(&state, &new_verifier()?);
         assert!(url.starts_with("https://auth.atlassian.com/authorize?audience=api.atlassian.com&"));
         assert!(url.contains("scope=read%3Ajira-work+write%3Ajira-work+read%3Ajira-user+"));
         assert!(url.contains("+read%3Aboard-scope%3Ajira-software+"));
         assert!(url.contains("+offline_access&"));
         assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A47123%2Fjira%2Fcallback"));
-        assert!(url.ends_with(&format!("state={state}")));
+        assert!(url.contains(&format!("&state={state}&")));
+        assert!(url.ends_with("&code_challenge_method=S256"));
         Ok(())
     }
 

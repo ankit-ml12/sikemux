@@ -6,11 +6,9 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use base64::Engine;
 use serde::Deserialize;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
-use sikemux_loopback::{redirect_uri, Callback, LoopbackError};
+use sikemux_loopback::{challenge, redirect_uri, Callback, LoopbackError};
 
 use crate::client;
 use crate::config::{self, Workspace};
@@ -33,13 +31,8 @@ pub fn new_state() -> LinearResult<String> {
     sikemux_loopback::new_state().map_err(refused)
 }
 
-/// The secret the browser never sees; Linear hands out tokens only to whoever holds it.
 pub fn new_verifier() -> LinearResult<String> {
-    Ok(format!("{}{}", new_state()?, new_state()?))
-}
-
-fn challenge(verifier: &str) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+    sikemux_loopback::new_verifier().map_err(refused)
 }
 
 pub async fn listen() -> LinearResult<Callback> {
