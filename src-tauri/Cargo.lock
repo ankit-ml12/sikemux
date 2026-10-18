@@ -5996,6 +5996,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-plugin-gcp"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tokio",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sikemux-plugin-github"
 version = "0.1.0"
 dependencies = [

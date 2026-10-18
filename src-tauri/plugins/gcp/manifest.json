@@ -1,0 +1,9 @@
+{
+  "id": "sikemux.gcp",
+  "name": "Google Cloud",
+  "version": "0.1.0",
+  "sikemux": ">=0.4",
+  "callTimeoutSecs": 120,
+  "environment": ["CLOUDSDK_CONFIG", "CLOUDSDK_ROOT_DIR", "CLOUDSDK_CORE_PROJECT", "CLOUDSDK_CORE_ACCOUNT", "CLOUDSDK_ACTIVE_CONFIG_NAME", "GCLOUD"],
+  "tools": []
+}
