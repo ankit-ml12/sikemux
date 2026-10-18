@@ -260,7 +260,7 @@ async fn login(
     }
     let account = crate::account::sign_in_by_code(core, |signing| {
         println!(
-            "\n  Open this link to add the host to your account:\n\n    {}\n\n  and check the code {}, or enter it in Sikemux on your phone.\n",
+            "\n  Open this link to add the host to your account:\n\n    {}\n\n  and enter the code {}, or enter it in Sikemux on your phone.\n",
             style::accent(&signing.verification_url),
             style::bold(&signing.user_code)
         );

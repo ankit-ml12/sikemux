@@ -295,15 +295,24 @@ pub async fn account_refresh_profile(
     Ok(status_of(&dir, saved).await)
 }
 
-/// The last access token handed out and when it expires, in seconds since
-/// the epoch, so pages that watch shared chats do not each renew the sign-in.
-static ISSUED: OnceLock<tokio::sync::Mutex<Option<(String, u64)>>> = OnceLock::new();
+/// The core's key and its signature, as the accounts server checks them.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct HostSignature {
+    pub key: String,
+    pub signature: String,
+}
 
-/// An access token for the signed-in account, kept until shortly before it
-/// expires. None when signed out.
-pub(crate) async fn access_token() -> AppResult<Option<String>> {
-    let Some(saved) = read_saved().await? else {
-        return Ok(None);
+/// Calls the accounts API as this host, signed with the core's key, which
+/// the server takes until the host is taken off the account.
+async fn as_host<T: DeserializeOwned>(
+    core: &CoreClient,
+    method: Method,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> AppResult<T> {
+    let body = match body {
+        Some(body) => serde_json::to_vec(body)?,
+        None => Vec::new(),
     };
     let mut issued = ISSUED
         .get_or_init(|| tokio::sync::Mutex::new(None))

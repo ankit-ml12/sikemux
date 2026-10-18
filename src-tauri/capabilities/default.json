@@ -54,6 +54,7 @@
     "allow-account-link-host",
     "allow-account-sign-out",
     "allow-share-access",
+    "allow-share-viewer-hello",
     "allow-core-call",
     "allow-remote-answer-pairing",
     "allow-remote-allow-devices",
