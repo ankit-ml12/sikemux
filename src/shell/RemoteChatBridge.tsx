@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import type { AcpChat } from "../api/acp";
 import { agentBoardApi } from "../api/agentBoard";
+import type { ChatInfo } from "../api/generated/wire";
 import { runOfAgent } from "../agents/agentBoard";
 import { getIpcTransport } from "../api/transport";
 import * as cmd from "../state/commands";
@@ -13,7 +13,7 @@ export const FOCUS_AGENT_EVENT = "focus_agent";
 export const AGENTS_SEEN_EVENT = "agents_seen";
 
 /** A chat the core starts for a board's Auto is placed by its card, which the board may not have brought yet. */
-async function adopt(chat: AcpChat) {
+async function adopt(chat: ChatInfo): Promise<void> {
     if (chat.startedBy === null && !runOfAgent(getState().agentBoards, chat.agentId)) {
         await agentBoardApi
             .all()
@@ -36,7 +36,7 @@ export function RemoteChatBridge() {
         const controller = new AbortController();
         const transport = getIpcTransport();
         Promise.all([
-            transport.subscribe<AcpChat>(REMOTE_CHAT_BEGUN_EVENT, (event) => void adopt(event.payload), { signal: controller.signal }),
+            transport.subscribe<ChatInfo>(REMOTE_CHAT_BEGUN_EVENT, ({ payload }) => void adopt(payload), { signal: controller.signal }),
             transport.subscribe<string>(REMOTE_CHAT_WAKE_EVENT, (event) => wake(event.payload), { signal: controller.signal }),
             transport.subscribe<string>(FOCUS_AGENT_EVENT, (event) => cmd.revealAgent(event.payload), { signal: controller.signal }),
             transport.subscribe<string[]>(AGENTS_SEEN_EVENT, (event) => event.payload.forEach(cmd.clearAgentUnread), {
