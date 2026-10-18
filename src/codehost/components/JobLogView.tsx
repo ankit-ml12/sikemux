@@ -10,7 +10,7 @@ import { jobLogR } from "../resources";
 import { elapsedMs, outcomeOf } from "../runStatus";
 import { useEvery } from "../../plugin-api/hooks";
 import { formatDuration } from "../../lib/format";
-import { RunMark } from "./ActionsIcon";
+import { StatusMark } from "./ActionsIcon";
 import { ansiCss, parseAnsi, stripAnsi, type AnsiRun } from "../../lib/ansi";
 import { CodeRun, fenceLanguage, useCodeTokens } from "../../chat/codeHighlight";
 
@@ -423,7 +423,7 @@ export function JobLogView({ repo, job, now, active }: Props) {
                         const took = elapsedMs(step.startedAt, step.completedAt, now);
                         return (
                             <>
-                                <RunMark outcome={outcome} size={14} />
+                                <StatusMark outcome={outcome} size={14} />
                                 <span className="acc-name gha-step-title" data-outcome={outcome}>
                                     {step.name}
                                 </span>

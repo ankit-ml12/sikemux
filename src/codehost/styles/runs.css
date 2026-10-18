@@ -63,19 +63,6 @@
     gap: var(--space-2);
     min-width: 0;
 }
-.gha-run-top > :is(.gha-outcome, .pr-ci-pending) {
-    flex: none;
-}
-.gha-run-top > .pr-ci-pending[data-outcome="running"] {
-    width: 15px;
-    height: 15px;
-    border-width: 2px;
-}
-.gha-run-top > .pr-ci-pending[data-outcome="queued"] {
-    width: 10px;
-    height: 10px;
-    margin: 0 3px;
-}
 .gha-run-name {
     min-width: 0;
     overflow: hidden;

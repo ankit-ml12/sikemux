@@ -170,23 +170,6 @@ button.gha-graph-job:hover {
     box-shadow: var(--focus-ring);
     outline: none;
 }
-.gha-graph-mark {
-    display: inline-grid;
-    place-items: center;
-    flex: none;
-    width: 14px;
-    height: 14px;
-    color: var(--text-tertiary);
-}
-.gha-graph-mark[data-outcome="success"] {
-    color: var(--live);
-}
-.gha-graph-mark[data-outcome="failure"] {
-    color: var(--danger);
-}
-.gha-graph-mark-inner {
-    stroke: var(--on-accent);
-}
 .gha-graph-job-took {
     flex: 0 0 auto;
     font-variant-numeric: tabular-nums;

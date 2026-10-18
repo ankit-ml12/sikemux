@@ -4,7 +4,8 @@ import type { Job, RepoRef, Run } from "../api";
 import { graphOf, type GraphBox, type GraphJob } from "../jobGraph";
 import { useHost } from "../registry";
 import { workflowJobsR } from "../resources";
-import { elapsedMs, jobsSummary, OUTCOME_LABEL, outcomeOf, type Outcome } from "../runStatus";
+import { elapsedMs, jobsSummary, outcomeOf } from "../runStatus";
+import { StatusMark } from "./ActionsIcon";
 import { coarse } from "./hooks";
 import { formatDuration } from "../../lib/format";
 
@@ -27,44 +28,9 @@ interface Shared {
     onOpen: (jobId: string) => void;
 }
 
-type Mark = Outcome | "idle";
-
 function fileName(path: string | null): string | null {
     if (!path) return null;
     return path.split("/").pop() ?? path;
-}
-
-function JobMark({ mark }: { mark: Mark }) {
-    const label = mark === "idle" ? "Not started" : OUTCOME_LABEL[mark];
-    const pending = mark === "running" || mark === "queued" || mark === "blocked";
-    const filled = mark === "success" || mark === "failure" || mark === "cancelled";
-    return (
-        <span className="gha-graph-mark" data-outcome={mark} role="img" aria-label={label} title={label}>
-            {pending ? (
-                <span className="pr-ci-pending" data-outcome={mark} />
-            ) : (
-                <svg
-                    width={14}
-                    height={14}
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    strokeWidth={1.6}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true">
-                    {filled ? (
-                        <circle cx="8" cy="8" r="7.2" fill="currentColor" />
-                    ) : (
-                        <circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth={1.3} />
-                    )}
-                    {mark === "success" && <path d="m5.2 8.2 1.9 1.9 3.7-3.9" className="gha-graph-mark-inner" />}
-                    {mark === "failure" && <path d="m5.8 5.8 4.4 4.4m0-4.4-4.4 4.4" className="gha-graph-mark-inner" />}
-                    {mark === "cancelled" && <path d="M5.6 10.4 10.4 5.6" className="gha-graph-mark-inner" />}
-                    {mark === "skipped" && <path d="M5.5 10.5 10.5 5.5" stroke="currentColor" strokeWidth={1.3} />}
-                </svg>
-            )}
-        </span>
-    );
 }
 
 function JobRow({ entry, shared }: { entry: GraphJob; shared: Shared }) {
@@ -72,7 +38,7 @@ function JobRow({ entry, shared }: { entry: GraphJob; shared: Shared }) {
     if (!job)
         return (
             <div className="gha-graph-job" data-idle="1" title={label}>
-                <JobMark mark={entry.skipped ? "skipped" : "idle"} />
+                <StatusMark outcome={entry.skipped ? "skipped" : "idle"} />
                 <span className="gha-graph-job-name">{label}</span>
             </div>
         );
@@ -85,7 +51,7 @@ function JobRow({ entry, shared }: { entry: GraphJob; shared: Shared }) {
             data-on={shared.openJob === job.id ? "1" : "0"}
             title={job.name}
             onClick={() => shared.onOpen(job.id)}>
-            <JobMark mark={outcome} />
+            <StatusMark outcome={outcome} />
             <span className="gha-graph-job-name">{label}</span>
             {took !== null && outcome !== "skipped" && <span className="gha-graph-job-took">{formatDuration(took)}</span>}
         </button>

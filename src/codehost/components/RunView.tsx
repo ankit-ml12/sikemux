@@ -18,9 +18,9 @@ import {
 import { hostApi, failureMessage, type Job, type RepoRef, type Run } from "../api";
 import { useHost } from "../registry";
 import { artifactsR, runAttemptR, runR, timingR } from "../resources";
-import { elapsedMs, eventLabel, failedStep, isUnfinished, outcomeOf, OUTCOME_LABEL, summaryJobs, watchIsNewer, type Outcome } from "../runStatus";
+import { elapsedMs, eventLabel, failedStep, isUnfinished, outcomeOf, OUTCOME_LABEL, summaryJobs, watchIsNewer } from "../runStatus";
 import { closeRun, leaveRun, showJob, updateView, useHostView, type RunTab } from "../state";
-import { OutcomeIcon, RunMark as RingedRunMark } from "./ActionsIcon";
+import { StatusMark } from "./ActionsIcon";
 import { Annotations } from "./Annotations";
 import { Approvals } from "./Approvals";
 import { Artifacts } from "./Artifacts";
@@ -116,21 +116,6 @@ function useOpenRun(repo: RepoRef, runId: string, active: boolean): OpenRun {
 }
 
 /** The run's state and what can be done to it, where a pull request's merge box sits. */
-/** How a job or run is going: its outcome once it ends, an amber dot while it waits and a spinning ring while it runs. */
-function RunMark({ outcome, size = 14 }: { outcome: Outcome; size?: number }) {
-    if (outcome === "running" || outcome === "queued")
-        return (
-            <span
-                className="pr-ci-pending run-mark"
-                data-outcome={outcome}
-                role="img"
-                aria-label={OUTCOME_LABEL[outcome]}
-                title={OUTCOME_LABEL[outcome]}
-            />
-        );
-    return <OutcomeIcon outcome={outcome} size={size} />;
-}
-
 /**
  * The head of an open run's side panel, like the git pane's: how it went, its number and branch with a way back, then
  * its actions edge to edge, and what still waits on someone under them.
@@ -195,7 +180,7 @@ function RunHead({
                         <IconChevron size={11} />
                     </button>
                 </Tooltip>
-                <RunMark outcome={outcome} />
+                <StatusMark outcome={outcome} size={15} />
                 <span className="pr-side-number">#{run.runNumber}</span>
                 {run.branch && <span className="pr-ref">{run.branch}</span>}
                 <span className="run-side-took" title={OUTCOME_LABEL[outcome]}>
@@ -286,7 +271,7 @@ const JobRows = memo(function JobRows({ paneId, jobs, openJob, now }: { paneId: 
                             data-last={index === jobs.length - 1 ? "" : undefined}
                             title={job.name}
                             onClick={() => showJob(paneId, job.id)}>
-                            <RunMark outcome={outcome} size={13} />
+                            <StatusMark outcome={outcome} size={14} />
                             <span className="git-row-name">{job.name}</span>
                             {stopped && <span className="gha-job-stopped">at {stopped.name}</span>}
                             <span className="run-job-took">
@@ -318,7 +303,7 @@ function JobLogs({ repo, job, now, active, canWrite }: { repo: RepoRef; job: Job
     return (
         <div className="run-logs">
             <div className="gha-job-actions">
-                <RingedRunMark outcome={outcomeOf(job)} size={14} />
+                <StatusMark outcome={outcomeOf(job)} size={14} />
                 <span className="gha-job-name">{job.name}</span>
                 {job.runner && <span className="gha-dim gha-job-runner">on {job.runner}</span>}
                 <span className="gha-page-spacer" />
@@ -451,7 +436,7 @@ function RunRight({
                         <Face login={run.actor} url={run.avatarUrl} />
                     </span>
                     <span className="pr-headline-top">
-                        <RunMark outcome={outcomeOf(run)} />
+                        <StatusMark outcome={outcomeOf(run)} size={16} />
                         <h2 className="git-detail-title pr-headline-title">{run.title || run.name}</h2>
                         <Tooltip label={`Open on ${host.name}`}>
                             <button

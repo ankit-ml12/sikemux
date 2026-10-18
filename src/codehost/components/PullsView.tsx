@@ -36,7 +36,7 @@ import { checksSummary, isUnfinished, outcomeOf, overallOutcome, type Outcome } 
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
-import { OutcomeIcon, SectionIcon } from "./ActionsIcon";
+import { SectionIcon, StatusMark } from "./ActionsIcon";
 import { closedIssues, pullState } from "../project";
 import { Branch, Comments, Labels, StateMark, Who } from "./Bits";
 import { useBusy } from "./hooks";
@@ -122,11 +122,7 @@ function PullCi({ runs }: { runs: readonly Run[] }) {
     return (
         <Tooltip label={summary === "all passed" ? "All checks passed" : `Checks: ${summary}`}>
             <span className="pr-ci" data-outcome={outcome}>
-                {outcome === "running" || outcome === "queued" ? (
-                    <span className="pr-ci-pending" data-outcome={outcome} role="img" aria-label={outcome === "running" ? "Running" : "Queued"} />
-                ) : (
-                    <OutcomeIcon outcome={outcome} size={12} />
-                )}
+                <StatusMark outcome={outcome} size={13} />
                 <span className="pr-ci-count">
                     {passed}/{runs.length}
                 </span>
@@ -222,7 +218,7 @@ function MergePart({ outcome, title, detail }: { outcome: Outcome; title: string
     return (
         <div className="gha-merge-part">
             <div className="gha-merge-row">
-                <OutcomeIcon outcome={outcome} size={12} />
+                <StatusMark outcome={outcome} size={14} />
                 <span className="gha-merge-title">{title}</span>
                 {detail && <span className="gha-merge-detail">{detail}</span>}
             </div>

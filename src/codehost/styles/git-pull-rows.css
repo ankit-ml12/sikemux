@@ -66,32 +66,6 @@
     content: "·";
     color: var(--text-disabled);
 }
-/* Waiting to start is a still amber dot; running is an amber ring spinning round. */
-.pr-ci-pending {
-    flex: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--warn);
-}
-.pr-ci-pending[data-outcome="running"] {
-    width: 11px;
-    height: 11px;
-    border: 1.5px solid color-mix(in oklab, var(--warn) 30%, transparent);
-    border-top-color: var(--warn);
-    background: none;
-    animation: pr-ci-spin 0.9s linear infinite;
-}
-@keyframes pr-ci-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-@media (prefers-reduced-motion: reduce) {
-    .pr-ci-pending[data-outcome="running"] {
-        animation: none;
-    }
-}
 .pr-ci-count {
     font-variant-numeric: tabular-nums;
     text-decoration: underline dotted;

@@ -83,7 +83,7 @@
     gap: var(--space-2);
     min-height: 26px;
 }
-.gha-merge-row > :is(.gha-outcome, .gha-state-mark) {
+.gha-merge-row > .gha-state-mark {
     justify-content: center;
     width: 22px;
     height: 22px;

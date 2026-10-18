@@ -18,7 +18,7 @@ import { useHost } from "../registry";
 import { pullsR, runsR, workflowsR } from "../resources";
 import { elapsedMs, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updateView, type HostView, type StatusFilter } from "../state";
-import { RunMark } from "./ActionsIcon";
+import { StatusMark } from "./ActionsIcon";
 import { RunMenu } from "./RunMenu";
 import { Face } from "./CommentThread";
 import { coarse } from "./hooks";
@@ -70,7 +70,7 @@ const RunRow = memo(function RunRow({
                     <Face login={run.actor} url={run.avatarUrl} />
                 </span>
                 <span className="gha-run-top">
-                    <RunMark outcome={outcome} />
+                    <StatusMark outcome={outcome} size={16} />
                     <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
                 </span>
                 <span className="gha-run-sub">

@@ -304,10 +304,6 @@ button.git-file-row {
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
 }
-.pr-ci-pending.run-mark[data-outcome="running"] {
-    width: 13px;
-    height: 13px;
-}
 .git-side-head > :is(.gha-callout, .gha-attempts, .gha-approvals) {
     margin: 0 var(--space-2) var(--space-2);
 }
