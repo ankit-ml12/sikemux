@@ -168,11 +168,12 @@ export default function ComposerMenu({
                     label: "Agents and earlier chats",
                     aside: "mention",
                     variant: "entries",
-                    empty: mates.length === 0 && !needle ? "No other agent in this project yet" : "No agent or earlier chat matches",
+                    empty: mates.length === 0 && !needle ? "No other agent yet" : "No agent or earlier chat matches",
                     loading: false,
                     rows: [
                         ...mateMatches.map((mate): MenuRow => ({
                             key: `agent:${mate.id}`,
+                            group: mate.project ?? undefined,
                             pick: { kind: "mate", mate },
                             content: (
                                 <>
