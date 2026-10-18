@@ -238,8 +238,9 @@
     bottom: -14px;
     pointer-events: auto;
     transition: transform var(--dur-2) var(--ease-out);
+}
 .composer-buddy > .buddy:hover {
-    transform: translateY(-14px);
+    transform: translateY(-9px);
 }
 @media (prefers-reduced-motion: no-preference) {
     .composer-buddy > .buddy:not(.still):hover svg {
@@ -252,13 +253,13 @@
         transform: translateY(0);
     }
     40% {
-        transform: translateY(-8px);
+        transform: translateY(-5px);
     }
     70% {
         transform: translateY(0);
     }
     82% {
-        transform: translateY(-2px);
+        transform: translateY(-1.5px);
     }
 }
 
