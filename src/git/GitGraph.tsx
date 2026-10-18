@@ -192,8 +192,8 @@ function draw(canvas: HTMLCanvasElement, rows: RowLayout[], maxLanes: number, co
     const cp = ROW_H * 0.42;
 
     // The lines sit back like the project tree's spine, so the commits' text leads the eye.
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.7;
     rows.forEach((r, i) => {
         const yTop = i * ROW_H;
         const yMid = yTop + ROW_H / 2;
