@@ -18,7 +18,10 @@ export type Product =
     | "scheduler"
     | "secrets"
     | "iam"
+    | "network"
+    | "dns"
     | "logging"
+    | "monitoring"
     | "errors";
 
 export const PRODUCTS: { id: Product; label: string; group: string }[] = [
@@ -34,9 +37,12 @@ export const PRODUCTS: { id: Product; label: string; group: string }[] = [
     { id: "build", label: "Cloud Build", group: "CI/CD" },
     { id: "registry", label: "Artifact Registry", group: "CI/CD" },
     { id: "scheduler", label: "Cloud Scheduler", group: "Integration" },
+    { id: "network", label: "VPC network", group: "Networking" },
+    { id: "dns", label: "Cloud DNS", group: "Networking" },
     { id: "secrets", label: "Secret Manager", group: "Security" },
     { id: "iam", label: "IAM", group: "Security" },
     { id: "logging", label: "Logging", group: "Operations" },
+    { id: "monitoring", label: "Monitoring", group: "Operations" },
     { id: "errors", label: "Error Reporting", group: "Operations" },
 ];
 

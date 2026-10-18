@@ -65,6 +65,12 @@ export function mockApi() {
         iamMembers: vi.fn(),
         serviceAccounts: vi.fn(),
         billing: vi.fn(),
+        network: vi.fn(),
+        firewallToggle: vi.fn(),
+        dnsZones: vi.fn(),
+        dnsRecords: vi.fn(),
+        alerting: vi.fn(),
+        alertPolicyToggle: vi.fn(),
         datasets: vi.fn(),
         tables: vi.fn(),
         table: vi.fn(),
@@ -111,9 +117,13 @@ export function answerEmpty(api: ReturnType<typeof mockApi>) {
         "nodes",
         "podEvents",
         "snapshots",
+        "dnsZones",
+        "dnsRecords",
     ] as const)
         api[list].mockResolvedValue([]);
     api.pubsub.mockResolvedValue({ topics: [], subscriptions: [] });
+    api.network.mockResolvedValue({ networks: [], subnets: [], firewalls: [] });
+    api.alerting.mockResolvedValue({ policies: [], uptimeChecks: [], channels: [] });
     api.billing.mockResolvedValue({ enabled: true, account: "0A1B2C-3D4E5F-6A7B8C", accountName: null, accountOpen: null, budgets: null });
     api.metrics.mockResolvedValue({ unit: "", step: 60, points: [] });
     api.agentPicks.mockResolvedValue({ project: null, default: null, effective: null });

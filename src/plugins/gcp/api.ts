@@ -573,6 +573,76 @@ export interface Billing {
         { name: string; amount: number | null; currency: string | null; lastPeriod: boolean; thresholds: number[]; projects: number | null }[] | null;
 }
 
+export interface Network {
+    name: string;
+    mode: "auto" | "custom";
+    routing: string | null;
+    mtu: number | null;
+    subnets: number;
+    createdAt: string | null;
+}
+
+export interface Subnet {
+    name: string;
+    region: string;
+    network: string;
+    range: string;
+    secondary: string[];
+    privateGoogleAccess: boolean;
+    purpose: string | null;
+}
+
+export interface FirewallRule {
+    name: string;
+    network: string;
+    direction: "INGRESS" | "EGRESS";
+    priority: number;
+    action: "allow" | "deny";
+    protocols: string[];
+    sources: string[];
+    destinations: string[];
+    targets: string[];
+    disabled: boolean;
+    logging: boolean;
+    description: string | null;
+}
+
+export interface NetworkOverview {
+    networks: Network[];
+    subnets: Subnet[];
+    firewalls: FirewallRule[];
+}
+
+export interface DnsZone {
+    name: string;
+    dnsName: string;
+    visibility: string;
+    dnssec: boolean;
+    nameServers: string[] | null;
+    description: string | null;
+}
+
+export interface DnsRecord {
+    name: string;
+    type: string;
+    ttl: number | null;
+    data: string[];
+}
+
+export interface Alerting {
+    policies: {
+        id: string;
+        name: string;
+        enabled: boolean;
+        conditions: { name: string; summary: string }[];
+        combiner: string | null;
+        channels: number;
+        documentation: string | null;
+    }[];
+    uptimeChecks: { id: string; name: string; target: string; period: string | null; timeout: string | null; regions: string[] | null }[];
+    channels: { name: string; type: string; enabled: boolean; verified: boolean }[];
+}
+
 export interface AgentPick {
     account: string | null;
     project: string | null;
@@ -700,6 +770,13 @@ export const gcpApi = {
     iamMembers: (target: Target) => backend.call<IamMember[]>("iamMembers", t(target)),
     serviceAccounts: (target: Target) => backend.call<ServiceAccount[]>("serviceAccounts", t(target)),
 
+    network: (target: Target) => backend.call<NetworkOverview>("network", t(target)),
+    firewallToggle: (target: Target, rule: string, disabled: boolean) => backend.call<Operation>("firewallToggle", { ...t(target), rule, disabled }),
+    dnsZones: (target: Target) => backend.call<DnsZone[]>("dnsZones", t(target)),
+    dnsRecords: (target: Target, zone: string) => backend.call<DnsRecord[]>("dnsRecords", { ...t(target), zone }),
+    alerting: (target: Target) => backend.call<Alerting>("alerting", t(target)),
+    alertPolicyToggle: (target: Target, policy: string, enabled: boolean) =>
+        backend.call<unknown>("alertPolicyToggle", { ...t(target), policy, enabled }),
     billing: (target: Target) => backend.call<Billing>("billing", t(target)),
     datasets: (target: Target) => backend.call<{ id: string; location: string | null; name: string | null }[]>("datasets", t(target)),
     tables: (target: Target, dataset: string) =>

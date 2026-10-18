@@ -212,3 +212,24 @@ export const snapshotsR = resource({
     fetch: (account: string, project: string) => gcpApi.snapshots(target(account, project)),
     staleAfterMs: 60_000,
 });
+
+export const networkR = resource({
+    kind: "gcp.network",
+    fetch: (account: string, project: string) => gcpApi.network(target(account, project)),
+    staleAfterMs: 60_000,
+});
+export const dnsZonesR = resource({
+    kind: "gcp.dns",
+    fetch: (account: string, project: string) => gcpApi.dnsZones(target(account, project)),
+    staleAfterMs: 5 * 60_000,
+});
+export const dnsRecordsR = resource({
+    kind: "gcp.dns.records",
+    fetch: (account: string, project: string, zone: string) => gcpApi.dnsRecords(target(account, project), zone),
+    staleAfterMs: 60_000,
+});
+export const alertingR = resource({
+    kind: "gcp.alerting",
+    fetch: (account: string, project: string) => gcpApi.alerting(target(account, project)),
+    staleAfterMs: 60_000,
+});

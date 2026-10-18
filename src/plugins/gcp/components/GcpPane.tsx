@@ -33,6 +33,9 @@ import { BigQueryPage } from "./BigQueryPage";
 import { RegistryPage } from "./RegistryPage";
 import { SchedulerPage } from "./SchedulerPage";
 import { IamPage } from "./IamPage";
+import { NetworkPage } from "./NetworkPage";
+import { DnsPage } from "./DnsPage";
+import { MonitoringPage } from "./MonitoringPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Search } from "./Search";
@@ -61,8 +64,11 @@ const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     scheduler: SchedulerPage,
     secrets: SecretsPage,
     iam: IamPage,
+    network: NetworkPage,
+    dns: DnsPage,
     logging: LoggingPage,
     errors: ErrorsPage,
+    monitoring: MonitoringPage,
 };
 
 function typing(target: EventTarget): boolean {
