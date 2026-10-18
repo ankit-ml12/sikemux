@@ -10,6 +10,12 @@ import { clampPageHeight, PAGE_DEFAULT_HEIGHT, readPageMessage } from "./pages";
    height it last reported, so the rows around it do not move. */
 const reportedHeights = new Map<string, number>();
 
+/* The page's own script can ask for a link at any time, so only a click or key the
+   person has just given the page opens one. Their click there activates this window too. */
+function personJustActedIn(frame: HTMLIFrameElement): boolean {
+    return document.activeElement === frame && navigator.userActivation.isActive;
+}
+
 /** A page an agent showed, drawn as part of its reply in a sandboxed frame. */
 export function ChatPage({ page }: { page: PageRef }) {
     const agent = useContext(ChatAgentContext);
@@ -25,7 +31,7 @@ export function ChatPage({ page }: { page: PageRef }) {
             if (message?.kind === "height") {
                 reportedHeights.set(page.id, message.height);
                 setHeight(clampPageHeight(message.height));
-            } else if (message?.kind === "link") openLink(message.url, agent.id, false);
+            } else if (message?.kind === "link" && personJustActedIn(frame.current)) openLink(message.url, agent.id, false);
             else if (message?.kind === "wheel") scrollByReader(message.deltaY);
         };
         window.addEventListener("message", receive);
