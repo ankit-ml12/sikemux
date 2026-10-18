@@ -554,6 +554,15 @@ export type BqResult =
           job: string;
       };
 
+export interface Billing {
+    enabled: boolean;
+    account: string | null;
+    accountName: string | null;
+    accountOpen: boolean | null;
+    budgets:
+        { name: string; amount: number | null; currency: string | null; lastPeriod: boolean; thresholds: number[]; projects: number | null }[] | null;
+}
+
 export interface AgentPick {
     account: string | null;
     project: string | null;
@@ -676,6 +685,7 @@ export const gcpApi = {
     iamMembers: (target: Target) => backend.call<IamMember[]>("iamMembers", t(target)),
     serviceAccounts: (target: Target) => backend.call<ServiceAccount[]>("serviceAccounts", t(target)),
 
+    billing: (target: Target) => backend.call<Billing>("billing", t(target)),
     datasets: (target: Target) => backend.call<{ id: string; location: string | null; name: string | null }[]>("datasets", t(target)),
     tables: (target: Target, dataset: string) =>
         backend.call<{ id: string; type: string; partitioned: boolean }[]>("tables", { ...t(target), dataset }),

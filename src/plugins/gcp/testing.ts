@@ -61,6 +61,7 @@ export function mockApi() {
         schedulerChange: vi.fn(),
         iamMembers: vi.fn(),
         serviceAccounts: vi.fn(),
+        billing: vi.fn(),
         datasets: vi.fn(),
         tables: vi.fn(),
         table: vi.fn(),
@@ -109,6 +110,7 @@ export function answerEmpty(api: ReturnType<typeof mockApi>) {
     ] as const)
         api[list].mockResolvedValue([]);
     api.pubsub.mockResolvedValue({ topics: [], subscriptions: [] });
+    api.billing.mockResolvedValue({ enabled: true, account: "0A1B2C-3D4E5F-6A7B8C", accountName: null, accountOpen: null, budgets: null });
     api.metrics.mockResolvedValue({ unit: "", step: 60, points: [] });
     api.agentPicks.mockResolvedValue({ project: null, default: null, effective: null });
     api.tailLogs.mockReturnValue({ stop: vi.fn() });

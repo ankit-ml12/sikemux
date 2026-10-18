@@ -200,3 +200,9 @@ export const podEventsR = resource({
         gcpApi.podEvents(target(account, project), location, cluster, namespace, pod),
     staleAfterMs: 10_000,
 });
+
+export const billingR = resource({
+    kind: "gcp.billing",
+    fetch: (account: string, project: string) => gcpApi.billing(target(account, project)),
+    staleAfterMs: 10 * 60_000,
+});

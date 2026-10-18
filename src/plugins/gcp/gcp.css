@@ -1313,3 +1313,21 @@ button.gcp-project-row:hover {
 .gcp-histogram-bar .error {
     background: var(--gcp-red);
 }
+
+.gcp-box-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 16px 16px;
+    border: 1px solid var(--gcp-line);
+    border-radius: 8px;
+    background: var(--gcp-raised);
+}
+
+.gcp-box-card .gcp-facts {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.gcp-box-card > .gcp-button {
+    align-self: flex-start;
+}

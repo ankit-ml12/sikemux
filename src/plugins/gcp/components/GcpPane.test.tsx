@@ -65,6 +65,8 @@ describe("the Google Cloud console", () => {
         expect(await screen.findByText("1 failing")).toBeInTheDocument();
         expect(await screen.findByText("1 running")).toBeInTheDocument();
         expect(api.runServices).toHaveBeenCalledWith({ account: null, project: "acme-prod" });
+        expect(await screen.findByText("Enabled")).toBeInTheDocument();
+        expect(screen.getByText("Budgets need the Billing Viewer role on the account.")).toBeInTheDocument();
     });
 
     it("picks another project from the top bar", async () => {

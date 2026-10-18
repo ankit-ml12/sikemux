@@ -1,11 +1,22 @@
 import type { ReactNode } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import type { Product } from "../state";
-import { bucketsR, buildsR, clustersR, functionsR, instancesR, runServicesR, sqlInstancesR } from "../resources";
+import {
+    billingR,
+    bucketsR,
+    buildsR,
+    clustersR,
+    errorGroupsR,
+    functionsR,
+    gcpProjectsR,
+    instancesR,
+    runServicesR,
+    sqlInstancesR,
+} from "../resources";
 import type { Target } from "../api";
 import { ProductIcon } from "./icons";
 import { RecentErrors } from "./RecentErrors";
-import { ago, Button, consoleUrl, keyOf, PageHeader, Status, visit } from "./parts";
+import { ago, Button, consoleUrl, Facts, keyOf, PageHeader, Status, visit } from "./parts";
 
 function Card({
     product,
@@ -42,6 +53,10 @@ export function Overview({ active, target, onOpen }: { active: boolean; target: 
     const buckets = useResourceEnabled(active, bucketsR, ...key);
     const sql = useResourceEnabled(active, sqlInstancesR, ...key);
     const builds = useResourceEnabled(active, buildsR, ...key);
+    const errors = useResourceEnabled(active, errorGroupsR, ...key, "1d");
+    const billing = useResourceEnabled(active, billingR, ...key);
+    const project = useResourceEnabled(active, gcpProjectsR, target.account ?? "").data?.find((each) => each.id === target.project);
+    const openErrors = (errors.data ?? []).filter((group) => group.status === "OPEN").length;
     const count = (data: unknown[] | undefined, failed: boolean) => (data ? data.length : failed ? "—" : "…");
     const failing = (run.data ?? []).filter((service) => service.state === "FAILED").length;
     const running = (instances.data ?? []).filter((vm) => vm.status === "RUNNING").length;
@@ -51,6 +66,62 @@ export function Overview({ active, target, onOpen }: { active: boolean; target: 
             <PageHeader title="Dashboard">
                 <Button onClick={() => visit(consoleUrl("home/dashboard", target.project))}>Open in Cloud console</Button>
             </PageHeader>
+            <div className="gcp-two">
+                <section className="gcp-box-card" aria-label="Project info">
+                    <h2 className="gcp-section-title">Project info</h2>
+                    <Facts
+                        items={[
+                            ["Project name", project?.name ?? target.project],
+                            ["Project ID", target.project],
+                            ["Project number", project?.number],
+                        ]}
+                    />
+                </section>
+                <section className="gcp-box-card" aria-label="Billing">
+                    <h2 className="gcp-section-title">Billing</h2>
+                    {billing.status === "error" && !billing.data ? (
+                        <p className="gcp-note">{billing.error}</p>
+                    ) : !billing.data ? (
+                        <p className="gcp-note">Loading…</p>
+                    ) : (
+                        <>
+                            <Facts
+                                items={[
+                                    ["Billing", billing.data.enabled ? "Enabled" : "Disabled"],
+                                    [
+                                        "Account",
+                                        billing.data.accountName ? `${billing.data.accountName} (${billing.data.account})` : billing.data.account,
+                                    ],
+                                ]}
+                            />
+                            {billing.data.budgets && billing.data.budgets.length > 0 ? (
+                                <div className="gcp-list">
+                                    {billing.data.budgets.map((each) => (
+                                        <div key={each.name} className="gcp-list-row">
+                                            <span className="gcp-list-main">{each.name}</span>
+                                            <span>
+                                                {each.lastPeriod
+                                                    ? "Last month's spend"
+                                                    : each.amount !== null
+                                                      ? `${each.amount} ${each.currency ?? ""}`
+                                                      : "—"}
+                                            </span>
+                                            <span className="gcp-muted">{each.thresholds.map((threshold) => `${threshold}%`).join(" · ")}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="gcp-note">
+                                    {billing.data.budgets
+                                        ? "No budgets on this billing account."
+                                        : "Budgets need the Billing Viewer role on the account."}
+                                </p>
+                            )}
+                            <Button onClick={() => visit(consoleUrl("billing/linkedaccount", target.project))}>Go to billing</Button>
+                        </>
+                    )}
+                </section>
+            </div>
             <section className="gcp-section">
                 <h2 className="gcp-section-title">Resources</h2>
                 <div className="gcp-cards">
@@ -90,6 +161,13 @@ export function Overview({ active, target, onOpen }: { active: boolean; target: 
                         onOpen={() => onOpen("storage")}
                     />
                     <Card product="sql" title="SQL" value={count(sql.data, sql.status === "error")} detail="instances" onOpen={() => onOpen("sql")} />
+                    <Card
+                        product="errors"
+                        title="Error Reporting"
+                        value={errors.data ? openErrors : errors.status === "error" ? "—" : "…"}
+                        detail="open in the last day"
+                        onOpen={() => onOpen("errors")}
+                    />
                 </div>
             </section>
             <div className="gcp-two">
