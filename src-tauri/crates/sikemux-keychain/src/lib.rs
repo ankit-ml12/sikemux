@@ -1,17 +1,16 @@
-//! Secrets kept by service and account: in the login Keychain on macOS, and
-//! elsewhere in files only the person can read.
+//! Secrets kept by service and account. A build Sikemux's team signed keeps
+//! them in the login Keychain on macOS; any other build, and every other
+//! system, keeps them in files only the person can read. An unsigned build
+//! would lose the Keychain's trust each time it is rebuilt.
 
 use std::fmt;
 
-#[cfg(not(target_os = "macos"))]
 mod file;
 #[cfg(target_os = "macos")]
-mod security;
+mod keychain;
+mod signature;
 
-#[cfg(not(target_os = "macos"))]
-use file as store;
-#[cfg(target_os = "macos")]
-use security as store;
+pub use signature::{signed_by_team, TEAM_REQUIREMENT};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeychainError {
@@ -45,13 +44,9 @@ fn name_like(raw: &str, what: &str) -> KeychainResult<String> {
     Ok(value.to_string())
 }
 
-/// Secrets reach `security -i` on a command line it splits on spaces, so
-/// anything that could end the value early is refused rather than escaped.
 fn secret_like(raw: &str) -> KeychainResult<String> {
     let secret = raw.trim();
-    let allowed =
-        |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '~' | '=' | '+' | '/');
-    if secret.is_empty() || secret.len() > 8192 || !secret.chars().all(allowed) {
+    if secret.is_empty() || secret.len() > 8192 || secret.chars().any(char::is_control) {
         return Err(KeychainError::Invalid(
             "that does not look like a token".into(),
         ));
@@ -61,26 +56,32 @@ fn secret_like(raw: &str) -> KeychainResult<String> {
 
 /// Nothing saved reads as `None`; a keychain that will not answer is an error.
 pub fn read(service: &str, account: &str) -> KeychainResult<Option<String>> {
-    store::read(
-        &name_like(service, "service")?,
-        &name_like(account, "account")?,
-    )
+    let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
+    #[cfg(target_os = "macos")]
+    if signed_by_team() {
+        return keychain::read(&service, &account);
+    }
+    file::read(&service, &account)
 }
 
 pub fn write(service: &str, account: &str, secret: &str) -> KeychainResult<()> {
-    store::write(
-        &name_like(service, "service")?,
-        &name_like(account, "account")?,
-        &secret_like(secret)?,
-    )
+    let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
+    let secret = secret_like(secret)?;
+    #[cfg(target_os = "macos")]
+    if signed_by_team() {
+        return keychain::write(&service, &account, &secret);
+    }
+    file::write(&service, &account, &secret)
 }
 
 /// Deleting an entry that is not there is not an error.
 pub fn delete(service: &str, account: &str) -> KeychainResult<()> {
-    store::delete(
-        &name_like(service, "service")?,
-        &name_like(account, "account")?,
-    )
+    let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
+    #[cfg(target_os = "macos")]
+    if signed_by_team() {
+        return keychain::delete(&service, &account);
+    }
+    file::delete(&service, &account)
 }
 
 #[cfg(test)]
@@ -100,8 +101,9 @@ mod tests {
     }
 
     #[test]
-    fn anything_that_could_end_the_command_early_is_refused() {
-        for secret in ["", "   ", "two words", "a\nb", "a;b", "a\"b", "a'b"] {
+    fn a_secret_is_one_line_of_text() {
+        assert!(secret_like("two words; \"quoted\"").is_ok());
+        for secret in ["", "   ", "a\nb", "a\u{7}b"] {
             assert!(secret_like(secret).is_err(), "{secret:?}");
         }
         for account in ["", "a b", "a/b", "a\nb", "{uuid}"] {
