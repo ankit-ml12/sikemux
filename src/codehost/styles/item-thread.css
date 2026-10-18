@@ -33,7 +33,28 @@
     font-size: var(--text-sm);
 }
 .gha-comment .prose {
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-md);
+    line-height: 1.55;
+}
+/* A conversation reads at GitHub's sizes: headings well above the text, code a step below it. */
+.gha-comment .prose h1 {
+    font-size: var(--text-xl);
+}
+.gha-comment .prose h2 {
+    font-size: var(--text-lg);
+}
+.gha-comment .prose :is(h3, h4, h5, h6) {
+    font-size: var(--text-md);
+}
+.gha-comment .prose :is(h1, h2, h3, h4, h5, h6) {
+    margin: var(--space-4) 0 var(--space-2);
+}
+.gha-comment .prose code {
+    font-size: var(--text-xs);
+}
+.gha-comment .prose p {
+    margin: var(--space-3) 0;
 }
 .gha-comment-author {
     font-weight: var(--weight-semibold);
