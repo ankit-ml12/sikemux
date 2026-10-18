@@ -136,6 +136,14 @@ impl Plugin for Gcp {
                 "instance" => answer(compute::instance_detail(params(input)?)).await,
                 "instancePower" => answer(compute::power(params(input)?)).await,
                 "instanceSerial" => answer(compute::serial(params(input)?)).await,
+                "snapshots" => answer(compute::snapshots(params(input)?)).await,
+                "snapshotDisk" => {
+                    answer(compute::take_snapshot(
+                        params(input)?,
+                        &logging::rfc3339_before(now_secs(), 0),
+                    ))
+                    .await
+                }
                 "clusters" => answer(gke::clusters(params(input)?)).await,
                 "cluster" => answer(gke::cluster_detail(params(input)?)).await,
                 "nodePoolResize" => answer(gke::resize_pool(params(input)?)).await,

@@ -259,6 +259,80 @@ pub async fn serial(input: Serial) -> GcpResult<Value> {
     }))
 }
 
+/// A snapshot as the pane and agents read it.
+pub fn snapshot(value: &Value) -> Value {
+    json!({
+        "name": at(value, "/name"),
+        "disk": short(&text(value, "/sourceDisk")),
+        "status": at(value, "/status"),
+        "sizeGb": at(value, "/diskSizeGb").as_str().and_then(|size| size.parse::<u64>().ok()),
+        "storageBytes": at(value, "/storageBytes").as_str().and_then(|size| size.parse::<u64>().ok()),
+        "locations": at(value, "/storageLocations"),
+        "createdAt": at(value, "/creationTimestamp"),
+    })
+}
+
+/// Every disk snapshot in the project, newest first.
+pub async fn snapshots(input: Listing) -> GcpResult<Vec<Value>> {
+    let project = input.target.project()?;
+    let listed = client::list(
+        &input.target,
+        &format!("{API}/projects/{project}/global/snapshots"),
+        &[("maxResults", "500".into())],
+        "items",
+        1000,
+    )
+    .await?;
+    let mut read: Vec<Value> = listed.iter().map(snapshot).collect();
+    read.sort_by_key(|each| std::cmp::Reverse(text(each, "/createdAt")));
+    Ok(read)
+}
+
+/// A snapshot name from a disk's and a time: lowercase letters, digits and dashes, at most 63, as Compute Engine allows.
+pub fn snapshot_name(disk: &str, stamp: &str) -> String {
+    let clean = |text: &str| {
+        text.to_ascii_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect::<String>()
+    };
+    let mut name = format!("{}-{}", clean(disk), clean(stamp));
+    name.truncate(63);
+    let name = name.trim_matches('-').to_string();
+    if name.starts_with(|c: char| c.is_ascii_lowercase()) {
+        name
+    } else {
+        format!("s-{name}")
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SnapshotDisk {
+    #[serde(flatten)]
+    pub target: Target,
+    pub zone: String,
+    pub disk: String,
+}
+
+/// Takes a snapshot of a disk now, named after the disk and the time.
+pub async fn take_snapshot(input: SnapshotDisk, stamp: &str) -> GcpResult<Value> {
+    let project = input.target.project()?;
+    let zone = segment("zone", &input.zone)?;
+    let disk = segment("disk", &input.disk)?;
+    let name = snapshot_name(&disk, stamp);
+    let operation = client::post(
+        &input.target,
+        &format!("{API}/projects/{project}/zones/{zone}/disks/{disk}/createSnapshot"),
+        &json!({ "name": name }),
+    )
+    .await?;
+    let mut read = operation_of(&operation);
+    if let Some(object) = read.as_object_mut() {
+        object.insert("snapshot".into(), json!(name));
+    }
+    Ok(read)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +372,23 @@ mod tests {
             "zones/asia-east1-a": { "instances": [{ "name": "db-1" }] }
         } });
         assert_eq!(instances_of(&page).len(), 2);
+    }
+
+    #[test]
+    fn a_snapshot_is_named_as_compute_engine_allows() {
+        assert_eq!(
+            snapshot_name("web-1", "2024-10-18T11:00:00Z"),
+            "web-1-2024-10-18t11-00-00z"
+        );
+        assert_eq!(snapshot_name("1st-disk", "x"), "s-1st-disk-x");
+        assert!(snapshot_name(&"d".repeat(80), "2024").len() <= 63);
+        let read = snapshot(
+            &json!({ "name": "web-1-snap", "sourceDisk": "https://.../disks/web-1", "status": "READY", "diskSizeGb": "20", "storageBytes": "1073741824" }),
+        );
+        assert_eq!(
+            (read["disk"].as_str(), read["sizeGb"].as_u64()),
+            (Some("web-1"), Some(20))
+        );
     }
 
     #[test]
