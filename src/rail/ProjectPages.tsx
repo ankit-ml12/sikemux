@@ -11,10 +11,12 @@ import { IconClose, IconFile, IconPlus, IconTerminal } from "../ui/Icons";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { fileTabMenu, windowTabMenu } from "../workspace/tabMenus";
+import { AgentRowProject } from "./AgentRowTree";
 import { type CtxItem, FileTree, TreeContextMenu } from "./FileTree";
 import { RailEmpty } from "./RailEmpty";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
+import { ScopeTabs } from "./ScopeTabs";
 
 const EMPTY_IDS: readonly string[] = [];
 const openEntry = (entry: { path: string }) => cmd.requestOpenFile(entry.path);
@@ -47,6 +49,7 @@ function TabRow({
     label,
     detail,
     title,
+    project,
     active,
     onMenu,
 }: {
@@ -57,6 +60,8 @@ function TabRow({
     label: string;
     detail?: string | null;
     title?: string;
+    /** The project the tab lives in, shown under its label when the list spans projects. */
+    project?: { name: string; sessionId: string };
     active: boolean;
     onMenu: (event: MouseEvent) => void;
 }) {
@@ -64,15 +69,25 @@ function TabRow({
         <div className="agent-row-wrap">
             <button
                 type="button"
-                className={`agent-row rail-tab${active ? " active" : ""}`}
+                className={`agent-row rail-tab${project ? " two-line" : ""}${active ? " active" : ""}`}
                 title={title}
-                onClick={() => cmd.selectTab(tab)}
+                onClick={() => {
+                    if (project && project.sessionId !== getState().activeSessionId) cmd.selectSession(project.sessionId);
+                    cmd.selectTab(tab);
+                }}
                 onAuxClick={(event) => {
                     if (event.button === 1) cmd.closeTab(tab);
                 }}
                 onContextMenu={onMenu}>
                 <span className={`agent-glyph${glyph ? ` ${glyph}` : ""}`}>{icon}</span>
-                <span className="agent-title">{label}</span>
+                {project ? (
+                    <span className="agent-row-text">
+                        <span className="agent-title">{label}</span>
+                        <AgentRowProject name={project.name} />
+                    </span>
+                ) : (
+                    <span className="agent-title">{label}</span>
+                )}
                 {detail && <span className="rail-file-folder">{detail}</span>}
             </button>
             <Tooltip label={`Close ${label}`}>
@@ -95,20 +110,26 @@ function useTabMenu() {
     return { open, shown };
 }
 
-/** The project's terminal tabs. */
+/** The terminal tabs of this project, or of every open project. */
 export function TerminalsPage() {
     const session = useProjectSession();
-    const windowIds = useStore((s) => (session ? s.windowsBySession[session.id] : undefined) ?? EMPTY_IDS);
+    const scope = useStore((s) => s.tabRailScope);
+    const sessions = useStore((s) => s.sessions);
+    const sessionOrder = useStore((s) => s.sessionOrder);
+    const windowsBySession = useStore((s) => s.windowsBySession);
     const windows = useStore((s) => s.windows);
     const titles = useStore((s) => s.terminalTitles);
     const closeShortcut = useShortcutLabel("pane.close");
     const menu = useTabMenu();
 
-    const tabs = windowIds.flatMap((id) => {
-        const win = windows[id];
-        const home = win?.role === "term" ? collectPanes(win.root).find((pane) => pane.kind === "terminal") : undefined;
-        return win && home ? [{ win, label: terminalLabel(win, home, titles) }] : [];
-    });
+    const shown = scope === "all" ? sessionOrder.map((id) => sessions[id]).filter((s) => s?.kind === "project") : session ? [session] : [];
+    const tabs = shown.flatMap((owner) =>
+        (windowsBySession[owner.id] ?? EMPTY_IDS).flatMap((id) => {
+            const win = windows[id];
+            const home = win?.role === "term" ? collectPanes(win.root).find((pane) => pane.kind === "terminal") : undefined;
+            return win && home ? [{ win, owner, label: terminalLabel(win, home, titles) }] : [];
+        }),
+    );
 
     return (
         <>
@@ -121,22 +142,24 @@ export function TerminalsPage() {
                         <div className="agent-actions">
                             <NewRow icon={<IconPlus size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                         </div>
+                        <ScopeTabs scope={scope} projectName={session.name} onChange={cmd.setTabRailScope} />
                     </div>
                     <div className="rail-scroll">
                         {tabs.length === 0 ? (
                             <RailEmpty icon={<IconTerminal size={20} />} title="No terminals open" shortcut="terminal.new" doing="start one" />
                         ) : (
                             <Panel variant="group" className="agent-group">
-                                {tabs.map(({ win, label }) => (
+                                {tabs.map(({ win, owner, label }) => (
                                     <TabRow
                                         key={win.id}
                                         tab={{ id: win.id }}
                                         icon={<IconTerminal size={15} />}
                                         glyph="term"
                                         label={label}
-                                        active={session.activeWindowId === win.id}
+                                        project={scope === "all" ? { name: owner.name, sessionId: owner.id } : undefined}
+                                        active={owner.id === session.id && session.activeWindowId === win.id}
                                         onMenu={(event) =>
-                                            menu.open(event, windowTabMenu(session.id, getState().windows[win.id] ?? win, closeShortcut))
+                                            menu.open(event, windowTabMenu(owner.id, getState().windows[win.id] ?? win, closeShortcut))
                                         }
                                     />
                                 ))}

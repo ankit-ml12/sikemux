@@ -5,12 +5,12 @@ import { IconFolder, IconStack } from "../ui/Icons";
 export function ScopeTabs({
     scope,
     projectName,
-    waitingElsewhere,
+    waitingElsewhere = 0,
     onChange,
 }: {
     scope: TabRailScope;
     projectName: string;
-    waitingElsewhere: number;
+    waitingElsewhere?: number;
     onChange: (scope: TabRailScope) => void;
 }) {
     return (
