@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ConnectionLike } from '@sikemux/native';
 
-import { asksPerson, type AgentQuestion, type QuestionAnswer } from '@mac/agents/agentQuestions';
+import { unreadAnswers, waitingQuestions, type AgentQuestion, type QuestionAnswer, type SentAnswer } from '@mac/agents/agentQuestions';
+import type { ChatMessage } from '@mac/chat/types';
 
 import { hostKnows } from '@/core/hostCalls';
 import { hostOf, problem } from '@/devices/hub';
@@ -35,12 +36,12 @@ export function useQuestions(
   connection: ConnectionLike | undefined,
   agentId: string,
   seen: string,
-  arrived: ReadonlySet<string>,
+  messages: readonly ChatMessage[],
   onError: (problem: string) => void,
 ): ChatQuestions {
   const [all, setAll] = useState<AgentQuestion[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
-  const [sent, setSent] = useState<{ question: AgentQuestion; answer: string | null }[]>([]);
+  const [sent, setSent] = useState<SentAnswer[]>([]);
   const [writingId, setWritingId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -54,7 +55,7 @@ export function useQuestions(
       .then(
         (text) => {
           const list = JSON.parse(text) as AgentQuestion[];
-          if (current) setAll(list.filter((question) => question.agentId === agentId && asksPerson(question)));
+          if (current) setAll(list);
         },
         (error: unknown) => {
           if (current) onError(`could not read this agent's questions: ${problem(error)}`);
@@ -65,14 +66,9 @@ export function useQuestions(
     };
   }, [connection, agentId, seen, reads, onError]);
 
-  const unanswered = useMemo(() => all.filter((question) => !sent.some((answered) => answered.question.id === question.id)), [all, sent]);
-  const open = useMemo(() => unanswered.filter((question) => question.blocked), [unanswered]);
-  const assumed = useMemo(() => unanswered.filter((question) => !question.blocked), [unanswered]);
-  const answered = useMemo(
-    () => sent.flatMap(({ question, answer }) => (answer === null || arrived.has(question.asked) ? [] : [{ question, answer }])),
-    [sent, arrived],
-  );
-  const writing = unanswered.find((question) => question.id === writingId && !question.secret) ?? null;
+  const { open, assumed } = useMemo(() => waitingQuestions(all, agentId, sent), [all, agentId, sent]);
+  const answered = useMemo(() => unreadAnswers(sent, messages), [sent, messages]);
+  const writing = [...open, ...assumed].find((question) => question.id === writingId && !question.secret) ?? null;
   const composing = writing ?? open.find((question) => !question.secret && !dismissed.has(question.id)) ?? null;
 
   const answer = useCallback(

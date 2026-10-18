@@ -1,3 +1,6 @@
+import { messageLetters } from "../chat/agentLetters";
+import type { ChatMessage } from "../chat/types";
+
 export interface QuestionChoice {
     readonly label: string;
     readonly detail?: string;
@@ -47,6 +50,34 @@ export const secretNote = (asker: string): string =>
 export const SECRET_ANSWERED = "Answered, kept private";
 
 export const asksPerson = (question: AgentQuestion): boolean => question.lead === null;
+
+/** An answer sent from this app. `answer` is what the chat shows until the agent has it; none for an assumption let stand. */
+export interface SentAnswer {
+    question: AgentQuestion;
+    answer: string | null;
+}
+
+/** The agent's questions to the person not yet answered from here: those it waits on, and those it went on without. */
+export function waitingQuestions(
+    all: readonly AgentQuestion[],
+    agentId: string,
+    sent: readonly SentAnswer[],
+): { open: AgentQuestion[]; assumed: AgentQuestion[] } {
+    const unanswered = all.filter(
+        (question) => question.agentId === agentId && asksPerson(question) && !sent.some((answered) => answered.question.id === question.id),
+    );
+    return { open: unanswered.filter((question) => question.blocked), assumed: unanswered.filter((question) => !question.blocked) };
+}
+
+/** Answers sent from here that the agent's transcript does not hold yet. */
+export function unreadAnswers(sent: readonly SentAnswer[], messages: readonly ChatMessage[]): { question: AgentQuestion; answer: string }[] {
+    const shown = sent.flatMap(({ question, answer }) => (answer === null ? [] : [{ question, answer }]));
+    if (shown.length === 0) return shown;
+    const arrived = new Set(
+        messages.flatMap((message) => (messageLetters(message) ?? []).flatMap((letter) => (letter.kind === "answer" ? [letter.question] : []))),
+    );
+    return shown.filter(({ question }) => !arrived.has(question.asked));
+}
 
 /** The question the agent waits on the person to answer, the first it asked. */
 export const blockingQuestion = (questions: readonly AgentQuestion[], agentId: string): AgentQuestion | undefined =>

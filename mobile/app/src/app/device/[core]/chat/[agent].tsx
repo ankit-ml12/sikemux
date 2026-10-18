@@ -6,7 +6,6 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { activityText, composerPlaceholder } from '@mac/chat/chatStatus';
-import { messageLetters } from '@mac/chat/agentLetters';
 import { sentPrompts } from '@mac/chat/promptHistory';
 import { activeToolLabel } from '@mac/chat/toolLabels';
 import { outlivesFold, subagentsById, workFolds, type WorkFold } from '@mac/chat/transcript';
@@ -207,20 +206,11 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const liveShown = hasLiveWork(fresh) && chat.attached === 'live';
   const recalls = !watchOnly && (chat.queued.length > 0 || state.messages.some((message) => message.role === 'user'));
   const strip = liveShown ? <LiveStrip work={work} provider={provider} onOpen={openLive} /> : null;
-  const arrived = useMemo(
-    () =>
-      new Set(
-        state.messages.flatMap((message) =>
-          (messageLetters(message) ?? []).flatMap((letter) => (letter.kind === 'answer' ? [letter.question] : [])),
-        ),
-      ),
-    [state.messages],
-  );
   const questions = useQuestions(
     live.status === 'open' ? live.connection : undefined,
     agentId,
     `${info?.activeAt}|${info?.unread}|${state.running}`,
-    arrived,
+    state.messages,
     session.report,
   );
   const input = useRef<TextInput>(null);

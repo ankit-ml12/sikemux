@@ -1,12 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { errorText } from "../lib/format";
-import { asksPerson, type AgentQuestion, type QuestionAnswer } from "../agents/agentQuestions";
+import { unreadAnswers, waitingQuestions, type AgentQuestion, type QuestionAnswer, type SentAnswer } from "../agents/agentQuestions";
 import { agentQuestionsApi } from "../api/agentQuestions";
 import { useStore } from "../state/store";
-import { messageLetters } from "./agentLetters";
 import type { ChatMessage } from "./types";
 
-const NO_QUESTIONS: AgentQuestion[] = [];
 const NO_PICKS: ReadonlyMap<string, QuestionPick> = new Map();
 
 /** An answer picked for an open question, held until every open question has one. */
@@ -61,16 +59,10 @@ const choicePick = (question: AgentQuestion, choice: number): QuestionPick => ({
 /** The questions an agent put to the person, answered in its chat. */
 export function useChatQuestions(agentId: string, messages: readonly ChatMessage[], onError: (message: string | null) => void): ChatQuestions {
     const all = useStore((s) => s.agentQuestions);
-    const mine = useMemo(() => {
-        const found = all.filter((question) => question.agentId === agentId && asksPerson(question));
-        return found.length > 0 ? found : NO_QUESTIONS;
-    }, [all, agentId]);
     const [busy, setBusy] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
-    const [sent, setSent] = useState<{ question: AgentQuestion; answer: string | null }[]>([]);
-    const unanswered = useMemo(() => mine.filter((question) => !sent.some((answered) => answered.question.id === question.id)), [mine, sent]);
-    const open = useMemo(() => unanswered.filter((question) => question.blocked), [unanswered]);
-    const assumed = useMemo(() => unanswered.filter((question) => !question.blocked), [unanswered]);
+    const [sent, setSent] = useState<SentAnswer[]>([]);
+    const { open, assumed } = useMemo(() => waitingQuestions(all, agentId, sent), [all, agentId, sent]);
     const [writingId, setWritingId] = useState<string | null>(null);
     const [heldPicks, setPicks] = useState<ReadonlyMap<string, QuestionPick>>(NO_PICKS);
     const [shownId, setShownId] = useState<string | null>(null);
@@ -89,14 +81,7 @@ export function useChatQuestions(agentId: string, messages: readonly ChatMessage
     const moved = current && cursorAt?.id === current.id ? cursorAt.at : null;
     const cursor = moved ?? (picked && "choice" in picked.answer ? picked.answer.choice : 0);
 
-    const answered = useMemo(() => {
-        const shown = sent.flatMap(({ question, answer }) => (answer === null ? [] : [{ question, answer }]));
-        if (shown.length === 0) return shown;
-        const arrived = new Set(
-            messages.flatMap((message) => (messageLetters(message) ?? []).flatMap((letter) => (letter.kind === "answer" ? [letter.question] : []))),
-        );
-        return shown.filter(({ question }) => !arrived.has(question.asked));
-    }, [messages, sent]);
+    const answered = useMemo(() => unreadAnswers(sent, messages), [messages, sent]);
 
     const writing = assumed.find((question) => question.id === writingId) ?? null;
     const composing = writing ?? (!folded && current && !current.secret ? current : null);
