@@ -11,7 +11,7 @@ use super::protocol::*;
 pub struct HostSignIn {
     pub code: HostSignInCode,
     pub user_code: HostSignInUserCode,
-    /// Where the person approves this host, with the code filled in.
+    /// Where the person approves this host by typing the code it shows. It never carries the code, so a link alone cannot approve anything.
     pub verification_url: String,
     pub expires_at: String,
     /// How many seconds the host waits between asks whether it was approved.
@@ -70,7 +70,7 @@ pub enum HostSignInStatus {
     Unknown,
 }
 
-/// What the host shows its person, who enters or checks it on a device already signed in. Eight consonants in two groups of four.
+/// What the host shows its person, who types it on a device already signed in. Eight consonants in two groups of four.
 pub type HostSignInUserCode = String;
 
 /// The host waiting behind a user code, for the person to check before approving it.
@@ -82,6 +82,13 @@ pub struct PendingHost {
     pub platform: Platform,
     pub channel: Channel,
     pub expires_at: String,
+    /// When the host asked to be signed in.
+    pub requested_at: String,
+    /// The address the host asked from, as the server saw it, or null when it is not known.
+    pub requested_from: Option<String>,
+    /// Only for a host once removed from this account: when it was. It can come back only through a code approved like this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed_at: Option<String>,
 }
 
 /// Reads `json` as the named type and writes it back, for the contract tests.

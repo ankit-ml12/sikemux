@@ -10,12 +10,22 @@ import { Hono } from "hono";
 import { sql } from "kysely";
 
 import { audit } from "../audit.ts";
-import { requireIdentity, type AuthEnv, type Verifier } from "../auth.ts";
+import {
+  requireIdentity,
+  requireSession,
+  type AuthEnv,
+  type Verifier,
+} from "../auth.ts";
 import type { Database } from "../db.ts";
 import { issueChallenge } from "../devices/challenge.ts";
 import { registerDevice, toDevice } from "../devices/register.ts";
 import { ApiFailure, readBody } from "../http.ts";
-import { clientAddress, limit, type RateLimiter } from "../limits.ts";
+import {
+  callerAddress,
+  clientAddress,
+  limit,
+  type RateLimiter,
+} from "../limits.ts";
 
 const LIFETIME_MS = 10 * 60_000;
 const INTERVAL_SECONDS = 5;
@@ -52,8 +62,8 @@ function gone(): ApiFailure {
 
 /**
  * Signing in a host that has no browser, as in OAuth's device grant: the host shows a user code,
- * the person approves it from a device already signed in, and the host then registers itself
- * with the same signed challenge as any device. The host keeps no sign-in token afterwards.
+ * the person types it on their phone or the web app and approves it, and the host then registers
+ * itself with the same signed challenge as any device. The host keeps no sign-in token afterwards.
  */
 export function hostSignInRoutes(
   { db }: Database,
@@ -63,7 +73,7 @@ export function hostSignInRoutes(
 ) {
   const perAddress = (name: string, perMinute: number) =>
     limit<AuthEnv>(limiter, name, perMinute, clientAddress);
-  const signedIn = requireIdentity(verifier, db);
+  const signedIn = [requireIdentity(verifier, db), requireSession()] as const;
   const perUser = limit<AuthEnv>(
     limiter,
     "host-sign-in",
@@ -80,11 +90,18 @@ export function hostSignInRoutes(
       .executeTakeFirst();
 
   return new Hono<AuthEnv>()
-    .get("/:userCode", signedIn, perUser, async (c) => {
+    .get("/:userCode", ...signedIn, perUser, async (c) => {
       const { userId } = c.get("identity");
       const row = await db
         .selectFrom("host_sign_ins")
-        .selectAll()
+        .leftJoin("removed_devices", (join) =>
+          join
+            .onRef("removed_devices.key", "=", "host_sign_ins.key")
+            .on("removed_devices.user_id", "=", userId)
+            .on("removed_devices.reason", "=", "removed"),
+        )
+        .selectAll("host_sign_ins")
+        .select("removed_devices.removed_at")
         .where("user_code", "=", userCodeOf(c.req.param("userCode")))
         .where("expires_at", ">", sql<Date>`now()`)
         .where((eb) =>
@@ -101,10 +118,13 @@ export function hostSignInRoutes(
         platform: row.platform as Platform,
         channel: row.channel as Channel,
         expiresAt: row.expires_at.toISOString(),
+        requestedAt: row.created_at.toISOString(),
+        requestedFrom: row.requested_from,
       };
+      if (row.removed_at) body.removedAt = row.removed_at.toISOString();
       return c.json(body);
     })
-    .post("/:userCode/approve", signedIn, perUser, async (c) => {
+    .post("/:userCode/approve", ...signedIn, perUser, async (c) => {
       const { userId, via } = c.get("identity");
       const row = await db
         .updateTable("host_sign_ins")
@@ -130,7 +150,7 @@ export function hostSignInRoutes(
       c.get("log").info({ host: row.key.slice(0, 8) }, "approved a host");
       return c.body(null, 204);
     })
-    .delete("/:userCode", signedIn, perUser, async (c) => {
+    .delete("/:userCode", ...signedIn, perUser, async (c) => {
       const { userId, via } = c.get("identity");
       const row = await db
         .deleteFrom("host_sign_ins")
@@ -176,6 +196,7 @@ export function hostSignInRoutes(
             name,
             platform: start.platform,
             channel: start.channel,
+            requested_from: callerAddress(c)?.slice(0, 64) ?? null,
             expires_at: expiresAt,
           })
           .onConflict((oc) => oc.column("user_code").doNothing())
@@ -185,7 +206,7 @@ export function hostSignInRoutes(
         const body: HostSignIn = {
           code,
           userCode,
-          verificationUrl: `${appOrigin}/host?code=${userCode}`,
+          verificationUrl: `${appOrigin}/host`,
           expiresAt: expiresAt.toISOString(),
           interval: INTERVAL_SECONDS,
         };

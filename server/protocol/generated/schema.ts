@@ -270,7 +270,7 @@ export const schema = {
         userCode: { $ref: "#/$defs/HostSignInUserCode" },
         verificationUrl: {
           description:
-            "Where the person approves this host, with the code filled in.",
+            "Where the person approves this host by typing the code it shows. It never carries the code, so a link alone cannot approve anything.",
           type: "string",
           format: "uri",
         },
@@ -353,7 +353,7 @@ export const schema = {
     HostSignInStatus: { type: "string", enum: ["pending", "approved"] },
     HostSignInUserCode: {
       description:
-        "What the host shows its person, who enters or checks it on a device already signed in. Eight consonants in two groups of four.",
+        "What the host shows its person, who types it on a device already signed in. Eight consonants in two groups of four.",
       type: "string",
       pattern: "^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$",
     },
@@ -759,8 +759,33 @@ export const schema = {
         platform: { $ref: "#/$defs/Platform" },
         channel: { $ref: "#/$defs/Channel" },
         expiresAt: { type: "string", format: "date-time" },
+        requestedAt: {
+          description: "When the host asked to be signed in.",
+          type: "string",
+          format: "date-time",
+        },
+        requestedFrom: {
+          description:
+            "The address the host asked from, as the server saw it, or null when it is not known.",
+          type: ["string", "null"],
+          maxLength: 64,
+        },
+        removedAt: {
+          description:
+            "Only for a host once removed from this account: when it was. It can come back only through a code approved like this.",
+          type: "string",
+          format: "date-time",
+        },
       },
-      required: ["key", "name", "platform", "channel", "expiresAt"],
+      required: [
+        "key",
+        "name",
+        "platform",
+        "channel",
+        "expiresAt",
+        "requestedAt",
+        "requestedFrom",
+      ],
       additionalProperties: false,
     },
     Platform: { type: "string", enum: ["macos", "linux", "ios", "android"] },

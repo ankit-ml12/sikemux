@@ -78,6 +78,7 @@ export interface Tables {
     platform: string;
     channel: string;
     approved_by: string | null;
+    requested_from: string | null;
     created_at: CreatedAt;
     expires_at: Date;
   };

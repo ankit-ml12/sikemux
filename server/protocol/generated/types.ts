@@ -178,7 +178,7 @@ export const healthStatusValues: readonly HealthStatus[] = [
 export interface HostSignIn {
   code: HostSignInCode;
   userCode: HostSignInUserCode;
-  /** Where the person approves this host, with the code filled in. */
+  /** Where the person approves this host by typing the code it shows. It never carries the code, so a link alone cannot approve anything. */
   verificationUrl: string;
   expiresAt: string;
   /** How many seconds the host waits between asks whether it was approved. */
@@ -222,7 +222,7 @@ export const hostSignInStatusValues: readonly HostSignInStatus[] = [
   "approved",
 ];
 
-/** What the host shows its person, who enters or checks it on a device already signed in. Eight consonants in two groups of four. */
+/** What the host shows its person, who types it on a device already signed in. Eight consonants in two groups of four. */
 export type HostSignInUserCode = string;
 
 /** Which host on the account the phone wants to join. */
@@ -418,6 +418,12 @@ export interface PendingHost {
   platform: Platform;
   channel: Channel;
   expiresAt: string;
+  /** When the host asked to be signed in. */
+  requestedAt: string;
+  /** The address the host asked from, as the server saw it, or null when it is not known. */
+  requestedFrom: string | null;
+  /** Only for a host once removed from this account: when it was. It can come back only through a code approved like this. */
+  removedAt?: string;
 }
 
 export type Platform = "macos" | "linux" | "ios" | "android";
