@@ -79,21 +79,28 @@
 .merge-review-virtual-item > div {
     padding: 0 var(--space-2) var(--space-2) 0;
 }
-.merge-review-item {
-    overflow: clip;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
-}
-/* Pinned while its card scrolls under it, a header keeps the card's top corners, so it still reads as the card's top. */
+/* The header and the diff under it each draw their own edges rather than the card, so a header pinned while its diff
+   scrolls under it still has its top line and corners. */
 .merge-review-item > .merge-file-header {
-    border-radius: calc(var(--radius-2) - 1px) calc(var(--radius-2) - 1px) 0 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2) var(--radius-2) 0 0;
     background: var(--surface);
 }
-/* Folded, the header is the whole card, and the card's own edge closes it. */
+.merge-review-item.open > .merge-file-header {
+    border-bottom: 0;
+}
+/* Folded, the header is the whole card. */
 .merge-review-item:not(.open) > .merge-file-header {
-    border-radius: calc(var(--radius-2) - 1px);
+    border-radius: var(--radius-2);
     box-shadow: none;
+}
+.merge-review-item.open > :not(.merge-file-header) {
+    overflow: clip;
+    clip-path: inset(var(--pinned-cut, 0px) 0 0 0 round 0 0 var(--radius-2) var(--radius-2));
+    border: 1px solid var(--border);
+    border-top: 0;
+    border-radius: 0 0 var(--radius-2) var(--radius-2);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 .merge-file-dir {
     color: var(--text-tertiary);

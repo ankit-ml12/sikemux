@@ -104,6 +104,32 @@ export function FileReviewList({
         });
     }, [focusPath, focusListed]);
 
+    // A pinned header's rounded corners would show the diff scrolled under it, so each open file's diff is trimmed at the
+    // header's bottom while the list scrolls.
+    useEffect(() => {
+        const list = listRef.current;
+        if (!list) return;
+        let frame = 0;
+        const trim = () => {
+            frame = 0;
+            const top = list.scrollTop;
+            for (const row of virtualizer.getVirtualItems()) {
+                const path = paths[row.index];
+                const item = path === undefined ? undefined : itemRefs.current.get(path);
+                item?.style.setProperty("--pinned-cut", `${Math.max(0, top - row.start)}px`);
+            }
+        };
+        const onScroll = () => {
+            if (!frame) frame = window.requestAnimationFrame(trim);
+        };
+        trim();
+        list.addEventListener("scroll", onScroll, { passive: true });
+        return () => {
+            list.removeEventListener("scroll", onScroll);
+            window.cancelAnimationFrame(frame);
+        };
+    }, [virtualizer, paths]);
+
     const toggle = (path: string) => {
         setCollapsed((current) => {
             const next = new Set(current);
