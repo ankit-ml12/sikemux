@@ -163,6 +163,8 @@ export class Director {
   }
 
   async point(target, at = { x: 0.5, y: 0.5 }) {
+    if (typeof target === "object" && "x" in target && !("width" in target))
+      return target;
     const box = await this.rect(target);
     return { x: box.x + box.width * at.x, y: box.y + box.height * at.y };
   }
@@ -178,10 +180,7 @@ export class Director {
 
   /** Puts the cursor somewhere at once, as if it had been resting there. */
   async place(target, at) {
-    const point =
-      typeof target === "object" && "x" in target && !("width" in target)
-        ? target
-        : await this.point(target, at);
+    const point = await this.point(target, at);
     this.cursor.x = point.x;
     this.cursor.y = point.y;
   }
@@ -309,7 +308,13 @@ export class Director {
    * Plays the live turns the demo agents have queued, step by step, holding each
    * as long as it took. Without `wait` they play on behind the beats that follow.
    */
-  async live({ pace = 1, shortest = 250, steps = Infinity, wait = true } = {}) {
+  async live({
+    agent,
+    pace = 1,
+    shortest = 250,
+    steps = Infinity,
+    wait = true,
+  } = {}) {
     let due = this.frames * STEP;
     let taken = 0;
     const task = async (at) => {
@@ -372,6 +377,12 @@ export class Director {
       await this.frame();
     }
     await this.app(() => showcase.backend.emit("wheel-touch", false));
+  }
+
+    const settled = this.page.evaluate(
+      (state) => window.video.island(state),
+      state,
+    );
   }
 
   async hideCursor(duration = 240) {

@@ -325,11 +325,13 @@ let snapshotBrowser: Promise<Browser> | null = null;
 const NOTCH_DIR = join(import.meta.dirname, "out/notch");
 let notchRender: Promise<void> | null = null;
 
-// The island is SwiftUI, so its own snapshot tool draws it once per server, on a clear background.
+// The island is SwiftUI, so its own snapshot tool draws it once per server, on a clear background,
+// sharp enough for a video to zoom right in, about the demo's own agents.
 function renderNotch(): Promise<void> {
   notchRender ??= new Promise((done, fail) => {
     const notchPackage = join(import.meta.dirname, "../src-tauri/notch");
-    spawn("swift", ["run", "--package-path", notchPackage, "notch-snapshots", NOTCH_DIR, "--bare"], {
+    const fixture = join(import.meta.dirname, "world/notch.fixture");
+    spawn("swift", ["run", "--package-path", notchPackage, "notch-snapshots", NOTCH_DIR, "--bare", "--scale", "3", "--fixture", fixture], {
       stdio: "ignore",
     }).on("exit", (code) => {
       if (code === 0) return done();

@@ -19,7 +19,13 @@ export interface Rect {
 
 export interface Frame {
   camera: { x: number; y: number; scale: number; blur: number };
-  cursor: { x: number; y: number; press: number; opacity: number };
+  cursor: {
+    x: number;
+    y: number;
+    press: number;
+    opacity: number;
+    shape: Shape | null;
+  };
 }
 
 type Shape = "arrow" | "hand" | "beam";
@@ -101,14 +107,20 @@ function rect(target: Target): Rect | null {
   const found = element(target);
   if (!found) return null;
   const box = found.getBoundingClientRect();
-  const inApp = found.ownerDocument !== document;
-  const left = inApp ? app.offsetLeft : 0;
-  const top = inApp ? app.offsetTop : 0;
+  if (found.ownerDocument !== document)
+    return {
+      x: box.x + app.offsetLeft,
+      y: box.y + app.offsetTop,
+      width: box.width,
+      height: box.height,
+    };
+  // The screen's own parts move with the camera, so their box is taken back to where they sit unmoved.
+  const { x, y, scale } = lens;
   return {
-    x: box.x + left,
-    y: box.y + top,
-    width: box.width,
-    height: box.height,
+    x: (box.x - (960 - x * scale)) / scale,
+    y: (box.y - (540 - y * scale)) / scale,
+    width: box.width / scale,
+    height: box.height / scale,
   };
 }
 
@@ -149,8 +161,10 @@ function syncAnimations(now: number) {
 }
 
 let shape: Shape | null = null;
+let lens: Frame["camera"] = { x: 960, y: 540, scale: 1, blur: 0 };
 
 function show(frame: Frame, now: number) {
+  lens = frame.camera;
   const { x, y, scale, blur } = frame.camera;
   camera.style.transform = `translate(${960 - x * scale}px, ${540 - y * scale}px) scale(${scale})`;
   camera.style.filter = blur > 0.05 ? `blur(${blur}px)` : "";
@@ -164,6 +178,28 @@ function show(frame: Frame, now: number) {
   syncAnimations(now);
 }
 
+  const ratio =
+    Math.min(next.naturalHeight, current.naturalHeight) /
+    Math.max(next.naturalHeight, current.naturalHeight);
+    ? next.animate([at(0.62, ratio, 0), at(1, 1, 1)], {
+        duration: 460,
+        easing: ISLAND_EASE,
+      })
+    : current.animate([at(1, 1, 1), at(0.62, ratio, 0)], {
+        duration: 300,
+        easing: "cubic-bezier(0.4, 0, 0.7, 0.2)",
+      });
+  if (grows)
+    current.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: 180,
+      fill: "forwards",
+    });
+  else
+    next.animate([{ opacity: 0 }, { opacity: 1 }], {
+      duration: 220,
+      delay: 80,
+      fill: "backwards",
+    });
 Object.assign(window, {
   video: {
     rect,

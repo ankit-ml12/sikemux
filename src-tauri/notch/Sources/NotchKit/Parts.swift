@@ -5,9 +5,11 @@ import SwiftUI
 /// rings twice when it starts needing you, a purple dot when done, a red one when it failed.
 struct StateMark: View {
     let mark: Mark
+    @Environment(\.stillMarks) private var still
 
     var body: some View {
         switch mark {
+        case .working where still: StillTwinkle(colour: Theme.live)
         case .working: TwinkleGrid(colour: Theme.live).frame(width: 16, height: 16)
         case .needs: PingDot(colour: Theme.warn)
         case .done: Dot(colour: Theme.accent)
@@ -189,6 +191,10 @@ final class TwinkleGridView: NSView {
         CATransaction.commit()
     }
 
+    static func stillOpacity(_ index: Int) -> Double {
+        opacity(at: phase(0, cells[index]))
+    }
+
     private static func phase(_ time: Double, _ cell: (period: Double, offset: Double)) -> Double {
         let phase = ((time + cell.offset) / cell.period).truncatingRemainder(dividingBy: 1)
         return phase < 0 ? phase + 1 : phase
@@ -199,6 +205,32 @@ final class TwinkleGridView: NSView {
         let rise = phase < 0.4 ? phase / 0.4 : 1 - (phase - 0.4) / 0.6
         let eased = rise * rise * (3 - 2 * rise)
         return 0.2 + 0.8 * eased
+    }
+}
+
+extension EnvironmentValues {
+    /// Marks drawn as one still frame, for a picture made without a window, where Core Animation cannot run.
+    @Entry public var stillMarks = false
+}
+
+/// The twinkling grid at one moment, drawn by SwiftUI alone.
+private struct StillTwinkle: View {
+    let colour: Color
+
+    var body: some View {
+        Grid(horizontalSpacing: 1.5, verticalSpacing: 1.5) {
+            ForEach(0..<3, id: \.self) { row in
+                GridRow {
+                    ForEach(0..<3, id: \.self) { column in
+                        RoundedRectangle(cornerRadius: 0.5)
+                            .fill(colour)
+                            .frame(width: 2.5, height: 2.5)
+                            .opacity(TwinkleGridView.stillOpacity(row * 3 + column))
+                    }
+                }
+            }
+        }
+        .frame(width: 16, height: 16)
     }
 }
 

@@ -4,7 +4,8 @@ import SwiftUI
 
 // Renders each state of the island against demo agents, to compare with
 // src-tauri/notch/design/screens.html: `swift run notch-snapshots <dir>`.
-// `--bare` leaves out the backdrop, so the showcase can lay the island over its own wallpaper.
+// `--bare` leaves out the backdrop, so the showcase can lay the island over its own wallpaper;
+// `--scale 3` draws it at three pixels a point, and `--fixture <file>` reads another device view.
 
 let fixture = #"""
 {
@@ -76,9 +77,17 @@ let fixture = #"""
 """#
 
 let arguments = CommandLine.arguments
-let paths = arguments.dropFirst().filter { !$0.hasPrefix("--") }
+func option(_ name: String) -> String? {
+    arguments.firstIndex(of: name).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+}
+let valued = Set(["--scale", "--fixture"].compactMap { name in option(name).map { _ in name } })
+let paths = arguments.dropFirst().enumerated().filter { index, argument in
+    !argument.hasPrefix("--") && !valued.contains(arguments[index])
+}.map(\.element)
 let outputDir = URL(fileURLWithPath: paths.first ?? "/tmp/notch-snapshots")
 let bare = arguments.contains("--bare")
+let scale = option("--scale").flatMap(Double.init).map { CGFloat($0) } ?? 1
+let source = option("--fixture").map { try! String(contentsOfFile: $0, encoding: .utf8) } ?? fixture
 try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
 
 let fontsDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../Fonts").standardized.path
@@ -87,9 +96,9 @@ _ = NSApplication.shared
 NSApp.setActivationPolicy(.prohibited)
 
 let now = Int(Date().timeIntervalSince1970 * 1000)
-let dated = try! NSRegularExpression(pattern: #"AGO\((\d+)\)"#).matches(in: fixture, range: NSRange(fixture.startIndex..., in: fixture))
-    .reversed().reduce(fixture) { text, match in
-        let seconds = Int((fixture as NSString).substring(with: match.range(at: 1)))!
+let dated = try! NSRegularExpression(pattern: #"AGO\((\d+)\)"#).matches(in: source, range: NSRange(source.startIndex..., in: source))
+    .reversed().reduce(source) { text, match in
+        let seconds = Int((source as NSString).substring(with: match.range(at: 1)))!
         return (text as NSString).replacingCharacters(in: match.range, with: String(now - seconds * 1000))
     }
 let full = try! JSONDecoder().decode(DeviceView.self, from: Data(dated.utf8))
@@ -141,8 +150,21 @@ func render(_ name: String, agents: Set<String>? = nil, geometry: NotchGeometry 
     window.contentView = host
     host.layoutSubtreeIfNeeded()
     RunLoop.main.run(until: Date().addingTimeInterval(0.8))
-    guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
-    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let bitmap: NSBitmapImageRep
+    if scale == 1 {
+        guard let cached = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+        host.cacheDisplay(in: host.bounds, to: cached)
+        bitmap = cached
+    } else {
+        // A window offscreen draws one pixel a point, so a sharper picture is drawn without one.
+        let image = MainActor.assumeIsolated {
+            let renderer = ImageRenderer(content: root.environment(\.stillMarks, true))
+            renderer.scale = scale
+            return renderer.cgImage
+        }
+        guard let image else { return }
+        bitmap = NSBitmapImageRep(cgImage: image)
+    }
     let url = outputDir.appendingPathComponent("\(name).png")
     try? bitmap.representation(using: .png, properties: [:])?.write(to: url)
     print(url.path)
