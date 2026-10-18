@@ -87,7 +87,7 @@ export function ComposerBuddy({ agent }: { agent: Pick<Agent, "id" | "buddy"> })
     if (!on) return null;
     return (
         <div className="composer-buddy" aria-hidden="true">
-            <AgentBuddy agent={agent} size={30} />
+            <AgentBuddy agent={agent} size={40} />
         </div>
     );
 }
