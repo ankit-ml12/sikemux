@@ -3,7 +3,7 @@ import { File } from 'expo-file-system';
 
 import { chatActions, recordOf } from '@mac/chat/acpEvents';
 import { earlierMessages, type EarlierPage, PAGE_TURNS, withEarlier } from '@mac/chat/earlier';
-import { combine, nextBatch } from '@mac/chat/queuedMessages';
+import type { QueuedMessage } from '@mac/chat/queuedMessages';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
 import type { AcpPermissionRequest, ChatAction, ChatState } from '@mac/chat/types';
 
@@ -37,10 +37,8 @@ export type Attachment = {
 };
 
 /** A message waiting behind the running turn. */
-export type Held = { id: string; text: string; attachments: Attachment[] };
-
-/** Held messages sent as one, each file once. */
-const combined = (messages: Held[]) => combine(messages, (attachment) => attachment.path ?? attachment.id);
+/** A message waiting in the host's queue behind the running turn. */
+export type Held = QueuedMessage;
 
 export type ChatSnapshot = {
   /** The chat as the host tells it, with what this phone sent added in place. */
@@ -84,8 +82,7 @@ type Options = {
   read?: (uri: string) => Promise<ArrayBuffer>;
 };
 
-/** `steer` puts it into the running turn rather than after it. */
-type Outgoing = { key: number; messageId: string; text: string; paths: string[]; steer: boolean } & Unsent;
+type Outgoing = { key: number; messageId: string; text: string; paths: string[] } & Unsent;
 
 /** Where the host's history of this run of the chat goes on before what the phone holds. */
 type Cursor = { feed: string; before: bigint };
@@ -135,7 +132,6 @@ export class ChatSession {
   private notice: string | null = null;
   private outbox: Outgoing[] = [];
   private sent = 0;
-  private queued: Held[] = [];
   private attachments: Attachment[] = [];
   private sentFiles: ReadonlyMap<string, Attachment> = new Map();
   private answering: ReadonlySet<string> = new Set();
@@ -278,8 +274,8 @@ export class ChatSession {
       if (!attachments.length) return false;
     }
     if (this.busy()) {
-      this.queued = [...this.queued, { id: `queued-${(this.sent += 1)}`, text, attachments }];
-      this.emit();
+      const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+      void this.ask((connection) => connection.prompt(this.agentId, text, paths), 'Could not send the message');
       return true;
     }
     this.deliver(text, attachments);
@@ -317,25 +313,25 @@ export class ChatSession {
 
   /** Puts waiting messages into the running turn now, as one, instead of after it. */
   steer = (ids: readonly string[]) => {
-    const steered = this.queued.filter((held) => ids.includes(held.id));
-    if (!steered.length) return;
-    this.queued = this.queued.filter((held) => !ids.includes(held.id));
-    const { text, attachments } = combined(steered);
-    this.deliver(text, attachments, true);
+    void this.ask((connection) => connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids })), 'Could not steer');
   };
 
   dropQueued = (id: string) => {
-    this.queued = this.queued.filter((held) => held.id !== id);
-    this.emit();
+    void this.ask((connection) => connection.call('dropQueued', JSON.stringify({ agentId: this.agentId, ids: [id] })), 'Could not take it back');
   };
 
   /** Stops the running turn. Messages waiting behind it go back to the composer rather than out. */
   cancel = () => {
-    if (this.queued.length) {
-      const { text, attachments } = combined(this.queued);
-      this.draft = [text, this.draft].filter(Boolean).join('\n\n');
-      this.attachments = [...attachments, ...this.attachments];
-      this.queued = [];
+    const queued = this.agent.queued;
+    if (queued.length) {
+      const text = queued.map((held) => held.text).filter(Boolean);
+      const paths = [...new Set(queued.flatMap((held) => held.paths))];
+      this.draft = [...text, this.draft].filter(Boolean).join('\n\n');
+      const sent = paths.flatMap((path) => {
+        const attachment = this.sentFiles.get(path);
+        return attachment ? [{ ...attachment, path }] : [];
+      });
+      this.attachments = [...sent, ...this.attachments];
     }
     this.notice = null;
     this.emit();
@@ -494,7 +490,7 @@ export class ChatSession {
       problem: this.problem,
       notice: this.notice,
       unsent: this.unsentView(),
-      queued: this.queued,
+      queued: this.agent.queued,
       attachments: this.attachments,
       sentFiles: this.sentFiles,
       answering: this.answering,
@@ -580,7 +576,7 @@ export class ChatSession {
   }
 
   private flush = () => {
-    if (this.applyPending()) this.drain();
+    this.applyPending();
   };
 
   /** Draws what was taken, and only then moves the mark past it. */
@@ -657,7 +653,6 @@ export class ChatSession {
         this.attached = 'live';
         this.take(waiting);
         this.emit();
-        this.drain();
       })
       .catch((error: unknown) => {
         if (run !== this.run) return;
@@ -745,20 +740,15 @@ export class ChatSession {
     }
   }
 
-  private deliver(text: string, attachments: Attachment[], steer = false) {
+  private deliver(text: string, attachments: Attachment[]) {
     const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
-    if (steer) {
-      this.agent = withMessage(this.agent, text, paths);
-    } else {
-      this.apply([{ type: 'local_prompt', text, paths }]);
-      this.optimistic = true;
-    }
+    this.apply([{ type: 'local_prompt', text, paths }]);
+    this.optimistic = true;
     const entry: Outgoing = {
       key: (this.sent += 1),
       messageId: this.agent.messages[this.agent.messages.length - 1].id,
       text,
       paths,
-      steer,
       state: 'sending',
     };
     this.outbox = [...this.outbox, entry];
@@ -771,16 +761,11 @@ export class ChatSession {
     Promise.resolve()
       .then(() => {
         if (!connection?.isOpen()) throw new Error('the host is not connected');
-        if (!entry.steer) return connection.prompt(this.agentId, entry.text, entry.paths);
-        // The turn may have ended before the message reached it, and then it starts the next one.
-        return connection
-          .steer(this.agentId, entry.text, entry.paths)
-          .then((took) => (took ? undefined : connection.prompt(this.agentId, entry.text, entry.paths)));
+        return connection.prompt(this.agentId, entry.text, entry.paths);
       })
       .then(() => {
         this.outbox = this.outbox.filter((outgoing) => outgoing.key !== entry.key);
         this.emit();
-        this.drain();
       })
       .catch((error: unknown) => {
         if (this.optimistic) {
@@ -794,15 +779,6 @@ export class ChatSession {
   private update(entry: Outgoing, change: Unsent) {
     this.outbox = this.outbox.map((outgoing) => (outgoing.key === entry.key ? { ...outgoing, ...change } : outgoing));
     this.emit();
-  }
-
-  /** Sends the messages held behind a turn once nothing is running and the chat is open. */
-  private drain() {
-    if (!this.queued.length || this.busy() || this.attached !== 'live' || !this.connection) return;
-    const batch = nextBatch(this.queued);
-    this.queued = this.queued.slice(batch.length);
-    const { text, attachments } = combined(batch);
-    this.deliver(text, attachments);
   }
 
   private ask<T>(request: (connection: ConnectionLike) => Promise<T>, what: string, then?: (answer: T) => void): Promise<void> {

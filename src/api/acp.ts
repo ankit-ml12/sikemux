@@ -116,6 +116,12 @@ export const acpApi = {
         invoke<void>("acp_edit", { agentId, messageId, text, paths, context }),
     steer: (agentId: string, text: string, paths: string[], context: PromptContext[] = []): Promise<string> =>
         invoke<string>("acp_steer", { agentId, text, paths, context }),
+    /** Puts the waiting messages `ids`, then `message` when given, into the running turn as one; a turn that just ended starts again with them. */
+    steerQueued: (agentId: string, ids: string[], message?: { text: string; paths: string[]; context: PromptContext[] }): Promise<void> =>
+        coreCall<void>("steerQueued", { agentId, ids, message: message ?? null }),
+    /** Takes back waiting messages before they go out. */
+    dropQueued: (agentId: string, ids: string[]): Promise<void> => coreCall<void>("dropQueued", { agentId, ids }),
+    /** Stops the running turn; the messages waiting behind it are taken back. */
     cancel: (agentId: string): Promise<void> => invoke<void>("acp_cancel", { agentId }),
     stopTask: (agentId: string, taskId: string): Promise<void> => invoke<void>("acp_stop_task", { agentId, taskId }),
     permissionReply: (agentId: string, requestId: string, optionId?: string): Promise<void> =>

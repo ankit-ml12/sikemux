@@ -1,4 +1,5 @@
 import { recordOf } from "./acpEvents";
+import type { QueuedMessage } from "./queuedMessages";
 import { isAgentLetter } from "./agentLetters";
 import { toolDiff, toolFailure } from "./diff";
 import { toolPage } from "./pages";
@@ -45,6 +46,7 @@ export const initialChatState: ChatState = {
     earlierLost: false,
     turnOpening: null,
     retrying: null,
+    queued: [],
 };
 
 /* The parent session and each subagent session own a transcript of the same
@@ -680,6 +682,8 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
                 revision: state.revision + 1,
             };
         }
+        case "queued_messages":
+            return { ...state, queued: queuedOf(update.messages) };
         case "earlier_turns_lost":
             return { ...state, earlierLost: true, revision: state.revision + 1 };
         case "message_rewound": {
@@ -689,6 +693,17 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
         default:
             return state;
     }
+}
+
+function queuedOf(value: unknown): QueuedMessage[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item) => {
+        const message = recordOf(item);
+        if (typeof message?.id !== "string" || typeof message.text !== "string") return [];
+        const paths = Array.isArray(message.paths) ? message.paths.filter((path): path is string => typeof path === "string") : [];
+        const context = Array.isArray(message.context) ? (message.context as QueuedMessage["context"]) : [];
+        return [{ id: message.id, text: message.text, paths, context }];
+    });
 }
 
 /* Turns from before what the transcript holds go above it. A subagent drawn

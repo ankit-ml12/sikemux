@@ -34,6 +34,12 @@ function live(events: unknown[], seq: number, running = false) {
   });
 }
 
+const queued = (...messages: { id: string; text: string; paths: string[] }[]) =>
+  event('session_update', {
+    sessionId: 's',
+    update: { sessionUpdate: 'queued_messages', messages: messages.map((message) => ({ ...message, context: [] })) },
+  });
+
 function fakeConnection(attachment: unknown) {
   return {
     isOpen: () => true,
@@ -44,6 +50,7 @@ function fakeConnection(attachment: unknown) {
     attachFile: vi.fn(async (_agent: string, name: string, _mime: string, _bytes: ArrayBuffer) => `/host/pasted/${name}`),
     cancel: vi.fn(async () => {}),
     steer: vi.fn(async (_agent: string, _text: string, _paths: string[]) => true),
+    call: vi.fn(async (_method: string, _params: string) => 'null'),
     stopTask: vi.fn(async (_agent: string, _task: string) => {}),
     setPermissionMode: vi.fn(async (_agent: string, _mode: string) => {}),
     answerPermission: vi.fn(async () => {}),
@@ -221,82 +228,49 @@ describe('a chat session', () => {
     expect(answering.size).toBe(0);
   });
 
-  it('sends a message held behind a turn when the turn ends', async () => {
+  it("hands a message written mid-turn to the host's queue, and shows what waits there", async () => {
     const { session, deliver, startAt, drawFrame } = harness();
     const connection = fakeConnection(live([event('turn_started')], 1, true));
     session.hold(connection as unknown as ConnectionLike);
     await settle();
-    session.send('next');
-    expect(session.snapshot().queued).toEqual([{ id: expect.any(String), text: 'next', attachments: [] }]);
-
-    startAt(1);
-    deliver(event('turn_completed'));
-    drawFrame();
+    await session.send('next');
     await settle();
     expect(connection.prompt).toHaveBeenCalledWith('agent', 'next', []);
-    expect(session.snapshot().queued).toEqual([]);
+    expect(texts(session)).toEqual([]);
+
+    startAt(1);
+    deliver(queued({ id: 'q1', text: 'next', paths: [] }));
+    drawFrame();
+    expect(session.snapshot().queued.map((held) => held.text)).toEqual(['next']);
   });
 
-  it('does not send a held message after Stop, and hands it back to the composer', async () => {
+  it('hands what waited back to the composer on Stop', async () => {
     const { session, deliver, startAt, drawFrame } = harness();
     const connection = fakeConnection(live([event('turn_started')], 1, true));
     session.hold(connection as unknown as ConnectionLike);
     await settle();
     session.setDraft('and also');
-    session.send('next');
+    startAt(1);
+    deliver(queued({ id: 'q1', text: 'next', paths: [] }));
+    drawFrame();
 
     session.cancel();
-    startAt(1);
-    deliver(event('turn_completed', { stopReason: 'cancelled' }));
-    drawFrame();
     await settle();
     expect(connection.cancel).toHaveBeenCalled();
-    expect(connection.prompt).not.toHaveBeenCalled();
-    expect(session.snapshot().queued).toEqual([]);
     expect(session.draftText()).toBe('next\n\nand also');
   });
 
-  it('sends what waited as one message, but a slash command on its own', async () => {
-    const { session, deliver, startAt, drawFrame } = harness();
-    const connection = fakeConnection(live([event('turn_started')], 1, true));
-    session.hold(connection as unknown as ConnectionLike);
-    await settle();
-    await session.send('one');
-    await session.send('two');
-    await session.send('/compact');
-    expect(session.snapshot().queued.map((held) => held.text)).toEqual(['one', 'two', '/compact']);
-
-    startAt(1);
-    deliver(event('turn_completed'));
-    drawFrame();
-    await settle();
-    expect(connection.prompt).toHaveBeenCalledWith('agent', 'one\n\ntwo', []);
-    expect(session.snapshot().queued.map((held) => held.text)).toEqual(['/compact']);
-  });
-
-  it('steers the running turn with waiting messages, and prompts when the turn already ended', async () => {
+  it('asks the host to steer waiting messages into the turn, or to take one back', async () => {
     const { session } = harness();
     const connection = fakeConnection(live([event('turn_started')], 1, true));
     session.hold(connection as unknown as ConnectionLike);
     await settle();
-    await session.send('keep it short');
-    await session.send('and skip the docs');
-    const [first, second] = session.snapshot().queued;
 
-    session.dropQueued(second.id);
-    session.steer([first.id]);
-    expect(session.snapshot().queued).toEqual([]);
-    expect(texts(session)).toEqual(['keep it short']);
-    expect(session.snapshot().agent.running).toBe(true);
+    session.steer(['q1']);
+    session.dropQueued('q2');
     await settle();
-    expect(connection.steer).toHaveBeenCalledWith('agent', 'keep it short', []);
-    expect(connection.prompt).not.toHaveBeenCalled();
-
-    connection.steer.mockResolvedValueOnce(false);
-    await session.send('one more');
-    session.steer(session.snapshot().queued.map((held) => held.id));
-    await settle();
-    expect(connection.prompt).toHaveBeenCalledWith('agent', 'one more', []);
+    expect(connection.call).toHaveBeenCalledWith('steerQueued', JSON.stringify({ agentId: 'agent', ids: ['q1'] }));
+    expect(connection.call).toHaveBeenCalledWith('dropQueued', JSON.stringify({ agentId: 'agent', ids: ['q2'] }));
   });
 
   it('keeps the permission mode it set until the host says otherwise', async () => {
@@ -379,13 +353,15 @@ describe('a chat session', () => {
   });
 
   it('hands held files back to the composer on Stop', async () => {
-    const { session } = harness();
+    const { session, deliver, startAt, drawFrame } = harness();
     const connection = fakeConnection(live([event('turn_started')], 1, true));
     session.hold(connection as unknown as ConnectionLike);
     await settle();
     session.attach([picked('shot.jpg', 'image')]);
     await session.send('next');
-    expect(session.snapshot().queued[0]?.attachments.map((attachment) => attachment.path)).toEqual(['/host/pasted/shot.jpg']);
+    startAt(1);
+    deliver(queued({ id: 'q1', text: 'next', paths: ['/host/pasted/shot.jpg'] }));
+    drawFrame();
 
     session.cancel();
     expect(session.snapshot().attachments.map((attachment) => attachment.path)).toEqual(['/host/pasted/shot.jpg']);

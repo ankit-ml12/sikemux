@@ -2,6 +2,7 @@ import type { PageRef } from "../api/pages";
 import type { ToolDiff } from "./diff";
 import type { ToolOutput } from "./toolOutput";
 import type { SentContext } from "./promptContext";
+import type { QueuedMessage } from "./queuedMessages";
 
 export interface AcpContentBlock {
     type: string;
@@ -198,6 +199,8 @@ export interface ChatState {
     turnOpening: { at: number | null } | null;
     /* The agent is retrying a request the network or its service failed. */
     retrying: { attempt: number | null; connection: boolean } | null;
+    /* What the person sent mid-turn, waiting in the host's queue to go out once the turn ends. */
+    queued: QueuedMessage[];
 }
 
 export type ChatAction =

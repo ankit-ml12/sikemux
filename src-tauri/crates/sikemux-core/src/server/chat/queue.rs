@@ -159,3 +159,43 @@ pub(crate) fn remove(core: &Core, agent_id: &str, ids: &[String]) -> CoreResult<
     core.chats.running(agent_id)?.feed.take_queued(Some(ids));
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn queued(text: &str, paths: &[&str], uris: &[&str]) -> Queued {
+        Queued::new(
+            text.into(),
+            paths.iter().map(|path| (*path).to_owned()).collect(),
+            uris.iter()
+                .map(|uri| ChatContext {
+                    uri: (*uri).to_owned(),
+                    title: (*uri).to_owned(),
+                    text: "body".into(),
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn plain_messages_go_together_and_a_command_on_its_own() {
+        let plain = |text| queued(text, &[], &[]);
+        assert_eq!(batch_len(&[plain("a"), plain("b")]), 2);
+        assert_eq!(batch_len(&[plain("/compact"), plain("b")]), 1);
+        assert_eq!(batch_len(&[plain("a"), plain("b"), plain("/review"), plain("c")]), 2);
+    }
+
+    #[test]
+    fn combined_messages_join_their_texts_and_name_each_attachment_once() {
+        let (text, paths, context) = combine(vec![
+            queued("a", &["/x", "/y"], &["u1"]),
+            queued("", &[], &[]),
+            queued("c", &["/y", "/z"], &["u1", "u2"]),
+        ]);
+        assert_eq!(text, "a\n\nc");
+        assert_eq!(paths, ["/x", "/y", "/z"]);
+        let uris: Vec<_> = context.iter().map(|item| item.uri.as_str()).collect();
+        assert_eq!(uris, ["u1", "u2"]);
+    }
+}

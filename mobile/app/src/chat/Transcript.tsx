@@ -528,7 +528,7 @@ export function Queued({ held, sentFiles }: { held: readonly Held[]; sentFiles: 
   return (
     <View style={styles.userRow}>
       {held.map((message) => {
-        const paths = message.attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+        const { paths } = message;
         return (
           <View key={message.id} style={styles.queued}>
             {paths.length ? <SentAttachments paths={paths} sentFiles={sentFiles} /> : null}

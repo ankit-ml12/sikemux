@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useState, type Dispatch, type RefObject } from "react";
 import { errorText } from "../lib/format";
-import { acpApi, type PromptContext } from "../api/acp";
+import { acpApi } from "../api/acp";
 import type { Agent } from "../state/types";
 import * as cmd from "../state/commands";
 import { unknownCommand } from "./composerInput";
 import type { OutgoingMessage, QueuedMessage } from "./queuedMessages";
 import type { AcpAvailableCommand, ChatAction, ChatState } from "./types";
 
-/* Left off when there is none, so a plain message goes out exactly as before. */
-const contextArgs = (context: PromptContext[]): [] | [PromptContext[]] => (context.length ? [context] : []);
-
-/** How long a queue waits after a turn ends, for word that it failed. */
-const SETTLE_MS = 150;
-
+/**
+ * Sends what the person writes. Written mid-turn, a message waits in the core's queue, which every app shows and the
+ * core sends on once the turn ends; written while the agent is still starting, they go out in order once it can take them.
+ */
 export function usePromptQueue({
     agentRef,
     agentId,
@@ -38,11 +36,10 @@ export function usePromptQueue({
     dispatch: Dispatch<ChatAction>;
     onError: (message: string | null) => void;
 }) {
-    const [queued, setQueued] = useState<QueuedMessage[]>([]);
-    const queuedCount = useRef(0);
-    const [early, setEarly] = useState<{ messageId: string; message: OutgoingMessage } | null>(null);
+    /* Only the first shows before the agent can take it, and not while the chat it takes up is still replaying. */
+    const [early, setEarly] = useState<{ message: OutgoingMessage; messageId?: string }[]>([]);
 
-    useEffect(() => setEarly(null), [agentId, cwd]);
+    useEffect(() => setEarly([]), [agentId, cwd]);
 
     const showPrompt = useCallback(
         ({ text, paths, context }: OutgoingMessage) => {
@@ -66,10 +63,12 @@ export function usePromptQueue({
     );
 
     useEffect(() => {
-        if (connection !== "ready" || early === null) return;
-        setEarly(null);
-        void deliver(early.message, early.messageId);
-    }, [connection, early, deliver]);
+        if (connection !== "ready" || early.length === 0) return;
+        setEarly([]);
+        const [first, ...rest] = early;
+        const sent = deliver(first.message, first.messageId ?? showPrompt(first.message));
+        void rest.reduce((before, { message }) => before.then(() => deliver(message)), sent);
+    }, [connection, early, deliver, showPrompt]);
 
     const failed = (error: unknown) => dispatch({ type: "error", message: errorText(error) });
 
@@ -93,17 +92,13 @@ export function usePromptQueue({
             void deliver(outgoing);
             return true;
         }
-
-        /* Written mid-turn, or while the session is still coming up: it waits
-           in the queue and goes out with the rest of it once the session is free. */
-        queuedCount.current += 1;
-        const message: QueuedMessage = { id: `queued-${queuedCount.current}`, ...outgoing };
-        if (steerNow && steerable && running) {
-            void steer([...queued, message]);
+        if (connection === "ready") {
+            void deliver(outgoing, showPrompt(outgoing));
             return true;
         }
-        onError("Wait for the agent to start");
-        return false;
+        const shown = early.length === 0 && !replaying;
+        setEarly([...early, { message: outgoing, ...(shown && { messageId: showPrompt(outgoing) }) }]);
+        return true;
     };
 
     const drop = (id: string) => void acpApi.dropQueued(agentId, [id]).catch(failed);

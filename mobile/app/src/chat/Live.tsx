@@ -10,6 +10,7 @@ import {
   workflowAgentDetail,
 } from '@mac/chat/transcript';
 import type { AcpWorkflowAgent } from '@mac/chat/types';
+import { queuedLabel } from '@mac/chat/queuedMessages';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { SectionLabel } from '@/ui/list';
 import { useStill } from '@/ui/motion';
@@ -287,8 +288,8 @@ export function LiveSheet({
               queued
             </SectionLabel>
             {work.queued.map((held) => {
-              const files = held.attachments.length;
-              const label = held.text || held.attachments.map((attachment) => attachment.name).join(', ');
+              const files = held.paths.length;
+              const label = queuedLabel(held);
               return (
                 <Line
                   key={held.id}

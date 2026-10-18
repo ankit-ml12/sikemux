@@ -26,6 +26,7 @@ import { useMessageArrival } from "./useMessageArrival";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
+import { putDraft } from "./draftHandoff";
 import { useChatWorktree } from "./useChatWorktree";
 import { useStickToBottom } from "./useStickToBottom";
 import { mentionContext, useMates } from "./agentMentions";
@@ -181,9 +182,9 @@ export function AgentChatPane({
         connection: state.connection,
         running: state.running,
         replaying,
+        queued: state.queued,
         commands: state.commands,
         steerable,
-        held: state.failure?.kind === "network",
         dispatch,
         onError: setComposerError,
     });
@@ -260,7 +261,9 @@ export function AgentChatPane({
         return true;
     };
 
+    /* Messages waiting behind the turn come back to the composer rather than going out. */
     const stop = () => {
+        putDraft(agent.id, queued.map((message) => message.text).filter(Boolean).join("\n\n"));
         void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(errorText(failure)));
     };
 

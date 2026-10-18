@@ -40,7 +40,7 @@ describe('live work', () => {
       update('s', { sessionUpdate: 'async_task_spawned', asyncTaskId: 't3', name: 'tsc -w', taskType: 'shell' }),
       update('s', { sessionUpdate: 'plan', entries: [{ content: 'Fix', status: 'completed' }] }),
     ].reduce(chatReducer, initialChatState);
-    const work = liveWork(state, [{ id: 'q1', text: 'and the docs', attachments: [] }]);
+    const work = liveWork(state, [{ id: 'q1', text: 'and the docs', paths: [], context: [] }]);
     expect(work.subagents.map((subagent) => subagent.name)).toEqual(['Explore']);
     expect(work.tasks.map(([kind, tasks]) => [kind, tasks.length])).toEqual([
       ['shell', 2],

@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
     discardFailed: vi.fn(async () => {}),
     edit: vi.fn(async () => {}),
     steer: vi.fn(async () => "injected"),
+    steerQueued: vi.fn(async () => {}),
+    dropQueued: vi.fn(async () => {}),
     setPermissionMode: vi.fn(async () => {}),
     stopTask: vi.fn(async () => {}),
     setConfig: vi.fn(),
@@ -61,6 +63,8 @@ vi.mock("../api/acp", () => ({
         prompt: mocks.prompt,
         edit: mocks.edit,
         steer: mocks.steer,
+        steerQueued: mocks.steerQueued,
+        dropQueued: mocks.dropQueued,
         cancel: vi.fn(async () => {}),
         stopTask: mocks.stopTask,
         permissionReply: vi.fn(async () => {}),
@@ -93,6 +97,14 @@ const shortcutKey = { key: "Enter", modifier: IS_MACOS ? { metaKey: true } : { c
 function emit(kind: AcpEvent["kind"], payload: Record<string, unknown>): void {
     // Streamed updates arrive a frame's worth at a time.
     act(() => mocks.eventListener?.({ agentId: agent.id, kind, payload: kind === "session_update" ? { updates: [payload] } : payload }));
+}
+
+/** The host's queue of messages waiting behind the running turn. */
+function queue(...texts: string[]): void {
+    emit("session_update", {
+        sessionId: "session-1",
+        update: { sessionUpdate: "queued_messages", messages: texts.map((text, index) => ({ id: `q${index + 1}`, text, paths: [], context: [] })) },
+    });
 }
 
 function emitBatch(updates: Record<string, unknown>[]): void {
@@ -436,15 +448,13 @@ describe("AgentChatPane", () => {
         expect(mocks.start).toHaveBeenCalledTimes(1);
     });
 
-    it("says plainly when the network cut a turn short, keeps what was queued, and retries or lets go", async () => {
+    it("says plainly when the network cut a turn short, and retries or lets go", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
         await waitFor(() => expect(editor).toBeEnabled());
         typeDraft(editor, "Check the build");
         fireEvent.keyDown(editor, { key: "Enter" });
         await waitFor(() => expect(mocks.prompt).toHaveBeenCalledTimes(1));
-        typeDraft(editor, "and then the docs");
-        fireEvent.keyDown(editor, { key: "Enter" });
 
         emit("turn_completed", { stopReason: "end_turn" });
         emit("error", {
@@ -463,7 +473,6 @@ describe("AgentChatPane", () => {
         await act(async () => fireEvent.click(screen.getByRole("button", { name: "Discard" })));
         expect(mocks.discardFailed).toHaveBeenCalledWith(agent.id);
         expect(screen.queryByText(/Lost connection to OpenAI/)).not.toBeInTheDocument();
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledTimes(2));
     });
 
     it("stops the running turn on Escape only once the box is empty", async () => {
@@ -531,7 +540,7 @@ describe("AgentChatPane", () => {
         expect(acpApi.cancel).not.toHaveBeenCalled();
     });
 
-    it("holds a message written mid-turn until the running turn ends", async () => {
+    it("hands a message written mid-turn to the host's queue and shows what waits there", async () => {
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
         await waitFor(() => expect(editor).toBeEnabled());
@@ -540,15 +549,14 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "Then look at the tests");
         fireEvent.keyDown(editor, { key: "Enter" });
 
-        expect(await screen.findByLabelText("1 queued")).toHaveTextContent("Then look at the tests");
+        await waitFor(() => expect(mocks.prompt).toHaveBeenLastCalledWith(agent.id, "Then look at the tests", [], [], undefined));
         expect(mocks.steer).not.toHaveBeenCalled();
-        expect(mocks.prompt).toHaveBeenCalledTimes(1);
+        queue("Then look at the tests");
+        expect(await screen.findByLabelText("1 queued")).toHaveTextContent("Then look at the tests");
         expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
 
-        emit("turn_completed", {});
-
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Then look at the tests", [], [], expect.any(String)));
-        expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
+        queue();
+        await waitFor(() => expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument());
     });
 
     it("writes a sent message again and takes the chat back to before it", async () => {
@@ -597,6 +605,8 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "Then look at the tests");
         fireEvent.keyDown(editor, { key: "Enter" });
         expect(draftOf(editor)).toBe("");
+        queue("Then look at the tests");
+        await screen.findByLabelText("1 queued");
 
         fireEvent.keyDown(editor, { key: "ArrowUp" });
         expect(draftOf(editor)).toBe("Then look at the tests");
@@ -639,9 +649,10 @@ describe("AgentChatPane", () => {
         fireEvent.keyDown(editor, { key: "Enter" });
         typeDraft(editor, "Second");
         fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
+        queue("Second");
 
         expect(await screen.findByLabelText("1 queued")).toHaveTextContent("Second");
-        expect(mocks.steer).not.toHaveBeenCalled();
+        expect(mocks.steerQueued).not.toHaveBeenCalled();
     });
 
     it("puts a queued message into the running turn when its steer is asked for", async () => {
@@ -651,136 +662,46 @@ describe("AgentChatPane", () => {
         await waitFor(() => expect(editor).toBeEnabled());
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Actually, check the other file");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
-        expect(mocks.steer).not.toHaveBeenCalled();
+        queue("Actually, check the other file");
 
         fireEvent.click(await screen.findByRole("button", { name: "Steer the running turn with Actually, check the other file" }));
 
-        await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Actually, check the other file", []));
-        expect(mocks.prompt).toHaveBeenCalledTimes(1);
-        expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
+        await waitFor(() => expect(mocks.steerQueued).toHaveBeenCalledWith(agent.id, ["q1"], undefined));
     });
 
-    it("steers straight from the composer on Enter", async () => {
+    it("steers straight from the composer on Enter, with whatever waits in the queue", async () => {
         mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
         await waitFor(() => expect(editor).toBeEnabled());
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Stop, wrong file");
-        fireEvent.keyDown(editor, { key: "Enter" });
-
-        await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Stop, wrong file", []));
-        expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
-    });
-
-    it("steers every queued message as one on the shortcut", async () => {
-        mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
-        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        await waitFor(() => expect(editor).toBeEnabled());
-        typeDraft(editor, "First");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
-        typeDraft(editor, "And the rail");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
-        await screen.findByLabelText("2 queued");
-
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
-
-        await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Then the tests\n\nAnd the rail", []));
-        expect(mocks.steer).toHaveBeenCalledTimes(1);
-        expect(screen.queryByLabelText("2 queued")).not.toBeInTheDocument();
-    });
-
-    it("steers the queue along with a message sent mid-turn", async () => {
-        mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
-        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        await waitFor(() => expect(editor).toBeEnabled());
-        typeDraft(editor, "First");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
+        queue("Then the tests");
         await screen.findByLabelText("1 queued");
 
         typeDraft(editor, "And the rail");
         fireEvent.keyDown(editor, { key: "Enter" });
 
-        await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Then the tests\n\nAnd the rail", []));
-        expect(screen.queryByLabelText("1 queued")).not.toBeInTheDocument();
+        await waitFor(() =>
+            expect(mocks.steerQueued).toHaveBeenCalledWith(agent.id, ["q1"], { text: "And the rail", paths: [], context: [] }),
+        );
+        expect(mocks.prompt).toHaveBeenCalledTimes(1);
     });
 
-    it("steers every queued message from the queue's own button", async () => {
+    it("steers every queued message, from the queue's own button or the shortcut", async () => {
         mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         const editor = screen.getByRole("textbox", { name: "Message agent" });
         await waitFor(() => expect(editor).toBeEnabled());
         typeDraft(editor, "First");
         fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
-        typeDraft(editor, "And the rail");
-        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
+        queue("Then the tests", "And the rail");
 
         fireEvent.click(await screen.findByRole("button", { name: "Steer the running turn with every queued message" }));
+        await waitFor(() => expect(mocks.steerQueued).toHaveBeenCalledWith(agent.id, ["q1", "q2"], undefined));
 
-        await waitFor(() => expect(mocks.steer).toHaveBeenCalledWith(agent.id, "Then the tests\n\nAnd the rail", []));
-        expect(screen.queryByLabelText("2 queued")).not.toBeInTheDocument();
-    });
-
-    it("sends everything queued as one prompt when the turn ends", async () => {
-        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        await waitFor(() => expect(editor).toBeEnabled());
-        typeDraft(editor, "First");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "And the rail");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        await screen.findByLabelText("2 queued");
-
-        emit("turn_completed", {});
-
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Then the tests\n\nAnd the rail", [], [], expect.any(String)));
-        expect(mocks.prompt).toHaveBeenCalledTimes(2);
-        expect(screen.queryByLabelText("2 queued")).not.toBeInTheDocument();
-    });
-
-    it("keeps a queued slash command out of the combined prompt", async () => {
-        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        await waitFor(() => expect(editor).toBeEnabled());
-        typeDraft(editor, "First");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Then the tests");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "/compact");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        await screen.findByLabelText("2 queued");
-
-        emit("turn_completed", {});
-
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Then the tests", [], [], expect.any(String)));
-        expect(await screen.findByLabelText("1 queued")).toHaveTextContent("/compact");
-    });
-
-    it("sends as its own prompt when the turn ended before the steer arrived", async () => {
-        mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: { steering: true }, setup: {} });
-        mocks.steer.mockResolvedValueOnce("promptRequired");
-        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
-        const editor = screen.getByRole("textbox", { name: "Message agent" });
-        await waitFor(() => expect(editor).toBeEnabled());
-        typeDraft(editor, "First");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        typeDraft(editor, "Carry on");
-        fireEvent.keyDown(editor, { key: "Enter" });
-
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Carry on", []));
+        fireEvent.keyDown(editor, { key: shortcutKey.key, ...shortcutKey.modifier });
+        await waitFor(() => expect(mocks.steerQueued).toHaveBeenCalledTimes(2));
     });
 
     it("keeps saying the turn is alive, and names the tool it is running", async () => {
