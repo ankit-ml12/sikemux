@@ -195,9 +195,9 @@
 }
 /* Events read as GitHub's: a larger mark on the thread line, solid when it means something, and the text a size up. */
 .gha-tl-event {
-    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-columns: 24px minmax(0, 1fr);
     gap: var(--space-2h, 10px);
-    padding-left: calc(var(--tl-x) - 16px);
+    padding-left: calc(var(--tl-x) - 12px);
     color: var(--text-secondary);
     font-size: var(--text-sm);
 }
@@ -209,8 +209,8 @@
     height: 20px;
 }
 .gha-tl-badge {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border: 0;
     background: var(--surface-raised);
 }
@@ -219,8 +219,8 @@
     color: #fff;
 }
 .gha-tl-badge > svg {
-    width: 15px;
-    height: 15px;
+    width: 13px;
+    height: 13px;
 }
 .gha-tl-sha-word {
     font-family: var(--mono);
@@ -238,8 +238,8 @@
 }
 /* Each pushed commit as GitHub lists it: a dot on the thread line, its author, its subject in code type, its hash. */
 .gha-tl-commit {
-    grid-template-columns: 32px 20px minmax(0, 1fr) auto;
-    padding-left: calc(var(--tl-x) - 16px);
+    grid-template-columns: 24px 20px minmax(0, 1fr) auto;
+    padding-left: calc(var(--tl-x) - 12px);
     min-height: 30px;
     font-size: var(--text-xs);
 }
