@@ -1,6 +1,6 @@
 const run = (page, action, arg) => page.evaluate(action, arg);
 
-const openWindow = (page, sessionId, windowId) =>
+export const openWindow = (page, sessionId, windowId) =>
   run(
     page,
     ([session, window]) => {
@@ -9,6 +9,31 @@ const openWindow = (page, sessionId, windowId) =>
     },
     [sessionId, windowId],
   );
+
+/* Agents across the projects working, waiting on the person and done, as a busy afternoon looks. */
+export const agentsAtWork = (page) =>
+  run(page, () => {
+    const state = (kind, minutesAgo) => ({
+      state: kind,
+      backendState: kind === "done" ? "idle" : kind,
+      unread: kind === "done",
+      updatedAt: Date.now() - minutesAgo * 60_000,
+      lastWorkedAt: Date.now() - minutesAgo * 60_000,
+      sequence: 1,
+      source: "acp",
+      confidence: "high",
+      reason: "",
+    });
+    showcase.store.setState({
+      agentActivity: {
+        "tab-rail": state("working", 0),
+        "agent-replay": state("blocked", 3),
+        "agent-hero": state("done", 12),
+        "agent-palette": state("working", 1),
+        "agent-notes": state("blocked", 7),
+      },
+    });
+  });
 
 /* The composer's tag menu over the demo repo's open issues and pull requests. `loading` holds them back. */
 const composerScene = async (page, write, { loading = false } = {}) => {
@@ -124,29 +149,10 @@ export const SCENES = [
     settle: 1200,
     setup: async (page) => {
       await openWindow(page, "s-sikemux", "w-tab-rail");
+      await agentsAtWork(page);
       await run(page, () => {
-        const state = (kind, minutesAgo) => ({
-          state: kind,
-          backendState: kind === "done" ? "idle" : kind,
-          unread: kind === "done",
-          updatedAt: Date.now() - minutesAgo * 60_000,
-          lastWorkedAt: Date.now() - minutesAgo * 60_000,
-          sequence: 1,
-          source: "acp",
-          confidence: "high",
-          reason: "",
-        });
         showcase.cmd.setTabRailAllAgents(true);
         showcase.cmd.setTabRailScope("all");
-        showcase.store.setState({
-          agentActivity: {
-            "tab-rail": state("working", 0),
-            "agent-replay": state("blocked", 3),
-            "agent-hero": state("done", 12),
-            "agent-palette": state("working", 1),
-            "agent-notes": state("blocked", 7),
-          },
-        });
       });
     },
     crops: { rail: ".workspace-rail" },

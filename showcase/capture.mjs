@@ -5,11 +5,14 @@ import {
   readFile,
   writeFile,
 } from "node:fs/promises";
-import { createServer as createNetServer } from "node:net";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { chromium } from "playwright-core";
-import { createServer } from "vite";
+import {
+  FIXED_TIME,
+  launchChrome,
+  MAC_USER_AGENT,
+  startShowcase,
+} from "./harness.mjs";
 import { PAGES } from "./pages.mjs";
 import { README_SCREENSHOTS, SCENES } from "./scenes.mjs";
 
@@ -26,40 +29,15 @@ const { values: options, positionals: only } = parseArgs({
   },
 });
 
-const MAC_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
-const FIXED_TIME = new Date("2026-09-26T09:41:00");
 const viewport = {
   width: Number(options.width),
   height: Number(options.height),
 };
 
-/** `pnpm showcase:serve` keeps 1471, so a capture takes whichever port is free. */
-const freePort = () =>
-  new Promise((settle, fail) => {
-    const probe = createNetServer().listen(0, "localhost", () => {
-      const { port } = probe.address();
-      probe.close(() => settle(port));
-    });
-    probe.on("error", fail);
-  });
+const showcase = await startShowcase();
+const { origin } = showcase;
 
-const server = await createServer({
-  configFile: resolve(root, "showcase/vite.config.ts"),
-  logLevel: "warn",
-  server: { port: await freePort(), strictPort: true },
-});
-await server.listen();
-const origin = `http://localhost:${server.config.server.port}`;
-
-// The chat's markdown comes from the app's Rust parser, which may need building first;
-// without this the first scene is taken before its prose arrives.
-await fetch(`${origin}/__showcase/markdown`, {
-  method: "POST",
-  body: JSON.stringify({ requests: [{ text: "ready" }] }),
-});
-
-const browser = await chromium.launch({ channel: "chrome" });
+const browser = await launchChrome();
 const context = await browser.newContext({
   viewport,
   deviceScaleFactor: 2,
@@ -184,7 +162,7 @@ async function frame(source, target) {
 }
 
 await browser.close();
-await server.close();
+await showcase.close();
 
 if (options.publish) {
   for (const [capture, screenshot] of Object.entries(README_SCREENSHOTS)) {

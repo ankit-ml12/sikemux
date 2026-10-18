@@ -1,0 +1,34 @@
+.video-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  pointer-events: none;
+  transform-origin: 0 0;
+  filter: drop-shadow(0 1.5px 2px rgba(0, 0, 0, 0.45));
+}
+
+/* Each shape is drawn about 1.4 times a real pointer, with its hot spot on the point the cursor is at. */
+.video-cursor > span {
+  position: absolute;
+  display: none;
+  zoom: 1.4;
+}
+
+.video-cursor[data-shape="arrow"] > [data-shape="arrow"] {
+  display: block;
+  left: -2px;
+  top: -2px;
+}
+
+.video-cursor[data-shape="hand"] > [data-shape="hand"] {
+  display: block;
+  left: -9.6px;
+  top: -2.2px;
+}
+
+.video-cursor[data-shape="beam"] > [data-shape="beam"] {
+  display: block;
+  left: -7px;
+  top: -14px;
+}

@@ -20,6 +20,7 @@
     "showcase:serve": "vite --config showcase/vite.config.ts",
     "showcase:perf": "NODE_ENV=production vite --config showcase/vite.perf.config.ts --mode production --force --port 5791",
     "showcase:twitter": "node showcase/twitter.mjs",
+    "showcase:video": "node showcase/video/render.mjs",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/*.mjs\" vite.config.ts eslint.config.js package.json README.md CONTRIBUTING.md \".github/workflows/*.{yml,yaml}\"",
