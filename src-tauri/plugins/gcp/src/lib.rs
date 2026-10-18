@@ -1,6 +1,7 @@
 // Google Cloud: a console over the projects the person's gcloud accounts can
 // see, and gcp_* tools for agents.
 //
+//   agent_setup — the account and project agents' shells start on
 //   gcloud   — the gcloud CLI, which holds the sign-in; nothing here stores a credential
 //   auth     — accounts, configurations, and the access tokens gcloud hands out
 //   client   — Google's REST APIs, pages and errors
@@ -17,6 +18,7 @@
 //   functions — Cloud Functions of both generations
 //   metrics  — Cloud Monitoring charts for services, VMs, databases and queues
 
+mod agent_setup;
 mod auth;
 mod build;
 mod client;
@@ -34,9 +36,11 @@ mod secrets;
 mod sql;
 mod storage;
 
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_plugin_api::{
     params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
@@ -52,6 +56,18 @@ pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
 
 struct Gcp {
     manifest: Manifest,
+}
+
+#[derive(Deserialize)]
+struct PickedParams {
+    folder: Option<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct PickParams {
+    folder: Option<PathBuf>,
+    #[serde(flatten)]
+    pick: agent_setup::Pick,
 }
 
 fn now_secs() -> u64 {
@@ -72,15 +88,27 @@ impl Plugin for Gcp {
         &self.manifest
     }
 
+    fn agent_environment(&self, ctx: &PluginContext, project: &Path) -> BTreeMap<String, String> {
+        agent_setup::environment(ctx, project)
+    }
+
     fn call<'a>(
         &'a self,
-        _ctx: &'a PluginContext,
+        ctx: &'a PluginContext,
         method: &'a str,
         input: Value,
     ) -> PluginFuture<'a, Value> {
         Box::pin(async move {
             match method {
                 "status" => reply(auth::status().await),
+                "agentPicks" => {
+                    let PickedParams { folder } = params(input)?;
+                    reply(agent_setup::picked(ctx, folder.as_deref()))
+                }
+                "pickForAgents" => {
+                    let PickParams { folder, pick } = params(input)?;
+                    reply(agent_setup::pick(ctx, folder.as_deref(), pick)?)
+                }
                 "projects" => answer(projects::projects(params(input)?)).await,
                 "runServices" => answer(run::services(params(input)?)).await,
                 "runService" => answer(run::service_detail(params(input)?)).await,
