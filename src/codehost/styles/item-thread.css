@@ -209,14 +209,18 @@
     height: 20px;
 }
 .gha-tl-badge {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border: 0;
     background: var(--surface-raised);
 }
 .gha-tl-badge:is([data-tone="acc"], [data-tone="live"], [data-tone="danger"]) {
     background: var(--tone);
-    color: var(--on-accent);
+    color: #fff;
+}
+.gha-tl-badge > svg {
+    width: 15px;
+    height: 15px;
 }
 .gha-tl-sha-word {
     font-family: var(--mono);
