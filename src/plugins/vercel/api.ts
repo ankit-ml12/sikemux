@@ -64,6 +64,8 @@ export interface VercelDeployment {
     commit: string | null;
     message: string | null;
     author: string | null;
+    /** The deployment this one built again, for a redeploy. */
+    redeployOf: string | null;
     inspectorUrl: string | null;
     aliases: string[] | null;
     error: string | null;
@@ -112,7 +114,7 @@ export const vercelApi = {
     logs: (team: string, id: string) => backend.call<VercelLog>("logs", { team, id, tail: 2000 }),
     domains: (team: string, project: string) => backend.call<VercelDomain[]>("domains", { team, project }),
     env: (team: string, project: string) => backend.call<VercelVariable[]>("env", { team, project }),
-    redeploy: (team: string, id: string) => backend.call<VercelDeployment>("redeploy", { team, id }),
+    redeploy: (team: string, id: string, target?: "production") => backend.call<VercelDeployment>("redeploy", { team, id, target }),
     promote: (team: string, id: string) => backend.call<VercelDeployment>("promote", { team, id }),
     cancel: (team: string, id: string) => backend.call<VercelDeployment>("cancel", { team, id }),
 };
