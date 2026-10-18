@@ -365,6 +365,8 @@ async fn an_edited_claude_message_takes_the_chat_back_to_before_it() {
         )
         .await
         .expect("edit");
+    chat.until(|event| said(std::slice::from_ref(event)).contains("earlier"))
+        .await;
     chat.until_kind(ChatEventKind::TurnCompleted).await;
     assert!(chat.text().ends_with("1 earlier"), "{}", chat.text());
 
@@ -623,6 +625,8 @@ async fn an_edited_codex_message_takes_the_thread_back_to_before_it() {
         )
         .await
         .expect("edit");
+    chat.until(|event| said(std::slice::from_ref(event)).contains("earlier"))
+        .await;
     chat.until_kind(ChatEventKind::TurnCompleted).await;
     assert!(chat.text().ends_with("1 earlier"), "{}", chat.text());
 }
