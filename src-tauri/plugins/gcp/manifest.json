@@ -258,7 +258,7 @@
         ]
       },
       "method": "agentKube",
-      "description": "Inside a GKE cluster: its workloads, pods (by label selector), services, or a pod's logs, optionally the previous run's after a crash.",
+      "description": "Inside a GKE cluster: workloads, pods (by label selector), services, nodes, a pod's events, or its logs, the previous run's after a crash.",
       "properties": {
         "project": {
           "type": "string"
@@ -275,6 +275,8 @@
             "workloads",
             "pods",
             "services",
+            "nodes",
+            "events",
             "logs"
           ]
         },

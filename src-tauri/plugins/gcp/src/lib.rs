@@ -141,6 +141,8 @@ impl Plugin for Gcp {
                 "pods" => answer(gke::pods(params(input)?)).await,
                 "kubeServices" => answer(gke::services(params(input)?)).await,
                 "podLogs" => answer(gke::pod_logs(params(input)?)).await,
+                "nodes" => answer(gke::nodes(params(input)?)).await,
+                "podEvents" => answer(gke::pod_events(params(input)?)).await,
                 "deploymentRestart" => {
                     answer(gke::restart(
                         params(input)?,

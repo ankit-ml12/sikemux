@@ -224,6 +224,8 @@ async fn kube(ctx: &PluginContext, input: Value) -> GcpResult<Value> {
         "workloads" => Ok(json!(gke::workloads(read(fields)?).await?)),
         "pods" => Ok(json!(gke::pods(read(fields)?).await?)),
         "services" => Ok(json!(gke::services(read(fields)?).await?)),
+        "nodes" => Ok(json!(gke::nodes(read(fields)?).await?)),
+        "events" => Ok(json!(gke::pod_events(read(fields)?).await?)),
         "logs" => {
             let mut logs: gke::PodLogs = read(fields)?;
             logs.tail = Some(logs.tail.unwrap_or(200).min(1000));

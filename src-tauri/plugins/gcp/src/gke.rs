@@ -479,6 +479,91 @@ pub async fn services(input: InCluster) -> GcpResult<Vec<Value>> {
     Ok(listed)
 }
 
+/// A node as the pane and agents read it: whether it is ready, why not, and what it can hold.
+pub fn node(value: &Value) -> Value {
+    let conditions = at(value, "/status/conditions")
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let ready = conditions.iter().any(|condition| {
+        text(condition, "/type") == "Ready" && text(condition, "/status") == "True"
+    });
+    let pressure: Vec<String> = conditions
+        .iter()
+        .filter(|condition| {
+            text(condition, "/type") != "Ready" && text(condition, "/status") == "True"
+        })
+        .map(|condition| text(condition, "/type"))
+        .collect();
+    let labels = at(value, "/metadata/labels");
+    json!({
+        "name": at(value, "/metadata/name"),
+        "ready": ready,
+        "pressure": pressure,
+        "unschedulable": at(value, "/spec/unschedulable").as_bool() == Some(true),
+        "pool": at(labels, "/cloud.google.com~1gke-nodepool"),
+        "machineType": at(labels, "/node.kubernetes.io~1instance-type"),
+        "zone": at(labels, "/topology.kubernetes.io~1zone"),
+        "spot": at(labels, "/cloud.google.com~1gke-spot").as_str() == Some("true") || at(labels, "/cloud.google.com~1gke-preemptible").as_str() == Some("true"),
+        "cpu": at(value, "/status/allocatable/cpu"),
+        "memory": at(value, "/status/allocatable/memory"),
+        "pods": at(value, "/status/allocatable/pods"),
+        "version": at(value, "/status/nodeInfo/kubeletVersion"),
+        "createdAt": at(value, "/metadata/creationTimestamp"),
+    })
+}
+
+/// The cluster's nodes, ready or not.
+pub async fn nodes(input: ClusterRef) -> GcpResult<Vec<Value>> {
+    let list = kube_json(&input, "/api/v1/nodes", &[]).await?;
+    let mut listed: Vec<Value> = at(&list, "/items")
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(node)
+        .collect();
+    listed.sort_by_key(|each| text(each, "/name"));
+    Ok(listed)
+}
+
+/// An event as `kubectl describe` lists it: what happened, why, how often and when last.
+pub fn event(value: &Value) -> Value {
+    json!({
+        "type": at(value, "/type"),
+        "reason": at(value, "/reason"),
+        "message": at(value, "/message"),
+        "count": value.get("count").cloned().unwrap_or(json!(1)),
+        "lastAt": value.get("lastTimestamp").filter(|v| !v.is_null()).or_else(|| value.get("eventTime")).cloned().unwrap_or(Value::Null),
+        "source": at(value, "/source/component"),
+    })
+}
+
+#[derive(Deserialize)]
+pub struct PodRef {
+    #[serde(flatten)]
+    pub cluster: ClusterRef,
+    pub namespace: String,
+    pub pod: String,
+}
+
+/// What Kubernetes recorded about a pod, newest first: scheduling, pulls, starts, probes and kills.
+pub async fn pod_events(input: PodRef) -> GcpResult<Vec<Value>> {
+    let path = format!(
+        "/api/v1/namespaces/{}/events",
+        segment("namespace", &input.namespace)?
+    );
+    let selector = format!("involvedObject.name={}", segment("pod", &input.pod)?);
+    let list = kube_json(&input.cluster, &path, &[("fieldSelector", selector)]).await?;
+    let mut listed: Vec<Value> = at(&list, "/items")
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(event)
+        .collect();
+    listed.sort_by_key(|each| std::cmp::Reverse(text(each, "/lastAt")));
+    Ok(listed)
+}
+
 #[derive(Deserialize)]
 pub struct PodLogs {
     #[serde(flatten)]
@@ -657,6 +742,41 @@ mod tests {
         );
         assert_eq!(read["ports"], json!(["80/TCP"]));
         assert_eq!(read["externalIps"], json!(["35.2.2.2"]));
+    }
+
+    #[test]
+    fn a_node_says_whether_it_is_ready_and_what_presses_on_it() {
+        let read = node(&json!({
+            "metadata": { "name": "gke-prod-default-pool-a1", "labels": { "cloud.google.com/gke-nodepool": "default-pool", "node.kubernetes.io/instance-type": "e2-standard-4", "cloud.google.com/gke-spot": "true" } },
+            "status": { "conditions": [{ "type": "MemoryPressure", "status": "True" }, { "type": "Ready", "status": "True" }], "allocatable": { "cpu": "3920m", "memory": "13Gi", "pods": "110" } }
+        }));
+        assert_eq!(read["ready"], true);
+        assert_eq!(read["pressure"], json!(["MemoryPressure"]));
+        assert_eq!(read["pool"], "default-pool");
+        assert_eq!(read["machineType"], "e2-standard-4");
+        assert_eq!(read["spot"], true);
+        assert_eq!(read["cpu"], "3920m");
+        assert_eq!(
+            node(&json!({ "status": { "conditions": [{ "type": "Ready", "status": "False" }] } }))
+                ["ready"],
+            false
+        );
+    }
+
+    #[test]
+    fn an_event_reads_as_kubectl_describe_lists_it() {
+        let read = event(
+            &json!({ "type": "Warning", "reason": "BackOff", "message": "Back-off restarting failed container", "count": 31, "lastTimestamp": "t2", "source": { "component": "kubelet" } }),
+        );
+        assert_eq!(
+            (read["reason"].as_str(), read["count"].as_u64()),
+            (Some("BackOff"), Some(31))
+        );
+        assert_eq!(
+            event(&json!({ "reason": "Scheduled", "lastTimestamp": null, "eventTime": "t1" }))
+                ["lastAt"],
+            "t1"
+        );
     }
 
     #[test]
