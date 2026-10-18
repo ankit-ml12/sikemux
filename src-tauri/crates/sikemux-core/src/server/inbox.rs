@@ -163,6 +163,8 @@ pub(crate) struct View {
     /// Agents on linked hosts working with agents here, each shown under its
     /// lead.
     pub remote_agents: Vec<RemoteAgent>,
+    /// Every open agent here, by id, in the order devices list them.
+    pub order: Vec<String>,
     /// The characters the app draws for its agents, while buddies are on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buddies: Option<super::workspace::Buddies>,
@@ -718,7 +720,24 @@ fn ranked(mut items: Vec<Item>) -> Vec<Item> {
 
 /// The inbox, from the chats and terminals the device view lists.
 pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> View {
-    view_of(core, &agents(core, chats, sessions), sessions)
+    View {
+        order: order(chats, sessions),
+        ..view_of(core, &agents(core, chats, sessions), sessions)
+    }
+}
+
+fn order(chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<String> {
+    let mut ranked: Vec<(u32, &String)> = chats
+        .iter()
+        .map(|chat| (chat.attention_rank, &chat.agent_id))
+        .collect();
+    ranked.extend(
+        sessions
+            .iter()
+            .filter_map(|session| Some((session.attention_rank?, session.agent_id.as_ref()?))),
+    );
+    ranked.sort();
+    ranked.into_iter().map(|(_, id)| id.clone()).collect()
 }
 
 fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
@@ -747,6 +766,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         away: core.notify.absence().1,
         agent_messages: core.harness.mailbox.log.latest(),
         remote_agents: remote_agents(core),
+        order: Vec::new(),
         buddies: core.workspaces.buddies(),
     }
 }

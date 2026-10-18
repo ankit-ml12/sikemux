@@ -15,7 +15,7 @@ import { Tooltip } from "../ui/Tooltip";
 import { AgentRowProject, AgentRowTree } from "./AgentRowTree";
 import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
 import { drawTeamLines } from "./teams";
-import { inInboxOrder, useInbox } from "./useInbox";
+import { inCoreOrder, useInbox } from "./useInbox";
 
 interface OpenAgentRow {
     id: string;
@@ -27,7 +27,7 @@ interface OpenAgentRow {
     sessionCwd: string;
 }
 
-/** Every agent open in any project, in the order the inbox wants them. */
+/** Every agent open in any project, in the order the core lists them. */
 export function AllProjectsAgents() {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
@@ -56,8 +56,8 @@ export function AllProjectsAgents() {
     }, [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity, agentTasks, agentSubagents]);
 
     const teams = useMemo(
-        () => inTeams(withRemoteWorkers(inInboxOrder(open, inbox.items), inbox.remoteAgents)),
-        [open, inbox.items, inbox.remoteAgents],
+        () => inTeams(withRemoteWorkers(inCoreOrder(open, inbox.order), inbox.remoteAgents)),
+        [open, inbox.order, inbox.remoteAgents],
     );
 
     const root = useRef<HTMLDivElement>(null);

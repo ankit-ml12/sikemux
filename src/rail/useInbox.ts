@@ -9,7 +9,7 @@ interface InboxState {
     inbox: Inbox;
 }
 
-let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, remoteAgents: [] } };
+let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, remoteAgents: [], order: [] } };
 const listeners = new Set<() => void>();
 let started = false;
 
@@ -38,11 +38,11 @@ export function useInbox(): InboxState {
     return useSyncExternalStore(subscribe, () => state);
 }
 
-/** Agents in the order the inbox lists them; those it does not list keep their order after it. */
-export function inInboxOrder<T extends { id: string }>(agents: readonly T[], items: readonly InboxItem[]): T[] {
+/** Agents in the order the core lists them on every device; those it does not list keep their order after it. */
+export function inCoreOrder<T extends { id: string }>(agents: readonly T[], order: readonly string[]): T[] {
     const rank = (agent: T) => {
-        const index = items.findIndex((item) => item.agentId === agent.id);
-        return index < 0 ? items.length : index;
+        const index = order.indexOf(agent.id);
+        return index < 0 ? order.length : index;
     };
     return [...agents].sort((a, b) => rank(a) - rank(b));
 }

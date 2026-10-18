@@ -33,7 +33,7 @@ import { RailPages } from "./RailPages";
 import { FilesPage, TerminalsPage } from "./ProjectPages";
 import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
-import { inInboxOrder, itemSessionId, useInbox } from "./useInbox";
+import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
@@ -275,9 +275,9 @@ export function TabRailBody() {
         .filter(Boolean) as Agent[];
     const isPin = (a: Agent, pin: PinnedChat) => a.type === pin.agent && a.resumeId === pin.id;
     const pins = pinnedChats.filter((pin) => pin.project === session.cwd).map((pin) => ({ pin, agent: sessionAgents.find((a) => isPin(a, pin)) }));
-    const opens = inInboxOrder(
+    const opens = inCoreOrder(
         sessionAgents.filter((a) => !pins.some(({ pin }) => isPin(a, pin))),
-        inbox.items,
+        inbox.order,
     );
 
     const menuAgent = menu ? agentsById[menu.agentId] : undefined;

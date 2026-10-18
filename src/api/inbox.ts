@@ -74,6 +74,8 @@ export interface Inbox {
     agentMessages: Record<string, number>;
     /** Workers agents here started on linked hosts. */
     remoteAgents: RemoteAgent[];
+    /** Every open agent here, by id, in the order every device lists them. */
+    order: string[];
 }
 
 /** Sent by the window whenever the core's inbox changes. */
