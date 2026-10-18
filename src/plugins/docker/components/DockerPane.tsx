@@ -1,0 +1,145 @@
+import { useRef } from "react";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { formatBytes } from "../../../plugin-api/format";
+import { refreshDocker, type DockerStatus } from "../api";
+import { usePoll } from "../hooks";
+import { dockerContainersR, dockerStatusR } from "../resources";
+import { updateDockerView, useDockerView, type DockerSection } from "../state";
+import { Containers } from "./Containers";
+import { DockerMark } from "./DockerMark";
+import "../docker.css";
+
+const SIDE_MIN = 170;
+const SIDE_MAX = 380;
+const LIST_POLL_MS = 4_000;
+const STATUS_POLL_MS = 5_000;
+
+export function DockerPane({ paneId, active }: { paneId: string; active: boolean }) {
+    const status = useResourceEnabled(active, dockerStatusR);
+    usePoll(active && status.data?.running === false, STATUS_POLL_MS, status.refresh);
+    if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Looking for Docker" />;
+    if (!status.data?.running) return <NotRunning status={status.data} error={status.error} onRetry={() => void status.refresh()} />;
+    return <Engine paneId={paneId} active={active} status={status.data} />;
+}
+
+function NotRunning({ status, error, onRetry }: { status: DockerStatus | undefined; error: string | undefined; onRetry: () => void }) {
+    return (
+        <div className="docker-pane docker-pane-empty">
+            <EmptyState
+                icon={<DockerMark size={28} />}
+                title="Docker isn't running"
+                message={
+                    <>
+                        <span>{status?.message ?? error ?? "No Docker engine answered."}</span>
+                        {status?.socket ? <span className="docker-mono docker-muted">{status.socket}</span> : null}
+                        <span className="docker-muted">This pane picks it up on its own once it starts.</span>
+                    </>
+                }
+                action={{ label: "Try again", onClick: onRetry }}
+            />
+        </div>
+    );
+}
+
+const SECTIONS: { value: DockerSection; label: string }[] = [{ value: "containers", label: "Containers" }];
+
+function Engine({ paneId, active, status }: { paneId: string; active: boolean; status: DockerStatus }) {
+    const view = useDockerView(paneId);
+    const sideRef = useRef<HTMLDivElement>(null);
+    const containers = useResourceEnabled(active, dockerContainersR);
+    usePoll(active, LIST_POLL_MS, containers.refresh);
+    const engine = status.engine;
+    const running = containers.data?.filter((each) => each.state === "running").length ?? engine?.running ?? 0;
+    const total = containers.data?.length ?? engine?.containers ?? 0;
+    const counts: Record<DockerSection, string> = {
+        containers: `${running}/${total}`,
+        stacks: "",
+        images: "",
+        volumes: "",
+        disk: "",
+    };
+
+    return (
+        <div className="docker-pane">
+            <aside className="docker-side" ref={sideRef} style={view.sideWidth ? { width: view.sideWidth } : undefined}>
+                <div className="docker-engine">
+                    <span className="docker-engine-mark">
+                        <DockerMark size={14} />
+                    </span>
+                    <span className="docker-engine-name">{engine?.name || "Docker"}</span>
+                    <span className="docker-muted">{engine ? `v${engine.version}` : ""}</span>
+                </div>
+                <input
+                    className="docker-find"
+                    value={view.find}
+                    onChange={(event) => updateDockerView(paneId, { find: event.target.value })}
+                    onKeyDown={(event) => {
+                        if (event.key === "Escape") updateDockerView(paneId, { find: "" });
+                    }}
+                    placeholder="Find…"
+                    aria-label="Find"
+                    spellCheck={false}
+                />
+                <nav className="docker-nav" aria-label="Docker">
+                    {SECTIONS.map((section) => (
+                        <button
+                            key={section.value}
+                            type="button"
+                            className={`docker-nav-item${view.section === section.value ? " active" : ""}`}
+                            aria-current={view.section === section.value ? "page" : undefined}
+                            onClick={() => updateDockerView(paneId, { section: section.value, container: null })}>
+                            <span>{section.label}</span>
+                            <span className="docker-count">{counts[section.value]}</span>
+                        </button>
+                    ))}
+                </nav>
+                <div className="docker-side-foot" title={status.socket ?? undefined}>
+                    <span className="docker-side-source">{status.source ?? "Docker"}</span>
+                    {engine ? (
+                        <span className="docker-muted">
+                            {engine.cpus} CPU · {formatBytes(engine.memory)}
+                        </span>
+                    ) : null}
+                </div>
+            </aside>
+            <ResizeHandle
+                targetRef={sideRef}
+                axis="x"
+                grows={1}
+                min={SIDE_MIN}
+                max={() => SIDE_MAX}
+                size={view.sideWidth}
+                label="Resize the Docker sidebar"
+                className="docker-resize"
+                onResize={(size) => {
+                    if (size === null && sideRef.current) sideRef.current.style.width = "";
+                    updateDockerView(paneId, { sideWidth: size });
+                }}
+            />
+            <main className="docker-main">
+                <header className="docker-topbar">
+                    <span className="docker-topbar-title">{SECTIONS.find((each) => each.value === view.section)?.label}</span>
+                    <button type="button" className="docker-button" onClick={() => refreshDocker()}>
+                        Refresh
+                    </button>
+                </header>
+                <div className="docker-page">
+                    <StaleNotice handle={containers} />
+                    {containers.status === "error" && !containers.data ? (
+                        <p className="docker-note">{containers.error}</p>
+                    ) : !containers.data ? (
+                        <SkeletonRows rows={6} label="Loading containers" />
+                    ) : (
+                        <Containers
+                            containers={containers.data}
+                            find={view.find}
+                            filter={view.stateFilter}
+                            onFilter={(stateFilter) => updateDockerView(paneId, { stateFilter })}
+                        />
+                    )}
+                </div>
+            </main>
+        </div>
+    );
+}
