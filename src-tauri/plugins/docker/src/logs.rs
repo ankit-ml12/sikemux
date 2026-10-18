@@ -13,7 +13,7 @@ use sikemux_plugin_api::{reply, PluginResult, StreamSink};
 use crate::engine::{segment, Engine};
 use crate::error::{DockerError, DockerResult};
 
-const DEFAULT_TAIL: u32 = 500;
+const DEFAULT_TAIL: u32 = 200;
 const MAX_TAIL: u32 = 5000;
 /// A line longer than this is cut, so one runaway line can't fill the pane.
 const MAX_LINE_CHARS: usize = 2000;
@@ -454,6 +454,6 @@ mod tests {
             .recv()
             .await
             .unwrap()
-            .contains("&tail=500&follow=1 HTTP/1.1"));
+            .contains("&tail=200&follow=1 HTTP/1.1"));
     }
 }

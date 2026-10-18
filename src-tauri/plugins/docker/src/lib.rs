@@ -117,6 +117,15 @@ impl Plugin for Docker {
         })
     }
 
+    /// Docker isn't tied to a repository, so its tools are offered wherever an engine is installed.
+    fn offers_agent_tools<'a>(
+        &'a self,
+        _ctx: &'a PluginContext,
+        _remotes: &'a [String],
+    ) -> PluginFuture<'a, bool> {
+        Box::pin(async { Ok(Engine::find().is_ok()) })
+    }
+
     fn stream<'a>(
         &'a self,
         _ctx: &'a PluginContext,
@@ -183,8 +192,51 @@ mod tests {
     }
 
     #[test]
-    fn its_manifest_parses() {
+    fn its_manifest_parses_with_the_nine_tools() {
         let plugin = plugin().expect("manifest parses");
-        assert_eq!(plugin.manifest().id, "sikemux.docker");
+        let names: Vec<&str> = plugin
+            .manifest()
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "docker_containers",
+                "docker_container",
+                "docker_logs",
+                "docker_stats",
+                "docker_act",
+                "docker_stacks",
+                "docker_stack_act",
+                "docker_images",
+                "docker_disk"
+            ]
+        );
+    }
+
+    #[test]
+    fn its_tools_call_methods_it_answers() {
+        let plugin = plugin().expect("manifest parses");
+        let answered = [
+            "containers",
+            "container",
+            "logs",
+            "stats",
+            "act",
+            "stacks",
+            "actOnStack",
+            "images",
+            "disk",
+        ];
+        for tool in &plugin.manifest().tools {
+            assert!(
+                answered.contains(&tool.method.as_str()),
+                "{} calls {}",
+                tool.name,
+                tool.method
+            );
+        }
     }
 }
