@@ -4,12 +4,13 @@ import { EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../pl
 import { formatBytes } from "../../../plugin-api/format";
 import { refreshDocker, type DockerStatus } from "../api";
 import { usePoll } from "../hooks";
-import { dockerContainersR, dockerStatsR, dockerStatusR } from "../resources";
+import { dockerContainersR, dockerStacksR, dockerStatsR, dockerStatusR } from "../resources";
 import { updateDockerView, useDockerView, type DockerSection } from "../state";
 import { ContainerDetail } from "./ContainerDetail";
 import { Containers } from "./Containers";
 import { DockerMark } from "./DockerMark";
 import { LogView } from "./LogView";
+import { Stacks } from "./Stacks";
 import { STATS_POLL_MS, StatsView } from "./StatsView";
 import "../docker.css";
 
@@ -45,7 +46,10 @@ function NotRunning({ status, error, onRetry }: { status: DockerStatus | undefin
     );
 }
 
-const SECTIONS: { value: DockerSection; label: string }[] = [{ value: "containers", label: "Containers" }];
+const SECTIONS: { value: DockerSection; label: string }[] = [
+    { value: "containers", label: "Containers" },
+    { value: "stacks", label: "Compose" },
+];
 
 function Engine({ paneId, active, status }: { paneId: string; active: boolean; status: DockerStatus }) {
     const view = useDockerView(paneId);
@@ -55,12 +59,15 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
     const listing = active && view.section === "containers" && !view.container;
     const stats = useResourceEnabled(listing, dockerStatsR);
     usePoll(listing, STATS_POLL_MS, stats.refresh);
+    const stacking = active && view.section === "stacks" && !view.container;
+    const stacks = useResourceEnabled(active, dockerStacksR);
+    usePoll(stacking, LIST_POLL_MS, stacks.refresh);
     const engine = status.engine;
     const running = containers.data?.filter((each) => each.state === "running").length ?? engine?.running ?? 0;
     const total = containers.data?.length ?? engine?.containers ?? 0;
     const counts: Record<DockerSection, string> = {
         containers: `${running}/${total}`,
-        stacks: "",
+        stacks: stacks.data ? String(stacks.data.length) : "",
         images: "",
         volumes: "",
         disk: "",
@@ -145,6 +152,12 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
                             onBack={() => updateDockerView(paneId, { container: null })}>
                             {(detail) => (view.tab === "logs" ? <LogView container={detail} /> : <StatsView active={active} container={detail} />)}
                         </ContainerDetail>
+                    ) : view.section === "stacks" ? (
+                        stacks.data ? (
+                            <Stacks stacks={stacks.data} find={view.find} onOpen={(container) => updateDockerView(paneId, { container })} />
+                        ) : (
+                            <SkeletonRows rows={4} label="Loading Compose stacks" />
+                        )
                     ) : (
                         <Containers
                             containers={containers.data}

@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
     containers: vi.fn(),
     container: vi.fn(),
     stats: vi.fn(),
+    stacks: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), dockerApi: api }));
 const openUrl = vi.hoisted(() => vi.fn(() => Promise.resolve()));
@@ -29,6 +30,7 @@ beforeEach(() => {
     api.status.mockResolvedValue(engineRunning);
     api.containers.mockResolvedValue([REDIS, SHOP_WEB, SHOP_DB]);
     api.stats.mockResolvedValue([]);
+    api.stacks.mockResolvedValue([]);
 });
 
 describe("the Docker pane", () => {
@@ -50,6 +52,8 @@ describe("the Docker pane", () => {
         const nav = screen.getByRole("navigation", { name: "Docker" });
         expect(within(nav).getByRole("button", { name: /Containers/ })).toHaveTextContent("2/3");
         expect(screen.getByText("v29.2.1")).toBeInTheDocument();
+        fireEvent.click(within(nav).getByRole("button", { name: /Compose/ }));
+        expect(await screen.findByText(/docker compose up show here/)).toBeInTheDocument();
     });
 
     it("filters by state and by words in the sidebar's Find box", async () => {

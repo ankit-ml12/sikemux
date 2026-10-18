@@ -555,3 +555,68 @@
 .docker-sparkline-empty {
     border-bottom: 1px dashed var(--border);
 }
+
+.docker-stacks {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.docker-stack-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.docker-stack .docker-stack-name {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--text-md);
+}
+
+.docker-stack-where {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.docker-services {
+    display: flex;
+    flex-direction: column;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.docker-service {
+    display: grid;
+    grid-template-columns: minmax(80px, 140px) 1fr;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+    font-size: var(--text-xs);
+}
+
+.docker-service-name {
+    color: var(--text-secondary);
+    font-weight: var(--weight-medium);
+}
+
+.docker-service-containers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+}
+
+.docker-service-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-primary);
+}
+
+.docker-service-container:hover {
+    color: var(--acc);
+}
