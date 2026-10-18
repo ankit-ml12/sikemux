@@ -199,3 +199,102 @@
 .issue-row > .pr-row:hover {
     background: none;
 }
+/* An open issue's side panel: the list it came from, compact, the open one lifted grey. */
+.issue-side-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0;
+}
+.issue-side-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: var(--space-2);
+    row-gap: 2px;
+    align-items: center;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.issue-side-row + .issue-side-row {
+    border-top: 1px solid var(--border);
+}
+.issue-side-row:hover {
+    background: var(--surface-hover);
+}
+.issue-side-row[data-on="1"] {
+    background: var(--surface-chosen);
+}
+.issue-side-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+}
+.issue-side-sub {
+    grid-column: 2 / span 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
+.issue-side-seg > .gha-chip {
+    height: 20px;
+    padding: 0 var(--space-2);
+}
+/* The issue's details page: GitHub's sidebar, as sections under small labels. */
+.issue-facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-3);
+    overflow-y: auto;
+}
+.issue-facts > section {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1h);
+    font-size: var(--text-xs);
+}
+.issue-facts-label {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+}
+.issue-facts-person,
+.issue-facts-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1h);
+    max-width: 100%;
+    color: var(--text-primary);
+}
+.issue-facts-link-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.issue-facts-faces {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.issue-facts-faces > .gha-avatar,
+.issue-facts-person > .gha-avatar {
+    width: 20px;
+    height: 20px;
+}

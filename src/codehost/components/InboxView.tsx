@@ -71,11 +71,7 @@ export function InboxDetail({ item, active }: { item: Notification; active: bool
         );
     }
     if (item.number !== null && item.kind === "Issue") {
-        return (
-            <div className="issue-page">
-                <IssueDetail repo={repo} number={item.number} active={active} />
-            </div>
-        );
+        return <IssueDetail repo={repo} number={item.number} active={active} />;
     }
     return (
         <EmptyState

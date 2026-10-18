@@ -283,14 +283,6 @@ button.git-file-row {
     margin-bottom: var(--space-2);
     padding: 0 var(--space-4) 0 calc(16px + var(--space-2));
 }
-/* An issue reads on the right, where a pull request's files would be. */
-.issue-page {
-    height: 100%;
-    overflow-y: auto;
-}
-.issue-page > .gha-detail {
-    padding-top: var(--space-3);
-}
 .git-right > .empty-state {
     margin: auto;
 }

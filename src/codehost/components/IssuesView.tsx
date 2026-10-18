@@ -1,12 +1,14 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
-import { EmptyState, IconExternal, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
+import { EmptyState, IconChevron, IconExternal, IconInfo, IconPlus, SkeletonRows, StaleNotice, Tooltip } from "../../plugin-api/ui";
+import { SwipePages } from "../../ui/SwipePages";
+import { SectionIcon } from "./ActionsIcon";
 import { GitColumns } from "../../git/GitColumns";
 import { hostApi, failureMessage, type Issue, type RepoRef } from "../api";
-import { issueCountsR, issueR, issuesR } from "../resources";
+import { issueCountsR, issueR, issuesR, timelineR } from "../resources";
 import { compose, setListState, showItem, updateView } from "../state";
-import { Comments, Labels, StateMark, Who } from "./Bits";
+import { Comments, Labels, StateMark } from "./Bits";
 import { CommentThread, Face } from "./CommentThread";
 import { useHost } from "../registry";
 import { useBusy } from "./hooks";
@@ -74,24 +76,79 @@ function IssueListRow({ issue, now, onOpen, work }: { issue: Issue; now: number;
     );
 }
 
-function IssueRow({ issue, now, selected, onOpen, work }: { issue: Issue; now: number; selected: boolean; onOpen: () => void; work: ReactNode }) {
+/** An issue as the side panel lists it beside the open one: its mark and title, then its number, who and when. */
+function IssueRow({ issue, now, selected, onOpen }: { issue: Issue; now: number; selected: boolean; onOpen: () => void }) {
     return (
-        <div className="gha-item-line">
-            <button type="button" className="gha-item-row" data-on={selected ? "1" : "0"} onClick={onOpen}>
-                <StateMark kind="issue" state={issue.state} reason={issue.stateReason} />
-                <span className="gha-item-head">
-                    <span className="gha-item-title">{issue.title}</span>
-                    <Labels labels={issue.labels} />
+        <button
+            type="button"
+            className="issue-side-row"
+            data-on={selected ? "1" : "0"}
+            ref={(node) => {
+                if (node && selected) node.scrollIntoView({ block: "nearest" });
+            }}
+            onClick={onOpen}>
+            <StateMark kind="issue" state={issue.state} reason={issue.stateReason} size={13} />
+            <span className="issue-side-title">{issue.title}</span>
+            <Comments count={issue.comments} />
+            <span className="issue-side-sub">
+                #{issue.number} · {issue.author ?? "someone"} · {formatAgo(issue.updatedAt, now)}
+            </span>
+        </button>
+    );
+}
+
+/** What GitHub keeps in an issue's sidebar: who it is on, its labels, the pull requests that mention it and who took part. */
+function IssueFacts({ repo, number, active }: { repo: RepoRef; number: number; active: boolean }) {
+    const issue = useResourceEnabled(active, issueR, repo, number).data;
+    const timeline = useResourceEnabled(active, timelineR, repo, number, "issue").data ?? [];
+    if (!issue) return <SkeletonRows rows={4} label="Loading issue" />;
+    const people = [...new Set([issue.author, ...timeline.map((item) => item.actor)].filter((login): login is string => !!login))];
+    const linked = [
+        ...new Map(
+            timeline.filter((item) => item.kind === "cross-referenced" && item.source?.pull).map((item) => [item.source?.number, item] as const),
+        ).values(),
+    ];
+    return (
+        <div className="git-list issue-facts">
+            <section>
+                <h3 className="issue-facts-label">Assignees</h3>
+                {issue.assignees.length === 0 ? (
+                    <span className="gha-dim">No one</span>
+                ) : (
+                    issue.assignees.map((login) => (
+                        <span key={login} className="issue-facts-person">
+                            <Face login={login} url={null} />
+                            {login}
+                        </span>
+                    ))
+                )}
+            </section>
+            <section>
+                <h3 className="issue-facts-label">Labels</h3>
+                {issue.labels.length === 0 ? <span className="gha-dim">None yet</span> : <Labels labels={issue.labels} />}
+            </section>
+            <section>
+                <h3 className="issue-facts-label">Linked pull requests</h3>
+                {linked.length === 0 ? (
+                    <span className="gha-dim">None</span>
+                ) : (
+                    linked.map((item) => (
+                        <span key={item.source?.number} className="issue-facts-link">
+                            <StateMark kind="pull" state={item.source?.merged ? "merged" : (item.source?.state ?? "open")} size={13} />
+                            <span className="issue-facts-link-title">{item.subject}</span>
+                            <span className="gha-dim">#{item.source?.number}</span>
+                        </span>
+                    ))
+                )}
+            </section>
+            <section>
+                <h3 className="issue-facts-label">Participants</h3>
+                <span className="issue-facts-faces">
+                    {people.map((login) => (
+                        <Face key={login} login={login} url={null} />
+                    ))}
                 </span>
-                <Comments count={issue.comments} />
-                <span className="gha-item-sub">
-                    <span className="gha-item-number">#{issue.number}</span>
-                    {issue.author && <Who login={issue.author} avatarUrl={issue.avatarUrl} />}
-                    {issue.assignees.length > 0 && <span>→ {issue.assignees.join(", ")}</span>}
-                </span>
-                <span className="gha-item-when">{formatAgo(issue.updatedAt, now)}</span>
-            </button>
-            {work}
+            </section>
         </div>
     );
 }
@@ -192,6 +249,7 @@ interface Props {
 
 export function IssuesView({ paneId, repo, listState, item, composing, page, cwd, active }: Props) {
     const issues = useResourceEnabled(active && !composing, issuesR, repo, listState, page);
+    const [sidePage, setSidePage] = useState("list");
     const counts = useResourceEnabled(active && !composing && item === null, issueCountsR, repo).data;
     const now = useNow(false);
 
@@ -239,7 +297,7 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                 </div>
                 {rows.length === 0 ? (
                     <EmptyState icon={<IconInfo size={20} />} message={`No ${listState === "all" ? "" : listState} issues.`} />
-                ) : item === null ? (
+                ) : (
                     <div className="pr-rows">
                         {rows.map((issue) => (
                             <IssueListRow
@@ -251,17 +309,6 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                             />
                         ))}
                     </div>
-                ) : (
-                    rows.map((issue) => (
-                        <IssueRow
-                            key={issue.number}
-                            issue={issue}
-                            now={now}
-                            selected={issue.number === item}
-                            onOpen={() => showItem(paneId, issue.number)}
-                            work={cwd && issue.state === "open" && <WorkOnThis repo={repo} number={issue.number} cwd={cwd} compact />}
-                        />
-                    ))
                 )}
                 {(page > 1 || nextPage) && (
                     <div className="gha-pager">
@@ -278,10 +325,82 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
         );
 
     if (item === null) return <div className="gha-full-page">{list}</div>;
-    const right = (
-        <div className="issue-page">
-            <IssueDetail repo={repo} number={item} active={active} cwd={cwd} />
+    const side = (
+        <div className="git-side">
+            <div className="git-side-head">
+                <div className="git-side-title">
+                    <Tooltip label="Back to the issues">
+                        <button
+                            type="button"
+                            className="git-foot-btn icon pr-back-btn"
+                            aria-label="Back to the issues"
+                            onClick={() => showItem(paneId, null)}>
+                            <IconChevron size={11} />
+                        </button>
+                    </Tooltip>
+                    <span className="pr-side-number">Issues</span>
+                    <span className="gha-page-spacer" />
+                    <div className="gha-chips gha-seg issue-side-seg" role="group" aria-label="Which to list">
+                        {LIST_STATES.map((state) => (
+                            <button
+                                key={state}
+                                type="button"
+                                className="gha-chip"
+                                data-on={listState === state ? "1" : "0"}
+                                onClick={() => setListState(paneId, "issues", state)}>
+                                {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
+                            </button>
+                        ))}
+                    </div>
+                    <Tooltip label="New issue">
+                        <button type="button" className="git-foot-btn icon" aria-label="New issue" onClick={() => compose(paneId, "issue")}>
+                            <IconPlus size={13} />
+                        </button>
+                    </Tooltip>
+                </div>
+            </div>
+            <SwipePages
+                label="Issue"
+                current={sidePage}
+                onChange={setSidePage}
+                pages={[
+                    {
+                        id: "list",
+                        label: "Issues",
+                        icon: <SectionIcon section="issues" size={14} />,
+                        content: (
+                            <div className="git-list issue-side-list">
+                                {rows.map((issue) => (
+                                    <IssueRow
+                                        key={issue.number}
+                                        issue={issue}
+                                        now={now}
+                                        selected={issue.number === item}
+                                        onOpen={() => showItem(paneId, issue.number)}
+                                    />
+                                ))}
+                            </div>
+                        ),
+                    },
+                    {
+                        id: "facts",
+                        label: "Details",
+                        icon: <IconInfo size={14} />,
+                        content: <IssueFacts repo={repo} number={item} active={active} />,
+                    },
+                ]}
+            />
         </div>
     );
-    return <GitColumns paneId={paneId} left={list} right={<div className="git-right-review">{right}</div>} />;
+    return (
+        <GitColumns
+            paneId={paneId}
+            left={side}
+            right={
+                <div className="git-right-review">
+                    <IssueDetail repo={repo} number={item} active={active} cwd={cwd} />
+                </div>
+            }
+        />
+    );
 }
