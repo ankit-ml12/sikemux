@@ -466,6 +466,7 @@ const job = (
 });
 
 const RELEASE_JOBS = [
+  job(108612011312, "Checks / What changed", 361, 0.4),
   job(
     108612011313,
     "Checks / Frontend quality, build, and tests",
@@ -484,6 +485,8 @@ const RELEASE_JOBS = [
   job(108612011314, "Checks / Rust formatting, lint and tests", 360, 2.95),
   job(108612011315, "Checks / macOS launched smoke test", 360, 6.6),
   job(108612011316, "Build, verify, and publish", 353, 20.3),
+  job(108612011317, "Build the Linux host core (x86_64)", 353, 8.4),
+  job(108612011318, "Build the Linux host core (aarch64)", 353, 9.1),
 ];
 
 const CI_JOBS = [
@@ -526,6 +529,64 @@ const LOG_LINES = [
   "##[endgroup]",
   "Cleaning up orphan processes",
 ];
+
+const WORKFLOW_FILES: Record<string, string> = {
+  [`${SHA}:.github/workflows/release.yml`]: `name: Release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+  build:
+    name: Build, verify, and publish
+    needs: checks
+    runs-on: macos-15
+  build-host:
+    name: Build the Linux host core (\${{ matrix.arch }})
+    needs: [checks]
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-24.04
+`,
+  [`${SHA}:.github/workflows/ci.yml`]: `name: CI
+on:
+  workflow_call:
+jobs:
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+  frontend:
+    name: Frontend quality, build, and tests
+    needs: changes
+    runs-on: macos-15
+  rust:
+    name: Rust formatting, lint and tests
+    needs: changes
+    runs-on: macos-15
+  macos:
+    name: macOS launched smoke test
+    needs:
+      - changes
+    runs-on: macos-15
+`,
+  [`${PR_SHA}:.github/workflows/ci.yml`]: `name: CI
+on: pull_request
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: macos-15
+  rust:
+    name: Rust
+    runs-on: macos-15
+  package:
+    name: Package
+    needs: [frontend, rust]
+    runs-on: macos-15
+`,
+};
 
 function jobsFor(runId: number) {
   return runId === 36316470001 ? CI_JOBS : RELEASE_JOBS;
@@ -778,6 +839,11 @@ export const GITHUB: Record<string, (params: Params) => unknown> = {
     path: ".github/workflows/release.yml",
     text: "name: Release\non:\n  push:\n    tags: ['v*']\njobs:\n  checks:\n    uses: ./.github/workflows/checks.yml\n  publish:\n    name: Build, verify, and publish\n    needs: checks\n    runs-on: macos-15\n",
   }),
+  workflowFileAt: ({ path, gitRef }) => {
+    const text = WORKFLOW_FILES[`${String(gitRef)}:${String(path)}`];
+    if (!text) throw { category: "unavailable", message: "No such file" };
+    return { path, text };
+  },
   artifacts: () => [
     {
       id: 1,
