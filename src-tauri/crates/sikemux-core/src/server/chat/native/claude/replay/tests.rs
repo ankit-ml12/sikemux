@@ -314,8 +314,9 @@ fn a_subagents_own_transcript_replays_inside_its_child_session() {
         .filter(|(session, _)| *session == child)
         .map(|(_, update)| update)
         .collect();
-    assert_eq!(inside.len(), 1, "{inside:?}");
+    assert_eq!(inside.len(), 2, "{inside:?}");
     assert_eq!(inside[0]["title"], "Read a.rs");
+    assert_eq!(inside[1]["status"], "cancelled", "a call with no result is not left running");
     assert!(updates.iter().any(|(session, update)| *session == SESSION
         && update["sessionUpdate"] == "subagent_state_update"
         && update["state"] == "completed"));

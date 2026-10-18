@@ -1258,6 +1258,25 @@ impl Replay<'_> {
     }
 
     fn finish(mut self) -> Vec<(String, Value)> {
+        // A call with no result is one the agent's last process died in, and nothing will finish it now.
+        let mut open: Vec<(String, String)> = self
+            .tool_uses
+            .keys()
+            .filter_map(|id| {
+                self.updates
+                    .iter()
+                    .find(|(_, update)| {
+                        str_field(update, "sessionUpdate") == Some("tool_call")
+                            && str_field(update, "toolCallId") == Some(id.as_str())
+                    })
+                    .map(|(session, _)| (session.clone(), id.clone()))
+            })
+            .collect();
+        open.sort();
+        for (session, id) in open {
+            let update = json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": "cancelled" });
+            self.updates.push((session, update));
+        }
         for index in (0..self.children.len()).rev() {
             let child = &self.children[index];
             if !child.announced {
