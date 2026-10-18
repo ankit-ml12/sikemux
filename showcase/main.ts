@@ -13,7 +13,7 @@ Object.assign(
 );
 mockIPC(
   (command) => {
-    if (command === "plugin:app|version") return "0.5.0";
+    if (command === "plugin:app|version") return "0.5.3";
     return null;
   },
   { shouldMockEvents: true },

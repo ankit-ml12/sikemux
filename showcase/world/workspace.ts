@@ -534,7 +534,7 @@ export function demoSnapshot(): PersistedSnapshot {
       notificationsIntroduced: true,
       agentNotifications: false,
       lastReleaseNotes: null,
-      lastSeenVersion: "0.5.0",
+      lastSeenVersion: "0.5.3",
       spaces: [
         { id: "space-acme", name: "Acme", icon: "building" },
         { id: "space-personal", name: "Personal", icon: "leaf" },
