@@ -8,12 +8,14 @@
 //   run      — Cloud Run services, revisions, traffic, jobs and executions
 //   logging  — searching and following a project's logs
 //   compute  — Compute Engine VMs, their power, serial output and SSH
+//   gke      — GKE clusters, node pools, workloads, pods, services and pod logs
 
 mod auth;
 mod client;
 mod compute;
 mod error;
 mod gcloud;
+mod gke;
 mod logging;
 mod projects;
 mod run;
@@ -36,6 +38,13 @@ pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
 
 struct Gcp {
     manifest: Manifest,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
 }
 
 async fn answer<T: Serialize>(
@@ -70,6 +79,21 @@ impl Plugin for Gcp {
                 "instance" => answer(compute::instance_detail(params(input)?)).await,
                 "instancePower" => answer(compute::power(params(input)?)).await,
                 "instanceSerial" => answer(compute::serial(params(input)?)).await,
+                "clusters" => answer(gke::clusters(params(input)?)).await,
+                "cluster" => answer(gke::cluster_detail(params(input)?)).await,
+                "nodePoolResize" => answer(gke::resize_pool(params(input)?)).await,
+                "workloads" => answer(gke::workloads(params(input)?)).await,
+                "pods" => answer(gke::pods(params(input)?)).await,
+                "kubeServices" => answer(gke::services(params(input)?)).await,
+                "podLogs" => answer(gke::pod_logs(params(input)?)).await,
+                "deploymentRestart" => {
+                    answer(gke::restart(
+                        params(input)?,
+                        &logging::rfc3339_before(now_secs(), 0),
+                    ))
+                    .await
+                }
+                "deploymentScale" => answer(gke::scale(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
