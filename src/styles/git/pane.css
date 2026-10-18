@@ -111,9 +111,6 @@
 :is(.git-left, .git-left .swipe-page) > .git-history > .git-history-head:hover {
     background: none;
 }
-:is(.git-left, .git-left .swipe-page) > .git-history .git-history-search {
-    flex: 1 1 auto;
-}
 .git-split {
     position: relative;
     z-index: 3;

@@ -434,40 +434,50 @@ function PullFileRows({
     const list = files.data ?? [];
     const added = list.reduce((sum, file) => sum + file.additions, 0);
     const removed = list.reduce((sum, file) => sum + file.deletions, 0);
+    const [folded, setFolded] = useState(false);
     return (
         <div className="git-list pr-files">
             <div className="git-group git-file-group">
-                <span className="git-label">Files</span>
-                {list.length > 0 && <span className="git-count">{list.length}</span>}
+                <button type="button" className="git-group-toggle" aria-expanded={!folded} onClick={() => setFolded((was) => !was)}>
+                    <IconChevron size={13} className="git-group-chev" />
+                    <span className="git-group-icon">
+                        <IconFile size={13} />
+                    </span>
+                    <span className="git-group-name">Files</span>
+                </button>
                 {list.length > 0 && (
                     <span className="gha-diffstat pr-files-stat">
                         <span className="gha-add">+{added.toLocaleString()}</span>
                         <span className="gha-del">−{removed.toLocaleString()}</span>
                     </span>
                 )}
+                {list.length > 0 && <span className="git-group-count">{list.length}</span>}
             </div>
             {files.status === "loading" && !files.data && <SkeletonRows rows={3} label="Loading files" />}
-            {list.map((file) => {
-                const badge = hostFileStatus(file.status);
-                const dir = dirname(file.path);
-                return (
-                    <button
-                        key={file.path}
-                        type="button"
-                        className={`git-row git-file-row${focus === file.path ? " sel" : ""}`}
-                        title={file.path}
-                        onClick={() => onFocus(file.path)}>
-                        <FileIcon name={basename(file.path)} size={14} />
-                        <span className="git-row-name">
-                            {basename(file.path)}
-                            {dir && <span className="git-row-dir">{dir}</span>}
-                        </span>
-                        <span className={`git-status git-${badge.cls}`} title={badge.label}>
-                            {badge.letter}
-                        </span>
-                    </button>
-                );
-            })}
+            {!folded &&
+                list.map((file, index) => {
+                    const badge = hostFileStatus(file.status);
+                    const dir = dirname(file.path);
+                    return (
+                        <button
+                            key={file.path}
+                            type="button"
+                            className={`git-row git-tree-row git-file-row${focus === file.path ? " sel" : ""}`}
+                            data-first={index === 0 ? "" : undefined}
+                            data-last={index === list.length - 1 ? "" : undefined}
+                            title={file.path}
+                            onClick={() => onFocus(file.path)}>
+                            <FileIcon name={basename(file.path)} size={14} />
+                            <span className="git-row-name">
+                                {basename(file.path)}
+                                {dir && <span className="git-row-dir">{dir}</span>}
+                            </span>
+                            <span className={`git-status git-${badge.cls}`} title={badge.label}>
+                                {badge.letter}
+                            </span>
+                        </button>
+                    );
+                })}
         </div>
     );
 }

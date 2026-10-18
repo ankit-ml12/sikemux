@@ -148,14 +148,12 @@
     padding: 6px;
 }
 /* The files take the rows they need; whatever is left goes to the open panels beneath. */
+/* The files page of a pull request's side panel, like Changes: its group a step below the actions above it. */
 .pr-files {
-    flex: 0 1 auto;
-    min-height: 64px;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
-}
-.pr-files:last-of-type,
-.pr-files:has(+ .git-history:not(.open)) {
-    flex-grow: 1;
+    padding-top: var(--space-1h);
 }
 .pr-files-stat {
     margin-left: auto;
