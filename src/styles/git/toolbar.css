@@ -170,6 +170,10 @@
     padding-top: var(--space-2);
     border-bottom: 1px solid var(--border);
 }
+/* With no row of actions to close it, the head keeps the same room under its title as above it. */
+.git-side-head:not(:has(> .git-side-actions)) {
+    padding-bottom: var(--space-2);
+}
 .git-side-title {
     padding: 0 var(--space-2);
     display: flex;
