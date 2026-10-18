@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VercelDeployment, VercelLog, VercelProject, VercelStatus } from "../api";
 
@@ -18,12 +18,13 @@ const api = vi.hoisted(() => ({
     cancel: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), vercelApi: api }));
+const confirmDialog = vi.hoisted(() => vi.fn());
+vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), confirmDialog }));
+const theme = vi.hoisted(() => ({ dark: true }));
+vi.mock("../../../plugin-api/hooks", async (importOriginal) => ({ ...(await importOriginal<object>()), useDarkTheme: () => theme.dark }));
 
-import { acceptDialog, useDialogs } from "../../../state/dialog";
 import { invalidate } from "../../../plugin-api/resources";
 import { deploymentForAgent } from "../state";
-import { CURATED_THEMES } from "../../../themes";
-import { previewTheme } from "../../../themes/bus";
 import { VercelPane } from "./VercelPane";
 
 const signedIn: VercelStatus = {
@@ -95,10 +96,7 @@ let pane = 0;
 const renderPane = () => render(<VercelPane paneId={`vercel-${++pane}`} active />);
 const openProject = async () => fireEvent.click(await screen.findByRole("button", { name: /web\.acme\.dev.*acme\/web/ }));
 const nav = (name: string) => fireEvent.click(within(screen.getByRole("navigation", { name: "Vercel" })).getByRole("button", { name }));
-const accept = async (title: string) => {
-    await waitFor(() => expect(useDialogs.getState().dialog).toMatchObject({ kind: "confirm", title }));
-    act(() => acceptDialog(useDialogs.getState().dialog!.id));
-};
+const accept = (title: string) => waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({ title })));
 
 afterEach(() => {
     cleanup();
@@ -107,6 +105,8 @@ afterEach(() => {
 
 beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
+    confirmDialog.mockReset().mockResolvedValue(true);
+    theme.dark = true;
     api.status.mockResolvedValue(signedIn);
     api.projects.mockResolvedValue([project]);
     api.deployments.mockResolvedValue([failed, redeploy, live, before]);
@@ -215,12 +215,13 @@ describe("the Vercel pane", () => {
     });
 
     it("takes Vercel's light colours in a light theme and its dark ones in a dark theme", async () => {
-        const { container } = renderPane();
+        theme.dark = false;
+        const { container, rerender } = render(<VercelPane paneId="vercel-scheme" active />);
         await screen.findByRole("separator", { name: "Resize the Vercel sidebar" });
         const pane = container.querySelector(".vercel-pane")!;
-        act(() => previewTheme(CURATED_THEMES.find((theme) => !theme.dark)!));
         expect(pane).toHaveAttribute("data-scheme", "light");
-        act(() => previewTheme(CURATED_THEMES.find((theme) => theme.dark)!));
+        theme.dark = true;
+        rerender(<VercelPane paneId="vercel-scheme" active />);
         expect(pane).toHaveAttribute("data-scheme", "dark");
     });
 });
