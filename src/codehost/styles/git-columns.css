@@ -261,15 +261,27 @@ button.git-file-row {
     flex: 1 1 0;
     min-height: 200px;
 }
-/* The job's band runs edge to edge under the run's header like the other heads in the column, solid so the picture
-   behind the pane never shows through it, and stays put while the steps scroll under it. */
-.run-logs > .gha-job-actions {
+/* The job's band, what CI flagged in it and the log's tools are one solid stack, edge to edge under the run's header
+   like the other heads in the column, so the picture behind the pane never shows through and the steps scroll under it. */
+.run-logs > .gha-job-actions,
+.run-logs > .gha-annotations,
+.run-logs > .gha-log > .gha-log-head {
     flex: none;
-    height: 38px;
-    margin: calc(-1 * var(--space-2)) calc(-16px - var(--space-2)) var(--space-2);
-    padding: 0 var(--space-4) 0 calc(16px + var(--space-2));
+    margin-inline: calc(-16px - var(--space-2));
     border-bottom: 1px solid var(--border);
+    border-radius: 0;
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
+}
+.run-logs > .gha-job-actions {
+    height: 38px;
+    margin-top: calc(-1 * var(--space-2));
+    padding: 0 var(--space-4) 0 calc(16px + var(--space-2));
+}
+.run-logs > .gha-log > .gha-log-head {
+    height: 38px;
+    margin-top: 0;
+    margin-bottom: var(--space-2);
+    padding: 0 var(--space-4) 0 calc(16px + var(--space-2));
 }
 /* An issue reads on the right, where a pull request's files would be. */
 .issue-page {
@@ -306,4 +318,8 @@ button.git-file-row {
 }
 .git-side-head > :is(.gha-callout, .gha-attempts, .gha-approvals) {
     margin: 0 var(--space-2) var(--space-2);
+}
+/* A job's mark fills its box edge to edge, unlike a file's icon, so it keeps a gap from the branch's tick. */
+.git-row.git-tree-row.run-job-row {
+    padding-left: 22px;
 }

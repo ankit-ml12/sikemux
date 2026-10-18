@@ -266,7 +266,7 @@ const JobRows = memo(function JobRows({ paneId, jobs, openJob, now }: { paneId: 
                         <button
                             key={job.id}
                             type="button"
-                            className={`git-row git-tree-row git-file-row${openJob === job.id ? " sel" : ""}`}
+                            className={`git-row git-tree-row git-file-row run-job-row${openJob === job.id ? " sel" : ""}`}
                             data-first={index === 0 ? "" : undefined}
                             data-last={index === jobs.length - 1 ? "" : undefined}
                             title={job.name}
