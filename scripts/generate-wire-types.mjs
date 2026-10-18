@@ -22,6 +22,17 @@ const SOURCES = [
   `${CORE}/server/workspace.rs`,
   `${CORE}/server/remote.rs`,
   `${CORE}/server/hosts/mod.rs`,
+  ...[
+    "status",
+    "branches",
+    "log",
+    "revisions",
+    "stash",
+    "remote",
+    "worktree",
+    "blame",
+    "diff",
+  ].map((file) => `${CORE}/git/${file}.rs`),
 ];
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
@@ -58,6 +69,15 @@ const TS_ROOTS = [
   "RemotePairing",
   "NetworkChange",
   "Inbox",
+  "GitOverview",
+  "DiscoveredRepo",
+  "GitCompare",
+  "GitStash",
+  "GitRemote",
+  "GitRemoteBranch",
+  "GitWorktree",
+  "GitBlame",
+  "DiffHunk",
 ];
 
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
@@ -174,7 +194,7 @@ function serde(attrs, where) {
 
 const KNOWN = {
   container: ["rename_all"],
-  field: ["rename", "default", "skip_serializing_if", "alias"],
+  field: ["rename", "default", "skip_serializing_if", "skip", "alias"],
   variant: ["rename", "other", "alias"],
 };
 
@@ -273,6 +293,7 @@ function byClientName(name) {
 const PRIMITIVES = {
   String: "string",
   PathBuf: "string",
+  str: "string",
   bool: "bool",
   f32: "float",
   f64: "float",
@@ -286,7 +307,7 @@ const PRIMITIVES = {
 
 /** A Rust type as `{ kind, ... }`: primitive, option, list, map or named. */
 function parseType(text, file) {
-  text = text.trim();
+  text = text.trim().replace(/^&(?:'\w+\s+)?/, "");
   const generic = /^([\w:]+)\s*<(.*)>$/s.exec(text);
   const path = (generic?.[1] ?? text).split("::").at(-1);
   const args = generic ? splitTop(generic[2]) : [];
@@ -334,6 +355,8 @@ function renameAll(name, rule, where) {
       return parts.join("_");
     case "kebab-case":
       return parts.join("-");
+    case "lowercase":
+      return parts.join("");
     default:
       fail(`${where} renames all to ${rule}`);
   }
@@ -341,12 +364,14 @@ function renameAll(name, rule, where) {
 
 /** A struct's or struct variant's fields. */
 function parseFields(body, file, rule, where) {
-  return splitTop(body.slice(1, -1)).map((member) => {
+  return splitTop(body.slice(1, -1)).flatMap((member) => {
     const { docs, attrs, rest } = readMember(member);
+    if (!rest) return [];
     const match = /^(?:pub(?:\([^)]*\))?\s+)?([\w#]+)\s*:\s*(.+)$/s.exec(rest);
     if (!match) fail(`${where} has field ${rest}`);
     const settings = serde(attrs, `${where}.${match[1]}`);
     only(settings, KNOWN.field, `${where}.${match[1]}`);
+    if (settings.skip) return [];
     const type = parseType(match[2], file);
     return {
       name: settings.rename ?? renameAll(match[1], rule, where),

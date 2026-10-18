@@ -609,7 +609,177 @@ export interface LinkedHost {
   connected: boolean;
   /** Agents of teams this host shares with it. */
   agents: number;
+  /** Agents it started or messaged may use this host's sign-ins. */
+  signIns: boolean;
 }
 
 /** What happened to this host's network. */
 export type NetworkChange = 'online' | 'offline' | 'changed' | 'woke';
+
+export interface GitOverview {
+  status: GitStatus;
+  branches: GitBranch[];
+  log: GitCommit[];
+}
+
+export interface GitStatus {
+  branch: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  files: GitFile[];
+}
+
+export interface GitFile {
+  path: string;
+  index: string;
+  worktree: string;
+}
+
+export interface GitBranch {
+  name: string;
+  current: boolean;
+  upstream?: string;
+}
+
+export interface GitCommit {
+  /** Short, human-facing id (`8b075bd`). */
+  hash: string;
+  /** Full oid — used by the frontend graph to match parents/children. */
+  full_hash: string;
+  /** Full oids of this commit's parents (>1 == a merge). */
+  parents: string[];
+  author: string;
+  /** Stable key for the author colour chip (initials avatar). */
+  author_email: string;
+  date: string;
+  subject: string;
+  /** Its message ends in an agent footer, which only the core can check. */
+  footer?: boolean;
+  /**
+   * Ref decorations pointing at this commit: `HEAD`, local branches,
+   * `origin/main`, `tag: v0.1.11`. Rendered as lazygit-style badges.
+   */
+  refs: string[];
+  /**
+   * True when this commit is ahead of the current branch's upstream
+   * (reachable from HEAD but not from `@{u}`) — i.e. not yet pushed.
+   * Drives the unpushed-vs-pushed lane colour in the graph.
+   */
+  unpushed: boolean;
+}
+
+export interface DiscoveredRepo {
+  path: string;
+  name: string;
+  branch: string;
+  ahead: number;
+  behind: number;
+  changes: number;
+}
+
+export interface GitCompare {
+  /** Where the branch left its base; diffs are drawn from here. */
+  merge_base: string;
+  files: GitCompareFile[];
+  commits: GitCommit[];
+}
+
+export interface GitCompareFile {
+  path: string;
+  /** `A`, `M`, `D` or `R`, as the status column shows it. */
+  status: string;
+}
+
+export interface GitStash {
+  /**
+   * Reflog index (0 = top). We treat this as the stable id within a
+   * single session, but it shifts whenever the user drops/pops, so
+   * the UI re-reads after every mutation.
+   */
+  index: number;
+  /**
+   * Stash commit id. This is the stable guard used before apply/pop/drop so
+   * external stash-list edits cannot make a stale UI row target another stash.
+   */
+  sha: string;
+  /** `stash@{N}` — the symbolic ref form, useful for `git stash apply <ref>`. */
+  refname: string;
+  /** Branch name the stash was created from. */
+  branch: string;
+  /** Free-form message (usually `WIP on <branch>: <sha> <subject>`). */
+  message: string;
+}
+
+export interface GitRemote {
+  name: string;
+  /** Fetch URL — the one we display + use for cloning context. */
+  url: string;
+}
+
+export interface GitRemoteBranch {
+  /** Branch name WITHOUT the remote prefix (`main` not `origin/main`). */
+  name: string;
+  /** Full ref form (`origin/main`) — what `git checkout --track` expects. */
+  full_ref: string;
+  /**
+   * True if this is the symbolic HEAD pointer for the remote (e.g.
+   * `origin/HEAD -> origin/main`). UI shows it differently and skips
+   * it from most ops.
+   */
+  is_head_pointer: boolean;
+  /** Local branch currently tracking this remote ref, if any. */
+  tracked_by?: string;
+  /** Tip subject line for the branch (best-effort). */
+  subject?: string;
+}
+
+export interface GitWorktree {
+  path: string;
+  head?: string;
+  branch?: string;
+  reference?: string;
+  detached: boolean;
+  locked: boolean;
+  lock_reason?: string;
+  prunable: boolean;
+  prune_reason?: string;
+  bare: boolean;
+  current: boolean;
+  is_main: boolean;
+}
+
+/**
+ * Compact per-file blame: the unique commits touched, plus a parallel array
+ * mapping each 0-based line to its commit's index in `commits`. The split
+ * keeps the IPC payload small (commit metadata isn't repeated per line) and
+ * lets the editor do O(1) cursor-line lookups with no further backend calls.
+ */
+export interface GitBlame {
+  commits: BlameCommit[];
+  lines: number[];
+}
+
+export interface BlameCommit {
+  /** Full commit oid; all-zeros for not-yet-committed lines. */
+  sha: string;
+  /** Short id for display (`1d3fa0b2`); empty when uncommitted. */
+  short: string;
+  author: string;
+  author_email: string;
+  /** Pre-formatted relative time (`3 days ago`); empty when uncommitted. */
+  time: string;
+  /** Raw author timestamp (unix seconds) — kept so the UI can re-format. */
+  timestamp: number;
+  summary: string;
+  /** True for lines that only exist in the working buffer (zero sha). */
+  uncommitted: boolean;
+}
+
+export interface DiffHunk {
+  kind: DiffKind;
+  start: number;
+  end: number;
+}
+
+export type DiffKind = 'add' | 'mod' | 'del';

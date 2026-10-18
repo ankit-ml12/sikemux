@@ -1,69 +1,42 @@
 import { coreCall } from "./core";
 import { subscribe } from "../state/bus";
+import type {
+    BlameCommit,
+    DiscoveredRepo,
+    GitBlame,
+    GitBranch,
+    GitCommit,
+    GitCompare,
+    GitFile,
+    GitOverview,
+    GitRemote,
+    GitRemoteBranch,
+    GitStash,
+    GitStatus,
+    GitWorktree,
+} from "./generated/wire";
 
-export interface GitFile {
-    path: string;
-    index: string;
-    worktree: string;
-}
-
-export interface GitStatus {
-    branch: string;
-    upstream: string | null;
-    ahead: number;
-    behind: number;
-    files: GitFile[];
-}
-
-export interface DiscoveredRepo {
-    path: string;
-    name: string;
-    branch: string;
-    ahead: number;
-    behind: number;
-    changes: number;
-}
-
-export interface GitBranch {
-    name: string;
-    current: boolean;
-    upstream: string | null;
-}
-
-export interface GitWorktree {
-    path: string;
-    head: string | null;
-    branch: string | null;
-    reference: string | null;
-    detached: boolean;
-    locked: boolean;
-    lock_reason: string | null;
-    prunable: boolean;
-    prune_reason: string | null;
-    bare: boolean;
-    current: boolean;
-    is_main: boolean;
-}
+export type {
+    BlameCommit,
+    DiscoveredRepo,
+    GitBlame,
+    GitBranch,
+    GitCommit,
+    GitCompare,
+    GitFile,
+    GitOverview,
+    GitRemote,
+    GitRemoteBranch,
+    GitStash,
+    GitStatus,
+    GitWorktree,
+};
 
 export interface CreateGitWorktreeOptions {
     path: string;
     branch: string;
     createBranch: boolean;
     startPoint?: string | null;
-}
-
-export interface GitCommit {
-    hash: string;
-    full_hash: string;
-    parents: string[];
-    author: string;
-    author_email: string;
-    date: string;
-    subject: string;
-    refs: string[];
-    unpushed: boolean;
-    /** Its message ends in an agent footer, which only the core can check. */
-    footer?: boolean;
 }
 
 /** An agent a commit's signed footer names, as this host knows it now. */
@@ -86,52 +59,8 @@ export interface CommitOwner {
     lines?: Record<string, [number, number][]>;
 }
 
-export interface GitCompare {
-    merge_base: string;
-    files: { path: string; status: "A" | "M" | "D" | "R" }[];
-    commits: GitCommit[];
-}
-
-export interface GitOverview {
-    status: GitStatus;
-    branches: GitBranch[];
-    log: GitCommit[];
-}
-
-export interface GitStash {
-    index: number;
-    sha: string;
-    refname: string;
-    branch: string;
-    message: string;
-}
-
 export type DiscardMode = "unstaged" | "staged" | "all";
 export type StashMode = "all" | "staged" | "unstaged";
-
-export interface GitRemote {
-    name: string;
-    url: string;
-}
-
-export interface GitRemoteBranch {
-    name: string;
-    full_ref: string;
-    is_head_pointer: boolean;
-    tracked_by: string | null;
-    subject: string | null;
-}
-
-export interface BlameCommit {
-    sha: string;
-    short: string;
-    author: string;
-    author_email: string;
-    time: string;
-    timestamp: number;
-    summary: string;
-    uncommitted: boolean;
-}
 
 /** A unified diff row: added, deleted or unchanged text with the line number it shows, or a count of unchanged lines left out. */
 export type DiffRow = [kind: 0 | 1 | 2, line: number, text: string] | [kind: 3, hidden: number, text: ""];
@@ -170,12 +99,6 @@ export interface FileOwners {
 export interface ChangeOwners {
     authors: ChangeAuthor[];
     files: FileOwners[];
-}
-
-/** Compact per-file blame: unique `commits` + a per-line index into them. */
-export interface GitBlame {
-    commits: BlameCommit[];
-    lines: number[];
 }
 
 const fileAtCache = new Map<string, string>();
