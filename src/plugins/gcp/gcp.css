@@ -864,3 +864,18 @@ button.gcp-project-row:hover {
     color: var(--gcp-text-2);
     user-select: text;
 }
+
+.gcp-filter-input {
+    max-width: 360px;
+}
+
+.gcp-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 24px;
+}
+
+.gcp-error-text {
+    color: var(--gcp-red);
+}
