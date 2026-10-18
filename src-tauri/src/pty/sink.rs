@@ -185,7 +185,6 @@ impl EventSink for AppSink {
                 self.emit("remote_status_changed", status);
             }
             Event::ChatBegun { .. } => {}
-            Event::WakeChat { agent_id } => self.emit("remote_chat_wake", agent_id),
             Event::Network { change } => self.emit("network_changed", change),
             Event::Notice {
                 title,
