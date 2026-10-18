@@ -24,6 +24,13 @@
 .git-right.git-framed {
     padding: var(--space-2);
 }
+/* A commit's or branch's card heads the framed column edge to edge, closed by a hairline, like the side panel's head. */
+.git-right.git-framed .git-right-review .git-detail {
+    margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) var(--space-2);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+}
 
 /* The changes view is panels on the pane's picture: the commit box, the files and the history, each with its own
    edge and corner and a gap between them, never a shared line. The review's files are cards of their own. */
