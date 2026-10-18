@@ -1,7 +1,5 @@
 mod account;
 mod acp;
-mod activity;
-mod agent_board;
 mod core_call;
 mod agent_notification;
 mod agent_questions;

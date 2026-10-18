@@ -1,9 +1,6 @@
 import type { CardChanges, NewCard, ProjectBoard, SettingsChanges } from "../agents/agentBoard";
 import { coreCall } from "./core";
 
-/** Sent by the window whenever boards change, with the boards that did. */
-export const AGENT_BOARD_EVENT = "agent_board";
-
 const board = coreCall;
 
 export const agentBoardApi = {

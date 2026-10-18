@@ -7,7 +7,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -15,9 +14,8 @@ use sha2::{Digest, Sha256};
 
 use crate::cli::protocol::HarnessRequest;
 use crate::launch::providers::{self, ROUTED_ENV};
-use crate::protocol::WindowCall;
 
-use super::connection::{blocking, ClientId};
+use super::connection::blocking;
 use super::inbox::Recording;
 use super::messages;
 use super::names::project_of;
@@ -51,7 +49,6 @@ const RECENT_DONE: usize = 10;
 const IDLE_BEFORE_OFFER_MS: u64 = 5_000;
 const MAX_OFFERED: usize = 6;
 const MAX_RECORDINGS: usize = 8;
-const WINDOW_ANSWER_WAIT: Duration = Duration::from_secs(10);
 const ONLY_PERSON_ACCEPTS: &str =
     "Only the person writes a card's acceptance criteria; leave out acceptance";
 
@@ -269,9 +266,8 @@ impl Board {
 #[derive(Default)]
 struct State {
     boards: BTreeMap<String, Board>,
-    /// Boards that changed since the window was last sent them.
+    /// Boards that changed since clients were last told.
     dirty: BTreeSet<String>,
-    told_window: Option<ClientId>,
     /// Each card the board told an idle agent of, by project, card and agent.
     offered: HashSet<(String, u64, String)>,
     /// Agents whose turn the board started to offer them cards, and that have
@@ -1787,59 +1783,13 @@ pub(crate) fn settle(core: &Arc<Core>) {
     if !core.boards.lock().dirty.is_empty() {
         core.harness.questions.boards_changed();
     }
-    tell_window(core);
+    tell_clients(core);
 }
 
-fn tell_window(core: &Arc<Core>) {
-    let window = core.window.client_id();
-    let views = {
-        let mut state = core.boards.lock();
-        let fresh = state.told_window != window;
-        if state.dirty.is_empty() && !fresh {
-            return;
-        }
-        state.told_window = window;
-        if window.is_none() {
-            return;
-        }
-        let projects: Vec<String> = if fresh {
-            state.boards.keys().cloned().collect()
-        } else {
-            state.dirty.iter().cloned().collect()
-        };
-        state.dirty.clear();
-        projects
-            .iter()
-            .map(|project| match state.boards.get(project) {
-                Some(board) => board_view(core, board),
-                None => board_view(core, &Board::empty(project)),
-            })
-            .collect::<Vec<_>>()
-    };
-    if views.is_empty() {
-        return;
+/// Tells every client which boards changed, so each reads them again.
+fn tell_clients(core: &Core) {
+    let dirty = std::mem::take(&mut core.boards.lock().dirty);
+    for project in dirty {
+        core.changes.changed("boards", Some(&project), None);
     }
-    let request = json!({
-        "id": "agent-board",
-        "project": "/",
-        "agentId": null,
-        "method": "agent.board",
-        "params": { "boards": views },
-    });
-    let Ok(call) = core
-        .window
-        .call(WindowCall::Harness { request }, "show the board", false)
-    else {
-        return;
-    };
-    let id = call.id;
-    let core = core.clone();
-    tokio::spawn(async move {
-        if tokio::time::timeout(WINDOW_ANSWER_WAIT, call.answer)
-            .await
-            .is_err()
-        {
-            core.window.forget(id);
-        }
-    });
 }

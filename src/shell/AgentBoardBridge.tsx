@@ -1,22 +1,23 @@
 import { useEffect } from "react";
-import type { ProjectBoard } from "../agents/agentBoard";
-import { AGENT_BOARD_EVENT, agentBoardApi } from "../api/agentBoard";
-import { getIpcTransport } from "../api/transport";
+import { agentBoardApi } from "../api/agentBoard";
+import { onCoreChanged } from "../api/coreChanged";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";
 
-/** Keeps the app's copy of each project's board, which the core sends whenever one changes. */
+/** Keeps the app's copy of each project's board, read again whenever the core says one changed. */
 export function AgentBoardBridge() {
     useEffect(() => {
-        const controller = new AbortController();
-        void getIpcTransport()
-            .subscribe<ProjectBoard[]>(AGENT_BOARD_EVENT, (event) => cmd.setAgentBoards(event.payload ?? []), { signal: controller.signal })
-            .then(() => agentBoardApi.all())
-            .then((boards) => {
-                if (!controller.signal.aborted) cmd.setAgentBoards(boards);
-            })
-            .catch(swallow("read the boards"));
-        return () => controller.abort();
+        let stopped = false;
+        const keep = (read: Promise<Parameters<typeof cmd.setAgentBoards>[0]>) =>
+            read.then((boards) => {
+                if (!stopped) cmd.setAgentBoards(boards);
+            }, swallow("read the boards"));
+        const stop = onCoreChanged("boards", ({ project }) => keep(project ? agentBoardApi.get(project).then((board) => [board]) : agentBoardApi.all()));
+        void keep(agentBoardApi.all());
+        return () => {
+            stopped = true;
+            stop();
+        };
     }, []);
     return null;
 }

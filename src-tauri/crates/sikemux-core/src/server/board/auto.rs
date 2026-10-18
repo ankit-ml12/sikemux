@@ -578,7 +578,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
         .ok();
         return Ok(());
     }
-    super::tell_window(core);
+    super::tell_clients(core);
     let chat =
         chat::begin(core, launch, None, Some(launcher)).map_err(|error| error.to_string())?;
     let worktree = json!({

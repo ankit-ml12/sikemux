@@ -775,7 +775,7 @@ export class ShowcaseBackend implements IpcTransport {
         card.id === id ? { ...card, ...changes, updatedAt: Date.now() } : card,
       ),
     };
-    this.emit("agent_board", [this.board]);
+    this.emit("core_changed", { topic: "boards", project: this.board.project, paths: null });
   }
 
   private readonly liveSteps: { agentId: string; run: () => void; holdMs: number }[] = [];
