@@ -5,6 +5,7 @@ import { engineRunning, engineStopped, REDIS, SHOP_DB, SHOP_WEB } from "../testi
 const api = vi.hoisted(() => ({
     status: vi.fn(),
     containers: vi.fn(),
+    container: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), dockerApi: api }));
 const openUrl = vi.hoisted(() => vi.fn(() => Promise.resolve()));
@@ -61,6 +62,16 @@ describe("the Docker pane", () => {
         expect(within(show).getByRole("button", { name: /^Running/ })).toHaveTextContent("1");
         fireEvent.change(screen.getByRole("textbox", { name: "Find" }), { target: { value: "nothing like it" } });
         expect(await screen.findByText("No containers match.")).toBeInTheDocument();
+    });
+
+    it("opens a container from its row, and goes back to the list", async () => {
+        api.container.mockRejectedValue({ category: "not-found", message: "docker: No such container: redis" });
+        renderPane();
+        fireEvent.click(await screen.findByRole("row", { name: "redis" }));
+        expect(await screen.findByText("docker: No such container: redis")).toBeInTheDocument();
+        expect(api.container).toHaveBeenCalledWith("redis");
+        fireEvent.click(screen.getByRole("button", { name: "← Containers" }));
+        expect(await screen.findByRole("table", { name: "Containers" })).toBeInTheDocument();
     });
 
     it("opens a published port in the browser", async () => {

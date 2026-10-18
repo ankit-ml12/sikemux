@@ -20,11 +20,13 @@ export function Containers({
     find,
     filter,
     onFilter,
+    onOpen,
 }: {
     containers: Container[];
     find: string;
     filter: StateFilter;
     onFilter: (filter: StateFilter) => void;
+    onOpen: (name: string) => void;
 }) {
     const shown = containers.filter((container) => matches(container, find, filter));
     const found = containers.filter((container) => matches(container, find, "all"));
@@ -55,7 +57,15 @@ export function Containers({
                     </thead>
                     <tbody>
                         {shown.map((container) => (
-                            <tr key={container.id}>
+                            <tr
+                                key={container.id}
+                                className="docker-row"
+                                tabIndex={0}
+                                aria-label={container.name}
+                                onClick={() => onOpen(container.name)}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter") onOpen(container.name);
+                                }}>
                                 <td className="docker-cell-dot">
                                     <StateDot container={container} />
                                 </td>

@@ -6,6 +6,7 @@ import { refreshDocker, type DockerStatus } from "../api";
 import { usePoll } from "../hooks";
 import { dockerContainersR, dockerStatusR } from "../resources";
 import { updateDockerView, useDockerView, type DockerSection } from "../state";
+import { ContainerDetail } from "./ContainerDetail";
 import { Containers } from "./Containers";
 import { DockerMark } from "./DockerMark";
 import "../docker.css";
@@ -130,12 +131,21 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
                         <p className="docker-note">{containers.error}</p>
                     ) : !containers.data ? (
                         <SkeletonRows rows={6} label="Loading containers" />
+                    ) : view.container ? (
+                        <ContainerDetail
+                            active={active}
+                            name={view.container}
+                            tab={view.tab}
+                            onTab={(tab) => updateDockerView(paneId, { tab })}
+                            onBack={() => updateDockerView(paneId, { container: null })}
+                        />
                     ) : (
                         <Containers
                             containers={containers.data}
                             find={view.find}
                             filter={view.stateFilter}
                             onFilter={(stateFilter) => updateDockerView(paneId, { stateFilter })}
+                            onOpen={(container) => updateDockerView(paneId, { container })}
                         />
                     )}
                 </div>
