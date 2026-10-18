@@ -13,7 +13,7 @@ use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::footer::{agent, known};
+use super::footer::{agent, attributed, known};
 use super::owners::{git, run, traced, Diff, Hunk, Owners};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::connection::blocking;
@@ -112,7 +112,11 @@ pub(crate) fn commit(
             .map(|me| agent(core, me))
             .or_else(|| known(core, dir, agent_id));
         let key = core.remote.host_key();
+        let attributed = attributed(dir);
         let signed = |commit: &Commit| {
+            if !attributed {
+                return message.to_owned();
+            }
             let footer =
                 crate::trailers::footer(Vec::from_iter(signer).as_slice(), commit, key.as_ref());
             crate::trailers::append(message, &footer)

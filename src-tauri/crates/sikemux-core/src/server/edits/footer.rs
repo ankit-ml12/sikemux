@@ -22,6 +22,13 @@ use crate::server::saved;
 use crate::server::Core;
 use crate::trailers::{self, Agent, Commit, PendingNote};
 
+/// Whether commits made in `dir` may name the agents that wrote them. Work
+/// repositories turn it off with `git config sikemux.attribution false`.
+pub(crate) fn attributed(dir: &Path) -> bool {
+    git(dir, &["config", "--type=bool", "--get", "sikemux.attribution"])
+        .map_or(true, |value| value.trim() != "false")
+}
+
 /// The footer for committing what `dir` has staged, or what `index` holds when
 /// git commits from an index of its own: every agent whose lines it holds, or
 /// the agents `named` when that was worked out before, else `fallback`. An
@@ -251,6 +258,9 @@ pub(crate) async fn call(
         serde_json::from_value(request.params.clone()).map_err(|error| error.to_string())?;
     let (core, dir) = (core.clone(), PathBuf::from(&request.project));
     let (footer, note) = blocking(move || {
+        if !attributed(&dir) {
+            return Ok((Vec::new(), None));
+        }
         Ok(footer(
             &core,
             &dir,
@@ -292,7 +302,7 @@ pub(crate) fn commit(
                 .collect()
         })
         .unwrap_or_default();
-    let signed = !staged.is_empty() || fallback.is_some();
+    let signed = (!staged.is_empty() || fallback.is_some()) && attributed(dir);
     let mut command = sikemux_process::user_environment::command("git");
     command
         .args(["-c", "core.fsmonitor=false", "commit", "-F", "-"])
