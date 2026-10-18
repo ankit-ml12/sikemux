@@ -44,7 +44,7 @@ async function checkoutsOf(projectCwd: string): Promise<{ repo: string; worktree
     }
     const repo = defaultRepoAmong(getState().defaultGitRepos[projectCwd], await git.discoverRepos(projectCwd));
     if (!repo)
-        throw new Error("This folder holds several repositories. Star the one to use in the Git pane's list, or pick it in Settings → Project.");
+        throw new Error("This folder holds several repositories. Star the one to use in the Git pane's list, or pick it in Settings → This project.");
     return { repo, worktrees: await git.worktrees(repo) };
 }
 
