@@ -1,6 +1,7 @@
 import { agentApi, type AgentSession } from "../../api/agents";
 import { acpApi, type AcpChat } from "../../api/acp";
 import { agentNamesApi } from "../../api/agentNames";
+import type { ChatInfo } from "../../api/generated/wire";
 import { runOfAgent } from "../../agents/agentBoard";
 import { waitsOnPerson, type AgentQuestion } from "../../agents/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
@@ -226,7 +227,7 @@ export function openSavedChat(chat: SavedChat, options: { background?: boolean; 
  * Shows a chat a paired device or another agent started among its project's agents, so the host can follow it.
  * Leaves the screen where it is: the person did not start it.
  */
-export function adoptChat(chat: AcpChat): boolean {
+export function adoptChat(chat: ChatInfo): boolean {
     const type = chat.provider;
     if (!isAgentType(type) || !agentSupportsChat(type)) return false;
     let adopted = false;

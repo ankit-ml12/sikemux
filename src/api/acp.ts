@@ -1,3 +1,4 @@
+import type { ChatInfo } from "./generated/wire";
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentStateEvent } from "../state/agentStatus";
@@ -63,28 +64,6 @@ export interface AcpAttachOptions {
     configPath?: string;
 }
 
-/** A chat agent the background core runs. */
-export interface AcpChat {
-    agentId: string;
-    /** What the core calls the agent, such as Otter. */
-    name?: string | null;
-    provider: string;
-    cwd: string;
-    sessionId: string | null;
-    state: "starting" | "ready" | "stopped";
-    running: boolean;
-    pendingPermissions: string[];
-    /** The paired device, or the agent by id, that started it; null when this app did. */
-    startedBy: string | null;
-    /** The app's launcher a device started it with. */
-    launcher: string | null;
-    permissionMode: string;
-    model: string | null;
-    /** The connected provider its turns are paid with, in place of the agent's own account. */
-    modelProvider?: string;
-    effort: string | null;
-}
-
 /** Something read elsewhere and handed to the agent whole, such as an issue and its comments. */
 export interface PromptContext {
     uri: string;
@@ -126,7 +105,7 @@ export const acpApi = {
         }),
     history: (agentId: string, feed: string, before: number, turns: number): Promise<AcpHistory> =>
         invoke<AcpHistory>("acp_history", { agentId, feed, before, turns }),
-    list: (): Promise<AcpChat[]> => invoke<AcpChat[]>("acp_list"),
+    list: () => invoke<ChatInfo[]>("acp_list"),
     setPermissionMode: (agentId: string, permissionMode: AgentPermissionMode): Promise<void> =>
         invoke<void>("acp_set_permission_mode", { agentId, permissionMode }),
     setConfig: (agentId: string, configId: string, value: string): Promise<Record<string, unknown>> =>
