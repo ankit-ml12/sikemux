@@ -142,6 +142,18 @@ impl PluginHost {
         self.keep_disabled(ids);
     }
 
+    pub fn disabled(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .disabled
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .cloned()
+            .collect();
+        ids.sort();
+        ids
+    }
+
     fn keep_disabled(&self, ids: Vec<String>) {
         *self
             .disabled

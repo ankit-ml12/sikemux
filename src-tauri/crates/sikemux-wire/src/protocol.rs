@@ -993,6 +993,9 @@ pub struct Workspace {
     /// The mode agents that can bypass permissions start in.
     #[serde(default)]
     pub permission_mode: String,
+    /// The plugins the person switched off, by id.
+    #[serde(default)]
+    pub disabled_plugins: Vec<String>,
     pub launchers: Vec<LauncherInfo>,
     /// The app's theme colours by name; empty until the app publishes them.
     pub palette: BTreeMap<String, String>,

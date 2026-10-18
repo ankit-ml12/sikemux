@@ -678,10 +678,6 @@ export default function App() {
     useEffect(() => {
         void simApi.offerToAgents(iosSimulator).catch(swallow("switch the iOS Simulator"));
     }, [iosSimulator]);
-    const disabledPlugins = useStore((s) => s.disabledPlugins);
-    useEffect(() => {
-        void pluginsApi.setDisabled(disabledPlugins).catch(swallow("switch plugins"));
-    }, [disabledPlugins]);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = useStore((s) => s.uiTextScale);
     useEffect(() => {

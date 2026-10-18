@@ -1,12 +1,16 @@
 // Signing in through the browser. A service sends the browser back to a fixed
 // address on this machine with a one-time code. Every plugin listens on the same
-// port, each at a path of its own, so only one port has to stay free.
+// port, each at a path of its own, so only one port has to stay free. A browser
+// on another machine comes back to its own localhost instead, and the address it
+// landed on is handed in with `relay`.
 
 use std::fmt;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 /// Registered with each service as part of its callback, so it cannot move without changing them too.
 pub const PORT: u16 = 47123;
@@ -47,6 +51,39 @@ pub struct Callback {
     v6: Option<TcpListener>,
     path: &'static str,
     service: &'static str,
+    relayed: Mutex<Option<UnboundedReceiver<String>>>,
+}
+
+/// The sign-ins waiting for a browser, by their callback path.
+static WAITING: Mutex<Vec<(&'static str, UnboundedSender<String>)>> = Mutex::new(Vec::new());
+
+fn waiting() -> std::sync::MutexGuard<'static, Vec<(&'static str, UnboundedSender<String>)>> {
+    WAITING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Hands the waiting sign-in the address a browser came back to elsewhere,
+/// as a whole URL or its path and query.
+pub fn relay(landed: &str) -> LoopbackResult<()> {
+    let landed = landed.trim();
+    let target = match url::Url::parse(landed) {
+        Ok(url) => match url.query() {
+            Some(query) => format!("{}?{query}", url.path()),
+            None => url.path().to_owned(),
+        },
+        Err(_) => landed.to_owned(),
+    };
+    let path = target.split('?').next().unwrap_or_default();
+    let waiting = waiting();
+    let sender = waiting
+        .iter()
+        .find(|(waits_at, _)| *waits_at == path)
+        .map(|(_, sender)| sender)
+        .ok_or_else(|| LoopbackError("no sign-in is waiting for that address".into()))?;
+    sender
+        .send(target)
+        .map_err(|_| LoopbackError("that sign-in stopped waiting".into()))
 }
 
 impl Callback {
@@ -57,11 +94,14 @@ impl Callback {
             ))
         })?;
         let v6 = TcpListener::bind(("::1", PORT)).await.ok();
+        let (sender, relayed) = unbounded_channel();
+        waiting().push((path, sender));
         Ok(Self {
             v4,
             v6,
             path,
             service,
+            relayed: Mutex::new(Some(relayed)),
         })
     }
 
@@ -78,8 +118,21 @@ impl Callback {
     /// Waits for the browser to come back with a code. Anything else that
     /// reaches the port, such as a request for a favicon, is answered and ignored.
     pub async fn code(&self, state: &str) -> LoopbackResult<String> {
+        let mut relayed = self
+            .relayed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .ok_or_else(|| LoopbackError("this sign-in is already waiting".into()))?;
         loop {
-            let Ok(mut stream) = self.accept().await else {
+            let accepted = tokio::select! {
+                accepted = self.accept() => accepted,
+                Some(target) = relayed.recv() => match answer_of(&target, self.path, state) {
+                    Some(answer) => return answer,
+                    None => continue,
+                },
+            };
+            let Ok(mut stream) = accepted else {
                 continue;
             };
             let Ok(Ok(target)) =
@@ -103,6 +156,12 @@ impl Callback {
                 }
             }
         }
+    }
+}
+
+impl Drop for Callback {
+    fn drop(&mut self) {
+        waiting().retain(|(path, _)| *path != self.path);
     }
 }
 

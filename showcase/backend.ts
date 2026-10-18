@@ -282,8 +282,8 @@ export class ShowcaseBackend implements IpcTransport {
         recent: [],
       }),
     );
-    this.on(
-      "plugin_manifests",
+    this.onCore(
+      ["pluginManifests"],
       constant(
         [
           ["aws", "AWS"],
@@ -351,7 +351,6 @@ export class ShowcaseBackend implements IpcTransport {
     for (const quiet of [
       "observability_ui_heartbeat",
       "observability_ui_activity",
-      "plugin_set_disabled",
       "set_window_blur",
       "state_save",
       "path_kinds",

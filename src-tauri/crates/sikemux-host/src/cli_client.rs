@@ -100,6 +100,7 @@ This host
   login        Sign this host in to your Sikemux account
   logout       Take this host off your account
   pair         Let phones and computers join this host
+  plugins      Sign this host in to a plugin's service       [login PLUGIN]
   start        Start the core
   stop         Stop the core and everything it runs
   restart      Restart the core, as an update needs
@@ -131,6 +132,7 @@ fn command_help(command: &str) -> Option<&'static str> {
         "login" => "Usage: sikemux login\n\nSigns this host in to your Sikemux account without a browser: it prints a code to\napprove at app.sikemux.com or in Sikemux on your phone, then waits for devices to\njoin, as `sikemux pair` does. Nothing secret is kept on this host.\n",
         "logout" => "Usage: sikemux logout\n\nTakes this host off your account. Devices already paired stay paired.\n",
         "pair" => "Usage: sikemux pair\n\nWaits for phones and computers on your account to join this host, and asks here\nwhether each gets full control, watch only or nothing. Ctrl-C stops waiting.\n",
+        "plugins" => "Usage: sikemux plugins login PLUGIN\n\nSigns this host in to a plugin's service, such as linear, jira, bitbucket or vercel,\nso its agents can use it. It prints a link to open in a browser on any machine. A\nbrowser on another machine then lands on a page that does not load; paste that\npage's address back here to finish.\n",
         "start" => "Usage: sikemux start\n\nStarts the core, through the service that starts it at boot when there is one.\n",
         "stop" => "Usage: sikemux stop\n\nStops the core and the terminals and agents it runs. A core set to start at boot\nstays stopped until `sikemux start` or the next boot.\n",
         "restart" => "Usage: sikemux restart\n\nStops the core and starts it again, so an updated sikemux takes over. Its terminals\nend; chats pick up where they were.\n",

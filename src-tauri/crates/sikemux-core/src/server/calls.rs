@@ -31,7 +31,8 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "commitStaged" | "setAgentAccounts" | "addAgentAccount" | "forgetAgentStatus"
         | "markAgentSignedOut" | "addProject" | "removeProject" | "updateProject"
         | "moveProject" | "setSpaces" | "setPinnedChats" | "setAgentDefaults" | "createAgent"
-        | "updateAgent" | "closeAgents" => Needs::Person,
+        | "updateAgent" | "closeAgents" | "plugin" | "pluginManifests" | "pluginSetDisabled"
+        | "pluginStream" | "pluginSignIn" | "signInCallback" => Needs::Person,
         "changeOwners" | "commitOwners" | "activitySummary" => Needs::Watch,
         "setActivityPrice" => Needs::Person,
         method if method.starts_with("git.") => super::git::needs(method),
@@ -40,14 +41,17 @@ pub(crate) fn needs(method: &str) -> Needs {
 }
 
 /// Whether only Sikemux's own window or notch may call `method` from this
-/// host; another program here may only read.
+/// host; another program here may only read, or start a plugin's browser
+/// sign-in, which only the person can finish in their browser.
 pub(crate) fn for_person(method: &str) -> bool {
     if method.starts_with("git.") {
         return super::git::for_person(method);
     }
     !matches!(
         method,
-        "chatFile"
+        "pluginSignIn"
+            | "signInCallback"
+            | "chatFile"
             | "workspace"
             | "questions"
             | "boards"
@@ -186,34 +190,24 @@ pub(crate) async fn call(
         }
         "addTask" => answer(super::tasks::add(&core, parse(params)?).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
-        "plugin" => {
-            only_window(&core, client)?;
-            answer(plugins::window_call(&core, parse(params)?).await)
-        }
-        "pluginManifests" => {
-            only_window(&core, client)?;
-            answer(plugins::manifests())
-        }
+        "plugin" => answer(plugins::window_call(&core, parse(params)?).await),
+        "pluginManifests" => answer(plugins::manifests()),
         "pluginSetDisabled" => {
-            only_window(&core, client)?;
             plugins::set_disabled(&core, parse(params)?);
             answer(())
         }
-        "pluginStream" => {
-            only_window(&core, client)?;
-            answer(plugins::stream_ticket(parse(params)?)?)
-        }
+        "pluginStream" => answer(plugins::stream_ticket(parse(params)?)?),
+        "pluginSignIn" => answer(plugins::sign_in_ticket(parse(params)?)?),
+        "signInCallback" => answer(plugins::sign_in_callback(parse(params)?)?),
         _ => Err(format!("this host does not know {method}").into()),
     }
 }
 
-/// Plugins act as the person through their sign-ins, so only the window's
-/// panes reach them directly; agents reach the methods offered as tools.
 fn only_window(core: &Core, client: &ClientConn) -> CoreResult<()> {
     if core.window.is_window(client.id) {
         Ok(())
     } else {
-        Err("only Sikemux's window may call a plugin".into())
+        Err("only Sikemux's window may say the person saved a file".into())
     }
 }
 

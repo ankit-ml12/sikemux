@@ -16,6 +16,7 @@ const workspace = (agents: Workspace["agents"] = []): Workspace => ({
     agents,
     pinned: [],
     permissionMode: "bypass",
+    disabledPlugins: [],
     launchers: [],
     palette: {},
     backdrop: { texture: false, image: null },

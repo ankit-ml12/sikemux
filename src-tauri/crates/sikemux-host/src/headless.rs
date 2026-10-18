@@ -9,10 +9,13 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use serde_json::json;
+use sikemux_core::cli::protocol::CliServerResponse;
 use sikemux_core::client::{
     ensure_running, probe, ClientError, ClientEvent, CoreClient, ProbeError,
 };
 use sikemux_core::protocol::{AccountLinkState, DeviceAccess, Event, PendingDevice, RemoteStatus};
+use sikemux_core::server::plugins::{Failure, StreamEvent};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::login_item::{self, CoreLaunch, IDENTIFIER};
@@ -26,6 +29,7 @@ const NOT_RUNNING: i32 = 3;
 
 pub const COMMANDS: &[&str] = &[
     "status", "login", "logout", "pair", "start", "stop", "restart", "enable", "disable",
+    "plugins",
 ];
 
 /// Runs `command` with the arguments after it.
@@ -41,6 +45,7 @@ pub fn run(command: &str, args: &[String]) -> i32 {
         "restart" => restart(),
         "enable" => enable(),
         "disable" => disable(),
+        "plugins" => plugins(args),
         _ => Err(format!("no command named {command}")),
     };
     match result {
@@ -460,6 +465,98 @@ fn print_status(status: &Status) {
                 if enabled { "on" } else { "off" }
             ),
         );
+    }
+}
+
+fn plugins(args: &[String]) -> Result<(), String> {
+    let [verb, plugin] = args else {
+        return Err("usage: sikemux plugins login <plugin>".into());
+    };
+    if verb != "login" {
+        return Err(format!("no plugins command named {verb}"));
+    }
+    let plugin = match plugin.contains('.') {
+        true => plugin.clone(),
+        false => format!("sikemux.{plugin}"),
+    };
+    let socket = running()?;
+    let endpoint = crate::cli_paths::cli_endpoint_path()
+        .ok_or("Sikemux's tool endpoint is unavailable")?;
+    runtime()?.block_on(plugin_login(&socket, endpoint, &plugin))
+}
+
+/// Signs the host in to a plugin's service through a browser on any machine.
+/// A browser on this host comes back to the core by itself; one elsewhere
+/// lands on a page that does not load, whose address is pasted back here.
+async fn plugin_login(socket: &Path, endpoint: PathBuf, plugin: &str) -> Result<(), String> {
+    let (core, _events) = CoreClient::connect(socket)
+        .await
+        .map_err(|error| error.to_string())?;
+    let ticket = core
+        .call("pluginSignIn", json!({ "plugin": plugin }))
+        .await
+        .map_err(|error| error.to_string())?["ticket"]
+        .as_str()
+        .ok_or("the core gave no ticket for the sign-in")?
+        .to_owned();
+    let stream = tokio::task::spawn_blocking(move || {
+        crate::cli_client::open_plugin_stream(&endpoint, ticket)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    let (sent, mut events) = tokio::sync::mpsc::unbounded_channel();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stream).lines() {
+            let event = line.ok().and_then(|line| {
+                match serde_json::from_str::<CliServerResponse>(&line).ok()? {
+                    CliServerResponse::Result { value } => serde_json::from_value(value).ok(),
+                    CliServerResponse::Error { message } => Some(StreamEvent::Error {
+                        error: Failure::new("", "core", message),
+                    }),
+                    _ => None,
+                }
+            });
+            if event.is_none() || sent.send(event).is_err() {
+                break;
+            }
+        }
+    });
+    let (pasted_into, mut pasted) = tokio::sync::mpsc::unbounded_channel();
+    loop {
+        tokio::select! {
+            event = events.recv() => match event.flatten() {
+                Some(StreamEvent::Item { value }) => {
+                    let Some(url) = value["url"].as_str() else { continue };
+                    println!(
+                        "\n  Open this link in a browser on any machine to sign in:\n\n    {}\n\n  If the browser then lands on a page that does not load, paste its address here.\n",
+                        style::accent(url)
+                    );
+                    style::note("Waiting for the sign-in…");
+                    let pasted_into = pasted_into.clone();
+                    std::thread::spawn(move || {
+                        for line in std::io::stdin().lock().lines().map_while(Result::ok) {
+                            if pasted_into.send(line).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                Some(StreamEvent::End) => {
+                    style::done("Signed in", plugin);
+                    return Ok(());
+                }
+                Some(StreamEvent::Error { error }) => return Err(error.message),
+                None => return Err("the core ended the sign-in".into()),
+            },
+            Some(landed) = pasted.recv() => {
+                if landed.trim().is_empty() {
+                    continue;
+                }
+                if let Err(error) = core.call("signInCallback", json!({ "target": landed })).await {
+                    eprintln!("  {} {error}", style::red("✗"));
+                }
+            }
+        }
     }
 }
 

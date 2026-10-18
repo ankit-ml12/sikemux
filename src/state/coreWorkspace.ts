@@ -2,6 +2,7 @@ import { coreCall } from "../api/core";
 import type { PinnedChat as CorePinnedChat, ProjectInfo, SpaceInfo, Workspace, WorkspaceAgent } from "../api/generated/wire";
 import { getIpcTransport } from "../api/transport";
 import { isAgentType } from "../agents/catalog";
+import { isPluginId } from "../plugins/kinds";
 import { dropAgents, dropSession } from "./commands";
 import { makeWindow } from "./commands/shared";
 import { agentExecutablePath, relaunchSpec } from "./commands/agentLaunchCommand";
@@ -58,7 +59,7 @@ const DURABLE_AGENT_KEYS = [
     "buddy",
 ] as const satisfies readonly (keyof Agent)[];
 
-type Shared = Pick<Workspace, "projects" | "spaces" | "agents" | "pinned" | "permissionMode">;
+type Shared = Pick<Workspace, "projects" | "spaces" | "agents" | "pinned" | "permissionMode" | "disabledPlugins">;
 
 /** The workspace as the core last sent it. */
 let known: Workspace | null = null;
@@ -143,6 +144,7 @@ export function localWorkspace(state: StoreState): Shared {
         ),
         pinned: state.pinnedChats.map(corePinned),
         permissionMode: state.defaultAgentPermissionMode,
+        disabledPlugins: [...state.disabledPlugins].sort(),
     };
 }
 
@@ -164,6 +166,7 @@ function changes(next: Shared, was: Shared): [string, unknown][] {
     for (const project of was.projects) if (!nextProjects.has(project.id)) calls.push(["removeProject", { path: project.path }]);
     if (!same(next.pinned, was.pinned)) calls.push(["setPinnedChats", { chats: next.pinned }]);
     if (next.permissionMode !== was.permissionMode) calls.push(["setAgentDefaults", { permissionMode: next.permissionMode }]);
+    if (!same(next.disabledPlugins, was.disabledPlugins)) calls.push(["pluginSetDisabled", { ids: next.disabledPlugins }]);
     const wasAgents = new Map(was.agents.map((agent) => [agent.id, agent]));
     for (const agent of next.agents) {
         const before = wasAgents.get(agent.id);
@@ -217,6 +220,7 @@ export function applyCoreWorkspace(workspace: Workspace): void {
         d.projectSpaces = Object.fromEntries(workspace.projects.flatMap((project) => (project.space ? [[project.path, project.space]] : [])));
         d.pinnedChats = workspace.pinned.flatMap((chat) => localPinned(chat) ?? []);
         d.defaultAgentPermissionMode = workspace.permissionMode === "bypass" ? "bypass" : "workspace-write";
+        if (!same([...d.disabledPlugins].sort(), workspace.disabledPlugins)) d.disabledPlugins = workspace.disabledPlugins.filter(isPluginId);
         for (const record of workspace.agents) {
             const saved = agentFromCore(record);
             const session = d.sessions[record.project];
@@ -307,7 +311,8 @@ export function startCoreWorkspace(initial: Workspace): () => void {
             state.spaces === previous.spaces &&
             state.projectSpaces === previous.projectSpaces &&
             state.pinnedChats === previous.pinnedChats &&
-            state.defaultAgentPermissionMode === previous.defaultAgentPermissionMode
+            state.defaultAgentPermissionMode === previous.defaultAgentPermissionMode &&
+            state.disabledPlugins === previous.disabledPlugins
         ) {
             return;
         }

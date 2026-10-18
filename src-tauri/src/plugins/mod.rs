@@ -71,21 +71,6 @@ async fn forward(manager: &PtyManager, method: &str, params: Value) -> AppResult
 }
 
 #[tauri::command]
-pub async fn plugin_set_disabled(
-    manager: tauri::State<'_, PtyManager>,
-    ids: Vec<String>,
-) -> AppResult<()> {
-    forward(&manager, "pluginSetDisabled", json!({ "ids": ids }))
-        .await
-        .map(drop)
-}
-
-#[tauri::command]
-pub async fn plugin_manifests(manager: tauri::State<'_, PtyManager>) -> AppResult<Value> {
-    forward(&manager, "pluginManifests", Value::Null).await
-}
-
-#[tauri::command]
 pub async fn plugin_call(
     manager: tauri::State<'_, PtyManager>,
     plugin: String,

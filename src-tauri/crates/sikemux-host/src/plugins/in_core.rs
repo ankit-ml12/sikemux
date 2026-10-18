@@ -28,6 +28,14 @@ impl Plugins for InCore {
         self.0.set_disabled(ids);
     }
 
+    fn disabled(&self) -> Vec<String> {
+        self.0.disabled()
+    }
+
+    fn relay_sign_in(&self, landed: &str) -> Result<(), String> {
+        sikemux_loopback::relay(landed).map_err(|error| error.0)
+    }
+
     fn offers_agent_tools(&self, plugin: &str) -> bool {
         self.0.offers_agent_tools(plugin)
     }

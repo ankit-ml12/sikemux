@@ -1199,6 +1199,7 @@ impl Workspaces {
                 .permission_mode
                 .clone()
                 .unwrap_or_else(|| "bypass".into()),
+            disabled_plugins: super::plugins::disabled(),
             launchers: published
                 .launchers
                 .iter()

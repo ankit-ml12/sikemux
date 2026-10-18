@@ -1,4 +1,5 @@
 import { Channel } from "@tauri-apps/api/core";
+import { coreCall } from "./core";
 import { invokeCommand as invoke } from "./invoke";
 
 export interface PluginManifest {
@@ -19,9 +20,7 @@ export type PluginStreamEvent =
     { readonly kind: "item"; readonly value: unknown } | { readonly kind: "end" } | { readonly kind: "error"; readonly error: PluginFailure };
 
 export const pluginsApi = {
-    manifests: () => invoke<PluginManifest[]>("plugin_manifests"),
-
-    setDisabled: (ids: readonly string[]) => invoke<void>("plugin_set_disabled", { ids }),
+    manifests: () => coreCall<PluginManifest[]>("pluginManifests"),
 
     call: <T>(plugin: string, method: string, params: unknown) => invoke<T>("plugin_call", { plugin, method, params }),
 

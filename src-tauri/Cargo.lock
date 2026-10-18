@@ -5817,6 +5817,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sikemux-core",
+ "sikemux-loopback",
  "sikemux-plugin-api",
  "sikemux-plugin-aws",
  "sikemux-plugin-bitbucket",

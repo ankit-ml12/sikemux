@@ -420,8 +420,6 @@ pub fn run() {
             external::open_url,
             external::macos_focus_app,
             transparency::set_window_blur,
-            plugins::plugin_manifests,
-            plugins::plugin_set_disabled,
             plugins::plugin_call,
             plugins::plugin_stream_start,
             plugins::plugin_stream_stop,

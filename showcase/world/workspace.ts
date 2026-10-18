@@ -177,6 +177,7 @@ export function demoWorkspace(): Workspace {
     })),
     pinned: [],
     permissionMode: "bypass",
+    disabledPlugins: [],
     launchers: [],
     palette: {},
     backdrop: { texture: false, image: null },

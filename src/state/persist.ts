@@ -132,7 +132,6 @@ const PERSISTED_KEYS = [
     "sideRailWidth",
     "tabRailWidth",
     "pluginSettings",
-    "disabledPlugins",
     "restoreAgentTabs",
     "activeSpaceId",
     "agentNotifications",
@@ -200,7 +199,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         sideRailWidth: s.sideRailWidth,
         tabRailWidth: s.tabRailWidth,
         pluginSettings: s.pluginSettings,
-        disabledPlugins: [...s.disabledPlugins],
         restoreAgentTabs: s.restoreAgentTabs,
         activeSpaceId: s.activeSpaceId,
         agentNotifications: s.agentNotifications,
@@ -1161,7 +1159,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
                 ? clampRailWidth("end", prefs.tabRailWidth)
                 : cur.tabRailWidth,
         pluginSettings: normalisePluginSettings(prefs.pluginSettings),
-        disabledPlugins: Array.isArray(prefs.disabledPlugins) ? [...new Set(prefs.disabledPlugins.filter(isPluginId))] : [],
+        disabledPlugins: [...new Set((workspace?.disabledPlugins ?? []).filter(isPluginId))],
         restoreAgentTabs,
         spaces,
         projectSpaces: normaliseProjectSpaces(

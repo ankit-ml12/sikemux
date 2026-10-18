@@ -8,7 +8,7 @@ publish = false
 getrandom = "0.3"
 hex = "0.4"
 url = "2"
-tokio = { version = "1", features = ["macros", "rt", "time", "net", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt", "time", "net", "io-util", "sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

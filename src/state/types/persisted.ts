@@ -85,7 +85,6 @@ export interface PersistedPrefs {
     sideRailWidth?: number;
     tabRailWidth?: number;
     pluginSettings?: Record<string, unknown>;
-    disabledPlugins?: string[];
     restoreAgentTabs?: boolean;
     activeSpaceId?: string | null;
     agentNotifications?: boolean;

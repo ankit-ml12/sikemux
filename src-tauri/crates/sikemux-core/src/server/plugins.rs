@@ -62,6 +62,10 @@ pub type Sink = Box<dyn Fn(Value) -> bool + Send + Sync>;
 pub trait Plugins: Send + Sync {
     fn manifests(&self) -> Vec<Value>;
     fn set_disabled(&self, ids: Vec<String>);
+    fn disabled(&self) -> Vec<String>;
+    /// Hands a waiting browser sign-in the address the browser came back to on
+    /// another machine.
+    fn relay_sign_in(&self, landed: &str) -> Result<(), String>;
     fn offers_agent_tools(&self, plugin: &str) -> bool;
     /// What the plugins set for an agent or terminal started in `project`.
     fn agent_environment(&self, project: &Path) -> BTreeMap<String, String>;
@@ -161,7 +165,49 @@ pub(crate) fn set_disabled(core: &Core, disabled: Disabled) {
     if let Some(plugins) = PLUGINS.get() {
         plugins.set_disabled(disabled.ids);
         core.harness.plugins_changed();
+        core.publish_device_view();
     }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SignIn {
+    plugin: String,
+}
+
+/// A stream ticket for the plugin's browser sign-in, which sends the address
+/// to open and ends once the person has signed in.
+pub(crate) fn sign_in_ticket(sign_in: SignIn) -> CoreResult<Ticket> {
+    stream_ticket(WindowCall {
+        plugin: sign_in.plugin,
+        method: "signInWithBrowser".into(),
+        params: Value::Null,
+    })
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Landed {
+    /// The address the browser came back to, whole or as its path and query.
+    target: String,
+}
+
+/// Finishes a browser sign-in whose browser came back on another machine,
+/// such as one the person opened from a host reached over SSH.
+pub(crate) fn sign_in_callback(landed: Landed) -> CoreResult<()> {
+    if landed.target.len() > 8 * 1024 {
+        return Err("that is not a sign-in address".into());
+    }
+    plugins("sign-in")
+        .map_err(|failure| CoreError::from(failure.message))?
+        .relay_sign_in(&landed.target)
+        .map_err(CoreError::from)
+}
+
+/// The plugins the person switched off, which every client shows.
+pub(crate) fn disabled() -> Vec<String> {
+    PLUGINS
+        .get()
+        .map(|plugins| plugins.disabled())
+        .unwrap_or_default()
 }
 
 /// A stream the window asked for and has yet to collect from the tool
