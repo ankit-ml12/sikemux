@@ -7,7 +7,7 @@
     height: var(--mark);
     color: var(--text-tertiary);
     /* A line's letters sit above the middle of its box, so a mark centred on the box reads low beside them. */
-    translate: 0 var(--mark-lift, -0.075em);
+    translate: 0 var(--mark-lift, -0.05em);
 }
 .status-mark[data-outcome="success"] {
     color: var(--live);
