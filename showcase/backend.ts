@@ -347,7 +347,7 @@ export class ShowcaseBackend implements IpcTransport {
         }, delay);
       return 1;
     });
-    this.on("activity_summary", demoActivity);
+    this.onCore(["activitySummary"], demoActivity);
     for (const quiet of [
       "observability_ui_heartbeat",
       "observability_ui_activity",
@@ -355,8 +355,6 @@ export class ShowcaseBackend implements IpcTransport {
       "set_window_blur",
       "state_save",
       "path_kinds",
-      "activity_turn_started",
-      "activity_turn_ended",
       "write_file",
       "lsp_start",
       "lsp_open",

@@ -1080,8 +1080,12 @@ async fn spawn(
                 if let Some(folder) = &folder {
                     give_agent_environment(&core, folder, &mut spawn.env);
                 }
+                let resumed = super::activity_log::resumed_by(&spawn);
                 let prepared = prepare_terminal(&launch, spawn)?;
                 let owner = &prepared.owner;
+                if let Some(resumed) = resumed {
+                    super::activity_log::terminal_launched(&core, owner, resumed);
+                }
                 if let (Some(agent_id), Some(folder)) = (&owner.agent_id, folder) {
                     core.name_agent(
                         agent_id,
