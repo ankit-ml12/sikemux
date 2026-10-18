@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { sql } from "kysely";
 
 import { audit } from "../audit.ts";
-import { requireSession, type AuthEnv } from "../auth.ts";
+import { allow, type AuthEnv } from "../auth.ts";
 import type { Database } from "../db.ts";
 import { consumeChallenge } from "../devices/challenge.ts";
 import { ownedDevice } from "../devices/owned.ts";
@@ -22,7 +22,7 @@ export function pushTokenRoutes(
     limit<AuthEnv>(limiter, name, perMinute, (c) => c.get("identity").userId);
 
   return new Hono<AuthEnv>()
-    .use("/:key/push", requireSession())
+    .use("/:key/push", allow("session"))
     .put("/:key/push", perUser("push-token", 20), async (c) => {
       const { userId } = c.get("identity");
       const key = c.req.param("key");

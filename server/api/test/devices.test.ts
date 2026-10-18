@@ -292,7 +292,10 @@ describe("removing a device", () => {
       { method: "DELETE" },
     );
     expect(response.status).toBe(204);
-    const list = await body(await call("/v1/devices", token), "DeviceList");
+    const list = await body(
+      await call("/v1/devices", await sessionToken("user_a")),
+      "DeviceList",
+    );
     expect(list.devices).toEqual([]);
     const { rows } = await database.pool.query(
       "select action from audit order by id",
@@ -316,7 +319,10 @@ describe("removing a device", () => {
       { method: "DELETE" },
     );
     expect(response.status).toBe(404);
-    const list = await body(await call("/v1/devices", theirs), "DeviceList");
+    const list = await body(
+      await call("/v1/devices", await sessionToken("user_b")),
+      "DeviceList",
+    );
     expect(list.devices).toHaveLength(1);
   });
 });

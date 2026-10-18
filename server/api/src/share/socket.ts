@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type {
   ShareClientMessage,
   ShareEndReason,
@@ -10,9 +10,18 @@ import { ShareCloseCode, validator } from "@sikemux/protocol";
 import { sql, type Kysely } from "kysely";
 import type { RawData, WebSocket } from "ws";
 
-import { checkStanding, type Verifier } from "../auth.ts";
+import {
+  checkStanding,
+  isSession,
+  type Identity,
+  type Verifier,
+} from "../auth.ts";
 import type { Tables } from "../db.ts";
-import { shareMessage, signedBy } from "../devices/signature.ts";
+import {
+  shareMessage,
+  shareViewerMessage,
+  signedBy,
+} from "../devices/signature.ts";
 import { ApiFailure } from "../http.ts";
 import type { RateLimiter } from "../limits.ts";
 import type { Logger } from "../log.ts";
@@ -100,13 +109,25 @@ export async function recheckShares(
     relay.rooms.delete(row.id);
     room?.end(row.ended_reason === "expired" ? "expired" : "stopped");
   }
-  const hosts = [...relay.hosts.values()].filter((host) => ours(host.userId));
+  const hosts = [
+    ...relay.hosts.values(),
+    ...[...relay.rooms.values()].flatMap((room) => [...room.viewers.values()]),
+  ].filter((link) => link.key && ours(link.userId));
   const standing = await hostAccounts(
     db,
     hosts.map((host) => host.key),
   );
   for (const host of hosts)
     if (standing.get(host.key) !== host.userId) host.removed();
+}
+
+/** Whether `proof` is what the share's link holds, by the check its host gave. */
+function provesLink(proof: string | undefined, check: string | null): boolean {
+  if (!proof || !check) return false;
+  const given = createHash("sha256")
+    .update(Buffer.from(proof, "base64url"))
+    .digest();
+  return timingSafeEqual(given, Buffer.from(check, "hex"));
 }
 
 /** The room for an open share, made from its row when this process has not held it yet. */
@@ -217,7 +238,7 @@ export class ShareSocket implements HostLink, ViewerLink {
   }
 
   removed() {
-    this.close(ShareCloseCode.unauthenticated, "the host left its account");
+    this.close(ShareCloseCode.unauthenticated, "no longer signed in");
   }
 
   bye(reconnectAfterMs: number) {
@@ -408,12 +429,37 @@ export class ShareSocket implements HostLink, ViewerLink {
     log.info({ key: this.key.slice(0, 8) }, "a host opened its shares");
   }
 
+  /** Who a viewer is: a phone or the web app by its token, or a Mac by its host's key. */
+  private async viewerIdentity(hello: ShareHello): Promise<Identity | null> {
+    const { db, verifier } = this.context;
+    if (hello.token) {
+      const identity = await verifier.verify(hello.token);
+      if (!isSession(identity))
+        throw new HelloRefused("a viewer signs in with a session token");
+      await checkStanding(db, identity);
+      return identity;
+    }
+    if (!hello.key || !hello.signature)
+      throw new HelloRefused("a viewer sends its token or its host's key");
+    if (
+      !signedBy(
+        hello.key,
+        shareViewerMessage(this.nonce, hello.key),
+        hello.signature,
+      )
+    )
+      throw new HelloRefused("the signature does not match");
+    const account = (await hostAccounts(db, [hello.key])).get(hello.key);
+    if (!account)
+      throw new HelloRefused("the key is not a host on any account");
+    this.key = hello.key;
+    return null;
+  }
+
   private async proveViewer(hello: ShareHello) {
-    const { db, verifier, options, log } = this.context;
-    if (!hello.token || !hello.share)
-      throw new HelloRefused("a viewer sends its token and the share");
-    const identity = await verifier.verify(hello.token);
-    await checkStanding(db, identity);
+    const { db, options, log } = this.context;
+    if (!hello.share) throw new HelloRefused("a viewer names the share");
+    const identity = await this.viewerIdentity(hello);
     const row = await db
       .selectFrom("shares")
       .select([
@@ -423,15 +469,19 @@ export class ShareSocket implements HostLink, ViewerLink {
         "expires_at",
         "ended_at",
         "ended_reason",
+        "viewer_check",
       ])
       .where("id", "=", hello.share)
       .executeTakeFirst();
     if (this.phase === "closing") return;
-    if (!row) {
+    if (!row || !provesLink(hello.proof, row.viewer_check)) {
       this.close(ShareCloseCode.notFound, "no such share");
       return;
     }
-    this.userId = identity.userId;
+    this.userId =
+      identity?.userId ??
+      (await hostAccounts(db, [this.key])).get(this.key) ??
+      "";
     this.role = "viewer";
     if (row.ended_at || row.expires_at.getTime() <= Date.now()) {
       this.send({
@@ -450,13 +500,13 @@ export class ShareSocket implements HostLink, ViewerLink {
     this.room = room;
     room.viewers.set(this.id, this);
     this.phase = "open";
-    this.watchExpiry(identity.expiresAt);
+    if (identity) this.watchExpiry(identity.expiresAt);
     this.send({
       type: "ready",
       heartbeatMs: options.heartbeatMs,
       expiresAt: row.expires_at.toISOString(),
       hostOnline: room.host !== null,
-      authExpiresAt: identity.expiresAt.toISOString(),
+      ...(identity ? { authExpiresAt: identity.expiresAt.toISOString() } : {}),
     });
     const frames = room.framesAfter(hello.since);
     for (let at = 0; at < frames.length; at += options.framesPerMessage)
@@ -466,7 +516,7 @@ export class ShareSocket implements HostLink, ViewerLink {
       });
     room.countViewers();
     log.info(
-      { share: row.id, userId: identity.userId, viewers: room.viewers.size },
+      { share: row.id, userId: this.userId, viewers: room.viewers.size },
       "a viewer joined a share",
     );
   }
@@ -487,11 +537,15 @@ export class ShareSocket implements HostLink, ViewerLink {
     }
     const existing = await db
       .selectFrom("shares")
-      .select(["id", "host_key", "expires_at", "ended_at"])
+      .select(["id", "host_key", "expires_at", "ended_at", "viewer_check"])
       .where("id", "=", message.share)
       .executeTakeFirst();
     if (existing) {
-      if (existing.host_key !== this.key || existing.ended_at) {
+      if (
+        existing.host_key !== this.key ||
+        existing.ended_at ||
+        existing.viewer_check !== message.viewers
+      ) {
         this.send({ type: "refused", share: message.share, reason: "exists" });
         return;
       }
@@ -514,6 +568,7 @@ export class ShareSocket implements HostLink, ViewerLink {
           user_id: this.userId,
           host_key: this.key,
           expires_at: expiresAt,
+          viewer_check: message.viewers,
         })
         .onConflict((conflict) => conflict.column("id").doNothing())
         .returning("id")
@@ -553,6 +608,10 @@ export class ShareSocket implements HostLink, ViewerLink {
     const { verifier, db } = this.context;
     try {
       const identity = await verifier.verify(token);
+      if (this.key || !isSession(identity))
+        throw new HelloRefused(
+          "only a viewer signed in with a session renews it",
+        );
       if (identity.userId !== this.userId)
         throw new HelloRefused("the token is for another account");
       await checkStanding(db, identity);

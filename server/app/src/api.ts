@@ -25,6 +25,31 @@ export class ApiProblem extends Error {
   }
 }
 
+/**
+ * Runs `call`; when the API wants the person to prove who they are again, answers what Clerk's
+ * `useReverification` takes as "ask them to sign in again", with how recently the API wants it.
+ */
+export async function orReverify<T>(call: () => Promise<T>) {
+  try {
+    return await call();
+  } catch (error) {
+    if (!(error instanceof ApiProblem) || error.code !== "reverify_required")
+      throw error;
+    return {
+      clerk_error: {
+        type: "forbidden",
+        reason: "reverification-error",
+        metadata: {
+          reverification: {
+            level: "first_factor",
+            afterMinutes: error.reverifyWithinMinutes ?? 0,
+          },
+        },
+      },
+    } as const;
+  }
+}
+
 type GetToken = ReturnType<typeof useAuth>["getToken"];
 
 /** A token for the API, or a problem asking the person to sign in again to do `what`. */

@@ -15,10 +15,15 @@ export interface ShareView {
     readonly problem?: string;
 }
 
-/** Where to watch a shared chat from, and the sign-in to watch with; no token when signed out. */
+/** Where to watch a shared chat from. */
 export interface ShareAccess {
     readonly socket: string;
-    readonly token: string | null;
+}
+
+/** This host's key and its signature over the share socket's challenge, to watch as its account. */
+export interface ShareViewerHello {
+    readonly key: string;
+    readonly signature: string;
 }
 
 export const shareApi = {
@@ -27,4 +32,5 @@ export const shareApi = {
     stop: (id: string) => coreCall<null>("stopShare", { id }),
     list: () => coreCall<ShareView[]>("shares", {}),
     access: () => invoke<ShareAccess>("share_access"),
+    viewerHello: (nonce: string) => invoke<ShareViewerHello>("share_viewer_hello", { nonce }),
 };

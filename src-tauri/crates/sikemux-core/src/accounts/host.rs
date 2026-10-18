@@ -86,6 +86,8 @@ pub struct PendingHost {
     pub requested_at: String,
     /// The address the host asked from, as the server saw it, or null when it is not known.
     pub requested_from: Option<String>,
+    /// Where requestedFrom is, as far as the server's IP database knows: the country, then the network's owner, such as `Germany · Hetzner Online`. Null when it does not know.
+    pub requested_near: Option<String>,
     /// Only for a host once removed from this account: when it was. It can come back only through a code approved like this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed_at: Option<String>,

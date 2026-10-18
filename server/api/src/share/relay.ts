@@ -18,11 +18,17 @@ export interface HostLink {
 /** What the relay needs of a viewer's connection. */
 export interface ViewerLink {
   readonly id: string;
+  /** The viewer's own account. */
+  readonly userId: string;
+  /** The host a Mac watches with, or empty for a viewer signed in with a token. */
+  readonly key: string;
   send(message: ShareServerMessage): void;
   /** A message already written out, sent as it is to every viewer it is for. */
   sendText(text: string): void;
   /** The share ended: say so and close. */
   end(reason: ShareEndReason): void;
+  /** The viewer's sign-in no longer stands: close its connection. */
+  removed(): void;
 }
 
 /** One open share: its frames since the last snapshot, its host when connected, and its viewers. */

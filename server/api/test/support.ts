@@ -13,6 +13,7 @@ import type { JoinSigner } from "../src/join/signer.ts";
 import { RateLimiter } from "../src/limits.ts";
 import { createLogger } from "../src/log.ts";
 import { readNetwork } from "../src/network/network.ts";
+import { NO_PLACES } from "../src/places.ts";
 import { APP_ORIGIN, verifier } from "./tokens.ts";
 
 export { APP_ORIGIN };
@@ -91,6 +92,8 @@ export function testApp(
     network: readNetwork({}, []),
     push: { app: "production", allowSandbox: false },
     join: joinSigner,
+    places: NO_PLACES,
+    relayAccessToken: null,
     ...services,
   });
 }

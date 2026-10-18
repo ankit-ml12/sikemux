@@ -128,6 +128,7 @@ export interface Tables {
     expires_at: Date;
     ended_at: ColumnType<Date | null, never, Date | null>;
     ended_reason: ColumnType<string | null, never, string | null>;
+    viewer_check: string | null;
   };
   audit: {
     id: Generated<string>;

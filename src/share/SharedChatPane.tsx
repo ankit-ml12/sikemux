@@ -27,7 +27,7 @@ export function SharedChatPane({ link, visible }: { paneId: string; link: string
                     link: parsed,
                     url: socket,
                     cipher: webCipher(parsed),
-                    token: async () => (await shareApi.access()).token,
+                    signHello: shareApi.viewerHello,
                 });
                 opened.start();
                 setSession(opened);

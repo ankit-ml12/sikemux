@@ -1,0 +1,8 @@
+{
+  "description": "The proof a share's link holds, for the link key 00..1f. The core, the shared viewer and the phone derive it, and the server checks it against check.",
+  "share": "q3Jx0vT9bW2kLmN8pQrS1A",
+  "linkKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "message": "sikemux-share-viewer|v1|q3Jx0vT9bW2kLmN8pQrS1A",
+  "proof": "xU-sOOHQxsVWNlrldDnfa9CxGsXu0ut95G3R_ko2274",
+  "check": "567f43cc92b9dff1a8f6ec8a2450f29eb9555b00821999057f83893f4796f57f"
+}

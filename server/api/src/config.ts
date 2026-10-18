@@ -34,6 +34,10 @@ export interface Config extends MigrationConfig {
   appleSignIn: AppleKey | null;
   /** The key join tickets are signed with. */
   join: JoinSigner;
+  /** Where DB-IP's databases are, to say roughly where a host asking to sign in is; null without them. */
+  placesDir: string | null;
+  /** What the relay sends to ask whether a device may use it; null leaves the relay's question unanswered. */
+  relayAccessToken: string | null;
 }
 
 const LEVELS: readonly Level[] = [
@@ -121,6 +125,10 @@ export function loadConfig(
   const join = readJoinSigner(env, problems, release);
   const logLevel = readLogLevel();
   const host = text("HOST", "127.0.0.1");
+  const placesDir = optional("GEOIP_DIR") ?? null;
+  const relayAccessToken = optional("RELAY_ACCESS_TOKEN") ?? null;
+  if (relayAccessToken !== null && relayAccessToken.length < 32)
+    problems.push("RELAY_ACCESS_TOKEN is shorter than 32 characters");
 
   return finish({
     host,
@@ -135,6 +143,8 @@ export function loadConfig(
     push,
     appleSignIn,
     join: join as JoinSigner,
+    placesDir,
+    relayAccessToken,
     logLevel,
   });
 }

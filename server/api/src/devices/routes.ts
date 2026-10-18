@@ -8,8 +8,8 @@ import { Hono } from "hono";
 import type { ClerkBackend } from "../account/clerk.ts";
 import { revokeRemovedSession } from "../account/deletion.ts";
 import {
+  allow,
   requireIdentity,
-  requireSession,
   type AuthEnv,
   type Verifier,
 } from "../auth.ts";
@@ -38,26 +38,38 @@ export function deviceRoutes(
     limit<AuthEnv>(limiter, name, perMinute, (c) => c.get("identity").userId);
 
   return new Hono<AuthEnv>()
-    .use(requireIdentity(verifier, db))
+    .use(
+      requireIdentity(verifier, db, {
+        accept: ["session", "host", "macRegistration"],
+      }),
+    )
     .route("/", pushTokenRoutes(database, limiter, push))
     .route("/", joinRoutes(database, limiter, join))
-    .post("/challenge", perUser("challenge", 30), async (c) =>
-      c.json(await issueChallenge(db, c.get("identity").userId)),
+    .post(
+      "/challenge",
+      allow("session", "macRegistration"),
+      perUser("challenge", 30),
+      async (c) => c.json(await issueChallenge(db, c.get("identity").userId)),
     )
-    .post("/", perUser("register", 20), async (c) => {
-      const registration = await readBody(c, "DeviceRegistration");
-      const { row, added } = await registerDevice(
-        db,
-        c.get("identity"),
-        registration,
-      );
-      c.get("log").info(
-        { key: row.key, role: row.role, added },
-        added ? "registered a device" : "updated a device",
-      );
-      return c.json(toDevice(row), added ? 201 : 200);
-    })
-    .delete("/:key", requireSession(), perUser("remove", 30), async (c) => {
+    .post(
+      "/",
+      allow("session", "macRegistration"),
+      perUser("register", 20),
+      async (c) => {
+        const registration = await readBody(c, "DeviceRegistration");
+        const { row, added } = await registerDevice(
+          db,
+          c.get("identity"),
+          registration,
+        );
+        c.get("log").info(
+          { key: row.key, role: row.role, added },
+          added ? "registered a device" : "updated a device",
+        );
+        return c.json(toDevice(row), added ? 201 : 200);
+      },
+    )
+    .delete("/:key", allow("session"), perUser("remove", 30), async (c) => {
       const { userId, via, sessionId } = c.get("identity");
       const key = c.req.param("key");
       const { device, reason } = await db.transaction().execute(async (trx) => {
@@ -83,7 +95,7 @@ export function deviceRoutes(
         );
       return c.body(null, 204);
     })
-    .get("/", perUser("list", 120), async (c) => {
+    .get("/", allow("session", "host"), perUser("list", 120), async (c) => {
       const { userId } = c.get("identity");
       const role = c.req.query("role");
       if (

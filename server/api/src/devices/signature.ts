@@ -22,6 +22,22 @@ export function shareMessage(nonce: string, key: string): string {
   return `sikemux-share|${nonce}|${key}`;
 }
 
+/** What a Mac signs to watch a shared chat with its host's key. */
+export function shareViewerMessage(nonce: string, key: string): string {
+  return `sikemux-share-viewer|${nonce}|${key}`;
+}
+
+/** What a host signs to make a request of the API as itself. The body goes in as its SHA-256, in hex. */
+export function hostRequestMessage(
+  method: string,
+  pathAndQuery: string,
+  time: string,
+  body: Uint8Array,
+): string {
+  const bodyHash = createHash("sha256").update(body).digest("hex");
+  return `sikemux-host-request|${method}|${pathAndQuery}|${time}|${bodyHash}`;
+}
+
 /** What a phone signs to send its notifications to a token. The token goes in as its SHA-256, in hex. */
 export function pushTokenMessage(
   nonce: string,

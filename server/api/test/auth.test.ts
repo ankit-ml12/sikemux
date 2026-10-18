@@ -52,6 +52,7 @@ describe("clerkVerifier", () => {
     await expect(verifier.verify(await macToken("user_1"))).resolves.toEqual({
       userId: "user_1",
       via: "mac",
+      issuedAt: expect.any(Date),
       expiresAt: expect.any(Date),
     });
   });

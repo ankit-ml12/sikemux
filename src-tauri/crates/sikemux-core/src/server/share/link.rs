@@ -122,10 +122,11 @@ async fn next_frame(socket: &mut Socket, wait: Duration) -> Frame {
     }
 }
 
-fn open_message(id: &str, expires_at: u64) -> ShareClientMessage {
+fn open_message(id: &str, expires_at: u64, viewers: &str) -> ShareClientMessage {
     ShareClientMessage::Open(ShareOpen {
         share: id.to_owned(),
         expires_at: rfc3339(expires_at),
+        viewers: viewers.to_owned(),
     })
 }
 
@@ -239,6 +240,7 @@ async fn session(
         signature: Some(signature),
         token: None,
         share: None,
+        proof: None,
         since: None,
     });
     if !send(&mut socket, hello).await {
@@ -278,7 +280,9 @@ async fn session(
                         .lock()
                         .running
                         .get(&id)
-                        .map(|running| open_message(&id, running.stored.expires_at)),
+                        .map(|running| {
+                            open_message(&id, running.stored.expires_at, running.seal.viewer_check())
+                        }),
                     ToLink::Close(id) => Some(close_message(&id)),
                     ToLink::Heard(id, frame) => publish(core, &id, &frame),
                     ToLink::Send(message) => Some(message),
@@ -324,7 +328,11 @@ async fn session(
                             .values()
                             .filter(|running| running.state != ShareState::Refused)
                             .map(|running| {
-                                open_message(&running.stored.id, running.stored.expires_at)
+                                open_message(
+                                    &running.stored.id,
+                                    running.stored.expires_at,
+                                    running.seal.viewer_check(),
+                                )
                             })
                             .collect(),
                         inner

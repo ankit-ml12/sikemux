@@ -1,6 +1,10 @@
+import type { AccountProfile } from "@sikemux/protocol";
+
 /** The calls the API makes to Clerk's Backend API. Each counts "already gone" as done. */
 export interface ClerkBackend {
   deleteUser(userId: string): Promise<void>;
+  /** The name, primary email and picture the user signed in with; all null once the user is gone. */
+  profile(userId: string): Promise<AccountProfile>;
   revokeSession(sessionId: string): Promise<void>;
   /** The access tokens Clerk holds from the user's web sign-ins with Apple; none for the phone's. */
   appleAccessTokens(userId: string): Promise<string[]>;
@@ -12,6 +16,14 @@ type Fetch = (
 ) => Promise<Response>;
 
 const BASE = "https://api.clerk.com";
+
+interface ClerkUser {
+  first_name?: string | null;
+  last_name?: string | null;
+  image_url?: string | null;
+  primary_email_address_id?: string | null;
+  email_addresses?: { id?: string; email_address?: string }[];
+}
 const TIMEOUT_MS = 10_000;
 
 export function clerkBackend(
@@ -41,6 +53,26 @@ export function clerkBackend(
   return {
     deleteUser: async (userId) =>
       call("DELETE", `/v1/users/${checked(userId, "user")}`),
+    profile: async (userId) => {
+      const response = await request(
+        "GET",
+        `/v1/users/${checked(userId, "user")}`,
+      );
+      const user = (await response?.json()) as ClerkUser | undefined;
+      const email = user?.email_addresses?.find(
+        (address) => address.id === user.primary_email_address_id,
+      )?.email_address;
+      const name = [user?.first_name, user?.last_name]
+        .filter((part) => part?.trim())
+        .join(" ");
+      return {
+        email: email?.slice(0, 320) ?? null,
+        name: name.slice(0, 256) || null,
+        imageUrl: user?.image_url?.startsWith("https://")
+          ? user.image_url.slice(0, 2048)
+          : null,
+      };
+    },
     revokeSession: async (sessionId) =>
       call("POST", `/v1/sessions/${checked(sessionId, "sess")}/revoke`),
     appleAccessTokens: async (userId) => {

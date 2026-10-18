@@ -3,8 +3,8 @@ import { useId, useState, type SubmitEvent } from "react";
 
 import {
   api,
-  ApiProblem,
   formatDay,
+  orReverify,
   problemText,
   signedInToken,
 } from "./api.ts";
@@ -15,17 +15,6 @@ import { BackIcon } from "./icons.tsx";
 const CONFIRM_WORD = "delete";
 const POLICY = "https://sikemux.com/delete-account";
 const CONTACT = "contact@nodelike.com";
-
-/** What `useReverification` takes as "ask the person to sign in again", with how recently the API wants a first factor. */
-function needsReverification(afterMinutes: number) {
-  return {
-    clerk_error: {
-      type: "forbidden",
-      reason: "reverification-error",
-      metadata: { reverification: { level: "first_factor", afterMinutes } },
-    },
-  };
-}
 
 function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -55,13 +44,7 @@ export function DeleteAccount({
     const token = await signedInToken(getToken, "delete your account", {
       fresh: true,
     });
-    try {
-      return await api.deleteAccount(token);
-    } catch (error) {
-      if (error instanceof ApiProblem && error.code === "reverify_required")
-        return needsReverification(error.reverifyWithinMinutes ?? 0);
-      throw error;
-    }
+    return orReverify(() => api.deleteAccount(token));
   });
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {

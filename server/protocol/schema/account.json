@@ -11,8 +11,13 @@
       "description": "Every device is revoked and every token refused from the moment this is answered, except to read or restore the account. Signing in again before deletesAt can restore it.",
       "type": "object",
       "properties": {
-        "status": { "$ref": "#/$defs/AccountDeletionStatus" },
-        "requestedAt": { "type": "string", "format": "date-time" },
+        "status": {
+          "$ref": "#/$defs/AccountDeletionStatus"
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
         "deletesAt": {
           "description": "When the sign-in is deleted for good and the account can no longer be restored.",
           "type": "string",
@@ -44,7 +49,9 @@
       "description": "Whether the signed-in account is in use or waiting to be deleted.",
       "type": "object",
       "properties": {
-        "status": { "$ref": "#/$defs/AccountStatus" },
+        "status": {
+          "$ref": "#/$defs/AccountStatus"
+        },
         "deletesAt": {
           "description": "Only while deleting: when the account is deleted for good unless restored first.",
           "type": "string",
@@ -57,6 +64,27 @@
         }
       },
       "required": ["status", "restorableDays"],
+      "additionalProperties": false
+    },
+    "AccountProfile": {
+      "description": "The name, email and picture the account signed in with, for a host to show who it belongs to.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": ["string", "null"],
+          "maxLength": 320
+        },
+        "name": {
+          "type": ["string", "null"],
+          "maxLength": 256
+        },
+        "imageUrl": {
+          "type": ["string", "null"],
+          "format": "uri",
+          "maxLength": 2048
+        }
+      },
+      "required": ["email", "name", "imageUrl"],
       "additionalProperties": false
     }
   }

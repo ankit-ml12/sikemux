@@ -73,6 +73,8 @@
       "post": {
         "operationId": "createChallenge",
         "summary": "A one-time value for a device to sign before it registers",
+        "security": [{ "session": [] }],
+        "description": "The phone's or the web app's sign-in, or the Mac app's OAuth token from a sign-in in the last ten minutes, which it uses only to register its host.",
         "responses": {
           "200": {
             "description": "The challenge, valid for two minutes.",
@@ -97,6 +99,8 @@
       "post": {
         "operationId": "registerDevice",
         "summary": "Add a device to your account, or update it",
+        "security": [{ "session": [] }],
+        "description": "The phone's or the web app's sign-in, or the Mac app's OAuth token from a sign-in in the last ten minutes, which it uses only to register its host.",
         "requestBody": {
           "required": true,
           "content": {
@@ -135,6 +139,8 @@
       "get": {
         "operationId": "listDevices",
         "summary": "Your devices",
+        "security": [{ "session": [] }, { "host": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host on the account.",
         "parameters": [
           {
             "name": "role",
@@ -167,6 +173,8 @@
       "delete": {
         "operationId": "removeDevice",
         "summary": "Take one of your devices off your account",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
             "name": "key",
@@ -192,6 +200,7 @@
       "put": {
         "operationId": "setPushToken",
         "summary": "Deliver this phone's notifications to a push token",
+        "security": [{ "session": [] }],
         "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
@@ -255,6 +264,7 @@
       "delete": {
         "operationId": "clearPushToken",
         "summary": "Stop delivering notifications to this phone",
+        "security": [{ "session": [] }],
         "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
@@ -291,7 +301,8 @@
       "post": {
         "operationId": "createJoinTicket",
         "summary": "A ticket for this phone to join one of your hosts without a code",
-        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "security": [{ "session": [] }, { "host": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host on the account.",
         "parameters": [
           {
             "name": "key",
@@ -511,6 +522,8 @@
       "get": {
         "operationId": "getPendingHost",
         "summary": "The host waiting behind a user code, to check before approving it",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
             "name": "userCode",
@@ -549,6 +562,8 @@
       "delete": {
         "operationId": "refuseHostSignIn",
         "summary": "Refuse the waiting host",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
             "name": "userCode",
@@ -582,6 +597,8 @@
       "post": {
         "operationId": "approveHostSignIn",
         "summary": "Add the waiting host to your account",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
             "name": "userCode",
@@ -593,6 +610,14 @@
         "responses": {
           "204": {
             "description": "Approved. The host finishes on its next ask."
+          },
+          "403": {
+            "description": "The sign-in was not verified again within the error's reverifyWithinMinutes (message reverify).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
           },
           "404": {
             "description": "The code is unknown, was refused, or has expired.",
@@ -650,6 +675,7 @@
       "get": {
         "operationId": "getAccount",
         "summary": "Whether your account is in use or waiting to be deleted",
+        "security": [{ "session": [] }],
         "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "responses": {
           "200": {
@@ -673,6 +699,7 @@
       "delete": {
         "operationId": "deleteAccount",
         "summary": "Delete your account and take every device off it",
+        "security": [{ "session": [] }],
         "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "requestBody": {
           "required": false,
@@ -724,6 +751,7 @@
       "post": {
         "operationId": "restoreAccount",
         "summary": "Take back a deletion before it is final",
+        "security": [{ "session": [] }],
         "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "responses": {
           "200": {
@@ -739,6 +767,32 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/profile": {
+      "get": {
+        "operationId": "getAccountProfile",
+        "summary": "The name, email and picture of the account a host is on",
+        "security": [{ "host": [] }],
+        "description": "Only a request signed by a host on the account.",
+        "responses": {
+          "200": {
+            "description": "The profile, read from the account's sign-in.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountProfile" }
               }
             }
           },
@@ -874,6 +928,21 @@
           "device.revoked",
           "account.deleted"
         ]
+      },
+      "AccountProfile": {
+        "description": "The name, email and picture the account signed in with, for a host to show who it belongs to.",
+        "type": "object",
+        "properties": {
+          "email": { "type": ["string", "null"], "maxLength": 320 },
+          "name": { "type": ["string", "null"], "maxLength": 256 },
+          "imageUrl": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "maxLength": 2048
+          }
+        },
+        "required": ["email", "name", "imageUrl"],
+        "additionalProperties": false
       },
       "AccountStatus": {
         "description": "Active, or deleting: deleted on request and still restorable until deletesAt.",
@@ -1507,6 +1576,11 @@
             "type": ["string", "null"],
             "maxLength": 64
           },
+          "requestedNear": {
+            "description": "Where requestedFrom is, as far as the server's IP database knows: the country, then the network's owner, such as `Germany · Hetzner Online`. Null when it does not know.",
+            "type": ["string", "null"],
+            "maxLength": 256
+          },
           "removedAt": {
             "description": "Only for a host once removed from this account: when it was. It can come back only through a code approved like this.",
             "type": "string",
@@ -1520,7 +1594,8 @@
           "channel",
           "expiresAt",
           "requestedAt",
-          "requestedFrom"
+          "requestedFrom",
+          "requestedNear"
         ],
         "additionalProperties": false
       },
@@ -1826,7 +1901,7 @@
         "additionalProperties": false
       },
       "ShareHello": {
-        "description": "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends a Clerk token from the web app, the phone or the Mac, the share it wants, and the last frame it holds, if any.",
+        "description": "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends the share it wants, the proof its link holds and the last frame it holds, if any, and signs in with a Clerk token from the web app or the phone, or, on a Mac, with the host's key and its Ed25519 signature over `sikemux-share-viewer|<nonce>|<key>`.",
         "type": "object",
         "properties": {
           "type": { "const": "hello" },
@@ -1835,6 +1910,7 @@
           "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" },
           "token": { "type": "string", "minLength": 1, "maxLength": 4096 },
           "share": { "$ref": "#/components/schemas/ShareId" },
+          "proof": { "$ref": "#/components/schemas/ShareViewerProof" },
           "since": { "$ref": "#/components/schemas/ShareSeq" }
         },
         "required": ["type", "role"],
@@ -1861,9 +1937,10 @@
         "properties": {
           "type": { "const": "open" },
           "share": { "$ref": "#/components/schemas/ShareId" },
-          "expiresAt": { "type": "string", "format": "date-time" }
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "viewers": { "$ref": "#/components/schemas/ShareViewerCheck" }
         },
-        "required": ["type", "share", "expiresAt"],
+        "required": ["type", "share", "expiresAt", "viewers"],
         "additionalProperties": false
       },
       "ShareOpened": {
@@ -1971,10 +2048,20 @@
         ],
         "discriminator": { "propertyName": "type" }
       },
+      "ShareViewerCheck": {
+        "description": "The lowercase hex SHA-256 of a share's ShareViewerProof bytes, which the host gives the server so it can check viewers without learning the proof.",
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
       "ShareViewerId": {
         "description": "One viewer's connection, as the server names it to the host.",
         "type": "string",
         "pattern": "^[A-Za-z0-9_-]{1,32}$"
+      },
+      "ShareViewerProof": {
+        "description": "What a share's link proves to the server, so only someone holding the link takes a viewer's place: HMAC-SHA256 keyed with the link's 32-byte key over the UTF-8 text `sikemux-share-viewer|v1|<share id>`, in unpadded base64url. It cannot be turned back into the key.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{43}$"
       },
       "ShareViewers": {
         "description": "To the host: how many viewers a share has now.",
@@ -2003,8 +2090,12 @@
         "type": "http",
         "scheme": "bearer",
         "description": "A Clerk sign-in: a session token from the phone or the web app, or the Mac app's OAuth access token."
+      },
+      "host": {
+        "type": "http",
+        "scheme": "SikemuxHost",
+        "description": "`Authorization: SikemuxHost <key>.<time>.<signature>`: a host on the account signs each request with its key. `time` is the request's Unix time in seconds, within a minute of the server's, and `signature` the Ed25519 signature in hex over the UTF-8 text `sikemux-host-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. The server takes each signature once."
       }
     }
-  },
-  "security": [{ "session": [] }]
+  }
 }

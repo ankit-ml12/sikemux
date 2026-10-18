@@ -98,6 +98,18 @@ export const schema = {
         "account.deleted",
       ],
     },
+    AccountProfile: {
+      description:
+        "The name, email and picture the account signed in with, for a host to show who it belongs to.",
+      type: "object",
+      properties: {
+        email: { type: ["string", "null"], maxLength: 320 },
+        name: { type: ["string", "null"], maxLength: 256 },
+        imageUrl: { type: ["string", "null"], format: "uri", maxLength: 2048 },
+      },
+      required: ["email", "name", "imageUrl"],
+      additionalProperties: false,
+    },
     AccountStatus: {
       description:
         "Active, or deleting: deleted on request and still restorable until deletesAt.",
@@ -770,6 +782,12 @@ export const schema = {
           type: ["string", "null"],
           maxLength: 64,
         },
+        requestedNear: {
+          description:
+            "Where requestedFrom is, as far as the server's IP database knows: the country, then the network's owner, such as `Germany · Hetzner Online`. Null when it does not know.",
+          type: ["string", "null"],
+          maxLength: 256,
+        },
         removedAt: {
           description:
             "Only for a host once removed from this account: when it was. It can come back only through a code approved like this.",
@@ -785,6 +803,7 @@ export const schema = {
         "expiresAt",
         "requestedAt",
         "requestedFrom",
+        "requestedNear",
       ],
       additionalProperties: false,
     },
@@ -1116,7 +1135,7 @@ export const schema = {
     },
     ShareHello: {
       description:
-        "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends a Clerk token from the web app, the phone or the Mac, the share it wants, and the last frame it holds, if any.",
+        "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends the share it wants, the proof its link holds and the last frame it holds, if any, and signs in with a Clerk token from the web app or the phone, or, on a Mac, with the host's key and its Ed25519 signature over `sikemux-share-viewer|<nonce>|<key>`.",
       type: "object",
       properties: {
         type: { const: "hello" },
@@ -1125,6 +1144,7 @@ export const schema = {
         signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
         token: { type: "string", minLength: 1, maxLength: 4096 },
         share: { $ref: "#/$defs/ShareId" },
+        proof: { $ref: "#/$defs/ShareViewerProof" },
         since: { $ref: "#/$defs/ShareSeq" },
       },
       required: ["type", "role"],
@@ -1152,8 +1172,9 @@ export const schema = {
         type: { const: "open" },
         share: { $ref: "#/$defs/ShareId" },
         expiresAt: { type: "string", format: "date-time" },
+        viewers: { $ref: "#/$defs/ShareViewerCheck" },
       },
-      required: ["type", "share", "expiresAt"],
+      required: ["type", "share", "expiresAt", "viewers"],
       additionalProperties: false,
     },
     ShareOpened: {
@@ -1266,11 +1287,23 @@ export const schema = {
       ],
       discriminator: { propertyName: "type" },
     },
+    ShareViewerCheck: {
+      description:
+        "The lowercase hex SHA-256 of a share's ShareViewerProof bytes, which the host gives the server so it can check viewers without learning the proof.",
+      type: "string",
+      pattern: "^[0-9a-f]{64}$",
+    },
     ShareViewerId: {
       description:
         "One viewer's connection, as the server names it to the host.",
       type: "string",
       pattern: "^[A-Za-z0-9_-]{1,32}$",
+    },
+    ShareViewerProof: {
+      description:
+        "What a share's link proves to the server, so only someone holding the link takes a viewer's place: HMAC-SHA256 keyed with the link's 32-byte key over the UTF-8 text `sikemux-share-viewer|v1|<share id>`, in unpadded base64url. It cannot be turned back into the key.",
+      type: "string",
+      pattern: "^[A-Za-z0-9_-]{43}$",
     },
     ShareViewers: {
       description: "To the host: how many viewers a share has now.",

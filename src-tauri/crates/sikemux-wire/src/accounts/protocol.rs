@@ -79,6 +79,15 @@ pub enum AccountEventType {
     Unknown,
 }
 
+/// The name, email and picture the account signed in with, for a host to show who it belongs to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountProfile {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub image_url: Option<String>,
+}
+
 /// Active, or deleting: deleted on request and still restorable until deletesAt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AccountStatus {
@@ -688,6 +697,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "AccountDeletionStatus" => through::<AccountDeletionStatus>(json),
         "AccountEvent" => through::<AccountEvent>(json),
         "AccountEventType" => through::<AccountEventType>(json),
+        "AccountProfile" => through::<AccountProfile>(json),
         "AccountStatus" => through::<AccountStatus>(json),
         "ApiError" => through::<ApiError>(json),
         "ApnsEnvironment" => through::<ApnsEnvironment>(json),

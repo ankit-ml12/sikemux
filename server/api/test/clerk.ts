@@ -13,6 +13,11 @@ export class FakeClerk implements ClerkBackend {
     this.deleted.push(userId);
   }
 
+  async profile() {
+    if (this.failing) throw new Error("Clerk answered 500");
+    return { email: null, name: null, imageUrl: null };
+  }
+
   async revokeSession(sessionId: string) {
     if (this.failing) throw new Error("Clerk answered 500");
     this.revoked.push(sessionId);

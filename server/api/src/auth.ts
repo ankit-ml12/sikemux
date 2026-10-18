@@ -4,16 +4,24 @@ import {
   jwtVerify,
   type JWTVerifyGetKey,
 } from "jose";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { sql, type Kysely } from "kysely";
 
 import type { Tables } from "./db.ts";
+import { hostRequestMessage, signedBy } from "./devices/signature.ts";
 import { ApiFailure, type Env } from "./http.ts";
 
 export interface Identity {
   userId: string;
-  /** "session" for Clerk session tokens from the phone and the web app, "mac" for the Mac app's OAuth tokens. */
-  via: "session" | "mac";
+  /**
+   * "session" for Clerk session tokens from the phone and the web app, "mac" for the Mac app's
+   * OAuth tokens, "host" for a request a host on the account signed with its key.
+   */
+  via: "session" | "mac" | "host";
+  /** The host that signed the request. */
+  deviceKey?: string;
+  /** When Clerk issued a Mac app's OAuth token. */
+  issuedAt?: Date;
   /** The Clerk session a session token belongs to. */
   sessionId?: string;
   /** The browser origin a session token was issued to; native apps have none. */
@@ -76,6 +84,7 @@ export function clerkVerifier(options: VerifierOptions): Verifier {
         return {
           userId: payload.sub,
           via: "mac",
+          issuedAt: new Date((payload.iat ?? 0) * 1000),
           expiresAt: new Date((payload.exp ?? 0) * 1000),
         };
       }
@@ -134,7 +143,162 @@ export async function checkStanding(
 
 export type AuthEnv = Env & { Variables: { identity: Identity } };
 
-/** Whether the sign-in is the phone's or the web app's, rather than the Mac app's OAuth token. */
+/**
+ * The ways in a route takes. The Mac app's OAuth token is only for adding its host, right after
+ * the person signs in in the browser; from then on the host signs its own requests, so removing
+ * it from the account cuts it off.
+ */
+export type SignIn = "session" | "host" | "macRegistration";
+
+/** How long after its sign-in the Mac app's OAuth token may add its host. */
+const MAC_REGISTRATION_MINUTES = 10;
+/** How far a signed request's time may be from the server's. */
+const HOST_CLOCK_SECONDS = 60;
+const HOST_SCHEME =
+  /^SikemuxHost\s+([0-9a-f]{64})\.(\d{1,12})\.([0-9a-f]{128})$/;
+
+/** Signatures already taken, with when each stops being accepted, so a request is never made twice. */
+const takenSignatures = new Map<string, number>();
+
+function takeSignature(signature: string, until: number) {
+  const now = Date.now();
+  if (takenSignatures.size > 10_000)
+    for (const [taken, expires] of takenSignatures)
+      if (expires < now) takenSignatures.delete(taken);
+  if (takenSignatures.has(signature))
+    throw unauthorized("This signed request was already made.");
+  takenSignatures.set(signature, until);
+}
+
+async function hostIdentity(
+  c: Context,
+  db: Kysely<Tables>,
+  [key, time, signature]: [string, string, string],
+): Promise<Identity> {
+  const signedAt = Number(time) * 1000;
+  if (Math.abs(Date.now() - signedAt) > HOST_CLOCK_SECONDS * 1000)
+    throw unauthorized(
+      "The request's time is more than a minute from the server's; check this host's clock.",
+    );
+  const url = new URL(c.req.url);
+  const body = new Uint8Array(await c.req.arrayBuffer());
+  const message = hostRequestMessage(
+    c.req.method,
+    url.pathname + url.search,
+    time,
+    body,
+  );
+  if (!signedBy(key, message, signature))
+    throw unauthorized("The request is not signed by that host.");
+  const host = await db
+    .selectFrom("devices")
+    .innerJoin("users", "users.id", "devices.user_id")
+    .select(["devices.user_id", "users.deleted_at"])
+    .where("devices.key", "=", key)
+    .where("devices.role", "=", "host")
+    .executeTakeFirst();
+  if (!host || host.deleted_at)
+    throw unauthorized("This host is not on an account.");
+  const expiresAt = signedAt + HOST_CLOCK_SECONDS * 1000;
+  takeSignature(signature, expiresAt);
+  return {
+    userId: host.user_id,
+    via: "host",
+    deviceKey: key,
+    expiresAt: new Date(expiresAt),
+  };
+}
+
+function admits(identity: Identity, accept: readonly SignIn[]): boolean {
+  if (identity.via === "session") return accept.includes("session");
+  if (identity.via === "host") return accept.includes("host");
+  return accept.includes("macRegistration");
+}
+
+/**
+ * Puts who signed in on the context: from `Authorization: Bearer <token>`, or from a request a
+ * host signed. Only the ways in `accept` lists get through; by default, the phone's and the web
+ * app's sign-ins.
+ */
+export function requireIdentity(
+  verifier: Verifier,
+  db: Kysely<Tables>,
+  {
+    allowDeleted = false,
+    accept = ["session"],
+  }: { allowDeleted?: boolean; accept?: readonly SignIn[] } = {},
+): MiddlewareHandler<AuthEnv> {
+  return async (c, next) => {
+    const header = c.req.header("authorization") ?? "";
+    const host = HOST_SCHEME.exec(header);
+    const bearer = /^Bearer\s+(\S+)$/i.exec(header);
+    let identity: Identity;
+    if (host?.[1] && host[2] && host[3] && accept.includes("host")) {
+      identity = await hostIdentity(c, db, [host[1], host[2], host[3]]);
+    } else if (bearer?.[1]) {
+      identity = await verifier.verify(bearer[1]);
+      await checkStanding(db, identity, { allowDeleted });
+    } else {
+      throw unauthorized(
+        accept.includes("host")
+          ? "Sign in first: send Authorization: Bearer <token>, or sign the request as a host."
+          : "Sign in first: send Authorization: Bearer <token>.",
+      );
+    }
+    if (!admits(identity, accept))
+      throw new ApiFailure(
+        403,
+        "forbidden",
+        identity.via === "mac"
+          ? "The Mac app's sign-in only adds its host to your account."
+          : "Only the phone app and app.sikemux.com may do this.",
+      );
+    c.set("identity", identity);
+    c.set("log", c.get("log").child({ userId: identity.userId }));
+    await next();
+  };
+}
+
+/** After requireIdentity: narrows a route to some of the ways in its router takes. */
+export function allow(...accept: SignIn[]): MiddlewareHandler<AuthEnv> {
+  return async (c, next) => {
+    const identity = c.get("identity");
+    if (!admits(identity, accept))
+      throw new ApiFailure(
+        403,
+        "forbidden",
+        identity.via === "mac"
+          ? "The Mac app's sign-in only adds its host to your account."
+          : "Only the phone app and app.sikemux.com may do this.",
+      );
+    if (
+      identity.via === "mac" &&
+      Date.now() - (identity.issuedAt?.getTime() ?? 0) >
+        MAC_REGISTRATION_MINUTES * 60_000
+    )
+      throw unauthorized(
+        "The Mac app's sign-in is too old to add a host; sign in again.",
+      );
+    await next();
+  };
+}
+
+/** How recently the person must have proved their first factor for what cannot be taken back. */
+const REVERIFY_MINUTES = 10;
+
+/** After requireIdentity: asks the phone or the web app to verify the person again first, unless they did lately. */
+export function requireRecentSignIn(): MiddlewareHandler<AuthEnv> {
+  return async (c, next) => {
+    const { factorAgeMinutes } = c.get("identity");
+    if (factorAgeMinutes === undefined || factorAgeMinutes > REVERIFY_MINUTES)
+      throw new ApiFailure(403, "reverify_required", "reverify", {
+        reverifyWithinMinutes: REVERIFY_MINUTES,
+      });
+    await next();
+  };
+}
+
+/** Whether the sign-in is the phone's or the web app's. */
 export function isSession(identity: Identity): boolean {
   return identity.via === "session";
 }
@@ -142,36 +306,4 @@ export function isSession(identity: Identity): boolean {
 /** Whether the sign-in is the web app's: the verifier lets a session token name only its origin. */
 export function isWeb(identity: Identity): boolean {
   return isSession(identity) && identity.origin !== undefined;
-}
-
-/** Requires `Authorization: Bearer <token>` and puts who signed in on the context. */
-export function requireIdentity(
-  verifier: Verifier,
-  db: Kysely<Tables>,
-  standing: { allowDeleted?: boolean } = {},
-): MiddlewareHandler<AuthEnv> {
-  return async (c, next) => {
-    const header = c.req.header("authorization") ?? "";
-    const match = /^Bearer\s+(\S+)$/i.exec(header);
-    if (!match?.[1])
-      throw unauthorized("Sign in first: send Authorization: Bearer <token>.");
-    const identity = await verifier.verify(match[1]);
-    await checkStanding(db, identity, standing);
-    c.set("identity", identity);
-    c.set("log", c.get("log").child({ userId: identity.userId }));
-    await next();
-  };
-}
-
-/** After requireIdentity: refuses the Mac app's sign-in, for what only the phone and the web app may do. */
-export function requireSession(): MiddlewareHandler<AuthEnv> {
-  return async (c, next) => {
-    if (!isSession(c.get("identity")))
-      throw new ApiFailure(
-        403,
-        "forbidden",
-        "Only the phone app and app.sikemux.com may do this, not the Mac app.",
-      );
-    await next();
-  };
 }

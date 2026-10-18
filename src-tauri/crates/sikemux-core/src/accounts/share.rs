@@ -202,7 +202,7 @@ pub struct ShareFrames {
     pub frames: Vec<ShareFrame>,
 }
 
-/// The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends a Clerk token from the web app, the phone or the Mac, the share it wants, and the last frame it holds, if any.
+/// The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends the share it wants, the proof its link holds and the last frame it holds, if any, and signs in with a Clerk token from the web app or the phone, or, on a Mac, with the host's key and its Ed25519 signature over `sikemux-share-viewer|<nonce>|<key>`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShareHello {
@@ -215,6 +215,8 @@ pub struct ShareHello {
     pub token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub share: Option<ShareId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof: Option<ShareViewerProof>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since: Option<ShareSeq>,
 }
@@ -235,6 +237,7 @@ pub type ShareId = String;
 pub struct ShareOpen {
     pub share: ShareId,
     pub expires_at: String,
+    pub viewers: ShareViewerCheck,
 }
 
 /// To the host: the share is open and viewers may join.
@@ -350,8 +353,14 @@ pub enum ShareServerMessage {
     Unknown,
 }
 
+/// The lowercase hex SHA-256 of a share's ShareViewerProof bytes, which the host gives the server so it can check viewers without learning the proof.
+pub type ShareViewerCheck = String;
+
 /// One viewer's connection, as the server names it to the host.
 pub type ShareViewerId = String;
+
+/// What a share's link proves to the server, so only someone holding the link takes a viewer's place: HMAC-SHA256 keyed with the link's 32-byte key over the UTF-8 text `sikemux-share-viewer|v1|<share id>`, in unpadded base64url. It cannot be turned back into the key.
+pub type ShareViewerProof = String;
 
 /// To the host: how many viewers a share has now.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -402,7 +411,9 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "ShareRole" => through::<ShareRole>(json),
         "ShareSeq" => through::<ShareSeq>(json),
         "ShareServerMessage" => through::<ShareServerMessage>(json),
+        "ShareViewerCheck" => through::<ShareViewerCheck>(json),
         "ShareViewerId" => through::<ShareViewerId>(json),
+        "ShareViewerProof" => through::<ShareViewerProof>(json),
         "ShareViewers" => through::<ShareServerMessage>(json),
         "ShareWantsSnapshot" => through::<ShareServerMessage>(json),
         _ => return None,

@@ -5,9 +5,16 @@ export interface ShareCipher {
     /** The text inside, or null when it was not sealed with this share's key. */
     open(sealed: string): Promise<string | null>;
     seal(text: string): Promise<string>;
+    /** What shows the server this viewer holds the link, without giving it the key. */
+    viewerProof(): Promise<string>;
 }
 
 export const NONCE_BYTES = 12;
+
+/** What a share's proof is an HMAC of, keyed with the link's key; `server/protocol/vectors/share-viewer.json` pins it. */
+export function viewerProofText(id: string): string {
+    return `sikemux-share-viewer|v1|${id}`;
+}
 
 /** Binds every sealed text to its share, as the host does. */
 export function shareAad(id: string): string {
@@ -50,6 +57,11 @@ export function webCipher(link: ShareLink): ShareCipher {
             out.set(iv);
             out.set(new Uint8Array(sealed), NONCE_BYTES);
             return toBase64Url(out);
+        },
+        async viewerProof() {
+            const hmac = await crypto.subtle.importKey("raw", fromBase64Url(link.key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+            const proof = await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(viewerProofText(link.id)));
+            return toBase64Url(new Uint8Array(proof));
         },
     };
 }

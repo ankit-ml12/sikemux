@@ -39,6 +39,8 @@ describe("loadConfig", () => {
         file: keyFile,
         created: false,
       },
+      placesDir: null,
+      relayAccessToken: null,
       logLevel: "info",
     });
   });

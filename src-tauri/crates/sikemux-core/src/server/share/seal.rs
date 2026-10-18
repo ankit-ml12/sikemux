@@ -4,6 +4,7 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
+use ring::{digest, hmac};
 use ring::rand::{SecureRandom, SystemRandom};
 
 pub(crate) const KEY_LEN: usize = 32;
@@ -19,6 +20,7 @@ pub(crate) struct Seal {
     key: LessSafeKey,
     /// Binds every frame to its share, so one cannot be passed off as another's.
     aad: Vec<u8>,
+    viewer_check: String,
 }
 
 impl Seal {
@@ -29,10 +31,21 @@ impl Seal {
             return None;
         }
         let key = LessSafeKey::new(UnboundKey::new(&AES_256_GCM, &bytes).ok()?);
+        let proof = hmac::sign(
+            &hmac::Key::new(hmac::HMAC_SHA256, &bytes),
+            format!("sikemux-share-viewer|v1|{share}").as_bytes(),
+        );
         Some(Self {
             key,
             aad: format!("sikemux-share|v1|{share}").into_bytes(),
+            viewer_check: hex::encode(digest::digest(&digest::SHA256, proof.as_ref())),
         })
+    }
+
+    /// What lets the server check that a viewer holds the share's link,
+    /// without the server learning what the link holds.
+    pub(crate) fn viewer_check(&self) -> &str {
+        &self.viewer_check
     }
 
     /// A random nonce, then the ciphertext and its tag, in unpadded base64url.
@@ -65,5 +78,24 @@ impl Seal {
             .open_in_place(nonce, Aad::from(&self.aad), &mut rest)
             .ok()?;
         Some(plain.to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Seal;
+
+    #[test]
+    fn the_viewer_check_matches_the_shared_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../../server/protocol/vectors/share-viewer.json"
+        ))
+        .unwrap();
+        let seal = Seal::new(
+            vector["share"].as_str().unwrap(),
+            vector["linkKey"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(seal.viewer_check(), vector["check"].as_str().unwrap());
     }
 }

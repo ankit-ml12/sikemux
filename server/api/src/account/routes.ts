@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import {
   isWeb,
   requireIdentity,
-  requireSession,
+  requireRecentSignIn,
   type AuthEnv,
   type Verifier,
 } from "../auth.ts";
@@ -14,9 +14,6 @@ import { limit, type RateLimiter } from "../limits.ts";
 import { revokeAppleSignIn, type AppleSignIn } from "./apple.ts";
 import type { ClerkBackend } from "./clerk.ts";
 import { markDeleted, PURGE_AFTER_DAYS, restoreAccount } from "./deletion.ts";
-
-/** How recently the person must have proved their first factor to delete their account. */
-const REVERIFY_MINUTES = 10;
 
 export function accountRoutes(
   { db }: Database,
@@ -28,7 +25,6 @@ export function accountRoutes(
 ) {
   return new Hono<AuthEnv>()
     .use(requireIdentity(verifier, db, { allowDeleted: true }))
-    .use(requireSession())
     .get("/", async (c) => {
       const { userId } = c.get("identity");
       const user = await db
@@ -78,15 +74,9 @@ export function accountRoutes(
         10,
         (c) => c.get("identity").userId,
       ),
+      requireRecentSignIn(),
       async (c) => {
         const identity = c.get("identity");
-        if (
-          identity.factorAgeMinutes === undefined ||
-          identity.factorAgeMinutes > REVERIFY_MINUTES
-        )
-          throw new ApiFailure(403, "reverify_required", "reverify", {
-            reverifyWithinMinutes: REVERIFY_MINUTES,
-          });
         const request = await readOptionalBody(c, "AccountDeletionRequest");
 
         const deletion = await markDeleted(db, {

@@ -10,6 +10,7 @@ import type { Config } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { RateLimiter } from "./limits.ts";
 import { attachLive } from "./live/server.ts";
+import { NO_PLACES, openPlaces } from "./places.ts";
 import type { Logger } from "./log.ts";
 import { ApnsProvider } from "./push/apns.ts";
 import { FcmProvider } from "./push/fcm.ts";
@@ -85,6 +86,17 @@ export function startServer(config: Config, log: Logger) {
       ...(apns ? { apns } : {}),
     },
   });
+  const places = config.placesDir
+    ? openPlaces(config.placesDir, log)
+    : NO_PLACES;
+  if (!config.placesDir)
+    log.warn(
+      "GEOIP_DIR is not set: a host asking to sign in shows no country or network",
+    );
+  if (!config.relayAccessToken)
+    log.warn(
+      "RELAY_ACCESS_TOKEN is not set: the relay is refused every device it asks about",
+    );
   const app = createApp({
     database,
     log,
@@ -97,6 +109,8 @@ export function startServer(config: Config, log: Logger) {
     network: config.network,
     push: config.push,
     join: config.join,
+    places,
+    relayAccessToken: config.relayAccessToken,
   });
   const server = serve(
     { fetch: app.fetch, hostname: config.host, port: config.port },

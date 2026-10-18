@@ -73,7 +73,9 @@ export interface ShareSessionOptions {
     url: string;
     cipher: ShareCipher;
     /** A sign-in token, or null when signed out. `fresh` asks past any cache for a newer one. */
-    token(fresh: boolean): Promise<string | null>;
+    token?(fresh: boolean): Promise<string | null>;
+    /** A Mac watches with its host's key instead of a token: this signs the server's challenge with it. */
+    signHello?(nonce: string): Promise<{ key: string; signature: string }>;
     connect?: (url: string) => ShareSocket;
     /** Runs once before the next frame is drawn; returns how to call that off. */
     frame?: (run: () => void) => () => void;
@@ -324,14 +326,15 @@ export class ShareSession {
     private async handle(socket: ShareSocket, message: ShareServerMessage) {
         switch (message.type) {
             case "challenge": {
-                const token = await this.options.token(false);
+                const [signIn, proof] = await Promise.all([this.signIn(message.nonce), this.options.cipher.viewerProof()]);
                 if (this.socket !== socket) return;
-                if (!token) return this.finished("signedOut");
+                if (!signIn) return this.finished("signedOut");
                 this.send(socket, {
                     type: "hello",
                     role: "viewer",
-                    token,
+                    ...signIn,
                     share: this.options.link.id,
+                    proof,
                     ...(this.seq === undefined ? {} : { since: this.seq }),
                 });
                 return;
@@ -376,6 +379,13 @@ export class ShareSession {
         }
     }
 
+    private async signIn(nonce: string): Promise<{ token: string } | { key: string; signature: string } | null> {
+        const { signHello, token } = this.options;
+        if (signHello) return signHello(nonce).catch(() => null);
+        const current = await token?.(false);
+        return current ? { token: current } : null;
+    }
+
     private refreshAuth(socket: ShareSocket, expiry: number) {
         if (this.authTimer) clearTimeout(this.authTimer);
         this.authTimer = setTimeout(
@@ -389,8 +399,8 @@ export class ShareSession {
 
     /** The sign-in may still hand out the token the server already has; it is asked past its cache then. */
     private async refresh(socket: ShareSocket, expiry: number) {
-        let token = await this.options.token(false);
-        if (token && expiresAt(token) <= expiry) token = await this.options.token(true);
+        let token = (await this.options.token?.(false)) ?? null;
+        if (token && expiresAt(token) <= expiry) token = (await this.options.token?.(true)) ?? null;
         if (!token || this.socket !== socket) return;
         this.send(socket, { type: "auth", token });
         this.refreshAuth(socket, expiresAt(token));

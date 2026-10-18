@@ -53,6 +53,13 @@ export const accountEventTypeValues: readonly AccountEventType[] = [
   "account.deleted",
 ];
 
+/** The name, email and picture the account signed in with, for a host to show who it belongs to. */
+export interface AccountProfile {
+  email: string | null;
+  name: string | null;
+  imageUrl: string | null;
+}
+
 /** Active, or deleting: deleted on request and still restorable until deletesAt. */
 export type AccountStatus = "active" | "deleting";
 export const accountStatusValues: readonly AccountStatus[] = [
@@ -422,6 +429,8 @@ export interface PendingHost {
   requestedAt: string;
   /** The address the host asked from, as the server saw it, or null when it is not known. */
   requestedFrom: string | null;
+  /** Where requestedFrom is, as far as the server's IP database knows: the country, then the network's owner, such as `Germany · Hetzner Online`. Null when it does not know. */
+  requestedNear: string | null;
   /** Only for a host once removed from this account: when it was. It can come back only through a code approved like this. */
   removedAt?: string;
 }
@@ -623,7 +632,7 @@ export interface ShareFrames {
   frames: ShareFrame[];
 }
 
-/** The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends a Clerk token from the web app, the phone or the Mac, the share it wants, and the last frame it holds, if any. */
+/** The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends the share it wants, the proof its link holds and the last frame it holds, if any, and signs in with a Clerk token from the web app or the phone, or, on a Mac, with the host's key and its Ed25519 signature over `sikemux-share-viewer|<nonce>|<key>`. */
 export interface ShareHello {
   type: "hello";
   role: ShareRole;
@@ -631,6 +640,7 @@ export interface ShareHello {
   signature?: string;
   token?: string;
   share?: ShareId;
+  proof?: ShareViewerProof;
   since?: ShareSeq;
 }
 
@@ -648,6 +658,7 @@ export interface ShareOpen {
   type: "open";
   share: ShareId;
   expiresAt: string;
+  viewers: ShareViewerCheck;
 }
 
 /** To the host: the share is open and viewers may join. */
@@ -723,8 +734,14 @@ export type ShareServerMessage =
   | SharePing
   | ShareBye;
 
+/** The lowercase hex SHA-256 of a share's ShareViewerProof bytes, which the host gives the server so it can check viewers without learning the proof. */
+export type ShareViewerCheck = string;
+
 /** One viewer's connection, as the server names it to the host. */
 export type ShareViewerId = string;
+
+/** What a share's link proves to the server, so only someone holding the link takes a viewer's place: HMAC-SHA256 keyed with the link's 32-byte key over the UTF-8 text `sikemux-share-viewer|v1|<share id>`, in unpadded base64url. It cannot be turned back into the key. */
+export type ShareViewerProof = string;
 
 /** To the host: how many viewers a share has now. */
 export interface ShareViewers {
@@ -747,6 +764,7 @@ export interface Definitions {
   AccountDeletionStatus: AccountDeletionStatus;
   AccountEvent: AccountEvent;
   AccountEventType: AccountEventType;
+  AccountProfile: AccountProfile;
   AccountStatus: AccountStatus;
   ApiError: ApiError;
   ApnsEnvironment: ApnsEnvironment;
@@ -835,7 +853,9 @@ export interface Definitions {
   ShareRole: ShareRole;
   ShareSeq: ShareSeq;
   ShareServerMessage: ShareServerMessage;
+  ShareViewerCheck: ShareViewerCheck;
   ShareViewerId: ShareViewerId;
+  ShareViewerProof: ShareViewerProof;
   ShareViewers: ShareViewers;
   ShareWantsSnapshot: ShareWantsSnapshot;
 }

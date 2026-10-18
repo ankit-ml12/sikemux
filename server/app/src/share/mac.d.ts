@@ -16,6 +16,7 @@ declare module "@mac/share/cipher" {
   export interface ShareCipher {
     open(sealed: string): Promise<string | null>;
     seal(text: string): Promise<string>;
+    viewerProof(): Promise<string>;
   }
   export function webCipher(link: ShareLink): ShareCipher;
 }

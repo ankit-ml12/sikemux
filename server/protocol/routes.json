@@ -70,7 +70,7 @@
       "path": "/v1/devices",
       "operationId": "listDevices",
       "summary": "Your devices",
-      "auth": "signedIn",
+      "auth": "sessionOrHost",
       "query": {
         "role": "DeviceRole"
       },
@@ -86,7 +86,7 @@
       "path": "/v1/devices/{key}",
       "operationId": "removeDevice",
       "summary": "Take one of your devices off your account",
-      "auth": "signedIn",
+      "auth": "session",
       "responses": {
         "204": {
           "description": "The device is no longer on your account."
@@ -140,7 +140,7 @@
       "path": "/v1/devices/{key}/join",
       "operationId": "createJoinTicket",
       "summary": "A ticket for this phone to join one of your hosts without a code",
-      "auth": "session",
+      "auth": "sessionOrHost",
       "request": "JoinRequest",
       "responses": {
         "200": {
@@ -236,7 +236,7 @@
       "path": "/v1/host-sign-ins/{userCode}",
       "operationId": "getPendingHost",
       "summary": "The host waiting behind a user code, to check before approving it",
-      "auth": "signedIn",
+      "auth": "session",
       "responses": {
         "200": {
           "description": "The waiting host.",
@@ -253,13 +253,17 @@
       "path": "/v1/host-sign-ins/{userCode}/approve",
       "operationId": "approveHostSignIn",
       "summary": "Add the waiting host to your account",
-      "auth": "signedIn",
+      "auth": "session",
       "responses": {
         "204": {
           "description": "Approved. The host finishes on its next ask."
         },
         "404": {
           "description": "The code is unknown, was refused, or has expired.",
+          "body": "ApiError"
+        },
+        "403": {
+          "description": "The sign-in was not verified again within the error's reverifyWithinMinutes (message reverify).",
           "body": "ApiError"
         }
       }
@@ -269,7 +273,7 @@
       "path": "/v1/host-sign-ins/{userCode}",
       "operationId": "refuseHostSignIn",
       "summary": "Refuse the waiting host",
-      "auth": "signedIn",
+      "auth": "session",
       "responses": {
         "204": {
           "description": "Refused. The host hears the code is gone."
@@ -351,6 +355,19 @@
         "404": {
           "description": "The sign-in is already deleted in Clerk, so the account can no longer be restored.",
           "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "get",
+      "path": "/v1/account/profile",
+      "operationId": "getAccountProfile",
+      "summary": "The name, email and picture of the account a host is on",
+      "auth": "host",
+      "responses": {
+        "200": {
+          "description": "The profile, read from the account's sign-in.",
+          "body": "AccountProfile"
         }
       }
     },

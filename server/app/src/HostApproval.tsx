@@ -1,8 +1,15 @@
-import { useAuth } from "@clerk/react";
+import { useAuth, useReverification } from "@clerk/react";
 import type { PendingHost } from "@sikemux/protocol";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 
-import { api, problemText, signedInToken } from "./api.ts";
+import {
+  api,
+  formatDay,
+  orReverify,
+  problemText,
+  signedInToken,
+} from "./api.ts";
+import { errorCode } from "./clerkErrors.ts";
 import { Panel } from "./Consent.tsx";
 
 export const HOST = "/host";
@@ -14,54 +21,48 @@ type Step =
   | { kind: "check"; code: string; host: PendingHost }
   | { kind: "done"; name: string; approved: boolean };
 
-/** Where a host with no browser sends its person: they check its code and add it to their account. */
+function ago(iso: string): string {
+  const minutes = Math.round((Date.parse(iso) - Date.now()) / 60_000);
+  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
+    Math.min(0, minutes),
+    "minute",
+  );
+}
+
+/**
+ * Where a host with no browser sends its person: they type the code it shows, check where and
+ * when it asked, and add it to their account. A link never fills the code in, so a code someone
+ * else started cannot be approved in one click.
+ */
 export function HostApproval() {
   const { getToken } = useAuth();
-  const given = new URLSearchParams(location.search).get("code") ?? "";
-  const [typed, setTyped] = useState(given);
+  const [typed, setTyped] = useState("");
   const [step, setStep] = useState<Step>({ kind: "enter" });
-  const [busy, setBusy] = useState<"look" | "approve" | "refuse" | undefined>(
-    given ? "look" : undefined,
-  );
+  const [busy, setBusy] = useState<"look" | "approve" | "refuse">();
   const [problem, setProblem] = useState<string>();
+
+  const approve = useReverification(async (code: string) => {
+    const token = await signedInToken(getToken, "add this host", {
+      fresh: true,
+    });
+    return orReverify(() => api.approveHost(token, code));
+  });
 
   const run = async (
     action: "look" | "approve" | "refuse",
-    work: (token: string) => Promise<void>,
+    work: () => Promise<void>,
   ) => {
     setBusy(action);
     setProblem(undefined);
     try {
-      await work(await signedInToken(getToken, "add this host"));
+      await work();
     } catch (error) {
-      setProblem(problemText(error));
+      if (errorCode(error) !== "reverification_cancelled")
+        setProblem(problemText(error));
     } finally {
       setBusy(undefined);
     }
   };
-
-  const show = (code: string) => async (token: string) => {
-    setStep({ kind: "check", code, host: await api.pendingHost(token, code) });
-  };
-
-  useEffect(() => {
-    if (!given) return;
-    let current = true;
-    void (async () => {
-      try {
-        const token = await signedInToken(getToken, "add this host");
-        const host = await api.pendingHost(token, given);
-        if (current) setStep({ kind: "check", code: given, host });
-      } catch (error) {
-        if (current) setProblem(problemText(error));
-      } finally {
-        if (current) setBusy(undefined);
-      }
-    })();
-    return () => {
-      current = false;
-    };
-  }, [given, getToken]);
 
   if (step.kind === "done")
     return (
@@ -77,14 +78,41 @@ export function HostApproval() {
 
   if (step.kind === "check") {
     const { code, host } = step;
+    const where = [host.requestedNear, host.requestedFrom]
+      .filter(Boolean)
+      .join(", ");
     return (
       <Panel>
         <h1>Add {host.name} to your account?</h1>
+        <ul className="consent-scopes">
+          <li>
+            {PLATFORMS[host.platform] ?? host.platform} · {host.channel}
+          </li>
+          <li>Asked {ago(host.requestedAt)}</li>
+          <li>From {where || "an address the server could not see"}</li>
+        </ul>
+        {host.removedAt ? (
+          <p className="problem">
+            This host was removed from your account on{" "}
+            {formatDay(host.removedAt)}. Add it again only if you are setting it
+            up yourself.
+          </p>
+        ) : null}
         <p className="lede">
-          {PLATFORMS[host.platform] ?? host.platform} · {host.channel}. Only add
-          a computer you are setting up yourself right now: phones on your
-          account will find it and can ask to join it.
+          Only add a computer you are setting up yourself right now. If you did
+          not just run <span className="ink">sikemux login</span> there, or it
+          asked from somewhere you are not, someone else is trying to get into
+          your account: choose Not mine.
         </p>
+        {host.requestedNear ? (
+          <p className="quiet small">
+            Places from{" "}
+            <a href="https://db-ip.com" target="_blank" rel="noreferrer">
+              DB-IP
+            </a>
+            .
+          </p>
+        ) : null}
         {problem ? <p className="problem">{problem}</p> : null}
         <div className="consent-actions">
           <button
@@ -93,7 +121,8 @@ export function HostApproval() {
             disabled={busy !== undefined}
             data-busy={busy === "refuse" || undefined}
             onClick={() =>
-              void run("refuse", async (token) => {
+              void run("refuse", async () => {
+                const token = await signedInToken(getToken, "refuse this host");
                 await api.refuseHost(token, code);
                 setStep({ kind: "done", name: host.name, approved: false });
               })
@@ -107,8 +136,8 @@ export function HostApproval() {
             disabled={busy !== undefined}
             data-busy={busy === "approve" || undefined}
             onClick={() =>
-              void run("approve", async (token) => {
-                await api.approveHost(token, code);
+              void run("approve", async () => {
+                await approve(code);
                 setStep({ kind: "done", name: host.name, approved: true });
               })
             }
@@ -120,10 +149,18 @@ export function HostApproval() {
     );
   }
 
-  const submit = (event: FormEvent) => {
+  const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     const code = typed.trim();
-    if (code) void run("look", show(code));
+    if (!code) return;
+    void run("look", async () => {
+      const token = await signedInToken(getToken, "add this host");
+      setStep({
+        kind: "check",
+        code,
+        host: await api.pendingHost(token, code),
+      });
+    });
   };
   return (
     <Panel>
@@ -141,6 +178,7 @@ export function HostApproval() {
           autoCapitalize="characters"
           autoComplete="off"
           spellCheck={false}
+          autoFocus
           aria-label="Code"
         />
         {problem ? <p className="problem">{problem}</p> : null}

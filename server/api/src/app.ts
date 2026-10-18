@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 
 import type { AppleSignIn } from "./account/apple.ts";
+import { profileRoutes } from "./account/profile.ts";
 import type { ClerkBackend } from "./account/clerk.ts";
 import { accountRoutes } from "./account/routes.ts";
 import type { Verifier } from "./auth.ts";
@@ -16,7 +17,9 @@ import type { JoinSigner } from "./join/signer.ts";
 import { clientAddress, limit, RateLimiter } from "./limits.ts";
 import type { Logger } from "./log.ts";
 import { networkRoutes } from "./network/routes.ts";
+import type { Places } from "./places.ts";
 import type { PushSettings } from "./push/settings.ts";
+import { relayAccessRoutes } from "./relay/access.ts";
 import { updateRoutes } from "./updates/routes.ts";
 import { clerkWebhookRoutes } from "./webhooks/clerk.ts";
 
@@ -35,6 +38,10 @@ export interface Services {
   network: Network;
   push: Pick<PushSettings, "app" | "allowSandbox">;
   join: JoinSigner;
+  /** Where hosts asking to sign in are. */
+  places: Places;
+  /** What the relay sends to ask whether a device may use it, or null when it is not set up. */
+  relayAccessToken: string | null;
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -51,10 +58,13 @@ export function createApp({
   network,
   push,
   join,
+  places,
+  relayAccessToken,
 }: Services) {
   const app = new Hono<Env>();
 
   app.use(requestContext(log));
+  app.route("/internal", relayAccessRoutes(database, relayAccessToken));
   app.use(limit<Env>(limiter, "address", 600, clientAddress));
   app.use(
     cors({
@@ -86,7 +96,11 @@ export function createApp({
   );
   app.route(
     "/v1/host-sign-ins",
-    hostSignInRoutes(database, verifier, limiter, appOrigin),
+    hostSignInRoutes(database, verifier, limiter, appOrigin, places),
+  );
+  app.route(
+    "/v1/account/profile",
+    profileRoutes(database, verifier, limiter, clerk),
   );
   app.route(
     "/v1/account",

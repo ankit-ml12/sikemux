@@ -75,7 +75,7 @@
       "additionalProperties": false
     },
     "ShareHello": {
-      "description": "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends a Clerk token from the web app, the phone or the Mac, the share it wants, and the last frame it holds, if any.",
+      "description": "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends the share it wants, the proof its link holds and the last frame it holds, if any, and signs in with a Clerk token from the web app or the phone, or, on a Mac, with the host's key and its Ed25519 signature over `sikemux-share-viewer|<nonce>|<key>`.",
       "type": "object",
       "properties": {
         "type": {
@@ -99,6 +99,9 @@
         "share": {
           "$ref": "#/$defs/ShareId"
         },
+        "proof": {
+          "$ref": "#/$defs/ShareViewerProof"
+        },
         "since": {
           "$ref": "#/$defs/ShareSeq"
         }
@@ -119,9 +122,12 @@
         "expiresAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "viewers": {
+          "$ref": "#/$defs/ShareViewerCheck"
         }
       },
-      "required": ["type", "share", "expiresAt"],
+      "required": ["type", "share", "expiresAt", "viewers"],
       "additionalProperties": false
     },
     "SharePublish": {
@@ -552,6 +558,16 @@
       },
       "required": ["type", "share", "viewer", "sealed"],
       "additionalProperties": false
+    },
+    "ShareViewerProof": {
+      "description": "What a share's link proves to the server, so only someone holding the link takes a viewer's place: HMAC-SHA256 keyed with the link's 32-byte key over the UTF-8 text `sikemux-share-viewer|v1|<share id>`, in unpadded base64url. It cannot be turned back into the key.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "ShareViewerCheck": {
+      "description": "The lowercase hex SHA-256 of a share's ShareViewerProof bytes, which the host gives the server so it can check viewers without learning the proof.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     }
   }
 }

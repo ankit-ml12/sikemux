@@ -12,7 +12,7 @@ import { sql } from "kysely";
 import { audit } from "../audit.ts";
 import {
   requireIdentity,
-  requireSession,
+  requireRecentSignIn,
   type AuthEnv,
   type Verifier,
 } from "../auth.ts";
@@ -20,6 +20,7 @@ import type { Database } from "../db.ts";
 import { issueChallenge } from "../devices/challenge.ts";
 import { registerDevice, toDevice } from "../devices/register.ts";
 import { ApiFailure, readBody } from "../http.ts";
+import type { Places } from "../places.ts";
 import {
   callerAddress,
   clientAddress,
@@ -70,10 +71,11 @@ export function hostSignInRoutes(
   verifier: Verifier,
   limiter: RateLimiter,
   appOrigin: string,
+  places: Places,
 ) {
   const perAddress = (name: string, perMinute: number) =>
     limit<AuthEnv>(limiter, name, perMinute, clientAddress);
-  const signedIn = [requireIdentity(verifier, db), requireSession()] as const;
+  const signedIn = requireIdentity(verifier, db);
   const perUser = limit<AuthEnv>(
     limiter,
     "host-sign-in",
@@ -90,7 +92,7 @@ export function hostSignInRoutes(
       .executeTakeFirst();
 
   return new Hono<AuthEnv>()
-    .get("/:userCode", ...signedIn, perUser, async (c) => {
+    .get("/:userCode", signedIn, perUser, async (c) => {
       const { userId } = c.get("identity");
       const row = await db
         .selectFrom("host_sign_ins")
@@ -120,37 +122,46 @@ export function hostSignInRoutes(
         expiresAt: row.expires_at.toISOString(),
         requestedAt: row.created_at.toISOString(),
         requestedFrom: row.requested_from,
+        requestedNear: row.requested_from
+          ? places.near(row.requested_from)
+          : null,
       };
       if (row.removed_at) body.removedAt = row.removed_at.toISOString();
       return c.json(body);
     })
-    .post("/:userCode/approve", ...signedIn, perUser, async (c) => {
-      const { userId, via } = c.get("identity");
-      const row = await db
-        .updateTable("host_sign_ins")
-        .set({ approved_by: userId })
-        .where("user_code", "=", userCodeOf(c.req.param("userCode")))
-        .where("expires_at", ">", sql<Date>`now()`)
-        .where((eb) =>
-          eb.or([
-            eb("approved_by", "is", null),
-            eb("approved_by", "=", userId),
-          ]),
-        )
-        .returning(["key", "name"])
-        .executeTakeFirst();
-      if (!row) throw gone();
-      await audit(db, {
-        userId,
-        actor: `user:${userId}`,
-        action: "host_sign_in.approved",
-        subject: row.key,
-        detail: { name: row.name, via },
-      });
-      c.get("log").info({ host: row.key.slice(0, 8) }, "approved a host");
-      return c.body(null, 204);
-    })
-    .delete("/:userCode", ...signedIn, perUser, async (c) => {
+    .post(
+      "/:userCode/approve",
+      signedIn,
+      requireRecentSignIn(),
+      perUser,
+      async (c) => {
+        const { userId, via } = c.get("identity");
+        const row = await db
+          .updateTable("host_sign_ins")
+          .set({ approved_by: userId })
+          .where("user_code", "=", userCodeOf(c.req.param("userCode")))
+          .where("expires_at", ">", sql<Date>`now()`)
+          .where((eb) =>
+            eb.or([
+              eb("approved_by", "is", null),
+              eb("approved_by", "=", userId),
+            ]),
+          )
+          .returning(["key", "name"])
+          .executeTakeFirst();
+        if (!row) throw gone();
+        await audit(db, {
+          userId,
+          actor: `user:${userId}`,
+          action: "host_sign_in.approved",
+          subject: row.key,
+          detail: { name: row.name, via },
+        });
+        c.get("log").info({ host: row.key.slice(0, 8) }, "approved a host");
+        return c.body(null, 204);
+      },
+    )
+    .delete("/:userCode", signedIn, perUser, async (c) => {
       const { userId, via } = c.get("identity");
       const row = await db
         .deleteFrom("host_sign_ins")

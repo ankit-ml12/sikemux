@@ -579,11 +579,29 @@ export function rust(definitions, { include = () => true, imports = "" } = {}) {
   return out;
 }
 
-const AUTH = new Set(["none", "signedIn", "session", "device", "webhook"]);
-const SIGNED_IN = new Set(["signedIn", "session"]);
+const AUTH = new Set([
+  "none",
+  "signedIn",
+  "session",
+  "sessionOrHost",
+  "host",
+  "device",
+  "webhook",
+]);
+const SECURITY = {
+  signedIn: [{ session: [] }],
+  session: [{ session: [] }],
+  sessionOrHost: [{ session: [] }, { host: [] }],
+  host: [{ host: [] }],
+};
 const AUTH_NOTES = {
+  signedIn:
+    "The phone's or the web app's sign-in, or the Mac app's OAuth token from a sign-in in the last ten minutes, which it uses only to register its host.",
   session:
     "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+  sessionOrHost:
+    "The phone's or the web app's sign-in, or a request signed by a host on the account.",
+  host: "Only a request signed by a host on the account.",
   device:
     "A WebSocket. The device proves who it is in its first message, since browsers cannot set headers on one. `send` is what the device sends; `receive` is what the server sends.",
   webhook: "Called by Clerk, signed with Svix's headers.",
@@ -698,7 +716,7 @@ export function openapi(definitions, routes) {
     paths[route.path][route.method] = {
       operationId: route.operationId,
       summary: route.summary,
-      ...(SIGNED_IN.has(route.auth) ? {} : { security: [] }),
+      security: SECURITY[route.auth] ?? [],
       ...(AUTH_NOTES[route.auth]
         ? { description: AUTH_NOTES[route.auth] }
         : {}),
@@ -729,8 +747,13 @@ export function openapi(definitions, routes) {
           description:
             "A Clerk sign-in: a session token from the phone or the web app, or the Mac app's OAuth access token.",
         },
+        host: {
+          type: "http",
+          scheme: "SikemuxHost",
+          description:
+            "`Authorization: SikemuxHost <key>.<time>.<signature>`: a host on the account signs each request with its key. `time` is the request's Unix time in seconds, within a minute of the server's, and `signature` the Ed25519 signature in hex over the UTF-8 text `sikemux-host-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. The server takes each signature once.",
+        },
       },
     },
-    security: [{ session: [] }],
   };
 }
