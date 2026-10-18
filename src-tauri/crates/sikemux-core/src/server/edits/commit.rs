@@ -3,7 +3,7 @@
 //! moves only if no one moved it meanwhile. The checkout's files stay as they
 //! are, and the shared index takes in only what was committed.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -14,13 +14,15 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::footer::{agent, attributed, known};
-use super::owners::{git, run, traced, Diff, Hunk, Owners};
+use super::owners::{git, run, traced, Diff, FileOwners, Hunk, Owners};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::connection::blocking;
 use crate::server::Core;
 use crate::trailers::Commit;
 
 const ATTEMPTS: usize = 4;
+/// Files a commit's answer lists as left out; the rest are counted.
+const MAX_LEFT: usize = 12;
 const INDEX_LOCKED_TRIES: usize = 5;
 
 #[derive(Serialize)]
@@ -29,8 +31,14 @@ pub(crate) struct Committed {
     branch: String,
     files: Vec<Taken>,
     left: Vec<Left>,
+    #[serde(rename = "moreLeft", skip_serializing_if = "is_zero")]
+    more_left: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 
 #[derive(Serialize)]
@@ -100,7 +108,8 @@ pub(crate) fn commit(
             .iter()
             .map(|path| in_checkout(&diff.top, dir, path))
             .collect::<Result<Vec<_>, _>>()?;
-        let (changes, left) = plan(&owners, &diff, agent_id, &named)?;
+        let mine = owners.standing_for(core, agent_id);
+        let (changes, left) = plan(&owners, &diff, mine, &named)?;
         if changes.is_empty() {
             return Err(nothing_yours(&left));
         }
@@ -151,7 +160,8 @@ pub(crate) fn commit(
                             removed: change.removed,
                         })
                         .collect(),
-                    left,
+                    more_left: left.len().saturating_sub(MAX_LEFT),
+                    left: left.into_iter().take(MAX_LEFT).collect(),
                     note,
                 });
             }
@@ -169,15 +179,19 @@ fn head(top: &Path) -> Option<String> {
 }
 
 fn nothing_yours(left: &[Left]) -> String {
-    let mut said = "None of the uncommitted lines here are yours".to_owned();
+    let mut text = "None of the uncommitted lines here are yours".to_owned();
     if !left.is_empty() {
-        let files: Vec<&str> = left.iter().map(|left| left.path.as_str()).collect();
-        said.push_str(&format!(
-            "; changed by others or by no agent Sikemux knows of: {}. Name paths to commit lines no agent wrote",
+        let files: Vec<String> = left
+            .iter()
+            .take(MAX_LEFT)
+            .map(|left| format!("{} ({})", left.path, said(&left.by)))
+            .collect();
+        text.push_str(&format!(
+            "; changed by others or by no agent Sikemux knows of: {}. Name paths to commit files your own commands made, which no agent's lines are in",
             files.join(", ")
         ));
     }
-    said
+    text
 }
 
 /// `path`, given from `dir` or whole, from the top of the checkout.
@@ -208,22 +222,16 @@ pub(super) fn names(paths: &[String], file: &str) -> bool {
     })
 }
 
-/// What the commit holds of each changed file, and what it leaves out.
+/// What the commit holds of each changed file, and what it leaves out, for
+/// the committing agent whose authors are `mine`: with
+/// `named` paths, only changes in them. A lockfile goes with a manifest beside
+/// or below it that the commit changes.
 fn plan(
     owners: &Owners,
     diff: &Diff,
-    agent_id: &str,
+    mine: HashSet<usize>,
     named: &[String],
 ) -> Result<(Vec<Change>, Vec<Left>), String> {
-    let me = owners
-        .authors
-        .iter()
-        .position(|author| author.agent_id == agent_id);
-    let by_path: HashMap<&str, _> = owners
-        .files
-        .iter()
-        .map(|file| (file.path.as_str(), file))
-        .collect();
     let mut paths: BTreeSet<&str> = diff
         .changed
         .keys()
@@ -241,17 +249,124 @@ fn plan(
         _ => String::new(),
     };
     paths.extend(deleted.split('\0').filter(|path| !path.is_empty()));
-    let before = tree_entries(diff, paths.iter().copied())?;
-    let name = |author: Option<usize>| {
-        author.map_or_else(
-            || "no agent".to_owned(),
-            |at| owners.authors[at].name.clone(),
-        )
+    if !named.is_empty() {
+        paths.retain(|path| names(named, path) || is_lockfile(path));
+    }
+    let planner = Planner {
+        owners,
+        diff,
+        mine,
+        by_path: owners
+            .files
+            .iter()
+            .map(|file| (file.path.as_str(), file))
+            .collect(),
+        before: tree_entries(diff, paths.iter().copied())?,
     };
+    let (locks, rest): (Vec<&str>, Vec<&str>) = paths.iter().partition(|path| is_lockfile(path));
     let mut changes = Vec::new();
     let mut left = Vec::new();
-    for path in paths {
-        let file = by_path.get(path);
+    for path in rest {
+        planner.take(path, names(named, path), &mut changes, &mut left)?;
+    }
+    for lock in locks {
+        let follows = changes.iter().any(|change| locks_for(lock, &change.path));
+        if named.is_empty() || follows || names(named, lock) {
+            planner.take(lock, follows || names(named, lock), &mut changes, &mut left)?;
+        }
+    }
+    let untaken: Vec<String> = named
+        .iter()
+        .filter(|path| paths.contains(path.as_str()))
+        .filter(|path| !changes.iter().any(|change| change.path == **path))
+        .filter_map(|path| left.iter().find(|left| left.path == *path))
+        .map(|left| format!("{} holds only lines {} wrote", left.path, said(&left.by)))
+        .collect();
+    if !untaken.is_empty() {
+        return Err(format!(
+            "Nothing was committed: {}. Ask them with agent_send, or leave those paths out.",
+            untaken.join("; ")
+        ));
+    }
+    Ok((changes, left))
+}
+
+/// Names as one would say them: "Otter", "Otter and Briar".
+fn said(names: &[String]) -> String {
+    match names.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
+const LOCKFILES: [(&str, &[&str]); 7] = [
+    ("Cargo.lock", &["Cargo.toml"]),
+    ("pnpm-lock.yaml", &["package.json", "pnpm-workspace.yaml"]),
+    ("package-lock.json", &["package.json"]),
+    ("yarn.lock", &["package.json"]),
+    ("bun.lock", &["package.json"]),
+    ("uv.lock", &["pyproject.toml"]),
+    ("go.sum", &["go.mod"]),
+];
+
+fn file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+fn folder(path: &str) -> &str {
+    path.rsplit_once('/').map_or("", |(folder, _)| folder)
+}
+
+fn is_lockfile(path: &str) -> bool {
+    LOCKFILES.iter().any(|(lock, _)| file_name(path) == *lock)
+}
+
+/// Whether the lockfile at `lock` records what the manifest at `manifest` asks for.
+fn locks_for(lock: &str, manifest: &str) -> bool {
+    let at = folder(lock);
+    let below = at.is_empty() || manifest == at || manifest.starts_with(&format!("{at}/"));
+    below
+        && LOCKFILES.iter().any(|(name, manifests)| {
+            file_name(lock) == *name && manifests.contains(&file_name(manifest))
+        })
+}
+
+/// What a commit of one agent's lines is planned from.
+struct Planner<'a> {
+    owners: &'a Owners,
+    diff: &'a Diff,
+    /// The authors that stand for the committing agent.
+    mine: HashSet<usize>,
+    by_path: HashMap<&'a str, &'a FileOwners>,
+    before: HashMap<String, (String, String)>,
+}
+
+impl Planner<'_> {
+    /// Whether `author` is another agent for certain, not agents at work
+    /// together that may include the committing one.
+    fn theirs(&self, author: usize) -> bool {
+        !self.mine.contains(&author) && self.owners.authors[author].shared.is_empty()
+    }
+
+    fn name(&self, author: Option<usize>) -> String {
+        author.map_or_else(
+            || "no agent".to_owned(),
+            |at| self.owners.authors[at].name.clone(),
+        )
+    }
+
+    /// Plans what the commit takes of `path`: all of it when `may_whole` and
+    /// no other agent wrote there for certain, else the committing agent's lines.
+    fn take(
+        &self,
+        path: &str,
+        may_whole: bool,
+        changes: &mut Vec<Change>,
+        left: &mut Vec<Left>,
+    ) -> Result<(), String> {
+        let top = &self.diff.top;
+        let file = self.by_path.get(path);
         let owner_of: HashMap<u64, usize> = file
             .into_iter()
             .flat_map(|file| &file.lines)
@@ -267,27 +382,27 @@ fn plan(
             .chain(removed_by.values())
             .copied()
             .collect();
-        let others = authors.iter().any(|author| {
-            Some(*author) != me && !owners.authors[*author].agents().any(|id| id == agent_id)
-        });
-        let whole = !others && names(named, path);
-        if !whole && !me.is_some_and(|me| authors.contains(&me)) {
-            let mut by: BTreeSet<String> = authors.iter().map(|at| name(Some(*at))).collect();
+        let whole = may_whole && !authors.iter().any(|author| self.theirs(*author));
+        let leave = |by: BTreeSet<Option<usize>>, left: &mut Vec<Left>| {
+            let mut by: BTreeSet<String> = by.into_iter().map(|at| self.name(at)).collect();
             if by.is_empty() {
-                by.insert(name(None));
+                by.insert(self.name(None));
             }
             left.push(Left {
                 path: path.to_owned(),
                 by: by.into_iter().collect(),
             });
-            continue;
+        };
+        if !whole && !authors.iter().any(|author| self.mine.contains(author)) {
+            leave(authors.iter().map(|at| Some(*at)).collect(), left);
+            return Ok(());
         }
-        let entry = before.get(path);
+        let entry = self.before.get(path);
         let old = match entry {
-            Some((_, blob)) => run(&diff.top, &["cat-file", "blob", blob], None, None)?,
+            Some((_, blob)) => run(top, &["cat-file", "blob", blob], None, None)?,
             None => Vec::new(),
         };
-        let Ok(meta) = std::fs::symlink_metadata(diff.top.join(path)) else {
+        let Ok(meta) = std::fs::symlink_metadata(top.join(path)) else {
             if let Some((_, blob)) = entry {
                 changes.push(Change {
                     path: path.to_owned(),
@@ -298,13 +413,33 @@ fn plan(
                     removed: lines(&old).len() as u64,
                 });
             }
-            continue;
+            return Ok(());
         };
         if !meta.is_file() {
-            continue;
+            return Ok(());
         }
-        let new = std::fs::read(diff.top.join(path)).map_err(|error| format!("{path}: {error}"))?;
-        let hunks = match diff.changed.get(path) {
+        let new = std::fs::read(top.join(path)).map_err(|error| format!("{path}: {error}"))?;
+        let mode = match entry {
+            Some((mode, _)) => mode.clone(),
+            None if meta.permissions().mode() & 0o111 != 0 => "100755".into(),
+            None => "100644".into(),
+        };
+        let hunks = match self.diff.changed.get(path) {
+            Some(hunks) if hunks.is_empty() => {
+                if !whole {
+                    leave(BTreeSet::new(), left);
+                    return Ok(());
+                }
+                changes.push(Change {
+                    path: path.to_owned(),
+                    mode,
+                    added: lines(&new).len() as u64,
+                    removed: lines(&old).len() as u64,
+                    content: Some(new),
+                    before: entry.map(|(_, blob)| blob.clone()),
+                });
+                return Ok(());
+            }
             Some(hunks) => hunks.clone(),
             None => vec![Hunk {
                 start: 1,
@@ -314,25 +449,19 @@ fn plan(
         };
         let owner = |line| owner_of.get(&line).copied();
         let removal = |line| removed_by.get(&line).copied();
-        let mine = |author: Option<usize>| whole || (me.is_some() && author == me);
+        let mine = |author: Option<usize>| {
+            whole || author.is_some_and(|author| self.mine.contains(&author))
+        };
+        let theirs = |author: Option<usize>| !whole && author.is_some_and(|at| self.theirs(at));
         let mut tally = Tally::default();
-        let content = splice(&old, &new, &hunks, &mut tally, owner, removal, mine)
+        let content = splice(&old, &new, &hunks, &mut tally, owner, removal, mine, theirs)
             .ok_or_else(|| format!("{path} changed while it was read; call this again"))?;
         if !tally.left.is_empty() {
-            let by: BTreeSet<String> = tally.left.iter().map(|author| name(*author)).collect();
-            left.push(Left {
-                path: path.to_owned(),
-                by: by.into_iter().collect(),
-            });
+            leave(std::mem::take(&mut tally.left), left);
         }
         if tally.added + tally.removed == 0 {
-            continue;
+            return Ok(());
         }
-        let mode = match entry {
-            Some((mode, _)) => mode.clone(),
-            None if meta.permissions().mode() & 0o111 != 0 => "100755".into(),
-            None => "100644".into(),
-        };
         changes.push(Change {
             path: path.to_owned(),
             mode,
@@ -341,8 +470,8 @@ fn plan(
             added: tally.added,
             removed: tally.removed,
         });
+        Ok(())
     }
-    Ok((changes, left))
 }
 
 #[derive(Default)]
@@ -352,9 +481,12 @@ struct Tally {
     left: BTreeSet<Option<usize>>,
 }
 
-/// `old` with the parts of `new`'s hunks whose author is `mine`. A hunk that
-/// both removes and adds lines goes in whole or not at all, since its lines
-/// cannot be told apart from the ones they replaced.
+/// `old` with the parts of `new`'s hunks that are `mine`. A run of changed
+/// lines holding some of mine and none certainly `theirs` goes in whole, so a
+/// line the record lost track of does not split it. Otherwise a hunk that both
+/// removes and adds lines goes in whole or not at all, since its lines cannot
+/// be told apart from the ones they replaced.
+#[allow(clippy::too_many_arguments)]
 fn splice(
     old: &[u8],
     new: &[u8],
@@ -363,6 +495,7 @@ fn splice(
     owner: impl Fn(u64) -> Option<usize>,
     removal: impl Fn(u64) -> Option<usize>,
     mine: impl Fn(Option<usize>) -> bool,
+    theirs: impl Fn(Option<usize>) -> bool,
 ) -> Option<Vec<u8>> {
     let old = lines(old);
     let new = lines(new);
@@ -373,10 +506,12 @@ fn splice(
         let end = start + hunk.removed as usize;
         out.extend(old.get(at..start)?.concat());
         let added = hunk.start..hunk.start + hunk.count;
+        let some_mine = added.clone().any(|line| mine(owner(line)));
+        let none_theirs = !added.clone().any(|line| theirs(owner(line)));
         let picked: Vec<u64> = match (hunk.count, hunk.removed) {
-            (_, 0) => added.clone().filter(|line| mine(owner(*line))).collect(),
             (0, _) => Vec::new(),
-            _ if added.clone().all(|line| mine(owner(line))) => added.clone().collect(),
+            _ if some_mine && none_theirs => added.clone().collect(),
+            (_, 0) => added.clone().filter(|line| mine(owner(*line))).collect(),
             _ => Vec::new(),
         };
         let replaced = match hunk.count {
@@ -589,4 +724,98 @@ fn merge(top: &Path, shared: &str, before: Option<&str>, committed: &str) -> Opt
     };
     let args = ["merge-file", "--object-id", shared, before, committed];
     git_in(top, &args, None).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_others_may_have_written_does_not_split_an_agents_change() {
+        let old = b".a {\n  color: red;\n}\n";
+        let new = b".a {\n  color: red;\n}\n.b {\n  color: blue;\n}\n";
+        let hunks = [Hunk {
+            start: 4,
+            count: 3,
+            removed: 0,
+        }];
+        let (me, unsure) = (0, 1);
+        let owner = |line| Some(if line == 6 { unsure } else { me });
+        let mut tally = Tally::default();
+        let content = splice(
+            old,
+            new,
+            &hunks,
+            &mut tally,
+            owner,
+            |_| None,
+            |author| author == Some(me),
+            |_| false,
+        );
+        assert_eq!(content.as_deref(), Some(&new[..]));
+        assert!(tally.left.is_empty());
+    }
+
+    fn author(agent_id: &str, shared: &[&str]) -> super::super::owners::Author {
+        super::super::owners::Author {
+            agent_id: agent_id.to_owned(),
+            name: agent_id.to_owned(),
+            cli: "claude".to_owned(),
+            model: None,
+            feed: String::new(),
+            shared: shared.iter().map(|id| (*id).to_owned()).collect(),
+        }
+    }
+
+    fn appended(path: &str, author: usize) -> FileOwners {
+        FileOwners {
+            path: path.to_owned(),
+            lines: vec![super::super::owners::Run {
+                start: 2,
+                count: 1,
+                author,
+                over: None,
+            }],
+            removed: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn named_paths_limit_the_commit_and_take_the_lockfile_along() {
+        let top = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(top.path()).unwrap();
+        let files = ["Cargo.toml", "Cargo.lock", "a.rs", "b.rs"];
+        for file in files {
+            std::fs::write(top.join(file), "x\n").unwrap();
+        }
+        let git = |args: &[&str]| run(&top, args, None, None).unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-qm",
+            "base",
+        ]);
+        for file in files {
+            std::fs::write(top.join(file), "x\ny\n").unwrap();
+        }
+        let owners = Owners {
+            authors: vec![author("me", &[]), author("", &["birch", "quartz"])],
+            files: vec![
+                appended("Cargo.lock", 1),
+                appended("Cargo.toml", 0),
+                appended("a.rs", 0),
+                appended("b.rs", 0),
+            ],
+        };
+        let diff = super::super::owners::read_diff(&top, false, false, None, false).unwrap();
+        let mine = HashSet::from([0]);
+        let (changes, _) = plan(&owners, &diff, mine, &["Cargo.toml".to_owned()]).unwrap();
+        let taken: Vec<&str> = changes.iter().map(|change| change.path.as_str()).collect();
+        assert_eq!(taken, ["Cargo.toml", "Cargo.lock"]);
+    }
 }

@@ -8,14 +8,15 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::commit::{in_checkout, names};
-use super::owners::{traced, Author};
+use super::owners::traced;
 use crate::cli::protocol::HarnessRequest;
 use crate::server::connection::blocking;
 use crate::server::messages::{listed, Reach};
 use crate::server::Core;
 
 /// The other agents than `agent_id` with uncommitted lines in `paths`, as
-/// given in `dir`, leaving out any outside its checkout. With no paths, those
+/// given in `dir`, leaving out any outside its checkout. Lines it may have
+/// written among others at work then count as its own. With no paths, those
 /// with lines anywhere in the checkout, and those working in it.
 pub(crate) fn others(
     core: &Core,
@@ -31,7 +32,7 @@ pub(crate) fn others(
     if named.is_empty() && !paths.is_empty() {
         return Ok(Vec::new());
     }
-    let theirs = |author: &&Author| author.agents().any(|of| of != agent_id);
+    let mine = owners.standing_for(core, agent_id);
     let mut others: BTreeSet<String> = owners
         .files
         .iter()
@@ -40,9 +41,8 @@ pub(crate) fn others(
             let lines = file.lines.iter().map(|run| run.author);
             lines.chain(file.removed.iter().map(|removal| removal.author))
         })
-        .map(|at| &owners.authors[at])
-        .filter(theirs)
-        .map(|author| author.name.clone())
+        .filter(|at| !mine.contains(at))
+        .map(|at| owners.authors[at].name.clone())
         .collect();
     if paths.is_empty() {
         let top = std::fs::canonicalize(&diff.top).unwrap_or(diff.top);

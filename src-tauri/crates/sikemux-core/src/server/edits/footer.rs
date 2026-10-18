@@ -33,9 +33,11 @@ pub(crate) fn attributed(dir: &Path) -> bool {
 }
 
 /// The footer for committing what `dir` has staged, or what `index` holds when
-/// git commits from an index of its own: every agent whose lines it holds, or
-/// the agents `named` when that was worked out before, else `fallback`. An
-/// `amend` keeps the agents of the commit it replaces. With it, the note for
+/// git commits from an index of its own: `fallback`, the agent committing, and
+/// every agent whose lines it holds for certain, or the agents `named` when
+/// that was worked out before. Lines several agents at work together may have
+/// written name none of them but the committer. An `amend` keeps the agents of
+/// the commit it replaces. With it, the note for
 /// the commit's hooks to put on it, when it holds lines of several writers.
 fn footer(
     core: &Core,
@@ -55,28 +57,26 @@ fn footer(
     })?;
     let writers: Vec<Agent> = match (named, &staged) {
         (Some(named), _) => named.iter().filter_map(|id| known(core, dir, id)).collect(),
-        (None, Ok((owners, _))) => owners
-            .writers()
-            .flat_map(|author| match author.shared.is_empty() {
-                true => vec![agent(core, author)],
-                false => author
-                    .shared
-                    .iter()
-                    .filter_map(|id| known(core, dir, id))
-                    .collect(),
-            })
-            .collect(),
+        (None, Ok((owners, _))) => {
+            let committers = fallback
+                .map(|id| owners.standing_for(core, id))
+                .unwrap_or_default();
+            owners
+                .writers()
+                .filter(|(at, author)| author.shared.is_empty() && !committers.contains(at))
+                .map(|(_, author)| agent(core, author))
+                .collect()
+        }
         (None, Err(error)) => return Err(error.clone()),
     };
-    let mut named = if amend {
-        verified(core, dir, "HEAD")?
-    } else {
-        Vec::new()
-    };
-    named.extend(writers);
-    if named.is_empty() {
-        named.extend(fallback.and_then(|id| known(core, dir, id)));
+    let mut named: Vec<Agent> = fallback
+        .and_then(|id| known(core, dir, id))
+        .into_iter()
+        .collect();
+    if amend {
+        named.extend(verified(core, dir, "HEAD")?);
     }
+    named.extend(writers);
     let keys: HashMap<&str, &str> = named
         .iter()
         .map(|agent| (agent.chat.as_str(), agent.key()))
@@ -300,8 +300,8 @@ pub(crate) fn commit(
         .map(|(owners, _)| {
             owners
                 .writers()
-                .flat_map(Author::agents)
-                .map(str::to_owned)
+                .filter(|(_, author)| author.shared.is_empty())
+                .map(|(_, author)| author.agent_id.clone())
                 .collect()
         })
         .unwrap_or_default();

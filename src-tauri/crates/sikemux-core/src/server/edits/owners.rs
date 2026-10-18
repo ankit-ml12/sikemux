@@ -27,8 +27,26 @@ pub(crate) struct Owners {
 }
 
 impl Owners {
-    /// The authors with a line or a removal among the files.
-    pub(super) fn writers(&self) -> impl Iterator<Item = &Author> {
+    /// The authors that stand for `agent_id`: the agent, an earlier run of its
+    /// CLI's session, or agents at work together when it was one of them.
+    pub(crate) fn standing_for(&self, core: &Core, agent_id: &str) -> HashSet<usize> {
+        let session = core.names.last_session(agent_id);
+        let is_it = |id: &str| {
+            id == agent_id
+                || session
+                    .as_deref()
+                    .is_some_and(|session| core.names.last_session(id).as_deref() == Some(session))
+        };
+        self.authors
+            .iter()
+            .enumerate()
+            .filter(|(_, author)| author.agents().any(is_it))
+            .map(|(at, _)| at)
+            .collect()
+    }
+
+    /// The authors with a line or a removal among the files, by number.
+    pub(super) fn writers(&self) -> impl Iterator<Item = (usize, &Author)> {
         let wrote: HashSet<usize> = self
             .files
             .iter()
@@ -41,7 +59,6 @@ impl Owners {
             .iter()
             .enumerate()
             .filter(move |(at, _)| wrote.contains(at))
-            .map(|(_, author)| author)
     }
 }
 
@@ -208,7 +225,7 @@ pub(super) fn staged_in(
 /// when `list_staged`, which `patched_diff` needs to stay quick. `index`
 /// stands in for the checkout's own, and `amend` compares with `HEAD`'s first
 /// parent.
-fn read_diff(
+pub(super) fn read_diff(
     dir: &Path,
     staged: bool,
     list_staged: bool,
@@ -465,18 +482,23 @@ pub(super) fn latest(core: &Core, dir: &Path, agent_id: &str) -> Option<Author> 
         .map(|edit| author(core, &edit))
 }
 
+/// What an agent no longer open, whose name is gone, is called.
+const GONE: &str = "an agent no longer open";
+
 fn author(core: &Core, edit: &Edit) -> Author {
     let name = |agent_id: &str| core.names.name(agent_id);
     let name = if edit.shared.is_empty() {
         name(&edit.agent_id)
             .or_else(|| edit.name.clone())
-            .unwrap_or_else(|| edit.cli.clone())
+            .unwrap_or_else(|| match edit.cli.as_str() {
+                "" => GONE.to_owned(),
+                cli => cli.to_owned(),
+            })
     } else {
-        let names: Vec<String> = edit
-            .shared
-            .iter()
-            .map(|agent_id| name(agent_id).unwrap_or_else(|| agent_id.clone()))
-            .collect();
+        let mut names: Vec<String> = edit.shared.iter().filter_map(|id| name(id)).collect();
+        if names.len() < edit.shared.len() {
+            names.push(GONE.to_owned());
+        }
         match names.split_last() {
             Some((last, rest)) if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
             _ => names.concat(),
@@ -799,7 +821,7 @@ fn diff_args(staged: bool, base: Option<&str>) -> Vec<&str> {
     args
 }
 
-/// Each file's hunks in a `-U0` diff, by path.
+/// Each file's hunks in a `-U0` diff, by path. A binary file has none.
 fn hunks(diff: &str) -> HashMap<String, Vec<Hunk>> {
     let mut files: HashMap<String, Vec<Hunk>> = HashMap::new();
     let mut path: Option<String> = None;
@@ -813,6 +835,13 @@ fn hunks(diff: &str) -> HashMap<String, Vec<Hunk>> {
         }
         if let Some(target) = line.strip_prefix("+++ ") {
             path = target.strip_prefix("b/").map(str::to_owned);
+        } else if let Some(binary) = line
+            .strip_prefix("Binary files ")
+            .and_then(|names| names.strip_suffix(" differ"))
+        {
+            if let Some((_, new)) = binary.split_once(" and b/") {
+                files.entry(new.to_owned()).or_default();
+            }
         } else if let Some(hunk) = line.strip_prefix("@@ -").and_then(header) {
             left = hunk.count + hunk.removed;
             if let Some(path) = &path {
