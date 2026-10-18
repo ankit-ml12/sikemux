@@ -116,3 +116,17 @@
 .prose summary:hover {
     color: var(--text-primary);
 }
+.prose .prose-image {
+    display: inline-block;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-2);
+    background: none;
+    vertical-align: top;
+    cursor: zoom-in;
+}
+.prose .prose-image:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
