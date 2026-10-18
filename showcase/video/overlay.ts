@@ -1,9 +1,12 @@
 import "./overlay.css";
 
-/** Where a beat points: a selector in the app, an element of the app holding some text, a part of the framed screen, or a rect on it. */
+/**
+ * Where a beat points: a selector in the app, the first (or last) element of the
+ * app matching a selector and holding some text, a part of the framed screen, or a rect on it.
+ */
 export type Target =
   | string
-  | { text: string | RegExp; selector?: string; exact?: boolean }
+  | { selector?: string; text?: string; exact?: boolean; last?: boolean }
   | { stage: string }
   | Rect;
 
@@ -43,14 +46,25 @@ function shapeAt(x: number, y: number): Shape {
   );
   if (!element) return "arrow";
   const style = element.ownerDocument.defaultView!.getComputedStyle(element);
-  if (style.cursor === "text" || style.cursor === "auto" && element.closest("input, textarea, [contenteditable=true], [role=textbox]")) return "beam";
+  if (
+    style.cursor === "text" ||
+    (style.cursor === "auto" &&
+      element.closest(
+        "input, textarea, [contenteditable=true], [role=textbox]",
+      ))
+  )
+    return "beam";
   if (style.cursor === "pointer" || element.closest(INTERACTIVE)) return "hand";
   return "arrow";
 }
 
 const visible = (element: Element) => {
   const box = element.getBoundingClientRect();
-  return box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden";
+  return (
+    box.width > 0 &&
+    box.height > 0 &&
+    getComputedStyle(element).visibility !== "hidden"
+  );
 };
 
 function element(target: Exclude<Target, Rect>): Element | null {
@@ -59,16 +73,26 @@ function element(target: Exclude<Target, Rect>): Element | null {
   const doc = app.contentDocument!;
   if (typeof target === "string")
     return [...doc.querySelectorAll(target)].find(visible) ?? null;
-  const matches = (text: string) => {
-    const trimmed = text.trim();
-    if (target.text instanceof RegExp) return target.text.test(trimmed);
-    return target.exact === false ? trimmed.includes(target.text) : trimmed === target.text;
-  };
+  const wanted = target.text;
+  const matches = (text: string) =>
+    wanted === undefined ||
+    (target.exact === false
+      ? text.trim().includes(wanted)
+      : text.trim() === wanted);
   const candidates = [...doc.querySelectorAll(target.selector ?? "*")].filter(
     (candidate) => visible(candidate) && matches(candidate.textContent ?? ""),
   );
   // The innermost match is the one the words are drawn in.
-  return candidates.find((candidate) => !candidates.some((other) => other !== candidate && candidate.contains(other))) ?? null;
+  const innermost =
+    wanted === undefined
+      ? candidates
+      : candidates.filter(
+          (candidate) =>
+            !candidates.some(
+              (other) => other !== candidate && candidate.contains(other),
+            ),
+        );
+  return (target.last ? innermost.at(-1) : innermost[0]) ?? null;
 }
 
 /** A target's box on the 1920 by 1080 screen, before the camera moves it. */
@@ -80,7 +104,12 @@ function rect(target: Target): Rect | null {
   const inApp = found.ownerDocument !== document;
   const left = inApp ? app.offsetLeft : 0;
   const top = inApp ? app.offsetTop : 0;
-  return { x: box.x + left, y: box.y + top, width: box.width, height: box.height };
+  return {
+    x: box.x + left,
+    y: box.y + top,
+    width: box.width,
+    height: box.height,
+  };
 }
 
 function documents(): Document[] {
@@ -113,7 +142,8 @@ function syncAnimations(now: number) {
         clock = { origin: now, from: Number(animation.currentTime ?? 0) };
         clocks.set(animation, clock);
       }
-      animation.currentTime = clock.from + (now - clock.origin) * animation.playbackRate;
+      animation.currentTime =
+        clock.from + (now - clock.origin) * animation.playbackRate;
     }
   }
 }
@@ -138,6 +168,9 @@ Object.assign(window, {
   video: {
     rect,
     show,
-    ready: () => app.contentWindow && "showcase" in app.contentWindow && !!app.contentDocument?.querySelector(".shell"),
+    ready: () =>
+      app.contentWindow &&
+      "showcase" in app.contentWindow &&
+      !!app.contentDocument?.querySelector(".shell"),
   },
 });

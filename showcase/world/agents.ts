@@ -384,6 +384,79 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
   },
 };
 
+const letter = (from: { id: string; name: string; type: string }, text: string) =>
+  user(`<agent-message from="${from.name}" agent-id="${from.id}" cli="${from.type}">\n${text}\n</agent-message>`);
+
+/** A turn a video plays when it says so, after the chat has opened. `board` is the change the step makes to a card. */
+export const CUED_TURNS: Record<string, { agentId: string; updates: Update[] }> = {
+  "otter-asks-maple": {
+    agentId: AGENTS.rail.id,
+    updates: [
+      think("The refunds bug waits on Maple's ledger import, so I'll check where that is first."),
+      tool("other", "mcp__sikemux-tools__agent_send", {
+        rawInput: {
+          to: AGENTS.replay.name,
+          text: "Is the ledger import onto amounts ready to land? I'll take the refunds bug as soon as it is.",
+        },
+        durationMs: 3200,
+      }),
+      say("I've asked Maple. The refunds bug waits on the ledger import, so I'll pick it up once that lands."),
+    ],
+  },
+  "maple-answers": {
+    agentId: AGENTS.replay.id,
+    updates: [
+      letter(
+        AGENTS.rail,
+        "Is the ledger import onto amounts ready to land? I'll take the refunds bug as soon as it is.",
+      ),
+      think("Otter is waiting on the import. One more run of the ledger tests before I close the card."),
+      tool("execute", "pnpm vitest run src/billing/ledger", {
+        rawOutput: " ✓ src/billing/ledger.test.ts (18 tests) 204ms\n Test Files  1 passed (1)",
+        durationMs: 1600,
+      }),
+      tool("edit", "mcp__sikemux-tools__board_update", {
+        rawInput: {
+          card: 3,
+          status: "done",
+          result: "Ledger rows import onto amounts in cents; 18 tests pass.",
+        },
+        board: { id: 3, status: "done", result: "Ledger rows import onto amounts in cents; 18 tests pass." },
+      }),
+      tool("other", "mcp__sikemux-tools__agent_send", {
+        rawInput: {
+          to: AGENTS.rail.name,
+          text: "Landed. The import reads amounts in cents and all 18 ledger tests pass, so the refunds bug is yours.",
+        },
+      }),
+      say("Card 3 is done, and Otter knows the refunds bug can start."),
+    ],
+  },
+  "otter-takes-refunds": {
+    agentId: AGENTS.rail.id,
+    updates: [
+      letter(
+        AGENTS.replay,
+        "Landed. The import reads amounts in cents and all 18 ledger tests pass, so the refunds bug is yours.",
+      ),
+      tool("edit", "mcp__sikemux-tools__board_claim", {
+        rawInput: { card: 6 },
+        board: {
+          id: 6,
+          status: "progress",
+          owner: AGENTS.rail.id,
+          ownerName: AGENTS.rail.name,
+          ownerCli: AGENTS.rail.type,
+          team: AGENTS.rail.id,
+          teamName: AGENTS.rail.name,
+          waitsOn: [],
+        },
+      }),
+      say("Maple's import is in, so I've taken the refunds bug. Starting with the refund path's rounding."),
+    ],
+  },
+};
+
 export const AVAILABLE_AGENTS = [
   {
     type: "claude",

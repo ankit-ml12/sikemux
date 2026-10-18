@@ -22,7 +22,8 @@ export async function startShowcase() {
   const server = await createServer({
     configFile: resolve(import.meta.dirname, "vite.config.ts"),
     logLevel: "warn",
-    server: { port: await freePort(), strictPort: true },
+    // Editing the demo while a capture runs must not reload the page under it.
+    server: { port: await freePort(), strictPort: true, hmr: false },
   });
   await server.listen();
   const origin = `http://localhost:${server.config.server.port}`;

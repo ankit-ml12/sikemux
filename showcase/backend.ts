@@ -10,6 +10,7 @@ import {
   AGENT_SCRIPTS,
   AGENT_USAGE,
   AVAILABLE_AGENTS,
+  CUED_TURNS,
   MODEL_OPTIONS,
   SAVED_SESSIONS,
 } from "./world/agents";
@@ -407,10 +408,27 @@ export class ShowcaseBackend implements IpcTransport {
       scanId: 1,
       files: await server<string[]>("list_files", { repo }),
     }));
-    this.on("git_file_at", async ({ repo, path }) =>
-      server("read_file", { path: `${repo}/${path}` }).catch(() => ""),
+    const projectAt = (repo: unknown) =>
+      DEMO_PROJECTS.find((candidate) => candidate.path === repo)?.name;
+    // Commits are the real repository's; the working tree and the index are the demo's.
+    const isCommit = (rev: unknown) =>
+      typeof rev === "string" && rev !== "HEAD" && !rev.startsWith(":");
+    this.on("git_file_at", async ({ repo, rev, path }) =>
+      isCommit(rev)
+        ? server("file_at", { project: projectAt(repo), rev, path })
+        : server("read_file", { path: `${repo}/${path}` }).catch(() => ""),
     );
-    this.on("git_file_diff", ({ path }) => FILE_DIFFS[path as string] ?? []);
+    this.on("git_file_diff", ({ repo, path, baseRev, headRev, full }) =>
+      isCommit(headRev)
+        ? server("file_diff", {
+            project: projectAt(repo),
+            path,
+            base: baseRev,
+            head: headRev,
+            full,
+          })
+        : (FILE_DIFFS[path as string] ?? []),
+    );
     this.on("git_blame", constant({ commits: [], lines: [] }));
 
     this.on("git_overview", async ({ repo }) => {
@@ -430,6 +448,7 @@ export class ShowcaseBackend implements IpcTransport {
           await server<GitCommit[]>("git_log", {
             project: project.name,
             count: 80,
+            head: this.historyHead,
           }),
         ),
       };
@@ -601,32 +620,25 @@ export class ShowcaseBackend implements IpcTransport {
         remoteAgents: [],
       };
     });
-    let board = DEMO_BOARD;
     this.on("agent_board_call", ({ method, params }) => {
       const { id, status } = (params ?? {}) as {
         id?: number;
         status?: BoardCard["status"];
       };
-      const changes = status ? { status } : {};
-      if (method === "boards") return [board];
-      if (method === "boardUpdate")
-        board = {
-          ...board,
-          cards: board.cards.map((card) =>
-            card.id === id ? { ...card, ...changes } : card,
-          ) as typeof board.cards,
-        };
+      if (method === "boards") return [this.board];
+      if (method === "boardUpdate" && id !== undefined)
+        this.changeCard({ id, ...(status ? { status } : {}) });
       if (method === "boardSettings")
-        board = {
-          ...board,
-          settings: { ...board.settings, ...(params as object) },
+        this.board = {
+          ...this.board,
+          settings: { ...this.board.settings, ...(params as object) },
         };
       if (method === "boardRemove")
-        board = {
-          ...board,
-          cards: board.cards.filter((card) => card.id !== id),
+        this.board = {
+          ...this.board,
+          cards: this.board.cards.filter((card) => card.id !== id),
         };
-      return board;
+      return this.board;
     });
     this.on("acp_start", ({ agentId, provider }) =>
       this.startAgent(agentId as string, provider as string),
@@ -723,7 +735,43 @@ export class ShowcaseBackend implements IpcTransport {
     }));
   }
 
-  private readonly liveSteps: { run: () => void; holdMs: number }[] = [];
+  private board = DEMO_BOARD;
+
+  /** The commit the demo's history starts from, so a capture can hold it still while the repository moves on. */
+  historyHead = "HEAD";
+
+  private changeCard({ id, ...changes }: Partial<BoardCard> & { id: number }) {
+    this.board = {
+      ...this.board,
+      cards: this.board.cards.map((card) =>
+        card.id === id ? { ...card, ...changes, updatedAt: Date.now() } : card,
+      ),
+    };
+    this.emit("agent_board", [this.board]);
+  }
+
+  private readonly liveSteps: { agentId: string; run: () => void; holdMs: number }[] = [];
+
+  /** Plays every queued step at once and ends each turn, so the chats start idle. */
+  settleLive(): void {
+    const agents = new Set(this.liveSteps.map((step) => step.agentId));
+    while (this.stepLive() >= 0);
+    for (const agentId of agents)
+      this.emit("acp_event", { agentId, kind: "turn_completed", payload: { stopReason: "end_turn" } });
+  }
+
+  /** Queues one of the world's cued turns behind whatever is already playing. */
+  cue(name: string): void {
+    const { agentId, updates } = CUED_TURNS[name];
+    this.queueLiveTurn(agentId, updates, this.batchFor(agentId), true);
+  }
+
+  private batchFor(agentId: string) {
+    const sessionId = `session-${agentId}`;
+    return (updates: Record<string, unknown>[]) => ({
+      updates: updates.map((update) => ({ sessionId, update })),
+    });
+  }
 
   // A live turn plays one step at a time so the capture can move the clock between tool calls.
   stepLive(): number {
@@ -737,6 +785,7 @@ export class ShowcaseBackend implements IpcTransport {
     agentId: string,
     live: Record<string, unknown>[],
     batch: (updates: Record<string, unknown>[]) => unknown,
+    completes = false,
   ) {
     const send = (updates: Record<string, unknown>[]) =>
       this.emit("acp_event", {
@@ -746,9 +795,11 @@ export class ShowcaseBackend implements IpcTransport {
       });
     const strip = ({
       durationMs: _durationMs,
+      board: _board,
       ...update
     }: Record<string, unknown>) => update;
     this.liveSteps.push({
+      agentId,
       run: () =>
         this.emit("acp_event", { agentId, kind: "turn_started", payload: {} }),
       holdMs: 400,
@@ -761,8 +812,10 @@ export class ShowcaseBackend implements IpcTransport {
       const shown = isTool
         ? { ...strip(update), status: "in_progress" }
         : strip(update);
+      const card = update.board as (Partial<BoardCard> & { id: number }) | undefined;
       this.liveSteps.push({
-        run: () =>
+      agentId,
+        run: () => {
           send([
             ...(previous
               ? [
@@ -774,19 +827,30 @@ export class ShowcaseBackend implements IpcTransport {
                 ]
               : []),
             shown,
-          ]),
+          ]);
+          if (card) this.changeCard(card);
+        },
         holdMs: isTool ? Number(update.durationMs ?? 1200) : 600,
       });
     }
+    if (!completes) return;
+    const last = finishing;
+    this.liveSteps.push({
+      agentId,
+      run: () => {
+        if (last)
+          send([{ sessionUpdate: "tool_call_update", toolCallId: last.toolCallId, status: "completed" }]);
+        this.emit("acp_event", { agentId, kind: "turn_completed", payload: { stopReason: "end_turn" } });
+      },
+      holdMs: 400,
+    });
   }
 
   private startAgent(agentId: string, provider: string) {
     const script = AGENT_SCRIPTS[agentId];
     const setup = { configOptions: MODEL_OPTIONS[provider] ?? [] };
     const sessionId = `session-${agentId}`;
-    const batch = (updates: Record<string, unknown>[]) => ({
-      updates: updates.map((update) => ({ sessionId, update })),
-    });
+    const batch = this.batchFor(agentId);
     if (script) {
       this.emit("acp_event", {
         agentId,

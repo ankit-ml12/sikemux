@@ -33,7 +33,15 @@ function encoder(path) {
   const ffmpeg = spawn(
     "ffmpeg",
     [
-      ...["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS)],
+      ...[
+        "-y",
+        "-loglevel",
+        "error",
+        "-f",
+        "image2pipe",
+        "-framerate",
+        String(FPS),
+      ],
       ...["-c:v", "png", "-i", "-", "-vf", `scale=-2:${height}:flags=lanczos`],
       ...["-c:v", "libx264", "-preset", options.draft ? "veryfast" : "slow"],
       ...["-crf", options.draft ? "24" : "14", "-pix_fmt", "yuv420p"],
@@ -42,11 +50,15 @@ function encoder(path) {
     { stdio: ["pipe", "inherit", "inherit"] },
   );
   const finished = new Promise((done, fail) =>
-    ffmpeg.on("exit", (code) => (code === 0 ? done() : fail(new Error(`ffmpeg exited with ${code}`)))),
+    ffmpeg.on("exit", (code) =>
+      code === 0 ? done() : fail(new Error(`ffmpeg exited with ${code}`)),
+    ),
   );
   return {
     write: (png) =>
-      ffmpeg.stdin.write(png) ? Promise.resolve() : new Promise((done) => ffmpeg.stdin.once("drain", done)),
+      ffmpeg.stdin.write(png)
+        ? Promise.resolve()
+        : new Promise((done) => ffmpeg.stdin.once("drain", done)),
     close: () => {
       ffmpeg.stdin.end();
       return finished;
@@ -68,9 +80,13 @@ for (const name of chosen) {
   await context.clock.install({ time: start });
   await context.clock.pauseAt(start + 1000);
   const page = await context.newPage();
-  page.on("pageerror", (error) => console.warn(`${name}: ${error.message.split("\n")[0]}`));
+  page.on("pageerror", (error) =>
+    console.warn(`${name}: ${error.message.split("\n")[0]}`),
+  );
   const cdp = await context.newCDPSession(page);
-  await page.goto(`${showcase.origin}/showcase/twitter.html?capture&video&notch=${scene.notch ?? "closed"}`);
+  await page.goto(
+    `${showcase.origin}/showcase/twitter.html?capture&video&notch=${scene.notch ?? "closed"}`,
+  );
   await cdp.send("Animation.enable");
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
 
@@ -83,13 +99,17 @@ for (const name of chosen) {
     app: null,
     start: start + 1000,
     capture: async () => {
-      const { data } = await cdp.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true });
+      const { data } = await cdp.send("Page.captureScreenshot", {
+        format: "png",
+        optimizeForSpeed: true,
+      });
       await video.write(Buffer.from(data, "base64"));
     },
   });
   const began = Date.now();
   await director.until(
-    async () => page.evaluate(() => Boolean(window.video?.ready())).catch(() => false),
+    async () =>
+      page.evaluate(() => Boolean(window.video?.ready())).catch(() => false),
     { label: "the app to start" },
   );
   director.appFrame = page.frames().find((frame) => frame !== page.mainFrame());
@@ -98,7 +118,16 @@ for (const name of chosen) {
   await scene.setup?.(director);
   await director.settle(scene.settle ?? 600);
   director.recording = true;
-  await scene.play(director);
+  try {
+    await scene.play(director);
+  } catch (error) {
+    const shot = resolve(root, "showcase/out", `video-${name}-failed.png`);
+    await page.screenshot({ path: shot });
+    console.error(
+      `✗ ${name} failed ${director.seconds.toFixed(1)} s in; the screen then is ${shot}`,
+    );
+    throw error;
+  }
   director.background.clear();
   await director.still();
   await video.close();

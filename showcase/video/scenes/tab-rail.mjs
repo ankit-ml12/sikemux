@@ -1,6 +1,10 @@
 import { agentsAtWork } from "../../scenes.mjs";
 
-const scope = (name) => ({ text: name, selector: ".swipe-page.is-current .scope-track button", exact: false });
+const scope = (name) => ({
+  text: name,
+  selector: ".swipe-page.is-current .scope-track button",
+  exact: false,
+});
 const page = ".tab-rail .swipe-page.is-current";
 
 export default {
@@ -12,7 +16,11 @@ export default {
   play: async (s) => {
     s.live({ wait: false });
     await s.wait(700);
-    await s.zoom(".tab-rail", { scale: 2.2, at: { x: 0.5, y: 0.3 }, wait: false });
+    await s.zoom(".tab-rail", {
+      scale: 2.2,
+      at: { x: 0.5, y: 0.3 },
+      wait: false,
+    });
     await s.wait(250);
     await s.click(scope("All projects"));
     await s.wait(1300);

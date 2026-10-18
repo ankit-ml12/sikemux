@@ -130,10 +130,10 @@ function shortAge(relative: string): string {
   return `${amount}${letter} ago`;
 }
 
-function gitLog(name: string, count: number) {
+function gitLog(name: string, count: number, head = "HEAD") {
   if (!LOCAL_ROOTS[name] || !existsSync(LOCAL_ROOTS[name])) return [];
   const format = ["%H", "%P", "%an", "%ar", "%s", "%D"].join("%x1f");
-  const out = execFileSync("git", ["log", `-n${count}`, `--format=${format}`], {
+  const out = execFileSync("git", ["log", `-n${count}`, `--format=${format}`, "--end-of-options", head], {
     cwd: LOCAL_ROOTS[name],
     encoding: "utf8",
   });
@@ -237,6 +237,55 @@ async function simulatorChrome(): Promise<unknown> {
   const found = { chrome: answers.get(1)?.chrome ?? null, mask: answers.get(2)?.mask ?? null };
   if (found.chrome) writeFileSync(SIM_CHROME, JSON.stringify(found));
   return found;
+}
+
+function gitShow(name: string, rev: string, path: string): string {
+  if (!LOCAL_ROOTS[name] || !existsSync(LOCAL_ROOTS[name])) return "";
+  try {
+    return execFileSync("git", ["show", `${rev}:${path}`], {
+      cwd: LOCAL_ROOTS[name],
+      encoding: "utf8",
+      maxBuffer: 16 << 20,
+    });
+  } catch {
+    return "";
+  }
+}
+
+type DiffRow = [0 | 1 | 2, number, string] | [3, number, ""];
+
+/** A real commit's change to one file, in the rows the app's diff view reads. */
+function fileDiff(name: string, path: string, base: string, head: string, full: boolean): DiffRow[] {
+  if (!LOCAL_ROOTS[name] || !existsSync(LOCAL_ROOTS[name])) return [];
+  const out = execFileSync(
+    "git",
+    ["diff", "--no-color", `-U${full ? 100_000 : 3}`, base, head, "--", path],
+    { cwd: LOCAL_ROOTS[name], encoding: "utf8", maxBuffer: 16 << 20 },
+  );
+  const rows: DiffRow[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let shown = 0;
+  for (const line of out.split("\n")) {
+    const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      if (newLine - 1 > shown) rows.push([3, newLine - 1 - shown, ""]);
+      continue;
+    }
+    if (!oldLine && !newLine) continue;
+    if (line.startsWith("+")) rows.push([1, newLine++, line.slice(1)]);
+    else if (line.startsWith("-")) rows.push([2, oldLine++, line.slice(1)]);
+    else if (line.startsWith(" ")) {
+      rows.push([0, newLine++, line.slice(1)]);
+      oldLine++;
+    } else continue;
+    shown = newLine - 1;
+  }
+  const length = gitShow(name, head, path).split("\n").length - 1;
+  if (length > shown) rows.push([3, length - shown, ""]);
+  return rows;
 }
 
 function commitFiles(name: string, rev: string): string[] {
@@ -453,7 +502,25 @@ function serveDemoFiles(server: ViteDevServer | PreviewServer, port: number) {
           return send(
             response,
             200,
-            gitLog(input.project as string, Number(input.count ?? 60)),
+            gitLog(input.project as string, Number(input.count ?? 60), input.head as string | undefined),
+          );
+        case "/file_diff":
+          return send(
+            response,
+            200,
+            fileDiff(
+              input.project as string,
+              input.path as string,
+              input.base as string,
+              input.head as string,
+              Boolean(input.full),
+            ),
+          );
+        case "/file_at":
+          return send(
+            response,
+            200,
+            gitShow(input.project as string, input.rev as string, input.path as string),
           );
         case "/snapshot":
           return send(

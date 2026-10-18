@@ -9,8 +9,7 @@ const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const lerp = (from, to, at) => from + (to - from) * at;
 /** How a hand moves between two points: slow away, fast across, slow onto the target. */
 const handEase = (p) => p * p * p * (10 + p * (6 * p - 15));
-const cameraEase = (p) =>
-  p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2;
+const cameraEase = (p) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 const outEase = (p) => 1 - (1 - p) ** 3;
 
 function seeded(seed) {
@@ -51,7 +50,11 @@ export class Director {
   }
 
   tween(duration, apply) {
-    const tween = { start: this.frames * STEP, duration: Math.max(STEP, duration), apply };
+    const tween = {
+      start: this.frames * STEP,
+      duration: Math.max(STEP, duration),
+      apply,
+    };
     this.tweens.add(tween);
     return tween;
   }
@@ -59,7 +62,8 @@ export class Director {
   async until(done, { limit = 20_000, label = "condition" } = {}) {
     const end = this.frames * STEP + limit;
     while (!(await done())) {
-      if (this.frames * STEP > end) throw new Error(`timed out waiting for ${label}`);
+      if (this.frames * STEP > end)
+        throw new Error(`timed out waiting for ${label}`);
       await this.frame();
     }
   }
@@ -137,9 +141,25 @@ export class Director {
   }
 
   async rect(target) {
-    const found = await this.page.evaluate((target) => window.video.rect(target), target);
-    if (!found) throw new Error(`nothing on screen matches ${JSON.stringify(target)}`);
+    const found = await this.page.evaluate(
+      (target) => window.video.rect(target),
+      target,
+    );
+    if (!found)
+      throw new Error(`nothing on screen matches ${JSON.stringify(target)}`);
     return found;
+  }
+
+  /** Plays on until `target` is on screen. */
+  async appear(target, { limit = 15_000 } = {}) {
+    await this.until(
+      async () =>
+        (await this.page.evaluate(
+          (target) => window.video.rect(target),
+          target,
+        )) !== null,
+      { limit, label: JSON.stringify(target) },
+    );
   }
 
   async point(target, at = { x: 0.5, y: 0.5 }) {
@@ -158,7 +178,10 @@ export class Director {
 
   /** Puts the cursor somewhere at once, as if it had been resting there. */
   async place(target, at) {
-    const point = typeof target === "object" && "x" in target && !("width" in target) ? target : await this.point(target, at);
+    const point =
+      typeof target === "object" && "x" in target && !("width" in target)
+        ? target
+        : await this.point(target, at);
     this.cursor.x = point.x;
     this.cursor.y = point.y;
   }
@@ -177,8 +200,10 @@ export class Director {
     };
     const tween = this.tween(time, (progress) => {
       const p = handEase(progress);
-      this.cursor.x = (1 - p) ** 2 * from.x + 2 * (1 - p) * p * control.x + p * p * to.x;
-      this.cursor.y = (1 - p) ** 2 * from.y + 2 * (1 - p) * p * control.y + p * p * to.y;
+      this.cursor.x =
+        (1 - p) ** 2 * from.x + 2 * (1 - p) * p * control.x + p * p * to.x;
+      this.cursor.y =
+        (1 - p) ** 2 * from.y + 2 * (1 - p) * p * control.y + p * p * to.y;
     });
     if (wait) await this.until(() => !this.tweens.has(tween));
   }
@@ -219,12 +244,24 @@ export class Director {
   }
 
   /** Moves the camera so `target` fills the screen, or by `scale` around it, never past the screen's edges. */
-  async zoom(target, { scale, pad = 48, at = { x: 0.5, y: 0.5 }, duration = 1100, wait = true } = {}) {
+  async zoom(
+    target,
+    {
+      scale,
+      pad = 48,
+      at = { x: 0.5, y: 0.5 },
+      duration = 1100,
+      wait = true,
+    } = {},
+  ) {
     let width = WIDTH;
     let center = { x: WIDTH / 2, y: HEIGHT / 2 };
     if (target !== null) {
       const box = await this.rect(target);
-      const fit = Math.min(WIDTH / (box.width + pad * 2), HEIGHT / (box.height + pad * 2));
+      const fit = Math.min(
+        WIDTH / (box.width + pad * 2),
+        HEIGHT / (box.height + pad * 2),
+      );
       width = WIDTH / clamp(scale ?? fit, 1, 3);
       center = { x: box.x + box.width * at.x, y: box.y + box.height * at.y };
     }
@@ -239,7 +276,10 @@ export class Director {
       const p = cameraEase(progress);
       this.view.width = start.width * (end.width / start.width) ** p;
       // A zoom keeps one point of the screen still, as a lens would, instead of sliding across it.
-      const along = Math.abs(end.width - start.width) > 1 ? (start.width - this.view.width) / (start.width - end.width) : p;
+      const along =
+        Math.abs(end.width - start.width) > 1
+          ? (start.width - this.view.width) / (start.width - end.width)
+          : p;
       this.view.x = lerp(start.x, end.x, along);
       this.view.y = lerp(start.y, end.y, along);
     });
@@ -274,27 +314,48 @@ export class Director {
     let taken = 0;
     const task = async (at) => {
       if (at < due) return;
-      const hold = taken++ < steps ? await this.app(() => showcase.backend.stepLive()) : -1;
+      const hold =
+        taken++ < steps
+          ? await this.app(() => showcase.backend.stepLive())
+          : -1;
       if (hold < 0) this.background.delete(task);
       else due = at + Math.max(shortest, hold * pace);
     };
     this.background.add(task);
-    if (wait) await this.until(() => !this.background.has(task), { limit: 120_000, label: "the live turn" });
+    if (wait)
+      await this.until(() => !this.background.has(task), {
+        limit: 120_000,
+        label: "the live turn",
+      });
   }
 
-  /** Scrolls an element of the app smoothly by `by` pixels. */
+  /** Scrolls `selector`, or the first thing inside it that scrolls, smoothly by `by` pixels. */
   async scroll(selector, { by, duration = 1600, ease = cameraEase } = {}) {
-    const from = await this.app((selector) => document.querySelector(selector)?.scrollTop ?? null, selector);
-    if (from === null) throw new Error(`nothing in the app matches ${selector}`);
-    let last = from;
+    const from = await this.app((selector) => {
+      const root = [...document.querySelectorAll(selector)].find(
+        (element) => element.getClientRects().length,
+      );
+      const scrolls = (element) =>
+        element.scrollHeight > element.clientHeight + 1 &&
+        /auto|scroll/.test(getComputedStyle(element).overflowY);
+      const scroller =
+        root &&
+        (scrolls(root) ? root : [...root.querySelectorAll("*")].find(scrolls));
+      if (!scroller) return null;
+      window.__videoScroller = scroller;
+      return scroller.scrollTop;
+    }, selector);
+    if (from === null)
+      throw new Error(`nothing in the app under ${selector} scrolls`);
+    let top = from;
     const tween = this.tween(duration, (p) => {
-      last = from + by * ease(p);
+      top = from + by * ease(p);
     });
     while (this.tweens.has(tween)) {
       await this.frame();
-      await this.app(([selector, top]) => {
-        document.querySelector(selector).scrollTop = top;
-      }, [selector, last]);
+      await this.app((top) => {
+        window.__videoScroller.scrollTop = top;
+      }, top);
     }
   }
 
