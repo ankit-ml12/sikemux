@@ -21,6 +21,7 @@ import { ChatAgentContext, ChatSubagentsContext, ReaderScrollContext } from "./c
 import { warmTranscript } from "./ChatMessageRow";
 import { ChatTranscript } from "./ChatTranscript";
 import { ChatComposer } from "./ChatComposer";
+import { ComposerBuddy } from "../buddies/Buddy";
 import { useMessageArrival } from "./useMessageArrival";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
@@ -467,6 +468,7 @@ export function AgentChatPane({
                                         <IconArrowDown size={14} />
                                     </button>
                                 )}
+                                <ComposerBuddy agent={agent} />
                                 {(questions.open.length > 0 || subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
                                     <LiveStack
                                         questions={<QuestionDock questions={questions} active={active} paneRef={paneRef} />}

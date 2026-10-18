@@ -81,6 +81,17 @@ export function AgentFace({
     );
 }
 
+/** The agent's buddy peeking over the top of the composer, or of whatever is docked on it. */
+export function ComposerBuddy({ agent }: { agent: Pick<Agent, "id" | "buddy"> }) {
+    const on = useStore((s) => s.buddies);
+    if (!on) return null;
+    return (
+        <div className="composer-buddy" aria-hidden="true">
+            <AgentBuddy agent={agent} size={30} />
+        </div>
+    );
+}
+
 /** Gives each new agent its colour while buddies are on. Mounted once, at the app's root. */
 export function BuddyBridge() {
     const on = useStore((s) => s.buddies);

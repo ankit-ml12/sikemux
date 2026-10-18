@@ -212,6 +212,25 @@
     }
 }
 
+/* A line on the top edge of the composer, or of the narrower stack docked on it; the buddy shows only above it. */
+.composer-buddy {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 820px);
+    height: 0;
+    margin: 0 auto;
+    clip-path: inset(-40px -40px 0 -40px);
+    pointer-events: none;
+}
+.composer-buddy:has(+ .chat-live-stack, + .chat-project-strip) {
+    width: calc(min(100%, 820px) - var(--chat-step) * 2);
+}
+.composer-buddy > .buddy {
+    position: absolute;
+    right: 20px;
+    bottom: -12px;
+}
+
 .dlg.buddy-dlg {
     width: min(600px, 100%);
 }
