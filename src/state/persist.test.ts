@@ -17,7 +17,6 @@ import { getState, setState } from "./store";
 import { activeAgentId, agentIdsOf, agentWindowId } from "./selectors";
 import { collectPanes } from "./layout";
 import { deskEditorId } from "./desks";
-import { agentWindow } from "./agentWindow";
 import { withAgents } from "../test/agents";
 import type { Workspace } from "../api/generated/wire";
 import { localWorkspace } from "./coreWorkspace";
