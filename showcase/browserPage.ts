@@ -29,6 +29,23 @@ export const BROWSER_TABS: Record<
   },
 };
 
+/** A page an agent's tab moves to while a video plays, and the picture of it the tab shows. */
+export interface BrowserPage {
+  url: string;
+  title: string;
+  picture: string;
+}
+
+export function showBrowserPage(agentId: string, page: BrowserPage): void {
+  BROWSER_TABS[agentId] = {
+    tabs: [tab("tab-site", page.url, page.title, true)],
+    activeTabId: "tab-site",
+  };
+  SNAPSHOTS[agentId] = page.picture;
+  const frame = frames.get(agentId);
+  if (frame) frame.src = page.picture;
+}
+
 const SNAPSHOTS: Record<string, string> = {
   [AGENTS.hero.id]: "/showcase/pages/vercel.png",
 };

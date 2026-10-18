@@ -38,7 +38,7 @@ export class Director {
     this.recorded = 0;
     this.tweens = new Set();
     this.background = new Set();
-    this.cursor = { x: 1500, y: 900, press: 0, opacity: 1 };
+    this.cursor = { x: 1500, y: 900, press: 0, opacity: 1, shape: null };
     this.view = { x: 0, y: 0, width: WIDTH };
     this.blur = 0;
     this.mouse = null;
@@ -305,8 +305,8 @@ export class Director {
   }
 
   /**
-   * Plays the live turns the demo agents have queued, step by step, holding each
-   * as long as it took. Without `wait` they play on behind the beats that follow.
+   * Plays the live turns the demo agents have queued, or only `agent`'s, step by
+   * step, holding each as long as it took. Without `wait` they play on behind the beats that follow.
    */
   async live({
     agent,
@@ -321,7 +321,7 @@ export class Director {
       if (at < due) return;
       const hold =
         taken++ < steps
-          ? await this.app(() => showcase.backend.stepLive())
+          ? await this.app((agent) => showcase.backend.stepLive(agent), agent)
           : -1;
       if (hold < 0) this.background.delete(task);
       else due = at + Math.max(shortest, hold * pace);
@@ -379,10 +379,15 @@ export class Director {
     await this.app(() => showcase.backend.emit("wheel-touch", false));
   }
 
+  /** Moves the island over the notch to one of its states, as drawn by its snapshot tool. */
+  async island(state) {
     const settled = this.page.evaluate(
       (state) => window.video.island(state),
       state,
     );
+    let done = false;
+    settled.then(() => (done = true));
+    await this.until(() => done, { label: `the island to show ${state}` });
   }
 
   async hideCursor(duration = 240) {

@@ -387,8 +387,69 @@ export const AGENT_SCRIPTS: Record<string, AgentScript> = {
 const letter = (from: { id: string; name: string; type: string }, text: string) =>
   user(`<agent-message from="${from.name}" agent-id="${from.id}" cli="${from.type}">\n${text}\n</agent-message>`);
 
-/** A turn a video plays when it says so, after the chat has opened. `board` is the change the step makes to a card. */
+const COVER = {
+  url: "http://localhost:5173/",
+  title: "Moodboard Studio · Issue 07",
+  picture: "/showcase/pages/moodboard-cover.png",
+};
+const SHOP = {
+  url: "http://localhost:5173/shop",
+  title: "Shop the drop · Moodboard Studio",
+  picture: "/showcase/pages/moodboard-shop.png",
+};
+const coverReply = say("The cover buttons share the row now, and Shop the drop opens the shop:");
+const railTests = tool(
+  "execute",
+  "pnpm test src/rail --run",
+  { rawInput: { command: "pnpm test src/rail --run" }, asks: true, durationMs: 600 },
+  "in_progress",
+);
+
+/**
+ * A turn a video plays when it says so, after the chat has opened. A step's
+ * `board` changes a card, `browser` moves the agent's tab to a page, and
+ * `asks` makes a command wait for the person's permission.
+ */
 export const CUED_TURNS: Record<string, { agentId: string; updates: Update[] }> = {
+  "wren-checks-the-cover": {
+    agentId: AGENTS.hero.id,
+    updates: [
+      user("Open the dev server in your tab, check the cover buttons, then show me Shop the drop."),
+      think("Opening the cover in my tab first."),
+      tool("fetch", "mcp__sikemux-tools__browser_navigate", {
+        rawInput: { url: COVER.url },
+        browser: COVER,
+        durationMs: 1_600,
+      }),
+      tool("edit", "mcp__sikemux-tools__browser_click", {
+        rawInput: { text: "Shop the drop" },
+        browser: SHOP,
+        durationMs: 1_400,
+      }),
+      tool("read", "mcp__sikemux-tools__browser_screenshot", { rawInput: {}, durationMs: 900 }),
+      coverReply,
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: coverReply.messageId,
+        content: { type: "image", uri: SHOP.picture },
+      },
+    ],
+  },
+  "otter-runs-the-rail-tests": {
+    agentId: AGENTS.rail.id,
+    updates: [
+      think("The rail suite needs a shell, so I'll ask before running it."),
+      railTests,
+      { sessionUpdate: "tool_call_update", toolCallId: railTests.toolCallId, status: "in_progress", durationMs: 1_800 },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: railTests.toolCallId,
+        status: "completed",
+        rawOutput: " ✓ src/rail (41 tests) 2.14s\n Test Files  9 passed (9)",
+      },
+      say("All 41 rail tests pass, so the labels are ready to commit."),
+    ],
+  },
   "otter-asks-maple": {
     agentId: AGENTS.rail.id,
     updates: [

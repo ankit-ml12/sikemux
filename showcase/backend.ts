@@ -28,7 +28,12 @@ import {
   CHECKOUT_RESPONSE,
   brunoDir,
 } from "./world/bruno";
-import { BROWSER_TABS, placeBrowserPage } from "./browserPage";
+import {
+  BROWSER_TABS,
+  placeBrowserPage,
+  showBrowserPage,
+  type BrowserPage,
+} from "./browserPage";
 import {
   DEMO_HOME,
   DEMO_PROJECTS,
@@ -752,18 +757,32 @@ export class ShowcaseBackend implements IpcTransport {
 
   private readonly liveSteps: { agentId: string; run: () => void; holdMs: number }[] = [];
 
-  /** Plays every queued step at once and ends each turn, so the chats start idle. */
-  settleLive(): void {
-    const agents = new Set(this.liveSteps.map((step) => step.agentId));
-    while (this.stepLive() >= 0);
+  /** Plays every queued step, or only `agentId`'s, at once and ends each turn, so the chats are idle. */
+  settleLive(agentId?: string): void {
+    const agents = new Set(this.liveSteps.map((step) => step.agentId).filter((id) => !agentId || id === agentId));
+    while (this.stepLive(agentId) >= 0);
     for (const agentId of agents)
       this.emit("acp_event", { agentId, kind: "turn_completed", payload: { stopReason: "end_turn" } });
   }
 
-  /** Queues one of the world's cued turns behind whatever is already playing. */
-  cue(name: string): void {
+  /**
+   * Queues one of the world's cued turns behind whatever that agent is already
+   * playing. A picture a step shows by `uri` is read first, as an agent's would be.
+   */
+  async cue(name: string): Promise<void> {
     const { agentId, updates } = CUED_TURNS[name];
-    this.queueLiveTurn(agentId, updates, this.batchFor(agentId), true);
+    const read = await Promise.all(updates.map((update) => this.withPicture(update)));
+    this.queueLiveTurn(agentId, read, this.batchFor(agentId), true);
+  }
+
+  private async withPicture(update: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const content = update.content as { type?: string; uri?: string } | undefined;
+    if (content?.type !== "image" || !content.uri) return update;
+    const bytes = new Uint8Array(await (await fetch(content.uri)).arrayBuffer());
+    let binary = "";
+    for (let at = 0; at < bytes.length; at += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+    return { ...update, content: { type: "image", mimeType: "image/png", data: btoa(binary) } };
   }
 
   private batchFor(agentId: string) {
@@ -773,9 +792,13 @@ export class ShowcaseBackend implements IpcTransport {
     });
   }
 
-  // A live turn plays one step at a time so the capture can move the clock between tool calls.
-  stepLive(): number {
-    const step = this.liveSteps.shift();
+  /**
+   * A live turn plays one step at a time so the capture can move the clock between tool calls.
+   * Given an agent, only that agent's turn moves on, so several can work at once.
+   */
+  stepLive(agentId?: string): number {
+    const index = agentId === undefined ? 0 : this.liveSteps.findIndex((step) => step.agentId === agentId);
+    const [step] = index < 0 ? [] : this.liveSteps.splice(index, 1);
     if (!step) return -1;
     step.run();
     return step.holdMs;
@@ -796,6 +819,8 @@ export class ShowcaseBackend implements IpcTransport {
     const strip = ({
       durationMs: _durationMs,
       board: _board,
+      browser: _browser,
+      asks: _asks,
       ...update
     }: Record<string, unknown>) => update;
     this.liveSteps.push({
@@ -810,11 +835,12 @@ export class ShowcaseBackend implements IpcTransport {
       const previous = finishing;
       finishing = isTool && update.status === "completed" ? update : null;
       const shown = isTool
-        ? { ...strip(update), status: "in_progress" }
+        ? { ...strip(update), status: update.asks ? "pending" : "in_progress" }
         : strip(update);
       const card = update.board as (Partial<BoardCard> & { id: number }) | undefined;
+      const page = update.browser as BrowserPage | undefined;
       this.liveSteps.push({
-      agentId,
+        agentId,
         run: () => {
           send([
             ...(previous
@@ -829,8 +855,28 @@ export class ShowcaseBackend implements IpcTransport {
             shown,
           ]);
           if (card) this.changeCard(card);
+          if (page) {
+            showBrowserPage(agentId, page);
+            this.emit("browser-tabs-changed", null);
+            this.emit("browser-agent-acting", agentId);
+          }
+          if (update.asks)
+            this.emit("acp_event", {
+              agentId,
+              kind: "permission_request",
+              payload: {
+                requestId: `ask-${String(update.toolCallId)}`,
+                sessionId: `session-${agentId}`,
+                toolCall: strip(update),
+                options: [
+                  { optionId: "allow", name: "Allow", kind: "allow_once" },
+                  { optionId: "always", name: "Always allow", kind: "allow_always" },
+                  { optionId: "deny", name: "Deny", kind: "reject_once" },
+                ],
+              },
+            });
         },
-        holdMs: isTool ? Number(update.durationMs ?? 1200) : 600,
+        holdMs: Number(update.durationMs ?? (isTool ? 1200 : 600)),
       });
     }
     if (!completes) return;

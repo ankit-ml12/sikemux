@@ -90,9 +90,12 @@ for (const name of chosen) {
   await cdp.send("Animation.enable");
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
 
-  const folder = resolve(options.out, name);
+  // A draft stays out of the posts, in the showcase's own ignored output.
+  const folder = options.draft
+    ? resolve(root, "showcase/out/video")
+    : resolve(options.out, name);
   await mkdir(folder, { recursive: true });
-  const path = resolve(folder, options.draft ? "draft.mp4" : "clip.mp4");
+  const path = resolve(folder, options.draft ? `${name}.mp4` : "clip.mp4");
   const video = encoder(path);
   const director = new Director({
     page,

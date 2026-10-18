@@ -28,7 +28,7 @@ export interface Frame {
   };
 }
 
-type Shape = "arrow" | "hand" | "beam";
+export type Shape = "arrow" | "hand" | "beam";
 
 const camera = document.querySelector<HTMLElement>(".camera")!;
 const app = document.querySelector<HTMLIFrameElement>("iframe")!;
@@ -168,7 +168,7 @@ function show(frame: Frame, now: number) {
   const { x, y, scale, blur } = frame.camera;
   camera.style.transform = `translate(${960 - x * scale}px, ${540 - y * scale}px) scale(${scale})`;
   camera.style.filter = blur > 0.05 ? `blur(${blur}px)` : "";
-  const next = shapeAt(frame.cursor.x, frame.cursor.y);
+  const next = frame.cursor.shape ?? shapeAt(frame.cursor.x, frame.cursor.y);
   if (next !== shape) {
     shape = next;
     cursor.dataset.shape = next;
@@ -178,9 +178,28 @@ function show(frame: Frame, now: number) {
   syncAnimations(now);
 }
 
+const ISLAND_EASE = "cubic-bezier(0.2, 1.15, 0.3, 1)";
+
+/**
+ * Moves the island to another of its states, the larger one growing out of the
+ * smaller from the top of the screen, as the real island does over the notch.
+ */
+async function island(state: string) {
+  const current = document.querySelector<HTMLImageElement>("img.notch")!;
+  const next = current.cloneNode() as HTMLImageElement;
+  next.src = `/__showcase/notch/${state}.png`;
+  await next.decode();
+  current.after(next);
+  const at = (scaleX: number, scaleY: number, opacity: number) => ({
+    transform: `translateX(-50%) scale(${scaleX}, ${scaleY})`,
+    opacity,
+  });
+  const grows = next.naturalHeight > current.naturalHeight;
   const ratio =
     Math.min(next.naturalHeight, current.naturalHeight) /
     Math.max(next.naturalHeight, current.naturalHeight);
+  for (const image of [current, next]) image.style.transformOrigin = "50% 0";
+  const moving = grows
     ? next.animate([at(0.62, ratio, 0), at(1, 1, 1)], {
         duration: 460,
         easing: ISLAND_EASE,
@@ -200,10 +219,15 @@ function show(frame: Frame, now: number) {
       delay: 80,
       fill: "backwards",
     });
+  await moving.finished;
+  current.remove();
+}
+
 Object.assign(window, {
   video: {
     rect,
     show,
+    island,
     ready: () =>
       app.contentWindow &&
       "showcase" in app.contentWindow &&
