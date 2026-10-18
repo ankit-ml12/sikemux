@@ -123,7 +123,12 @@ export function SwipePages({
             <div className="swipe-switch" role="tablist" aria-label={label}>
                 {pages.map((page) => (
                     <Tooltip key={page.id} label={page.label}>
-                        <button type="button" role="tab" aria-selected={page.id === current} aria-label={page.label} onClick={() => onChange(page.id)}>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={page.id === current}
+                            aria-label={page.label}
+                            onClick={() => onChange(page.id)}>
                             {page.icon}
                         </button>
                     </Tooltip>
