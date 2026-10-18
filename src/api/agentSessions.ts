@@ -1,4 +1,4 @@
-import { invokeCommand as invoke } from "./invoke";
+import { coreCall } from "./core";
 import type { AgentType } from "../state/types";
 
 /** A saved session the core's search found, by its title and what was said in it. */
@@ -24,5 +24,5 @@ export interface SessionSearch {
 
 export const agentSessionsApi = {
     /** Saved sessions best matching `query`, leaving out those open now. */
-    search: (search: SessionSearch) => invoke<SessionMatch[]>("agent_name_call", { method: "agentSessions", params: search }),
+    search: (search: SessionSearch) => coreCall<SessionMatch[]>("agentSessions", search),
 };

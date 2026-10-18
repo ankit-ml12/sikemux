@@ -1,10 +1,10 @@
 import type { CardChanges, NewCard, ProjectBoard, SettingsChanges } from "../agents/agentBoard";
-import { invokeCommand as invoke } from "./invoke";
+import { coreCall } from "./core";
 
 /** Sent by the window whenever boards change, with the boards that did. */
 export const AGENT_BOARD_EVENT = "agent_board";
 
-const board = <T>(method: string, params: unknown) => invoke<T>("agent_board_call", { method, params });
+const board = coreCall;
 
 export const agentBoardApi = {
     all: () => board<ProjectBoard[]>("boards", null),

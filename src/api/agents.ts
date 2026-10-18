@@ -1,3 +1,4 @@
+import { coreCall } from "./core";
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
@@ -89,7 +90,7 @@ const inflight = new Map<string, Promise<AgentSession[]>>();
 
 /** One of the core's calls about the person's agent accounts. */
 function accountCall<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-    return invoke<T>("agent_accounts_call", { method, params });
+    return coreCall<T>(method, params);
 }
 
 function key(agent: string, cwd: string, configPath?: string) {

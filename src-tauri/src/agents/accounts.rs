@@ -1,6 +1,6 @@
 //! Signing the person in and out of their accounts with Claude Code and
 //! Codex, through each CLI's own login. The core keeps the accounts and says
-//! who each is signed in as; these commands pass the app's asks on to it.
+//! who each is signed in as.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -8,34 +8,17 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::Value;
-use sikemux_core::agent_accounts::{cli, folders::link_shared, METHODS};
-use tauri::{AppHandle, Emitter, State};
+use sikemux_core::agent_accounts::{cli, folders::link_shared};
+use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::oneshot;
 
 use super::AgentKind;
-use crate::error::{AppError, AppResult};
-use crate::pty::PtyManager;
 
 const SIGN_OUT_TIMEOUT: Duration = Duration::from_secs(12);
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const SIGN_IN_TAIL: usize = 12;
-
-/// The core's calls about the person's agent accounts.
-#[tauri::command]
-pub async fn agent_accounts_call(
-    manager: State<'_, PtyManager>,
-    method: String,
-    params: Value,
-) -> AppResult<Value> {
-    if !METHODS.contains(&method.as_str()) {
-        return Err(AppError::Other(format!("{method} is not an account call")));
-    }
-    let client = manager.client().await?;
-    crate::core_call::call(&client, method, params).await
-}
 
 async fn agent_command(
     agent: AgentKind,

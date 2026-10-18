@@ -1,6 +1,5 @@
-//! Agents' names, and the saved sessions they ran. The core gives the names
-//! and keeps them, and searches the sessions; these commands pass the app's
-//! asks on to it.
+//! The agents the app holds, which the core keeps names for. The app tells a
+//! core it reconnects to again.
 
 use std::sync::{Arc, Mutex};
 
@@ -9,11 +8,8 @@ use sikemux_core::client::CoreClient;
 use tauri::{AppHandle, Manager, State};
 
 use crate::core_call::call;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::pty::PtyManager;
-
-/// The core's calls the page may make through this.
-const METHODS: [&str; 4] = ["nameAgent", "renameAgent", "agentsInApp", "agentSessions"];
 
 /// Tells the core every agent the app holds.
 const IN_APP: &str = "agentsInApp";
@@ -29,9 +25,6 @@ pub async fn agent_name_call(
     method: String,
     params: Value,
 ) -> AppResult<Value> {
-    if !METHODS.contains(&method.as_str()) {
-        return Err(AppError::Other(format!("{method} is not a name call")));
-    }
     if method == IN_APP {
         if let Ok(mut last) = in_app.0.lock() {
             *last = Some(params.clone());

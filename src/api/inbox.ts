@@ -1,5 +1,6 @@
 import type { AgentMessageLog } from "../agents/agentMessages";
-import { invokeCommand as invoke } from "./invoke";
+import type { AgentShown, AgentStatus } from "../state/agentStatus";
+import { coreCall } from "./core";
 
 export type InboxTier = "needs" | "review" | "finished" | "progress";
 
@@ -49,8 +50,6 @@ export interface InboxItem {
     host?: string;
 }
 
-export type RemoteAgentStatus = "working" | "done" | "idle" | "blocked" | "stopped" | "starting" | "asleep";
-
 /** A worker an agent here started on a linked host. */
 export interface RemoteAgent {
     agentId: string;
@@ -58,7 +57,7 @@ export interface RemoteAgent {
     host: string;
     hostId: string;
     cli: string;
-    status: RemoteAgentStatus;
+    status: AgentStatus;
     /** The agent here that started it. */
     lead: string | null;
     project: string;
@@ -74,14 +73,14 @@ export interface Inbox {
     agentMessages: Record<string, number>;
     /** Workers agents here started on linked hosts. */
     remoteAgents: RemoteAgent[];
-    /** Every open agent here, by id, in the order every device lists them. */
-    order: string[];
+    /** Every open agent here as every device shows it, in the order they list them. */
+    agents: AgentShown[];
 }
 
 /** Sent by the window whenever the core's inbox changes. */
 export const INBOX_EVENT = "inbox_changed";
 
 export const inboxApi = {
-    read: () => invoke<Inbox>("inbox_call", { method: "inbox", params: null }),
-    agentMessages: (project: string) => invoke<AgentMessageLog>("inbox_call", { method: "agentMessages", params: { project } }),
+    read: () => coreCall<Inbox>("inbox"),
+    agentMessages: (project: string) => coreCall<AgentMessageLog>("agentMessages", { project }),
 };

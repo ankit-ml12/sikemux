@@ -1,3 +1,4 @@
+import { coreCall } from "./core";
 import { invokeCommand as invoke } from "./invoke";
 
 /** A chat this computer shares, as its core runs it. */
@@ -22,9 +23,8 @@ export interface ShareAccess {
 
 export const shareApi = {
     /** Shares the chat, or with a share already open, tells its viewers its name. */
-    share: (agentId: string, lifetimeMs: number, title: string) =>
-        invoke<ShareView>("share_call", { method: "shareChat", params: { agentId, lifetimeMs, title } }),
-    stop: (id: string) => invoke<null>("share_call", { method: "stopShare", params: { id } }),
-    list: () => invoke<ShareView[]>("share_call", { method: "shares", params: {} }),
+    share: (agentId: string, lifetimeMs: number, title: string) => coreCall<ShareView>("shareChat", { agentId, lifetimeMs, title }),
+    stop: (id: string) => coreCall<null>("stopShare", { id }),
+    list: () => coreCall<ShareView[]>("shares", {}),
     access: () => invoke<ShareAccess>("share_access"),
 };

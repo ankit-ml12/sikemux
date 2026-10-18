@@ -1,3 +1,4 @@
+import { coreCall } from "./core";
 import { invokeCommand as invoke } from "./invoke";
 
 /** An agent's name as the core keeps it. */
@@ -26,8 +27,8 @@ export interface NameRequest {
 
 export const agentNamesApi = {
     /** The agent's name, given now when it has none. */
-    name: (request: NameRequest) => invoke<AgentName>("agent_name_call", { method: "nameAgent", params: request }),
-    rename: (agentId: string, name: string) => invoke<AgentName>("agent_name_call", { method: "renameAgent", params: { agentId, name } }),
+    name: (request: NameRequest) => coreCall<AgentName>("nameAgent", request),
+    rename: (agentId: string, name: string) => coreCall<AgentName>("renameAgent", { agentId, name }),
     /**
      * Every agent the app holds, sleeping ones included, so the core keeps their names theirs and frees the names of the
      * rest, and how each runs, so an agent a terminal agent starts runs on its account and in its mode.

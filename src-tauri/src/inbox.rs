@@ -7,29 +7,11 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::Request;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter};
 
-use crate::core_call::call;
-use crate::error::{AppError, AppResult};
-use crate::pty::{core_error, PtyManager};
-
-/// The core's inbox calls, the only ones the page may make through this.
-const METHODS: [&str; 3] = ["inbox", "digest", "agentMessages"];
+use crate::pty::core_error;
 
 const CHANGED_EVENT: &str = "inbox_changed";
-
-#[tauri::command]
-pub async fn inbox_call(
-    manager: State<'_, PtyManager>,
-    method: String,
-    params: Value,
-) -> AppResult<Value> {
-    if !METHODS.contains(&method.as_str()) {
-        return Err(AppError::Other(format!("{method} is not an inbox call")));
-    }
-    let client = manager.client().await?;
-    call(&client, method, params).await
-}
 
 /// Asks a core the app just connected to for its device view as it changes.
 pub(crate) async fn connected(client: &Arc<CoreClient>) {
