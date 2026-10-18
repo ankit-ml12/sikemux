@@ -13,6 +13,7 @@ import { GkePage } from "./GkePage";
 import { StoragePage } from "./StoragePage";
 import { SqlPage } from "./SqlPage";
 import { PubSubPage } from "./PubSubPage";
+import { BuildPage } from "./BuildPage";
 import { Overview } from "./Overview";
 import { ProjectList, ProjectPicker } from "./ProjectPicker";
 import { Setup } from "./Setup";
@@ -33,6 +34,7 @@ const PAGES: Partial<Record<Product, ComponentType<ProductProps>>> = {
     storage: StoragePage,
     sql: SqlPage,
     pubsub: PubSubPage,
+    build: BuildPage,
     logging: LoggingPage,
 };
 
