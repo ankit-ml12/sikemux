@@ -12,6 +12,10 @@ When you ask an agent to open, show or preview a page, it opens the page on its 
 - `http` and `https` pages.
 - Local files and folders: give the agent an absolute path, a `~/` path or a `file://` URL; a folder opens its `index.html`. Sikemux serves the page from a private address on your computer. Inside a project, the files beside it load too, so relative links and images work. In Downloads, Desktop, Documents, Library and other folders that gather files from anywhere, a page sees only itself. Folders are never listed.
 
+## Downloads
+
+Files a page downloads wait in a folder of Sikemux's own, marked as downloaded from the internet, and Sikemux shows a notice for each. Click **Keep in Downloads** to move it into your Downloads folder; files you don't keep are cleared after a week. A page that starts more than eight downloads in half a minute is stopped.
+
 ## Size
 
 A tab's page follows the pane's size. An agent can hold a tab at a set size, such as phone (390×844), tablet (820×1180) or desktop (1280×800), to check a layout. The page is scaled down to fit the pane, never up. The phone size also sends iPhone Safari's user agent, so sites serve their phone version.

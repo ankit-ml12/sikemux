@@ -53,6 +53,11 @@ const MAX_URL_LEN: usize = 8192;
 /// A page opening more tabs than this in `POPUP_WINDOW` is in a loop.
 const POPUP_LIMIT: usize = 4;
 const POPUP_WINDOW: Duration = Duration::from_secs(10);
+/// A page saving more files than this in `DOWNLOAD_WINDOW` is filling the disk.
+const DOWNLOAD_LIMIT: usize = 8;
+const DOWNLOAD_WINDOW: Duration = Duration::from_secs(30);
+/// Files the person never kept are cleared from the holding folder after this long.
+const HELD_DOWNLOAD_LIFETIME: Duration = Duration::from_secs(7 * 24 * 3600);
 // Parked pages sit outside the window, since a hidden view still takes file
 // drops over the spot it last covered. They are hidden too once they are idle.
 const PARKED_ORIGIN: f64 = -100_000.0;
@@ -145,8 +150,7 @@ pub struct BrowserShortcut {
     pub alt: bool,
 }
 
-/// A file a page handed to the download folder, announced when it starts and
-/// again when it ends. macOS never reports the saved path back, so the path
+/// A file a page saved, announced when it starts and again when it ends. macOS never reports the saved path back, so the path
 /// chosen at the start is the one carried through.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -672,11 +676,19 @@ impl BrowserManager {
         let popups = Mutex::new(burst::Burst::new(POPUP_LIMIT, POPUP_WINDOW));
         let (download_app, download_agent, download_tab) =
             (app.clone(), agent_id.to_owned(), tab_id.to_owned());
+        let downloads = Mutex::new(burst::Burst::new(DOWNLOAD_LIMIT, DOWNLOAD_WINDOW));
         builder
             .on_download(move |_, event| {
+                if matches!(event, DownloadEvent::Requested { .. })
+                    && !downloads
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .admit(Instant::now())
+                {
+                    return false;
+                }
                 let manager = download_app.state::<BrowserManager>();
-                manager.note_download(&download_app, &download_agent, &download_tab, event);
-                true
+                manager.note_download(&download_app, &download_agent, &download_tab, event)
             })
             .on_page_load(move |webview, payload| {
                 let loading = payload.event() == PageLoadEvent::Started;
@@ -729,14 +741,13 @@ impl BrowserManager {
         agent_id: &str,
         tab_id: &str,
         event: DownloadEvent<'_>,
-    ) {
+    ) -> bool {
         let key = |url: &Url| (tab_id.to_owned(), url.to_string());
         let (url, path, state) = match event {
             DownloadEvent::Requested { url, destination } => {
-                let folder = app
-                    .path()
-                    .download_dir()
-                    .unwrap_or_else(|_| std::env::temp_dir());
+                let Some(folder) = held_downloads_dir(app) else {
+                    return false;
+                };
                 let path = unique_download_path(&folder, &download_file_name(&url, destination));
                 *destination = path.clone();
                 self.downloads_lock().insert(key(&url), path.clone());
@@ -759,7 +770,7 @@ impl BrowserManager {
                     },
                 )
             }
-            _ => return,
+            _ => return true,
         };
         let bytes = (state == DownloadState::Finished)
             .then(|| std::fs::metadata(&path).ok().map(|meta| meta.len()))
@@ -775,6 +786,7 @@ impl BrowserManager {
             agent.downloads.note(&download, bytes);
         }
         let _ = app.emit(BROWSER_DOWNLOAD_EVENT, download);
+        true
     }
 
     /// The number the agent's next download will get, to find later which
@@ -1316,6 +1328,27 @@ fn history_state(webview: &Webview) -> Option<(bool, bool)> {
         let _ = webview;
         None
     }
+}
+
+/// Where pages' downloads wait until the person keeps them, so a page can never
+/// drop a file into Downloads by itself. Files left there go after a week.
+fn held_downloads_dir(app: &AppHandle) -> Option<PathBuf> {
+    let folder = app.path().app_cache_dir().ok()?.join("desk-downloads");
+    std::fs::create_dir_all(&folder).ok()?;
+    let now = std::time::SystemTime::now();
+    for entry in std::fs::read_dir(&folder).ok()?.flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|modified| {
+                now.duration_since(modified)
+                    .is_ok_and(|age| age > HELD_DOWNLOAD_LIFETIME)
+            });
+        if stale {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    Some(folder)
 }
 
 /// Where Sikemux keeps the files an agent host needs to find the browser: MCP
