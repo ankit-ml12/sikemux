@@ -10,10 +10,11 @@ const api = vi.hoisted(() => ({
 
 import { invalidate } from "../../plugin-api/resources";
 import { hostSettings, resetView, updateView, useHostView, viewOf } from "../state";
-import { InHost, registerTestHost, TEST_HOST } from "../testHost";
+import { ciCore, InHost, registerTestHost, TEST_HOST } from "../testHost";
 import { RunsList } from "./RunsList";
 
 const host = registerTestHost(api);
+const core = ciCore();
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const makeRun = (overrides: Partial<Run> = {}): Run => ({
@@ -144,29 +145,18 @@ describe("filtering runs", () => {
 });
 
 describe("keeping the list fresh", () => {
-    it("reads again every ten seconds while a run is going", async () => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    it("reads again when the core says the repository's CI moved, and only then", async () => {
         api.runs.mockResolvedValue(pageOf([makeRun({ status: "in_progress", conclusion: null })]));
         await renderList();
         const before = api.runs.mock.calls.length;
         await act(async () => {
-            vi.advanceTimersByTime(10_000);
-        });
-        expect(api.runs.mock.calls.length).toBe(before + 1);
-        expect(document.querySelector(".gha-run-item")).toHaveAttribute("data-outcome", "running");
-    });
-
-    it("waits twenty seconds between reads once everything has finished", async () => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        await renderList();
-        const before = api.runs.mock.calls.length;
-        await act(async () => {
-            vi.advanceTimersByTime(10_000);
+            core.moved({ ...repo, name: "elsewhere" });
         });
         expect(api.runs.mock.calls.length).toBe(before);
         await act(async () => {
-            vi.advanceTimersByTime(10_000);
+            core.moved(repo);
         });
         expect(api.runs.mock.calls.length).toBe(before + 1);
+        expect(document.querySelector(".gha-run-item")).toHaveAttribute("data-outcome", "running");
     });
 });

@@ -19,7 +19,7 @@ use sikemux_core::client::{
 };
 use sikemux_core::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
 use sikemux_core::protocol::{BuildIdentity, Request, SessionId, SessionInfo, SessionKind};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 
@@ -239,6 +239,7 @@ impl PtyManager {
         client.register_window().await.map_err(core_error)?;
         crate::remote::connected(&settings.app, self.core_launch().as_ref(), &client).await;
         crate::inbox::connected(&client).await;
+        let _ = settings.app.emit_to("main", "core_connected", ());
         self.core_pid.store(client.core_pid(), Ordering::Release);
         if let Ok(mut current) = self.client.lock() {
             *current = Some(client.clone());

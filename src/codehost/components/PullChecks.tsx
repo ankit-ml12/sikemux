@@ -3,10 +3,9 @@ import type { RepoRef } from "../api";
 import { runsR } from "../resources";
 import { checksSummary, elapsedMs, eventLabel, isUnfinished, outcomeOf, OUTCOME_LABEL, overallOutcome } from "../runStatus";
 import { StatusMark } from "./ActionsIcon";
-import { useEvery, useNow } from "../../plugin-api/hooks";
+import { useNow } from "../../plugin-api/hooks";
+import { useCiWatch } from "../ciWatch";
 import { formatDuration } from "../../lib/format";
-
-const LIVE_REFRESH_MS = 10_000;
 
 interface Props {
     repo: RepoRef;
@@ -21,7 +20,7 @@ export function PullChecks({ repo, sha, active, onOpenRun }: Props) {
     const runs = found.data?.runs ?? [];
     const live = active && runs.some(isUnfinished);
     const now = useNow(live);
-    useEvery(live, LIVE_REFRESH_MS, () => void found.refresh());
+    useCiWatch(repo, active);
     if (runs.length === 0) return null;
 
     const summary = checksSummary(runs);

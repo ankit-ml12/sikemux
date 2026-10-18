@@ -32,7 +32,7 @@ import { basename, dirname } from "../../lib/paths";
 import { requestOpenFile } from "../../state/commands";
 import { hostApi, failureMessage, type MergeMethod, type Pull, type RepoRef, type Run } from "../api";
 import { pullCommitsR, pullCountsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
-import { checksSummary, isUnfinished, outcomeOf, overallOutcome, type Outcome } from "../runStatus";
+import { checksSummary, outcomeOf, overallOutcome, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
@@ -40,14 +40,14 @@ import { SectionIcon, StatusMark } from "./ActionsIcon";
 import { closedIssues, pullState } from "../project";
 import { Branch, Comments, Labels, ListTitle, ShellAccount, StateMark, Who } from "./Bits";
 import { useBusy } from "./hooks";
-import { useEvery, useNow } from "../../plugin-api/hooks";
+import { useNow } from "../../plugin-api/hooks";
+import { useCiWatch } from "../ciWatch";
 import { NewPullForm } from "./NewPullForm";
 import { PullFiles } from "./PullFiles";
 import { PullChecks } from "./PullChecks";
 import { formatAgo } from "../../lib/format";
 
 const LIST_STATES = ["open", "closed", "all"];
-const LIVE_REFRESH_MS = 10_000;
 
 export function reviewVerdict(reviews: readonly { author: string | null; state: string }[]): string | null {
     // Only a person's latest review counts, which is how GitHub scores it too.
@@ -795,8 +795,7 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
         for (const run of recentRuns.data?.runs ?? []) bySha.set(run.sha, [...(bySha.get(run.sha) ?? []), run]);
         return bySha;
     }, [recentRuns.data]);
-    const runsLive = active && listing && (recentRuns.data?.runs.some(isUnfinished) ?? false);
-    useEvery(runsLive, LIVE_REFRESH_MS, () => void recentRuns.refresh());
+    useCiWatch(repo, active && listing);
     const now = useNow(false);
     const [commit, setCommit] = useState<{ pull: number; sha: string } | null>(null);
     const [focus, setFocus] = useState<{ pull: number; path: string } | null>(null);

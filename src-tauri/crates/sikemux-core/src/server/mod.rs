@@ -10,6 +10,7 @@ mod callers;
 mod calls;
 mod changed;
 mod chat;
+mod ci;
 mod collisions;
 mod connection;
 mod custom_command;
@@ -328,6 +329,7 @@ pub(crate) struct Core {
     pub(crate) ports: ports::Ports,
     pub(crate) tasks: tasks::Tasks,
     pub(crate) git_watches: crate::git::watch::Watches,
+    pub(crate) ci: ci::Ci,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
     pub(crate) notify: notify::Notifier,
@@ -393,6 +395,7 @@ impl Core {
             ports: ports::Ports::default(),
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
+            ci: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
             notify: notify::Notifier::default(),

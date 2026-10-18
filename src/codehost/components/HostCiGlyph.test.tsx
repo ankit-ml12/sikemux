@@ -9,10 +9,11 @@ const project = vi.hoisted(() => ({ found: { repo: null, remote: null, branch: n
 vi.mock("../project", async (importOriginal) => ({ ...(await importOriginal<object>()), useHostRepo: () => project.found }));
 
 import { invalidate } from "../../plugin-api/resources";
-import { registerTestHost, TEST_HOST } from "../testHost";
+import { ciCore, registerTestHost, TEST_HOST } from "../testHost";
 import { hostCiGlyph } from "./HostCiGlyph";
 
 registerTestHost(api);
+const core = ciCore();
 const Glyph = hostCiGlyph(TEST_HOST);
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux", account: "work" };
 
@@ -73,23 +74,15 @@ describe("the top bar's CI glyph", () => {
         expect(view.container.textContent).toBe("");
     });
 
-    it("reads again every ten seconds while the run is going, and every twenty once it is not", async () => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    it("has the core check the repository's CI, and reads again when the core says it moved", async () => {
         await renderGlyph({ repo }, [makeRun({ status: "in_progress", conclusion: null })]);
         expect(screen.getByRole("button", { name: /^Running · / })).toBeTruthy();
+        expect(core.shown.at(-1)).toEqual({ repos: [expect.objectContaining({ provider: TEST_HOST, owner: "nodelike", name: "sikemux" })] });
         api.runs.mockResolvedValue({ runs: [makeRun({ conclusion: "success" })], total: 1, nextPage: null });
         await act(async () => {
-            vi.advanceTimersByTime(10_000);
+            core.moved(repo);
         });
         expect(api.runs).toHaveBeenCalledTimes(2);
         expect(screen.getByRole("button", { name: /^Passed · / })).toBeTruthy();
-        await act(async () => {
-            vi.advanceTimersByTime(10_000);
-        });
-        expect(api.runs).toHaveBeenCalledTimes(2);
-        await act(async () => {
-            vi.advanceTimersByTime(10_000);
-        });
-        expect(api.runs).toHaveBeenCalledTimes(3);
     });
 });
