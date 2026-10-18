@@ -20,8 +20,8 @@ export const BROWSER_TABS: Record<
     tabs: [
       tab(
         "tab-site",
-        "http://localhost:5173/",
-        "Maison Verre · Issue 07",
+        "https://monkeytype.com/",
+        "Monkeytype | A minimalistic, customizable typing test",
         true,
       ),
     ],
@@ -30,7 +30,7 @@ export const BROWSER_TABS: Record<
 };
 
 const SNAPSHOTS: Record<string, string> = {
-  [AGENTS.hero.id]: "/showcase/pages/maison-home.png",
+  [AGENTS.hero.id]: "/showcase/pages/monkeytype.png",
 };
 const frames = new Map<string, HTMLImageElement>();
 

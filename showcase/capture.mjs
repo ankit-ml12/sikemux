@@ -52,10 +52,11 @@ if (options["refresh-pages"]) {
     colorScheme: "dark",
     userAgent: MAC_USER_AGENT,
   });
-  for (const { name, url, width, height } of PAGES) {
+  for (const { name, url, width, height, prepare } of PAGES) {
     const page = await pages.newPage();
     await page.setViewportSize({ width, height });
     await page.goto(url, { waitUntil: "networkidle" });
+    await prepare?.(page);
     await page.screenshot({
       path: resolve(root, "showcase/pages", `${name}.png`),
     });
