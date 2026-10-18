@@ -6,11 +6,13 @@
 //   client   — Google's REST APIs, pages and errors
 //   projects — the projects an account can see
 //   run      — Cloud Run services, revisions, traffic, jobs and executions
+//   logging  — searching and following a project's logs
 
 mod auth;
 mod client;
 mod error;
 mod gcloud;
+mod logging;
 mod projects;
 mod run;
 
@@ -61,6 +63,7 @@ impl Plugin for Gcp {
                 "runJobs" => answer(run::jobs(params(input)?)).await,
                 "runJob" => answer(run::job_detail(params(input)?)).await,
                 "runJobExecute" => answer(run::run_job(params(input)?)).await,
+                "logs" => answer(logging::search(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -70,7 +73,7 @@ impl Plugin for Gcp {
         &'a self,
         _ctx: &'a PluginContext,
         method: &'a str,
-        _input: Value,
+        input: Value,
         sink: StreamSink,
     ) -> PluginFuture<'a, ()> {
         Box::pin(async move {
@@ -79,6 +82,7 @@ impl Plugin for Gcp {
                     auth::sign_in().await?;
                     sink.send(reply(auth::status().await)?)
                 }
+                "tailLogs" => Ok(logging::tail(params(input)?, sink).await?),
                 "signInApplicationDefault" => {
                     auth::sign_in_application_default().await?;
                     sink.send(reply(auth::status().await)?)
