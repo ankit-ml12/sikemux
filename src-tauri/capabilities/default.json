@@ -184,8 +184,6 @@
     "allow-open-url",
     "allow-macos-focus-app",
     "allow-set-window-blur",
-    "allow-plugin-manifests",
-    "allow-plugin-set-disabled",
     "allow-plugin-call",
     "allow-plugin-stream-start",
     "allow-plugin-stream-stop",

@@ -21,6 +21,8 @@ export interface Workspace {
   pinned?: PinnedChat[];
   /** The mode agents that can bypass permissions start in. */
   permissionMode?: string;
+  /** The plugins the person switched off, by id. */
+  disabledPlugins?: string[];
   launchers: LauncherInfo[];
   /** The app's theme colours by name; empty until the app publishes them. */
   palette: Record<string, string>;

@@ -167,8 +167,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "open_url",
     "macos_focus_app",
     "set_window_blur",
-    "plugin_manifests",
-    "plugin_set_disabled",
     "plugin_call",
     "plugin_stream_start",
     "plugin_stream_stop",
