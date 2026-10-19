@@ -7,7 +7,7 @@
 
 mod words;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
@@ -101,6 +101,10 @@ struct Book {
     /// still lead back to a session that can be resumed.
     #[serde(default, skip_serializing_if = "VecDeque::is_empty")]
     closed_sessions: VecDeque<ClosedSession>,
+    /// The linked hosts whose agents started or messaged each agent, kept
+    /// after it closes so it still has them when opened again.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    reached_from: HashMap<String, BTreeSet<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -174,6 +178,8 @@ pub(crate) struct Adopted<'a> {
     pub reports: bool,
     /// How far below the person's own agent its lead's host has it.
     pub depth: usize,
+    /// The linked host that started it.
+    pub from_host: Option<&'a str>,
 }
 
 pub(crate) struct Names {
@@ -269,8 +275,44 @@ impl Names {
         };
         let named = entry.view();
         book.agents.push(entry);
+        if let Some(host) = adopted.from_host {
+            book.reached_from
+                .entry(adopted.agent_id.to_owned())
+                .or_default()
+                .insert(host.to_owned());
+        }
         self.save(&book);
         named
+    }
+
+    /// Notes that agents on the linked hosts `hosts` reached `agent_id`.
+    pub(crate) fn reached_from(&self, agent_id: &str, hosts: BTreeSet<String>) {
+        if hosts.is_empty() {
+            return;
+        }
+        let mut book = self.lock();
+        let known = book.reached_from.entry(agent_id.to_owned()).or_default();
+        let before = known.len();
+        known.extend(hosts);
+        if known.len() != before {
+            self.save(&book);
+        }
+    }
+
+    /// The linked hosts whose agents started or messaged `agent_id` or any
+    /// agent up its chain of leads.
+    pub(crate) fn hosts_behind(&self, agent_id: &str) -> BTreeSet<String> {
+        let book = self.lock();
+        let mut hosts = BTreeSet::new();
+        let mut current = Some(agent_id);
+        for _ in 0..=book.agents.len() + book.closed_leads.len() {
+            let Some(id) = current else { break };
+            if let Some(reached) = book.reached_from.get(id) {
+                hosts.extend(reached.iter().cloned());
+            }
+            current = book.parent(id);
+        }
+        hosts
     }
 
     /// Calls an agent what the host it runs on calls it.
@@ -722,7 +764,25 @@ impl Book {
             }
         }
         self.prune_closed_leads();
+        self.prune_reached_from();
         true
+    }
+
+    /// Keeps what reached only the agents that are named, lead others, or can
+    /// be opened again.
+    fn prune_reached_from(&mut self) {
+        let Self {
+            agents,
+            closed_leads,
+            closed_sessions,
+            reached_from,
+            ..
+        } = self;
+        reached_from.retain(|id, _| {
+            agents.iter().any(|entry| entry.agent_id == *id)
+                || closed_leads.contains_key(id)
+                || closed_sessions.iter().any(|closed| closed.agent_id == *id)
+        });
     }
 
     /// Keeps only the closed leads some named agent's chain still runs through.

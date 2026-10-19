@@ -3,7 +3,7 @@
 - Status: Accepted
 - Decision date: 2026-10-16
 - Amended: 2026-10-19, to say which credentials are shared and how a per-host agent login stays
-  within the vendors' terms
+  within the vendors' terms, and that agents from a linked host use none of them until allowed
 
 ## Context
 
@@ -32,7 +32,9 @@ when its home goes away.
   approves a host joining the account, a host that already holds the vault key wraps it for the
   new one. Removing a host from the account makes a new vault key and wraps it for those left.
 - **Each entry says who may use it.** Which hosts, and which agents or projects. Nothing is
-  allowed by default.
+  allowed by default. An agent another host's agent started or messaged uses none of them on
+  this host until the person allows that host
+  ([ADR 0013](./0013-hosts-link-to-run-agents-for-each-other.md)).
 - **Agents never hold a secret.** The core makes plugin calls itself, as it does now, and adds
   tokens to a sandboxed agent's traffic on its way out, so an agent can use a service but never
   read or leak its token. A secret the person types goes through a masked question that never

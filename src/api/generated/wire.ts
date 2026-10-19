@@ -610,6 +610,8 @@ export interface LinkedHost {
     connected: boolean;
     /** Agents of teams this host shares with it. */
     agents: number;
+    /** Agents it started or messaged may use this host's sign-ins. */
+    signIns: boolean;
 }
 
 /** What happened to this host's network. */

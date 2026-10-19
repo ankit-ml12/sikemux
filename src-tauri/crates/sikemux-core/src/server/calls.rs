@@ -34,7 +34,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "updateAgent" | "closeAgents" | "plugin" | "pluginManifests" | "pluginSetDisabled"
         | "pluginStream" | "pluginSignIn" | "signInCallback" => Needs::Person,
         "changeOwners" | "commitOwners" | "activitySummary" | "showCi" => Needs::Watch,
-        "setActivityPrice" => Needs::Person,
+        "setActivityPrice" | "setLinkSignIns" => Needs::Person,
         "createAgentWorktree" => Needs::Person,
         "modelProviders" | "modelProviderModels" | "modelHelper" | "agentSignIns" => Needs::Full,
         "agentSignIn" | "agentSignInCode" | "cancelAgentSignIn" | "agentSignOut" => Needs::Person,
@@ -185,6 +185,7 @@ pub(crate) async fn call(
         "shares" => answer(share::list(&core)),
         "pairing" => answer(remote::pairing(&core)),
         "linkHost" => answer(super::hosts::link_host(&core, parse(params)?).await?),
+        "setLinkSignIns" => answer(super::hosts::sign_ins::set(&core, parse(params)?)?),
         "signHostRequest" => {
             let request: crate::accounts::HostRequest = parse(params)?;
             answer(signed(core.remote.sign_host_request(&request)?))

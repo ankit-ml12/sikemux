@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Decision date: 2026-10-15
+- Amended: 2026-10-19, so that a linked host's agents use none of this host's sign-ins until the
+  person allows that host
 
 ## Context
 
@@ -59,6 +61,16 @@ may or may not have.
   question goes to its lead, and from there to the person on the lead's host; the answer goes
   back to the worker's host, which keeps a secret answer in its own private file. Which agent is
   calling stays the process-tree lookup on its own host.
+- **A linked host's agents use none of this host's sign-ins until the person allows it.** The core
+  keeps, for each agent, the linked hosts whose agents started it or messaged it, and an agent
+  that one of those starts or messages carries them on, after it closes too. Such an agent is
+  refused plugin calls and the browser tools, whose tabs hold this host's site sign-ins, and gets
+  none of the environment plugins give an agent at launch, such as its AWS profile. The refusal
+  names the host and says the person has not allowed it. The check sits where the core answers
+  every tool call, not in each plugin. Each link has its own switch for this, off when the link
+  is made and kept with it, which only the person changes: in the app's Settings, under Devices,
+  or from a phone that acts as them. An agent's own sign-in for its CLI is not one of these; a
+  worker still runs on this host's.
 - **What must arrive waits.** Messages, reports, questions, answers and commits for a host out of
   reach wait in a bounded outbox in the data folder and go in order when it is back. Its agents
   show as out of reach, their leads hear after a few minutes and again when it is back, and a
@@ -67,8 +79,15 @@ may or may not have.
 ## Consequences
 
 - A linked host can start agents on this one with full access to the projects it shares, on this
-  host's sign-ins, in permission modes as wide as its own agents'. That is why the owner allows
-  each link and can remove it at once.
+  host's agent sign-ins, in permission modes as wide as its own agents'. That is why the owner
+  allows each link and can remove it at once. Without the person's word, those agents cannot act
+  as the person in a plugin, a database or a signed-in tab here, so an agent tricked by what it
+  read on one host cannot reach the other's services.
+- A lead whose worker runs on another host hears its reports, so it too is refused this host's
+  sign-ins until the person allows the worker's host.
+- The check covers what Sikemux hands agents. An agent that runs without approvals still has its
+  shell, so sign-ins a CLI keeps in its own files on the host stay within its reach until it runs
+  in a sandbox of its own ([ADR 0014](./0014-agents-run-on-hosts-and-every-client-is-a-way-in.md)).
 - Starting a worker on another host sends the lead's code to it. A large repository the other host
   lacks takes its first bundle's time; a later worker for the same project sends only what is new.
 - A worker's checkout stays on its host after it closes, as a worktree beside the project or under
@@ -89,3 +108,7 @@ may or may not have.
   to push, publishes work in progress, and fails for a project with no remote.
 - **Running the worker's tools on the lead's host.** Rejected: the worker needs its own files,
   processes and browser where it runs.
+- **Letting each plugin decide whether a linked host's agent may use it.** Rejected: one plugin
+  that forgot to check would hand out its sign-in, and the core already answers every tool call.
+- **Refusing only the agents a linked host started, not those it messaged.** Rejected: a message
+  steers an agent as well as a prompt does.

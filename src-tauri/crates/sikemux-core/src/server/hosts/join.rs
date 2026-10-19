@@ -110,6 +110,7 @@ pub(crate) async fn link_host(core: &Arc<Core>, params: LinkParams) -> CoreResul
         linked_at: unix_ms(),
         last_seen: Some(unix_ms()),
         addresses: known,
+        sign_ins: false,
     })?;
     adopt(core, &ticket.host, connection);
     Ok(remote::pairing(core))

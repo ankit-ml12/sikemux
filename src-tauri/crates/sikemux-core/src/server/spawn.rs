@@ -166,6 +166,8 @@ pub(crate) fn hire(core: &Core, worker: Worker<'_>) -> Result<AgentName, String>
 
 /// A worker here for a lead on a linked host, as that host named it.
 pub(crate) struct ForHost {
+    /// The linked host whose agent starts it.
+    pub host: String,
     pub agent_id: String,
     pub name: String,
     pub lead_id: String,
@@ -215,6 +217,7 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
             provider: &plan.provider,
             reports: plan.reports,
             depth: 0,
+            from_host: Some(&plan.host),
         },
         running(core),
     );
@@ -307,6 +310,7 @@ fn start(
                     provider: &provider,
                     reports,
                     depth: 0,
+                    from_host: None,
                 },
                 running(core),
             );
