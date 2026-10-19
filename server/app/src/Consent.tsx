@@ -31,7 +31,7 @@ export function Consent() {
         </p>
       </Panel>
     );
-  if (isLoading)
+  if (isLoading || (!data && !error))
     return (
       <Panel>
         <p className="quiet">Loading…</p>

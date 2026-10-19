@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { Avatar } from "./Avatar.tsx";
 import { Backdrop } from "./Backdrop.tsx";
-import { Consent, CONSENT } from "./Consent.tsx";
+import { Consent, CONSENT, Panel } from "./Consent.tsx";
 import {
   AccountDeleted,
   DeleteAccount,
@@ -80,11 +80,11 @@ export function App() {
     if (isSharePath(to)) location.replace(to);
     else go(to, { replace: true });
   };
-  const returning = isLoaded && isSignedIn ? appReturn() : null;
+  const appReturning = signedIn ? appReturn() : null;
 
   useEffect(() => {
-    if (returning) location.replace(returning);
-  }, [returning]);
+    if (appReturning && isLoaded) location.replace(appReturning);
+  }, [appReturning, isLoaded]);
 
   /** Reached from this page or from the account's live connection, so it may run twice. */
   const onDeleted = (deletesAt?: string) => {
@@ -99,10 +99,12 @@ export function App() {
     <>
       <Backdrop />
       <div className="page">
-        {returning ? (
-          <section className="panel">
-            <p className="quiet">Taking you back to Sikemux…</p>
-          </section>
+        {appReturning ? (
+          <main className="center">
+            <Panel>
+              <p className="quiet">Loading…</p>
+            </Panel>
+          </main>
         ) : showDeleted ? (
           <main className="center">
             <AccountDeleted
