@@ -225,6 +225,7 @@
 }
 .tb-run-btn,
 .tb-run-chip {
+    border-radius: 0;
     background-image: linear-gradient(var(--tab-tint), var(--tab-tint));
     transition:
         --tab-tint 200ms var(--ease-out),
