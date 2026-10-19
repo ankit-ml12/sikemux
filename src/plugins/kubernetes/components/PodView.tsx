@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { confirmDialog, copyWithNotice, notify, runInTerminal } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Seg, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { SendToAgentMenu, Seg, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { podBrief } from "../brief";
 import { failureMessage, kubeApi, refreshKubernetes, type Container, type KubeEvent, type PodDetail, type Scope } from "../api";
 import { age, podTone, shortImage, type Tone } from "../format";
 import { usePoll } from "../hooks";
@@ -19,6 +20,7 @@ export function kubectlScope(scope: Scope): string[] {
 
 export function PodView({ scope, name, active, onBack }: { scope: Scope; name: string; active: boolean; onBack: () => void }) {
     const [tab, setTab] = useState<PodTab>("overview");
+    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const pod = useResourceEnabled(active, kubePodR, scope, name);
     usePoll(active && tab === "overview", DETAIL_POLL_MS, pod.refresh);
     const detail = pod.data;
@@ -72,6 +74,16 @@ export function PodView({ scope, name, active, onBack }: { scope: Scope; name: s
                     {detail ? <span className={`k8s-status ${podTone(detail)}`}>{detail.status}</span> : null}
                 </div>
                 <div className="k8s-detail-actions">
+                    <button
+                        type="button"
+                        className="k8s-button"
+                        disabled={!detail}
+                        onClick={(event) => {
+                            const box = event.currentTarget.getBoundingClientRect();
+                            setMenu({ x: box.right, y: box.bottom + 4 });
+                        }}>
+                        Ask an agent
+                    </button>
                     <button type="button" className="k8s-button" onClick={() => copyWithNotice(name, "Pod name")}>
                         Copy name
                     </button>
@@ -83,6 +95,15 @@ export function PodView({ scope, name, active, onBack }: { scope: Scope; name: s
                     </button>
                 </div>
             </header>
+            {menu && detail ? (
+                <SendToAgentMenu
+                    x={menu.x}
+                    y={menu.y}
+                    alignRight
+                    delivery={() => ({ text: podBrief(detail, scope) })}
+                    onClose={() => setMenu(null)}
+                />
+            ) : null}
             <Seg
                 label="Pod view"
                 value={tab}
