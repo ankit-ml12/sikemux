@@ -6,6 +6,7 @@
 //   contexts — the kubeconfig's clusters, the current one, and each one's namespaces
 //   pods     — pods with their status as kubectl words it, restarts and owning workload
 //   logs     — a container's logs, read once, from before its last restart, or followed
+//   workloads — Deployments, StatefulSets, DaemonSets, Jobs and CronJobs, and what is wrong with them
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 
 mod contexts;
@@ -14,6 +15,7 @@ mod error;
 mod kubectl;
 mod logs;
 mod pods;
+mod workloads;
 
 use std::sync::Arc;
 
@@ -60,6 +62,7 @@ impl Plugin for Kubernetes {
                 "pods" => answer(pods::list(params(input)?)).await,
                 "pod" => answer(describe::describe(params(input)?)).await,
                 "logs" => answer(logs::read(params(input)?)).await,
+                "workloads" => answer(workloads::list(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -102,6 +105,25 @@ mod tests {
             .await
             .expect("namespaces");
         println!("{namespaces:#}");
+        let workloads = plugin
+            .call(
+                &ctx,
+                "workloads",
+                serde_json::json!({ "namespace": "shop" }),
+            )
+            .await
+            .expect("workloads");
+        for each in workloads.as_array().into_iter().flatten() {
+            println!(
+                "workload {} {} {} {}/{} {}",
+                each["kind"],
+                each["name"],
+                each["health"],
+                each["ready"],
+                each["desired"],
+                each["note"]
+            );
+        }
         let pods = plugin
             .call(&ctx, "pods", serde_json::json!({ "allNamespaces": true }))
             .await
