@@ -737,6 +737,20 @@ async function coreWorkspaceMentions(text) {
   return contents.some((json) => json.includes(text));
 }
 
+async function coreWorkspaceAgents() {
+  const files = (await readdir(isolatedHome, { recursive: true })).filter(
+    (path) => path.endsWith("workspace.json"),
+  );
+  const saved = await Promise.all(
+    files.map((path) =>
+      readFile(join(isolatedHome, path), "utf8")
+        .then((json) => JSON.stringify(JSON.parse(json).agents ?? null))
+        .catch((error) => String(error)),
+    ),
+  );
+  return `${files.join(", ")}: ${saved.join(" ")}`;
+}
+
 async function coreSession(core, id) {
   const listed = await core.request({ op: "list" }, 5_000);
   return (listed?.response?.sessions ?? []).find(
@@ -1312,6 +1326,11 @@ async function exerciseTerminalAgentResumes() {
     "the core to save the resumed agent's terminal",
     PERSIST_TIMEOUT_MS,
     () => coreWorkspaceMentions(`${second.id}`),
+  ).catch(async (error) =>
+    fail(
+      `${error.message.replace("desktop E2E smoke failed: ", "")}; terminal ${second.id}, saved agents: ${(await coreWorkspaceAgents()).slice(0, 2_000)}`,
+      desktopLog,
+    ),
   );
   console.log(
     `Terminal agent resume passed: agent terminal ${first.id} was killed and came back as ${second.id} below its old screen`,
