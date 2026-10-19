@@ -40,11 +40,12 @@ const MAX_RECENT_BYTES: usize = 1024 * 1024;
 const MAX_RECENT_EVENTS: usize = 4096;
 
 /// A client opening a chat is sent this much of its end, and pages back
-/// through the rest.
+/// through the rest. The byte bounds only stop a run of huge tool outputs; a
+/// chat full of tool calls still pages back whole turns at a time.
 const TAIL_TURNS: usize = 50;
-const TAIL_BYTES: usize = 1024 * 1024;
+const TAIL_BYTES: usize = MAX_REPLAY_BYTES;
 const MAX_PAGE_TURNS: usize = 100;
-const PAGE_BYTES: u64 = 1024 * 1024;
+const PAGE_BYTES: u64 = MAX_REPLAY_BYTES as u64;
 /// A turn longer than a page is cut into pieces about this long.
 const PIECE_BYTES: usize = 64 * 1024;
 /// Updates that set how the chat stands rather than say something in it. A
