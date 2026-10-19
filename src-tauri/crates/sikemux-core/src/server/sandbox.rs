@@ -249,7 +249,7 @@ pub(crate) struct AtParams {
 /// saved chat that resumes there. The project's current branch stands in as
 /// its base.
 pub(crate) async fn at(params: AtParams) -> CoreResult<Option<AgentWorktree>> {
-    Ok(blocking(move || Ok(read_back(&params.cwd))).await?)
+    blocking(move || Ok(read_back(&params.cwd))).await
 }
 
 fn read_back(cwd: &Path) -> Option<AgentWorktree> {
