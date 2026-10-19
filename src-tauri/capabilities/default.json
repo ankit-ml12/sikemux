@@ -41,7 +41,6 @@
     "allow-pty-kill",
     "allow-pty-sessions",
     "allow-remote-status",
-    "allow-remote-pairing",
     "allow-remote-set-enabled",
     "allow-remote-set-device-access",
     "allow-remote-revoke-device",
