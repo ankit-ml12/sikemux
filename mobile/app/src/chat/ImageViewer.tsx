@@ -3,6 +3,7 @@ import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, Share
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { LockCover } from '@/lock/LockScreen';
 import { haptics } from '@/ui/haptics';
 import { Icon } from '@/ui/Icon';
 import { fonts, type Palette, radius, useColors, useStyles } from '@/ui/theme';
@@ -107,6 +108,7 @@ export function ImageViewer({ uri, name, onClose }: { uri: string | undefined; n
           </Text>
         ) : null}
       </View>
+      <LockCover />
     </Modal>
   );
 }

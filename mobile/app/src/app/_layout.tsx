@@ -15,6 +15,8 @@ import { tokenCache } from '@/account/tokenCache';
 import { useAccountHostsFeed, useAccountSequence, useConnectArrivals } from '@/account/session';
 import { goOffline } from '@/device/identity';
 import { useDevices } from '@/devices/hub';
+import { lockFor, useLock } from '@/lock/lock';
+import { LockCover, LockScreen } from '@/lock/LockScreen';
 import { NotificationsOffer } from '@/notify/NotificationsOffer';
 import { useNotificationResponses } from '@/notify/responses';
 import { currentRelays, useUpdateRequired } from '@/network/network';
@@ -89,6 +91,7 @@ function Routes({ background }: { background: string }) {
   const devices = useDevices();
   const ready = isLoaded && (!isSignedIn || devices.loaded);
   const [late, setLate] = useState(false);
+  const lock = useLock();
 
   useEffect(() => {
     if (ready) return;
@@ -100,7 +103,12 @@ function Routes({ background }: { background: string }) {
     if (ready || late) SplashScreen.hideAsync().catch(() => {});
   }, [ready, late]);
 
+  useEffect(() => {
+    if (isLoaded) lockFor(!!isSignedIn);
+  }, [isLoaded, isSignedIn]);
+
   if (!ready) return late && !isLoaded ? <Unreachable /> : null;
+  if (isSignedIn && !lock.opened) return <LockScreen />;
   return (
     <>
       <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: background } }}>
@@ -112,13 +120,18 @@ function Routes({ background }: { background: string }) {
           <Stack.Screen name="share/[id]" />
         </Stack.Protected>
       </Stack>
-      <NotificationsOffer />
-      <NotificationResponses />
+      {!isSignedIn || lock.phase === 'open' ? (
+        <>
+          <NotificationsOffer />
+          <NotificationResponses />
+        </>
+      ) : null}
+      {isSignedIn ? <LockCover /> : null}
     </>
   );
 }
 
-/** Mounted with the screens, so a tapped card can open its chat. */
+/** Mounted with the screens while they show, so a tapped card opens its chat, and answers it, only once the app is unlocked. */
 function NotificationResponses() {
   useNotificationResponses();
   return null;

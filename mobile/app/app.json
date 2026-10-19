@@ -55,6 +55,7 @@
         }
       ],
       "@clerk/expo",
+      ["expo-local-authentication", { "faceIDPermission": "Sikemux asks for Face ID before it shows your hosts and chats." }],
       "@clerk/expo-google-signin",
       "expo-apple-authentication",
       "./plugins/link-system-configuration",

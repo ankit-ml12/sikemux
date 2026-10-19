@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LockCover } from '@/lock/LockScreen';
 import { pauseBackdrop, useStill } from './motion';
 import { fonts, type Palette, useStyles } from './theme';
 
@@ -204,6 +205,7 @@ export function Sheet({
           {footer}
         </Animated.View>
       ) : null}
+      <LockCover />
     </Modal>
   );
 }
