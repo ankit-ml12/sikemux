@@ -8,6 +8,8 @@ const api = vi.hoisted(() => ({
     workloads: vi.fn(),
     pods: vi.fn(),
     events: vi.fn(),
+    network: vi.fn(),
+    config: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), kubeApi: api }));
 
@@ -31,7 +33,12 @@ beforeEach(() => {
     api.workloads.mockResolvedValue([WORKER, WEB, NIGHTLY]);
     api.pods.mockResolvedValue([]);
     api.events.mockResolvedValue([]);
+    api.network.mockResolvedValue({ services: [], ingresses: [] });
+    api.config.mockResolvedValue({ configMaps: [], secrets: [] });
 });
+
+const openSection = async (name: RegExp) =>
+    fireEvent.click(within(await screen.findByRole("navigation", { name: "Kubernetes" })).getByRole("button", { name }));
 
 describe("the Kubernetes pane", () => {
     it("says what is missing before there is a cluster to show", async () => {
@@ -84,5 +91,65 @@ describe("the Kubernetes pane", () => {
         expect(within(pods).getAllByRole("row")).toHaveLength(2);
         fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: /^Needs attention/ }));
         expect(screen.getByText("No pods match.")).toBeInTheDocument();
+    });
+
+    it("shows services with the pods they pick, and where ingresses route", async () => {
+        api.network.mockResolvedValue({
+            services: [
+                {
+                    name: "web",
+                    namespace: "shop",
+                    kind: "ClusterIP",
+                    clusterIp: "10.96.4.2",
+                    external: [],
+                    ports: ["80→8080/TCP"],
+                    selector: "app=web",
+                },
+            ],
+            ingresses: [
+                {
+                    name: "shop",
+                    namespace: "shop",
+                    class: "nginx",
+                    tls: ["shop.acme.dev"],
+                    address: [],
+                    rules: [{ host: "shop.acme.dev", path: "/", service: "web", port: "80" }],
+                },
+            ],
+        });
+        renderPane();
+        await openSection(/Services/);
+        const services = await screen.findByRole("table", { name: "Services" });
+        expect(within(services).getByText("80→8080/TCP")).toBeInTheDocument();
+        expect(screen.getByRole("article", { name: "Ingress shop" })).toHaveTextContent("web:80");
+        expect(screen.getByRole("button", { name: "shop.acme.dev/" })).toHaveAttribute("title", "Open https://shop.acme.dev/");
+        fireEvent.click(within(services).getByRole("button", { name: "app=web" }));
+        await waitFor(() => expect(api.pods).toHaveBeenLastCalledWith({ context: "kind-dev", namespace: "default" }, false, "app=web"));
+    });
+
+    it("lists config by key names only", async () => {
+        api.config.mockResolvedValue({
+            configMaps: [{ name: "web-config", namespace: "shop", kind: null, keys: [{ name: "API_URL", size: 21 }] }],
+            secrets: [{ name: "web-secrets", namespace: "shop", kind: "Opaque", keys: [{ name: "DATABASE_PASSWORD", size: 2048 }] }],
+        });
+        renderPane();
+        await openSection(/Config/);
+        expect(await screen.findByRole("article", { name: "web-config" })).toHaveTextContent("21 B");
+        fireEvent.click(within(screen.getByRole("group", { name: "Kind" })).getByRole("button", { name: /^Secrets/ }));
+        expect(screen.getByRole("article", { name: "web-secrets" })).toHaveTextContent("DATABASE_PASSWORD2.0 KB");
+    });
+
+    it("counts warnings in the sidebar and shows them first", async () => {
+        api.events.mockResolvedValue([
+            { kind: "Warning", reason: "BackOff", message: "Back-off restarting failed container", count: 9, last: null, object: "Pod/worker-1" },
+            { kind: "Normal", reason: "Scheduled", message: "Assigned to node", count: 1, last: null, object: "Pod/web-1" },
+        ]);
+        renderPane();
+        await openSection(/Events/);
+        const list = await screen.findByRole("list", { name: "Events" });
+        expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+        expect(within(screen.getByRole("navigation", { name: "Kubernetes" })).getByRole("button", { name: /Events/ })).toHaveTextContent("1");
+        fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: /^All/ }));
+        expect(within(list).getAllByRole("listitem")).toHaveLength(2);
     });
 });

@@ -1,11 +1,14 @@
-import { useRef } from "react";
-import { useResourceEnabled } from "../../../plugin-api/resources";
+import { useRef, type ReactNode } from "react";
+import { useResourceEnabled, type ResourceHandle } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { refreshKubernetes, type KubeStatus, type Scope } from "../api";
 import { usePoll } from "../hooks";
-import { kubeNamespacesR, kubePodsR, kubeStatusR, kubeWorkloadsR } from "../resources";
+import { kubeConfigR, kubeEventsR, kubeNamespacesR, kubeNetworkR, kubePodsR, kubeStatusR, kubeWorkloadsR } from "../resources";
 import { ALL_NAMESPACES, updateKubeView, useKubeView, type KubeSection } from "../state";
 import { KubernetesMark } from "./KubernetesMark";
+import { Config } from "./Config";
+import { Events } from "./Events";
+import { Network } from "./Network";
 import { Pods } from "./Pods";
 import { PodView } from "./PodView";
 import { Workloads } from "./Workloads";
@@ -14,6 +17,7 @@ import "../kubernetes.css";
 const SIDE_MIN = 180;
 const SIDE_MAX = 380;
 const LIST_POLL_MS = 5_000;
+const EVENTS_POLL_MS = 10_000;
 
 export function KubernetesPane({ paneId, active }: { paneId: string; active: boolean }) {
     const status = useResourceEnabled(active, kubeStatusR);
@@ -39,6 +43,9 @@ function NotReady({ status, error, onRetry }: { status: KubeStatus | undefined; 
 const SECTIONS: { value: KubeSection; label: string }[] = [
     { value: "workloads", label: "Workloads" },
     { value: "pods", label: "Pods" },
+    { value: "network", label: "Services" },
+    { value: "config", label: "Config" },
+    { value: "events", label: "Events" },
 ];
 
 function Cluster({ paneId, active, status }: { paneId: string; active: boolean; status: KubeStatus }) {
@@ -55,10 +62,17 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
     const listing = active && view.pod === null;
     const pods = useResourceEnabled(listing && view.section === "pods", kubePodsR, scope, all, view.selector);
     usePoll(listing && view.section === "pods", LIST_POLL_MS, pods.refresh);
+    const network = useResourceEnabled(listing && view.section === "network", kubeNetworkR, scope, all);
+    const config = useResourceEnabled(listing && view.section === "config", kubeConfigR, scope, all);
+    const events = useResourceEnabled(listing, kubeEventsR, scope, all);
+    usePoll(listing && view.section === "events", EVENTS_POLL_MS, events.refresh);
+    const warnings = events.data?.filter((event) => event.kind === "Warning").length ?? 0;
     const trouble = workloads.data?.filter((each) => each.health !== "ok").length ?? 0;
     const counts: Partial<Record<KubeSection, string>> = {
         workloads: workloads.data ? (trouble > 0 ? `${trouble} !` : String(workloads.data.length)) : "",
         pods: pods.data ? String(pods.data.length) : "",
+        network: network.data ? String(network.data.services.length) : "",
+        events: warnings > 0 ? `${warnings} !` : "",
     };
 
     return (
@@ -153,15 +167,10 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                             onBack={() => updateKubeView(paneId, { pod: null })}
                         />
                     ) : view.section === "pods" ? (
-                        <>
-                            <StaleNotice handle={pods} />
-                            {pods.status === "error" && !pods.data ? (
-                                <p className="k8s-note">{pods.error}</p>
-                            ) : !pods.data ? (
-                                <SkeletonRows rows={6} label="Loading pods" />
-                            ) : (
+                        <Loaded handle={pods} label="pods">
+                            {(data) => (
                                 <Pods
-                                    pods={pods.data}
+                                    pods={data}
                                     find={view.find}
                                     selector={view.selector}
                                     showNamespace={all}
@@ -169,17 +178,39 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                                     onOpen={(pod) => updateKubeView(paneId, { pod: { namespace: pod.namespace, name: pod.name } })}
                                 />
                             )}
-                        </>
+                        </Loaded>
+                    ) : view.section === "network" ? (
+                        <Loaded handle={network} label="services">
+                            {(data) => (
+                                <Network
+                                    services={data.services}
+                                    ingresses={data.ingresses}
+                                    find={view.find}
+                                    scope={scope}
+                                    showNamespace={all}
+                                    onPods={(service) =>
+                                        updateKubeView(paneId, {
+                                            section: "pods",
+                                            selector: service.selector,
+                                            namespace: all ? service.namespace : view.namespace,
+                                        })
+                                    }
+                                />
+                            )}
+                        </Loaded>
+                    ) : view.section === "config" ? (
+                        <Loaded handle={config} label="config">
+                            {(data) => <Config configMaps={data.configMaps} secrets={data.secrets} find={view.find} showNamespace={all} />}
+                        </Loaded>
+                    ) : view.section === "events" ? (
+                        <Loaded handle={events} label="events">
+                            {(data) => <Events events={data} find={view.find} />}
+                        </Loaded>
                     ) : (
-                        <>
-                            <StaleNotice handle={workloads} />
-                            {workloads.status === "error" && !workloads.data ? (
-                                <p className="k8s-note">{workloads.error}</p>
-                            ) : !workloads.data ? (
-                                <SkeletonRows rows={6} label="Loading workloads" />
-                            ) : (
+                        <Loaded handle={workloads} label="workloads">
+                            {(data) => (
                                 <Workloads
-                                    workloads={workloads.data}
+                                    workloads={data}
                                     find={view.find}
                                     scope={scope}
                                     showNamespace={all}
@@ -192,10 +223,21 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                                     }
                                 />
                             )}
-                        </>
+                        </Loaded>
                     )}
                 </div>
             </main>
         </div>
+    );
+}
+
+function Loaded<T>({ handle, label, children }: { handle: ResourceHandle<T>; label: string; children: (data: T) => ReactNode }) {
+    if (handle.status === "error" && handle.data === undefined) return <p className="k8s-note k8s-error">{handle.error}</p>;
+    if (handle.data === undefined) return <SkeletonRows rows={6} label={`Loading ${label}`} />;
+    return (
+        <>
+            <StaleNotice handle={handle} />
+            {children(handle.data)}
+        </>
     );
 }

@@ -673,3 +673,78 @@
 .k8s-row:focus-within .k8s-row-actions {
     opacity: 1;
 }
+
+.k8s-network {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.k8s-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--acc);
+    font-size: inherit;
+    cursor: pointer;
+}
+
+.k8s-link:hover {
+    text-decoration: underline;
+}
+
+.k8s-ingress,
+.k8s-store {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--surface-raised);
+}
+
+.k8s-ingress + .k8s-ingress {
+    margin-top: 8px;
+}
+
+.k8s-ingress header,
+.k8s-store header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-xs);
+}
+
+.k8s-ingress header .k8s-chip,
+.k8s-store header .k8s-chip,
+.k8s-routes .k8s-chip {
+    margin-left: 0;
+}
+
+.k8s-routes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-xs);
+}
+
+.k8s-routes li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.k8s-stores {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px;
+}
+
+.k8s-config-note {
+    margin-left: auto;
+    font-size: var(--text-xs);
+}
