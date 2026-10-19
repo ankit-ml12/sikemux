@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { FIXED_TIME, launchChrome, startShowcase } from "../harness.mjs";
@@ -123,7 +123,9 @@ for (const name of chosen) {
   await mkdir(folder, { recursive: true });
   const path = resolve(folder, options.draft ? `${name}.mp4` : "clip.mp4");
   const stills = [];
-  const video = stillsAt ? null : encoder(path);
+  // Encoded beside the clip and moved over it once whole, so the clip on disk always plays.
+  const partial = `${path}.partial.mp4`;
+  const video = stillsAt ? null : encoder(partial);
   const director = new Director({
     page,
     app: null,
@@ -186,6 +188,7 @@ for (const name of chosen) {
     continue;
   }
   await video.close();
+  await rename(partial, path);
   const { size } = await stat(path);
   console.log(
     `✓ ${name}  ${director.seconds.toFixed(1)} s, ${(size / 1e6).toFixed(1)} MB, rendered in ${((Date.now() - began) / 1000).toFixed(0)} s\n  ${path}`,

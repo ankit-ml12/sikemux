@@ -152,11 +152,12 @@ export async function browserCheck(s, { hold = 1300 } = {}) {
   await s.wait(hold);
   await s.live({ agent: WREN, steps: 1, shortest: 0, pace: 0 });
   await s.wait(hold);
-  await s.live({ agent: WREN, steps: 2, pace: 0.25, shortest: 120 });
-  await s.steady({ selector: ".chat-image", last: true }, { frames: 4 });
+  // The chat scrolls the reply and its picture in at once, so the camera stands back while they arrive.
+  await s.zoomOut({ wait: false });
+  await s.live({ agent: WREN, pace: 0.25, shortest: 120 });
+  await s.steady({ selector: ".chat-image", last: true }, { frames: 6 });
   await s.zoom(await around({ selector: ".chat-image", last: true }), { pad: 0 });
   await s.wait(1000);
-  s.live({ agent: WREN, wait: false });
 }
 
 /** Swipes from Wren's tab to Flint's, and Flint answers with a chart drawn in the chat, framed whole. */
