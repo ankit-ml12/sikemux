@@ -842,9 +842,11 @@ impl Collisions {
     }
 
     /// `project`'s branch moved, by whatever commit, an agent's own `git
-    /// commit` or the person's among them: its newest commit waits for the
-    /// project's check, with the agents its footer names.
+    /// commit` or the person's among them: agents waiting on its events hear
+    /// it, and its newest commit waits for the project's check, with the
+    /// agents its footer names.
     pub(crate) fn head_moved(&self, core: &Arc<Core>, project: &str) {
+        core.harness.note_repository(project, "git.moved");
         if crate::server::board::check_command(core, project).is_none() {
             return;
         }

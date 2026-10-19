@@ -232,6 +232,14 @@ fn ended(
         }
     }
     drop(state);
+    core.harness.note_repository(
+        project,
+        if passed {
+            "check.passed"
+        } else {
+            "check.failed"
+        },
+    );
     collisions.wake.now();
     if let Some(at) = person_at.filter(|at| *at > unix_ms()) {
         collisions.wake.at(at);

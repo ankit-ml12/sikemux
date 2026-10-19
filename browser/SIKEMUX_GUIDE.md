@@ -232,7 +232,10 @@ when the app is under pressure. Read output you care about promptly.
 ### Waiting for something to happen
 
 `events_wait` blocks for up to 30 seconds and returns task output,
-task lifecycle, and UI-open events.
+task lifecycle, and UI-open events, `git.moved` when the project's branch
+moves by anyone's commit, and `check.passed` or `check.failed` when the
+project's check of its newest commit ends. Wait on those rather than asking
+another agent to tell you once it has committed.
 
 **Event cursors are not output cursors.** They are separate sequences. Get an
 event cursor from `workspace_inspect`, pass it to `events_wait`, and
