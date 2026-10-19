@@ -388,8 +388,8 @@ export function AgentPalette() {
                                                         ? "signed out"
                                                         : ""
                                                     : item.row.mtime
-                                                      ? `${agentLabel(type)} · ${formatAge(item.row.mtime * 1000)}`
-                                                      : agentLabel(type)}
+                                                      ? formatAge(item.row.mtime * 1000)
+                                                      : ""}
                                     </span>
                                 </button>
                             </Fragment>
