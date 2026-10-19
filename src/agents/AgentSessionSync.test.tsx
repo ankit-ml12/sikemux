@@ -19,7 +19,7 @@ beforeEach(() => {
             ...state.sessions,
             [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo" },
         },
-        ...withAgents(state, sessionId, [{ id: "agent-1", type: "codex", title: "Codex", startup: "codex", cwd: "/repo" }]),
+        ...withAgents(state, sessionId, [{ id: "agent-1", type: "codex", title: "Codex", cwd: "/repo" }]),
     });
     resetIpcTransportForTests();
     transport = new MemoryIpcTransport();
@@ -72,9 +72,7 @@ describe("AgentSessionSync IPC events", () => {
         await waitFor(() => expect(agentApi.watchStart).toHaveBeenCalledTimes(1));
 
         const sessionId = getState().activeSessionId;
-        act(() =>
-            setState((state) => withAgents(state, sessionId, [{ id: "agent-2", type: "codex", title: "Other", startup: "codex", cwd: "/other" }])),
-        );
+        act(() => setState((state) => withAgents(state, sessionId, [{ id: "agent-2", type: "codex", title: "Other", cwd: "/other" }])));
 
         await waitFor(() => expect(agentApi.watchStart).toHaveBeenCalledTimes(2));
         expect(agentApi.watchStop).not.toHaveBeenCalled();
@@ -93,9 +91,7 @@ describe("AgentSessionSync IPC events", () => {
         await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledTimes(1));
 
         const sessionId = getState().activeSessionId;
-        act(() =>
-            setState((state) => withAgents(state, sessionId, [{ id: "agent-2", type: "codex", title: "Other", startup: "codex", cwd: "/other" }])),
-        );
+        act(() => setState((state) => withAgents(state, sessionId, [{ id: "agent-2", type: "codex", title: "Other", cwd: "/other" }])));
 
         await waitFor(() => expect(resources.fetchResource).toHaveBeenCalledWith(expect.anything(), "codex", "/other", undefined));
         expect(resources.fetchResource).toHaveBeenCalledTimes(2);

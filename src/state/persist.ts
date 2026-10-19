@@ -20,7 +20,7 @@ import { clampPaneStrength, mergePinnedIntoRoots, normaliseProjectRoots, pruneOn
 import { agentInWindow, agentPaneId } from "./selectors";
 import { collectPanes, newId, removePane } from "./layout";
 import { BROWSER_ACTIVE, deskEditorId, deskView, fileKey, simulatorKey } from "./desks";
-import { agentExecutablePath, relaunchSpec } from "./commands/agentLaunchCommand";
+import { agentExecutablePath } from "./commands/agentLaunchCommand";
 import { agentWindow } from "./agentWindow";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { errMessage, notify } from "./toast";
@@ -1008,16 +1008,13 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
             }
             const permissionMode = normalizePermissionMode(saved.type, effectiveMode(saved));
             const executablePath = agentExecutablePath({ providerProfiles }, saved);
-            const launch = relaunchSpec({ providerProfiles }, { ...saved, permissionMode });
             if (saved.profileId && !providerProfiles.some((profile) => profile.id === saved.profileId && profile.provider === saved.type)) {
                 delete saved.profileId;
             }
-            // Startup is rebuilt from the trusted type/resume id pair, never read from disk.
             agents[saved.id] = {
                 ...saved,
                 permissionMode,
                 executablePath,
-                ...launch,
                 createdAt: record.createdAt,
                 launchState: "dormant",
             };

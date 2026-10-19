@@ -67,7 +67,7 @@ describe("composer pickers", () => {
         setState({ providerProfiles: [{ id: "work", name: "Work Claude", provider: "claude", accent: "#fff" }] });
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 setup={{}}
                 disabled={false}
@@ -118,7 +118,7 @@ describe("composer pickers", () => {
     it("offers no effort picker to an agent whose model has none", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "hermes", title: "Hermes", startup: "hermes" }}
+                agent={{ id: "a", type: "hermes", title: "Hermes" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 onConfig={() => {}}
@@ -132,7 +132,7 @@ describe("composer pickers", () => {
     it("lists a harness once when its built-in profile is the default", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 setup={{}}
                 disabled={false}
@@ -148,7 +148,7 @@ describe("composer pickers", () => {
     it("drops the agent picker after messages while keeping model and effort available", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 agentLocked
@@ -172,7 +172,7 @@ describe("composer pickers", () => {
         const onConfig = vi.fn();
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 onConfig={onConfig}
@@ -203,7 +203,7 @@ describe("composer pickers", () => {
     it("closes the model menu with Escape and returns focus to its trigger", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 onConfig={() => {}}

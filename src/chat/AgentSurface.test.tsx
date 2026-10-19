@@ -50,7 +50,6 @@ const agent: Agent = {
     id: "agent-1",
     type: "claude",
     title: "Agent session",
-    startup: "claude",
     permissionMode: "workspace-write",
     launchState: "live",
 };
@@ -166,7 +165,7 @@ it("renames the agent from its title on double-click", () => {
 });
 
 it("types a delivered issue into a terminal agent as text", () => {
-    render(<AgentSurface agent={{ ...agent, type: "pi", startup: "pi" }} session={session} visible />);
+    render(<AgentSurface agent={{ ...agent, type: "pi" }} session={session} visible />);
     deliverToAgent("agent-1", {
         text: "fix this",
         context: [{ uri: "https://github.com/o/r/issues/12", title: "#12 Login crashes", text: "Issue #12: Login crashes" }],

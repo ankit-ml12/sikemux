@@ -25,7 +25,7 @@ describe("agent session reconciliation", () => {
         const agentId = "agent-new";
         const transcriptId = "019fd81d-c861-7920-bc88-a41a6b17aca4";
         const slices = withAgents(state, sessionId, [
-            { id: agentId, type: "codex", title: "codex", startup: "codex", createdAt: 100_000, baselineSessionIds: [], launchState: "live" },
+            { id: agentId, type: "codex", title: "codex", createdAt: 100_000, baselineSessionIds: [], launchState: "live" },
         ]);
         setState({
             ...slices,
@@ -49,9 +49,7 @@ describe("agent session reconciliation", () => {
         const agentId = "acp-new";
         setState({
             sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo" } },
-            ...withAgents(state, sessionId, [
-                { id: agentId, type: "codex", title: "codex", startup: "codex", createdAt: 100_000, baselineSessionIds: [] },
-            ]),
+            ...withAgents(state, sessionId, [{ id: agentId, type: "codex", title: "codex", createdAt: 100_000, baselineSessionIds: [] }]),
         });
         showingChat(agentId);
         reconcileAgentSessions("codex", "/repo", undefined, [{ id: "another-session", title: "Another chat", mtime: 101 }]);
@@ -63,7 +61,7 @@ describe("agent session reconciliation", () => {
         const agentId = "renamed-agent";
         const transcriptId = "019fd81d-c861-7920-bc88-a41a6b17aca4";
         const slices = withAgents(state, sessionId, [
-            { id: agentId, type: "claude", title: "claude", startup: "claude", createdAt: 100_000, baselineSessionIds: [], launchState: "live" },
+            { id: agentId, type: "claude", title: "claude", createdAt: 100_000, baselineSessionIds: [], launchState: "live" },
         ]);
         setState({
             ...slices,
@@ -93,9 +91,9 @@ describe("agent session reconciliation", () => {
         setState({
             sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo" } },
             ...withAgents(state, sessionId, [
-                { id: "claude-chat", type: "claude", title: "Old", startup: "claude", resumeId: "claude-session" },
-                { id: "codex-chat", type: "codex", title: "Old", startup: "codex", resumeId: "codex-session", executablePath: "/bin/codex" },
-                { id: "fresh-chat", type: "codex", title: "Old", startup: "codex" },
+                { id: "claude-chat", type: "claude", title: "Old", resumeId: "claude-session" },
+                { id: "codex-chat", type: "codex", title: "Old", resumeId: "codex-session", executablePath: "/bin/codex" },
+                { id: "fresh-chat", type: "codex", title: "Old" },
             ]),
         });
 
@@ -111,7 +109,7 @@ describe("agent session reconciliation", () => {
     it("ignores a blank or unchanged name", () => {
         const state = getState();
         const agentId = "unnamed-agent";
-        setState(withAgents(state, state.activeSessionId, [{ id: agentId, type: "claude", title: "Provider title", startup: "claude" }]));
+        setState(withAgents(state, state.activeSessionId, [{ id: agentId, type: "claude", title: "Provider title" }]));
 
         renameAgent(agentId, "   ");
         renameAgent(agentId, "Provider title");

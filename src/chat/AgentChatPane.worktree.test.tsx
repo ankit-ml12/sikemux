@@ -65,7 +65,6 @@ const agent: Agent = {
     id: "agent-wt",
     type: "codex",
     title: "Agent",
-    startup: "codex",
     permissionMode: "workspace-write",
     launchState: "live",
     cwd: "/repo",

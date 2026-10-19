@@ -61,7 +61,6 @@ describe("agent launch commands", () => {
 
         const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
         expect(agent.profileId).toBeUndefined();
-        expect(agent.startup).toMatch(/^claude /);
     });
 
     it("normalizes legacy modes to Normal", () => {
@@ -69,7 +68,6 @@ describe("agent launch commands", () => {
 
         const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
         expect(agent.permissionMode).toBe("workspace-write");
-        expect(agent.startup).toBe("pi");
     });
 
     it("pins an asynchronous launch to its originating project", () => {
@@ -102,8 +100,6 @@ describe("agent launch commands", () => {
             cwd: "/code/project",
         });
         expect(agent.baselineSessionIds).toEqual(["existing-one", "existing-two"]);
-        expect(agent.startup).toContain("--model gpt-5.6-codex");
-        expect(agent.startup).toContain("model_reasoning_effort");
         expect(agent).not.toHaveProperty("initialInput");
         expect(agent).not.toHaveProperty("worktreePath");
     });
@@ -114,11 +110,9 @@ describe("agent launch commands", () => {
 
         setAgentPermissionMode(id, "bypass");
         expect(getState().agents[id]).toMatchObject({ permissionMode: "bypass", skipPermissions: true });
-        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--dangerously-bypass-approvals-and-sandbox", "session-42"]);
 
         setAgentPermissionMode(id, "workspace-write");
         expect(getState().agents[id]).toMatchObject({ permissionMode: "workspace-write", skipPermissions: false });
-        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "workspace-write", "session-42"]);
     });
 
     it("relaunches a fresh CLI when its live PTY mode changes", () => {
@@ -130,7 +124,6 @@ describe("agent launch commands", () => {
         expect(getState().agents[id]).toMatchObject({
             permissionMode: "bypass",
             skipPermissions: true,
-            directCommand: { program: "claude", args: ["--dangerously-skip-permissions"] },
         });
     });
 });

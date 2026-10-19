@@ -180,7 +180,7 @@ describe("document slide", () => {
     it("takes no copy when the document arrives with its own screen", async () => {
         const { container } = await editorOfDocuments();
         const editorWindow = getState().sessions[getState().activeSessionId].activeWindowId;
-        const agents: Agent[] = [{ id: "agent-0", type: "codex", title: "agent 0", startup: "codex", launchState: "live" }];
+        const agents: Agent[] = [{ id: "agent-0", type: "codex", title: "agent 0", launchState: "live" }];
         act(() => setState(withAgents(getState(), getState().activeSessionId, agents)));
         act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-0")!));
         endSlide(container.querySelector(".window-track") as HTMLElement);

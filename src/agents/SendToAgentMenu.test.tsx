@@ -20,7 +20,7 @@ beforeEach(() => {
         activeSessionId: "p",
         windows: { w: { id: "w", name: "Fix it", role: "agent", root: pane, activePaneId: "a1" } },
         windowsBySession: { p: ["w"] },
-        agents: { a1: { id: "a1", type: "codex", title: "Fix it", startup: "" } },
+        agents: { a1: { id: "a1", type: "codex", title: "Fix it" } },
     });
     mocks.available.mockResolvedValue([{ type: "claude", label: "Claude", command: "claude", defaultModel: null, defaultEffort: null }]);
     mocks.send.mockClear();

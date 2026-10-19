@@ -7,7 +7,7 @@ const remove = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../agents/agentWorktree", () => ({ removeAgentWorktree: remove }));
 
 const session: Session = { id: "s", name: "app", kind: "project", cwd: "/code/app", pinned: false, activeWindowId: "w" };
-const agent: Agent = { id: "a", type: "claude", title: "fix", startup: "claude", cwd: "/code/app" };
+const agent: Agent = { id: "a", type: "claude", title: "fix", cwd: "/code/app" };
 const hints = { close: "", permissions: "" };
 
 describe("agentMenu", () => {

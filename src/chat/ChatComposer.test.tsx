@@ -45,7 +45,6 @@ const agent: Agent = {
     id: "composer-agent",
     type: "codex",
     title: "Agent",
-    startup: "codex",
     permissionMode: "workspace-write",
     launchState: "live",
 };

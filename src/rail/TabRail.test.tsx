@@ -91,9 +91,7 @@ import { agentIdsOf } from "../state/selectors";
 import { withAgents } from "../test/agents";
 
 function openAgent(title: string) {
-    setState((state) =>
-        withAgents(state, "sess-project", [{ id: "agent-open", type: "codex", title, startup: "codex", cwd: "/code/sikemux", launchState: "live" }]),
-    );
+    setState((state) => withAgents(state, "sess-project", [{ id: "agent-open", type: "codex", title, cwd: "/code/sikemux", launchState: "live" }]));
 }
 
 const initial = getState();
@@ -429,9 +427,7 @@ describe("tab rail", () => {
             sessionOrder: ["sess-project", "sess-other"],
         }));
         setState((state) =>
-            withAgents(state, "sess-other", [
-                { id: "agent-away", type: "codex", title: "Pricing copy", startup: "codex", cwd: "/code/website", launchState: "live" },
-            ]),
+            withAgents(state, "sess-other", [{ id: "agent-away", type: "codex", title: "Pricing copy", cwd: "/code/website", launchState: "live" }]),
         );
         mocks.inbox.mockReturnValue({
             inbox: {

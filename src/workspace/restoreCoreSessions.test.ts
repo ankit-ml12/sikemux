@@ -39,8 +39,8 @@ function layoutWithSessions() {
     cmd.setPanePty(paneId, 101);
     setState((s) => {
         const slices = withAgents(s, sid, [
-            { id: "agent-live", type: "pi", title: "live", startup: "pi", ptyId: 102, launchState: "dormant" },
-            { id: "agent-ended", type: "claude", title: "ended", startup: "claude", resumeId: "r1", ptyId: 103, launchState: "dormant" },
+            { id: "agent-live", type: "pi", title: "live", ptyId: 102, launchState: "dormant" },
+            { id: "agent-ended", type: "claude", title: "ended", resumeId: "r1", ptyId: 103, launchState: "dormant" },
         ]);
         return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project" } } };
     });

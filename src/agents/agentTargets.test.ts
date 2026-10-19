@@ -8,7 +8,7 @@ function agentWindow(id: string, agentId: string): Window {
 }
 
 function agent(id: string, title: string, type: Agent["type"] = "claude"): Agent {
-    return { id, type, title, startup: "" };
+    return { id, type, title };
 }
 
 function info(type: AgentInfo["type"], label: string, available = true): AgentInfo {

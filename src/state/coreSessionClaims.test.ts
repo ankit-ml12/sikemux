@@ -14,7 +14,7 @@ function pane(id: string, ptyId?: number): PaneNode {
 }
 
 function agent(id: string, overrides: Partial<Agent> = {}): Agent {
-    return { id, type: "claude", title: id, startup: "claude", ...overrides };
+    return { id, type: "claude", title: id, ...overrides };
 }
 
 const hiddenWindow: Window = {

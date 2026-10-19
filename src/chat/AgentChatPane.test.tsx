@@ -98,7 +98,6 @@ const agent: Agent = {
     id: "agent-1",
     type: "codex",
     title: "Agent session",
-    startup: "codex",
     permissionMode: "workspace-write",
     launchState: "live",
 };
@@ -673,9 +672,7 @@ describe("AgentChatPane", () => {
         typeDraft(editor, "And the rail");
         fireEvent.keyDown(editor, { key: "Enter" });
 
-        await waitFor(() =>
-            expect(mocks.steerQueued).toHaveBeenCalledWith(agent.id, ["q1"], { text: "And the rail", paths: [], context: [] }),
-        );
+        await waitFor(() => expect(mocks.steerQueued).toHaveBeenCalledWith(agent.id, ["q1"], { text: "And the rail", paths: [], context: [] }));
         expect(mocks.prompt).toHaveBeenCalledTimes(1);
     });
 

@@ -131,7 +131,7 @@ describe("AgentPalette", () => {
         expect(screen.getByRole("radio", { name: "safe" })).toBeChecked();
     });
 
-    it("opens a new CLI directly in a PTY using Normal mode", async () => {
+    it("opens a new CLI in Normal mode", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
 
@@ -142,8 +142,6 @@ describe("AgentPalette", () => {
             type: "codex",
             cwd: "/code/sikemux",
             permissionMode: "workspace-write",
-            startup: "codex --sandbox workspace-write",
-            directCommand: { program: "codex", args: ["--sandbox", "workspace-write"] },
         });
         expect(getState().agentPaletteOpen).toBe(false);
     });
@@ -175,10 +173,6 @@ describe("AgentPalette", () => {
         expect(getState().agents[id]).toMatchObject({
             profileId: "codex-work",
             executablePath: "/Applications/ChatGPT.app/Contents/Resources/codex",
-            directCommand: {
-                program: "/Applications/ChatGPT.app/Contents/Resources/codex",
-                profile: { configPath: "~/.codex-work" },
-            },
         });
     });
 
@@ -273,10 +267,6 @@ describe("AgentPalette", () => {
             title: "Fix terminal tabs",
             resumeId: "codex-old",
             permissionMode: "bypass",
-            directCommand: {
-                program: "codex",
-                args: ["resume", "--dangerously-bypass-approvals-and-sandbox", "codex-old"],
-            },
         });
     });
 

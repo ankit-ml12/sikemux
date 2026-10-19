@@ -55,7 +55,6 @@ const agent: Agent = {
     id: "agent-kept",
     type: "claude",
     title: "Agent",
-    startup: "claude",
     permissionMode: "workspace-write",
     launchState: "live",
     cwd: "/repo",

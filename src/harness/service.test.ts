@@ -74,7 +74,7 @@ describe("harness window service", () => {
         expect(useStore.getState().sessions[useStore.getState().activeSessionId].cwd).toBe("/one");
     });
     it("opens a file an agent asks for on that agent's desk, at the line it names", async () => {
-        const state = addAgents([{ id: "fixture-agent", type: "codex", title: "Fixture", startup: "" }]);
+        const state = addAgents([{ id: "fixture-agent", type: "codex", title: "Fixture" }]);
         transport.register("harness_resolve_path", () => "/one/file.ts");
         const result = await handleHarnessRequest({ ...request("ui.open", { kind: "file", path: "file.ts", line: 12 }), agentId: "fixture-agent" });
         expect(result).toEqual({ kind: "file", agentId: "fixture-agent", path: "/one/file.ts" });
@@ -85,7 +85,7 @@ describe("harness window service", () => {
         expect(useStore.getState().activeSessionId).toBe(state.activeSessionId);
     });
     it("opens the configured preview in the requesting agent's browser", async () => {
-        const state = addAgents([{ id: "fixture-agent", type: "codex", title: "Fixture", startup: "" }]);
+        const state = addAgents([{ id: "fixture-agent", type: "codex", title: "Fixture" }]);
         const open = vi.fn(() => "fixture-tab");
         transport.register("browser_new_tab", open);
         const result = await handleHarnessRequest({ ...request("ui.open", { kind: "preview" }), agentId: "fixture-agent" });

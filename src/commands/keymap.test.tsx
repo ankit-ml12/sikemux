@@ -27,7 +27,7 @@ function session(id: string, kind: Session["kind"] = "project"): Session {
 /** Puts an agent in `sessionId` and makes it the window on screen. */
 function lookAtAgent(sessionId: string, agentId: string): void {
     setState((state) => {
-        const slices = withAgents(state, sessionId, [{ id: agentId, type: "codex", title: agentId, startup: "codex", launchState: "live" }]);
+        const slices = withAgents(state, sessionId, [{ id: agentId, type: "codex", title: agentId, launchState: "live" }]);
         return {
             ...slices,
             sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: agentWindowId(slices, agentId)! } },

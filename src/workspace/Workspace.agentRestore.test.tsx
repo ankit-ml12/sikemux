@@ -18,7 +18,15 @@ vi.mock("../api/acp", () => {
                 const begun = started;
                 started = null;
                 return begun
-                    ? { status: "live", start: begun, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
+                    ? {
+                          status: "live",
+                          start: begun,
+                          permissionMode: "workspace-write",
+                          running: false,
+                          turned: false,
+                          feed: "feed-1",
+                          olderBefore: null,
+                      }
                     : { status: "missing" };
             }),
             startChat: vi.fn(async () => {
@@ -58,11 +66,10 @@ function arrangeRestoredAgents(resumeId: string | undefined): void {
             id: "agent-visible",
             type: "codex",
             title: "visible",
-            startup: "codex resume visible-session",
             resumeId: "visible-session",
             launchState: "live",
         },
-        { id: "agent-hidden", type: "claude", title: "hidden", startup: "claude --resume hidden-session", resumeId, launchState: "live" },
+        { id: "agent-hidden", type: "claude", title: "hidden", resumeId, launchState: "live" },
     ]);
     setState({
         ...slices,

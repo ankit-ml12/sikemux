@@ -61,7 +61,7 @@ beforeEach(() => {
             [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo", activeWindowId: "window-term" },
         },
         ...withAgents({ windows, windowsBySession: { [sessionId]: roles.map((role) => `window-${role}`) }, agents: {} }, sessionId, [
-            { id: "agent-only", type: "codex", title: "agent", startup: "codex", launchState: "live" },
+            { id: "agent-only", type: "codex", title: "agent", launchState: "live" },
         ]),
     });
 });

@@ -22,7 +22,15 @@ vi.mock("../api/acp", () => {
                 const begun = started;
                 started = null;
                 return begun
-                    ? { status: "live", start: begun, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
+                    ? {
+                          status: "live",
+                          start: begun,
+                          permissionMode: "workspace-write",
+                          running: false,
+                          turned: false,
+                          feed: "feed-1",
+                          olderBefore: null,
+                      }
                     : { status: "missing" };
             }),
             startChat: vi.fn(async () => {
@@ -69,11 +77,6 @@ function projectWithAgent(resumable = true): string {
             id: "agent-only",
             type: "codex",
             title: "only agent",
-            startup: "codex",
-            directCommand: {
-                program: "codex",
-                args: resumable ? ["resume", "--sandbox", "workspace-write", "session-only"] : ["--sandbox", "workspace-write"],
-            },
             ...(resumable ? { resumeId: "session-only" } : {}),
             permissionMode: "workspace-write",
             launchState: "live",
@@ -128,7 +131,6 @@ describe("workspace tab bars", () => {
         expect(getState().agents["agent-only"]).toMatchObject({
             permissionMode: "bypass",
             skipPermissions: true,
-            directCommand: { program: "codex", args: ["--dangerously-bypass-approvals-and-sandbox"] },
         });
         expect(await screen.findByRole("button", { name: /yolo/i }, { timeout: LAZY_PANE_MS })).toHaveAttribute("aria-pressed", "true");
         expect(screen.queryByTestId("terminal-agent-only")).not.toBeInTheDocument();
@@ -152,7 +154,6 @@ describe("workspace tab bars", () => {
 
         expect(getState().agents["agent-only"]).toMatchObject({
             permissionMode: "bypass",
-            directCommand: { program: "codex", args: ["--dangerously-bypass-approvals-and-sandbox"] },
         });
         expect(toggle).toHaveTextContent("yolo");
         expect(toggle).toHaveAttribute("aria-pressed", "true");
@@ -213,7 +214,7 @@ describe("workspace tab bars", () => {
 
 describe("stage layers", () => {
     function addAgentTo(sessionId: string) {
-        setState((s) => withAgents(s, sessionId, [{ id: "agent-two", type: "codex", title: "second agent", startup: "codex", launchState: "live" }]));
+        setState((s) => withAgents(s, sessionId, [{ id: "agent-two", type: "codex", title: "second agent", launchState: "live" }]));
     }
 
     /*

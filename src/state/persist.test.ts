@@ -114,7 +114,10 @@ describe("frontend persistence", () => {
         expect(workspace.pinned).toEqual([{ provider: "claude", sessionId: "s-1", title: "Release checklist", project: "/work/demo" }]);
 
         setState({ pinnedChats: [] });
-        workspace.pinned.push({ provider: "nobody", sessionId: "x", title: "x", project: "/x" }, { provider: "codex", sessionId: "", title: "y", project: "/y" });
+        workspace.pinned.push(
+            { provider: "nobody", sessionId: "x", title: "x", project: "/x" },
+            { provider: "codex", sessionId: "", title: "y", project: "/y" },
+        );
         expect(applyHydrate(JSON.stringify(saved), undefined, workspace)).toBe("applied");
         expect(getState().pinnedChats).toEqual([{ agent: "claude", id: "s-1", title: "Release checklist", project: "/work/demo" }]);
 
@@ -355,9 +358,6 @@ describe("frontend persistence", () => {
         });
         const restored = getState().agents[agent.id];
         expect(restored).toMatchObject({ launchState: "dormant", keepAlive: true, renamed: true, worktree: agent.worktree });
-        expect(restored.startup).toMatch(/^codex resume\b/);
-        expect(restored.startup).toContain("session-123");
-        expect(restored.startup).not.toContain("still malicious");
         expect(agentIdsOf(getState(), sid)).toEqual([agent.id]);
         expect(activeAgentId(getState(), getState().sessions[sid])).toBe(agent.id);
     });
@@ -365,7 +365,7 @@ describe("frontend persistence", () => {
     /* A desk is a leaf like any other, but the browser behind it dies with the
        app, so what comes back is the pane plus the pages and files it held. */
     it("saves an agent's pages and files and hands them back to the desk that was showing them", async () => {
-        const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
+        const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", resumeId: "session-7" };
         const sid = projectWith([agent]);
         cmd.openDesk(agent.id);
         const windowId = agentWindowId(getState(), agent.id)!;
@@ -403,7 +403,7 @@ describe("frontend persistence", () => {
 
     it("brings back a desk that holds only a simulator, showing the device it showed", async () => {
         const sid = getState().activeSessionId;
-        const agent: Agent = { id: "agent-phone", type: "claude", title: "testing the app", startup: "claude", resumeId: "session-8" };
+        const agent: Agent = { id: "agent-phone", type: "claude", title: "testing the app", resumeId: "session-8" };
         setState((s) => {
             const slices = withAgents(s, sid, [agent]);
             return {
@@ -435,7 +435,7 @@ describe("frontend persistence", () => {
     });
 
     it("drops a desk with nothing left to open, and one whose agent did not come back", async () => {
-        const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
+        const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", resumeId: "session-7" };
         const sid = projectWith([agent]);
         cmd.openDesk(agent.id);
         const windowId = agentWindowId(getState(), agent.id)!;
@@ -476,7 +476,7 @@ describe("frontend persistence", () => {
         const terminalWindowId = getState().sessions[sid].activeWindowId;
         const paneId = getState().windows[terminalWindowId].activePaneId;
         cmd.setPanePty(paneId, 1_759_300_000_001);
-        const agent: Agent = { id: "agent-tui", type: "pi", title: "pi in its terminal", startup: "pi" };
+        const agent: Agent = { id: "agent-tui", type: "pi", title: "pi in its terminal" };
         setState((s) => {
             const slices = withAgents(s, sid, [agent]);
             return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", cwd: "/repo" } } };
@@ -534,7 +534,7 @@ describe("frontend persistence", () => {
     });
 
     it("moves a v15 browser pane onto a desk with the pages it held", async () => {
-        const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", startup: "claude", resumeId: "session-7" };
+        const agent: Agent = { id: "agent-browsing", type: "claude", title: "reading docs", resumeId: "session-7" };
         const sid = projectWith([agent]);
         const windowId = agentWindowId(getState(), agent.id)!;
         invoke.mockResolvedValue(undefined);
@@ -687,7 +687,6 @@ describe("frontend persistence", () => {
         );
 
         expect(getState().agents["claude-agent"].profileId).toBeUndefined();
-        expect(getState().agents["claude-agent"].startup).toMatch(/^claude /);
     });
 
     it("writes item envelopes and migrates bounded v6 editor views", async () => {
@@ -1061,8 +1060,6 @@ describe("frontend persistence", () => {
         const restored = getState().windows[session.activeWindowId].root;
         expect(restored.type).toBe("pane");
         if (restored.type === "pane") {
-            expect(restored.startup).toContain("Retrying (%s/5)");
-            expect(restored.startup).not.toMatch(/[\r\n]/);
         }
     });
 

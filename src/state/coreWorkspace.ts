@@ -6,7 +6,7 @@ import { isAgentType } from "../agents/catalog";
 import { isPluginId } from "../plugins/kinds";
 import { dropAgents, dropSession } from "./commands";
 import { makeWindow } from "./commands/shared";
-import { agentExecutablePath, relaunchSpec } from "./commands/agentLaunchCommand";
+import { agentExecutablePath } from "./commands/agentLaunchCommand";
 import { agentWindow } from "./agentWindow";
 import { agentFromCore, persistedAgent } from "./persist";
 import { isSpaceIcon } from "./projectSpaces";
@@ -232,14 +232,12 @@ export function applyCoreWorkspace(workspace: Workspace): void {
                     if (saved[key as keyof typeof saved] === undefined) delete fields[key];
                     else fields[key] = saved[key as keyof typeof saved];
                 }
-                Object.assign(current, relaunchSpec(d, current));
                 moveWindow(d, windowId, record.project);
                 continue;
             }
             const agent: Agent = {
                 ...saved,
                 executablePath: agentExecutablePath(d, saved),
-                ...relaunchSpec(d, saved),
                 createdAt: record.createdAt,
                 launchState: record.asleep ? "dormant" : "live",
             };

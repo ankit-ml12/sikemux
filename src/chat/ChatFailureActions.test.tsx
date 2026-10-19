@@ -12,7 +12,7 @@ vi.mock("../api/agents", () => ({ agentApi: { authenticateChat, retryFailed } })
 
 import { ChatFailureActions } from "./ChatFailureActions";
 
-const agent = (type: Agent["type"], executablePath?: string): Agent => ({ id: `${type}-1`, type, title: type, startup: "", executablePath });
+const agent = (type: Agent["type"], executablePath?: string): Agent => ({ id: `${type}-1`, type, title: type, executablePath });
 
 afterEach(() => {
     cleanup();

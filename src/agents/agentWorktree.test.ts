@@ -30,7 +30,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("removeAgentWorktree", () => {
     const worktree: AgentWorktree = { repo: "/code/app", path: "/code/app.worktrees/fix", branch: "sikemux/fix", base: "main", startSha: "abc123" };
-    const agent: Agent = { id: "agent-1", type: "claude", title: "fix", startup: "claude", cwd: worktree.path, worktree };
+    const agent: Agent = { id: "agent-1", type: "claude", title: "fix", cwd: worktree.path, worktree };
 
     beforeEach(() => {
         setState({ agents: { [agent.id]: agent }, sessions: {}, agentStatus: {} });

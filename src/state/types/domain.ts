@@ -104,9 +104,6 @@ export interface Agent {
     /** The agent that started this one, by id, when an agent did rather than the person. */
     lead?: string;
     title: string;
-    startup: string;
-    /** Runtime-only structured launch; avoids shell parsing and argv prompt exposure. */
-    directCommand?: PtyDirectCommand;
     resumeId?: string;
     createdAt?: number;
     /** Explicit launch boundary. Absent on legacy in-memory records. */

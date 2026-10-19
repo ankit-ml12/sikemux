@@ -55,8 +55,8 @@ beforeEach(() => {
             s2: { ...state.sessions[first], id: "s2", name: "openjob" },
         },
     }));
-    setState((state) => withAgents(state, first, [{ id: "a1", type: "claude", title: "Claude", startup: "claude", cwd: "/one" }]));
-    setState((state) => withAgents(state, "s2", [{ id: "a2", type: "codex", title: "Codex", startup: "codex", cwd: "/two" }]));
+    setState((state) => withAgents(state, first, [{ id: "a1", type: "claude", title: "Claude", cwd: "/one" }]));
+    setState((state) => withAgents(state, "s2", [{ id: "a2", type: "codex", title: "Codex", cwd: "/two" }]));
     vi.clearAllMocks();
 });
 

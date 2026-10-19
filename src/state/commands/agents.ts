@@ -22,7 +22,7 @@ import { invalidate, peekResource } from "../resources";
 import { agentCatalogR, agentSessionsR } from "../resources.defs";
 import { getState, mutate, type StoreState } from "../store";
 import { notify, reportError, swallow } from "../toast";
-import { agentExecutablePath, profileOf, relaunchSpec } from "./agentLaunchCommand";
+import { agentExecutablePath, profileOf } from "./agentLaunchCommand";
 import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId, projectSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
@@ -81,7 +81,6 @@ export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?:
         agent.modelProvider = modelProvider;
         delete agent.effort;
         delete agent.baselineSessionIds;
-        Object.assign(agent, relaunchSpec(d, agent));
     });
 }
 
@@ -91,7 +90,6 @@ export function setAgentModelPreferences(id: string, model: string | undefined, 
         if (!agent) return;
         agent.model = model;
         agent.effort = effort;
-        Object.assign(agent, relaunchSpec(d, agent));
     });
 }
 
@@ -103,7 +101,6 @@ export function setAgentPermissionMode(id: string, requestedMode: AgentPermissio
         if (next === effectiveMode(a)) return;
         a.permissionMode = next;
         a.skipPermissions = next === "bypass";
-        Object.assign(a, relaunchSpec(d, a));
     });
 }
 
@@ -173,7 +170,6 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             id: newId("agent"),
             type,
             title: title ?? type,
-            ...relaunchSpec(d, { type, resumeId, permissionMode, profileId, executablePath, model, effort: options.effort }),
             resumeId,
             createdAt: Date.now(),
             permissionMode,
@@ -281,7 +277,6 @@ export function reconcileAgentSessions(type: AgentType, cwd: string, configPath:
             agent.resumeId = row.id;
             if (agent.renamed) unsavedNames.push({ sessionId: row.id, name: agent.title, executablePath: agentExecutablePath(d, agent) });
             else agent.title = usableAgentSessionTitle(row, agent.title);
-            Object.assign(agent, relaunchSpec(d, agent));
             delete agent.baselineSessionIds;
             claimed.add(row.id);
         }
@@ -296,7 +291,6 @@ export function attachAgentSession(id: string, resumeId: string): void {
         const agent = d.agents[id];
         if (!agent || agent.resumeId === resumeId || !isResumeId(agent.type, resumeId)) return;
         agent.resumeId = resumeId;
-        Object.assign(agent, relaunchSpec(d, agent));
         delete agent.baselineSessionIds;
     });
 }

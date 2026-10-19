@@ -14,8 +14,8 @@ function twoProjects(): void {
         sessionOrder: [first, "s2"],
         sessions: { ...state.sessions, s2: { ...state.sessions[first], id: "s2", name: "openjob" } },
     }));
-    setState((state) => withAgents(state, first, [{ id: "a1", type: "claude", title: "claude · api", startup: "claude", cwd: "/one" }]));
-    setState((state) => withAgents(state, "s2", [{ id: "a2", type: "codex", title: "codex · web", startup: "codex", cwd: "/two" }]));
+    setState((state) => withAgents(state, first, [{ id: "a1", type: "claude", title: "claude · api", cwd: "/one" }]));
+    setState((state) => withAgents(state, "s2", [{ id: "a2", type: "codex", title: "codex · web", cwd: "/two" }]));
 }
 
 beforeEach(twoProjects);
