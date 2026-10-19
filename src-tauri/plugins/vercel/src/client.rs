@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use reqwest::{Method, Response};
+use reqwest::Method;
 use serde_json::Value;
 use sikemux_plugin_api::http::{self, Deadline, Http, Redirects};
 use sikemux_plugin_api::store::{self, Held};
@@ -96,32 +96,33 @@ impl Session {
         self.send(Method::GET, path, query, None).await
     }
 
-    /// The answer as it arrives, for a stream that keeps going.
-    pub async fn open(&self, path: &str, query: &[(&str, String)]) -> VercelResult<Response> {
-        let mut query = query.to_vec();
-        if let Some(team) = &self.team {
-            query.push(team_param(team));
-        }
-        let builder = STREAMING
+    /// A POST with one extra header, for the APIs that ask why they are being called.
+    pub async fn post_with_header(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        header: (&str, &str),
+        body: Value,
+    ) -> VercelResult<Value> {
+        let builder = HTTP
             .client()?
-            .get(format!("{API}{path}"))
+            .post(format!("{API}{path}"))
             .bearer_auth(&self.token)
-            .query(&query);
-        let response = builder.send().await?;
+            .query(query)
+            .header(header.0, header.1)
+            .json(&body);
+        let response = HTTP.send(builder).await?;
         let status = response.status().as_u16();
-        if (200..300).contains(&status) {
-            return Ok(response);
-        }
         let bytes = http::read_body(response, MAX_RESPONSE_BYTES).await?;
-        Err(checked(
-            status,
-            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-        )
-        .err()
-        .unwrap_or(VercelError::Http {
-            status,
-            message: "Vercel refused the request".into(),
-        }))
+        let body = if bytes.iter().all(u8::is_ascii_whitespace) {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes).map_err(|_| VercelError::Http {
+                status,
+                message: String::from_utf8_lossy(&bytes).chars().take(200).collect(),
+            })?
+        };
+        checked(status, body)
     }
 
     pub async fn send_unchecked(

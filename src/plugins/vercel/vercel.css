@@ -980,3 +980,8 @@
     white-space: nowrap;
     color: var(--text-primary);
 }
+
+.vercel-log-line.runtime.log .vercel-log-text {
+    padding-left: 12px;
+    border-left: 1px solid var(--border);
+}

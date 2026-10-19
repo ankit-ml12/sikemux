@@ -146,32 +146,33 @@ export interface DomainRouting {
 }
 
 export interface RuntimeLogLine {
-    at: number;
+    /** When Vercel saw it, as RFC 3339. */
+    at: string;
+    /** A request Vercel answered, or a line a function wrote while answering one. */
+    kind: "request" | "log";
     level: "info" | "warning" | "error" | string;
-    source: string;
     message: string;
     method: string | null;
     path: string | null;
     status: number | null;
-    domain: string | null;
-}
-
-export interface VercelCrons {
-    /** Off when the person turned crons off in Vercel's settings. */
-    enabled: boolean;
-    /** The production deployment that declared them. */
+    requestId: string | null;
     deploymentId: string | null;
-    updatedAt: number | null;
-    jobs: { path: string; schedule: string; host: string | null }[];
 }
 
-export interface VercelFirewall {
-    enabled: boolean;
-    rules: { id: string; name: string; description: string | null; active: boolean; action: string }[];
-    blocks: { ip: string; hostname: string | null; note: string | null; action: string }[];
-    /** Every visitor passes a browser check before reaching the site. */
-    attackMode: boolean;
-    attackModeUntil: number | null;
+export interface RuntimeLogs {
+    lines: RuntimeLogLine[];
+    minutes: number;
+    filtered: number;
+    /** Why something is missing, such as function logs a Hobby team doesn't keep that long. */
+    note: string | null;
+}
+
+export interface DeployProgress {
+    step: string;
+    done: number;
+    total: number;
+    /** Set once Vercel accepted the deployment and started building it. */
+    deployment: VercelDeployment | null;
 }
 
 export interface VercelProtection {
@@ -183,12 +184,22 @@ export interface VercelProtection {
     canShare: boolean;
 }
 
-export interface DeployProgress {
-    step: string;
-    done: number;
-    total: number;
-    /** Set once Vercel accepted the deployment and started building it. */
-    deployment: VercelDeployment | null;
+export interface VercelFirewall {
+    enabled: boolean;
+    rules: { id: string; name: string; description: string | null; active: boolean; action: string }[];
+    blocks: { ip: string; hostname: string | null; note: string | null; action: string }[];
+    /** Every visitor passes a browser check before reaching the site. */
+    attackMode: boolean;
+    attackModeUntil: number | null;
+}
+
+export interface VercelCrons {
+    /** Off when the person turned crons off in Vercel's settings. */
+    enabled: boolean;
+    /** The production deployment that declared them. */
+    deploymentId: string | null;
+    updatedAt: number | null;
+    jobs: { path: string; schedule: string; host: string | null }[];
 }
 
 export type VercelTarget = "production" | "preview" | "development";
@@ -234,8 +245,8 @@ export const vercelApi = {
         production: boolean,
         handlers: PluginStreamHandlers<DeployProgress>,
     ): PluginStream => backend.stream("deployFolder", { team, project, folder, production }, handlers),
-    followRuntimeLogs: (team: string, project: string, id: string, handlers: PluginStreamHandlers<{ lines: RuntimeLogLine[] }>): PluginStream =>
-        backend.stream("followRuntimeLogs", { team, project, id }, handlers),
+    runtimeLogs: (team: string, project: string, id: string, minutes: number) =>
+        backend.call<RuntimeLogs>("runtimeLogs", { team, project, id, minutes, limit: 500 }),
     setEnv: (team: string, project: string, change: VariableChange) => backend.call<VercelVariable>("setEnv", { team, project, ...change }),
     removeEnv: (team: string, project: string, id: string) => backend.call<void>("removeEnv", { team, project, id }),
     firewall: (team: string, project: string) => backend.call<VercelFirewall>("firewall", { team, project }),

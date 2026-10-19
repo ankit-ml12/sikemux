@@ -142,19 +142,19 @@
     },
     {
       "name": "vercel_runtime_logs",
-      "row": {"verb": "listen", "kind": "read", "icon": "log-lines", "target": ["{id} runtime logs"], "detail": ["{path}"]},
+      "row": {"verb": "read", "kind": "read", "icon": "log-lines", "target": ["{project} runtime logs"], "detail": ["{path}"]},
       "method": "runtimeLogs",
-      "description": "Listen to a deployment's function and edge logs for `seconds` (default 20); none are kept from before, so have the person retry meanwhile.",
+      "description": "A project's requests with their status, and what its functions logged, newest first, from the last `minutes` (default 15, at most 30).",
       "properties": {
         "project": { "type": "string" },
-        "id": { "type": "string" },
-        "seconds": { "type": "integer" },
+        "id": { "type": "string", "description": "Only this deployment's." },
+        "minutes": { "type": "integer" },
         "minStatus": { "type": "integer" },
         "path": { "type": "string" },
         "levels": { "type": "array", "items": { "type": "string", "enum": ["info", "warning", "error"] } },
         "team": { "type": "string" }
       },
-      "required": ["project", "id"]
+      "required": ["project"]
     }
   ]
 }

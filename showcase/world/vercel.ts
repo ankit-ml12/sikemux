@@ -192,6 +192,7 @@ const find = (id: unknown) =>
   DEPLOYMENTS.find((each) => each.id === id) ?? DEPLOYMENTS[2];
 
 export const VERCEL: Record<string, (params: Params) => unknown> = {
+  runtimeLogs: () => vercelRuntimeLogs(),
   protection: () => ({
     vercelAuthentication: "Preview deployments",
     password: null,
@@ -398,41 +399,40 @@ export const VERCEL: Record<string, (params: Params) => unknown> = {
   cancel: ({ id }) => find(id),
 };
 
-export function vercelRuntimeLines() {
+export function vercelRuntimeLogs() {
   const now = Date.now();
   const line = (
     ago: number,
+    kind: "request" | "log",
     level: string,
     method: string,
     path: string,
-    status: number,
+    status: number | null,
     message: string,
-    source = "serverless",
+    requestId: string,
   ) => ({
-    at: now - ago,
+    at: new Date(now - ago).toISOString(),
+    kind,
     level,
-    source,
     message,
     method,
     path,
     status,
-    domain: "shop.acme.dev",
+    requestId,
+    deploymentId: "dpl_live",
   });
   return {
     lines: [
-      line(9_000, "info", "GET", "/", 200, "GET / 200 in 41ms", "static"),
-      line(7_400, "info", "GET", "/api/products", 200, "products: 24 from cache"),
-      line(5_100, "warning", "GET", "/favicon.png", 404, "No such file", "static"),
-      line(3_000, "info", "POST", "/api/cart", 200, "cart c_81f: 3 items"),
-      line(
-        1_200,
-        "error",
-        "POST",
-        "/api/checkout",
-        500,
-        "TypeError: Cannot read properties of undefined (reading 'items')\n    at checkout (/var/task/app/api/checkout/route.js:18:27)",
-      ),
+      line(1_200, "log", "error", "POST", "/api/checkout", null, "TypeError: Cannot read properties of undefined (reading 'items')\n    at checkout (/var/task/app/api/checkout/route.js:18:27)", "r5"),
+      line(1_300, "request", "error", "POST", "/api/checkout", 500, "/api/checkout · streaming_func · MISS", "r5"),
+      line(3_000, "request", "info", "POST", "/api/cart", 200, "/api/cart · streaming_func · MISS", "r4"),
+      line(5_100, "request", "warning", "GET", "/favicon.png", 404, "/[slug] · prerender · MISS", "r3"),
+      line(7_400, "request", "info", "GET", "/api/products", 200, "/api/products · streaming_func · HIT", "r2"),
+      line(9_000, "request", "info", "GET", "/", 200, "/ · prerender · HIT", "r1"),
     ],
+    minutes: 15,
+    filtered: 0,
+    note: null,
   };
 }
 
