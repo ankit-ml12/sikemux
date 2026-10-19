@@ -1,7 +1,6 @@
 //! Secrets kept by service and account. A build Sikemux's team signed keeps
-//! them in the login Keychain on macOS; any other build, and every other
-//! system, keeps them in files only the person can read. An unsigned build
-//! would lose the Keychain's trust each time it is rebuilt.
+//! them in the data protection keychain on macOS; any other build, and every
+//! other system, keeps them in files only the person can read.
 
 use std::fmt;
 

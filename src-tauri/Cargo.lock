@@ -8574,6 +8574,8 @@ dependencies = [
  "rustls-webpki",
  "schemars 0.8.22",
  "schemars 1.2.2",
+ "security-framework",
+ "security-framework-sys",
  "semver",
  "serde",
  "serde_core",

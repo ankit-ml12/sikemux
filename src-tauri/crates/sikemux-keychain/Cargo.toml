@@ -11,5 +11,5 @@ sikemux-process = { path = "../sikemux-process" }
 workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-security-framework = { version = "3", default-features = false }
+security-framework = { version = "3", default-features = false, features = ["OSX_10_15"] }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
