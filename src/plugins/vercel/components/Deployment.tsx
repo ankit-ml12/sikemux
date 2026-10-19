@@ -8,6 +8,7 @@ import { vercelLogR } from "../resources";
 import { useRefreshEvery } from "../../../plugin-api/hooks";
 import { deploymentForAgent, isUnderway, UNDERWAY_REFRESH_MS } from "../state";
 import { Avatar, EnvBadge, hostOf, IconMore, IconPromote, IconRollback, Source, Status, useDeploymentActions, visit } from "./parts";
+import { Protection } from "./Protection";
 import { RuntimeLogs } from "./RuntimeLogs";
 
 /** Builds print plenty to stderr that is not a failure, so only lines that say so are marked. */
@@ -146,6 +147,7 @@ export function Deployment({
                         </dd>
                     </div>
                 </dl>
+                <Protection active={active} team={team} deployment={deployment} />
                 {deployment.error && <p className="vercel-error">{deployment.error}</p>}
             </section>
 

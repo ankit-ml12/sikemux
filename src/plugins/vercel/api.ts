@@ -174,6 +174,15 @@ export interface VercelFirewall {
     attackModeUntil: number | null;
 }
 
+export interface VercelProtection {
+    /** Which deployments ask visitors to sign in to Vercel, or none. */
+    vercelAuthentication: string | null;
+    /** Which deployments ask for a password, or none. */
+    password: string | null;
+    /** The project already has a secret for share links. */
+    canShare: boolean;
+}
+
 export type VercelTarget = "production" | "preview" | "development";
 
 export interface VariableChange {
@@ -217,6 +226,8 @@ export const vercelApi = {
     firewall: (team: string, project: string) => backend.call<VercelFirewall>("firewall", { team, project }),
     setAttackMode: (team: string, project: string, enabled: boolean, hours?: number) =>
         backend.call<VercelFirewall>("setAttackMode", { team, project, enabled, hours }),
+    protection: (team: string, project: string) => backend.call<VercelProtection>("protection", { team, project }),
+    shareLink: (team: string, project: string, url: string) => backend.call<{ link: string }>("shareLink", { team, project, url }),
     crons: (team: string, project: string) => backend.call<VercelCrons>("crons", { team, project }),
     settings: (team: string, project: string) => backend.call<VercelSettings>("settings", { team, project }),
     updateSettings: (team: string, project: string, settings: SettingsChange) =>

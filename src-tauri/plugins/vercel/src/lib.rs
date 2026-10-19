@@ -10,6 +10,7 @@
 //   domains     — adding a domain, the DNS records it needs, verifying, routing and removing it
 //   firewall    — the firewall's rules and IP blocks, and Attack Challenge Mode
 //   env         — adding, changing and removing environment variables; values only go to Vercel
+//   protection  — whether deployments ask for a sign-in or password, and a link past it
 //   runtime     — a deployment's runtime logs, followed live or listened to for a while
 //   settings    — a project's framework, commands, root directory and Node version, read and changed
 
@@ -23,6 +24,7 @@ mod error;
 mod firewall;
 mod oauth;
 mod projects;
+mod protection;
 mod runtime;
 mod settings;
 
@@ -87,6 +89,8 @@ impl Plugin for Vercel {
                 "setAttackMode" => {
                     answer(firewall::set_attack_mode(data_dir, params(input)?)).await
                 }
+                "protection" => answer(protection::protection(data_dir, params(input)?)).await,
+                "shareLink" => answer(protection::share(data_dir, params(input)?)).await,
                 "crons" => answer(settings::crons(data_dir, params(input)?)).await,
                 "settings" => answer(settings::settings(data_dir, params(input)?)).await,
                 "updateSettings" => answer(settings::update(data_dir, params(input)?)).await,

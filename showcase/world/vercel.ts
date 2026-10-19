@@ -192,6 +192,14 @@ const find = (id: unknown) =>
   DEPLOYMENTS.find((each) => each.id === id) ?? DEPLOYMENTS[2];
 
 export const VERCEL: Record<string, (params: Params) => unknown> = {
+  protection: () => ({
+    vercelAuthentication: "Preview deployments",
+    password: null,
+    canShare: true,
+  }),
+  shareLink: () => ({
+    link: "https://storefront-git-checkout-acme.vercel.app/?x-vercel-protection-bypass=showcase&x-vercel-set-bypass-cookie=samesitenone",
+  }),
   firewall: () => ({
     enabled: true,
     rules: [

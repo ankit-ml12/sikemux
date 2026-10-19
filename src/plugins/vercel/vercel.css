@@ -951,3 +951,14 @@
 .vercel-button.danger {
     color: var(--danger);
 }
+
+.vercel-protection {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: var(--text-xs);
+}

@@ -25,3 +25,5 @@ export const vercelDomainR = vercel.resource(
 export const vercelCronsR = vercel.resource("crons", (team: string, project: string) => vercelApi.crons(team, project), 60_000);
 
 export const vercelFirewallR = vercel.resource("firewall", (team: string, project: string) => vercelApi.firewall(team, project), 30_000);
+
+export const vercelProtectionR = vercel.resource("protection", (team: string, project: string) => vercelApi.protection(team, project), 60_000);
