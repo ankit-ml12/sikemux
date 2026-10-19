@@ -877,6 +877,9 @@ pub fn replay(records: &[Value], session_id: &str, cwd: &Path) -> Vec<(String, V
             .map(|child| child.session_id.clone());
         let mut opens_turn =
             (is_assistant || wakes) && main_thread && turn_over && !updates.is_empty();
+        for ended in ended_subagents(record) {
+            replay.end(&ended);
+        }
         for mut update in updates {
             if position < pictures_from {
                 drop_pictures(&mut update);
@@ -938,6 +941,7 @@ struct Child {
     task: String,
     reconstructable: bool,
     announced: bool,
+    ended: bool,
     terminal_state: Option<Subagent>,
 }
 
@@ -1008,6 +1012,7 @@ fn collect_children(records: &[Value], session_id: &str) -> Vec<Child> {
                     .unwrap_or_else(|| states::UNNAMED_TASK.to_owned()),
                 reconstructable: true,
                 announced: false,
+                ended: false,
                 terminal_state: terminal_states
                     .iter()
                     .find(|(known, _)| known == id)
@@ -1045,6 +1050,37 @@ fn collect_children(records: &[Value], session_id: &str) -> Vec<Child> {
         }
     }
     children
+}
+
+/// The subagents `record` says have ended: a call's answer, unless it only says
+/// the subagent went to the background, or the notice a background one sends.
+fn ended_subagents(record: &Value) -> Vec<Ended> {
+    if let Some((agent_id, _)) = task_notification(record) {
+        return vec![Ended::Agent(agent_id)];
+    }
+    let reported = record.get("toolUseResult");
+    if reported.and_then(|reported| str_field(reported, "status")) == Some("async_launched") {
+        return Vec::new();
+    }
+    record
+        .pointer("/message/content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|block| {
+            matches!(
+                str_field(block, "type"),
+                Some("tool_result" | "mcp_tool_result")
+            )
+        })
+        .filter_map(|block| str_field(block, "tool_use_id"))
+        .map(|id| Ended::Call(id.to_owned()))
+        .collect()
+}
+
+enum Ended {
+    Call(String),
+    Agent(String),
 }
 
 fn wakes_agent(record: &Value) -> bool {
@@ -1130,6 +1166,7 @@ impl Replay<'_> {
                     task: states::UNNAMED_TASK.to_owned(),
                     reconstructable: false,
                     announced: false,
+                    ended: false,
                     terminal_state: None,
                 });
                 self.children.len() - 1
@@ -1155,6 +1192,29 @@ impl Replay<'_> {
             self.children[index].announced = true;
         }
         self.children[index].session_id.clone()
+    }
+
+    /// Says how a subagent ended where it ended, so its card is settled
+    /// beside the work around it rather than with the chat's last turn.
+    fn end(&mut self, ended: &Ended) {
+        let index = self.children.iter().position(|child| match ended {
+            Ended::Call(id) => child.tool_use_id == *id,
+            Ended::Agent(id) => child.agent_id.as_deref() == Some(id.as_str()),
+        });
+        let Some(index) = index else {
+            return;
+        };
+        let child = &self.children[index];
+        if !child.announced || child.ended || !child.reconstructable {
+            return;
+        }
+        let Some(state) = child.terminal_state else {
+            return;
+        };
+        let update = state.update(&child.session_id);
+        let parent_session = self.session_of(child.parent_tool_use_id.as_deref());
+        self.children[index].ended = true;
+        self.updates.push((parent_session, update));
     }
 
     fn usage_limit(&mut self, record: &Value, turn_id: Option<&str>, title: String) {
@@ -1279,7 +1339,7 @@ impl Replay<'_> {
         }
         for index in (0..self.children.len()).rev() {
             let child = &self.children[index];
-            if !child.announced {
+            if !child.announced || child.ended {
                 continue;
             }
             let state = match child.terminal_state {
