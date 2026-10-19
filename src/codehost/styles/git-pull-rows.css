@@ -249,10 +249,6 @@
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
 }
-.side-seg > .gha-chip {
-    height: 20px;
-    padding: 0 var(--space-2);
-}
 /* The issue's details page: GitHub's sidebar, each fact a row with its name beside its value, a hairline between. */
 .issue-facts {
     flex: 1 1 auto;
@@ -322,14 +318,9 @@
     display: inline-flex;
     gap: var(--space-1);
 }
-/* A segment that spans the side panel under its head, its choices sharing the width. */
-.side-seg.fill {
-    display: flex;
+/* A segment across the side panel keeps clear of its edges. */
+.git-side-head > .seg.fill {
     margin: 0 var(--space-2) var(--space-2);
-}
-.side-seg.fill > .gha-chip {
-    flex: 1 1 0;
-    justify-content: center;
 }
 /* A release reads as one page: its notes, then its files under a fold, as GitHub shows it. */
 .release-page {
@@ -413,6 +404,6 @@
     width: 72px;
     justify-content: flex-end;
 }
-.git-side-actions + .side-seg.fill {
+.git-side-actions + .seg.fill {
     margin-top: var(--space-2);
 }

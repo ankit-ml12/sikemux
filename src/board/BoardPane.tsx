@@ -12,11 +12,10 @@ import { agentBoardApi } from "../api/agentBoard";
 import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
 import { useStore } from "../state/store";
-import { basename } from "../lib/paths";
-import { IconBoard, IconChevron, IconLink, IconRefresh, IconSearch } from "../ui/Icons";
+import { IconBoard, IconChevron, IconLink, IconPlus, IconSearch } from "../ui/Icons";
 import { EmptyState } from "../ui/Panel";
 import { useCardDrag } from "../ui/kanbanDrag";
-import { Switch } from "../ui/Controls";
+import { Segmented, Switch } from "../ui/Controls";
 import { AutoPanel } from "./AutoPanel";
 import { CardPanel } from "./CardPanel";
 import { MessagesPanel } from "./MessagesPanel";
@@ -45,8 +44,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     const auto = useStore((s) => s.agentBoardAuto[project]);
     const questions = useStore((s) => s.agentQuestions);
     const [words, setWords] = useState("");
-    const [fromJira, setFromJira] = useState(false);
-    const [onlyNeeds, setOnlyNeeds] = useState(false);
+    const [show, setShow] = useState<"all" | "jira" | "needs">("all");
     const [selected, setSelected] = useState<number | "new" | "auto" | "messages" | null>(null);
     const [moving, setMoving] = useState<Record<number, CardStatus>>({});
     const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
@@ -57,7 +55,6 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
             return next;
         });
 
-    const refresh = () => readBoard(folder);
     useEffect(() => {
         if (visible) readBoard(folder);
     }, [visible, folder]);
@@ -91,8 +88,8 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     const wanted = words.trim().toLowerCase();
     const shown = cards.filter(
         (card) =>
-            (!fromJira || card.ticket) &&
-            (!onlyNeeds || columnOf(card) === "needs") &&
+            (show !== "jira" || card.ticket) &&
+            (show !== "needs" || columnOf(card) === "needs") &&
             (!wanted || [card.title, card.details, card.ownerName ?? "", card.ticket?.key ?? ""].some((text) => text.toLowerCase().includes(wanted))),
     );
 
@@ -213,20 +210,35 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
             <section className="kanban" aria-label="Board">
                 <header className="kanban-head">
                     <div className="kanban-title">
-                        <h2>Board</h2>
-                        <span className="kanban-tag board-project">{basename(folder)}</span>
-                        <span className="kanban-meta">
-                            {count(cards)}
-                            {fromTickets > 0 && ` · ${fromTickets} from Jira`}
+                        <span className="kanban-find">
+                            <IconSearch size={13} />
+                            <input
+                                className="kanban-search"
+                                value={words}
+                                onChange={(event) => setWords(event.target.value)}
+                                placeholder="Find a card"
+                                aria-label="Find a card"
+                                spellCheck={false}
+                            />
                         </span>
+                        <Segmented
+                            label="Which cards to show"
+                            value={show}
+                            options={[
+                                { value: "all", label: "All", count: cards.length },
+                                ...(fromTickets > 0 ? [{ value: "jira" as const, label: "From Jira", count: fromTickets }] : []),
+                                { value: "needs", label: "Needs you", count: needing.length },
+                            ]}
+                            onChange={setShow}
+                        />
                         <span className="kanban-grow" />
                         <span className="board-auto" title={auto?.autoNote ?? undefined}>
                             <Switch checked={autoOn} onChange={(on) => void setAuto(on)} label="Auto" />
-                            <button type="button" className="kanban-pick" aria-pressed={selected === "auto"} onClick={() => setSelected("auto")}>
+                            <button type="button" aria-pressed={selected === "auto"} onClick={() => setSelected("auto")}>
                                 Auto
                                 {autoOn && auto && (
                                     <span className="kanban-pick-count">
-                                        {auto.running} of {auto.settings.slots} running
+                                        {auto.running} of {auto.settings.slots}
                                     </span>
                                 )}
                             </button>
@@ -239,43 +251,10 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                             onClick={() => setSelected("messages")}>
                             Messages
                         </button>
-                        <button type="button" className="kanban-button" onClick={() => setSelected("new")}>
+                        <button type="button" className="kanban-pick" onClick={() => setSelected("new")}>
+                            <IconPlus size={12} />
                             Add card
                         </button>
-                        <button type="button" className="kanban-icon-button" title="Refresh" aria-label="Refresh the board" onClick={refresh}>
-                            <IconRefresh size={13} />
-                        </button>
-                    </div>
-                    <div className="kanban-filters" role="group" aria-label="Filter the board">
-                        <span className="kanban-find">
-                            <IconSearch size={13} />
-                            <input
-                                className="kanban-search"
-                                value={words}
-                                onChange={(event) => setWords(event.target.value)}
-                                placeholder="Find a card"
-                                aria-label="Find a card"
-                                spellCheck={false}
-                            />
-                        </span>
-                        <button type="button" className="kanban-pick" aria-pressed={fromJira} onClick={() => setFromJira((on) => !on)}>
-                            From Jira
-                        </button>
-                        <button type="button" className="kanban-pick" aria-pressed={onlyNeeds} onClick={() => setOnlyNeeds((on) => !on)}>
-                            Needs you <span className="kanban-pick-count">{needing.length}</span>
-                        </button>
-                        {(words || fromJira || onlyNeeds) && (
-                            <button
-                                type="button"
-                                className="kanban-clear"
-                                onClick={() => {
-                                    setWords("");
-                                    setFromJira(false);
-                                    setOnlyNeeds(false);
-                                }}>
-                                Clear
-                            </button>
-                        )}
                     </div>
                 </header>
                 {cards.length === 0 ? (

@@ -1,3 +1,4 @@
+import { Segmented } from "../../ui/Controls";
 import { useState } from "react";
 import { GitColumns } from "../../git/GitColumns";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
@@ -206,18 +207,14 @@ export function ReleasesView({ paneId, repo, active }: Props) {
                     </Tooltip>
                     <ShellAccount />
                 </div>
-                <div className="gha-chips gha-seg side-seg fill" role="group" aria-label="Which releases to list">
-                    {KINDS.map((each) => (
-                        <button
-                            key={each.id}
-                            type="button"
-                            className="gha-chip"
-                            data-on={kind === each.id ? "1" : "0"}
-                            onClick={() => setKind(each.id)}>
-                            {each.label}
-                        </button>
-                    ))}
-                </div>
+                <Segmented
+                    fill
+                    small
+                    label="Which releases to list"
+                    value={kind}
+                    options={KINDS.map((each) => ({ value: each.id, label: each.label }))}
+                    onChange={setKind}
+                />
             </div>
             {releases.status === "loading" && !releases.data ? (
                 <SkeletonRows rows={6} label="Loading releases" />

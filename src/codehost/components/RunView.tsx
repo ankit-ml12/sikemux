@@ -1,3 +1,4 @@
+import { Segmented } from "../../ui/Controls";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { GitColumns } from "../../git/GitColumns";
 import { SwipePages } from "../../ui/SwipePages";
@@ -225,18 +226,14 @@ function RunHead({
                 </div>
             )}
             {ci.attempts && open.latestAttempt > 1 && (
-                <div className="gha-chips gha-seg side-seg fill" role="group" aria-label="Attempts">
-                    {Array.from({ length: open.latestAttempt }, (_, index) => index + 1).map((number) => (
-                        <button
-                            key={number}
-                            type="button"
-                            className="gha-chip"
-                            data-on={(open.attempt ?? open.latestAttempt) === number ? "1" : "0"}
-                            onClick={() => open.setAttempt(number === open.latestAttempt ? null : number)}>
-                            Attempt {number}
-                        </button>
-                    ))}
-                </div>
+                <Segmented
+                    fill
+                    small
+                    label="Attempts"
+                    value={open.attempt ?? open.latestAttempt}
+                    options={Array.from({ length: open.latestAttempt }, (_, index) => ({ value: index + 1, label: `Attempt ${index + 1}` }))}
+                    onChange={(number) => open.setAttempt(number === open.latestAttempt ? null : number)}
+                />
             )}
             {ci.approvals && <Approvals repo={repo} runId={run.id} status={run.status} conclusion={run.conclusion} active={active} />}
         </div>

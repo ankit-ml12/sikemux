@@ -1,3 +1,4 @@
+import { Segmented } from "../../ui/Controls";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { openUrl, swallow } from "../../plugin-api/host";
 import { useResourceEnabled } from "../../plugin-api/resources";
@@ -162,18 +163,12 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
         <div className="gha-runs pr-list">
             <div className="gha-list-head">
                 <ListTitle section="actions" />
-                <div className="gha-chips gha-seg" role="group" aria-label="Which runs to list">
-                    {STATUS_FILTERS.map((filter) => (
-                        <button
-                            key={filter}
-                            type="button"
-                            className="gha-chip"
-                            data-on={view.statusFilter === filter ? "1" : "0"}
-                            onClick={() => filterBy(paneId, { statusFilter: filter })}>
-                            {FILTER_LABEL[filter]}
-                        </button>
-                    ))}
-                </div>
+                <Segmented
+                    label="Which runs to list"
+                    value={view.statusFilter}
+                    options={STATUS_FILTERS.map((filter) => ({ value: filter, label: FILTER_LABEL[filter] }))}
+                    onChange={(filter) => filterBy(paneId, { statusFilter: filter })}
+                />
                 {projectBranch && !view.branch && (
                     <Tooltip label={`Only show runs on ${projectBranch}`}>
                         <button

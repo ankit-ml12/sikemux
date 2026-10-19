@@ -39,6 +39,39 @@ export function Switch({
     );
 }
 
+/** One choice from a few, as a segmented track. `fill` stretches it across its box with the choices sharing the width. */
+export function Segmented<T extends string | number>({
+    value,
+    options,
+    onChange,
+    label,
+    fill = false,
+    small = false,
+}: {
+    value: T;
+    options: readonly { value: T; label: ReactNode; count?: number }[];
+    onChange: (value: T) => void;
+    label: string;
+    fill?: boolean;
+    small?: boolean;
+}) {
+    return (
+        <div className={`seg${fill ? " fill" : ""}${small ? " small" : ""}`} role="group" aria-label={label}>
+            {options.map((option) => (
+                <button
+                    key={option.value}
+                    type="button"
+                    className="seg-item"
+                    aria-pressed={option.value === value}
+                    onClick={() => onChange(option.value)}>
+                    {option.label}
+                    {option.count !== undefined && <span className="seg-count">{option.count.toLocaleString()}</span>}
+                </button>
+            ))}
+        </div>
+    );
+}
+
 /** Checkbox with a visible label. Use for multi-select sets, not for settings. */
 export function Checkbox({
     checked,

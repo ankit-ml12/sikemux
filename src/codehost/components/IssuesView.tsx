@@ -1,3 +1,4 @@
+import { Segmented } from "../../ui/Controls";
 import { useState, type ReactNode } from "react";
 import { notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
@@ -281,21 +282,16 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                 <StaleNotice handle={issues} />
                 <div className="gha-list-head">
                     <ListTitle section="issues" />
-                    <div className="gha-chips gha-seg" role="group" aria-label="Which to list">
-                        {LIST_STATES.map((state) => (
-                            <button
-                                key={state}
-                                type="button"
-                                className="gha-chip"
-                                data-on={listState === state ? "1" : "0"}
-                                onClick={() => setListState(paneId, "issues", state)}>
-                                {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
-                                {counts && state !== "all" && (
-                                    <span className="gha-chip-count">{counts[state as "open" | "closed"].toLocaleString()}</span>
-                                )}
-                            </button>
-                        ))}
-                    </div>
+                    <Segmented
+                        label="Which to list"
+                        value={listState}
+                        options={LIST_STATES.map((state) => ({
+                            value: state,
+                            label: state === "all" ? "All" : state === "open" ? "Open" : "Closed",
+                            count: counts && state !== "all" ? counts[state as "open" | "closed"] : undefined,
+                        }))}
+                        onChange={(state) => setListState(paneId, "issues", state)}
+                    />
                     <span className="gha-page-spacer" />
                     <span className="gha-dim">{total}</span>
                     <Tooltip label="New issue">
@@ -352,18 +348,13 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                     <StateMark kind="issue" state={openIssue?.state ?? "open"} reason={openIssue?.stateReason ?? null} size={14} />
                     <span className="pr-side-number">#{item}</span>
                     <span className="gha-page-spacer" />
-                    <div className="gha-chips gha-seg side-seg" role="group" aria-label="Which to list">
-                        {LIST_STATES.map((state) => (
-                            <button
-                                key={state}
-                                type="button"
-                                className="gha-chip"
-                                data-on={listState === state ? "1" : "0"}
-                                onClick={() => setListState(paneId, "issues", state)}>
-                                {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
-                            </button>
-                        ))}
-                    </div>
+                    <Segmented
+                        small
+                        label="Which to list"
+                        value={listState}
+                        options={LIST_STATES.map((state) => ({ value: state, label: state === "all" ? "All" : state === "open" ? "Open" : "Closed" }))}
+                        onChange={(state) => setListState(paneId, "issues", state)}
+                    />
                     <Tooltip label="New issue">
                         <button type="button" className="git-foot-btn icon" aria-label="New issue" onClick={() => compose(paneId, "issue")}>
                             <IconPlus size={13} />

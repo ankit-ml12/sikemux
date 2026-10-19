@@ -1,3 +1,4 @@
+import { Segmented } from "../../ui/Controls";
 import { useMemo, useState, type ReactNode } from "react";
 import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../plugin-api/host";
 import { checkoutPull, isOwnBranch, localBranchOf } from "../checkout";
@@ -835,21 +836,16 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                 <StaleNotice handle={pulls} />
                 <div className="gha-list-head">
                     <ListTitle section="pulls" />
-                    <div className="gha-chips gha-seg" role="group" aria-label="Which to list">
-                        {LIST_STATES.map((state) => (
-                            <button
-                                key={state}
-                                type="button"
-                                className="gha-chip"
-                                data-on={listState === state ? "1" : "0"}
-                                onClick={() => setListState(paneId, "pulls", state)}>
-                                {state === "all" ? "All" : state === "open" ? "Open" : "Closed"}
-                                {counts && state !== "all" && (
-                                    <span className="gha-chip-count">{counts[state as "open" | "closed"].toLocaleString()}</span>
-                                )}
-                            </button>
-                        ))}
-                    </div>
+                    <Segmented
+                        label="Which to list"
+                        value={listState}
+                        options={LIST_STATES.map((state) => ({
+                            value: state,
+                            label: state === "all" ? "All" : state === "open" ? "Open" : "Closed",
+                            count: counts && state !== "all" ? counts[state as "open" | "closed"] : undefined,
+                        }))}
+                        onChange={(state) => setListState(paneId, "pulls", state)}
+                    />
                     <span className="gha-page-spacer" />
                     <Tooltip label="New pull request">
                         <button type="button" className="gha-icon-btn" aria-label="New pull request" onClick={() => compose(paneId, "pull")}>
