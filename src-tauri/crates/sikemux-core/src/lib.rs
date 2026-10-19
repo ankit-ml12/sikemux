@@ -32,6 +32,7 @@ pub mod sessions;
 pub mod skills;
 pub mod tasks;
 pub mod trailers;
+pub mod usage;
 
 use std::path::PathBuf;
 

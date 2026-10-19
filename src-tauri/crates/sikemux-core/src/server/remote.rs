@@ -1,6 +1,7 @@
-//! Paired devices reaching the core from other machines. The core's key, the
-//! on/off switch and the trusted devices live in `<socket>.remote.json`, so
-//! the dev and release cores keep separate ones.
+//! Paired devices reaching the core from other machines. The on/off switch
+//! and the trusted devices live in `<socket>.remote.json`, so the dev and
+//! release cores keep separate ones; the core's key and the digest of what
+//! that file trusts live in the person's secret store.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -30,6 +31,7 @@ use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
 use super::access::{Peer, Setup, Standing};
+use super::host_key::{HostKey, Keeper};
 use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult, ServerConfig};
 
@@ -47,7 +49,6 @@ const HOST_REQUEST_SKEW_SECS: u64 = 60;
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Stored {
-    secret_key: Option<String>,
     enabled: bool,
     devices: Vec<DeviceInfo>,
     owner: Option<String>,
@@ -157,6 +158,59 @@ struct Removal {
 }
 
 impl Stored {
+    /// What decides who may reach this host, leaving out what changes each
+    /// time a device or host is seen.
+    fn trusted(&self) -> CoreResult<String> {
+        #[derive(Serialize)]
+        struct Trusted<'a> {
+            owner: &'a Option<String>,
+            devices: Vec<DeviceInfo>,
+            joined_through: &'a BTreeMap<String, String>,
+            links: Vec<LinkedHost>,
+            shares: &'a [StoredShare],
+            revoked: &'a BTreeMap<String, u64>,
+        }
+        let trusted = Trusted {
+            owner: &self.owner,
+            devices: self
+                .devices
+                .iter()
+                .map(|device| DeviceInfo {
+                    last_seen: None,
+                    ..device.clone()
+                })
+                .collect(),
+            joined_through: &self.joined_through,
+            links: self
+                .links
+                .iter()
+                .map(|link| LinkedHost {
+                    last_seen: None,
+                    addresses: Vec::new(),
+                    ..link.clone()
+                })
+                .collect(),
+            shares: &self.shares,
+            revoked: &self.revoked,
+        };
+        let digest = <sha2::Sha256 as sha2::Digest>::digest(serde_json::to_vec(&trusted)?);
+        Ok(hex::encode(digest))
+    }
+
+    /// Forgets every device, host, share and account a file it did not write
+    /// named, or that trusted a key this host no longer has.
+    fn distrust(&mut self) {
+        self.devices.clear();
+        self.joined_through.clear();
+        self.links.clear();
+        self.shares.clear();
+        self.notifications.clear();
+        self.owner = None;
+        self.pending_leave = None;
+        self.enabled = false;
+        self.account_event_id = 0;
+    }
+
     /// Drops a device and everything kept for it, answering with the device.
     fn forget(&mut self, id: &str) -> Option<DeviceInfo> {
         self.links.retain(|link| link.id != id);
@@ -198,6 +252,9 @@ struct Pending {
 #[derive(Default)]
 struct Inner {
     path: Option<PathBuf>,
+    keeper: Option<Keeper>,
+    /// The digest the secret store holds for the file.
+    trusted: String,
     direct_only: bool,
     secret: Option<SecretKey>,
     stored: Stored,
@@ -255,11 +312,6 @@ fn write_stored(path: &Path, stored: &Stored) -> CoreResult<()> {
     Ok(())
 }
 
-fn secret_from_hex(text: &str) -> Option<SecretKey> {
-    let bytes: [u8; 32] = hex::decode(text).ok()?.try_into().ok()?;
-    Some(SecretKey::from_bytes(&bytes))
-}
-
 impl Remote {
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner
@@ -269,6 +321,10 @@ impl Remote {
 
     pub(crate) fn is_enabled(&self) -> bool {
         self.lock().stored.enabled
+    }
+
+    pub(crate) fn owner(&self) -> Option<String> {
+        self.lock().stored.owner.clone()
     }
 
     /// What a paired device may do now, or `None` once it is unpaired or remote
@@ -670,7 +726,7 @@ impl Remote {
         if let Some(addresses) = addresses.filter(|addresses| !addresses.is_empty()) {
             link.addresses = addresses;
         }
-        if let Err(error) = self.save(&inner) {
+        if let Err(error) = self.save(&mut inner) {
             eprintln!("sikemux core: could not save when a host was last seen: {error}");
         }
     }
@@ -848,17 +904,29 @@ impl Remote {
         })
     }
 
-    fn save(&self, inner: &Inner) -> CoreResult<()> {
-        match inner.path.as_deref() {
-            Some(path) => write_stored(path, &inner.stored),
-            None => Ok(()),
+    /// The secret store learns of a change to what the file trusts before the
+    /// file does.
+    fn save(&self, inner: &mut Inner) -> CoreResult<()> {
+        let Some(path) = inner.path.clone() else {
+            return Ok(());
+        };
+        let trusted = inner.stored.trusted()?;
+        if trusted != inner.trusted {
+            if let (Some(keeper), Some(secret)) = (&inner.keeper, &inner.secret) {
+                keeper.save(&HostKey {
+                    secret: secret.clone(),
+                    trusted: trusted.clone(),
+                })?;
+            }
+            inner.trusted = trusted;
         }
+        write_stored(&path, &inner.stored)
     }
 
     fn change<T>(&self, edit: impl FnOnce(&mut Stored) -> CoreResult<T>) -> CoreResult<T> {
         let mut inner = self.lock();
         let result = edit(&mut inner.stored)?;
-        self.save(&inner)?;
+        self.save(&mut inner)?;
         Ok(result)
     }
 
@@ -875,7 +943,7 @@ impl Remote {
             {
                 device.last_seen = Some(now);
             }
-            if let Err(error) = self.save(&inner) {
+            if let Err(error) = self.save(&mut inner) {
                 eprintln!("sikemux core: could not save when a device was last seen: {error}");
             }
         } else if let Some(count) = inner.connected.get_mut(id) {
@@ -939,21 +1007,40 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
     let direct_only = config.remote_direct_only;
     let path = file_path(&config.socket);
     let loading = path.clone();
+    let (socket, secret_store) = (config.socket.clone(), config.secret_store);
     let loaded = blocking(move || {
+        let keeper = Keeper::new(&socket, secret_store)?;
         let mut stored = read_stored(&loading)?;
-        let secret = match stored.secret_key.as_deref().and_then(secret_from_hex) {
-            Some(secret) => secret,
+        let key = match keeper.load()? {
+            Some(key) if key.trusted == stored.trusted()? => key,
+            Some(key) => {
+                eprintln!(
+                    "sikemux core: {} was changed by something other than this host, so it trusts none of the devices or hosts it names",
+                    loading.display()
+                );
+                stored.distrust();
+                key
+            }
             None => {
-                let secret = SecretKey::generate();
-                stored.secret_key = Some(hex::encode(secret.to_bytes()));
-                write_stored(&loading, &stored)?;
-                secret
+                stored.distrust();
+                HostKey {
+                    secret: SecretKey::generate(),
+                    trusted: String::new(),
+                }
             }
         };
-        Ok((stored, secret))
+        let trusted = stored.trusted()?;
+        if trusted != key.trusted {
+            keeper.save(&HostKey {
+                secret: key.secret.clone(),
+                trusted: trusted.clone(),
+            })?;
+        }
+        write_stored(&loading, &stored)?;
+        Ok((stored, key.secret, trusted, keeper))
     })
     .await;
-    let (stored, secret) = match loaded {
+    let (stored, secret, trusted, keeper) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
             eprintln!(
@@ -972,6 +1059,8 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
             .and_then(network::usable_relays)
             .unwrap_or_else(network::default_relays);
         inner.path = Some(path);
+        inner.keeper = Some(keeper);
+        inner.trusted = trusted;
         inner.direct_only = direct_only;
         inner.never_too_old = cfg!(debug_assertions);
         inner.secret = Some(secret);
@@ -1663,12 +1752,10 @@ mod tests {
     }
 
     #[test]
-    fn the_key_and_devices_survive_a_write_and_read() {
+    fn the_devices_survive_a_write_and_read() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nested/core.sock.remote.json");
-        let secret = SecretKey::generate();
         let stored = Stored {
-            secret_key: Some(hex::encode(secret.to_bytes())),
             enabled: true,
             owner: Some("user_2abc".into()),
             account_event_id: 7,
@@ -1696,11 +1783,14 @@ mod tests {
         assert_eq!(read.owner.as_deref(), Some("user_2abc"));
         assert_eq!(read.account_event_id, 7);
         assert_eq!(read.pending_leave.as_deref(), Some("user_2old"));
-        let key = secret_from_hex(read.secret_key.as_deref().unwrap()).unwrap();
-        assert_eq!(key.public(), secret.public());
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    fn secret_from_hex(text: &str) -> Option<SecretKey> {
+        let bytes: [u8; 32] = hex::decode(text).ok()?.try_into().ok()?;
+        Some(SecretKey::from_bytes(&bytes))
     }
 
     #[test]

@@ -191,7 +191,7 @@ fi
 # The Release workflow checks the tag and the GitHub release before it builds.
 if [[ "$PUBLISH" == "1" ]]; then
   [[ "${GITHUB_ACTIONS:-}" == "true" ]] || fail "releases publish from the Release workflow; run this locally without --publish to preview"
-  export SIKEMUX_USAGE_REPORTING=1
+  export SIKEMUX_USAGE_REPORTING=app
 fi
 
 if [[ "${RELEASE_PREFLIGHT_ONLY:-0}" == "1" ]]; then

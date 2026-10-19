@@ -868,7 +868,7 @@ function AboutPage() {
                 <SettingsRows>
                     <SettingsRow
                         label="Share anonymous usage"
-                        desc="Once a day, sends a random install ID with the app version, update channel and macOS version. Never your files, commands or projects."
+                        desc="Once a day, sends a random install ID and a one-way hash of your account with the app version, update channel and system version. Never your files, commands or projects."
                         asLabel
                         control={<Switch checked={shareUsageData} onChange={cmd.setShareUsageData} label="Share anonymous usage" />}
                     />

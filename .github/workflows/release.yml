@@ -438,6 +438,7 @@ jobs:
 
       - name: Build the deb, rpm and AppImage
         env:
+          SIKEMUX_USAGE_REPORTING: app
           BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
           JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
           VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
@@ -478,6 +479,7 @@ jobs:
 
       - name: Build the core
         env:
+          SIKEMUX_USAGE_REPORTING: host
           BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
           JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
           VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
