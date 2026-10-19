@@ -151,6 +151,7 @@ jobs:
   sign-helpers:
     name: Sign the helpers
     needs: [plan, helpers]
+    if: ${{ !cancelled() && needs.helpers.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 15
     environment: release
@@ -216,6 +217,7 @@ jobs:
   build:
     name: Build the app
     needs: [plan, sign-helpers]
+    if: ${{ !cancelled() && needs.sign-helpers.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 90
     permissions:
@@ -276,6 +278,7 @@ jobs:
   sign:
     name: Sign and notarize the app
     needs: [plan, sign-helpers, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 60
     environment: release
@@ -344,6 +347,7 @@ jobs:
   verify:
     name: Verify the signed release
     needs: [plan, sign-helpers, sign]
+    if: ${{ !cancelled() && needs.sign.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 20
     permissions:
