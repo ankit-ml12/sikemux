@@ -4,10 +4,12 @@
 //
 //   kubectl  — running kubectl in a context and namespace, and its errors in words
 //   contexts — the kubeconfig's clusters, the current one, and each one's namespaces
+//   pods     — pods with their status as kubectl words it, restarts and owning workload
 
 mod contexts;
 mod error;
 mod kubectl;
+mod pods;
 
 use std::sync::Arc;
 
@@ -51,6 +53,7 @@ impl Plugin for Kubernetes {
                 "status" => reply(contexts::status().await),
                 "contexts" => answer(contexts::contexts()).await,
                 "namespaces" => answer(contexts::namespaces(params(input)?)).await,
+                "pods" => answer(pods::list(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -67,7 +70,10 @@ mod tests {
     async fn against_the_local_cluster() {
         let plugin = plugin().expect("plugin loads");
         let ctx = PluginContext::new(std::env::temp_dir());
-        let status = plugin.call(&ctx, "status", Value::Null).await.expect("status");
+        let status = plugin
+            .call(&ctx, "status", Value::Null)
+            .await
+            .expect("status");
         println!("{status:#}");
         assert_eq!(status["ready"], true);
         let namespaces = plugin
@@ -75,6 +81,22 @@ mod tests {
             .await
             .expect("namespaces");
         println!("{namespaces:#}");
+        let pods = plugin
+            .call(&ctx, "pods", serde_json::json!({ "allNamespaces": true }))
+            .await
+            .expect("pods");
+        for pod in pods.as_array().into_iter().flatten() {
+            println!(
+                "{} {} {} {}/{} restarts {} {}",
+                pod["namespace"],
+                pod["name"],
+                pod["status"],
+                pod["ready"],
+                pod["containers"],
+                pod["restarts"],
+                pod["owner"]
+            );
+        }
     }
 
     #[test]
