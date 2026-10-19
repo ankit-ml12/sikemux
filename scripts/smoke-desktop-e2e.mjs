@@ -7,6 +7,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   realpath,
   rm,
   stat,
@@ -723,6 +724,19 @@ async function stateMentions(text) {
   return contents.some((bytes) => bytes.includes(text));
 }
 
+// The core keeps every agent, with the terminal it runs in, in its workspace.json.
+async function coreWorkspaceMentions(text) {
+  const files = (await readdir(isolatedHome, { recursive: true })).filter(
+    (path) => path.endsWith("workspace.json"),
+  );
+  const contents = await Promise.all(
+    files.map((path) =>
+      readFile(join(isolatedHome, path), "utf8").catch(() => ""),
+    ),
+  );
+  return contents.some((json) => json.includes(text));
+}
+
 async function coreSession(core, id) {
   const listed = await core.request({ op: "list" }, 5_000);
   return (listed?.response?.sessions ?? []).find(
@@ -1294,9 +1308,9 @@ async function exerciseTerminalAgentResumes() {
   const second = await expectTuiAgentResumed(core, first.id, 2);
   core.close();
   await waitFor(
-    "the resumed agent's terminal saved in the layout",
+    "the core to save the resumed agent's terminal",
     PERSIST_TIMEOUT_MS,
-    () => stateMentions(`"ptyId":${second.id}`),
+    () => coreWorkspaceMentions(`${second.id}`),
   );
   console.log(
     `Terminal agent resume passed: agent terminal ${first.id} was killed and came back as ${second.id} below its old screen`,
