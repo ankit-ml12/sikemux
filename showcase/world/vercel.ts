@@ -246,24 +246,24 @@ export const VERCEL: Record<string, (params: Params) => unknown> = {
     ],
   }),
   domain: ({ domain }) =>
-    String(domain).startsWith("beta.")
+    String(domain).startsWith("staging.")
       ? {
           name: domain,
           verified: false,
           misconfigured: true,
           redirect: null,
           redirectStatusCode: null,
-          gitBranch: "beta",
+          gitBranch: "staging",
           records: [
             {
               type: "TXT",
-              name: "_vercel.acme.dev",
-              value: "vc-domain-verify=beta.acme.dev,8f2c41d9e0",
+              name: "_vercel.shop.acme.dev",
+              value: "vc-domain-verify=staging.shop.acme.dev,8f2c41d9e0",
               why: "Proves the domain is yours",
             },
             {
               type: "CNAME",
-              name: "beta",
+              name: "staging.shop",
               value: "cname.vercel-dns.com",
               why: "Points the domain at Vercel",
             },

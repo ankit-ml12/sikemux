@@ -206,7 +206,10 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                         <DeployFolder
                             team={team}
                             project={project}
-                            onDeployed={(id) => updateVercelView(paneId, { deployment: id })}
+                            onDeployed={(id) => {
+                                setDeploying(false);
+                                updateVercelView(paneId, { deployment: id });
+                            }}
                             onClose={() => setDeploying(false)}
                         />
                     ) : null}
