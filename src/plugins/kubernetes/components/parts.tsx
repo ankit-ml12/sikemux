@@ -1,3 +1,4 @@
+import { Switch } from "../../../plugin-api/ui";
 import type { Tone } from "../format";
 
 export function Dot({ tone, label }: { tone: Tone; label?: string }) {
@@ -16,5 +17,24 @@ export function ReadyBar({ ready, of }: { ready: number; of: number }) {
                 <span style={{ width: `${share}%` }} />
             </span>
         </span>
+    );
+}
+
+export function Toggle({
+    label,
+    checked,
+    disabled,
+    onChange,
+}: {
+    label: string;
+    checked: boolean;
+    disabled?: boolean;
+    onChange: (value: boolean) => void;
+}) {
+    return (
+        <label className={`k8s-toggle${disabled ? " disabled" : ""}`}>
+            <Switch checked={checked} disabled={disabled} onChange={onChange} />
+            <span>{label}</span>
+        </label>
     );
 }

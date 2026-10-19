@@ -1,4 +1,4 @@
-import type { KubeStatus, Pod, Workload } from "./api";
+import type { KubeStatus, Pod, PodDetail, Workload } from "./api";
 
 export const ready: KubeStatus = {
     ready: true,
@@ -73,3 +73,50 @@ export const WORKER_POD = pod("worker-546f6f965-9swqn", {
     restarts: 6,
     owner: { kind: "Deployment", name: "worker" },
 });
+
+export const WORKER_DETAIL: PodDetail = {
+    ...WORKER_POD,
+    labels: [
+        ["app", "worker"],
+        ["pod-template-hash", "546f6f965"],
+    ],
+    conditions: [
+        { kind: "PodScheduled", ok: true, reason: null, message: null },
+        { kind: "Ready", ok: false, reason: "ContainersNotReady", message: "containers with unready status: [worker]" },
+    ],
+    containerStates: [
+        {
+            name: "worker",
+            image: "docker.io/library/busybox:1.36",
+            init: false,
+            ready: false,
+            restarts: 6,
+            state: "waiting",
+            reason: "CrashLoopBackOff",
+            message: "back-off 2m40s restarting failed container=worker",
+            exitCode: null,
+            since: null,
+            last: { reason: "Error", exitCode: 1, finished: "2026-10-19T08:40:00Z" },
+            ports: [],
+            env: [
+                { name: "QUEUE_URL", from: "configmap worker-config" },
+                { name: "API_TOKEN", from: "secret worker-secrets" },
+            ],
+            envFrom: [],
+            requests: [["cpu", "50m"]],
+            limits: [["memory", "64Mi"]],
+            probes: [],
+        },
+    ],
+    volumes: [{ name: "kube-api-access-x2", kind: "projected", source: null }],
+    events: [
+        {
+            kind: "Warning",
+            reason: "BackOff",
+            message: "Back-off restarting failed container worker",
+            count: 14,
+            last: "2026-10-19T08:41:00Z",
+            object: "Pod/worker-546f6f965-9swqn",
+        },
+    ],
+};

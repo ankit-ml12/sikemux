@@ -7,6 +7,7 @@ import { kubeNamespacesR, kubePodsR, kubeStatusR, kubeWorkloadsR } from "../reso
 import { ALL_NAMESPACES, updateKubeView, useKubeView, type KubeSection } from "../state";
 import { KubernetesMark } from "./KubernetesMark";
 import { Pods } from "./Pods";
+import { PodView } from "./PodView";
 import { Workloads } from "./Workloads";
 import "../kubernetes.css";
 
@@ -50,9 +51,10 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
     const scope: Scope = { context, namespace };
     const namespaces = useResourceEnabled(active, kubeNamespacesR, context);
     const workloads = useResourceEnabled(active && view.section === "workloads", kubeWorkloadsR, scope, all);
-    usePoll(active && view.section === "workloads", LIST_POLL_MS, workloads.refresh);
-    const pods = useResourceEnabled(active && view.section === "pods", kubePodsR, scope, all, view.selector);
-    usePoll(active && view.section === "pods", LIST_POLL_MS, pods.refresh);
+    usePoll(active && view.pod === null && view.section === "workloads", LIST_POLL_MS, workloads.refresh);
+    const listing = active && view.pod === null;
+    const pods = useResourceEnabled(listing && view.section === "pods", kubePodsR, scope, all, view.selector);
+    usePoll(listing && view.section === "pods", LIST_POLL_MS, pods.refresh);
     const trouble = workloads.data?.filter((each) => each.health !== "ok").length ?? 0;
     const counts: Partial<Record<KubeSection, string>> = {
         workloads: workloads.data ? (trouble > 0 ? `${trouble} !` : String(workloads.data.length)) : "",
@@ -142,7 +144,15 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                     </button>
                 </header>
                 <div className="k8s-page">
-                    {view.section === "pods" ? (
+                    {view.pod ? (
+                        <PodView
+                            key={`${view.pod.namespace}/${view.pod.name}`}
+                            scope={{ context, namespace: view.pod.namespace }}
+                            name={view.pod.name}
+                            active={active}
+                            onBack={() => updateKubeView(paneId, { pod: null })}
+                        />
+                    ) : view.section === "pods" ? (
                         <>
                             <StaleNotice handle={pods} />
                             {pods.status === "error" && !pods.data ? (
