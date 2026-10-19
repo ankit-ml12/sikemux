@@ -205,7 +205,14 @@ export function applyCoreWorkspace(workspace: Workspace): void {
                 continue;
             }
             const window = makeWindow(project.path, "Terminal", { role: "term" });
-            d.sessions[project.id] = { id: project.id, name: project.name, kind: "project", cwd: project.path, pinned: project.pinned, activeWindowId: window.id };
+            d.sessions[project.id] = {
+                id: project.id,
+                name: project.name,
+                kind: "project",
+                cwd: project.path,
+                pinned: project.pinned,
+                activeWindowId: window.id,
+            };
             d.sessionOrder.push(project.id);
             d.windows[window.id] = window;
             d.windowsBySession[project.id] = [window.id];

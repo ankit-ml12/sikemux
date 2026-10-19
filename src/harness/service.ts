@@ -168,7 +168,8 @@ export async function handleHarnessRequest(request: HarnessRequest, signal?: Abo
                         .map((id) => useStore.getState().windows[id])
                         .find((window) =>
                             collectPanes(window.root).some(
-                                (pane) => pane.taskTerminalKey && runShownIn(taskRuns.getSnapshot(), pane.taskTerminalKey)?.executionId === executionId,
+                                (pane) =>
+                                    pane.taskTerminalKey && runShownIn(taskRuns.getSnapshot(), pane.taskTerminalKey)?.executionId === executionId,
                             ),
                         );
                     if (!window) throw new Error("Task terminal is no longer open");

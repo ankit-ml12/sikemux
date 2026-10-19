@@ -19,7 +19,15 @@ function task(id: string): ProjectTask {
 }
 
 function run(taskId: string): TaskRun {
-    return Object.freeze({ executionId: "run-1", taskId, project: "/repo", status: "running" as const, ptyId: 7, agentId: null, terminalKey: "task" });
+    return Object.freeze({
+        executionId: "run-1",
+        taskId,
+        project: "/repo",
+        status: "running" as const,
+        ptyId: 7,
+        agentId: null,
+        terminalKey: "task",
+    });
 }
 
 describe("active task command reachability", () => {

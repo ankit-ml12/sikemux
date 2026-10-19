@@ -667,10 +667,7 @@ const WindowLayer = memo(function WindowLayer({
         [stacks],
     );
     const stackTitleList = useStore(useShallow((s) => stackPtyIds.map((id) => s.terminalTitles[id] ?? "")));
-    const stackTitles = useMemo(
-        () => Object.fromEntries(stackPtyIds.map((id, index) => [id, stackTitleList[index]])),
-        [stackPtyIds, stackTitleList],
-    );
+    const stackTitles = useMemo(() => Object.fromEntries(stackPtyIds.map((id, index) => [id, stackTitleList[index]])), [stackPtyIds, stackTitleList]);
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);
     const zoomActive = live && zoomedPaneId != null;
 

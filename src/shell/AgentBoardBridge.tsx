@@ -12,7 +12,9 @@ export function AgentBoardBridge() {
             read.then((boards) => {
                 if (!stopped) cmd.setAgentBoards(boards);
             }, swallow("read the boards"));
-        const stop = onCoreChanged("boards", ({ project }) => keep(project ? agentBoardApi.get(project).then((board) => [board]) : agentBoardApi.all()));
+        const stop = onCoreChanged("boards", ({ project }) =>
+            keep(project ? agentBoardApi.get(project).then((board) => [board]) : agentBoardApi.all()),
+        );
         void keep(agentBoardApi.all());
         return () => {
             stopped = true;

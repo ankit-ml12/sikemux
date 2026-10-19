@@ -72,7 +72,13 @@ export function usePromptQueue({
 
     /* Steering puts messages into what the agent has in flight, so a message only goes this way when it is asked to. */
     const steer = (messages: QueuedMessage[], message?: OutgoingMessage) =>
-        acpApi.steerQueued(agentId, messages.map((queued) => queued.id), message).catch(failed);
+        acpApi
+            .steerQueued(
+                agentId,
+                messages.map((queued) => queued.id),
+                message,
+            )
+            .catch(failed);
 
     /** Says whether the composer may clear what it just handed over. */
     const send = (outgoing: OutgoingMessage, steerNow: boolean): boolean => {

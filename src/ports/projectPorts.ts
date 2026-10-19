@@ -63,14 +63,14 @@ export function deskAgentFor(state: PortsState, sessionId: string): string | nul
 /** Where a task's output is showing, for opening it. */
 export function taskTerminalReveal(state: PortsState, sessionId: string, terminalKey: string): PortReveal | null {
     for (const [agentId, desk] of Object.entries(state.desks))
-        for (const terminal of desk.terminals)
-            if (terminal.terminalKey === terminalKey) return { kind: "desk-terminal", agentId, id: terminal.id };
+        for (const terminal of desk.terminals) if (terminal.terminalKey === terminalKey) return { kind: "desk-terminal", agentId, id: terminal.id };
     const shown = sessionPanes(state, sessionId).find(({ pane }) => pane.taskTerminalKey === terminalKey);
     return shown ? { kind: "pane", sessionId, windowId: shown.windowId, paneId: shown.pane.id } : null;
 }
 
 function ownerOf(state: PortsState, sessionId: string, runs: readonly TaskRun[], owner: CorePortOwner): ProjectPort["owner"] {
-    if (owner.kind === "agent") return { kind: "agent", label: owner.label, reveal: state.agents[owner.agentId] ? { kind: "agent", agentId: owner.agentId } : null };
+    if (owner.kind === "agent")
+        return { kind: "agent", label: owner.label, reveal: state.agents[owner.agentId] ? { kind: "agent", agentId: owner.agentId } : null };
     if (owner.kind === "task") {
         const terminalKey = runs.find((run) => run.executionId === owner.executionId)?.terminalKey;
         const ran = { terminalKey, executionId: owner.executionId };

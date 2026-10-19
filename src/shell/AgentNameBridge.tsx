@@ -54,20 +54,18 @@ export function AgentNameBridge() {
             const key = JSON.stringify(request);
             if (asked.current.get(request.agentId) === key) continue;
             asked.current.set(request.agentId, key);
-            agentNamesApi
-                .name(request)
-                .then(
-                    (named) => {
-                        cmd.setAgentName(request.agentId, named.name, named.parent);
-                        if (named.buddy) wearBuddy(request.agentId, named.buddy);
-                    },
-                    (error: unknown) => {
-                        asked.current.delete(request.agentId);
-                        swallow("name an agent")(error);
-                        window.clearTimeout(retry);
-                        retry = window.setTimeout(() => setRetries((count) => count + 1), RETRY_MS);
-                    },
-                );
+            agentNamesApi.name(request).then(
+                (named) => {
+                    cmd.setAgentName(request.agentId, named.name, named.parent);
+                    if (named.buddy) wearBuddy(request.agentId, named.buddy);
+                },
+                (error: unknown) => {
+                    asked.current.delete(request.agentId);
+                    swallow("name an agent")(error);
+                    window.clearTimeout(retry);
+                    retry = window.setTimeout(() => setRetries((count) => count + 1), RETRY_MS);
+                },
+            );
         }
         return () => window.clearTimeout(retry);
     }, [requests, retries]);

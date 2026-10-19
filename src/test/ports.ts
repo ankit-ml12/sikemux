@@ -29,7 +29,14 @@ export function seedProjects(options: { terminal?: boolean; agentLaunch?: "live"
         id: "win-shell",
         name: "shell",
         role: "terminal" as const,
-        root: { type: "pane" as const, id: "pane-1", cwd: "/code", kind: terminal ? ("terminal" as const) : ("editor" as const), title: "zsh", ptyId: 1 },
+        root: {
+            type: "pane" as const,
+            id: "pane-1",
+            cwd: "/code",
+            kind: terminal ? ("terminal" as const) : ("editor" as const),
+            title: "zsh",
+            ptyId: 1,
+        },
         activePaneId: "pane-1",
     };
     setState({

@@ -67,4 +67,3 @@ export const isYolo = (mode: string | null | undefined): boolean => mode === "by
    has a YOLO mode: in the CLI's own modes where it has them, or else by
    answering the agent's permission requests itself. */
 export const canSwitchMode = (type: string): boolean => isAgentType(type) && canBypassPermissions(type);
-

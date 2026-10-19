@@ -48,9 +48,7 @@ async function gatherEvidence(agentId: string, worktree: AgentWorktree): Promise
 
 function failureReport(tests: readonly ModuleTests[]): string {
     const lines = tests.flatMap(({ failures }) =>
-        failures.map(
-            (failure) => `- ${failure.test}: ${failure.message}${failure.line ? ` (line ${failure.line})` : ""}`,
-        ),
+        failures.map((failure) => `- ${failure.test}: ${failure.message}${failure.line ? ` (line ${failure.line})` : ""}`),
     );
     return `These tests fail in your worktree:\n${lines.join("\n")}\nFix them and run the tests again.`;
 }

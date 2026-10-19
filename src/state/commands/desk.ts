@@ -351,10 +351,7 @@ export function consumeDeskReveal(agentId: string, seq: number): void {
  * Puts a task terminal on the agent's desk and returns the id its process is
  * bound to. A rerun of the same task comes back to the terminal it had.
  */
-export function openDeskTerminal(
-    agentId: string,
-    request: Pick<TaskTerminalRequest, "terminalKey" | "label" | "cwd" | "background">,
-): string {
+export function openDeskTerminal(agentId: string, request: Pick<TaskTerminalRequest, "terminalKey" | "label" | "cwd" | "background">): string {
     let id = "";
     mutate((d) => {
         const desk = ensureDesk(d, agentId);

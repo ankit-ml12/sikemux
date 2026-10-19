@@ -246,7 +246,13 @@ export function AgentChatPane({
 
     /* Messages waiting behind the turn come back to the composer rather than going out. */
     const stop = () => {
-        putDraft(agent.id, queued.map((message) => message.text).filter(Boolean).join("\n\n"));
+        putDraft(
+            agent.id,
+            queued
+                .map((message) => message.text)
+                .filter(Boolean)
+                .join("\n\n"),
+        );
         void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(errorText(failure)));
     };
 

@@ -564,7 +564,9 @@ describe("DeskHost", () => {
     });
 
     it("lists one kind at a time and switches kinds from the icons beside the strip", async () => {
-        setTaskRunsForTests([{ executionId: "run-1", taskId: "web", project: "/repo", status: "running", ptyId: 7, agentId: "agent-one", terminalKey: "task-web" }]);
+        setTaskRunsForTests([
+            { executionId: "run-1", taskId: "web", project: "/repo", status: "running", ptyId: 7, agentId: "agent-one", terminalKey: "task-web" },
+        ]);
         setState({
             desks: {
                 "agent-one": {

@@ -89,4 +89,3 @@ export const jiraSettings = definePluginSettings(JIRA_PLUGIN_ID, (saved): JiraSe
 });
 
 export const openJira = (): string | null => openSurface(JIRA_ISSUES);
-

@@ -1192,7 +1192,11 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
         recentCommandKeys: Array.isArray(prefs.recentCommandKeys)
             ? prefs.recentCommandKeys.filter((value): value is string => typeof value === "string").slice(0, 20)
             : [],
-        defaultAgentPermissionMode: !workspace ? cur.defaultAgentPermissionMode : workspace.permissionMode === "bypass" ? "bypass" : "workspace-write",
+        defaultAgentPermissionMode: !workspace
+            ? cur.defaultAgentPermissionMode
+            : workspace.permissionMode === "bypass"
+              ? "bypass"
+              : "workspace-write",
         lastAgentType: isAgentType(prefs.lastAgentType) ? prefs.lastAgentType : null,
         languageServerTrust: booleansByPath(prefs.languageServerTrust),
         agentWorktreeDefaults: booleansByPath(prefs.agentWorktreeDefaults),

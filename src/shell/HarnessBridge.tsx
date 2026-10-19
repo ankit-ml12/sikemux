@@ -51,8 +51,7 @@ export function HarnessBridge() {
             );
             if (!controller.signal.aborted) await claim();
         })().catch(swallow("harness bridge"));
-        const stopRuns = (selector: { project: string } | { agentId: string }) =>
-            void tasksApi.stopRuns(selector).catch(swallow("harness stop"));
+        const stopRuns = (selector: { project: string } | { agentId: string }) => void tasksApi.stopRuns(selector).catch(swallow("harness stop"));
         const unsubscribe = useStore.subscribe((state, previous) => {
             for (const session of Object.values(previous.sessions)) {
                 if (session.kind === "project" && !projectSessionId(state, session.cwd)) stopRuns({ project: session.cwd });

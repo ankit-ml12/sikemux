@@ -52,7 +52,9 @@ export const AgentBuddy = memo(function AgentBuddy({
     const pack = useStore((s) => s.buddyPack);
     const shape = useStore((s) => s.buddyShape);
     const look = useMemo(() => resolveBuddy(agent, { pack, shape }), [agent, pack, shape]);
-    return <BuddyArt pack={look.pack} shape={look.shape} color={look.color} state={state ?? buddyStateOfGroup(live)} size={size} className={className} />;
+    return (
+        <BuddyArt pack={look.pack} shape={look.shape} color={look.color} state={state ?? buddyStateOfGroup(live)} size={size} className={className} />
+    );
 });
 
 /** The agent's buddy when buddies are on, otherwise its harness logo, each in its own wrapper. */

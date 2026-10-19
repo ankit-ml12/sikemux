@@ -83,7 +83,6 @@ export function unreadAnswers(sent: readonly SentAnswer[], messages: readonly Ch
 export const blockingQuestion = (questions: readonly AgentQuestion[], agentId: string): AgentQuestion | undefined =>
     questions.find((question) => question.agentId === agentId && question.blocked && asksPerson(question));
 
-
 /** Why a question reached the person rather than the lead it went to first. */
 export function viaNote(question: Pick<AgentQuestion, "via" | "passed">): string | null {
     if (!question.via) return null;
