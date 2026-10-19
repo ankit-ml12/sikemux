@@ -33,18 +33,27 @@ pub(crate) struct Pushed {
 }
 
 /// One unpushed commit: whose it is, and what it is made of.
-struct Unpushed {
-    id: String,
-    mine: bool,
-    by: String,
-    subject: String,
+pub(super) struct Unpushed {
+    pub id: String,
+    pub mine: bool,
+    pub by: String,
+    pub subject: String,
 }
 
 /// The host's key, which signs footers and notes again for commits made
 /// again, and the hosts whose signatures count.
-struct Signing {
-    key: Option<iroh::SecretKey>,
-    hosts: Vec<iroh::PublicKey>,
+pub(super) struct Signing {
+    pub key: Option<iroh::SecretKey>,
+    pub hosts: Vec<iroh::PublicKey>,
+}
+
+impl Signing {
+    pub(super) fn of(core: &Core) -> Self {
+        Self {
+            key: core.remote.host_key(),
+            hosts: core.remote.host_keys(),
+        }
+    }
 }
 
 /// Pushes `agent_id`'s unpushed commits on `dir`'s branch to `remote`.
@@ -66,11 +75,7 @@ pub(super) fn push(
         let names: Vec<&str> = agents.iter().map(|agent| agent.name.as_str()).collect();
         Ok((mine, names.join(", ")))
     };
-    let signing = Signing {
-        key: core.remote.host_key(),
-        hosts: core.remote.host_keys(),
-    };
-    push_as(dir, remote, whose, &signing)
+    push_as(dir, remote, whose, &Signing::of(core))
 }
 
 /// Pushes the unpushed commits on `dir`'s branch that `whose` says are the
@@ -204,7 +209,7 @@ fn rebase_branch(
     Ok(false)
 }
 
-fn line(text: String) -> String {
+pub(super) fn line(text: String) -> String {
     text.trim().to_owned()
 }
 
@@ -256,7 +261,7 @@ fn unpushed(
 /// `commits` made again one after another on `onto`, with the same changes,
 /// authors and messages, their footers and notes signed again for where they
 /// now stand. The last one made, or `onto` when there are none.
-fn replay(
+pub(super) fn replay(
     signing: &Signing,
     top: &Path,
     onto: &str,

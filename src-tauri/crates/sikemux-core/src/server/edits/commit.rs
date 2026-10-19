@@ -44,6 +44,8 @@ struct Done {
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     committed: Option<Committed>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    landed: Option<super::land::Landed>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pushed: Option<super::push::Pushed>,
 }
 
@@ -76,16 +78,18 @@ struct Change {
 }
 
 /// `git_commit`: commits the calling agent's lines in its checkout, then
-/// pushes its unpushed commits when asked to.
+/// when asked lands them from a checkout of its own onto the branch it was
+/// cut from, and pushes its unpushed commits.
 pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = request
         .agent_id
         .clone()
         .ok_or("git_commit needs the calling agent's id")?;
-    let push = request.params.get("push").and_then(Value::as_bool) == Some(true);
+    let flag = |name: &str| request.params.get(name).and_then(Value::as_bool) == Some(true);
+    let (land, push) = (flag("land"), flag("push"));
     let message = match request.params.get("message") {
         Some(Value::String(message)) => Some(message.clone()),
-        None | Some(Value::Null) if push => None,
+        None | Some(Value::Null) if land || push => None,
         _ => return Err("message must be the commit message".into()),
     };
     let named: Vec<String> = match request.params.get("paths") {
@@ -100,11 +104,22 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             Some(message) => Some(commit(&core, &dir, &agent_id, message, &named)?),
             None => None,
         };
-        let pushed = match push {
-            true => Some(super::push::push(&core, &dir, &agent_id, "origin")?),
+        let landed = match land {
+            true => Some(super::land::land(&core, &agent_id)?),
             false => None,
         };
-        Ok(Done { committed, pushed })
+        let from = landed
+            .as_ref()
+            .map_or(dir.as_path(), |landed| landed.repo.as_path());
+        let pushed = match push {
+            true => Some(super::push::push(&core, from, &agent_id, "origin")?),
+            false => None,
+        };
+        Ok(Done {
+            committed,
+            landed,
+            pushed,
+        })
     })
     .await
     .map_err(|error| error.to_string())

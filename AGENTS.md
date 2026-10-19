@@ -7,7 +7,9 @@
   to stabilise a stable release, and cut hotfix branches from `release/*`.
 - Never merge a release branch into `main`. Cherry-pick the fix commit instead, so
   version-bump commits stay on the release line.
-- Do not create or use Git worktrees.
+- Do not create Git worktrees by hand. A teammate started with `agent_spawn` and
+  `checkout: "own"` gets one from the core: work there, and land your commits with
+  `git_commit` and `land: true`.
 - Commit day-to-day changes directly to `main`.
 - Make small, atomic commits as work progresses.
 - Other agents are always working in the same tree at the same time. Stage only the

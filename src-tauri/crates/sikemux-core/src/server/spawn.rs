@@ -22,6 +22,7 @@ use super::follow::{self, TerminalAnswer};
 use super::hosts::spawn::{self as elsewhere, Hired};
 use super::messages;
 use super::names::{self, Adopted, AgentName, Worker};
+use super::sandbox::{self, AgentWorktree};
 use super::saved::{self, Saved};
 use super::workspace::{Lead, Paid};
 use super::Core;
@@ -92,6 +93,17 @@ fn text_param<'a>(params: &'a Value, key: &str, max: usize) -> Result<Option<&'a
     }
 }
 
+/// Whether the agent gets a checkout of its own, cut from its lead's, rather
+/// than working in its lead's beside the other agents there.
+fn own_checkout(params: &Value) -> Result<bool, String> {
+    match params.get("checkout") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::String(checkout)) if checkout == "own" => Ok(true),
+        Some(Value::String(checkout)) if checkout == "shared" => Ok(false),
+        Some(_) => Err("checkout must be own or shared".into()),
+    }
+}
+
 fn reports_back(params: &Value) -> Result<bool, String> {
     match params.get("report") {
         None | Some(Value::Null) => Ok(true),
@@ -117,6 +129,8 @@ struct Started {
     lead_cli: String,
     reports: bool,
     chat: Arc<chat::Chat>,
+    /// The checkout of its own it works in, set up before it gets its task.
+    checkout: Option<Box<AgentWorktree>>,
 }
 
 /// How the calling agent runs and where, for its worker to do the same.
@@ -166,8 +180,6 @@ pub(crate) fn hire(core: &Core, worker: Worker<'_>) -> Result<AgentName, String>
 
 /// A worker here for a lead on a linked host, as that host named it.
 pub(crate) struct ForHost {
-    /// The linked host whose agent starts it.
-    pub host: String,
     pub agent_id: String,
     pub name: String,
     pub lead_id: String,
@@ -217,7 +229,6 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
             provider: &plan.provider,
             reports: plan.reports,
             depth: 0,
-            from_host: Some(&plan.host),
         },
         running(core),
     );
@@ -245,6 +256,7 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
         lead_cli: plan.lead_cli,
         reports: plan.reports,
         chat,
+        checkout: None,
     };
     let core = core.clone();
     tokio::spawn(async move { hand_task(&core, started, plan.prompt).await });
@@ -266,6 +278,10 @@ fn start(
     let model = text_param(params, "model", MAX_MODEL_CHARS)?.map(|model| model.trim().to_owned());
     let named_provider = text_param(params, "provider", 64)?.map(|id| id.trim().to_owned());
     let reports = reports_back(params)?;
+    let own = own_checkout(params)?;
+    if own && resume.is_some() {
+        return Err("resume reopens a session where it ran; leave checkout out".into());
+    }
     let _one_at_a_time = core.harness.spawning.one_at_a_time();
     if let Some((agent_id, name)) =
         resume.and_then(|saved| saved::open_now(core, &saved.cli, &saved.session_id))
@@ -274,6 +290,14 @@ fn start(
     }
     let (lead, lead_cwd) = lead_of(core, &lead_id, &request.project)?;
     let cwd = resume.map_or(lead_cwd, |saved| saved.project.clone());
+    let (checkout, cwd) = if own {
+        let name = text_param(params, "prompt", MAX_PROMPT_BYTES)?.unwrap_or("teammate");
+        let name: String = name.chars().take(48).collect();
+        let (checkout, tree_cwd) = sandbox::cut_for(&cwd, &cwd, &name)?;
+        (Some(Box::new(checkout)), tree_cwd)
+    } else {
+        (None, cwd)
+    };
     let helper = core.workspaces.helper().filter(|helper| {
         resume.is_none()
             && model.is_none()
@@ -310,7 +334,6 @@ fn start(
                     provider: &provider,
                     reports,
                     depth: 0,
-                    from_host: None,
                 },
                 running(core),
             );
@@ -339,6 +362,16 @@ fn start(
         core.names.forget(&agent_id);
         error.to_string()
     })?;
+    if let Some(checkout) = &checkout {
+        let mut patch = serde_json::Map::new();
+        patch.insert(
+            "worktree".into(),
+            serde_json::to_value(checkout).map_err(|error| error.to_string())?,
+        );
+        if let Err(error) = core.workspaces.update_agent(&agent_id, patch) {
+            eprintln!("sikemux core: a worker's own checkout was not kept on its record: {error}");
+        }
+    }
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
     core.publish_device_view();
     let lead_name = core.names.name(&lead_id).unwrap_or_else(|| lead_id.clone());
@@ -356,6 +389,7 @@ fn start(
         },
         reports,
         chat,
+        checkout,
     }))
 }
 
@@ -495,9 +529,23 @@ async fn hand_task(core: &Arc<Core>, started: Started, prompt: String) {
         lead_cli,
         reports,
         chat,
+        checkout,
         ..
     } = started;
     let lead_id = chat.origin.started_by.clone().unwrap_or_default();
+    if let Some(checkout) = checkout {
+        let cwd = chat.launch.cwd.clone();
+        if let Some(error) = sandbox::set_up(core, &checkout.repo, Some(&agent_id), &cwd).await {
+            messages::report_as(
+                core,
+                agent_id.clone(),
+                Some(name.clone()),
+                lead_id.clone(),
+                format!("{name}'s own checkout is not fully set up: {error}"),
+            )
+            .await;
+        }
+    }
     let failed = match chat::until_started(core, chat).await {
         Ok(_) => {
             let task = messages::task(&lead_id, &lead_name, &lead_cli, reports, prompt);

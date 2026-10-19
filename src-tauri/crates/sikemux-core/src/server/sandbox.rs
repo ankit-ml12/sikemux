@@ -195,6 +195,50 @@ pub(crate) struct ForAgent {
     setup_error: Option<String>,
 }
 
+/// A worktree of the repository `checkout` is in, cut from where it is now on
+/// a branch named for `name`, with what it needs copied in, and the folder in
+/// it that stands where `cwd` stood.
+pub(crate) fn cut_for(
+    checkout: &Path,
+    cwd: &Path,
+    name: &str,
+) -> Result<(AgentWorktree, PathBuf), String> {
+    let repo = PathBuf::from(
+        git(
+            checkout,
+            &["rev-parse", "--path-format=absolute", "--show-toplevel"],
+        )
+        .map_err(|_| "the agent's folder is not in a git repository")?,
+    );
+    let main = PathBuf::from(git(
+        &repo,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?)
+    .parent()
+    .map(Path::to_path_buf)
+    .unwrap_or_else(|| repo.clone());
+    let start_sha = git(&repo, &["rev-parse", "--verify", "HEAD"])
+        .map_err(|_| "the project has no commit to branch from")?;
+    let base = git(&repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
+    let (branch, path) = cut(&repo, name, &start_sha)?;
+    copy_included(&main, &path);
+    let inside = if cwd.starts_with(&repo) {
+        inside(cwd, &repo)
+    } else {
+        PathBuf::new()
+    };
+    Ok((
+        AgentWorktree {
+            repo: main,
+            path: path.clone(),
+            branch,
+            base,
+            start_sha,
+        },
+        path.join(inside),
+    ))
+}
+
 /// Gives an agent a worktree of its own cut from where its checkout is now,
 /// moves it there, and starts it again there if it was running.
 pub(crate) async fn for_agent(core: &Arc<Core>, params: ForAgentParams) -> CoreResult<ForAgent> {
@@ -211,43 +255,7 @@ pub(crate) async fn for_agent(core: &Arc<Core>, params: ForAgentParams) -> CoreR
     let cwd = agent.cwd.clone();
     let checkout = params.repo.unwrap_or_else(|| cwd.clone());
     let message = params.message;
-    let (worktree, tree_cwd) = blocking(move || {
-        let repo = PathBuf::from(
-            git(
-                &checkout,
-                &["rev-parse", "--path-format=absolute", "--show-toplevel"],
-            )
-            .map_err(|_| "the agent's folder is not in a git repository")?,
-        );
-        let main = PathBuf::from(git(
-            &repo,
-            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        )?)
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| repo.clone());
-        let start_sha = git(&repo, &["rev-parse", "--verify", "HEAD"])
-            .map_err(|_| "the project has no commit to branch from")?;
-        let base = git(&repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
-        let (branch, path) = cut(&repo, &message, &start_sha)?;
-        copy_included(&main, &path);
-        let inside = if cwd.starts_with(&repo) {
-            inside(&cwd, &repo)
-        } else {
-            PathBuf::new()
-        };
-        Ok((
-            AgentWorktree {
-                repo: main,
-                path: path.clone(),
-                branch,
-                base,
-                start_sha,
-            },
-            path.join(inside),
-        ))
-    })
-    .await?;
+    let (worktree, tree_cwd) = blocking(move || Ok(cut_for(&checkout, &cwd, &message)?)).await?;
     let project = core
         .workspaces
         .view()
@@ -352,7 +360,7 @@ fn link_installed(main: &Path, tree: &Path) {
 /// once the person trusts its `sikemux.json`, asked on behalf of `agent_id`
 /// when an agent wants the checkout. Why they did not all finish, when they
 /// did not.
-async fn set_up(
+pub(crate) async fn set_up(
     core: &Arc<Core>,
     project: &Path,
     agent_id: Option<&str>,

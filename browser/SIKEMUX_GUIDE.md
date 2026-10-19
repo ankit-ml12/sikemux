@@ -864,7 +864,11 @@ file holding only another agent's lines fails the commit rather than leaving
 it half done. It returns the commit, its files and what was left. Stage
 nothing yourself mid-task: what you `git add`, `git mv` or `git rm` early goes
 into the next agent's commit. The shell is zsh, which does not split `$FILES`
-into words; name paths or use an array. With `push: true` it then pushes
+into words; name paths or use an array. In a checkout of your own, `land: true` then puts your commits on the
+branch your checkout was cut from and moves your checkout up to it: a file
+someone changed in the project's checkout and has not committed takes your
+lines merged in, and a clash refuses the landing before anything moves. With
+`push: true` it then pushes
 your own commits only, even when other agents' unpushed commits sit before
 them, and lists theirs as kept; with no `message` it only pushes. Push only
 when the person asked for it. In a checkout other agents work in, Sikemux refuses
@@ -949,6 +953,13 @@ pays. It opens in its own tab without taking the person there, runs on
 your account and in your permission mode, which you cannot change, and records
 you as the agent that started it: you are its lead. The answer gives its `name`
 and `agentId` at once; it gets the prompt, from you, once it is ready.
+
+With `checkout: "own"` it works in a checkout of its own, a git worktree on a
+branch of its own cut from yours, with the project's setup run in it, so it
+builds and tests apart from every other agent's work in progress. Give each
+teammate of a team its own checkout; a quick helper can share yours, the
+default. A teammate with its own checkout lands its commits on your branch
+with `git_commit`'s `land: true` once its piece builds.
 
 It runs in Sikemux's chat unless you pass `mode: "terminal"`, which starts the
 CLI in a terminal tab of its own instead, the CLI's own screen, as when the
