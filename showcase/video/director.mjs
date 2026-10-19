@@ -2,7 +2,6 @@ import { openWindow } from "../scenes.mjs";
 import { STAGE } from "../stage.mjs";
 
 export const FPS = 60;
-const STEP = 1000 / FPS;
 const { width: WIDTH, height: HEIGHT } = STAGE;
 /** Scenes give zoom scales for a 1920-wide screen, so a zoomed view looks the same size however wide the stage is. */
 const ZOOM_UNIT = WIDTH / 1920;
@@ -48,8 +47,13 @@ function seeded(seed) {
  * sixtieth of a second, and hands the picture to `capture`.
  */
 export class Director {
-  constructor({ page, app, start, capture, density = 1 }) {
+  constructor({ page, app, start, capture, density = 1, fps = FPS }) {
     this.page = page;
+    /** Pictures taken a second; a render for motion blur takes two for each frame it keeps. */
+    this.fps = fps;
+    this.step = 1000 / fps;
+    /** What happened on screen and when, in seconds of the finished clip, for the sound to follow. */
+    this.events = [];
     this.density = density;
     this.appFrame = app;
     this.now = start;
@@ -69,13 +73,23 @@ export class Director {
   }
 
   get seconds() {
-    return this.recorded / FPS;
+    return this.recorded / this.fps;
+  }
+
+  /** Notes that `kind` happens now, for the sound mixed under the clip. */
+  mark(kind, detail) {
+    if (!this.recording) return;
+    this.events.push({
+      kind,
+      at: Number(this.seconds.toFixed(3)),
+      ...(detail ? { detail } : {}),
+    });
   }
 
   tween(duration, apply) {
     const tween = {
-      start: this.frames * STEP,
-      duration: Math.max(STEP, duration),
+      start: this.frames * this.step,
+      duration: Math.max(this.step, duration),
       apply,
     };
     this.tweens.add(tween);
@@ -83,9 +97,9 @@ export class Director {
   }
 
   async until(done, { limit = 20_000, label = "condition" } = {}) {
-    const end = this.frames * STEP + limit;
+    const end = this.frames * this.step + limit;
     while (!(await done())) {
-      if (this.frames * STEP > end)
+      if (this.frames * this.step > end)
         throw new Error(`timed out waiting for ${label}`);
       await this.frame();
     }
@@ -104,8 +118,8 @@ export class Director {
 
   async advance() {
     this.frames += 1;
-    this.now += STEP;
-    const at = this.frames * STEP;
+    this.now += this.step;
+    const at = this.frames * this.step;
     for (const task of [...this.background]) await task(at);
     for (const tween of [...this.tweens]) {
       const progress = clamp((at - tween.start) / tween.duration, 0, 1);
@@ -165,7 +179,7 @@ export class Director {
   }
 
   async wait(ms) {
-    const frames = Math.round(ms / STEP);
+    const frames = Math.round(ms / this.step);
     for (let index = 0; index < frames; index++) await this.frame();
   }
 
@@ -207,6 +221,7 @@ export class Director {
 
   /** Plays on until `target` is on screen and has stopped growing, so a zoom frames all of it. */
   async steady(target, { frames = 12 } = {}) {
+    frames = Math.round((frames * this.fps) / FPS);
     await this.appear(target);
     let last = "";
     let same = 0;
@@ -282,6 +297,7 @@ export class Director {
       await this.move(target, options);
       await this.wait(options.pause ?? 90);
     }
+    this.mark("click");
     await this.pressCursor(1, 70);
     await this.page.mouse.down();
     await this.wait(50);
@@ -301,6 +317,7 @@ export class Director {
   /** Types at a person's pace, a little uneven, the same every render. */
   async type(text, { perSecond = 15 } = {}) {
     for (const character of text) {
+      this.mark("key");
       await this.page.keyboard.type(character);
       const gap = (1000 / perSecond) * (0.55 + this.random() * 0.9);
       await this.wait(character === " " ? gap * 1.3 : gap);
@@ -308,6 +325,7 @@ export class Director {
   }
 
   async key(name, { after = 200 } = {}) {
+    this.mark(name === "Enter" ? "send" : "key");
     await this.page.keyboard.press(name);
     await this.wait(after);
   }
@@ -342,6 +360,10 @@ export class Director {
       width,
     };
     const start = { ...this.view };
+    const change = start.width / end.width;
+    if (change > 1.15) this.mark("zoom-in", { by: Number(change.toFixed(2)) });
+    else if (change < 1 / 1.15)
+      this.mark("zoom-out", { by: Number((1 / change).toFixed(2)) });
     // One camera: a new move takes over from wherever the last one had got to, instead of both writing every frame.
     if (this.lens) this.tweens.delete(this.lens);
     const tween = this.tween(duration, (progress) => {
@@ -371,7 +393,7 @@ export class Director {
     });
     await this.until(() => !this.tweens.has(into));
     await change();
-    await this.wait(STEP * 2);
+    await this.wait(this.step * 2);
     const out = this.tween(half, (p) => {
       this.blur = strength * (1 - p) ** 2;
     });
@@ -389,7 +411,7 @@ export class Director {
     steps = Infinity,
     wait = true,
   } = {}) {
-    let due = this.frames * STEP;
+    let due = this.frames * this.step;
     let taken = 0;
     const task = async (at) => {
       if (at < due) return;
@@ -460,9 +482,10 @@ export class Director {
       await this.still();
       await this.move(this.inView(await this.point(target, at)));
     }
+    this.mark("swipe");
     await this.pressCursor(1, 90);
     await this.app(() => showcase.backend.emit("wheel-touch", true));
-    const frames = Math.max(2, Math.round(duration / STEP));
+    const frames = Math.max(2, Math.round(duration / this.step));
     const before = await this.app(() => {
       if (window.__videoWheels === undefined) {
         window.__videoWheels = 0;
@@ -506,6 +529,7 @@ export class Director {
 
   /** Plays the closing card on the wallpaper and holds it for `hold` ms. */
   async endCard({ hold = 2000 } = {}) {
+    this.mark("end-card");
     this.fadeCursor(0, 350);
     const settled = this.page.evaluate(() => window.video.endCard());
     let done = false;
@@ -516,6 +540,7 @@ export class Director {
 
   /** Moves the island over the notch to one of its states, as drawn by its snapshot tool. */
   async island(state) {
+    this.mark("island", { state });
     const settled = this.page.evaluate(
       (state) => window.video.island(state),
       state,
