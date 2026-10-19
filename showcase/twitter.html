@@ -161,7 +161,7 @@
       const params = new URLSearchParams(location.search);
       const frame = document.querySelector("iframe");
       // A video steps the agents' turns itself, frame by frame.
-      frame.src = params.has("video") ? "/showcase/" : "/showcase/?play";
+      frame.src = params.has("video") ? "/showcase/?video" : "/showcase/?play";
       if (params.has("video")) import("/showcase/video/overlay.ts");
       const app = frame.contentWindow;
 

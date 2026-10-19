@@ -34,7 +34,7 @@ export async function startChats(s, windows) {
  * The person asks Otter to pass work on to Maple, tagging her with @. The menu
  * filters off camera, so it shows once, settled, with Maple picked, and stays a beat.
  */
-export async function askOtter(s, { perSecond = 15, menuHold = 1500 } = {}) {
+export async function askOtter(s, { perSecond = 15, menuHold = 1000 } = {}) {
   await s.click(composer);
   await s.type("When ", { perSecond });
   await s.offCamera(async () => {
@@ -49,9 +49,9 @@ export async function askOtter(s, { perSecond = 15, menuHold = 1500 } = {}) {
 }
 
 /** Right after the send, Otter starts and messages Maple, framed on the call. */
-export async function otterMessagesMaple(s, { hold = 2200 } = {}) {
-  await s.live({ agent: OTTER, steps: 2 });
-  await s.wait(700);
+export async function otterMessagesMaple(s, { hold = 1700 } = {}) {
+  await s.live({ agent: OTTER, steps: 2, pace: 0.6 });
+  await s.wait(300);
   s.live({ agent: OTTER, steps: 1, wait: false });
   await s.appear(lastTools);
   await s.zoom(lastTools, { scale: 1.8, at: { x: 0.42, y: 0.5 } });
@@ -61,24 +61,23 @@ export async function otterMessagesMaple(s, { hold = 2200 } = {}) {
 /** One swipe over to Maple's chat: Otter's message arrives, and she answers once her tests pass. */
 export async function mapleAnswers(
   s,
-  { letterHold = 2000, replyHold = 2500 } = {},
+  { letterHold = 1700, replyHold = 1600 } = {},
 ) {
   await s.zoomOut({ wait: false });
   await s.app(() => showcase.backend.cue("maple-answers"));
   await swipeTabs(s);
   await s.live({ agent: MAPLE, steps: 2, pace: 0.3 });
-  await s.zoom({ selector: ".agent-letter", last: true }, { scale: 1.7 });
-  await s.wait(letterHold);
-  await s.live({ agent: MAPLE, steps: 4, pace: 0.2, shortest: 120 });
   await s.zoom(
-    { selector: ".chat-message", last: true },
-    { scale: 1.6, at: { x: 0.5, y: 0.6 } },
+    { selector: ".agent-letter", last: true },
+    { scale: 1.7, at: { x: 0.5, y: 1.3 } },
   );
+  await s.wait(letterHold);
+  await s.live({ agent: MAPLE, steps: 4, pace: 0.15, shortest: 100 });
   await s.wait(replyHold);
 }
 
 /** On the project's board, Maple's card moves to Done, and Otter takes the refunds card it was waiting on. */
-export async function boardMoves(s, { hold = 1500 } = {}) {
+export async function boardMoves(s, { hold = 1000 } = {}) {
   await s.zoomOut({ wait: false });
   await s.click({ selector: ".side-rail *", text: "Board" });
   const otterLane = ".kanban-columns";
@@ -87,7 +86,7 @@ export async function boardMoves(s, { hold = 1500 } = {}) {
   await s.move(card("Ledger import onto amounts"));
   await s.still();
   await s.live({ agent: MAPLE, steps: 1, pace: 0, shortest: 0 });
-  await s.wait(1000 + hold);
+  await s.wait(700 + hold);
   await s.app(() => showcase.backend.cue("otter-takes-refunds"));
   await s.live({ agent: OTTER, steps: 4, pace: 0.15, shortest: 100 });
   await s.move(card("Totals are off by a cent"));
@@ -100,7 +99,7 @@ export async function boardMoves(s, { hold = 1500 } = {}) {
 const railPage = ".tab-rail .swipe-page.is-current";
 
 /** Swipes the tab rail over to its next page and back, each in one unhurried motion. */
-export async function swipeRail(s, { hold = 500, duration = 420 } = {}) {
+export async function swipeRail(s, { hold = 1000, duration = 420 } = {}) {
   await s.swipe(railPage, { at: { x: 0.6, y: 0.2 }, duration });
   await s.wait(hold);
   await s.swipe(railPage, { pixels: -160, at: { x: 0.3, y: 0.2 }, duration });
@@ -119,7 +118,6 @@ export const openProject = (s, name, options) =>
 /** Wren's desk open beside its chat on the moodboard app's cover, where it left off, before it is asked to look again. */
 export async function wrenAtItsDesk(s) {
   await s.app(async () => {
-    showcase.backend.settledScripts.add("agent-hero");
     showcase.cmd.openDesk("agent-hero", { focus: false });
     const tabs = await import("/showcase/browserPage.ts");
     tabs.showBrowserPage("agent-hero", {
@@ -136,26 +134,26 @@ const lastTools = { selector: ".chat-tools", last: true };
  * Wren opens the app in its tab and clicks through to the shop, framed on its
  * tool calls beside the tab, each held long enough to read; the screenshot lands in the chat.
  */
-export async function browserCheck(s, { hold = 2000 } = {}) {
+export async function browserCheck(s, { hold = 1300 } = {}) {
   const chat = await s.rect(".agent-chat-pane");
-  // From the chat's left edge, wide enough that the tab's page shows beside its tool calls.
-  const frame = (top) => ({
-    x: chat.x + 8,
-    y: top,
-    width: 1300,
-    height: (1300 * 1485) / 2640,
-  });
-  const words = await s.rect({ selector: ".chat-message", last: true });
-  await s.zoom(frame(words.y - 120), { pad: 0 });
+  // Wren's chat in the middle, the side rail's edge on the left, the tab only a sliver on the right.
+  const width = 1150;
+  const height = (width * 1485) / 2640;
+  const around = async (target) => {
+    const box = await s.rect(target);
+    return { x: chat.x - 230, y: box.y + box.height / 2 - height / 2, width, height };
+  };
+  s.move(".agent-chat-pane", { at: { x: 0.78, y: 0.8 }, wait: false });
+  await s.live({ agent: WREN, steps: 2, pace: 0.4 });
+  await s.zoom(await around({ selector: ".chat-message", last: true }), { pad: 0 });
   await s.live({ agent: WREN, steps: 1, shortest: 0, pace: 0 });
   await s.wait(hold);
   await s.live({ agent: WREN, steps: 1, shortest: 0, pace: 0 });
   await s.wait(hold);
-  await s.live({ agent: WREN, steps: 3, pace: 0.25, shortest: 120 });
+  await s.live({ agent: WREN, steps: 2, pace: 0.25, shortest: 120 });
   await s.steady({ selector: ".chat-image", last: true }, { frames: 4 });
-  const shot = await s.rect({ selector: ".chat-image", last: true });
-  await s.zoom(frame(shot.y + shot.height - 640), { pad: 0 });
-  await s.wait(1300);
+  await s.zoom(await around({ selector: ".chat-image", last: true }), { pad: 0 });
+  await s.wait(1000);
   s.live({ agent: WREN, wait: false });
 }
 
@@ -180,7 +178,7 @@ const ALLOW = { stage: "img.notch" };
  */
 export async function approveFromNotch(
   s,
-  { ask = 2500, hold = 1500, showCard = 0 } = {},
+  { ask = 1400, hold = 1100, showCard = 0 } = {},
 ) {
   await s.app(() => showcase.backend.cue("otter-runs-the-rail-tests"));
   await s.live({ agent: OTTER, steps: 3, pace: 0.35, shortest: 150 });

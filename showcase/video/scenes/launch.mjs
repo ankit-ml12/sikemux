@@ -35,7 +35,7 @@ export default {
     await s.place(composer, { x: 0.62, y: 0.45 });
   },
   play: async (s) => {
-    await s.wait(1200);
+    await s.wait(900);
     await s.zoom(composer, { scale: 1.3, at: { x: 0.5, y: 0.1 } });
     await askOtter(s, { perSecond: 30 });
     await otterMessagesMaple(s);
@@ -46,19 +46,19 @@ export default {
     await s.zoom(railHead, { scale: 1.8, at: { x: 0.5, y: 4 }, wait: false });
     await s.move(railHead, { at: { x: 0.6, y: 3 } });
     await s.still();
-    await swipeRail(s, { hold: 1500 });
+    await swipeRail(s);
     await s.zoomOut({ wait: false });
     await openProject(s, "moodboard-studio");
-    await s.wait(500);
+    await s.wait(300);
 
     await browserCheck(s);
 
     await s.zoomOut({ wait: false });
-    await s.wait(400);
+    await s.wait(300);
     await approveFromNotch(s);
 
     await s.zoomOut();
-    await s.wait(600);
-    await s.endCard({ hold: 2000 });
+    await s.wait(400);
+    await s.endCard({ hold: 1800 });
   },
 };

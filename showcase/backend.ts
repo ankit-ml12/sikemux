@@ -594,7 +594,22 @@ export class ShowcaseBackend implements IpcTransport {
       return null;
     });
     this.onCore(["modelProviders"], () => []);
-    this.on("acp_attach", () => ({ status: "missing" }));
+    // Each time a pane opens a chat the demo starts it again from its script, as acp_start did:
+    // the first attach finds nothing, startChat plays the history, and the next attach takes it up.
+    this.on("acp_attach", ({ agentId }) => {
+      const start = this.justStarted.get(agentId as string);
+      if (!start) return { status: "missing" };
+      this.justStarted.delete(agentId as string);
+      return {
+        status: "live",
+        start,
+        permissionMode: "workspace-write",
+        running: false,
+        turned: true,
+        feed: `feed-${String(agentId)}`,
+        olderBefore: null,
+      };
+    });
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);
     this.on("listening_ports", () => []);
@@ -951,8 +966,15 @@ export class ShowcaseBackend implements IpcTransport {
     });
   }
 
-  /** Agents whose chat a video starts at their last answer: no request still waiting and no turn queued for it. */
-  readonly settledScripts = new Set<string>();
+  /**
+   * Agents whose chat starts at its last answer, with no request still waiting and no turn queued.
+   * A video starts Wren there, so its browser beat begins from a quiet chat.
+   */
+  readonly settledScripts = new Set<string>(
+    new URLSearchParams(location.search).has("video") ? [AGENTS.hero.id] : [],
+  );
+
+  private readonly justStarted = new Map<string, { sessionId: string; capabilities: object; setup: object }>();
 
   private startAgent(agentId: string, provider: string) {
     const full = AGENT_SCRIPTS[agentId];
@@ -980,6 +1002,8 @@ export class ShowcaseBackend implements IpcTransport {
       payload: { capabilities: {}, setup },
     });
     if (script?.live) this.queueLiveTurn(agentId, script.live, batch);
-    return { sessionId, capabilities: {}, setup };
+    const start = { sessionId, capabilities: {}, setup };
+    this.justStarted.set(agentId, start);
+    return start;
   }
 }
