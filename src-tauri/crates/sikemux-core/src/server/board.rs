@@ -32,8 +32,8 @@ mod review;
 mod tickets;
 
 pub(crate) use auto::Settings;
-pub(crate) use finish::{ci_moved, waiting_on_ci};
 use auto::{Run, Stage};
+pub(crate) use finish::{ci_moved, waiting_on_ci};
 
 const FOLDER: &str = "boards";
 const MAX_CARDS: usize = 1000;
@@ -1776,7 +1776,9 @@ fn offer(core: &Arc<Core>) -> Option<u64> {
         .filter_map(|agent| {
             let named = core.names.get(agent)?;
             let lead = named.parent.as_ref()?;
-            idle_from(core, lead).is_some().then(|| (agent.clone(), named.project))
+            idle_from(core, lead)
+                .is_some()
+                .then(|| (agent.clone(), named.project))
         })
         .collect();
     if workers.is_empty() {

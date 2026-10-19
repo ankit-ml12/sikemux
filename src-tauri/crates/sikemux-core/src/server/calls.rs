@@ -290,7 +290,9 @@ async fn not_an_agent(client: &ClientConn) -> CoreResult<()> {
         return Ok(());
     };
     match blocking(move || Ok(super::callers::agent_of(pid))).await? {
-        Some(_) => Err("an agent cannot sign the person in to a service; the person runs this".into()),
+        Some(_) => {
+            Err("an agent cannot sign the person in to a service; the person runs this".into())
+        }
         None => Ok(()),
     }
 }

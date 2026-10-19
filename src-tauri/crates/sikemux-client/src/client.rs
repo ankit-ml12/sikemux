@@ -19,8 +19,8 @@ use sikemux_wire::protocol::{
     Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment, ChatContext,
     ChatEvent, ChatInfo, ChatLaunch, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
     FrameKind, HostRegistration, LaunchIdentity, RemoteStatus, Request, RequestId, Response,
-    ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
-    Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
+    ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall, Workspace,
+    MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);

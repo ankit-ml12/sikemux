@@ -85,7 +85,10 @@ pub(crate) fn picks(core: &Core, dir: &Path) -> BTreeMap<String, CodeHostChoice>
 
 /// The code host the remote `url` is on, with an account signed in to it,
 /// or the repository and account in `picks` for it.
-pub(crate) async fn find(url: &str, picks: &BTreeMap<String, CodeHostChoice>) -> Result<Repo, String> {
+pub(crate) async fn find(
+    url: &str,
+    picks: &BTreeMap<String, CodeHostChoice>,
+) -> Result<Repo, String> {
     for (host, label) in HOSTS {
         let Ok(found) = plugins::call(&plugin(host), "resolveRemote", json!({ "url": url })).await
         else {
@@ -103,7 +106,9 @@ pub(crate) async fn find(url: &str, picks: &BTreeMap<String, CodeHostChoice>) ->
             .repo
             .as_deref()
             .and_then(|slug| slug.split_once('/'))
-            .map_or((owner, name), |(owner, name)| (owner.to_owned(), name.to_owned()));
+            .map_or((owner, name), |(owner, name)| {
+                (owner.to_owned(), name.to_owned())
+            });
         let account = match pick.account {
             Some(account) => Some(account),
             None => plugins::call(

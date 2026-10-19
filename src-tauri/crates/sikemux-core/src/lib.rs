@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod acp;
 #[cfg(unix)]
 pub mod agent_accounts;
+#[rustfmt::skip]
 pub mod agent_catalog;
 pub mod cli;
 #[cfg(unix)]
@@ -26,11 +27,11 @@ pub mod push;
 #[cfg(unix)]
 pub use sikemux_client::remote;
 #[cfg(unix)]
+pub mod pages;
+#[cfg(unix)]
 pub mod server;
 #[cfg(unix)]
 pub mod sessions;
-#[cfg(unix)]
-pub mod pages;
 pub mod skills;
 pub mod tasks;
 pub mod trailers;

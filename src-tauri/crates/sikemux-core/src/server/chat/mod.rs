@@ -337,7 +337,8 @@ impl Chat {
         if known.is_none_or(|agent| agent.resume_id.as_deref() == Some(start.session_id.as_str())) {
             return;
         }
-        let patch = serde_json::Map::from_iter([("resumeId".to_owned(), Value::from(start.session_id))]);
+        let patch =
+            serde_json::Map::from_iter([("resumeId".to_owned(), Value::from(start.session_id))]);
         if core.workspaces.update_agent(self.agent_id(), patch).is_ok() {
             core.publish_device_view();
         }

@@ -771,7 +771,10 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         _ => None,
     };
     if session.is_task() {
-        if let Some(failed) = core.harness.session_exited(session.id, code, signal.clone()) {
+        if let Some(failed) = core
+            .harness
+            .session_exited(session.id, code, signal.clone())
+        {
             super::harness::tell_agent_run_failed(core, failed);
         }
         super::tasks::ended(core, session.id);

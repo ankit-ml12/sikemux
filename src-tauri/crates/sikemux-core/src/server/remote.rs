@@ -31,8 +31,8 @@ use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
 use super::access::{Peer, Setup, Standing};
-use super::host_key::{HostKey, Keeper};
 use super::connection::{blocking, serve_client};
+use super::host_key::{HostKey, Keeper};
 use super::{Core, CoreError, CoreResult, ServerConfig};
 
 /// How long signing out waits for the account to confirm this host left.
@@ -2175,7 +2175,9 @@ mod tests {
         let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
         assert_eq!(saved.pending_leave.as_deref(), Some("user_2abc"));
 
-        set_owner(&core, Some("user_2new".into()), &Peer::App).await.unwrap();
+        set_owner(&core, Some("user_2new".into()), &Peer::App)
+            .await
+            .unwrap();
         let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
         assert_eq!(saved.pending_leave, None);
         stop_live(&core);
@@ -2254,7 +2256,9 @@ mod tests {
         assert_eq!(refused.to_string(), SIGNED_OUT);
         assert!(!core.remote.is_enabled());
 
-        let status = set_owner(&core, Some("user_2abc".into()), &Peer::App).await.unwrap();
+        let status = set_owner(&core, Some("user_2abc".into()), &Peer::App)
+            .await
+            .unwrap();
         assert!(status.enabled, "signing in turns remote access on");
         assert!(core.remote.lock().running.is_some());
 

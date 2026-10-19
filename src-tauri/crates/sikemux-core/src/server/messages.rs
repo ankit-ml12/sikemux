@@ -965,7 +965,9 @@ async fn send_team(
         one.params["to"] = Value::String(member.clone());
         let name = core.names.name(&member).unwrap_or_else(|| member.clone());
         match send(core, &one).await {
-            Ok(answer) => sent.push(serde_json::json!({ "to": name, "delivery": answer["delivery"] })),
+            Ok(answer) => {
+                sent.push(serde_json::json!({ "to": name, "delivery": answer["delivery"] }))
+            }
             Err(why) => failed.push(serde_json::json!({ "to": name, "error": why })),
         }
     }

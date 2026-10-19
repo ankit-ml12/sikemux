@@ -4,8 +4,8 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
-use ring::{digest, hmac};
 use ring::rand::{SecureRandom, SystemRandom};
+use ring::{digest, hmac};
 
 pub(crate) const KEY_LEN: usize = 32;
 

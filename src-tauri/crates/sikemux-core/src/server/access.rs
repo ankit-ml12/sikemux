@@ -135,7 +135,9 @@ pub(crate) struct Setup {
 pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
     match request {
         Request::Call { method, .. } => super::calls::for_person(method),
-        Request::SetOwner { .. } | Request::SignRegistration { .. } | Request::AnswerPairing { .. }
+        Request::SetOwner { .. }
+        | Request::SignRegistration { .. }
+        | Request::AnswerPairing { .. }
             if setup.app_signed =>
         {
             true

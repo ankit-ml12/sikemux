@@ -101,7 +101,10 @@ fn secret_like(raw: &str) -> KeychainResult<String> {
 
 /// Nothing saved reads as `None`; a keychain that will not answer is an error.
 pub fn read(service: &str, account: &str) -> KeychainResult<Option<String>> {
-    let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
+    let (service, account) = (
+        name_like(service, "service")?,
+        name_like(account, "account")?,
+    );
     match store() {
         #[cfg(target_os = "macos")]
         Store::Keychain => keychain::read(&service, &account),
@@ -113,7 +116,10 @@ pub fn read(service: &str, account: &str) -> KeychainResult<Option<String>> {
 }
 
 pub fn write(service: &str, account: &str, secret: &str) -> KeychainResult<()> {
-    let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
+    let (service, account) = (
+        name_like(service, "service")?,
+        name_like(account, "account")?,
+    );
     let secret = secret_like(secret)?;
     match store() {
         #[cfg(target_os = "macos")]
@@ -127,7 +133,10 @@ pub fn write(service: &str, account: &str, secret: &str) -> KeychainResult<()> {
 
 /// Deleting an entry that is not there is not an error.
 pub fn delete(service: &str, account: &str) -> KeychainResult<()> {
-    let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
+    let (service, account) = (
+        name_like(service, "service")?,
+        name_like(account, "account")?,
+    );
     match store() {
         #[cfg(target_os = "macos")]
         Store::Keychain => keychain::delete(&service, &account),

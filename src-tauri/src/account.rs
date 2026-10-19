@@ -328,9 +328,10 @@ async fn as_host<T: DeserializeOwned>(
         .await
         .map_err(core_error)?;
     let HostSignature { key, signature } = serde_json::from_value(signed)?;
-    let mut request = http()
-        .request(method, api(path))
-        .header(AUTHORIZATION, format!("SikemuxHost {key}.{time}.{signature}"));
+    let mut request = http().request(method, api(path)).header(
+        AUTHORIZATION,
+        format!("SikemuxHost {key}.{time}.{signature}"),
+    );
     if !body.is_empty() {
         request = request.header(CONTENT_TYPE, "application/json").body(body);
     }
@@ -383,7 +384,11 @@ pub async fn account_sign_in(
     let dir = profile_dir(&app)?;
     let _ = profile::forget(&dir).await;
     if let Some(account) = account {
-        let _ = profile::save(&dir, &profile::from_account(account, user_id, profile::now())).await;
+        let _ = profile::save(
+            &dir,
+            &profile::from_account(account, user_id, profile::now()),
+        )
+        .await;
     }
     Ok(status_of(&dir, saved).await)
 }

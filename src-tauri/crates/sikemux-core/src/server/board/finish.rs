@@ -553,7 +553,9 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                             Some(_) => sooner(unread, at_deadline),
                         };
                         match again {
-                            Some(at) if at <= now => due.push((project.clone(), card.id, run.stage)),
+                            Some(at) if at <= now => {
+                                due.push((project.clone(), card.id, run.stage))
+                            }
                             at => next = sooner(next, at),
                         }
                         continue;
