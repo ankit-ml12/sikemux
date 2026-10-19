@@ -8,6 +8,7 @@
 //   logs     — a container's logs, read once, from before its last restart, or followed
 //   workloads — Deployments, StatefulSets, DaemonSets, Jobs and CronJobs, and what is wrong with them
 //   events   — a namespace's recent events, warnings first in mind
+//   network  — Services with their ports and selectors, and Ingresses with their routes
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 
 mod contexts;
@@ -16,6 +17,7 @@ mod error;
 mod events;
 mod kubectl;
 mod logs;
+mod network;
 mod pods;
 mod workloads;
 
@@ -66,6 +68,7 @@ impl Plugin for Kubernetes {
                 "logs" => answer(logs::read(params(input)?)).await,
                 "workloads" => answer(workloads::list(params(input)?)).await,
                 "events" => answer(events::list(params(input)?)).await,
+                "network" => answer(network::list(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -124,6 +127,11 @@ mod tests {
             )
             .await
             .expect("events");
+        let network = plugin
+            .call(&ctx, "network", serde_json::json!({ "namespace": "shop" }))
+            .await
+            .expect("network");
+        println!("network {network}");
         for each in events.as_array().into_iter().flatten() {
             println!(
                 "event {} {} x{} {}",
