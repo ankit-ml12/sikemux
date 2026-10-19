@@ -68,28 +68,9 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
     }
     let before = tab_ids(&manager, agent_id);
     let download_mark = manager.download_mark(agent_id);
-    let sends_input = matches!(
-        request.method.as_str(),
-        "browser.click"
-            | "browser.type"
-            | "browser.press"
-            | "browser.act"
-            | "browser.drag"
-            | "browser.upload"
-    );
-    let held = sends_input
-        .then(|| manager.active_view(agent_id).ok())
-        .flatten()
-        .map(|(_, view)| view);
-    if let Some(view) = &held {
-        let _ = tauri::async_runtime::block_on(native::hold_person_focus(view));
-    }
     let mut result =
         tauri::async_runtime::block_on(run(app, agent_id, &request.method, &request.params))
             .map_err(|error| error.to_string());
-    if let Some(view) = &held {
-        let _ = tauri::async_runtime::block_on(native::return_person_focus(view));
-    }
     if acts_on_a_tab {
         marks.extend(manager.mark_acting(app, agent_id));
         manager.release_acting(app, agent_id, marks);
@@ -1209,14 +1190,6 @@ mod native {
                 .map_err(Option::unwrap_or_default)
         }
 
-        pub async fn hold_person_focus(view: &Webview) -> Result<(), String> {
-            on_tab(view, input::hold_person_focus).await
-        }
-
-        pub async fn return_person_focus(view: &Webview) -> Result<(), String> {
-            on_tab(view, input::return_person_focus).await
-        }
-
         pub async fn probe_responsiveness(view: &Webview) -> Result<(), String> {
             on_tab(view, input::probe_responsiveness).await
         }
@@ -1322,14 +1295,6 @@ mod native {
             Err(UNSUPPORTED.into())
         }
 
-        pub async fn hold_person_focus(_: &Webview) -> Result<(), String> {
-            Ok(())
-        }
-
-        pub async fn return_person_focus(_: &Webview) -> Result<(), String> {
-            Ok(())
-        }
-
         pub async fn probe_responsiveness(_: &Webview) -> Result<(), String> {
             Ok(())
         }
@@ -1387,16 +1352,6 @@ mod native {
         limit: std::time::Duration,
     ) -> Result<String, String> {
         platform::run_script(view, body, limit).await
-    }
-
-    /// Notes where the person's keyboard is before the agent sends input, so
-    /// `return_person_focus` can put it back once the tab has taken it.
-    pub async fn hold_person_focus(view: &Webview) -> Result<(), String> {
-        platform::hold_person_focus(view).await
-    }
-
-    pub async fn return_person_focus(view: &Webview) -> Result<(), String> {
-        platform::return_person_focus(view).await
     }
 
     /// Nudges WebKit into checking whether the tab's page still answers.

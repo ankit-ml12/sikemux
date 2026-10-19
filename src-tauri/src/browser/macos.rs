@@ -1688,6 +1688,16 @@ fn focused_tab(event: &NSEvent, mtm: MainThreadMarker) -> Option<(String, String
     })
 }
 
+/// The tab `view` belongs to, if it is part of one.
+pub(super) fn tab_holding(view: &NSView) -> Option<Retained<WKWebView>> {
+    TABS.with(|tabs| {
+        tabs.borrow()
+            .values()
+            .find(|tab| view.isDescendantOf(&tab.webview))
+            .map(|tab| tab.webview.clone())
+    })
+}
+
 pub fn install_shortcuts(app: AppHandle) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
@@ -1824,6 +1834,7 @@ fn watch_the_person() {
     let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
     PERSON_MONITOR.with(|slot| *slot.borrow_mut() = monitor);
     super::input::guard_cursor();
+    super::input::guard_keyboard();
 }
 
 #[cfg(test)]

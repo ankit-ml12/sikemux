@@ -437,11 +437,9 @@ absolute `paths` and the number (or `x`, `y`) of the file input or of the
 button that opens its chooser. The chooser never shows; the page gets the
 files and its change events. Only one file is given when the input takes one.
 
-While you click, type or press, the tab holds the keyboard, and afterwards
-the person's focus goes back to wherever they were typing, so they can keep
-working in Sikemux while you drive a page. A menu that closes when its page
-loses focus may therefore close between your calls; open it and pick from it
-in one `browser_act`.
+Your clicks, typing and keys never take the person's keyboard, so they can
+keep typing in Sikemux while you drive a page. The tab only gets the keyboard
+when the person clicks into it.
 
 A page that hangs or whose process crashes is reported at once on the next
 call: close that tab with `browser_close_tab` and open a new one.

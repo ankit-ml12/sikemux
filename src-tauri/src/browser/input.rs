@@ -4,20 +4,19 @@
 //! and keys take the same path through WebKit as the person's.
 //!
 //! Events go straight to the tab's view rather than through the window, so a
-//! tab that is off screen still receives them. Keys only reach the page from
-//! the window's first responder, and a click makes the tab the first responder
-//! on its own, so the person's keyboard focus is held at the start of an agent
-//! action and given back at the end.
+//! tab that is off screen still receives them. The person's keyboard focus
+//! never moves for the agent: a tab only takes it when the person clicks into
+//! it, and a key the agent presses borrows it for that key alone, unseen by
+//! either page.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
-use objc2::{msg_send, sel, Message};
+use objc2::{msg_send, sel, MainThreadMarker, Message};
 use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSView, NSWindow};
 use objc2_foundation::{NSObjectProtocol, NSPoint, NSProcessInfo, NSString};
 use objc2_web_kit::WKWebView;
@@ -25,8 +24,6 @@ use objc2_web_kit::WKWebView;
 /// WebKit hands a key back to the app once the page is done with it, which
 /// can take a while on a busy page.
 const SENT_KEY_LIFETIME: Duration = Duration::from_secs(30);
-/// WebKit takes the keyboard for a clicked page a moment after the click.
-const LATE_FOCUS_GRAB: Duration = Duration::from_millis(400);
 /// How long after an agent's input WebKit may still answer it with a cursor.
 const CURSOR_ANSWER_WINDOW: Duration = Duration::from_secs(3);
 /// No keyboard has a key with this code.
@@ -34,11 +31,17 @@ const UNUSED_KEY_CODE: u16 = 0xFF;
 
 static ORIGINAL_SET_CURSOR: OnceLock<Imp> = OnceLock::new();
 static ORIGINAL_HIDE_CURSOR: OnceLock<Imp> = OnceLock::new();
+static ORIGINAL_MAKE_FIRST_RESPONDER: OnceLock<Imp> = OnceLock::new();
+static ORIGINAL_BECOME_FIRST_RESPONDER: OnceLock<Imp> = OnceLock::new();
+static ORIGINAL_RESIGN_FIRST_RESPONDER: OnceLock<Imp> = OnceLock::new();
 
 thread_local! {
     static SENT_KEYS: RefCell<Vec<SentKey>> = const { RefCell::new(Vec::new()) };
-    static HELD_FOCUS: RefCell<HashMap<isize, HeldFocus>> = RefCell::new(HashMap::new());
     static LAST_INPUT: Cell<LastInput> = const { Cell::new(LastInput::NONE) };
+    /// The view under the person's latest click.
+    static PERSON_CLICKED: RefCell<Option<Weak<NSView>>> = const { RefCell::new(None) };
+    /// Set while an agent key borrows the keyboard.
+    static LENDING_KEYBOARD: Cell<bool> = const { Cell::new(false) };
 }
 
 /// A key-down the agent sent. A page that leaves a key unhandled has WebKit
@@ -49,12 +52,6 @@ struct SentKey {
     tab: Weak<WKWebView>,
     edit: Option<Edit>,
     at: Instant,
-}
-
-/// Where the person's keyboard focus was when an agent action began.
-struct HeldFocus {
-    responder: Retained<NSResponder>,
-    holders: usize,
 }
 
 /// The editing commands a text field answers to without any page script.
@@ -147,7 +144,6 @@ pub fn mouse(
 pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
     let webview = webview_from(pointer)?;
     let window = webview.window().ok_or("the tab is not in a window")?;
-    take_keyboard(&window, &webview);
     note(|last| last.agent_key = Some(Instant::now()));
     let event = |kind: NSEventType| {
         NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
@@ -167,12 +163,15 @@ pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
     let down = event(NSEventType::KeyDown)?;
     let up = event(NSEventType::KeyUp)?;
     remember_sent(&down, &webview, edit_of(stroke));
-    // AppKit hands command chords to performKeyEquivalent, never to keyDown.
-    if !stroke.flags.contains(NSEventModifierFlags::Command) || !webview.performKeyEquivalent(&down)
-    {
-        webview.keyDown(&down);
-    }
-    webview.keyUp(&up);
+    lend_keyboard(&window, &webview, || {
+        // AppKit hands command chords to performKeyEquivalent, never to keyDown.
+        if !stroke.flags.contains(NSEventModifierFlags::Command)
+            || !webview.performKeyEquivalent(&down)
+        {
+            webview.keyDown(&down);
+        }
+        webview.keyUp(&up);
+    });
     Ok(())
 }
 
@@ -256,15 +255,27 @@ fn inside(responder: &NSResponder, tab: &WKWebView) -> bool {
         .is_some_and(|view| view.isDescendantOf(tab))
 }
 
-/// Keys resolve against the window's first responder, not the view they
-/// are sent to, so the tab has to hold the keyboard while one is pressed.
-fn take_keyboard(window: &NSWindow, tab: &WKWebView) {
-    let holds = window
-        .firstResponder()
-        .is_some_and(|responder| inside(&responder, tab));
-    if !holds {
-        window.makeFirstResponder(Some(tab));
+/// A key only types from the window's first responder, so the tab holds it
+/// for one key, too briefly for any of the person's keys to land in between.
+/// Neither page hears of it: a page given the keyboard back moves the caret
+/// to the start of the field.
+fn lend_keyboard(window: &NSWindow, tab: &WKWebView, press: impl FnOnce()) {
+    let person = window.firstResponder();
+    if person
+        .as_deref()
+        .is_some_and(|responder| inside(responder, tab))
+    {
+        press();
+        return;
     }
+    let person = person.map(owner_of);
+    LENDING_KEYBOARD.set(true);
+    window.makeFirstResponder(Some(tab));
+    LENDING_KEYBOARD.set(false);
+    press();
+    LENDING_KEYBOARD.set(true);
+    window.makeFirstResponder(person.as_deref());
+    LENDING_KEYBOARD.set(false);
 }
 
 /// A text field edits through a shared field editor, which is the first
@@ -287,111 +298,138 @@ fn owner_of(responder: Retained<NSResponder>) -> Retained<NSResponder> {
         .unwrap_or(responder)
 }
 
-/// Notes where the person's keyboard focus is as an agent action begins, so
-/// `return_person_focus` can give it back. Nested and overlapping actions in
-/// one window share the first note.
-pub fn hold_person_focus(pointer: *mut c_void) -> Result<(), String> {
-    let tab = webview_from(pointer)?;
-    let window = tab.window().ok_or("the tab is not in a window")?;
-    let number = window.windowNumber();
-    HELD_FOCUS.with(|held| {
-        let mut held = held.borrow_mut();
-        if let Some(focus) = held.get_mut(&number) {
-            focus.holders += 1;
-            return;
-        }
-        let Some(responder) = window.firstResponder() else {
-            return;
-        };
-        if inside(&responder, &tab) {
-            return;
-        }
-        held.insert(
-            number,
-            HeldFocus {
-                responder: owner_of(responder),
-                holders: 1,
-            },
-        );
-    });
-    Ok(())
-}
-
-/// Gives the keyboard back to where `hold_person_focus` found it, but only
-/// if this tab still has it: the person may have moved on meanwhile. WebKit
-/// takes the keyboard for a clicked page a moment late, so this looks again
-/// shortly after.
-pub fn return_person_focus(pointer: *mut c_void) -> Result<(), String> {
-    let tab = webview_from(pointer)?;
-    let window = tab.window().ok_or("the tab is not in a window")?;
-    let number = window.windowNumber();
-    let person = HELD_FOCUS.with(|held| {
-        let mut held = held.borrow_mut();
-        let focus = held.get_mut(&number)?;
-        focus.holders -= 1;
-        if focus.holders > 0 {
-            return None;
-        }
-        held.remove(&number).map(|focus| focus.responder)
-    });
-    let Some(person) = person else {
-        return Ok(());
+/// Whether `responder` taking the window's keyboard would move it into a tab
+/// the person did not click into. A page focusing a field, on load or when
+/// the agent clicks it, has WebKit ask for the keyboard, and would take it
+/// from wherever the person is typing.
+fn takes_keyboard_into_tab(window: &NSWindow, responder: &NSResponder) -> bool {
+    let Some(tab) = responder
+        .downcast_ref::<NSView>()
+        .and_then(super::macos::tab_holding)
+    else {
+        return false;
     };
-    give_back(&window, &tab, &person);
-    after(
-        LATE_FOCUS_GRAB,
-        Box::new(move || {
-            let acting_again = HELD_FOCUS.with(|held| held.borrow().contains_key(&number));
-            if !acting_again {
-                give_back(&window, &tab, &person);
-            }
-        }),
-    );
-    Ok(())
-}
-
-fn give_back(window: &NSWindow, tab: &WKWebView, person: &NSResponder) {
-    let agent_has_it = window
+    let tab_has_it = window
         .firstResponder()
-        .is_some_and(|responder| inside(&responder, tab));
-    if agent_has_it {
-        window.makeFirstResponder(Some(person));
-    }
+        .is_some_and(|current| inside(&current, &tab));
+    let person_clicked_it = PERSON_CLICKED.with(|clicked| {
+        clicked
+            .borrow()
+            .as_ref()
+            .and_then(Weak::load)
+            .is_some_and(|view| view.isDescendantOf(&tab))
+    });
+    !tab_has_it && !person_clicked_it
 }
 
-type MainThreadWork = Box<dyn FnOnce()>;
+type MakeFirstResponder = unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> Bool;
+type FirstResponderChange = unsafe extern "C-unwind" fn(*mut AnyObject, Sel) -> Bool;
 
-extern "C" {
-    static _dispatch_main_q: c_void;
-    fn dispatch_time(when: u64, delta: i64) -> u64;
-    fn dispatch_after_f(
-        when: u64,
-        queue: *const c_void,
-        context: *mut c_void,
-        work: extern "C" fn(*mut c_void),
-    );
-}
-
-/// Runs `work` on the main thread once `delay` has passed.
-fn after(delay: Duration, work: MainThreadWork) {
-    extern "C" fn run(context: *mut c_void) {
-        // SAFETY: `context` is the box `after` leaked below, and the main queue
-        // runs this exactly once.
-        let work = unsafe { Box::from_raw(context.cast::<MainThreadWork>()) };
-        work();
+// SAFETY: only the Objective-C runtime calls this, as NSWindow's `makeFirstResponder:`,
+// with a live window and a responder or nil.
+unsafe extern "C-unwind" fn make_first_responder(
+    window: *mut AnyObject,
+    selector: Sel,
+    responder: *mut AnyObject,
+) -> Bool {
+    // SAFETY: the runtime passes a live NSWindow, and the responder is nil or live.
+    let (window_ref, responder_ref) = unsafe {
+        (
+            &*window.cast::<NSWindow>(),
+            responder.cast::<NSResponder>().as_ref(),
+        )
+    };
+    if !LENDING_KEYBOARD.get() {
+        if let Some(responder) = responder_ref {
+            if takes_keyboard_into_tab(window_ref, responder) {
+                return Bool::NO;
+            }
+            if responder
+                .downcast_ref::<NSView>()
+                .and_then(super::macos::tab_holding)
+                .is_none()
+            {
+                PERSON_CLICKED.with(|clicked| clicked.borrow_mut().take());
+            }
+        }
     }
-    let context = Box::into_raw(Box::new(work)).cast::<c_void>();
-    let delta = i64::try_from(delay.as_nanos()).unwrap_or(i64::MAX);
-    // SAFETY: `_dispatch_main_q` is libdispatch's main queue, alive for the whole
-    // process. `run` takes back ownership of `context`, and the main queue only runs
-    // it on the main thread, where the objects the work holds belong.
+    let Some(original) = ORIGINAL_MAKE_FIRST_RESPONDER.get() else {
+        return Bool::NO;
+    };
+    // SAFETY: `original` is the implementation this function replaced, so it takes
+    // the same arguments.
     unsafe {
-        dispatch_after_f(
-            dispatch_time(0, delta),
-            std::ptr::addr_of!(_dispatch_main_q),
-            context,
-            run,
-        );
+        std::mem::transmute::<Imp, MakeFirstResponder>(*original)(window, selector, responder)
+    }
+}
+
+// SAFETY: only the Objective-C runtime calls this, as WKWebView's `becomeFirstResponder`.
+unsafe extern "C-unwind" fn become_first_responder(view: *mut AnyObject, selector: Sel) -> Bool {
+    if LENDING_KEYBOARD.get() {
+        return Bool::YES;
+    }
+    let Some(original) = ORIGINAL_BECOME_FIRST_RESPONDER.get() else {
+        return Bool::YES;
+    };
+    // SAFETY: `original` is the implementation this function replaced, so it takes
+    // the same arguments.
+    unsafe { std::mem::transmute::<Imp, FirstResponderChange>(*original)(view, selector) }
+}
+
+// SAFETY: only the Objective-C runtime calls this, as WKWebView's `resignFirstResponder`.
+unsafe extern "C-unwind" fn resign_first_responder(view: *mut AnyObject, selector: Sel) -> Bool {
+    if LENDING_KEYBOARD.get() {
+        return Bool::YES;
+    }
+    let Some(original) = ORIGINAL_RESIGN_FIRST_RESPONDER.get() else {
+        return Bool::YES;
+    };
+    // SAFETY: `original` is the implementation this function replaced, so it takes
+    // the same arguments.
+    unsafe { std::mem::transmute::<Imp, FirstResponderChange>(*original)(view, selector) }
+}
+
+/// Keeps the person's keyboard where they put it while agents drive tabs:
+/// a tab takes it only from the person's own click, and a key the agent
+/// lends a tab is never noticed by either page. Call once, on the main thread.
+pub fn guard_keyboard() {
+    if let Some(method) = AnyClass::get(c"NSWindow")
+        .and_then(|class| class.instance_method(sel!(makeFirstResponder:)))
+    {
+        let replacement: MakeFirstResponder = make_first_responder;
+        // SAFETY: `make_first_responder` has the signature of `-[NSWindow
+        // makeFirstResponder:]` and calls the implementation it replaces, which is
+        // stored before anything can call it.
+        let original = unsafe {
+            method.set_implementation(std::mem::transmute::<MakeFirstResponder, Imp>(replacement))
+        };
+        let _ = ORIGINAL_MAKE_FIRST_RESPONDER.set(original);
+    }
+    let Some(webview) = AnyClass::get(c"WKWebView") else {
+        return;
+    };
+    for (selector, replacement, slot) in [
+        (
+            sel!(becomeFirstResponder),
+            become_first_responder as FirstResponderChange,
+            &ORIGINAL_BECOME_FIRST_RESPONDER,
+        ),
+        (
+            sel!(resignFirstResponder),
+            resign_first_responder as FirstResponderChange,
+            &ORIGINAL_RESIGN_FIRST_RESPONDER,
+        ),
+    ] {
+        if let Some(method) = webview.instance_method(selector) {
+            // SAFETY: both replacements have the signature of the NSResponder method
+            // they replace and call the implementation stored here.
+            let original = unsafe {
+                method.set_implementation(std::mem::transmute::<FirstResponderChange, Imp>(
+                    replacement,
+                ))
+            };
+            let _ = slot.set(original);
+        }
     }
 }
 
@@ -446,8 +484,18 @@ pub fn note_person(event: &NSEvent) {
         NSEventType::KeyDown | NSEventType::FlagsChanged => {
             note(|last| last.person_key = Some(now))
         }
+        NSEventType::LeftMouseDown | NSEventType::RightMouseDown | NSEventType::OtherMouseDown => {
+            note(|last| last.person_pointer = Some(now));
+            let clicked = clicked_view(event);
+            PERSON_CLICKED.with(|slot| *slot.borrow_mut() = clicked.as_deref().map(Weak::from));
+        }
         _ => note(|last| last.person_pointer = Some(now)),
     }
+}
+
+fn clicked_view(event: &NSEvent) -> Option<Retained<NSView>> {
+    let window = event.window(MainThreadMarker::new()?)?;
+    window.contentView()?.hitTest(event.locationInWindow())
 }
 
 /// Whether the app's latest pointer or key input came from an agent rather
@@ -545,12 +593,10 @@ pub fn probe_responsiveness(pointer: *mut c_void) -> Result<(), String> {
 }
 
 /// Inserts text at the page's caret the way a keyboard or input method would,
-/// so editors that keep their own model of the document see it arrive.
+/// so editors that keep their own model of the document see it arrive. Unlike
+/// a key, this reaches the page without the window's keyboard.
 pub fn insert_text(pointer: *mut c_void, text: &str) -> Result<(), String> {
     let webview = webview_from(pointer)?;
-    if let Some(window) = webview.window() {
-        take_keyboard(&window, &webview);
-    }
     note(|last| last.agent_key = Some(Instant::now()));
     let text = NSString::from_str(text);
     // SAFETY: WKWebView implements NSTextInputClient's `insertText:`, which takes one
