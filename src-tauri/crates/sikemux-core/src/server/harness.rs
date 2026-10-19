@@ -52,9 +52,19 @@ const PLUGIN_SETTLE: Duration = Duration::from_secs(1);
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
-/// Tools that act as the agent calling them, so a call from outside every
-/// agent's processes is refused rather than answered for no one.
-const AGENT_METHODS: [&str; 6] = ["agent.", "board.", "git.", "review.", "browser.", "sim."];
+/// Tools that act as the agent calling them, or with a sign-in or a view
+/// the caller does not hold itself, so a call from outside every agent's
+/// processes is refused rather than answered for no one.
+const AGENT_METHODS: [&str; 8] = [
+    "agent.",
+    "board.",
+    "git.",
+    "review.",
+    "browser.",
+    "sim.",
+    "plugins.call",
+    "app.console",
+];
 /// What a reviewer Auto started blind may not do: start agents, read saved
 /// sessions, who wrote what, or the board, any of which could show it the
 /// builder's side.
@@ -64,7 +74,8 @@ pub(crate) const AGENT_EVENT: &str = "agent.";
 
 /// What `workspace_inspect` takes from the window: the panes it shows.
 const LAYOUT_FIELDS: [&str; 4] = ["sessionId", "active", "activeWindowId", "windows"];
-const NO_WINDOW_NOTE: &str = "No Sikemux window is open on this host, so there are no panes to list.";
+const NO_WINDOW_NOTE: &str =
+    "No Sikemux window is open on this host, so there are no panes to list.";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
 const STARTING_NOTE: &str = "Still starting. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it runs.";
 const NOT_READY_NOTE: &str = "The task is running but readyWhen has not appeared yet. Wait with events_wait on this executionId, or task_read with search.";
@@ -1119,7 +1130,11 @@ fn launch(core: &Arc<Core>, execution_id: String, previous: Option<String>, chec
 
 /// The person starts a task, in place of whatever else they run in that
 /// project. Answers the new run's id.
-pub(crate) fn start_for_person(core: &Arc<Core>, project: &str, task_id: &str) -> Result<String, String> {
+pub(crate) fn start_for_person(
+    core: &Arc<Core>,
+    project: &str,
+    task_id: &str,
+) -> Result<String, String> {
     let params = json!({ "taskId": task_id });
     let key = uuid::Uuid::new_v4().to_string();
     let Begun::New {
