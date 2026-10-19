@@ -53,7 +53,9 @@ fn parse_address(hex: &str) -> Option<IpAddr> {
     let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_ne_bytes()).collect();
     match bytes.len() {
         4 => Some(IpAddr::V4(Ipv4Addr::from(<[u8; 4]>::try_from(bytes).ok()?))),
-        16 => Some(IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(bytes).ok()?))),
+        16 => Some(IpAddr::V6(Ipv6Addr::from(
+            <[u8; 16]>::try_from(bytes).ok()?,
+        ))),
         _ => None,
     }
 }
@@ -139,4 +141,3 @@ pub(super) fn environment_value(pid: u32, key: &str) -> Option<String> {
             .map(|value| String::from_utf8_lossy(value).into_owned())
     })
 }
-

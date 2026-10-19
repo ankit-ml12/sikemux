@@ -491,7 +491,10 @@ mod tests {
         );
         assert_eq!(
             owners(&found),
-            vec![(3000, "agent agent-1".into()), (3001, "agent agent-1".into())]
+            vec![
+                (3000, "agent agent-1".into()),
+                (3001, "agent agent-1".into())
+            ]
         );
         reads.sort_unstable();
         assert_eq!(reads, vec![20, 30]);

@@ -417,9 +417,9 @@ async fn a_call_waiting_on_a_window_that_leaves_fails_and_a_new_window_takes_ove
     silent.register_window().await.expect("register");
     let pending = {
         let (endpoint, project) = (endpoint.clone(), project.clone());
-        tokio::spawn(
-            async move { call(&endpoint, &project, "ui.open", json!({ "kind": "diff" })).await },
-        )
+        tokio::spawn(async move {
+            call(&endpoint, &project, "ui.open", json!({ "kind": "diff" })).await
+        })
     };
     let asked_to_open = async {
         while let Some(event) = silent_events.recv().await {
