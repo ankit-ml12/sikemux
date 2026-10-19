@@ -183,6 +183,14 @@ export interface VercelProtection {
     canShare: boolean;
 }
 
+export interface DeployProgress {
+    step: string;
+    done: number;
+    total: number;
+    /** Set once Vercel accepted the deployment and started building it. */
+    deployment: VercelDeployment | null;
+}
+
 export type VercelTarget = "production" | "preview" | "development";
 
 export interface VariableChange {
@@ -219,6 +227,13 @@ export const vercelApi = {
         backend.call<DomainDetail>("updateDomain", { team, project, domain, ...routing }),
     verifyDomain: (team: string, project: string, domain: string) => backend.call<DomainDetail>("verifyDomain", { team, project, domain }),
     removeDomain: (team: string, project: string, domain: string) => backend.call<void>("removeDomain", { team, project, domain }),
+    deployFolder: (
+        team: string,
+        project: string,
+        folder: string,
+        production: boolean,
+        handlers: PluginStreamHandlers<DeployProgress>,
+    ): PluginStream => backend.stream("deployFolder", { team, project, folder, production }, handlers),
     followRuntimeLogs: (team: string, project: string, id: string, handlers: PluginStreamHandlers<{ lines: RuntimeLogLine[] }>): PluginStream =>
         backend.stream("followRuntimeLogs", { team, project, id }, handlers),
     setEnv: (team: string, project: string, change: VariableChange) => backend.call<VercelVariable>("setEnv", { team, project, ...change }),

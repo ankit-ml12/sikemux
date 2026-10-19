@@ -962,3 +962,21 @@
     border-top: 1px solid var(--border);
     font-size: var(--text-xs);
 }
+
+.vercel-deploy {
+    margin-bottom: 14px;
+}
+
+.vercel-deploy-folder {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.vercel-deploy-folder .vercel-mono {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+}

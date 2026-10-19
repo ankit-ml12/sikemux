@@ -6,6 +6,7 @@
 //   oauth       — installing the Sikemux integration from the browser, and removing it
 //   auth        — signing in with the browser or an access token, choosing a team, and the account's status
 //   projects    — projects, their domains, and the names of their environment variables
+//   deploy      — deploying a folder on this Mac, sending only the files Vercel lacks
 //   deployments — listing and reading deployments, build logs, redeploy, promote and cancel
 //   domains     — adding a domain, the DNS records it needs, verifying, routing and removing it
 //   firewall    — the firewall's rules and IP blocks, and Attack Challenge Mode
@@ -17,6 +18,7 @@
 mod auth;
 mod client;
 mod config;
+mod deploy;
 mod deployments;
 mod domains;
 mod env;
@@ -109,6 +111,7 @@ impl Plugin for Vercel {
         Box::pin(async move {
             let data_dir = ctx.data_dir();
             match method {
+                "deployFolder" => deploy::deploy(data_dir, input, &sink).await,
                 "followRuntimeLogs" => runtime::follow(data_dir, input, &sink).await,
                 "signInWithBrowser" => {
                     auth::sign_in_with_browser(data_dir, &sink).await?;

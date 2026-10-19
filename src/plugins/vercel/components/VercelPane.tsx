@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { errorText } from "../../../plugin-api/format";
 import { notify, openSignInUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
@@ -10,6 +10,7 @@ import { Deployment } from "./Deployment";
 import { Deployments } from "./Deployments";
 import { BuildSettings } from "./BuildSettings";
 import { Crons } from "./Crons";
+import { DeployFolder } from "./DeployFolder";
 import { Firewall } from "./Firewall";
 import { Domains } from "./Domains";
 import { Environment } from "./Settings";
@@ -46,6 +47,7 @@ const SECTIONS: { value: VercelSection; label: string }[] = [
 function Dashboard({ paneId, active, status }: { paneId: string; active: boolean; status: VercelStatus }) {
     const view = useVercelView(paneId);
     const sideRef = useRef<HTMLDivElement>(null);
+    const [deploying, setDeploying] = useState(false);
     const team = status.team ?? "";
     const scopeSlug = status.teams.find((each) => each.id === team)?.slug ?? status.account?.username ?? "";
     const projects = useResourceEnabled(active, vercelProjectsR, team);
@@ -187,12 +189,27 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                     <span className="vercel-topbar-section">
                         {project ? (view.deployment ? "Deployment Details" : SECTIONS.find((each) => each.value === view.section)?.label) : ""}
                     </span>
-                    <button type="button" className="vercel-button" onClick={() => vercel.refresh()}>
-                        Refresh
-                    </button>
+                    <span className="vercel-actions">
+                        {project ? (
+                            <button type="button" className="vercel-button" onClick={() => setDeploying((was) => !was)}>
+                                Deploy
+                            </button>
+                        ) : null}
+                        <button type="button" className="vercel-button" onClick={() => vercel.refresh()}>
+                            Refresh
+                        </button>
+                    </span>
                 </header>
                 <div className="vercel-page">
                     <StaleNotice handle={projects} />
+                    {deploying && project ? (
+                        <DeployFolder
+                            team={team}
+                            project={project}
+                            onDeployed={(id) => updateVercelView(paneId, { deployment: id })}
+                            onClose={() => setDeploying(false)}
+                        />
+                    ) : null}
                     {!projects.data ? (
                         <Pending handle={projects} loading="Loading projects" />
                     ) : !project ? (

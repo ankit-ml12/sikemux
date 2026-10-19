@@ -435,3 +435,17 @@ export function vercelRuntimeLines() {
     ],
   };
 }
+
+export function vercelDeploySteps() {
+  return [
+    { step: "Reading files", done: 0, total: 0, deployment: null },
+    { step: "Uploading", done: 0, total: 3, deployment: null },
+    { step: "Uploading", done: 3, total: 3, deployment: null },
+    {
+      step: "Building",
+      done: 214,
+      total: 214,
+      deployment: DEPLOYMENTS[0],
+    },
+  ];
+}

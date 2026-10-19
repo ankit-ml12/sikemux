@@ -124,6 +124,37 @@ impl Session {
         }))
     }
 
+    pub async fn send_unchecked(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> VercelResult<(u16, Value)> {
+        let query: Vec<(&str, String)> = self.team.iter().map(|team| team_param(team)).collect();
+        request_unchecked(&self.token, method, path, &query, body).await
+    }
+
+    /// Sends a file's bytes for a deployment, named by their SHA-1.
+    pub async fn upload(&self, sha: &str, bytes: Vec<u8>) -> VercelResult<()> {
+        let query: Vec<(&str, String)> = self.team.iter().map(|team| team_param(team)).collect();
+        let builder = STREAMING
+            .client()?
+            .post(format!("{API}/v2/files"))
+            .bearer_auth(&self.token)
+            .query(&query)
+            .header("Content-Type", "application/octet-stream")
+            .header("x-vercel-digest", sha)
+            .body(bytes);
+        let response = STREAMING.send(builder).await?;
+        let status = response.status().as_u16();
+        let bytes = http::read_body(response, MAX_RESPONSE_BYTES).await?;
+        checked(
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+        .map(drop)
+    }
+
     pub async fn send(
         &self,
         method: Method,
@@ -175,6 +206,19 @@ pub async fn request(
     query: &[(&str, String)],
     body: Option<Value>,
 ) -> VercelResult<Value> {
+    let (status, body) = request_unchecked(token, method, path, query, body).await?;
+    checked(status, body)
+}
+
+/// Like `request`, but answers with Vercel's status and JSON even when it refused,
+/// for the few calls whose refusal carries what to do next.
+pub async fn request_unchecked(
+    token: &str,
+    method: Method,
+    path: &str,
+    query: &[(&str, String)],
+    body: Option<Value>,
+) -> VercelResult<(u16, Value)> {
     let mut builder = HTTP
         .client()?
         .request(method, format!("{API}{path}"))
@@ -194,7 +238,7 @@ pub async fn request(
             message: String::from_utf8_lossy(&bytes).chars().take(200).collect(),
         })?
     };
-    checked(status, body)
+    Ok((status, body))
 }
 
 #[cfg(test)]
