@@ -194,8 +194,8 @@ install_mac() {
 
 install_linux() {
   [ "$(uname -m)" = x86_64 ] || fail "the desktop app needs an x86_64 machine; add --host for the core"
-  # sudo asks for its password here, before a spinner holds the line.
-  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -v; fi
+  # sudo asks for a password here, if it needs one, before a spinner holds the line.
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -n true 2>/dev/null || sudo -v; fi
   if command -v apt-get >/dev/null 2>&1; then
     download "Sikemux_${VERSION}_amd64.deb" "the app"
     step "Installing with apt" as_root apt-get install -y "$TMP/Sikemux_${VERSION}_amd64.deb"
@@ -228,8 +228,8 @@ install_host() {
   if id -nG "$user" | tr ' ' '\n' | grep -qx sikemux; then
     fail "$user is in the sikemux group, which would let your agents read the core's secrets; remove it with: sudo gpasswd -d $user sikemux"
   fi
-  # sudo asks for its password here, before a spinner holds the line.
-  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -v; fi
+  # sudo asks for a password here, if it needs one, before a spinner holds the line.
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -n true 2>/dev/null || sudo -v; fi
   asset="sikemux-host-${VERSION}-linux-${arch}.tar.gz"
   download "$asset" "the core"
   tar -xzf "$TMP/$asset" -C "$TMP"
@@ -245,6 +245,8 @@ install_host() {
     getent group sikemux >/dev/null || groupadd --system sikemux
     install -d -o root -g root -m 755 /usr/local/lib/sikemux
     install -o root -g sikemux -m 2755 "$1" /usr/local/lib/sikemux/.sikemux-host.new
+    # On Ubuntu 26.04, install drops the setgid bit when it sets the owner.
+    chmod 2755 /usr/local/lib/sikemux/.sikemux-host.new
     mv -f /usr/local/lib/sikemux/.sikemux-host.new /usr/local/lib/sikemux/sikemux-host
     install -d -o root -g sikemux -m 770 /var/lib/sikemux
   ' sh "$TMP/sikemux-host"
