@@ -2,9 +2,7 @@ import type { AgentGroup, AgentShown, AgentStatus } from "../api/generated/wire"
 
 export type { AgentGroup, AgentShown, AgentStatus };
 
-/** The groups in the order they want attention, and the one word each surface uses for them. */
-export const AGENT_GROUPS: readonly AgentGroup[] = ["blocked", "working", "done", "idle"];
-
+/** The one word each surface uses for each group. */
 export const AGENT_LABELS: Record<AgentGroup, string> = {
     blocked: "Needs input",
     working: "Working",

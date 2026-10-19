@@ -1,4 +1,4 @@
-import { activeSurfacePane, openSurface } from "../../plugin-api/host";
+import { openSurface } from "../../plugin-api/host";
 import { definePaneViews } from "../../plugin-api/paneViews";
 import { definePluginSettings } from "../../plugin-api/settings";
 import { JIRA_ISSUES, JIRA_PLUGIN_ID } from "./kinds";
@@ -90,8 +90,3 @@ export const jiraSettings = definePluginSettings(JIRA_PLUGIN_ID, (saved): JiraSe
 
 export const openJira = (): string | null => openSurface(JIRA_ISSUES);
 
-/** Shows an issue in the Jira pane, opening the pane if none is. */
-export function openJiraIssue(key: string): void {
-    const paneId = activeSurfacePane(JIRA_ISSUES) ?? openSurface(JIRA_ISSUES);
-    if (paneId) updateJiraView(paneId, { issue: key });
-}

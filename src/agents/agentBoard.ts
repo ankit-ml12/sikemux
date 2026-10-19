@@ -140,15 +140,6 @@ export function ticketAbove(card: BoardCard, byId: ReadonlyMap<number, BoardCard
     return null;
 }
 
-/** The card whose Auto run `agentId` is, on any board. */
-export function runOfAgent(boards: Readonly<Record<string, readonly BoardCard[]>>, agentId: string): { project: string; card: BoardCard } | null {
-    for (const [project, cards] of Object.entries(boards)) {
-        const card = cards.find((each) => each.auto?.agent === agentId);
-        if (card) return { project, card };
-    }
-    return null;
-}
-
 /** What the person may change on a card. A parent of 0 takes the card out from under one. */
 export interface CardChanges {
     readonly title?: string;

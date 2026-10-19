@@ -24,7 +24,6 @@ export const IPC_COMMANDS = [
     "pty_kill",
     "pty_sessions",
     "remote_status",
-    "remote_pairing",
     "remote_set_enabled",
     "remote_set_device_access",
     "remote_revoke_device",

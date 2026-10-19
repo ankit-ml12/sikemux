@@ -1,5 +1,5 @@
-import type { AgentEffort, AgentPermissionMode, AgentType } from "../state/types";
-import { agentEfforts, canBypassPermissions, isAgentType } from "./catalog";
+import type { AgentPermissionMode, AgentType } from "../state/types";
+import { canBypassPermissions, isAgentType } from "./catalog";
 
 export const MAX_AGENT_MODEL_LENGTH = 256;
 
@@ -68,6 +68,3 @@ export const isYolo = (mode: string | null | undefined): boolean => mode === "by
    answering the agent's permission requests itself. */
 export const canSwitchMode = (type: string): boolean => isAgentType(type) && canBypassPermissions(type);
 
-export function supportedEfforts(type: AgentType): readonly AgentEffort[] {
-    return agentEfforts(type) as readonly AgentEffort[];
-}

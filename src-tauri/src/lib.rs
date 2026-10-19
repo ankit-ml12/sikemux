@@ -270,7 +270,6 @@ pub fn run() {
             pty::commands::pty_kill,
             pty::commands::pty_sessions,
             remote::remote_status,
-            remote::remote_pairing,
             remote::remote_set_enabled,
             remote::remote_set_device_access,
             remote::remote_revoke_device,

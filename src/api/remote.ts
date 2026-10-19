@@ -12,7 +12,7 @@ export const REMOTE_STATUS_EVENT = "remote_status_changed";
 
 export const remoteApi = {
     status: () => invoke<RemoteStatus>("remote_status"),
-    pairing: () => invoke<RemotePairing>("remote_pairing"),
+    pairing: () => coreCall<RemotePairing>("pairing"),
     setEnabled: (enabled: boolean) => invoke<RemoteStatus>("remote_set_enabled", { enabled }),
     setDeviceAccess: (id: string, access: DeviceAccess) => invoke<RemoteStatus>("remote_set_device_access", { id, access }),
     revokeDevice: (id: string) => invoke<RemoteStatus>("remote_revoke_device", { id }),

@@ -43,9 +43,6 @@ function focusDiff(target: DiffTarget): void {
 /** Review one changed file in the diff tab. `path` is repo-relative. */
 export const openDiff = (path: string): void => focusDiff({ kind: "worktree", path });
 
-/** Review a whole commit in the diff tab. */
-export const openCommitDiff = (rev: string, subject: string): void => focusDiff({ kind: "commit", rev, subject });
-
 export function setGitView(paneId: string, patch: Partial<StoreState["gitViews"][string]>): void {
     mutate((d) => {
         const cur = (d.gitViews[paneId] ?? DEFAULT_GIT_VIEW) as StoreState["gitViews"][string];
