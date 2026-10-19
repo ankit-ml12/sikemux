@@ -264,7 +264,12 @@ impl Plugin for Rundeck {
                     answer(agent::find_jobs(session, project, filter)).await
                 }
                 "agentRun" => {
-                    answer(agent::run(session, params(input)?, &saved.settings.prod_envs)).await
+                    answer(agent::run(
+                        session,
+                        params(input)?,
+                        &saved.settings.prod_envs,
+                    ))
+                    .await
                 }
                 "agentExecutions" => {
                     answer(agent::history(session, params(input)?, branch_options)).await

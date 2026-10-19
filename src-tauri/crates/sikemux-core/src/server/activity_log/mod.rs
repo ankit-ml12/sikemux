@@ -76,7 +76,11 @@ pub(crate) fn place(core: &Core, agent_id: &str) -> Option<Place> {
     })
 }
 
-pub(crate) fn transcript_of(agent: &str, session: Option<String>, home: Option<&Path>) -> Option<Transcript> {
+pub(crate) fn transcript_of(
+    agent: &str,
+    session: Option<String>,
+    home: Option<&Path>,
+) -> Option<Transcript> {
     let session = session?;
     let cli = Cli::of(agent)?;
     let path = transcript::locate(cli, home, &session)?;
@@ -84,7 +88,11 @@ pub(crate) fn transcript_of(agent: &str, session: Option<String>, home: Option<&
         Cli::Claude => AgentKind::Claude,
         Cli::Codex => AgentKind::Codex,
     };
-    Some(Transcript { kind, session, path })
+    Some(Transcript {
+        kind,
+        session,
+        path,
+    })
 }
 
 pub(crate) fn chat_launched(core: &Core, launch: &crate::protocol::ChatLaunch) {
@@ -96,7 +104,8 @@ pub(crate) fn chat_launched(core: &Core, launch: &crate::protocol::ChatLaunch) {
         cwd: launch.cwd.to_string_lossy().into_owned(),
         transcript: transcript_of(&launch.provider, launch.resume_id.clone(), home.as_deref()),
     };
-    core.activity_log.launched(place, "chat", launch.resume_id.is_some());
+    core.activity_log
+        .launched(place, "chat", launch.resume_id.is_some());
 }
 
 /// For an agent a terminal starts, the session its command resumes, if any.
@@ -106,7 +115,11 @@ pub(crate) fn resumed_by(spawn: &crate::protocol::TerminalSpawn) -> Option<Optio
     Some(resumed_session_in_args(agent, &command.args).map(str::to_owned))
 }
 
-pub(crate) fn terminal_launched(core: &Core, owner: &super::prepare::Owner, resumed: Option<String>) {
+pub(crate) fn terminal_launched(
+    core: &Core,
+    owner: &super::prepare::Owner,
+    resumed: Option<String>,
+) {
     let (Some(agent), Some(project)) = (&owner.agent_type, &owner.project) else {
         return;
     };
@@ -115,7 +128,8 @@ pub(crate) fn terminal_launched(core: &Core, owner: &super::prepare::Owner, resu
         cwd: project.clone(),
         transcript: transcript_of(agent, resumed.clone(), owner.account_home.as_deref()),
     };
-    core.activity_log.launched(place, "terminal", resumed.is_some());
+    core.activity_log
+        .launched(place, "terminal", resumed.is_some());
 }
 
 /// Work on the database and git, off the threads that serve clients.
@@ -318,8 +332,15 @@ impl ActivityLog {
 
     /// Prices `model` at what the person entered, or at the published price
     /// again with none.
-    pub(crate) fn set_price(&self, model: &str, price: Option<PriceOverride>) -> Result<(), String> {
-        let path = self.prices_path.as_ref().ok_or("Sikemux keeps no prices here")?;
+    pub(crate) fn set_price(
+        &self,
+        model: &str,
+        price: Option<PriceOverride>,
+    ) -> Result<(), String> {
+        let path = self
+            .prices_path
+            .as_ref()
+            .ok_or("Sikemux keeps no prices here")?;
         let mut prices = self.price_overrides();
         match price {
             Some(price) => prices.insert(model.to_owned(), price),
@@ -335,7 +356,15 @@ impl ActivityLog {
         let feed = self.feed.as_ref().map(Feed::current).unwrap_or_default();
         let prices = Prices::new(&feed, &overrides);
         let mut summary = self
-            .with_database(|db| summarize(db, offset_ms.clamp(-DAY_MS, DAY_MS), now_ms(), project, &prices))
+            .with_database(|db| {
+                summarize(
+                    db,
+                    offset_ms.clamp(-DAY_MS, DAY_MS),
+                    now_ms(),
+                    project,
+                    &prices,
+                )
+            })
             .unwrap_or_default();
         summary.pricing.overrides = overrides;
         summary

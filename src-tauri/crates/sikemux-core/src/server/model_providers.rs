@@ -153,7 +153,10 @@ async fn on_store<T: Send + 'static>(
 /// The key of a connected provider.
 pub(crate) async fn key(core: &Arc<Core>, id: &str) -> Option<String> {
     let id = id.to_owned();
-    on_store(core, move |store| store.key(&id)).await.ok().flatten()
+    on_store(core, move |store| store.key(&id))
+        .await
+        .ok()
+        .flatten()
 }
 
 /// A chat started on a provider has its model's tool calls checked once.
@@ -364,9 +367,7 @@ pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreR
         "modelProviderModels" => serde_json::to_value(models(core, from(params)?).await?)?,
         "modelProviderCheck" => serde_json::to_value(check(core, from(params)?).await?)?,
         "modelProviderConnect" => serde_json::to_value(connect(core, from(params)?).await?)?,
-        "modelProviderDisconnect" => {
-            serde_json::to_value(disconnect(core, from(params)?).await?)?
-        }
+        "modelProviderDisconnect" => serde_json::to_value(disconnect(core, from(params)?).await?)?,
         "modelHelper" => serde_json::to_value(helper(core).await?)?,
         "setModelHelper" => serde_json::to_value(set_helper(core, from(params)?).await?)?,
         _ => return Err(format!("this host does not know {method}").into()),
