@@ -1,4 +1,4 @@
-import { useAuth, useReverification } from "@clerk/react";
+import { useAuth } from "@clerk/react";
 import type { PendingHost } from "@sikemux/protocol";
 import { useState, type SubmitEvent } from "react";
 
@@ -11,6 +11,7 @@ import {
 } from "./api.ts";
 import { errorCode } from "./clerkErrors.ts";
 import { Panel } from "./Consent.tsx";
+import { useReverified } from "./Reverify.tsx";
 
 export const HOST = "/host";
 
@@ -41,7 +42,7 @@ export function HostApproval() {
   const [busy, setBusy] = useState<"look" | "approve" | "refuse">();
   const [problem, setProblem] = useState<string>();
 
-  const approve = useReverification(async (code: string) => {
+  const { run: approve, confirm } = useReverified(async (code: string) => {
     const token = await signedInToken(getToken, "add this host", {
       fresh: true,
     });
@@ -63,6 +64,8 @@ export function HostApproval() {
       setBusy(undefined);
     }
   };
+
+  if (confirm) return confirm;
 
   if (step.kind === "done")
     return (

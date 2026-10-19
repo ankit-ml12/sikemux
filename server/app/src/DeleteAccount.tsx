@@ -1,4 +1,4 @@
-import { useAuth, useReverification } from "@clerk/react";
+import { useAuth } from "@clerk/react";
 import { useId, useState, type SubmitEvent } from "react";
 
 import {
@@ -11,6 +11,7 @@ import {
 import { errorCode } from "./clerkErrors.ts";
 import type { Load } from "./Devices.tsx";
 import { BackIcon } from "./icons.tsx";
+import { useReverified } from "./Reverify.tsx";
 
 const CONFIRM_WORD = "delete";
 const POLICY = "https://sikemux.com/delete-account";
@@ -40,7 +41,7 @@ export function DeleteAccount({
   const [problem, setProblem] = useState<string>();
   const fieldId = useId();
 
-  const deleteAccount = useReverification(async () => {
+  const { run: deleteAccount, confirm } = useReverified(async () => {
     const token = await signedInToken(getToken, "delete your account", {
       fresh: true,
     });
@@ -61,6 +62,8 @@ export function DeleteAccount({
       setProblem(problemText(error));
     }
   };
+
+  if (confirm) return confirm;
 
   const devices = load.state === "loaded" ? load.devices : null;
   const hosts = devices?.filter((device) => device.role === "host") ?? [];

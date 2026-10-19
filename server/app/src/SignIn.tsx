@@ -366,7 +366,7 @@ function BackLink({ onClick }: { onClick: () => void }) {
   );
 }
 
-function PasswordField({
+export function PasswordField({
   value,
   onChange,
   autoComplete,
@@ -402,7 +402,7 @@ function PasswordField({
 }
 
 /** Six tiles under one real input, so typing, pasting and the browser's code autofill all work. */
-function CodeEntry({
+export function CodeEntry({
   code,
   onChange,
   disabled,
