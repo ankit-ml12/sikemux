@@ -1261,7 +1261,7 @@ async function exerciseTerminalAgentResumes() {
   if (
     !openDeepLink(
       desktop.pid,
-      `sikemux://agent/pi/${TUI_AGENT_RESUME_ID}?project=${encodeURIComponent(project)}`,
+      `sikemux://agent/pi/${TUI_AGENT_RESUME_ID}?project=${encodeURIComponent(await realpath(project))}`,
     )
   ) {
     console.warn(
