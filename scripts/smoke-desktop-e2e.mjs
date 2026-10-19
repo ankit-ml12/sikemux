@@ -1306,6 +1306,7 @@ async function exerciseTerminalAgentResumes() {
   );
   process.kill(first.pid, "SIGKILL");
   const second = await expectTuiAgentResumed(core, first.id, 2);
+  const secondStartedAt = Date.now();
   core.close();
   await waitFor(
     "the core to save the resumed agent's terminal",
@@ -1318,25 +1319,17 @@ async function exerciseTerminalAgentResumes() {
 
   await quitDesktop();
   const closed = await openCore(coreSocket);
+  // The core leaves an agent that crashes again within half a minute of coming back to the person.
+  await delay(Math.max(0, secondStartedAt + 31_000 - Date.now()));
   process.kill(second.pid, "SIGKILL");
-  await waitFor(
-    "the core to keep the crashed agent's terminal",
-    10_000,
-    async () => {
-      const ended = await coreSession(closed, second.id);
-      return ended && !ended.running && !ended.killed;
-    },
-  );
+  const third = await expectTuiAgentResumed(closed, second.id, 3);
   closed.close();
+  console.log(
+    `Terminal agent resume with the app closed passed: terminal ${second.id} crashed while Sikemux was closed and the core resumed it as ${third.id}`,
+  );
 
   desktop = launchDesktop();
   await waitForBroker(desktop);
-  const watcher = await openCore(coreSocket);
-  const third = await expectTuiAgentResumed(watcher, second.id, 3);
-  watcher.close();
-  console.log(
-    `Terminal agent resume with the app closed passed: terminal ${second.id} crashed while Sikemux was closed and the next launch resumed it as ${third.id}`,
-  );
 }
 
 // Quit and Stop Everything ends what Quit left running, and the core with it.
