@@ -9,6 +9,9 @@ vi.mock('@/devices/hub', () => hub);
 const paired = vi.hoisted(() => ({ pairedDevices: vi.fn(async () => [{ core: 'host-a' }, { core: 'host-b' }]) }));
 vi.mock('@/devices/paired', () => paired);
 
+const lock = vi.hoisted(() => ({ turnLockOff: vi.fn(async () => {}) }));
+vi.mock('@/lock/lock', () => lock);
+
 const setting = vi.hoisted(() => ({ choose: vi.fn(async () => {}) }));
 vi.mock('@/notify/setting', () => setting);
 
