@@ -600,24 +600,14 @@ async fn wait_for_callback(listener: &TcpListener, state: &str) -> AppResult<Str
         };
         match callback(&target, state) {
             Callback::Code(code) => {
-                answer(
-                    &mut stream,
-                    200,
-                    "Signed in. You can close this tab and go back to Sikemux.",
-                )
-                .await;
+                send_to(&mut stream, "/signed-in").await;
                 return Ok(code);
             }
             Callback::Refused(reason) => {
-                answer(
-                    &mut stream,
-                    200,
-                    "Sign-in was not finished. You can close this tab.",
-                )
-                .await;
+                send_to(&mut stream, "/signed-in?cancelled").await;
                 return Err(AppError::Other(reason));
             }
-            Callback::Other => answer(&mut stream, 404, "Nothing here.").await,
+            Callback::Other => not_found(&mut stream).await,
         }
     }
 }
@@ -673,17 +663,19 @@ async fn request_target(stream: &mut TcpStream) -> std::io::Result<String> {
     }
 }
 
-async fn answer(stream: &mut TcpStream, status: u16, message: &str) {
-    let body = format!(
-        "<!doctype html><meta charset=utf-8><title>Sikemux</title>\
-         <body style=\"font:15px system-ui;background:#0b0b0d;color:#e7e7ea;display:grid;place-items:center;height:100vh;margin:0\">\
-         <p>{message}</p>"
-    );
-    let reason = if status == 200 { "OK" } else { "Not Found" };
+/// The browser finishes on the web app's page, which looks like the rest of the sign-in.
+async fn send_to(stream: &mut TcpStream, path: &str) {
+    let location = format!("{}{path}", sikemux_core::accounts::app_base());
+    reply(stream, &format!("303 See Other\r\nLocation: {location}")).await;
+}
+
+async fn not_found(stream: &mut TcpStream) {
+    reply(stream, "404 Not Found").await;
+}
+
+async fn reply(stream: &mut TcpStream, status_and_headers: &str) {
     let response = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: text/html; charset=utf-8\r\n\
-         Content-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
-        body.len()
+        "HTTP/1.1 {status_and_headers}\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
     );
     let _ = stream.write_all(response.as_bytes()).await;
     let _ = stream.shutdown().await;
