@@ -32,11 +32,11 @@ export default {
       await showcase.backend.cue("otter-asks-maple");
     });
     await s.live({ agent: WREN, steps: 3 });
-    await s.place(composer, { x: 0.62, y: 0.45 });
+    await s.place(composer, { x: 0.86, y: 0.75 });
   },
   play: async (s) => {
     await s.wait(900);
-    await s.zoom(composer, { scale: 1.3, at: { x: 0.5, y: 0.1 } });
+    await s.zoom(composer, { scale: 2.25, at: { x: 0.5, y: -0.55 } });
     await askOtter(s, { perSecond: 30 });
     await otterMessagesMaple(s);
     await mapleAnswers(s);

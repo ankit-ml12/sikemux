@@ -37,7 +37,7 @@ export async function startChats(s, windows) {
  * filters off camera, so it shows once, settled, with Maple picked, and stays a beat.
  */
 export async function askOtter(s, { perSecond = 15, menuHold = 1000 } = {}) {
-  await s.click(composer);
+  await s.click(composer, { at: { x: 0.9, y: 0.75 } });
   await s.type("When ", { perSecond });
   await s.offCamera(async () => {
     await s.page.keyboard.type("@Ma");
