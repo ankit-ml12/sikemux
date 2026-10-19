@@ -224,6 +224,12 @@ install_host() {
     aarch64 | arm64) arch=aarch64 ;;
     *) fail "a Sikemux host needs an x86_64 or arm64 machine" ;;
   esac
+  user=$(id -un)
+  if id -nG "$user" | tr ' ' '\n' | grep -qx sikemux; then
+    fail "$user is in the sikemux group, which would let your agents read the core's secrets; remove it with: sudo gpasswd -d $user sikemux"
+  fi
+  # sudo asks for its password here, before a spinner holds the line.
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -v; fi
   asset="sikemux-host-${VERSION}-linux-${arch}.tar.gz"
   download "$asset" "the core"
   tar -xzf "$TMP/$asset" -C "$TMP"
@@ -231,10 +237,22 @@ install_host() {
   mkdir -p "$bin"
   previous=""
   [ -x "$bin/sikemux" ] && previous=$("$bin/sikemux" --version 2>/dev/null | sed 's/^sikemux //')
-  cp "$TMP/sikemux-editor" "$bin/.sikemux-editor.new"
-  chmod 755 "$bin/.sikemux-editor.new"
-  mv -f "$bin/.sikemux-editor.new" "$bin/sikemux-editor"
-  ln -sf sikemux-editor "$bin/sikemux"
+  # The core keeps its secrets in a folder only the group sikemux may enter,
+  # and runs setgid to it; you stay out of the group, so your agents do too.
+  # shellcheck disable=SC2016
+  step "Setting up the core's secret store" as_root sh -c '
+    set -e
+    getent group sikemux >/dev/null || groupadd --system sikemux
+    install -d -o root -g root -m 755 /usr/local/lib/sikemux
+    install -o root -g sikemux -m 2755 "$1" /usr/local/lib/sikemux/.sikemux-editor.new
+    mv -f /usr/local/lib/sikemux/.sikemux-editor.new /usr/local/lib/sikemux/sikemux-editor
+    install -d -o root -g sikemux -m 770 /var/lib/sikemux
+  ' sh "$TMP/sikemux-editor"
+  ln -sf /usr/local/lib/sikemux/sikemux-editor "$bin/sikemux-editor"
+  ln -sf /usr/local/lib/sikemux/sikemux-editor "$bin/sikemux"
+  if [ "$(id -u)" -eq 0 ]; then
+    note "Running as root, agents run as root too and can read anything; use your own account to keep them out of the core's secrets."
+  fi
   updated=false
   if [ -n "$previous" ] && [ "$previous" != "$VERSION" ]; then
     updated=true
@@ -244,7 +262,6 @@ install_host() {
   fi
 
   if systemctl --user show-environment >/dev/null 2>&1; then
-    user=$(id -un)
     loginctl enable-linger "$user" 2>/dev/null || as_root loginctl enable-linger "$user" >/dev/null 2>&1 || true
     step "Starting the core" "$bin/sikemux" enable
     done_step "Starts at boot" "systemd user service"

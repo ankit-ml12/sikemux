@@ -10,13 +10,15 @@ mod tools_mcp;
 use sikemux_host::cli_client;
 
 fn main() {
+    let first = std::env::args_os().nth(1);
+    let core = first.as_ref().is_some_and(|arg| arg == "core");
+    sikemux_keychain::settle(core);
     #[cfg(unix)]
     if let Some(code) = sikemux_core::git_guard::shim::run_if_git() {
         std::process::exit(code);
     }
-    let first = std::env::args_os().nth(1);
     #[cfg(unix)]
-    if first.as_ref().is_some_and(|arg| arg == "core") {
+    if core {
         std::process::exit(core_mode::run());
     }
     let code = if first.is_some_and(|arg| arg == cli_client::TOOLS_MCP_FLAG) {

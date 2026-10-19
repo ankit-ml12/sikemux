@@ -10,6 +10,9 @@ sikemux-process = { path = "../sikemux-process" }
 [lints]
 workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3", default-features = false, features = ["OSX_10_15"] }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }

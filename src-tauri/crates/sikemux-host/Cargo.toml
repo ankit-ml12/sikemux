@@ -40,6 +40,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 sikemux-core = { path = "../sikemux-core" }
 sikemux-loopback = { path = "../sikemux-loopback" }
+sikemux-keychain = { path = "../sikemux-keychain" }
 sikemux-process = { path = "../sikemux-process" }
 sikemux-pty = { path = "../sikemux-pty" }
 sikemux-plugin-api = { path = "../sikemux-plugin-api" }

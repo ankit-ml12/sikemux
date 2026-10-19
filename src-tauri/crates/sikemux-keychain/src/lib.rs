@@ -1,10 +1,14 @@
-//! Secrets kept by service and account. A build Sikemux's team signed keeps
-//! them in the data protection keychain on macOS; any other build, and every
-//! other system, keeps them in files only the person can read.
+//! Secrets kept by service and account, where no agent can reach them: in
+//! the data protection keychain for a build Sikemux's team signed on macOS,
+//! and in the guarded store for a core Sikemux's installer set up on Linux. A
+//! development build keeps them in files only the person can read. Any other
+//! build keeps none, rather than keep them where agents could read them.
 
 use std::fmt;
 
 mod file;
+#[cfg(target_os = "linux")]
+mod guarded;
 #[cfg(target_os = "macos")]
 mod keychain;
 mod signature;
@@ -31,6 +35,48 @@ impl std::error::Error for KeychainError {}
 
 pub type KeychainResult<T> = Result<T, KeychainError>;
 
+/// Run first thing in `main`, before any thread starts. `core` says this run
+/// is the core, the only one that keeps the means to reach a guarded store.
+pub fn settle(core: bool) {
+    #[cfg(target_os = "linux")]
+    guarded::settle(core);
+    #[cfg(not(target_os = "linux"))]
+    let _ = core;
+}
+
+enum Store {
+    #[cfg(target_os = "macos")]
+    Keychain,
+    #[cfg(target_os = "linux")]
+    Guarded,
+    Files,
+    Unprotected,
+}
+
+fn store() -> Store {
+    #[cfg(target_os = "macos")]
+    if signed_by_team() {
+        return Store::Keychain;
+    }
+    #[cfg(target_os = "linux")]
+    if guarded::active() {
+        return Store::Guarded;
+    }
+    if cfg!(debug_assertions) {
+        Store::Files
+    } else {
+        Store::Unprotected
+    }
+}
+
+fn unprotected() -> KeychainError {
+    KeychainError::Failed(if cfg!(target_os = "macos") {
+        "this copy of Sikemux is not signed by Sikemux, so it keeps no secrets".into()
+    } else {
+        "Sikemux keeps no secrets on this host until its installer sets the core up to guard them: run `curl -fsSL https://sikemux.com/install | sh`".into()
+    })
+}
+
 fn name_like(raw: &str, what: &str) -> KeychainResult<String> {
     let value = raw.trim();
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '@');
@@ -56,31 +102,40 @@ fn secret_like(raw: &str) -> KeychainResult<String> {
 /// Nothing saved reads as `None`; a keychain that will not answer is an error.
 pub fn read(service: &str, account: &str) -> KeychainResult<Option<String>> {
     let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
-    #[cfg(target_os = "macos")]
-    if signed_by_team() {
-        return keychain::read(&service, &account);
+    match store() {
+        #[cfg(target_os = "macos")]
+        Store::Keychain => keychain::read(&service, &account),
+        #[cfg(target_os = "linux")]
+        Store::Guarded => guarded::run(move |root| file::read(root, &service, &account)),
+        Store::Files => file::read(&file::home_root()?, &service, &account),
+        Store::Unprotected => Err(unprotected()),
     }
-    file::read(&service, &account)
 }
 
 pub fn write(service: &str, account: &str, secret: &str) -> KeychainResult<()> {
     let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
     let secret = secret_like(secret)?;
-    #[cfg(target_os = "macos")]
-    if signed_by_team() {
-        return keychain::write(&service, &account, &secret);
+    match store() {
+        #[cfg(target_os = "macos")]
+        Store::Keychain => keychain::write(&service, &account, &secret),
+        #[cfg(target_os = "linux")]
+        Store::Guarded => guarded::run(move |root| file::write(root, &service, &account, &secret)),
+        Store::Files => file::write(&file::home_root()?, &service, &account, &secret),
+        Store::Unprotected => Err(unprotected()),
     }
-    file::write(&service, &account, &secret)
 }
 
 /// Deleting an entry that is not there is not an error.
 pub fn delete(service: &str, account: &str) -> KeychainResult<()> {
     let (service, account) = (name_like(service, "service")?, name_like(account, "account")?);
-    #[cfg(target_os = "macos")]
-    if signed_by_team() {
-        return keychain::delete(&service, &account);
+    match store() {
+        #[cfg(target_os = "macos")]
+        Store::Keychain => keychain::delete(&service, &account),
+        #[cfg(target_os = "linux")]
+        Store::Guarded => guarded::run(move |root| file::delete(root, &service, &account)),
+        Store::Files => file::delete(&file::home_root()?, &service, &account),
+        Store::Unprotected => Err(unprotected()),
     }
-    file::delete(&service, &account)
 }
 
 #[cfg(test)]
