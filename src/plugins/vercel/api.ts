@@ -165,6 +165,15 @@ export interface VercelCrons {
     jobs: { path: string; schedule: string; host: string | null }[];
 }
 
+export interface VercelFirewall {
+    enabled: boolean;
+    rules: { id: string; name: string; description: string | null; active: boolean; action: string }[];
+    blocks: { ip: string; hostname: string | null; note: string | null; action: string }[];
+    /** Every visitor passes a browser check before reaching the site. */
+    attackMode: boolean;
+    attackModeUntil: number | null;
+}
+
 export type VercelTarget = "production" | "preview" | "development";
 
 export interface VariableChange {
@@ -205,6 +214,9 @@ export const vercelApi = {
         backend.stream("followRuntimeLogs", { team, project, id }, handlers),
     setEnv: (team: string, project: string, change: VariableChange) => backend.call<VercelVariable>("setEnv", { team, project, ...change }),
     removeEnv: (team: string, project: string, id: string) => backend.call<void>("removeEnv", { team, project, id }),
+    firewall: (team: string, project: string) => backend.call<VercelFirewall>("firewall", { team, project }),
+    setAttackMode: (team: string, project: string, enabled: boolean, hours?: number) =>
+        backend.call<VercelFirewall>("setAttackMode", { team, project, enabled, hours }),
     crons: (team: string, project: string) => backend.call<VercelCrons>("crons", { team, project }),
     settings: (team: string, project: string) => backend.call<VercelSettings>("settings", { team, project }),
     updateSettings: (team: string, project: string, settings: SettingsChange) =>

@@ -10,6 +10,7 @@ import { Deployment } from "./Deployment";
 import { Deployments } from "./Deployments";
 import { BuildSettings } from "./BuildSettings";
 import { Crons } from "./Crons";
+import { Firewall } from "./Firewall";
 import { Domains } from "./Domains";
 import { Environment } from "./Settings";
 import { Overview } from "./Overview";
@@ -36,6 +37,7 @@ const SECTIONS: { value: VercelSection; label: string }[] = [
     { value: "deployments", label: "Deployments" },
     { value: "env", label: "Environment Variables" },
     { value: "domains", label: "Domains" },
+    { value: "firewall", label: "Firewall" },
     { value: "crons", label: "Cron Jobs" },
     { value: "settings", label: "Settings" },
 ];
@@ -223,6 +225,8 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                             onFilter={(patch) => updateVercelView(paneId, patch)}
                             onOpen={(id) => updateVercelView(paneId, { deployment: id })}
                         />
+                    ) : view.section === "firewall" ? (
+                        <Firewall active={active} team={team} project={project.name} />
                     ) : view.section === "crons" ? (
                         <Crons active={active} team={team} project={project} />
                     ) : view.section === "settings" ? (

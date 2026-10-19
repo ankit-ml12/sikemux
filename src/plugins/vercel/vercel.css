@@ -923,3 +923,31 @@
     padding: 12px 14px;
     font-size: var(--text-xs);
 }
+
+.vercel-attack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+}
+
+.vercel-attack.on {
+    box-shadow: inset 3px 0 var(--warn);
+}
+
+.vercel-attack .vercel-domain-head .plugin-seg {
+    margin-left: auto;
+}
+
+.vercel-table-row.rule {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto minmax(60px, auto);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    font-size: var(--text-xs);
+}
+
+.vercel-button.danger {
+    color: var(--danger);
+}

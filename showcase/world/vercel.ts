@@ -192,6 +192,41 @@ const find = (id: unknown) =>
   DEPLOYMENTS.find((each) => each.id === id) ?? DEPLOYMENTS[2];
 
 export const VERCEL: Record<string, (params: Params) => unknown> = {
+  firewall: () => ({
+    enabled: true,
+    rules: [
+      {
+        id: "rule_wp",
+        name: "Block WordPress probes",
+        description: "Paths under /wp-admin and /wp-login.php",
+        active: true,
+        action: "Deny",
+      },
+      {
+        id: "rule_api",
+        name: "Rate limit checkout",
+        description: "60 requests a minute per IP on /api/checkout",
+        active: true,
+        action: "Rate limit",
+      },
+      {
+        id: "rule_geo",
+        name: "Challenge new regions",
+        description: null,
+        active: false,
+        action: "Challenge",
+      },
+    ],
+    blocks: [
+      { ip: "203.0.113.7", hostname: null, note: "Card-testing bot", action: "deny" },
+    ],
+    attackMode: false,
+    attackModeUntil: null,
+  }),
+  setAttackMode: ({ enabled }) => ({
+    ...(VERCEL.firewall!({}) as object),
+    attackMode: enabled,
+  }),
   crons: () => ({
     enabled: true,
     deploymentId: "dpl_live",

@@ -8,6 +8,7 @@
 //   projects    — projects, their domains, and the names of their environment variables
 //   deployments — listing and reading deployments, build logs, redeploy, promote and cancel
 //   domains     — adding a domain, the DNS records it needs, verifying, routing and removing it
+//   firewall    — the firewall's rules and IP blocks, and Attack Challenge Mode
 //   env         — adding, changing and removing environment variables; values only go to Vercel
 //   runtime     — a deployment's runtime logs, followed live or listened to for a while
 //   settings    — a project's framework, commands, root directory and Node version, read and changed
@@ -19,6 +20,7 @@ mod deployments;
 mod domains;
 mod env;
 mod error;
+mod firewall;
 mod oauth;
 mod projects;
 mod runtime;
@@ -81,6 +83,10 @@ impl Plugin for Vercel {
                 "setEnv" => answer(env::set(data_dir, params(input)?)).await,
                 "removeEnv" => answer(env::remove(data_dir, params(input)?)).await,
                 "changeEnv" => answer(env::change(data_dir, input)).await,
+                "firewall" => answer(firewall::firewall(data_dir, params(input)?)).await,
+                "setAttackMode" => {
+                    answer(firewall::set_attack_mode(data_dir, params(input)?)).await
+                }
                 "crons" => answer(settings::crons(data_dir, params(input)?)).await,
                 "settings" => answer(settings::settings(data_dir, params(input)?)).await,
                 "updateSettings" => answer(settings::update(data_dir, params(input)?)).await,
