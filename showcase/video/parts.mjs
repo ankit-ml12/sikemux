@@ -4,6 +4,8 @@
  * says, for whatever plays next.
  */
 
+import { STAGE } from "../stage.mjs";
+
 export const OTTER = "tab-rail";
 export const MAPLE = "agent-replay";
 export const WREN = "agent-hero";
@@ -137,11 +139,11 @@ const lastTools = { selector: ".chat-tools", last: true };
 export async function browserCheck(s, { hold = 1300 } = {}) {
   const chat = await s.rect(".agent-chat-pane");
   // Wren's chat in the middle, the side rail's edge on the left, the tab only a sliver on the right.
-  const width = 1150;
-  const height = (width * 1485) / 2640;
+  const width = chat.width * 1.47;
+  const height = (width * STAGE.height) / STAGE.width;
   const around = async (target) => {
     const box = await s.rect(target);
-    return { x: chat.x - 230, y: box.y + box.height / 2 - height / 2, width, height };
+    return { x: chat.x - chat.width * 0.29, y: box.y + box.height / 2 - height / 2, width, height };
   };
   s.move(".agent-chat-pane", { at: { x: 0.78, y: 0.8 }, wait: false });
   await s.live({ agent: WREN, steps: 2, pace: 0.4 });

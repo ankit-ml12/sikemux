@@ -35,10 +35,9 @@
 
       iframe {
         position: absolute;
-        top: calc((var(--stage-height) - var(--window-height)) / 2);
-        left: calc((var(--stage-width) - var(--window-width)) / 2);
-        width: var(--window-width);
-        height: var(--window-height);
+        inset: var(--window-edge) var(--window-side);
+        width: calc(100% - 2 * var(--window-side));
+        height: calc(100% - 2 * var(--window-edge));
         border: 0;
         border-radius: 12px;
         box-shadow:
@@ -113,7 +112,8 @@
 
       /* The window drops below the closed island, leaving a gap. */
       .has-notch iframe {
-        top: var(--window-top);
+        top: var(--window-below-notch);
+        height: calc(100% - var(--window-below-notch) - var(--window-edge));
       }
 
       .app-view {
@@ -149,9 +149,9 @@
       for (const [name, value] of Object.entries({
         "stage-width": STAGE.width,
         "stage-height": STAGE.height,
-        "window-width": WINDOW.width,
-        "window-height": WINDOW.height,
-        "window-top": WINDOW.top,
+        "window-side": WINDOW.side,
+        "window-edge": WINDOW.edge,
+        "window-below-notch": WINDOW.belowNotch,
       }))
         document.documentElement.style.setProperty(`--${name}`, `${value}px`);
       const stage = document.querySelector(".stage");
