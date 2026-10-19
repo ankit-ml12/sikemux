@@ -1,5 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, type MouseEvent, type ReactNode, type Ref } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type Ref } from "react";
 import { agentHandle } from "../agents/AgentLabel";
+import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -10,6 +11,7 @@ import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
 import { IconAgent, IconClose, IconPin } from "../ui/Icons";
 import { RailEmpty } from "./RailEmpty";
+import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentRowProject, AgentRowTree } from "./AgentRowTree";
@@ -37,6 +39,8 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
     const agentStatus = useStore((s) => s.agentStatus);
     const { inbox } = useInbox();
     const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [menu, setMenu] = useState<{ agentId: string; sessionId: string; x: number; y: number } | null>(null);
 
     const open = useMemo(() => {
         const rows: OpenAgentRow[] = [];
@@ -63,6 +67,9 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
         if (root.current) drawTeamLines(root.current);
     });
 
+    const menuAgent = menu && agents[menu.agentId];
+    const menuSession = menu && sessions[menu.sessionId];
+
     if (open.length === 0)
         return showEmpty && <RailEmpty icon={<IconAgent size={20} />} title="No agents open" shortcut="agent.new" doing="start one" />;
 
@@ -81,10 +88,35 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                             active={row.id === shownAgentId}
                             project={{ name: row.sessionName, sessionId: row.sessionId }}
                             sessionCwd={row.sessionCwd}
+                            title={
+                                renamingId === row.id && (
+                                    <AgentTitleInput
+                                        title={row.agent.title}
+                                        className="agent-title"
+                                        onSave={(title) => cmd.renameAgent(row.id, title)}
+                                        onDone={() => setRenamingId(null)}
+                                    />
+                                )
+                            }
+                            onDoubleClick={() => setRenamingId(row.id)}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                setMenu({ agentId: row.id, sessionId: row.sessionId, x: event.clientX, y: event.clientY });
+                            }}
                         />
                     ),
                 )}
             </Panel>
+            {menuAgent && menuSession && (
+                <AgentContextMenu
+                    agent={menuAgent}
+                    session={menuSession}
+                    x={menu.x}
+                    y={menu.y}
+                    onClose={() => setMenu(null)}
+                    onRetitle={() => setRenamingId(menuAgent.id)}
+                />
+            )}
         </div>
     );
 }
