@@ -6,6 +6,12 @@ export default {
       resources.invalidate((kind) => kind.startsWith("git."));
     });
     await s.open("s-sikemux", "w-sikemux-git");
+    // History is opened once before filming, so its first commit has loaded by the time the swipe lands on it.
+    await s.settle(800);
+    await s.click('.git-left .swipe-switch button[aria-label^="History"]');
+    await s.settle(2500);
+    await s.click('.git-left .swipe-switch button[aria-label^="Changes"]');
+    await s.settle(1200);
     await s.place({ x: 1250, y: 860 });
   },
   play: async (s) => {

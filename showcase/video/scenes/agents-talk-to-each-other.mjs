@@ -17,13 +17,14 @@ export default {
     await s.place(composer, { x: 0.62, y: 0.45 });
   },
   play: async (s) => {
-    await s.wait(1200);
-    await s.zoom(composer, { scale: 1.5, at: { x: 0.5, y: 0.1 } });
+    await s.wait(900);
+    await s.zoom(composer, { scale: 2.25, at: { x: 0.5, y: -0.55 } });
     await askOtter(s);
     await otterMessagesMaple(s);
     await mapleAnswers(s);
     await boardMoves(s);
     await s.zoomOut();
-    await s.wait(900);
+    await s.wait(400);
+    await s.endCard();
   },
 };
