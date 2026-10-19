@@ -244,12 +244,11 @@ install_host() {
     set -e
     getent group sikemux >/dev/null || groupadd --system sikemux
     install -d -o root -g root -m 755 /usr/local/lib/sikemux
-    install -o root -g sikemux -m 2755 "$1" /usr/local/lib/sikemux/.sikemux-editor.new
-    mv -f /usr/local/lib/sikemux/.sikemux-editor.new /usr/local/lib/sikemux/sikemux-editor
+    install -o root -g sikemux -m 2755 "$1" /usr/local/lib/sikemux/.sikemux-host.new
+    mv -f /usr/local/lib/sikemux/.sikemux-host.new /usr/local/lib/sikemux/sikemux-host
     install -d -o root -g sikemux -m 770 /var/lib/sikemux
-  ' sh "$TMP/sikemux-editor"
-  ln -sf /usr/local/lib/sikemux/sikemux-editor "$bin/sikemux-editor"
-  ln -sf /usr/local/lib/sikemux/sikemux-editor "$bin/sikemux"
+  ' sh "$TMP/sikemux-host"
+  ln -sf /usr/local/lib/sikemux/sikemux-host "$bin/sikemux"
   if [ "$(id -u)" -eq 0 ]; then
     note "Running as root, agents run as root too and can read anything; use your own account to keep them out of the core's secrets."
   fi

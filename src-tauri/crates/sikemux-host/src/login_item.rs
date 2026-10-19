@@ -343,7 +343,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn launch() -> CoreLaunch {
         CoreLaunch {
-            binary: "/Applications/Sikemux.app/Contents/MacOS/sikemux-editor".into(),
+            binary: "/Applications/Sikemux.app/Contents/MacOS/sikemux-host".into(),
             socket: "/Users/me/.config/sikemux/core.sock".into(),
             log: "/Users/me/Library/Logs/com.nodelike.sikemux/core.log".into(),
             args: vec![
@@ -363,7 +363,7 @@ mod tests {
         );
         assert!(plist.contains("<string>com.nodelike.sikemux.core</string>"));
         assert!(plist.contains(
-            "<string>/Applications/Sikemux.app/Contents/MacOS/sikemux-editor</string>\n    <string>core</string>\n    <string>--socket</string>\n    <string>/Users/me/.config/sikemux/core.sock</string>\n    <string>--data-dir</string>"
+            "<string>/Applications/Sikemux.app/Contents/MacOS/sikemux-host</string>\n    <string>core</string>\n    <string>--socket</string>\n    <string>/Users/me/.config/sikemux/core.sock</string>\n    <string>--data-dir</string>"
         ));
         assert!(plist.contains("Application Support/A&amp;B"));
         assert!(plist.contains("<key>PATH</key>\n    <string>/usr/bin:/bin</string>"));

@@ -87,7 +87,7 @@ await emit(
   page(
     "CLI",
     "The sikemux command: run this host's core, open files and projects, call Sikemux's tools.",
-    `On a Mac, install the \`sikemux\` command from **Settings → CLI**. On a server it comes with the core. \`sikemux help <command>\` explains each one.\n\n\`\`\`text\n${help}\`\`\`\n\nAs \`$EDITOR\`, the \`sikemux-editor\` name waits until the file is closed:\n\n\`\`\`bash\nEDITOR=sikemux-editor git commit\n\`\`\``,
+    `On a Mac, install the \`sikemux\` command from **Settings → CLI**. On a server it comes with the core. \`sikemux help <command>\` explains each one.\n\n\`\`\`text\n${help}\`\`\``,
   ),
 );
 

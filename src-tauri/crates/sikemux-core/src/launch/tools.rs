@@ -569,7 +569,7 @@ mod tests {
 
     fn launch() -> McpLaunch {
         McpLaunch {
-            command: "/Apps/Sikemux.app/sikemux-editor".into(),
+            command: "/Apps/Sikemux.app/sikemux-host".into(),
             args: vec!["--tools-mcp".into()],
         }
     }
@@ -623,13 +623,13 @@ mod tests {
     /// tag, so the shape matters as much as the values.
     #[test]
     fn an_acp_stdio_server_is_untagged_with_its_environment_spelled_out() {
-        let mut stdio = McpServerStdio::new("sikemux-tools", "/apps/sikemux-editor");
+        let mut stdio = McpServerStdio::new("sikemux-tools", "/apps/sikemux-host");
         stdio.args = vec!["--tools-mcp".into()];
         stdio.env = vec![EnvVariable::new("SIKEMUX_TOOLS_AGENT_ID", "agent-one")];
         let value = serde_json::to_value(McpServer::Stdio(stdio)).unwrap();
         assert!(value.get("type").is_none(), "{value}");
         assert_eq!(value["name"], "sikemux-tools");
-        assert_eq!(value["command"], "/apps/sikemux-editor");
+        assert_eq!(value["command"], "/apps/sikemux-host");
         assert_eq!(value["args"], json!(["--tools-mcp"]));
         assert_eq!(value["env"][0]["name"], "SIKEMUX_TOOLS_AGENT_ID");
         assert_eq!(value["env"][0]["value"], "agent-one");
@@ -652,8 +652,7 @@ mod tests {
             codex_args(&launch()).unwrap(),
             vec![
                 "-c".to_string(),
-                "mcp_servers.sikemux_tools.command=\"/Apps/Sikemux.app/sikemux-editor\""
-                    .to_string(),
+                "mcp_servers.sikemux_tools.command=\"/Apps/Sikemux.app/sikemux-host\"".to_string(),
                 "-c".to_string(),
                 "mcp_servers.sikemux_tools.args=[\"--tools-mcp\"]".to_string(),
             ]
@@ -665,7 +664,7 @@ mod tests {
         let document = json!({ "mcpServers": { "sikemux-tools": mcp_server_document(&launch()) } });
         let server = &document["mcpServers"]["sikemux-tools"];
         assert_eq!(server["type"], "stdio");
-        assert_eq!(server["command"], "/Apps/Sikemux.app/sikemux-editor");
+        assert_eq!(server["command"], "/Apps/Sikemux.app/sikemux-host");
         assert_eq!(server["args"], json!(["--tools-mcp"]));
     }
 
@@ -679,7 +678,7 @@ mod tests {
         assert_eq!(merged["mcp"]["other"]["type"], "local");
         assert_eq!(
             merged["mcp"]["sikemux_tools"]["command"],
-            json!(["/Apps/Sikemux.app/sikemux-editor", "--tools-mcp"])
+            json!(["/Apps/Sikemux.app/sikemux-host", "--tools-mcp"])
         );
         assert_eq!(merged["mcp"]["sikemux_tools"]["enabled"], true);
     }

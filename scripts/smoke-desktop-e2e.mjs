@@ -49,7 +49,7 @@ const cliExecutable = resolve(
       "target",
       "e2e",
       "debug",
-      `sikemux-editor${executableSuffix}`,
+      `sikemux-host${executableSuffix}`,
     ),
 );
 
@@ -106,14 +106,13 @@ function fail(message, appLog = "") {
   throw new Error(`desktop E2E smoke failed: ${message}${suffix}`);
 }
 
-function run(executable, args, env, timeout, argv0) {
+function run(executable, args, env, timeout) {
   const result = spawnSync(executable, args, {
     cwd: root,
     env,
     encoding: "utf8",
     timeout,
     windowsHide: true,
-    ...(argv0 ? { argv0 } : {}),
   });
   return {
     status: result.status,
@@ -1591,11 +1590,6 @@ try {
     ["open", "--project", project, `${source}:2:3`],
     isolatedEnvironment,
     OPEN_TIMEOUT_MS,
-    // The sidecar executable is named `sikemux-editor`, which deliberately
-    // defaults to --wait for $EDITOR callers. Exercise ordinary non-waiting
-    // `sikemux open` semantics by setting only argv[0], not by renaming or
-    // copying the signed sidecar.
-    "sikemux",
   );
   if (opened.error) fail(opened.error.message, desktopLog);
   if (opened.signal)

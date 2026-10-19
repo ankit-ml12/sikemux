@@ -33,9 +33,9 @@ pub fn cli_executable_path() -> Option<PathBuf> {
         })
         .map(|bundle| bundle.join(sikemux_process::paths::BUNDLED_CORE));
     let filename = if cfg!(windows) {
-        "sikemux-editor.exe"
+        "sikemux-host.exe"
     } else {
-        "sikemux-editor"
+        "sikemux-host"
     };
     bundled
         .into_iter()
@@ -46,7 +46,7 @@ pub fn cli_executable_path() -> Option<PathBuf> {
 static CLI_ON_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 /// Agents shell out to `sikemux`, but the packaged CLI is named
-/// `sikemux-editor`, so a `sikemux` link to it goes first on PATH for every
+/// `sikemux-host`, so a `sikemux` link to it goes first on PATH for every
 /// process this app launches. Call once at startup.
 pub fn link_cli_for_children() {
     let Some(executable) = cli_executable_path() else {
@@ -104,8 +104,8 @@ mod tests {
     #[test]
     fn the_cli_is_linked_as_sikemux_and_relinked_when_it_moves() {
         let root = tempfile::tempdir().unwrap();
-        let first = root.path().join("first/sikemux-editor");
-        let second = root.path().join("second/sikemux-editor");
+        let first = root.path().join("first/sikemux-host");
+        let second = root.path().join("second/sikemux-host");
         let directory = root.path().join("bin");
         let link = link_cli(&first, &directory).unwrap();
         assert_eq!(link, directory.join("sikemux"));

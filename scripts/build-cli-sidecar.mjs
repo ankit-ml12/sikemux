@@ -19,7 +19,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const tauriDir = join(root, "src-tauri");
 const binariesDir = join(tauriDir, "binaries");
 const args = process.argv.slice(2);
-const sidecars = ["sikemux-editor"];
+const sidecars = ["sikemux-host"];
 
 function fail(message) {
   console.error(`Sidecar build failed: ${message}`);
@@ -96,7 +96,7 @@ function bundleCore(binary) {
   const info = {
     CFBundleIdentifier: `${config.identifier}.core`,
     CFBundleName: "Sikemux Core",
-    CFBundleExecutable: "sikemux-editor",
+    CFBundleExecutable: "sikemux-host",
     CFBundleIconFile: "sikemux.icns",
     CFBundleInfoDictionaryVersion: "6.0",
     CFBundlePackageType: "APPL",
@@ -119,13 +119,13 @@ function bundleCore(binary) {
     join(tauriDir, "resources", "sikemux_pi_tools.ts"),
     join(contents, "Resources", "sikemux_pi_tools.ts"),
   );
-  const executable = join(contents, "MacOS", "sikemux-editor");
+  const executable = join(contents, "MacOS", "sikemux-host");
   copyFileSync(binary, executable);
   chmodSync(executable, 0o755);
   mkdirSync(join(staging, "MacOS"));
   symlinkSync(
-    "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor",
-    join(staging, "MacOS", "sikemux-editor"),
+    "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host",
+    join(staging, "MacOS", "sikemux-host"),
   );
   const identity = process.env.APPLE_SIGNING_IDENTITY || "-";
   run("codesign", [
@@ -180,7 +180,7 @@ const runnable =
   requestedTarget === hostTriple() ||
   requestedTarget === "universal-apple-darwin";
 if (runnable && !args.includes("--skip-smoke")) {
-  const browser = shipped.get("sikemux-editor");
+  const browser = shipped.get("sikemux-host");
   try {
     await smokeBrowserSidecar(browser);
   } catch (error) {
@@ -194,6 +194,6 @@ for (const [name, destination] of shipped) {
 }
 
 if (requestedTarget.includes("apple-darwin")) {
-  const app = bundleCore(shipped.get("sikemux-editor"));
+  const app = bundleCore(shipped.get("sikemux-host"));
   console.log(`✓ Sikemux Core.app ready: ${app.slice(root.length + 1)}`);
 }

@@ -39,19 +39,7 @@ pub fn run() -> i32 {
 
 fn run_inner() -> Result<i32, String> {
     let mut args: Vec<String> = env::args().skip(1).collect();
-    let invoked_as_editor = env::args()
-        .next()
-        .and_then(|value| {
-            PathBuf::from(value)
-                .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-        })
-        .is_some_and(|stem| stem.eq_ignore_ascii_case("sikemux-editor"));
-
     if args.is_empty() {
-        if invoked_as_editor {
-            return Err("editor invocation requires at least one file".into());
-        }
         print!("{}", overview());
         return Ok(0);
     }
@@ -82,10 +70,10 @@ fn run_inner() -> Result<i32, String> {
         "open" => {
             args.remove(0);
         }
-        word if !invoked_as_editor && looks_like_command(word) => return Err(unknown_word(word)),
+        word if looks_like_command(word) => return Err(unknown_word(word)),
         _ => {}
     }
-    let Some(open) = parse_open_args(args, invoked_as_editor)? else {
+    let Some(open) = parse_open_args(args)? else {
         return Ok(0);
     };
     execute_open(open)
@@ -138,7 +126,7 @@ fn command_help(command: &str) -> Option<&'static str> {
         "restart" => "Usage: sikemux restart\n\nStops the core and starts it again, so an updated sikemux takes over. Its terminals\nend; chats pick up where they were.\n",
         "enable" => "Usage: sikemux enable\n\nStarts the core at boot and again if it crashes: a systemd user service on Linux,\na LaunchAgent on macOS. On Linux, `loginctl enable-linger` keeps it running\nafter you log out.\n",
         "disable" => "Usage: sikemux disable\n\nStops starting the core at boot. The core keeps running until `sikemux stop`.\n",
-        "open" => "Usage: sikemux open [--wait] [--project DIR] <path[:line[:column]]>...\n       sikemux <path[:line[:column]]>...\n\nOpens files, or folders as projects, in the app, starting it when needed.\nLINE and COLUMN are one-based.\n\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Open files that belong to no project in this one\n\nAs $EDITOR, the sikemux-editor name waits until the file is closed.\n",
+        "open" => "Usage: sikemux open [--wait] [--project DIR] <path[:line[:column]]>...\n       sikemux <path[:line[:column]]>...\n\nOpens files, or folders as projects, in the app, starting it when needed.\nLINE and COLUMN are one-based.\n\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Open files that belong to no project in this one\n",
         "doctor" => "Usage: sikemux doctor\n\nShows the latest report the app wrote when its window stopped answering, and\nwhere the rest of it is. It reads them from disk, so it works while the app is stuck.\n",
         "tool" => "Usage: sikemux tool METHOD [JSON_PARAMS]\n\nCalls one of the tools Sikemux gives agents, such as browser_navigate, as the\nagent in this terminal.\n",
         "core" => "Usage: sikemux core [--socket PATH] [--cli-endpoint PATH] [--data-dir PATH]\n\nRuns the core in the foreground. The service and the app start it this way; to\nmanage it, use `sikemux start`, `stop` and `status` instead.\n",
@@ -161,8 +149,8 @@ fn unknown(word: &str) -> String {
     format!("no command named {word}; run `sikemux help` for the list")
 }
 
-fn parse_open_args(args: Vec<String>, invoked_as_editor: bool) -> Result<Option<OpenArgs>, String> {
-    let mut wait = invoked_as_editor;
+fn parse_open_args(args: Vec<String>) -> Result<Option<OpenArgs>, String> {
+    let mut wait = false;
     let mut project = None;
     let mut operands = Vec::new();
     let mut literal = false;
@@ -746,9 +734,7 @@ mod tests {
 
     #[test]
     fn nested_open_help_is_a_successful_control_path() {
-        assert!(parse_open_args(vec!["--help".into()], false)
-            .unwrap()
-            .is_none());
+        assert!(parse_open_args(vec!["--help".into()]).unwrap().is_none());
     }
 
     #[test]

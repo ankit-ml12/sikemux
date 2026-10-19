@@ -51,8 +51,8 @@ TAR="$BUNDLE/macos/${APP_NAME}.app.tar.gz"
 SIG="$TAR.sig"
 NOTCH_APP="$APP/Contents/Helpers/Sikemux Notch.app"
 CORE_APP="$APP/Contents/Helpers/Sikemux Core.app"
-CORE_LINK="$APP/Contents/MacOS/sikemux-editor"
-CORE_LINK_TARGET="../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor"
+CORE_LINK="$APP/Contents/MacOS/sikemux-host"
+CORE_LINK_TARGET="../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host"
 
 WORK="$(mktemp -d)"
 MOUNT=""
@@ -68,19 +68,19 @@ trap cleanup EXIT
 # the core, where installed `sikemux` commands point.
 [[ -d "$APP" ]] || fail "missing $APP"
 [[ -L "$CORE_LINK" && "$(readlink "$CORE_LINK")" == "$CORE_LINK_TARGET" ]] ||
-  fail "Contents/MacOS/sikemux-editor does not link to the bundled core"
+  fail "Contents/MacOS/sikemux-host does not link to the bundled core"
 [[ -z "$(find "$APP" ! -type f ! -type d ! -path "$CORE_LINK" -print -quit)" ]] ||
   fail "$APP holds something other than files, folders and the link to its core"
 EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
 expected_code="$(printf '%s\n' "Contents/Helpers/Sikemux Notch.app/Contents/MacOS/sikemux-notch" \
-  "Contents/MacOS/$EXECUTABLE_NAME" "Contents/Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor" | sort)"
+  "Contents/MacOS/$EXECUTABLE_NAME" "Contents/Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host" | sort)"
 found_code="$(cd "$APP" && find . -type f -print0 | while IFS= read -r -d '' file; do
   if /usr/bin/file -b "$file" | grep -q '^Mach-O'; then echo "${file#./}"; fi
 done | sort)"
 [[ "$found_code" == "$expected_code" ]] || fail "$APP carries other code than the app, its core and the notch helper: $found_code"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" == "$APP_IDENTIFIER" ]] || fail "app identifier is wrong"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CORE_APP/Contents/Info.plist")" == "$APP_IDENTIFIER.core" ]] || fail "core identifier is wrong"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$CORE_APP/Contents/Info.plist")" == "sikemux-editor" ]] || fail "core executable is wrong"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$CORE_APP/Contents/Info.plist")" == "sikemux-host" ]] || fail "core executable is wrong"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" == "$VERSION" ]] || fail "app version is not $VERSION"
 shopt -s nullglob
 DMGS=("$BUNDLE"/dmg/*.dmg)

@@ -26,7 +26,7 @@ const RECENT_CALLERS: usize = 32;
 /// Deeper than any agent's tree, short of a loop in a table read mid-change.
 const MAX_DEPTH: usize = 64;
 /// The names Sikemux's app and core run under.
-const SIKEMUX_PROCESSES: [&str; 2] = ["sikemux", "sikemux-editor"];
+const SIKEMUX_PROCESSES: [&str; 2] = ["sikemux", "sikemux-host"];
 
 struct Root {
     started: u64,

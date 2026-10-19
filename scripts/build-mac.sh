@@ -104,10 +104,10 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 ARCHS="$(/usr/bin/lipo -archs "$EXECUTABLE")"
 [[ -n "$ARCHS" ]] || fail "could not determine executable architecture"
 CORE_APP="$APP_PATH/Contents/Helpers/Sikemux Core.app"
-CLI_EXECUTABLE="$CORE_APP/Contents/MacOS/sikemux-editor"
+CLI_EXECUTABLE="$CORE_APP/Contents/MacOS/sikemux-host"
 [[ -x "$CLI_EXECUTABLE" && ! -L "$CLI_EXECUTABLE" ]] || fail "bundled core is missing or not executable"
-[[ "$(readlink "$APP_PATH/Contents/MacOS/sikemux-editor")" == "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor" ]] ||
-  fail "Contents/MacOS/sikemux-editor does not link to the bundled core"
+[[ "$(readlink "$APP_PATH/Contents/MacOS/sikemux-host")" == "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host" ]] ||
+  fail "Contents/MacOS/sikemux-host does not link to the bundled core"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CORE_APP/Contents/Info.plist")" == "$APP_IDENTIFIER.core" ]] ||
   fail "the core's CFBundleIdentifier is not $APP_IDENTIFIER.core"
 CORE_SIGNATURE="$(/usr/bin/codesign -dv "$CORE_APP" 2>&1)"

@@ -100,9 +100,9 @@ APP_CDHASH="$(cdhash_of "$APP")"
 [[ -n "$APP_CDHASH" && "$(cdhash_of "$ARCHIVE_APP")" == "$APP_CDHASH" ]] || fail "updater archive does not contain the exact signed app"
 
 CORE_APP="$ARCHIVE_APP/Contents/Helpers/Sikemux Core.app"
-CLI_EXECUTABLE="$CORE_APP/Contents/MacOS/sikemux-editor"
-[[ "$(readlink "$ARCHIVE_APP/Contents/MacOS/sikemux-editor")" == "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor" ]] ||
-  fail "Contents/MacOS/sikemux-editor does not link to the bundled core"
+CLI_EXECUTABLE="$CORE_APP/Contents/MacOS/sikemux-host"
+[[ "$(readlink "$ARCHIVE_APP/Contents/MacOS/sikemux-host")" == "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host" ]] ||
+  fail "Contents/MacOS/sikemux-host does not link to the bundled core"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CORE_APP/Contents/Info.plist")" == "$APP_IDENTIFIER.core" ]] ||
   fail "the core's CFBundleIdentifier is not $APP_IDENTIFIER.core"
 grep -qx "Identifier=$APP_IDENTIFIER.core" <<<"$(signing_info "$CORE_APP")" || fail "the core is not signed as $APP_IDENTIFIER.core"

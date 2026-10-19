@@ -16,6 +16,7 @@ pub enum CliInstallState {
     Unavailable,
     NotInstalled,
     Installed,
+    #[cfg(windows)]
     Outdated,
     Conflict,
 }
@@ -26,7 +27,6 @@ pub struct CliInstallStatus {
     state: CliInstallState,
     install_dir: String,
     cli_path: String,
-    editor_path: String,
     executable: Option<String>,
     path_configured: bool,
     message: String,
@@ -36,6 +36,7 @@ pub struct CliInstallStatus {
 enum DestinationState {
     Missing,
     Installed,
+    #[cfg(windows)]
     Outdated,
     Conflict,
 }
@@ -64,51 +65,40 @@ fn install_cli() -> AppResult<CliInstallStatus> {
 
 fn status_for(executable: Option<PathBuf>) -> CliInstallStatus {
     let install_dir = install_dir().unwrap_or_default();
-    let (cli_path, editor_path) = destination_paths(&install_dir);
+    let cli_path = destination_path(&install_dir);
     let path_configured = path_contains(&install_dir);
     let Some(executable) = executable.filter(|path| path.is_file()) else {
         return make_status(
             CliInstallState::Unavailable,
             install_dir,
             cli_path,
-            editor_path,
             None,
             path_configured,
             "The CLI is included in packaged builds; it is unavailable from this development executable.",
         );
     };
 
-    let cli_state = destination_state(&cli_path, &executable);
-    let editor_state = destination_state(&editor_path, &executable);
-    let install_state = if cli_state == DestinationState::Conflict
-        || editor_state == DestinationState::Conflict
-    {
-        CliInstallState::Conflict
-    } else if cli_state == DestinationState::Installed
-        && editor_state == DestinationState::Installed
-    {
-        CliInstallState::Installed
-    } else if cli_state == DestinationState::Outdated || editor_state == DestinationState::Outdated
-    {
-        CliInstallState::Outdated
-    } else {
-        CliInstallState::NotInstalled
+    let install_state = match destination_state(&cli_path, &executable) {
+        DestinationState::Conflict => CliInstallState::Conflict,
+        DestinationState::Installed => CliInstallState::Installed,
+        #[cfg(windows)]
+        DestinationState::Outdated => CliInstallState::Outdated,
+        DestinationState::Missing => CliInstallState::NotInstalled,
     };
     let message = match install_state {
-        CliInstallState::Installed if path_configured => {
-            "Ready. Run `sikemux <path>` or use Sikemux as `$EDITOR`."
-        }
+        CliInstallState::Installed if path_configured => "Ready. Run `sikemux <path>`.",
         CliInstallState::Installed => {
             "Installed. Add the shown directory to PATH, then restart your shell."
         }
+        #[cfg(windows)]
         CliInstallState::Outdated => {
             "A previous managed CLI is installed and can be updated safely."
         }
         CliInstallState::Conflict => {
-            "An unrelated file already uses one of these names. It was left untouched."
+            "An unrelated file already uses this name. It was left untouched."
         }
         CliInstallState::NotInstalled => {
-            "Install two small launchers that connect your shell to this Sikemux app."
+            "Install a small launcher that connects your shell to this Sikemux app."
         }
         CliInstallState::Unavailable => unreachable!(),
     };
@@ -116,7 +106,6 @@ fn status_for(executable: Option<PathBuf>) -> CliInstallStatus {
         install_state,
         install_dir,
         cli_path,
-        editor_path,
         Some(executable),
         path_configured,
         message,
@@ -127,7 +116,6 @@ fn make_status(
     state: CliInstallState,
     install_dir: PathBuf,
     cli_path: PathBuf,
-    editor_path: PathBuf,
     executable: Option<PathBuf>,
     path_configured: bool,
     message: &str,
@@ -136,7 +124,6 @@ fn make_status(
         state,
         install_dir: install_dir.to_string_lossy().into_owned(),
         cli_path: cli_path.to_string_lossy().into_owned(),
-        editor_path: editor_path.to_string_lossy().into_owned(),
         executable: executable.map(|path| path.to_string_lossy().into_owned()),
         path_configured,
         message: message.into(),
@@ -154,21 +141,12 @@ fn install_dir() -> Option<PathBuf> {
     }
 }
 
-fn destination_paths(install_dir: &Path) -> (PathBuf, PathBuf) {
-    #[cfg(windows)]
-    {
-        (
-            install_dir.join("sikemux.exe"),
-            install_dir.join("sikemux-editor.exe"),
-        )
-    }
-    #[cfg(not(windows))]
-    {
-        (
-            install_dir.join("sikemux"),
-            install_dir.join("sikemux-editor"),
-        )
-    }
+fn destination_path(install_dir: &Path) -> PathBuf {
+    install_dir.join(if cfg!(windows) {
+        "sikemux.exe"
+    } else {
+        "sikemux"
+    })
 }
 
 fn path_contains(directory: &Path) -> bool {
@@ -224,30 +202,19 @@ fn install_for(executable: &Path) -> AppResult<()> {
 fn install_unix_into(executable: &Path, directory: &Path) -> AppResult<()> {
     use std::os::unix::fs::symlink;
 
-    let (cli_path, editor_path) = destination_paths(directory);
-    for destination in [&cli_path, &editor_path] {
-        if destination_state(destination, executable) == DestinationState::Conflict {
+    let cli_path = destination_path(directory);
+    match destination_state(&cli_path, executable) {
+        DestinationState::Installed => return Ok(()),
+        DestinationState::Conflict => {
             return Err(AppError::State(format!(
                 "refusing to replace unrelated path: {}",
-                destination.display()
-            )));
+                cli_path.display()
+            )))
         }
+        DestinationState::Missing => {}
     }
     fs::create_dir_all(directory)?;
-
-    let mut created = Vec::new();
-    for destination in [&cli_path, &editor_path] {
-        if destination_state(destination, executable) == DestinationState::Installed {
-            continue;
-        }
-        if let Err(error) = symlink(executable, destination) {
-            for path in created {
-                let _ = fs::remove_file(path);
-            }
-            return Err(error.into());
-        }
-        created.push(destination);
-    }
+    symlink(executable, &cli_path)?;
     Ok(())
 }
 
@@ -289,7 +256,7 @@ fn destination_state(destination: &Path, executable: &Path) -> DestinationState 
 fn install_for(executable: &Path) -> AppResult<()> {
     let directory =
         install_dir().ok_or_else(|| AppError::State("LOCALAPPDATA is unavailable".into()))?;
-    let (cli_path, editor_path) = destination_paths(&directory);
+    let cli_path = destination_path(&directory);
     let marker = windows_marker(&directory);
     let app_pointer = directory.join(WINDOWS_APP_POINTER);
     let app_executable = executable
@@ -301,7 +268,7 @@ fn install_for(executable: &Path) -> AppResult<()> {
         })?;
     let managed = windows_directory_managed(&directory);
     if !managed
-        && ([&cli_path, &editor_path, &marker, &app_pointer]
+        && ([&cli_path, &marker, &app_pointer]
             .iter()
             .any(|path| path.exists()))
     {
@@ -315,14 +282,12 @@ fn install_for(executable: &Path) -> AppResult<()> {
         fs::write(&marker, WINDOWS_MARKER)?;
     }
     fs::write(&app_pointer, app_executable.to_string_lossy().as_bytes())?;
-    for destination in [&cli_path, &editor_path] {
-        let temporary = destination.with_extension("exe.sikemux-new");
-        fs::copy(executable, &temporary)?;
-        if destination.exists() {
-            fs::remove_file(destination)?;
-        }
-        fs::rename(temporary, destination)?;
+    let temporary = cli_path.with_extension("exe.sikemux-new");
+    fs::copy(executable, &temporary)?;
+    if cli_path.exists() {
+        fs::remove_file(&cli_path)?;
     }
+    fs::rename(temporary, &cli_path)?;
     Ok(())
 }
 
@@ -335,7 +300,7 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let directory = tempfile::tempdir().unwrap();
-        let executable = directory.path().join("sikemux-editor");
+        let executable = directory.path().join("sikemux-host");
         fs::write(&executable, b"cli").unwrap();
         let destination = directory.path().join("sikemux");
         assert_eq!(
@@ -358,19 +323,15 @@ mod tests {
     #[test]
     fn install_is_idempotent_and_refuses_collisions() {
         let temporary = tempfile::tempdir().unwrap();
-        let executable = temporary.path().join("sikemux-editor-bin");
+        let executable = temporary.path().join("sikemux-host-bin");
         fs::write(&executable, b"cli").unwrap();
         let install = temporary.path().join("bin");
-        let (cli_path, editor_path) = destination_paths(&install);
+        let cli_path = destination_path(&install);
 
         install_unix_into(&executable, &install).unwrap();
         install_unix_into(&executable, &install).unwrap();
         assert_eq!(
             destination_state(&cli_path, &executable),
-            DestinationState::Installed
-        );
-        assert_eq!(
-            destination_state(&editor_path, &executable),
             DestinationState::Installed
         );
 

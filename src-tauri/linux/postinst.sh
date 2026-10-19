@@ -4,6 +4,6 @@
 # agents a person runs cannot read them.
 set -e
 getent group sikemux >/dev/null || groupadd --system sikemux
-chgrp sikemux /usr/bin/sikemux-editor
-chmod 2755 /usr/bin/sikemux-editor
+chgrp sikemux /usr/bin/sikemux-host
+chmod 2755 /usr/bin/sikemux-host
 install -d -o root -g sikemux -m 770 /var/lib/sikemux

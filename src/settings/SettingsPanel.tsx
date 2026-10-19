@@ -734,7 +734,6 @@ interface CliInstallStatus {
     state: CliInstallState;
     installDir: string;
     cliPath: string;
-    editorPath: string;
     executable: string | null;
     pathConfigured: boolean;
     message: string;
@@ -780,8 +779,8 @@ function CliPage() {
             <SettingsSection title="Shell integration" meta={stateLabel} sub={status?.message ?? "Checking the packaged command-line integration…"}>
                 <div className="cli-paths">
                     <span>
-                        <b>Commands</b>
-                        <code>sikemux · sikemux-editor</code>
+                        <b>Command</b>
+                        <code>sikemux</code>
                     </span>
                     <span>
                         <b>Install directory</b>
@@ -799,8 +798,7 @@ function CliPage() {
                 </div>
                 {status?.state === "conflict" && (
                     <p className="settings-hint danger">
-                        Sikemux will not overwrite <em>{status.cliPath}</em> or <em>{status.editorPath}</em>. Move the existing file yourself, then
-                        refresh.
+                        Sikemux will not overwrite <em>{status.cliPath}</em>. Move the existing file yourself, then refresh.
                     </p>
                 )}
                 {status?.state === "installed" && !status.pathConfigured && (
@@ -811,7 +809,7 @@ function CliPage() {
             </SettingsSection>
 
             <SettingsSection title="Usage" sub="Existing files open in an editor tab. Directories focus or create their workspace.">
-                <pre className="cli-usage">{`sikemux .\nsikemux src/App.tsx:42:5\nsikemux open --wait README.md\nEDITOR=sikemux-editor git commit`}</pre>
+                <pre className="cli-usage">{`sikemux .\nsikemux src/App.tsx:42:5\nsikemux open --wait README.md`}</pre>
             </SettingsSection>
         </SettingsPage>
     );

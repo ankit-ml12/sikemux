@@ -160,6 +160,10 @@ fn non_empty(value: &Option<String>) -> Option<&str> {
 }
 
 fn editor_command(path: &Path) -> String {
+    format!("{} open --wait", shell_word(path))
+}
+
+fn shell_word(path: &Path) -> String {
     let raw = path.to_string_lossy();
     let shell_safe = raw.bytes().all(|byte| {
         byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'\\' | b':' | b'.' | b'_' | b'-')
@@ -335,7 +339,7 @@ mod tests {
             &mut command,
             Some(&context),
             "1.2.3",
-            Some(Path::new("/app/sikemux-editor")),
+            Some(Path::new("/app/sikemux-host")),
             Some(Path::new("/runtime/cli.json")),
             &HashMap::new(),
         );
@@ -374,14 +378,20 @@ mod tests {
         }
         assert_eq!(
             env(&command, "SIKEMUX_BIN_PATH"),
-            Some("/app/sikemux-editor".into())
+            Some("/app/sikemux-host".into())
         );
         assert_eq!(
             env(&command, "SIKEMUX_CLI_ENDPOINT"),
             Some("/runtime/cli.json".into())
         );
-        assert_eq!(env(&command, "EDITOR"), Some("/app/sikemux-editor".into()));
-        assert_eq!(env(&command, "VISUAL"), Some("/app/sikemux-editor".into()));
+        assert_eq!(
+            env(&command, "EDITOR"),
+            Some("/app/sikemux-host open --wait".into())
+        );
+        assert_eq!(
+            env(&command, "VISUAL"),
+            Some("/app/sikemux-host open --wait".into())
+        );
     }
 
     #[test]
@@ -393,7 +403,7 @@ mod tests {
             &mut editor_only,
             None,
             "1.2.3",
-            Some(Path::new("/app/sikemux-editor")),
+            Some(Path::new("/app/sikemux-host")),
             None,
             &HashMap::new(),
         );
@@ -407,7 +417,7 @@ mod tests {
             &mut visual_only,
             None,
             "1.2.3",
-            Some(Path::new("/app/sikemux-editor")),
+            Some(Path::new("/app/sikemux-host")),
             None,
             &HashMap::new(),
         );
@@ -425,7 +435,7 @@ mod tests {
             None,
             "1.2.3",
             Some(Path::new(
-                "/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor",
+                "/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host",
             )),
             None,
             &HashMap::new(),
@@ -433,17 +443,23 @@ mod tests {
 
         assert_eq!(
             env(&command, "SIKEMUX_BIN_PATH"),
-            Some("/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor".into())
+            Some("/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host".into())
         );
         #[cfg(not(windows))]
         assert_eq!(
             env(&command, "EDITOR"),
-            Some("'/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor'".into())
+            Some(
+                "'/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host' open --wait"
+                    .into()
+            )
         );
         #[cfg(windows)]
         assert_eq!(
             env(&command, "EDITOR"),
-            Some("\"/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor\"".into())
+            Some(
+                "\"/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host\" open --wait"
+                    .into()
+            )
         );
     }
 

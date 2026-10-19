@@ -172,7 +172,7 @@ impl PtyManager {
             .get()
             .ok_or_else(|| AppError::Pty("the terminal core is not configured yet".into()))?;
         let binary = settings.binary.clone().ok_or_else(|| {
-            AppError::Pty("the sikemux-editor sidecar that runs terminals is missing".into())
+            AppError::Pty("the sikemux-host sidecar that runs terminals is missing".into())
         })?;
         let socket = settings.socket.clone();
         let log = settings.log.clone();

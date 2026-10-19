@@ -81,7 +81,6 @@ Install the `sikemux` launcher from Settings → CLI.
 ```bash
 sikemux .
 sikemux src/App.tsx:42:5
-EDITOR=sikemux-editor git commit
 ```
 
 ## Shortcuts

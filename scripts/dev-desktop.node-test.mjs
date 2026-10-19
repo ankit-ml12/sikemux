@@ -33,7 +33,7 @@ test("Sikemux Dev started from a Sikemux terminal drops that terminal's identity
     TERM_PROGRAM: "Sikemux",
     TERM_PROGRAM_VERSION: "0.4.2",
     SIKEMUX: "1",
-    SIKEMUX_BIN_PATH: "/Applications/Sikemux.app/Contents/MacOS/sikemux-editor",
+    SIKEMUX_BIN_PATH: "/Applications/Sikemux.app/Contents/MacOS/sikemux-host",
     SIKEMUX_CLI_ENDPOINT: "/Users/me/.config/sikemux/cli.json",
     SIKEMUX_AGENT_ID: "agent-1",
     SIKEMUX_CORE_SOCKET: "/tmp/core.sock",

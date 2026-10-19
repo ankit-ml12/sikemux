@@ -5,7 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ARCH="${1:?usage: $0 <x86_64|aarch64>}"
-BINARY=src-tauri/target/release/sikemux-editor
+BINARY=src-tauri/target/release/sikemux-host
 VERSION="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' package.json)"
 
 fail() {
@@ -24,7 +24,7 @@ OUT=src-tauri/target/host
 mkdir -p "$OUT"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-cp "$BINARY" "$STAGE/sikemux-editor"
+cp "$BINARY" "$STAGE/sikemux-host"
 ASSET="$OUT/sikemux-host-${VERSION}-linux-${ARCH}.tar.gz"
-tar -czf "$ASSET" -C "$STAGE" sikemux-editor
+tar -czf "$ASSET" -C "$STAGE" sikemux-host
 echo "✓ $ASSET ($(du -h "$ASSET" | cut -f1))"

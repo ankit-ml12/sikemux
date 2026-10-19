@@ -161,7 +161,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("actions", "New action", "Where output lands", "placement terminal split popup background"),
     row("actions", "New action", "Contexts", "project ssh aws bruno plugin"),
 
-    section("cli", "Shell integration", "install terminal path sikemux-editor"),
+    section("cli", "Shell integration", "install terminal path"),
     section("cli", "Usage", "editor git commit open"),
 
     section("devices", "Your account", "account sign in sign out login google github email delete"),

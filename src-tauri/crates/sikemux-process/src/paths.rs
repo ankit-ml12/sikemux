@@ -49,7 +49,7 @@ pub fn config_file(stem: &str, extension: &str) -> Option<PathBuf> {
 /// Where a macOS release keeps its core, relative to the app bundle. It is an
 /// app of its own because only an app can carry the provisioning profile that
 /// lets it use the keychain only Sikemux can read.
-pub const BUNDLED_CORE: &str = "Contents/Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor";
+pub const BUNDLED_CORE: &str = "Contents/Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host";
 
 /// The app bundle a release's core runs inside; None for any other build.
 pub fn app_bundle_of_core(core: &Path) -> Option<&Path> {

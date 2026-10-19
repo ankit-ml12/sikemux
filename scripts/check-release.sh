@@ -72,7 +72,7 @@ if (!releaseWorkflow.includes("run: pnpm build:linux")) fail("the Release workfl
 if (!publish.includes('"$DEB" "$RPM" "$APPIMAGE"')) fail("releases do not publish the Linux packages");
 if (!releaseWorkflow.includes("scripts/package-host.sh")) fail("the Release workflow does not build the Linux host core");
 if (!publish.includes('"$APPIMAGE" "${HOSTS[@]}"')) fail("releases do not publish the Linux host core");
-if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor"])) fail("sidecar bundle mapping is incomplete");
+if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-host"])) fail("sidecar bundle mapping is incomplete");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
 if (!macBuild.includes("build-notch-helper.mjs")) fail("macOS build does not build the notch helper");
 if (!macBuild.includes("tauri.notch.conf.json")) fail("macOS build does not bundle the notch helper");
@@ -86,7 +86,7 @@ if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("
 if (!macBuild.includes("build-cli-sidecar.mjs")) fail("macOS build does not build the CLI sidecar");
 if (!macBuild.includes("tauri.core.conf.json") || macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build must bundle the core as its own app, not as a sidecar");
 if (coreConfig.bundle?.macOS?.files?.["Helpers/Sikemux Core.app"] !== "binaries/core/Helpers/Sikemux Core.app") fail("the macOS bundle must carry the core app");
-if (coreConfig.bundle?.macOS?.files?.MacOS !== "binaries/core/MacOS") fail("the macOS bundle must link Contents/MacOS/sikemux-editor to the core");
+if (coreConfig.bundle?.macOS?.files?.MacOS !== "binaries/core/MacOS") fail("the macOS bundle must link Contents/MacOS/sikemux-host to the core");
 for (const profile of ["sikemux-developer-id", "sikemux-core-developer-id"]) {
   if (!fs.existsSync(`src-tauri/macos/${profile}.provisionprofile`)) fail(`src-tauri/macos/${profile}.provisionprofile is missing`);
 }

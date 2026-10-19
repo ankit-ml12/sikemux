@@ -8,7 +8,7 @@ publish = false
 name = "sikemux_host"
 
 [[bin]]
-name = "sikemux-editor"
+name = "sikemux-host"
 path = "src/main.rs"
 
 [features]

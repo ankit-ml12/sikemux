@@ -40,24 +40,24 @@ owns a window. Inside that window, a system web view (WKWebView on macOS) runs t
 React interface. The two talk over IPC: the page calls named Rust commands, and Rust
 sends events and byte streams back.
 
-| Process           | Where it lives                                     | What it does                                                                                                                                                                                                                                                                                                                                        |
-| ----------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Main process      | `src-tauri/src/main.rs` → `lib.rs::run()`          | Owns the window, Git calls, language servers, watchers and browser tabs, and connects to the background core for terminals and agents. `lib.rs` registers the managed state and every IPC command.                                                                                                                                                  |
-| Background core   | `sikemux core` → `crates/sikemux-core`             | Owns every shell, terminal agent, task and chat agent, the harness and the agents' tool endpoint. It outlives the window; see [The background core](#the-background-core).                                                                                                                                                                          |
-| App web view      | `src/main.tsx`, window label `main`                | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                                                                                                                                       |
-| Browser tabs      | `src-tauri/src/browser/`                           | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                                                                                                                                   |
-| `sikemux-editor`  | `src-tauri/crates/sikemux-host/` → `cli_client.rs` | The `sikemux` and `sikemux-editor` launchers, which ask the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio; with `core` it is the background core, with the built-in plugins. It never links the app's window code, so a host with no screen installs only this. |
-| `sikemux-voice`   | `src-tauri/voice/` (Swift package)                 | Speech-to-text helper, downloaded with the speech model. `voice.rs` starts it, writes JSON lines to its stdin and relays its `voice` events.                                                                                                                                                                                                        |
-| Shells and agents | spawned by the background core                     | Children of the core, not of the app, so reloading, closing or quitting the app leaves them running.                                                                                                                                                                                                                                                |
-| Language servers  | spawned by `lsp/`                                  | Children of the app. When the main web view reloads or the window closes, `lib.rs` drains them.                                                                                                                                                                                                                                                     |
+| Process           | Where it lives                                     | What it does                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Main process      | `src-tauri/src/main.rs` → `lib.rs::run()`          | Owns the window, Git calls, language servers, watchers and browser tabs, and connects to the background core for terminals and agents. `lib.rs` registers the managed state and every IPC command.                                                                                                                             |
+| Background core   | `sikemux core` → `crates/sikemux-core`             | Owns every shell, terminal agent, task and chat agent, the harness and the agents' tool endpoint. It outlives the window; see [The background core](#the-background-core).                                                                                                                                                     |
+| App web view      | `src/main.tsx`, window label `main`                | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                                                                                                                  |
+| Browser tabs      | `src-tauri/src/browser/`                           | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                                                                                                              |
+| `sikemux-host`    | `src-tauri/crates/sikemux-host/` → `cli_client.rs` | The `sikemux` launcher, which asks the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio; with `core` it is the background core, with the built-in plugins. It never links the app's window code, so a host with no screen installs only this. |
+| `sikemux-voice`   | `src-tauri/voice/` (Swift package)                 | Speech-to-text helper, downloaded with the speech model. `voice.rs` starts it, writes JSON lines to its stdin and relays its `voice` events.                                                                                                                                                                                   |
+| Shells and agents | spawned by the background core                     | Children of the core, not of the app, so reloading, closing or quitting the app leaves them running.                                                                                                                                                                                                                           |
+| Language servers  | spawned by `lsp/`                                  | Children of the app. When the main web view reloads or the window closes, `lib.rs` drains them.                                                                                                                                                                                                                                |
 
-`sikemux-editor` ships as a Tauri sidecar, meaning an extra executable bundled next to
+`sikemux-host` ships as a Tauri sidecar, meaning an extra executable bundled next to
 the app. `scripts/build-cli-sidecar.mjs` builds it into `src-tauri/binaries/` and
 `tauri.sidecar.conf.json` adds it to the Linux and Windows bundles. On macOS it is the
 executable of an app of its own, `Contents/Helpers/Sikemux Core.app`
 (`com.nodelike.sikemux.core`), because only an app can carry the provisioning profile
 that lets it keep secrets in the keychain group it shares with the app. `tauri.core.conf.json`
-adds it, with a `Contents/MacOS/sikemux-editor` link to it for installed `sikemux`
+adds it, with a `Contents/MacOS/sikemux-host` link to it for installed `sikemux`
 commands, and `scripts/sign-mac.sh` embeds the profiles in `src-tauri/macos/`. `scripts/build-voice-helper.mjs` builds
 and signs `sikemux-voice` there too, but it stays out of the app: each release publishes
 it as an asset, `build.rs` records its hash, and `voice_models.rs` downloads it with the
@@ -66,7 +66,7 @@ speech model. `pnpm sidecar:dev` builds both beside the dev app, which runs them
 ### The background core
 
 The app is a client of a long-lived background process, the core. It is the
-`sikemux-editor` sidecar run as `sikemux core`, so it adds no executable to the bundle and
+`sikemux-host` sidecar run as `sikemux core`, so it adds no executable to the bundle and
 never loads WebKit. [ADR 0006](./0006-background-core.md) records why.
 
 - **Starting.** The app starts the core on demand, detached in its own session, logging
@@ -328,7 +328,7 @@ asking for a sign-in. At a usage limit it moves the chat to the next signed-in a
 launch names, when the person turned that on, and says so in the transcript.
 
 **Harness tools.** Agents on both transports get Sikemux's tools through
-`sikemux-editor --tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
+`sikemux-host --tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
 each agent host. Tools are declared once in `browser/tools.json`, one-line descriptions
 only. The protocol details live in `browser/SIKEMUX_GUIDE.md`, which agents fetch with
 the `guide` tool. An agent keeps its MCP process across a Sikemux update, so the process
@@ -339,7 +339,7 @@ core retries for 15 seconds before failing, but one the core may have received i
 sent twice. A tool call travels:
 
 ```
-agent → sikemux-editor --tools-mcp → the core's tool endpoint
+agent → sikemux-host --tools-mcp → the core's tool endpoint
   task.read / task.stop / events.wait     → answered by the core (server/harness.rs)
   tools.manifest                          → the core's own browser/tools.json and guide
   task.start / task.restart               → the core keeps the run, the window launches it
