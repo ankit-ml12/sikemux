@@ -148,7 +148,13 @@ pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreR
         }
         "saveAgentAccount" => {
             let saving: Saving = parse(params)?;
-            answer(change(core, |book| Ok(book.save(saving.profile))).await?)
+            answer(
+                change(core, |book| {
+                    book.save(saving.profile);
+                    Ok(())
+                })
+                .await?,
+            )
         }
         "removeAgentAccount" => {
             let removing: Removing = parse(params)?;
