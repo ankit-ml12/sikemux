@@ -1273,7 +1273,13 @@ async function exerciseTerminalAgentResumes() {
   let first;
   await waitFor("the terminal agent to start", READY_TIMEOUT_MS, async () =>
     Boolean((first = await tuiAgentSession(core))),
-  );
+  ).catch(async (error) => {
+    const listed = await core.request({ op: "list" }, 5_000);
+    fail(
+      `${error.message.replace("desktop E2E smoke failed: ", "")}; the core's terminals: ${JSON.stringify(listed?.response?.sessions ?? []).slice(0, 2_000)}`,
+      desktopLog,
+    );
+  });
   let screen = "";
   await waitFor("the terminal agent to print", 10_000, async () => {
     screen = await core.attachReplay(first.id);
