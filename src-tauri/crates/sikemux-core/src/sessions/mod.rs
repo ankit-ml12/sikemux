@@ -52,6 +52,23 @@ pub struct AgentSession {
     pub mtime: u64,
 }
 
+/// Whether `id` has the shape `agent`'s own sessions take, so it can never pass for a flag.
+/// Pi and OMP also name a session by its transcript's path.
+pub fn is_session_id(agent: Option<AgentKind>, id: &str) -> bool {
+    let mut chars = id.chars();
+    let token = id.len() <= 200
+        && chars
+            .next()
+            .is_some_and(|first| first.is_ascii_alphanumeric())
+        && chars.all(|char| char.is_ascii_alphanumeric() || matches!(char, '.' | '_' | ':' | '-'));
+    let transcript = matches!(agent, Some(AgentKind::Pi | AgentKind::Omp))
+        && id.starts_with('/')
+        && id.ends_with(".jsonl")
+        && id.len() <= 4_096
+        && !id.chars().any(|char| char < ' ');
+    token || transcript
+}
+
 /// One agent's saved sessions that ran in `cwd`, newest first.
 pub fn agent_sessions(agent: AgentKind, cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
     match agent {
