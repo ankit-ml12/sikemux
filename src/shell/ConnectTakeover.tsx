@@ -192,7 +192,7 @@ export default function ConnectTakeover({
                 </div>
             </div>
             <p className="connect-foot">
-                {link ? "Only allow computers you own." : "Only allow phones you own."} Remove one any time in Settings › Devices.
+                {link ? "Only allow hosts you own." : "Only allow phones you own."} Remove one any time in Settings › Devices.
             </p>
         </div>,
         host,

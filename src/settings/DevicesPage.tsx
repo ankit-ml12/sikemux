@@ -59,8 +59,8 @@ function accountLine(link: AccountLink | null): string {
 function removalNote(link: AccountLink | null): string | null {
     if (link?.state !== "removed") return null;
     if (link.reason === "account_deleted") return "Your account was deleted. Phones already allowed stay allowed.";
-    if (link.reason === "signed_out") return "This computer was signed out of your account. Phones already allowed stay allowed.";
-    return "This computer was removed from your account at app.sikemux.com. Phones already allowed stay allowed.";
+    if (link.reason === "signed_out") return "This host was signed out of your account. Phones already allowed stay allowed.";
+    return "This host was removed from your account at app.sikemux.com. Phones already allowed stay allowed.";
 }
 
 function useRemoteStatus(): [RemoteStatus | null, (next: Promise<RemoteStatus>, what: string) => Promise<void>] {
@@ -237,7 +237,7 @@ function SignInCall({ removed }: { removed: string | null }) {
                 <p className="devices-panel-lede">
                     {waiting
                         ? "Sikemux opened the sign-in page in your default browser."
-                        : (removed ?? "Your phone finds this computer through it. Sign in with Google, GitHub or your email, in your browser.")}
+                        : (removed ?? "Your phone finds this host through it. Sign in with Google, GitHub or your email, in your browser.")}
                 </p>
                 <div className="devices-panel-actions">
                     {waiting ? (
@@ -335,11 +335,11 @@ function useLinkedHosts(): [readonly LinkedHost[] | null, () => void] {
                 .then((pairing) => {
                     if (!controller.signal.aborted) setLinks(pairing.links);
                 })
-                .catch(swallow("linked computers"));
+                .catch(swallow("linked hosts"));
         remoteApi
             .subscribe(() => read.current(), controller.signal)
             .then(() => read.current())
-            .catch(swallow("linked computers"));
+            .catch(swallow("linked hosts"));
         return () => controller.abort();
     }, []);
     return [links, () => read.current()];
@@ -358,7 +358,7 @@ function HostsSection({ now }: { now: number }) {
             .then((next) => {
                 if (current) setHosts(next);
             })
-            .catch(swallow("computers on the account"));
+            .catch(swallow("hosts on the account"));
         return () => {
             current = false;
         };
@@ -368,7 +368,7 @@ function HostsSection({ now }: { now: number }) {
         try {
             await accountApi.linkHost(host);
         } catch (error) {
-            reportError(`Link ${host.name || "computer"}`)(error);
+            reportError(`Link ${host.name || "host"}`)(error);
         } finally {
             setLinking(null);
             reread();
@@ -386,34 +386,34 @@ function HostsSection({ now }: { now: number }) {
         try {
             await remoteApi.revokeDevice(host.id);
         } catch (error) {
-            reportError("Remove computer")(error);
+            reportError("Remove host")(error);
         }
         reread();
     };
     if (!links) return null;
     return (
-        <section className="devices-hosts" data-settings-target="Computers">
-            <h2 className="devices-label">Computers</h2>
+        <section className="devices-hosts" data-settings-target="Hosts">
+            <h2 className="devices-label">Hosts</h2>
             <p className="settings-hint">
-                Link another computer on your account. Someone there allows it once, then agents here can start agents there, on that computer&apos;s
-                own sign-ins.
+                Link another host on your account. Someone there allows it once, then agents here can start agents there, on that host&apos;s own
+                sign-ins.
             </p>
             <p className="settings-hint">
-                Agents a linked host starts or messages here can&apos;t use this host&apos;s plugin sign-ins, database logins or signed-in browser tabs
-                until you allow that host.
+                Agents a linked host starts or messages here can&apos;t use this host&apos;s plugin sign-ins, database logins or signed-in browser
+                tabs until you allow that host.
             </p>
             {links.length === 0 && hosts.length === 0 ? (
-                <p className="settings-hint">No other computers on your account. Sign in to Sikemux on one to link it.</p>
+                <p className="settings-hint">No other hosts on your account. Sign in to Sikemux on one to link it.</p>
             ) : (
                 <SettingsRows>
                     {links.map((host) => (
                         <Fragment key={host.id}>
-                            <SettingsRow label={host.name || "Unnamed computer"} desc={linkedLine(host, now)}>
+                            <SettingsRow label={host.name || "Unnamed host"} desc={linkedLine(host, now)}>
                                 <button
                                     className="settings-btn danger"
                                     type="button"
                                     onClick={() => void unlink(host)}
-                                    title="Unlink this computer; agents on either side can no longer start agents on the other">
+                                    title="Unlink this host; agents on either side can no longer start agents on the other">
                                     <IconTrash size={12} /> Remove
                                 </button>
                             </SettingsRow>
@@ -428,7 +428,7 @@ function HostsSection({ now }: { now: number }) {
                     {hosts.map((host) => (
                         <SettingsRow
                             key={host.key}
-                            label={host.name || "Unnamed computer"}
+                            label={host.name || "Unnamed host"}
                             desc={
                                 linking?.key === host.key
                                     ? `Waiting for ${host.name || "it"} to allow…`
