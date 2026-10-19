@@ -92,6 +92,7 @@ pub struct Event {
     pub last: Option<String>,
     /// What it happened to, such as Pod/web-1.
     pub object: String,
+    pub namespace: Option<String>,
 }
 
 fn items<'a>(value: &'a Value, path: &str) -> Vec<&'a Value> {
@@ -267,6 +268,8 @@ pub fn event_of(event: &Value) -> Option<Event> {
             text(event, "/involvedObject/kind").unwrap_or_default(),
             text(event, "/involvedObject/name").unwrap_or_default()
         ),
+        namespace: text(event, "/involvedObject/namespace")
+            .or_else(|| text(event, "/metadata/namespace")),
     })
 }
 

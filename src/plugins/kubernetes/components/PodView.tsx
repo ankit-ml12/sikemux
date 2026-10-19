@@ -278,7 +278,17 @@ function ContainerCard({ container }: { container: Container }) {
     );
 }
 
-export function EventList({ events, empty, showObject }: { events: KubeEvent[]; empty: string; showObject?: boolean }) {
+export function EventList({
+    events,
+    empty,
+    showObject,
+    onOpenPod,
+}: {
+    events: KubeEvent[];
+    empty: string;
+    showObject?: boolean;
+    onOpenPod?: (name: string) => void;
+}) {
     if (events.length === 0) return <p className="k8s-note">{empty}</p>;
     return (
         <ul className="k8s-events" aria-label="Events">
@@ -286,7 +296,13 @@ export function EventList({ events, empty, showObject }: { events: KubeEvent[]; 
                 <li key={`${event.object}-${event.reason}-${index}`} className={event.kind === "Warning" ? "warning" : undefined}>
                     <span className="k8s-event-reason">{event.reason}</span>
                     <span className="k8s-event-message">
-                        {showObject ? <span className="k8s-mono k8s-muted">{event.object} </span> : null}
+                        {showObject && onOpenPod && event.object.startsWith("Pod/") ? (
+                            <button type="button" className="k8s-link k8s-mono" onClick={() => onOpenPod(event.object.slice(4))}>
+                                {event.object}
+                            </button>
+                        ) : showObject ? (
+                            <span className="k8s-mono k8s-muted">{event.object}</span>
+                        ) : null}{" "}
                         {event.message}
                     </span>
                     <span className="k8s-muted k8s-event-when">

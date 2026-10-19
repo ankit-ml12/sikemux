@@ -88,6 +88,7 @@ export interface KubeEvent {
     count: number;
     last: string | null;
     object: string;
+    namespace: string | null;
 }
 
 export interface PodDetail extends Pod {

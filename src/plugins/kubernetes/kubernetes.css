@@ -142,7 +142,9 @@
 }
 
 .k8s-page {
+    display: flex;
     flex: 1;
+    flex-direction: column;
     min-height: 0;
     padding: 12px 14px;
     overflow: auto;
@@ -740,6 +742,7 @@
 
 .k8s-stores {
     display: grid;
+    align-items: start;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 8px;
 }
@@ -747,4 +750,16 @@
 .k8s-config-note {
     margin-left: auto;
     font-size: var(--text-xs);
+}
+
+.k8s-facts.compact > div:first-child {
+    grid-column: 1 / -1;
+}
+
+.k8s-log-line.error .k8s-log-text {
+    color: var(--danger);
+}
+
+.k8s-log-line.warn .k8s-log-text {
+    color: var(--warn);
 }

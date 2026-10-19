@@ -117,6 +117,7 @@ export const WORKER_DETAIL: PodDetail = {
             count: 14,
             last: "2026-10-19T08:41:00Z",
             object: "Pod/worker-546f6f965-9swqn",
+            namespace: "shop",
         },
     ],
 };

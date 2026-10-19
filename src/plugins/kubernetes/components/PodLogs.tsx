@@ -6,6 +6,12 @@ import { Toggle } from "./parts";
 /** The most lines kept while following, so a chatty pod can't grow the pane without end. */
 const KEEP_LINES = 5_000;
 
+export function levelOf(text: string): "error" | "warn" | null {
+    if (/\b(level=error|ERROR|FATAL|panic:|Exception|Traceback)\b/.test(text) || /^panic:/.test(text)) return "error";
+    if (/\b(level=warn(ing)?|WARN(ING)?)\b/.test(text)) return "warn";
+    return null;
+}
+
 function time(at: string | null): string {
     return at ? at.slice(11, 19) : "";
 }
@@ -103,7 +109,7 @@ export function PodLogs({
                 <VirtualLogList
                     items={shown}
                     className={`k8s-log-list${wrap ? " wrap" : ""}`}
-                    rowClassName="k8s-log-line"
+                    rowClassName={(line) => `k8s-log-line ${levelOf(line.text) ?? ""}`.trim()}
                     follow={live}
                     allowFollow={(element) => element.scrollHeight - element.scrollTop - element.clientHeight < 80}
                     empty={

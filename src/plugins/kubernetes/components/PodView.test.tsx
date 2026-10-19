@@ -12,6 +12,7 @@ vi.mock("../../../plugin-api/ui", async (importOriginal) => ({
 }));
 
 import { invalidate } from "../../../plugin-api/resources";
+import { levelOf } from "./PodLogs";
 import { containerTone, kubectlScope, PodView, stateLine } from "./PodView";
 
 const scope = { context: "kind-dev", namespace: "shop" };
@@ -81,5 +82,14 @@ describe("container words", () => {
     it("names the cluster and namespace for kubectl", () => {
         expect(kubectlScope(scope)).toEqual(["--context", "kind-dev", "--namespace", "shop"]);
         expect(kubectlScope({})).toEqual([]);
+    });
+});
+
+describe("log levels", () => {
+    it("picks out error and warning lines", () => {
+        expect(levelOf('level=error msg="capture failed"')).toBe("error");
+        expect(levelOf("panic: capture failed")).toBe("error");
+        expect(levelOf("2026-10-19 WARN slow query")).toBe("warn");
+        expect(levelOf("level=info msg=connected")).toBeNull();
     });
 });

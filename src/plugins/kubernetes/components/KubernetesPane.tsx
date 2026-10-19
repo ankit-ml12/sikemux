@@ -60,11 +60,11 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
     const workloads = useResourceEnabled(active && view.section === "workloads", kubeWorkloadsR, scope, all);
     usePoll(active && view.pod === null && view.section === "workloads", LIST_POLL_MS, workloads.refresh);
     const listing = active && view.pod === null;
-    const pods = useResourceEnabled(listing && view.section === "pods", kubePodsR, scope, all, view.selector);
+    const pods = useResourceEnabled(active && view.section === "pods", kubePodsR, scope, all, view.selector);
     usePoll(listing && view.section === "pods", LIST_POLL_MS, pods.refresh);
     const network = useResourceEnabled(listing && view.section === "network", kubeNetworkR, scope, all);
     const config = useResourceEnabled(listing && view.section === "config", kubeConfigR, scope, all);
-    const events = useResourceEnabled(listing, kubeEventsR, scope, all);
+    const events = useResourceEnabled(active, kubeEventsR, scope, all);
     usePoll(listing && view.section === "events", EVENTS_POLL_MS, events.refresh);
     const warnings = events.data?.filter((event) => event.kind === "Warning").length ?? 0;
     const trouble = workloads.data?.filter((each) => each.health !== "ok").length ?? 0;
@@ -204,7 +204,17 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                         </Loaded>
                     ) : view.section === "events" ? (
                         <Loaded handle={events} label="events">
-                            {(data) => <Events events={data} find={view.find} />}
+                            {(data) => (
+                                <Events
+                                    events={data}
+                                    find={view.find}
+                                    onOpenPod={(event) =>
+                                        updateKubeView(paneId, {
+                                            pod: { namespace: event.namespace ?? namespace ?? "default", name: event.object.slice(4) },
+                                        })
+                                    }
+                                />
+                            )}
                         </Loaded>
                     ) : (
                         <Loaded handle={workloads} label="workloads">

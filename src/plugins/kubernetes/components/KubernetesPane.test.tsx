@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
     events: vi.fn(),
     network: vi.fn(),
     config: vi.fn(),
+    pod: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), kubeApi: api }));
 
@@ -141,8 +142,16 @@ describe("the Kubernetes pane", () => {
 
     it("counts warnings in the sidebar and shows them first", async () => {
         api.events.mockResolvedValue([
-            { kind: "Warning", reason: "BackOff", message: "Back-off restarting failed container", count: 9, last: null, object: "Pod/worker-1" },
-            { kind: "Normal", reason: "Scheduled", message: "Assigned to node", count: 1, last: null, object: "Pod/web-1" },
+            {
+                kind: "Warning",
+                reason: "BackOff",
+                message: "Back-off restarting failed container",
+                count: 9,
+                last: null,
+                object: "Pod/worker-1",
+                namespace: "shop",
+            },
+            { kind: "Normal", reason: "Scheduled", message: "Assigned to node", count: 1, last: null, object: "Pod/web-1", namespace: "shop" },
         ]);
         renderPane();
         await openSection(/Events/);
@@ -151,5 +160,8 @@ describe("the Kubernetes pane", () => {
         expect(within(screen.getByRole("navigation", { name: "Kubernetes" })).getByRole("button", { name: /Events/ })).toHaveTextContent("1");
         fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: /^All/ }));
         expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+        api.pod.mockResolvedValue(null);
+        fireEvent.click(within(list).getByRole("button", { name: "Pod/worker-1" }));
+        await waitFor(() => expect(api.pod).toHaveBeenCalledWith({ context: "kind-dev", namespace: "shop" }, "worker-1"));
     });
 });

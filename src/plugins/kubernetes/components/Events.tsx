@@ -5,7 +5,7 @@ import { EventList } from "./PodView";
 
 type Which = "all" | "warnings";
 
-export function Events({ events, find }: { events: KubeEvent[]; find: string }) {
+export function Events({ events, find, onOpenPod }: { events: KubeEvent[]; find: string; onOpenPod: (event: KubeEvent) => void }) {
     const [which, setWhich] = useState<Which>("warnings");
     const words = find.trim().toLowerCase();
     const found = events.filter(
@@ -32,6 +32,10 @@ export function Events({ events, find }: { events: KubeEvent[]; find: string }) 
             <EventList
                 events={which === "warnings" ? warnings : found}
                 showObject
+                onOpenPod={(name) => {
+                    const event = events.find((each) => each.object === `Pod/${name}`);
+                    if (event) onOpenPod(event);
+                }}
                 empty={which === "warnings" ? "No warnings. Everything here is going as asked." : "No events in the last hour."}
             />
         </section>
