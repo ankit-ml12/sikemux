@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,9 @@ pub struct RecentSession {
     pub(crate) title: String,
     pub(crate) mtime: u64,
     pub(crate) project: String,
+    /// The worktree of `project` the chat ran in, which it resumes in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cwd: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -235,7 +238,17 @@ pub fn recent_page(request: RecentRequest) -> Result<RecentPage, String> {
     if request.projects.len() > MAX_PROJECTS || request.exclude.len() > MAX_EXCLUDED {
         return Err("too many projects or excluded sessions".into());
     }
-    let projects: HashSet<String> = request.projects.into_iter().collect();
+    let home: HashMap<String, String> = request
+        .projects
+        .iter()
+        .flat_map(|project| {
+            worktree_checkouts(project)
+                .into_iter()
+                .map(|checkout| (checkout, project.clone()))
+                .chain([(project.clone(), project.clone())])
+        })
+        .collect();
+    let projects: HashSet<String> = home.keys().cloned().collect();
     let exclude: HashSet<(String, String)> = request
         .exclude
         .into_iter()
@@ -279,15 +292,53 @@ pub fn recent_page(request: RecentRequest) -> Result<RecentPage, String> {
         });
     let sessions = hits
         .into_iter()
-        .map(|hit| RecentSession {
-            agent: hit.agent,
-            id: hit.found.session.id,
-            title: hit.found.session.title,
-            mtime: hit.found.session.mtime,
-            project: hit.found.project,
+        .map(|hit| {
+            let ran_in = hit.found.project;
+            let project = home.get(&ran_in).cloned().unwrap_or_else(|| ran_in.clone());
+            RecentSession {
+                agent: hit.agent,
+                id: hit.found.session.id,
+                title: hit.found.session.title,
+                mtime: hit.found.session.mtime,
+                cwd: (ran_in != project).then_some(ran_in),
+                project,
+            }
         })
         .collect();
     Ok(RecentPage { sessions, next })
+}
+
+/// Where `project` stands in each worktree the core cut of its repository,
+/// or of the repositories it holds, so a chat that ran in one is listed under
+/// the project.
+fn worktree_checkouts(project: &str) -> Vec<String> {
+    let project = Path::new(project);
+    let beside = project.ancestors().find_map(|top| {
+        let name = top.file_name()?.to_string_lossy();
+        let folder = top.with_file_name(format!("{name}.worktrees"));
+        let inside = project.strip_prefix(top).ok()?.to_path_buf();
+        folder.is_dir().then_some((folder, inside))
+    });
+    let held = std::fs::read_dir(project)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".worktrees"))
+        .map(|entry| (entry.path(), PathBuf::new()));
+    beside
+        .into_iter()
+        .chain(held)
+        .flat_map(|(folder, inside)| {
+            std::fs::read_dir(folder)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+                .map(move |entry| entry.path().join(&inside))
+        })
+        .filter(|checkout| checkout.is_dir())
+        .map(|checkout| checkout.to_string_lossy().into_owned())
+        .collect()
 }
 
 #[cfg(test)]

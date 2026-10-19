@@ -37,7 +37,7 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
         cmd.renameAgentSession(
             {
                 type: chat.agent,
-                cwd: chat.project,
+                cwd: chat.cwd ?? chat.project,
                 sessionId: chat.id,
                 configPath: provider?.configPath ?? undefined,
                 executablePath: provider?.command,
@@ -51,7 +51,7 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
         const provider = providerOf(chat);
         const session = {
             type: chat.agent,
-            cwd: chat.project,
+            cwd: chat.cwd ?? chat.project,
             sessionId: chat.id,
             configPath: provider?.configPath ?? undefined,
             executablePath: provider?.command,

@@ -57,6 +57,8 @@ export interface RecentChat extends AgentSession {
     agent: AgentType;
     /** The project folder the chat ran in. */
     project: string;
+    /** The worktree of the project the chat ran in, when it ran in one. */
+    cwd?: string;
 }
 
 export interface RecentChatsPage {

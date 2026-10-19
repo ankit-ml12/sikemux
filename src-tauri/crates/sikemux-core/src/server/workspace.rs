@@ -1743,7 +1743,7 @@ fn newest(requests: Vec<(String, RecentRequest)>) -> Vec<Recent> {
                 provider: session.agent.to_owned(),
                 session_id: session.id,
                 title: session.title.chars().take(MAX_TITLE_CHARS).collect(),
-                cwd: session.project.into(),
+                cwd: session.cwd.unwrap_or(session.project).into(),
                 active_at: session.mtime * 1000,
             }))
         })

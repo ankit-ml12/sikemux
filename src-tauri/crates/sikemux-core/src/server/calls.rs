@@ -37,6 +37,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         "changeOwners" | "commitOwners" | "activitySummary" | "showCi" => Needs::Watch,
         "setActivityPrice" | "setLinkSignIns" => Needs::Person,
         "createAgentWorktree" => Needs::Person,
+        "agentWorktreeAt" => Needs::Full,
         "modelProviders" | "modelProviderModels" | "modelHelper" | "agentSignIns" => Needs::Full,
         "agentSignIn" | "agentSignInCode" | "cancelAgentSignIn" | "agentSignOut" => Needs::Person,
         "skillsOverview" | "skillsAdded" | "savedSessions" | "recentSessions" => Needs::Full,
@@ -158,6 +159,7 @@ pub(crate) async fn call(
         "updateAgent" => answer(workspace::update_agent(&core, parse(params)?)?),
         "closeAgents" => answer(workspace::close_agents(&core, parse(params)?)?),
         "createAgentWorktree" => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
+        "agentWorktreeAt" => answer(super::sandbox::at(parse(params)?).await?),
         method if method.starts_with("git.") => {
             super::git::call(&core, &client.peer, method, params).await
         }

@@ -106,6 +106,7 @@ export interface AddAgentOptions {
     model?: string;
     effort?: AgentEffort;
     cwd?: string;
+    worktree?: AgentWorktree;
     /** Pin launches to the project that opened the picker. */
     sessionId?: string;
     detectedExecutablePath?: string;
@@ -156,6 +157,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             profileId,
             executablePath,
             cwd,
+            ...(options.worktree ? { worktree: options.worktree } : {}),
             model,
             effort: options.effort,
             ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
@@ -177,14 +179,35 @@ export interface SavedChat {
     id: string;
     title: string;
     project: string;
+    /** The worktree of the project the chat ran in, when it ran in one. */
+    cwd?: string;
 }
 
-/** Resumes a saved chat in the project it ran in; one already open there comes forward instead. */
-export function openSavedChat(chat: SavedChat, options: { background?: boolean; detectedExecutablePath?: string } = {}): void {
+interface SavedChatOptions {
+    background?: boolean;
+    detectedExecutablePath?: string;
+}
+
+/** Resumes a saved chat in the project it ran in, back in its worktree if it had one; one already open there comes forward instead. */
+export function openSavedChat(chat: SavedChat, options: SavedChatOptions = {}): void {
+    const { cwd } = chat;
+    if (!cwd) return resumeSavedChat(chat, options);
+    void coreCall<AgentWorktree | null>("agentWorktreeAt", { cwd }).then(
+        (worktree) => resumeSavedChat(chat, options, cwd, worktree ?? undefined),
+        (failure: unknown) => {
+            swallow("worktree of a saved chat")(failure);
+            resumeSavedChat(chat, options, cwd);
+        },
+    );
+}
+
+function resumeSavedChat(chat: SavedChat, options: SavedChatOptions, cwd?: string, worktree?: AgentWorktree): void {
     const state = getState();
     const project = projectSessionId(state, chat.project) ?? undefined;
     addAgent(chat.agent, chat.id, chat.title, {
         sessionId: project,
+        cwd,
+        worktree,
         profileId: selectedProviderProfile(chat.agent, state.providerProfiles, state.selectedProviderProfileIds)?.id,
         detectedExecutablePath: options.detectedExecutablePath,
         background: options.background,

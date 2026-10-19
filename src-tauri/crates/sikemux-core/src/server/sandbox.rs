@@ -240,6 +240,50 @@ pub(crate) fn cut_for(
     ))
 }
 
+#[derive(Deserialize)]
+pub(crate) struct AtParams {
+    cwd: PathBuf,
+}
+
+/// The worktree the core cut that `cwd` lies in, read back from git, for a
+/// saved chat that resumes there. The project's current branch stands in as
+/// its base.
+pub(crate) async fn at(params: AtParams) -> CoreResult<Option<AgentWorktree>> {
+    Ok(blocking(move || Ok(read_back(&params.cwd))).await?)
+}
+
+fn read_back(cwd: &Path) -> Option<AgentWorktree> {
+    let path = PathBuf::from(
+        git(
+            cwd,
+            &["rev-parse", "--path-format=absolute", "--show-toplevel"],
+        )
+        .ok()?,
+    );
+    let main = PathBuf::from(
+        git(
+            &path,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )
+        .ok()?,
+    )
+    .parent()?
+    .to_path_buf();
+    if !path.starts_with(worktrees_folder(&main)) {
+        return None;
+    }
+    let branch = git(&path, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok()?;
+    let base = git(&main, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
+    let start_sha = git(&main, &["merge-base", "HEAD", &branch]).ok()?;
+    Some(AgentWorktree {
+        repo: main,
+        path,
+        branch,
+        base,
+        start_sha,
+    })
+}
+
 /// Gives an agent a worktree of its own cut from where its checkout is now,
 /// moves it there, and starts it again there if it was running.
 pub(crate) async fn for_agent(core: &Arc<Core>, params: ForAgentParams) -> CoreResult<ForAgent> {
