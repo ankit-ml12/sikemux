@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppState, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import type { ConnectionLike } from '@sikemux/native';
 
@@ -53,7 +53,7 @@ function usePairing(connection: ConnectionLike | undefined) {
     return () => listener.remove();
   }, []);
 
-  const change = async (id: string, method: 'answerPairing' | 'changeDevice', params: object) => {
+  const change = async (id: string, method: 'answerPairing' | 'changeDevice' | 'setLinkSignIns', params: object) => {
     if (!connection || busy) return;
     setBusy(id);
     try {
@@ -76,6 +76,7 @@ function usePairing(connection: ConnectionLike | undefined) {
     reread: () => setReads((count) => count + 1),
     answer: (id: string, access: DeviceAccess | null) => change(id, 'answerPairing', { allow: access !== null, access: access ?? 'watch' }),
     setAccess: (id: string, access: DeviceAccess | null) => change(id, 'changeDevice', { access }),
+    setSignIns: (id: string, allowed: boolean) => change(id, 'setLinkSignIns', { allowed }),
   };
 }
 
@@ -121,19 +122,24 @@ function DeviceSheet({
 
 const hostKind = (platform: string) => (platform === 'linux' ? 'desktop' : 'laptop');
 
-/** A host linked with this one: what the link is, and ending it. */
+/** A host linked with this one: what the link is, whether its agents may use this host's sign-ins, and ending it. */
 function LinkSheet({
   link,
   now,
+  busy,
   onClose,
+  onSignIns,
   onRemove,
 }: {
   link?: LinkedHost;
   now: number;
+  busy: boolean;
   onClose: () => void;
+  onSignIns: (id: string, allowed: boolean) => void;
   onRemove: (id: string) => void;
 }) {
   const styles = useStyles(makeStyles);
+  const colors = useColors();
   const type = useType();
   return (
     <Sheet visible={!!link} onClose={onClose}>
@@ -145,6 +151,21 @@ function LinkSheet({
           <Text style={type.meta}>
             {platformName(link.platform)} · linked {formatAgo(link.linkedAt, now)} · {agentCount(link.agents)} across the link
           </Text>
+          <View style={styles.boxed}>
+            <Icon name="IconLock" size={18} color={colors.secondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.boxedTitle}>Let its agents use sign-ins here</Text>
+              <Text style={type.meta}>Plugins, databases and signed-in tabs</Text>
+            </View>
+            <Switch
+              value={link.signIns}
+              disabled={busy}
+              onValueChange={(allowed) => onSignIns(link.id, allowed)}
+              trackColor={{ false: colors.active, true: colors.live }}
+              thumbColor={colors.ink}
+              accessibilityLabel="Let its agents use sign-ins here"
+            />
+          </View>
           <Button
             kind="danger"
             title="Remove link"
@@ -178,7 +199,7 @@ export default function HostPairing() {
   const device = devices.find((known) => known.core === core);
   const live = useLive(core);
   const connection = live.status === 'open' ? live.connection : undefined;
-  const { pairing, problem, busy, reread, answer, setAccess } = usePairing(connection);
+  const { pairing, problem, busy, reread, answer, setAccess, setSignIns } = usePairing(connection);
   const [editing, setEditing] = useState<string>();
   const [linkOpen, setLinkOpen] = useState<string>();
   const phone = useDeviceId();
@@ -289,7 +310,9 @@ export default function HostPairing() {
       <LinkSheet
         link={links.find((link) => link.id === linkOpen)}
         now={now}
+        busy={busy === linkOpen}
         onClose={() => setLinkOpen(undefined)}
+        onSignIns={(id, allowed) => void setSignIns(id, allowed)}
         onRemove={(id) => void setAccess(id, null)}
       />
     </Screen>
@@ -309,5 +332,18 @@ const makeStyles = (colors: Palette) => {
     sheet: { paddingHorizontal: 4, gap: 12 },
     sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     remove: { marginTop: 8 },
+    boxed: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      minHeight: 52,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 9,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    boxedTitle: { ...type.row, fontSize: 15, color: colors.ink },
   });
 };
