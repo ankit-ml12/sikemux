@@ -183,7 +183,10 @@ mod tests {
         let plain = |text| queued(text, &[], &[]);
         assert_eq!(batch_len(&[plain("a"), plain("b")]), 2);
         assert_eq!(batch_len(&[plain("/compact"), plain("b")]), 1);
-        assert_eq!(batch_len(&[plain("a"), plain("b"), plain("/review"), plain("c")]), 2);
+        assert_eq!(
+            batch_len(&[plain("a"), plain("b"), plain("/review"), plain("c")]),
+            2
+        );
     }
 
     #[test]

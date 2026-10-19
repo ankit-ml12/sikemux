@@ -69,7 +69,12 @@ macro_rules! methods {
     };
 }
 
-pub(crate) async fn call(core: &Core, peer: &Peer, method: &str, params: Value) -> CoreResult<Value> {
+pub(crate) async fn call(
+    core: &Core,
+    peer: &Peer,
+    method: &str,
+    params: Value,
+) -> CoreResult<Value> {
     if matches!(peer, Peer::Device { .. }) {
         let asked = ["repo", "root"]
             .into_iter()

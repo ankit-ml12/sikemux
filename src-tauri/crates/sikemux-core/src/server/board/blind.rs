@@ -14,11 +14,11 @@ use super::auto::Stage;
 use super::finish::{self, change_run, Step};
 use super::review::MAX_ROUNDS;
 use super::{git, Card, State};
+use crate::cli::protocol::{REVIEWER_OFFER, TOOLS_OFFER_ENV};
 use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
 use crate::server::spawn::Ending;
-use crate::cli::protocol::{REVIEWER_OFFER, TOOLS_OFFER_ENV};
 use crate::server::{chat, messages, Core};
 
 const MAX_DIFF_BYTES: usize = 200 * 1024;
@@ -257,7 +257,9 @@ async fn start(core: &Arc<Core>, step: &Step, agent: &str, head: &str) -> Result
             );
             core.names.make_blind(&agent);
             launch.agent_id = agent.clone();
-            launch.env.insert(TOOLS_OFFER_ENV.into(), REVIEWER_OFFER.into());
+            launch
+                .env
+                .insert(TOOLS_OFFER_ENV.into(), REVIEWER_OFFER.into());
             Ok((launch, launcher, named.name))
         })
         .await

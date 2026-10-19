@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::launch::model_feed::{Cost, Model, Snapshot};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Bare family names could be any generation, and synthetic messages were never billed.

@@ -28,8 +28,7 @@ const SETTLE_POLL: Duration = Duration::from_millis(200);
 const NOT_RUNNING: i32 = 3;
 
 pub const COMMANDS: &[&str] = &[
-    "status", "login", "logout", "pair", "start", "stop", "restart", "enable", "disable",
-    "plugins",
+    "status", "login", "logout", "pair", "start", "stop", "restart", "enable", "disable", "plugins",
 ];
 
 /// Runs `command` with the arguments after it.
@@ -480,8 +479,8 @@ fn plugins(args: &[String]) -> Result<(), String> {
         false => format!("sikemux.{plugin}"),
     };
     let socket = running()?;
-    let endpoint = crate::cli_paths::cli_endpoint_path()
-        .ok_or("Sikemux's tool endpoint is unavailable")?;
+    let endpoint =
+        crate::cli_paths::cli_endpoint_path().ok_or("Sikemux's tool endpoint is unavailable")?;
     runtime()?.block_on(plugin_login(&socket, endpoint, &plugin))
 }
 
@@ -507,15 +506,16 @@ async fn plugin_login(socket: &Path, endpoint: PathBuf, plugin: &str) -> Result<
     let (sent, mut events) = tokio::sync::mpsc::unbounded_channel();
     std::thread::spawn(move || {
         for line in std::io::BufReader::new(stream).lines() {
-            let event = line.ok().and_then(|line| {
-                match serde_json::from_str::<CliServerResponse>(&line).ok()? {
-                    CliServerResponse::Result { value } => serde_json::from_value(value).ok(),
-                    CliServerResponse::Error { message } => Some(StreamEvent::Error {
-                        error: Failure::new("", "core", message),
-                    }),
-                    _ => None,
-                }
-            });
+            let event =
+                line.ok().and_then(|line| {
+                    match serde_json::from_str::<CliServerResponse>(&line).ok()? {
+                        CliServerResponse::Result { value } => serde_json::from_value(value).ok(),
+                        CliServerResponse::Error { message } => Some(StreamEvent::Error {
+                            error: Failure::new("", "core", message),
+                        }),
+                        _ => None,
+                    }
+                });
             if event.is_none() || sent.send(event).is_err() {
                 break;
             }

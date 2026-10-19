@@ -750,9 +750,13 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
                 chat.attention_rank,
                 Shown {
                     agent_id: chat.agent_id.clone(),
-                    title: chat.title.clone().filter(|title| !title.is_empty()).unwrap_or_else(|| {
-                        format!("New {} chat", provider_name(core, &chat.provider))
-                    }),
+                    title: chat
+                        .title
+                        .clone()
+                        .filter(|title| !title.is_empty())
+                        .unwrap_or_else(|| {
+                            format!("New {} chat", provider_name(core, &chat.provider))
+                        }),
                     status: chat.status,
                     group: chat.group,
                     unread: chat.unread,
@@ -772,9 +776,13 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
             session.attention_rank.unwrap_or(u32::MAX),
             Shown {
                 agent_id: agent_id.clone(),
-                title: session.title.clone().filter(|title| !title.is_empty()).unwrap_or_else(|| {
-                    provider_name(core, session.agent_type.as_deref().unwrap_or("agent"))
-                }),
+                title: session
+                    .title
+                    .clone()
+                    .filter(|title| !title.is_empty())
+                    .unwrap_or_else(|| {
+                        provider_name(core, session.agent_type.as_deref().unwrap_or("agent"))
+                    }),
                 status: session.status?,
                 group: session.group?,
                 unread: session.unread,

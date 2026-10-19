@@ -31,7 +31,9 @@ struct State {
 
 impl State {
     fn viewed(&self, agent_id: &str) -> bool {
-        self.views.values().any(|view| view.agents.contains(agent_id))
+        self.views
+            .values()
+            .any(|view| view.agents.contains(agent_id))
     }
 
     fn looked_at(&self, agent_id: &str) -> bool {
@@ -51,7 +53,8 @@ impl State {
             .cloned()
             .collect();
         if view.looking {
-            self.unread.retain(|agent_id| !view.agents.contains(agent_id));
+            self.unread
+                .retain(|agent_id| !view.agents.contains(agent_id));
         }
         if !view.agents.is_empty() {
             self.views.insert(client, view);

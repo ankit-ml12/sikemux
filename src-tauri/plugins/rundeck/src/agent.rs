@@ -436,15 +436,25 @@ pub struct RunAsk {
 
 /// Whether a job's top folder or project names production, by the words in the plugin's settings.
 fn is_production(detail: &JobDetail, prod_envs: &[String]) -> bool {
-    let top_folder = detail
-        .group
-        .as_deref()
-        .and_then(|group| group.split('/').map(str::trim).find(|segment| !segment.is_empty()));
+    let top_folder = detail.group.as_deref().and_then(|group| {
+        group
+            .split('/')
+            .map(str::trim)
+            .find(|segment| !segment.is_empty())
+    });
     let names_production = |name: &str| {
         let lower = name.to_lowercase();
         std::iter::once(lower.as_str())
-            .chain(lower.split(['-', '_', '.', '/', ' ']).filter(|token| !token.is_empty()))
-            .any(|token| prod_envs.iter().any(|env| env.trim().eq_ignore_ascii_case(token)))
+            .chain(
+                lower
+                    .split(['-', '_', '.', '/', ' '])
+                    .filter(|token| !token.is_empty()),
+            )
+            .any(|token| {
+                prod_envs
+                    .iter()
+                    .any(|env| env.trim().eq_ignore_ascii_case(token))
+            })
     };
     top_folder.is_some_and(names_production) || names_production(&detail.project)
 }

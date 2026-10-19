@@ -7,9 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{
-    AllowedDevice, BackdropImage, DeviceAccess, RemoteStatus,
-};
+use sikemux_core::protocol::{AllowedDevice, BackdropImage, DeviceAccess, RemoteStatus};
 use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppResult;

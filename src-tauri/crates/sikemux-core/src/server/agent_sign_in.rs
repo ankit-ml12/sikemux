@@ -43,7 +43,10 @@ struct Account {
 
 impl Account {
     fn check(&self) -> CoreResult<()> {
-        let long = |path: &Option<String>| path.as_ref().is_some_and(|path| path.len() > MAX_PATH_CHARS);
+        let long = |path: &Option<String>| {
+            path.as_ref()
+                .is_some_and(|path| path.len() > MAX_PATH_CHARS)
+        };
         if long(&self.executable_path) || long(&self.config_path) {
             return Err("that path is longer than Sikemux takes".into());
         }
@@ -59,11 +62,9 @@ impl Account {
     }
 
     async fn command(&self) -> CoreResult<Command> {
-        let program: PathBuf = crate::launch::discovery::resolve(
-            self.agent.as_str(),
-            self.executable_path.as_deref(),
-        )
-        .await?;
+        let program: PathBuf =
+            crate::launch::discovery::resolve(self.agent.as_str(), self.executable_path.as_deref())
+                .await?;
         Ok(cli(
             self.agent.as_str(),
             &program,

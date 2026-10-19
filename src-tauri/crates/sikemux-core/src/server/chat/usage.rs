@@ -61,8 +61,7 @@ impl Chat {
         let start = start.clone();
         tokio::task::spawn_blocking(move || {
             let cwd = launch.cwd.to_string_lossy();
-            let Some(saved) = read_session_context(kind, &cwd, &resumed, account.as_deref())
-            else {
+            let Some(saved) = read_session_context(kind, &cwd, &resumed, account.as_deref()) else {
                 return;
             };
             let size = saved
@@ -100,7 +99,11 @@ mod tests {
     fn a_model_named_for_a_million_tokens_has_the_long_window() {
         assert_eq!(window(&models("opus[1m]", &[]), None, 0), LONG_WINDOW);
         assert_eq!(
-            window(&models("default", &[("default", "Opus (1M context)")]), None, 0),
+            window(
+                &models("default", &[("default", "Opus (1M context)")]),
+                None,
+                0
+            ),
             LONG_WINDOW
         );
         assert_eq!(window(&json!({}), Some("sonnet[1m]"), 0), LONG_WINDOW);
@@ -108,14 +111,26 @@ mod tests {
 
     #[test]
     fn a_session_past_the_standard_window_has_the_long_one() {
-        assert_eq!(window(&json!({}), Some("claude-opus-5-5"), 515_222), LONG_WINDOW);
-        assert_eq!(window(&json!({}), Some("claude-opus-5-5"), 150_000), DEFAULT_WINDOW);
+        assert_eq!(
+            window(&json!({}), Some("claude-opus-5-5"), 515_222),
+            LONG_WINDOW
+        );
+        assert_eq!(
+            window(&json!({}), Some("claude-opus-5-5"), 150_000),
+            DEFAULT_WINDOW
+        );
     }
 
     #[test]
     fn every_other_model_has_the_standard_window() {
-        assert_eq!(window(&models("sonnet", &[("sonnet", "Sonnet 5")]), None, 0), DEFAULT_WINDOW);
+        assert_eq!(
+            window(&models("sonnet", &[("sonnet", "Sonnet 5")]), None, 0),
+            DEFAULT_WINDOW
+        );
         assert_eq!(window(&json!({}), Some("sonnet"), 0), DEFAULT_WINDOW);
-        assert_eq!(window(&models("claude-1mini", &[]), None, 0), DEFAULT_WINDOW);
+        assert_eq!(
+            window(&models("claude-1mini", &[]), None, 0),
+            DEFAULT_WINDOW
+        );
     }
 }
