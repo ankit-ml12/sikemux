@@ -13,3 +13,5 @@ export const vercelLogR = vercel.resource("log", (team: string, id: string) => v
 export const vercelDomainsR = vercel.resource("domains", (team: string, project: string) => vercelApi.domains(team, project), 60_000);
 
 export const vercelEnvR = vercel.resource("env", (team: string, project: string) => vercelApi.env(team, project), 60_000);
+
+export const vercelSettingsR = vercel.resource("settings", (team: string, project: string) => vercelApi.settings(team, project), 60_000);

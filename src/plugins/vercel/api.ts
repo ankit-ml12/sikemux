@@ -101,6 +101,24 @@ export interface VercelVariable {
     updatedAt: number | null;
 }
 
+export interface VercelSettings {
+    id: string;
+    name: string;
+    framework: string | null;
+    buildCommand: string | null;
+    outputDirectory: string | null;
+    installCommand: string | null;
+    devCommand: string | null;
+    rootDirectory: string | null;
+    nodeVersion: string | null;
+    /** The Node versions Vercel builds with. */
+    nodeVersions: string[];
+}
+
+export type SettingsChange = Partial<
+    Pick<VercelSettings, "framework" | "buildCommand" | "outputDirectory" | "installCommand" | "devCommand" | "rootDirectory" | "nodeVersion">
+>;
+
 /** Every call names its team, so the pane never acts on another team than the one it shows. */
 export const vercelApi = {
     status: () => backend.call<VercelStatus>("status"),
@@ -117,4 +135,7 @@ export const vercelApi = {
     redeploy: (team: string, id: string, target?: "production") => backend.call<VercelDeployment>("redeploy", { team, id, target }),
     promote: (team: string, id: string) => backend.call<VercelDeployment>("promote", { team, id }),
     cancel: (team: string, id: string) => backend.call<VercelDeployment>("cancel", { team, id }),
+    settings: (team: string, project: string) => backend.call<VercelSettings>("settings", { team, project }),
+    updateSettings: (team: string, project: string, settings: SettingsChange) =>
+        backend.call<VercelSettings>("updateSettings", { team, project, settings }),
 };

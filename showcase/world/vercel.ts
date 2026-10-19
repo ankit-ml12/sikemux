@@ -192,6 +192,22 @@ const find = (id: unknown) =>
   DEPLOYMENTS.find((each) => each.id === id) ?? DEPLOYMENTS[2];
 
 export const VERCEL: Record<string, (params: Params) => unknown> = {
+  settings: ({ project }) => ({
+    id: `prj_${String(project)}`,
+    name: project,
+    framework: "nextjs",
+    buildCommand: null,
+    outputDirectory: null,
+    installCommand: "pnpm install --frozen-lockfile",
+    devCommand: null,
+    rootDirectory: "apps/storefront",
+    nodeVersion: "22.x",
+    nodeVersions: ["24.x", "22.x", "20.x"],
+  }),
+  updateSettings: ({ project, settings }) => ({
+    ...(VERCEL.settings!({ project }) as object),
+    ...(settings as object),
+  }),
   status: () => ({
     configured: true,
     ok: true,

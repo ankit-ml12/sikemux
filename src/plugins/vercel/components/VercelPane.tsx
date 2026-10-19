@@ -8,6 +8,7 @@ import { vercel, vercelProjectsR } from "../resources";
 import { updateVercelView, useVercelView, type VercelSection } from "../state";
 import { Deployment } from "./Deployment";
 import { Deployments } from "./Deployments";
+import { BuildSettings } from "./BuildSettings";
 import { Domains, Environment } from "./Settings";
 import { Overview } from "./Overview";
 import { Projects } from "./Projects";
@@ -33,6 +34,7 @@ const SECTIONS: { value: VercelSection; label: string }[] = [
     { value: "deployments", label: "Deployments" },
     { value: "env", label: "Environment Variables" },
     { value: "domains", label: "Domains" },
+    { value: "settings", label: "Settings" },
 ];
 
 /** The account's dashboard laid out as Vercel's: a sidebar of the team and the project's pages, and the page beside it. */
@@ -218,6 +220,8 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                             onFilter={(patch) => updateVercelView(paneId, patch)}
                             onOpen={(id) => updateVercelView(paneId, { deployment: id })}
                         />
+                    ) : view.section === "settings" ? (
+                        <BuildSettings active={active} team={team} project={project.name} />
                     ) : view.section === "env" ? (
                         <Environment active={active} team={team} project={project.name} find={view.find} />
                     ) : (

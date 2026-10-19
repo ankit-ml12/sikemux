@@ -753,3 +753,35 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+.vercel-form-box {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.vercel-form-box h3 {
+    margin: 0 0 4px;
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+}
+
+.vercel-form-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.vercel-form-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.vercel-form-foot .vercel-muted {
+    margin-right: auto;
+}
