@@ -22,7 +22,7 @@ use crate::cli::protocol::{
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
 use crate::harness::journal::{EventsPage, JournalRecord, Journals};
 use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsRecord};
-use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
+use crate::protocol::{SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
 use super::messages::{self, Mailbox};
@@ -639,8 +639,7 @@ async fn dispatch(
 const PAGE_IN_REPLY: &str = "The person sees the page in your reply, above the text you write next. Do not describe or restate it; write only what it does not already say.";
 const PAGE_ON_DESK: &str =
     "The page is open on your desk, beside your terminal, where the person can see it.";
-const PAGE_KEPT: &str =
-    "The page is kept, but no Sikemux window is open to show it on your desk.";
+const PAGE_KEPT: &str = "The page is kept, but no Sikemux window is open to show it on your desk.";
 
 /// Keeps the page an agent wrote. A chat shows it in its reply; for an agent
 /// in a terminal the window opens it on the agent's desk.
@@ -955,8 +954,20 @@ pub(crate) async fn stop_run(core: &Arc<Core>, execution_id: &str) -> Result<Run
     })
 }
 
-/// Stops the active runs a closed project or agent leaves behind, or one the
-/// window replaces.
+/// The runs that match every field given.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RunSelector {
+    #[serde(default)]
+    execution_id: Option<String>,
+    #[serde(default)]
+    project: Option<String>,
+    #[serde(default)]
+    agent_id: Option<String>,
+}
+
+/// Stops the active runs that match, such as the ones a closed project or
+/// agent leaves behind.
 pub(crate) async fn stop_runs(core: &Arc<Core>, selector: RunSelector) {
     let matching = core.harness.read(|state| {
         state.runs.matching(|run| {

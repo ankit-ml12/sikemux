@@ -19,7 +19,7 @@ use sikemux_wire::protocol::{
     Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment, ChatContext,
     ChatEvent, ChatInfo, ChatLaunch, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
     FrameKind, HostRegistration, LaunchIdentity, RemoteStatus, Request, RequestId, Response,
-    RunSelector, ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
+    ServerMessage, SessionId, SessionInfo, SpawnTarget, WindowAnswer, WindowCall,
     Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
@@ -519,17 +519,6 @@ impl CoreClient {
     /// Every tab a waiting CLI `open` opened has closed.
     pub fn window_open_closed(&self, call_id: CallId) {
         self.send(&ClientMessage::WindowOpenClosed { call_id });
-    }
-
-    pub async fn harness_awaiting_trust(&self, execution_id: String) -> Result<(), ClientError> {
-        self.request_done(Request::HarnessAwaitingTrust { execution_id })
-            .await
-    }
-
-    /// Resolves once every matching run has stopped.
-    pub async fn harness_stop_runs(&self, selector: RunSelector) -> Result<(), ClientError> {
-        self.request_done(Request::HarnessStopRuns { selector })
-            .await
     }
 
     pub async fn plugins_changed(&self) -> Result<(), ClientError> {

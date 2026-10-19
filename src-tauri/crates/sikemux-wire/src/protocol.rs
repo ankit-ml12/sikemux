@@ -163,15 +163,6 @@ pub enum Request {
     /// This connection is the app's window from now on, replacing any other.
     /// Tool calls that need the window are sent to it.
     RegisterWindow,
-    /// The window is asking the person to trust the project's tasks before it
-    /// launches this run.
-    HarnessAwaitingTrust {
-        execution_id: String,
-    },
-    /// Stops the active harness runs that match every field given.
-    HarnessStopRuns {
-        selector: RunSelector,
-    },
     /// The person did something in a plugin, such as signing in, that may
     /// change the tools it offers agents.
     PluginsChanged,
@@ -617,17 +608,6 @@ pub struct ChatInfo {
     /// in the order they want the person: 0 first.
     #[serde(default)]
     pub attention_rank: u32,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunSelector {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub execution_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_id: Option<String>,
 }
 
 /// Something only the app's window can do, asked of it by the core. Requests

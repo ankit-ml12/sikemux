@@ -250,8 +250,7 @@ pub(crate) async fn call(
         "taskStart" => answer(super::tasks::start(&core, parse(params)?).await?),
         "taskRerunFailed" => answer(super::tasks::rerun_failed(&core, parse(params)?).await?),
         "taskStop" => {
-            let params: RunParams = parse(params)?;
-            super::harness::stop_run(&core, &params.execution_id).await?;
+            super::harness::stop_runs(&core, parse(params)?).await;
             answer(())
         }
         "trustAsks" => answer(super::tasks::asks(&core)),
@@ -337,12 +336,6 @@ struct PortsParams {
 struct TrustProjectParams {
     project: String,
     fingerprint: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RunParams {
-    execution_id: String,
 }
 
 #[derive(Deserialize)]

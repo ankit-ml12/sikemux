@@ -388,7 +388,6 @@ pub fn run() {
             harness::harness_resolve_path,
             harness::harness_claim,
             harness::harness_reply,
-            harness::harness_stop_runs,
             cli_open::cli_frontend_ready,
             cli_open::cli_claim_open_requests,
             cli_open::cli_open_result,

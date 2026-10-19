@@ -142,7 +142,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "harness_resolve_path",
     "harness_claim",
     "harness_reply",
-    "harness_stop_runs",
     "cli_frontend_ready",
     "cli_claim_open_requests",
     "cli_open_result",

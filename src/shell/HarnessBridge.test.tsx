@@ -50,12 +50,12 @@ describe("closing a project", () => {
         installIpcTransportForTests(transport);
         transport.register("harness_claim", () => []);
         const stop = vi.fn();
-        transport.register("harness_stop_runs", stop);
+        transport.register("core_call", stop);
         createProjectSession("/gone");
         const view = render(<HarnessBridge />);
         const session = Object.values(useStore.getState().sessions).find((session) => session.cwd === "/gone")!;
         closeSession(session.id);
-        await waitFor(() => expect(stop).toHaveBeenCalledWith({ project: "/gone" }, expect.anything()));
+        await waitFor(() => expect(stop).toHaveBeenCalledWith({ method: "taskStop", params: { project: "/gone" } }, expect.anything()));
         view.unmount();
     });
 });

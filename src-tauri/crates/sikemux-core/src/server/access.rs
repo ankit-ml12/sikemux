@@ -98,8 +98,6 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::ExplainAgentDetection { .. }
         | Request::StopAll
         | Request::RegisterWindow
-        | Request::HarnessAwaitingTrust { .. }
-        | Request::HarnessStopRuns { .. }
         | Request::PluginsChanged
         | Request::Shutdown { .. }
         | Request::RemoteStatus
@@ -191,8 +189,6 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::Configure { .. }
         | Request::ReloadManifests
         | Request::RegisterWindow
-        | Request::HarnessAwaitingTrust { .. }
-        | Request::HarnessStopRuns { .. }
         | Request::PluginsChanged
         | Request::FocusAgent { .. }
         | Request::SetRemoteAccess { .. }

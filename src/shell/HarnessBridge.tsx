@@ -4,6 +4,7 @@ import { getIpcTransport } from "../api/transport";
 import type { HarnessRequest } from "../harness/service";
 import { projectSessionId } from "../state/selectors";
 import { useStore } from "../state/store";
+import { tasksApi } from "../tasks/coreTasks";
 import { errMessage, swallow } from "../state/toast";
 
 /** Answers the tool calls the core hands to the window, and stops the harness tasks of a project or agent that closes. */
@@ -51,7 +52,7 @@ export function HarnessBridge() {
             if (!controller.signal.aborted) await claim();
         })().catch(swallow("harness bridge"));
         const stopRuns = (selector: { project: string } | { agentId: string }) =>
-            void invokeCommand("harness_stop_runs", selector).catch(swallow("harness stop"));
+            void tasksApi.stopRuns(selector).catch(swallow("harness stop"));
         const unsubscribe = useStore.subscribe((state, previous) => {
             for (const session of Object.values(previous.sessions)) {
                 if (session.kind === "project" && !projectSessionId(state, session.cwd)) stopRuns({ project: session.cwd });

@@ -10,10 +10,9 @@ use std::time::Duration;
 use serde_json::Value;
 pub use sikemux_core::cli::protocol::HarnessRequest;
 use sikemux_core::cli::protocol::{is_browser_method, is_sim_method};
-use sikemux_core::protocol::{CallId, RunSelector, WindowAnswer, WindowCall};
+use sikemux_core::protocol::{CallId, WindowAnswer, WindowCall};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::error::AppResult;
 use crate::pty::PtyManager;
 
 pub const MAX_PENDING: usize = 64;
@@ -234,25 +233,6 @@ pub fn harness_reply(
             None => Ok(result.unwrap_or(Value::Null)),
         },
     );
-}
-
-/// Stops the harness runs that match every field given, and waits for them.
-#[tauri::command]
-pub async fn harness_stop_runs(
-    manager: State<'_, PtyManager>,
-    execution_id: Option<String>,
-    project: Option<String>,
-    agent_id: Option<String>,
-) -> AppResult<()> {
-    let client = manager.client().await?;
-    client
-        .harness_stop_runs(RunSelector {
-            execution_id,
-            project,
-            agent_id,
-        })
-        .await
-        .map_err(crate::pty::core_error)
 }
 
 #[tauri::command]

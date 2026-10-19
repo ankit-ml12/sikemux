@@ -20,8 +20,8 @@ use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
 use super::{
-    agent, attachments, chat, harness, local_peer, messages, remote, upgrade, window, workspace,
-    Core, CoreError, CoreResult,
+    agent, attachments, chat, local_peer, messages, remote, upgrade, window, workspace, Core,
+    CoreError, CoreResult,
 };
 
 pub(crate) type ClientId = u64;
@@ -531,19 +531,9 @@ async fn run_requests(
                 core.agents_changed();
                 client.respond(request_id, Ok(Response::Done));
             }
-            Request::HarnessAwaitingTrust { execution_id } => {
-                core.harness.awaiting_trust(&execution_id);
-                client.respond(request_id, Ok(Response::Done));
-            }
             Request::PluginsChanged => {
                 core.harness.plugins_changed();
                 client.respond(request_id, Ok(Response::Done));
-            }
-            Request::HarnessStopRuns { selector } => {
-                tokio::spawn(async move {
-                    harness::stop_runs(&core, selector).await;
-                    client.respond(request_id, Ok(Response::Done));
-                });
             }
             Request::Configure { manifest_dir } => {
                 tokio::spawn(async move {

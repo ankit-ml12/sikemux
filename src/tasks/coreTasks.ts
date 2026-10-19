@@ -106,6 +106,8 @@ export const tasksApi = {
     start: (project: string, taskId: string, how: { force?: boolean; fix?: boolean } = {}) =>
         coreCall<{ executionId: string } | { checks: Check[] }>("taskStart", { project, taskId, ...how }),
     stop: (executionId: string) => coreCall<void>("taskStop", { executionId }),
+    /** Stops every run of a project or an agent that closed. */
+    stopRuns: (selector: { project: string } | { agentId: string }) => coreCall<void>("taskStop", selector),
     rerunFailed: (executionId: string) => coreCall<{ taskId: string; executionId: string }>("taskRerunFailed", { executionId }),
     trustAsks: () => coreCall<PendingTrust[]>("trustAsks"),
     answerTrust: (id: string, trust: boolean) => coreCall<void>("answerTrust", { id, trust }),
