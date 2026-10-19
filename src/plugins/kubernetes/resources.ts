@@ -18,9 +18,9 @@ export const kubeNamespacesR = resource({
 
 export const kubePodsR = resource({
     kind: "kubernetes.pods",
-    fetch: (scope: Scope, all: boolean): Promise<Pod[]> => kubeApi.pods(scope, all),
+    fetch: (scope: Scope, all: boolean, selector: string | null): Promise<Pod[]> => kubeApi.pods(scope, all, selector),
     staleAfterMs: 5_000,
-    keyFn: keyOf,
+    keyFn: (args) => `${keyOf(args)}|${(args[2] as string | null) ?? ""}`,
 });
 
 export const kubeWorkloadsR = resource({

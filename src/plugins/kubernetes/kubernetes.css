@@ -316,3 +316,41 @@
 .k8s-ready-bar.short span {
     background: var(--warn);
 }
+
+.k8s-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.k8s-table th.k8s-num {
+    text-align: right;
+}
+
+.k8s-num-left {
+    font-variant-numeric: tabular-nums;
+}
+
+.k8s-restarts {
+    color: var(--warn);
+}
+
+.k8s-status.danger {
+    color: var(--danger);
+}
+
+.k8s-status.warn {
+    color: var(--warn);
+}
+
+.k8s-status.idle {
+    color: var(--text-tertiary);
+}
+
+.k8s-chip-button {
+    margin-left: 0;
+    cursor: pointer;
+}
+
+.k8s-chip-button:hover {
+    color: var(--text-primary);
+}

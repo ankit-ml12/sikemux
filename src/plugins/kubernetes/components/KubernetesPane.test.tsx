@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NIGHTLY, noKubectl, ready, WEB, WORKER } from "../testing";
+import { NIGHTLY, noKubectl, ready, WEB, WEB_POD, WORKER, WORKER_POD } from "../testing";
 
 const api = vi.hoisted(() => ({
     status: vi.fn(),
@@ -60,5 +60,29 @@ describe("the Kubernetes pane", () => {
         fireEvent.click(screen.getByRole("button", { name: /Namespace/ }));
         fireEvent.click(await screen.findByRole("option", { name: /All namespaces/ }));
         await waitFor(() => expect(api.workloads).toHaveBeenLastCalledWith({ context: "kind-dev", namespace: undefined }, true));
+    });
+
+    it("opens a workload's own pods, worst first, and lets the narrowing go", async () => {
+        api.pods.mockResolvedValue([WORKER_POD, WEB_POD]);
+        renderPane();
+        const workloads = await screen.findByRole("table", { name: "Workloads" });
+        fireEvent.click(within(workloads).getByRole("row", { name: "Deployment worker" }));
+        const pods = await screen.findByRole("table", { name: "Pods" });
+        expect(api.pods).toHaveBeenLastCalledWith({ context: "kind-dev", namespace: "default" }, false, "app=worker");
+        expect(within(pods).getByText("CrashLoopBackOff")).toBeInTheDocument();
+        expect(within(pods).getByText("6")).toHaveClass("k8s-restarts");
+        fireEvent.click(screen.getByRole("button", { name: /app=worker/ }));
+        await waitFor(() => expect(api.pods).toHaveBeenLastCalledWith({ context: "kind-dev", namespace: "default" }, false, null));
+    });
+
+    it("finds pods by name, owner or node", async () => {
+        api.pods.mockResolvedValue([WORKER_POD, WEB_POD]);
+        renderPane();
+        fireEvent.click(within(await screen.findByRole("navigation", { name: "Kubernetes" })).getByRole("button", { name: /Pods/ }));
+        const pods = await screen.findByRole("table", { name: "Pods" });
+        fireEvent.change(screen.getByRole("textbox", { name: "Find" }), { target: { value: "web" } });
+        expect(within(pods).getAllByRole("row")).toHaveLength(2);
+        fireEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: /^Needs attention/ }));
+        expect(screen.getByText("No pods match.")).toBeInTheDocument();
     });
 });

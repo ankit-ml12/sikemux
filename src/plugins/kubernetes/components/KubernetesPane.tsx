@@ -3,9 +3,10 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { refreshKubernetes, type KubeStatus, type Scope } from "../api";
 import { usePoll } from "../hooks";
-import { kubeNamespacesR, kubeStatusR, kubeWorkloadsR } from "../resources";
+import { kubeNamespacesR, kubePodsR, kubeStatusR, kubeWorkloadsR } from "../resources";
 import { ALL_NAMESPACES, updateKubeView, useKubeView, type KubeSection } from "../state";
 import { KubernetesMark } from "./KubernetesMark";
+import { Pods } from "./Pods";
 import { Workloads } from "./Workloads";
 import "../kubernetes.css";
 
@@ -34,7 +35,10 @@ function NotReady({ status, error, onRetry }: { status: KubeStatus | undefined; 
     );
 }
 
-const SECTIONS: { value: KubeSection; label: string }[] = [{ value: "workloads", label: "Workloads" }];
+const SECTIONS: { value: KubeSection; label: string }[] = [
+    { value: "workloads", label: "Workloads" },
+    { value: "pods", label: "Pods" },
+];
 
 function Cluster({ paneId, active, status }: { paneId: string; active: boolean; status: KubeStatus }) {
     const view = useKubeView(paneId);
@@ -47,9 +51,12 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
     const namespaces = useResourceEnabled(active, kubeNamespacesR, context);
     const workloads = useResourceEnabled(active && view.section === "workloads", kubeWorkloadsR, scope, all);
     usePoll(active && view.section === "workloads", LIST_POLL_MS, workloads.refresh);
+    const pods = useResourceEnabled(active && view.section === "pods", kubePodsR, scope, all, view.selector);
+    usePoll(active && view.section === "pods", LIST_POLL_MS, pods.refresh);
     const trouble = workloads.data?.filter((each) => each.health !== "ok").length ?? 0;
     const counts: Partial<Record<KubeSection, string>> = {
         workloads: workloads.data ? (trouble > 0 ? `${trouble} !` : String(workloads.data.length)) : "",
+        pods: pods.data ? String(pods.data.length) : "",
     };
 
     return (
@@ -99,7 +106,7 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                             type="button"
                             className={`k8s-nav-item${view.section === section.value ? " active" : ""}`}
                             aria-current={view.section === section.value ? "page" : undefined}
-                            onClick={() => updateKubeView(paneId, { section: section.value, pod: null })}>
+                            onClick={() => updateKubeView(paneId, { section: section.value, pod: null, selector: null })}>
                             <span>{section.label}</span>
                             <span className={`k8s-count${counts[section.value]?.endsWith("!") ? " trouble" : ""}`}>
                                 {counts[section.value]?.replace(" !", "")}
@@ -135,24 +142,46 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                     </button>
                 </header>
                 <div className="k8s-page">
-                    <StaleNotice handle={workloads} />
-                    {workloads.status === "error" && !workloads.data ? (
-                        <p className="k8s-note">{workloads.error}</p>
-                    ) : !workloads.data ? (
-                        <SkeletonRows rows={6} label="Loading workloads" />
+                    {view.section === "pods" ? (
+                        <>
+                            <StaleNotice handle={pods} />
+                            {pods.status === "error" && !pods.data ? (
+                                <p className="k8s-note">{pods.error}</p>
+                            ) : !pods.data ? (
+                                <SkeletonRows rows={6} label="Loading pods" />
+                            ) : (
+                                <Pods
+                                    pods={pods.data}
+                                    find={view.find}
+                                    selector={view.selector}
+                                    showNamespace={all}
+                                    onClearSelector={() => updateKubeView(paneId, { selector: null })}
+                                    onOpen={(pod) => updateKubeView(paneId, { pod: { namespace: pod.namespace, name: pod.name } })}
+                                />
+                            )}
+                        </>
                     ) : (
-                        <Workloads
-                            workloads={workloads.data}
-                            find={view.find}
-                            showNamespace={all}
-                            onOpen={(workload) =>
-                                updateKubeView(paneId, {
-                                    section: "pods",
-                                    selector: workload.selector,
-                                    namespace: all ? workload.namespace : view.namespace,
-                                })
-                            }
-                        />
+                        <>
+                            <StaleNotice handle={workloads} />
+                            {workloads.status === "error" && !workloads.data ? (
+                                <p className="k8s-note">{workloads.error}</p>
+                            ) : !workloads.data ? (
+                                <SkeletonRows rows={6} label="Loading workloads" />
+                            ) : (
+                                <Workloads
+                                    workloads={workloads.data}
+                                    find={view.find}
+                                    showNamespace={all}
+                                    onOpen={(workload) =>
+                                        updateKubeView(paneId, {
+                                            section: "pods",
+                                            selector: workload.selector,
+                                            namespace: all ? workload.namespace : view.namespace,
+                                        })
+                                    }
+                                />
+                            )}
+                        </>
                     )}
                 </div>
             </main>

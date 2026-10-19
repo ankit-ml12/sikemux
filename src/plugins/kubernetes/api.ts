@@ -153,7 +153,8 @@ export const refreshKubernetes = () => invalidate((kind) => kind.startsWith("kub
 export const kubeApi = {
     status: () => backend.call<KubeStatus>("status"),
     namespaces: (scope: Scope) => backend.call<Namespace[]>("namespaces", scope),
-    pods: (scope: Scope, allNamespaces: boolean) => backend.call<Pod[]>("pods", { ...scope, allNamespaces }),
+    pods: (scope: Scope, allNamespaces: boolean, selector: string | null) =>
+        backend.call<Pod[]>("pods", { ...scope, allNamespaces, selector: selector ?? undefined }),
     pod: (scope: Scope, name: string) => backend.call<PodDetail | null>("pod", { ...scope, name }),
     logs: (scope: Scope, pod: string, container: string | null, previous: boolean) =>
         backend.call<{ lines: LogLine[]; filtered: number }>("logs", { ...scope, pod, container, previous, tail: 1000 }),
