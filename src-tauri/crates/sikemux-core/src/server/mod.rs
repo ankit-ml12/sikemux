@@ -22,7 +22,6 @@ mod git;
 mod handover;
 mod harness;
 mod host;
-mod host_key;
 mod hosts;
 mod inbox;
 mod join;
@@ -113,10 +112,6 @@ pub struct ServerConfig {
     /// The accounts server this host keeps a live connection to while it is
     /// signed in. Without it the host learns nothing from its account.
     pub accounts_api: Option<String>,
-    /// The host's key and the digest of the devices it trusts live in the
-    /// person's secret store. Without it they live in a file beside the
-    /// socket, for tests.
-    pub secret_store: bool,
 }
 
 impl ServerConfig {
@@ -130,7 +125,6 @@ impl ServerConfig {
             attachment_dir: None,
             remote_direct_only: false,
             accounts_api: None,
-            secret_store: false,
         }
     }
 }
