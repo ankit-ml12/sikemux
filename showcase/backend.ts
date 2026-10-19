@@ -612,7 +612,6 @@ export class ShowcaseBackend implements IpcTransport {
     });
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);
-    this.on("listening_ports", () => []);
     const demoNames = new Map<string, string>(
       Object.values(AGENTS).map((agent) => [agent.id, agent.name]),
     );
