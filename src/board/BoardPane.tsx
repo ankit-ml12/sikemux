@@ -160,8 +160,9 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                 return (
                     <div
                         key={key}
-                        className={`kanban-column${drag.dragging?.over === key && key !== "needs" ? " drop" : ""}`}
+                        className="kanban-column"
                         data-column={key}
+                        data-drop={key === "needs" ? "false" : undefined}
                         role="list"
                         aria-label={name}>
                         <div className="kanban-column-head">
