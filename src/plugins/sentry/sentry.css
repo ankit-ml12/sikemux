@@ -733,3 +733,28 @@
     font-family: var(--ui);
     font-size: var(--text-2xs);
 }
+
+.sentry-section {
+    container-type: inline-size;
+}
+
+@container (max-width: 640px) {
+    .sentry-issues-head,
+    .sentry-issue {
+        grid-template-columns: 3px minmax(0, 1fr) 48px 48px;
+    }
+
+    .sentry-issues-head {
+        grid-template-columns: minmax(0, 1fr) 48px 48px;
+    }
+
+    .sentry-issues-head > :nth-child(2),
+    .sentry-issues-head > :nth-child(5),
+    .sentry-issues-head > :nth-child(6),
+    .sentry-issue .sentry-spark,
+    .sentry-issue .sentry-spark-empty,
+    .sentry-issue .sentry-seen,
+    .sentry-issue .sentry-assignee {
+        display: none;
+    }
+}
