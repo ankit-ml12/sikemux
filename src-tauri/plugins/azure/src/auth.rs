@@ -90,6 +90,10 @@ pub fn subscriptions_of(listed: &Value) -> Vec<Subscription> {
 pub struct Status {
     /// The CLI is installed and an account is signed in.
     pub ready: bool,
+    /// Alias of `ready`, which the pane's sign-in state reads.
+    pub configured: bool,
+    /// The sign-in has run out and the person must sign in again.
+    pub auth_failed: bool,
     /// cli-missing, signed-out or auth when not ready.
     pub category: Option<String>,
     pub message: Option<String>,
@@ -110,6 +114,8 @@ fn version_of(answer: &Value) -> Option<String> {
 pub async fn status() -> Status {
     let base = |category: &str, message: String| Status {
         ready: false,
+        configured: false,
+        auth_failed: category == "auth",
         category: Some(category.to_string()),
         message: Some(message),
         subscriptions: Vec::new(),
@@ -156,6 +162,8 @@ pub async fn status() -> Status {
         .cloned();
     Status {
         ready: true,
+        configured: true,
+        auth_failed: false,
         category: None,
         message: None,
         user: current
