@@ -7,11 +7,13 @@
 //   pods     — pods with their status as kubectl words it, restarts and owning workload
 //   logs     — a container's logs, read once, from before its last restart, or followed
 //   workloads — Deployments, StatefulSets, DaemonSets, Jobs and CronJobs, and what is wrong with them
+//   events   — a namespace's recent events, warnings first in mind
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 
 mod contexts;
 mod describe;
 mod error;
+mod events;
 mod kubectl;
 mod logs;
 mod pods;
@@ -63,6 +65,7 @@ impl Plugin for Kubernetes {
                 "pod" => answer(describe::describe(params(input)?)).await,
                 "logs" => answer(logs::read(params(input)?)).await,
                 "workloads" => answer(workloads::list(params(input)?)).await,
+                "events" => answer(events::list(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -113,6 +116,20 @@ mod tests {
             )
             .await
             .expect("workloads");
+        let events = plugin
+            .call(
+                &ctx,
+                "events",
+                serde_json::json!({ "namespace": "shop", "warningsOnly": true, "limit": 3 }),
+            )
+            .await
+            .expect("events");
+        for each in events.as_array().into_iter().flatten() {
+            println!(
+                "event {} {} x{} {}",
+                each["object"], each["reason"], each["count"], each["message"]
+            );
+        }
         for each in workloads.as_array().into_iter().flatten() {
             println!(
                 "workload {} {} {} {}/{} {}",
