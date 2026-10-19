@@ -7,8 +7,12 @@ import { rankBy } from "../lib/fuzzy";
 import * as cmd from "../state/commands";
 import { fetchResource, peekResource, useResource } from "../state/resources";
 import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
+import { agentIdsOf } from "../state/selectors";
 import { useStore } from "../state/store";
-import type { AgentPermissionMode, AgentType } from "../state/types";
+import type { Agent, AgentPermissionMode, AgentType, PinnedChat } from "../state/types";
+import { AgentFace } from "../buddies/Buddy";
+import { agentHandle } from "./AgentLabel";
+import { inCoreOrder, useInbox } from "../rail/useInbox";
 import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../ui/Icons";
 import { formatAge } from "../lib/format";
 import { agentAbout, agentLabel, canBypassPermissions, installCommand, loginArgs } from "./catalog";
@@ -19,7 +23,8 @@ import { leavingOverlay } from "../lib/motion";
 type Row = AgentSession & { type: AgentType };
 /** A new chat, or with `signIn`, the agent's own sign-in for one that reads as signed out. */
 type NewAgentItem = { kind: "new"; type: AgentType; signIn?: true };
-type ResumeAgentItem = { kind: "resume"; row: Row };
+/** A saved chat, with `agent` when it is open in the project. */
+type ResumeAgentItem = { kind: "resume"; row: Row; agent?: Agent };
 type AgentItem = NewAgentItem | ResumeAgentItem;
 
 const NORMAL: AgentPermissionMode = "workspace-write";
@@ -34,6 +39,31 @@ function sortRows(rows: Row[]): Row[] {
     return [...rows].sort((left, right) => right.mtime - left.mtime);
 }
 
+/** The project's chats as its rail lists them: open agents in the core's order, then pinned chats, then the rest newest first. */
+function railOrder(rows: Row[], open: Agent[], pins: PinnedChat[]): ResumeAgentItem[] {
+    const key = (type: string, id: string) => `${type}\0${id}`;
+    const saved = new Map(rows.map((row) => [key(row.type, row.id), row]));
+    const used = new Set<string>();
+    const take = (type: AgentType, id: string) => {
+        used.add(key(type, id));
+        return saved.get(key(type, id));
+    };
+    const isPinned = (agent: Agent) => pins.some((pin) => pin.agent === agent.type && pin.id === agent.resumeId);
+    const opened = (agent: Agent): ResumeAgentItem => {
+        const id = agent.resumeId ?? agent.id;
+        return { kind: "resume", row: take(agent.type, id) ?? { id, title: agent.title, mtime: 0, type: agent.type }, agent };
+    };
+    const live = open.filter((agent) => !isPinned(agent)).map(opened);
+    const pinned = pins.flatMap((pin): ResumeAgentItem[] => {
+        const agent = open.find((candidate) => candidate.type === pin.agent && candidate.resumeId === pin.id);
+        if (agent) return [opened(agent)];
+        const row = take(pin.agent, pin.id);
+        return row ? [{ kind: "resume", row }] : [];
+    });
+    const rest = rows.filter((row) => !used.has(key(row.type, row.id))).map((row): ResumeAgentItem => ({ kind: "resume", row }));
+    return [...live, ...pinned, ...rest];
+}
+
 function typeForItem(item: AgentItem): AgentType {
     return item.kind === "new" ? item.type : item.row.type;
 }
@@ -42,6 +72,11 @@ export function AgentPalette() {
     const modalRef = useRef<HTMLDivElement>(null);
     useModalFocus(modalRef);
     const session = useStore((state) => state.sessions[state.activeSessionId]);
+    const windowsBySession = useStore((state) => state.windowsBySession);
+    const windows = useStore((state) => state.windows);
+    const agentsById = useStore((state) => state.agents);
+    const pinnedChats = useStore((state) => state.pinnedChats);
+    const { inbox } = useInbox();
     const profiles = useStore((state) => state.providerProfiles);
     const profileSelections = useStore((state) => state.selectedProviderProfileIds);
     const defaultMode = useStore((state) => state.defaultAgentPermissionMode);
@@ -125,7 +160,18 @@ export function AgentPalette() {
             .filter((agent) => agent.status?.state === "signedOut" && loginArgs(agent.type))
             .map(({ type }): NewAgentItem => ({ kind: "new", type, signIn: true }));
         const fresh = [...agents.map(({ type }): NewAgentItem => ({ kind: "new", type })), ...signIns];
-        const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
+        const { sessionId, cwd } = origin.current;
+        const open = inCoreOrder(
+            agentIdsOf({ windowsBySession, windows }, sessionId)
+                .map((id) => agentsById[id])
+                .filter((agent): agent is Agent => !!agent),
+            inbox.agents,
+        );
+        const resumable = railOrder(
+            rows,
+            open,
+            pinnedChats.filter((pin) => pin.project === cwd),
+        );
         const rankedFresh = rankBy(query, fresh, (item) =>
             item.signIn
                 ? `sign in to ${agentLabel(item.type)} ${item.type}`
@@ -136,9 +182,13 @@ export function AgentPalette() {
                   ? `install ${agentLabel(item.type)} ${item.type}`
                   : `+ new ${agentLabel(item.type)} ${item.type}`,
         );
-        const rankedResumable = rankBy(query, resumable, (item) => `${item.row.title} ${agentLabel(item.row.type)} ${item.row.type}`);
+        const rankedResumable = rankBy(
+            query,
+            resumable,
+            (item) => `${item.row.title} ${agentLabel(item.row.type)} ${item.row.type}${item.agent?.name ? ` ${agentHandle(item.agent.name)}` : ""}`,
+        );
         return [...rankedFresh, ...rankedResumable];
-    }, [agents, query, rows]);
+    }, [agents, query, rows, windowsBySession, windows, agentsById, pinnedChats, inbox.agents]);
 
     const selectable = useMemo(
         () =>
@@ -186,6 +236,11 @@ export function AgentPalette() {
         if (item.kind === "new" && item.signIn && provider) {
             cmd.closeAgentPalette();
             signInAgent(provider);
+            return;
+        }
+        if (item.kind === "resume" && item.agent) {
+            cmd.closeAgentPalette();
+            cmd.revealAgent(item.agent.id);
             return;
         }
         if (!provider || provider.available === false) return;
@@ -304,10 +359,21 @@ export function AgentPalette() {
                                         if (mouseActive.current && available) setSelected(index);
                                     }}
                                     onClick={() => activate(item)}>
-                                    <span className={`picker-icon agent-glyph ${type}`}>
-                                        <AgentIcon type={type} size={14} />
-                                    </span>
+                                    {item.kind === "resume" && item.agent ? (
+                                        <AgentFace
+                                            agent={item.agent}
+                                            size={14}
+                                            logoSize={14}
+                                            logoClass={`picker-icon agent-glyph ${type}`}
+                                            buddyClass="picker-icon agent-glyph buddy-mark"
+                                        />
+                                    ) : (
+                                        <span className={`picker-icon agent-glyph ${type}`}>
+                                            <AgentIcon type={type} size={14} />
+                                        </span>
+                                    )}
                                     <span className="picker-name">{name}</span>
+                                    {item.kind === "resume" && item.agent?.name && <span className="picker-sub">{agentHandle(item.agent.name)}</span>}
                                     <span className="picker-sub">
                                         {signIn
                                             ? "Signed out"
@@ -321,7 +387,9 @@ export function AgentPalette() {
                                                     ? provider?.status?.state === "signedOut"
                                                         ? "signed out"
                                                         : ""
-                                                    : `${agentLabel(type)} · ${formatAge(item.row.mtime * 1000)}`}
+                                                    : item.row.mtime
+                                                      ? `${agentLabel(type)} · ${formatAge(item.row.mtime * 1000)}`
+                                                      : agentLabel(type)}
                                     </span>
                                 </button>
                             </Fragment>
