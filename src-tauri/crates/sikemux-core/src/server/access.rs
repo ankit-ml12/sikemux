@@ -124,15 +124,24 @@ pub(crate) fn needs(request: &Request) -> Needs {
 pub(crate) struct Setup {
     pub signed_in: bool,
     pub paired: bool,
+    /// The core tells its app by code signature, so the app is always there
+    /// to set the host up and nothing else needs to.
+    pub app_signed: bool,
 }
 
 /// Whether only Sikemux's own window or notch may send `request` from this
 /// host. A host with no window is set up from a terminal, which cannot be told
 /// from an agent's shell: `sikemux login` while no account owns it,
-/// `logout`, and `pair` until its first device is in.
+/// `logout`, and `pair` until its first device is in. A host signed in once
+/// stays its account's until the app, root or the account moves it.
 pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
     match request {
         Request::Call { method, .. } => super::calls::for_person(method),
+        Request::SetOwner { .. } | Request::SignRegistration { .. } | Request::AnswerPairing { .. }
+            if setup.app_signed =>
+        {
+            true
+        }
         Request::SetOwner { owner: None } => false,
         Request::SetOwner { owner: Some(_) } | Request::SignRegistration { .. } => setup.signed_in,
         Request::AnswerPairing { .. } => setup.paired,

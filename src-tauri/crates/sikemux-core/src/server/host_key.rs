@@ -1,7 +1,7 @@
-//! The host's key, and the digest of the devices, links and account it
-//! trusts. They live in the person's secret store, out of reach of the agents
-//! that can edit `<socket>.remote.json`, so a file this host did not write is
-//! caught when the core starts.
+//! The host's key, the digest of the devices, links and account it trusts,
+//! and the account it belongs to. They live in the person's secret store, out
+//! of reach of the agents that can edit `<socket>.remote.json`, so a file this
+//! host did not write is caught when the core starts.
 
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,9 @@ const SERVICE: &str = if cfg!(debug_assertions) {
 pub(super) struct HostKey {
     pub secret: SecretKey,
     pub trusted: String,
+    /// Kept through signing out, so a program here can sign the host back in
+    /// only to the account that let it go.
+    pub account: Option<String>,
 }
 
 pub(super) enum Keeper {
@@ -59,7 +62,12 @@ impl Keeper {
     }
 
     pub(super) fn save(&self, key: &HostKey) -> CoreResult<()> {
-        let text = format!("{}.{}", hex::encode(key.secret.to_bytes()), key.trusted);
+        let text = format!(
+            "{}.{}.{}",
+            hex::encode(key.secret.to_bytes()),
+            key.trusted,
+            key.account.as_deref().unwrap_or_default()
+        );
         match self {
             Self::Store { account } => sikemux_keychain::write(SERVICE, account, &text)
                 .map_err(|error| CoreError::from(error.to_string())),
@@ -72,10 +80,13 @@ impl Keeper {
 }
 
 fn decode(text: &str) -> Option<HostKey> {
-    let (secret, trusted) = text.trim().split_once('.')?;
-    let bytes: [u8; 32] = hex::decode(secret).ok()?.try_into().ok()?;
+    let mut parts = text.trim().splitn(3, '.');
+    let bytes: [u8; 32] = hex::decode(parts.next()?).ok()?.try_into().ok()?;
+    let trusted = parts.next()?.to_owned();
+    let account = parts.next()?;
     Some(HostKey {
         secret: SecretKey::from_bytes(&bytes),
-        trusted: trusted.to_owned(),
+        trusted,
+        account: (!account.is_empty()).then(|| account.to_owned()),
     })
 }

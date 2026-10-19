@@ -43,6 +43,7 @@ const LEAVE_WAIT: Duration = Duration::from_millis(300);
 const NETWORK_REFRESH: Duration = Duration::from_secs(4 * 60 * 60);
 const NETWORK_RETRY: Duration = Duration::from_secs(5 * 60);
 const SIGNED_OUT: &str = "sign in to use Sikemux on your phone";
+const BOUND: &str = "this host belongs to another Sikemux account; to move it, sign in from Sikemux's app or run `sudo sikemux login`";
 /// How far a signed request's time may be from now; the server allows the same.
 const HOST_REQUEST_SKEW_SECS: u64 = 60;
 
@@ -253,8 +254,10 @@ struct Pending {
 struct Inner {
     path: Option<PathBuf>,
     keeper: Option<Keeper>,
-    /// The digest the secret store holds for the file.
-    trusted: String,
+    /// The account this host belongs to, signed in or not.
+    bound: Option<String>,
+    /// The digest and account the secret store holds.
+    kept: (String, Option<String>),
     direct_only: bool,
     secret: Option<SecretKey>,
     stored: Stored,
@@ -348,6 +351,7 @@ impl Remote {
         Setup {
             signed_in: inner.stored.owner.is_some(),
             paired: !inner.stored.devices.is_empty(),
+            app_signed: super::local_peer::app_is_signed(),
         }
     }
 
@@ -519,6 +523,22 @@ impl Remote {
             inner.pushed.insert(push.to.clone(), (state, unix_ms()));
         }
         changed
+    }
+
+    /// A program here other than the app may sign this host in only to the
+    /// account it belongs to. The app, root, or that account letting the host
+    /// go moves it to another.
+    pub(super) fn may_join(&self, account: &str, peer: &Peer) -> CoreResult<()> {
+        match &self.lock().bound {
+            Some(bound) if bound != account && *peer != Peer::App => Err(BOUND.into()),
+            _ => Ok(()),
+        }
+    }
+
+    fn bind(&self, account: Option<String>) -> CoreResult<()> {
+        let mut inner = self.lock();
+        inner.bound = account;
+        self.save(&mut inner)
     }
 
     /// The core's key and its signature over the registration text for
@@ -910,15 +930,16 @@ impl Remote {
         let Some(path) = inner.path.clone() else {
             return Ok(());
         };
-        let trusted = inner.stored.trusted()?;
-        if trusted != inner.trusted {
+        let kept = (inner.stored.trusted()?, inner.bound.clone());
+        if kept != inner.kept {
             if let (Some(keeper), Some(secret)) = (&inner.keeper, &inner.secret) {
                 keeper.save(&HostKey {
                     secret: secret.clone(),
-                    trusted: trusted.clone(),
+                    trusted: kept.0.clone(),
+                    account: kept.1.clone(),
                 })?;
             }
-            inner.trusted = trusted;
+            inner.kept = kept;
         }
         write_stored(&path, &inner.stored)
     }
@@ -1009,6 +1030,7 @@ pub fn trust_remote_file(socket: &Path, key: &SecretKey) -> Result<(), String> {
         Keeper::new(socket, false)?.save(&HostKey {
             secret: key.clone(),
             trusted: stored.trusted()?,
+            account: stored.owner.clone(),
         })
     };
     trust().map_err(|error: CoreError| error.to_string())
@@ -1035,25 +1057,27 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
                 key
             }
             None => {
+                let account = stored.owner.clone();
                 stored.distrust();
                 HostKey {
                     secret: SecretKey::generate(),
                     trusted: String::new(),
+                    account,
                 }
             }
         };
         let trusted = stored.trusted()?;
         if trusted != key.trusted {
             keeper.save(&HostKey {
-                secret: key.secret.clone(),
                 trusted: trusted.clone(),
+                ..key.clone()
             })?;
         }
         write_stored(&loading, &stored)?;
-        Ok((stored, key.secret, trusted, keeper))
+        Ok((stored, key, trusted, keeper))
     })
     .await;
-    let (stored, secret, trusted, keeper) = match loaded {
+    let (stored, key, trusted, keeper) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
             eprintln!(
@@ -1073,10 +1097,11 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
             .unwrap_or_else(network::default_relays);
         inner.path = Some(path);
         inner.keeper = Some(keeper);
-        inner.trusted = trusted;
+        inner.bound = key.account.clone();
+        inner.kept = (trusted, key.account);
         inner.direct_only = direct_only;
         inner.never_too_old = cfg!(debug_assertions);
-        inner.secret = Some(secret);
+        inner.secret = Some(key.secret);
         inner.stored = stored;
         inner.accounts_api = config.accounts_api.clone();
     }
@@ -1348,9 +1373,15 @@ pub(crate) fn set_access(core: &Core, id: &str, access: DeviceAccess) -> CoreRes
 /// access on. Signing out turns remote access off and sends `leave` on the
 /// live connection, now or on the next one, so the account drops this host;
 /// paired devices stay.
-pub(crate) async fn set_owner(core: &Arc<Core>, owner: Option<String>) -> CoreResult<RemoteStatus> {
+pub(crate) async fn set_owner(
+    core: &Arc<Core>,
+    owner: Option<String>,
+    peer: &Peer,
+) -> CoreResult<RemoteStatus> {
     if let Some(owner) = &owner {
         crate::accounts::check_user_id(owner).map_err(CoreError::from)?;
+        core.remote.may_join(owner, peer)?;
+        core.remote.bind(Some(owner.clone()))?;
     }
     let live = core.remote.lock().accounts_api.is_some();
     let leaving = core.remote.change(|stored| {
@@ -1605,6 +1636,7 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
 /// signs in again, and turn remote access off. Paired devices stay.
 fn let_go(core: &Core, reason: Option<RevokeReason>) {
     let released = core.remote.change(|stored| {
+        let asked = stored.pending_leave.is_some();
         stored.enabled = false;
         if stored.owner.take().is_some() {
             stored.removed = Some(Removal {
@@ -1621,7 +1653,14 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
             );
         }
         stored.pending_leave = None;
-        Ok(())
+        Ok(asked)
+    });
+    let released = released.and_then(|asked| {
+        if asked {
+            Ok(())
+        } else {
+            core.remote.bind(None)
+        }
     });
     if let Err(error) = released {
         eprintln!("sikemux core: could not save leaving the account: {error}");
@@ -2105,7 +2144,7 @@ mod tests {
 
         let signing_out = tokio::spawn({
             let core = core.clone();
-            async move { set_owner(&core, None).await }
+            async move { set_owner(&core, None, &Peer::App).await }
         });
         let leave = socket.next().await.unwrap().unwrap();
         assert_eq!(leave.as_text(), Some(r#"{"type":"leave"}"#));
@@ -2131,12 +2170,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let core = signed_in(dir.path(), &[]);
         core.remote.lock().accounts_api = Some("http://127.0.0.1:9".into());
-        let status = set_owner(&core, None).await.unwrap();
+        let status = set_owner(&core, None, &Peer::App).await.unwrap();
         assert_eq!(status.owner, None);
         let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
         assert_eq!(saved.pending_leave.as_deref(), Some("user_2abc"));
 
-        set_owner(&core, Some("user_2new".into())).await.unwrap();
+        set_owner(&core, Some("user_2new".into()), &Peer::App).await.unwrap();
         let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();
         assert_eq!(saved.pending_leave, None);
         stop_live(&core);
@@ -2215,11 +2254,11 @@ mod tests {
         assert_eq!(refused.to_string(), SIGNED_OUT);
         assert!(!core.remote.is_enabled());
 
-        let status = set_owner(&core, Some("user_2abc".into())).await.unwrap();
+        let status = set_owner(&core, Some("user_2abc".into()), &Peer::App).await.unwrap();
         assert!(status.enabled, "signing in turns remote access on");
         assert!(core.remote.lock().running.is_some());
 
-        let status = set_owner(&core, None).await.unwrap();
+        let status = set_owner(&core, None, &Peer::App).await.unwrap();
         assert!(!status.enabled, "signing out turns remote access off");
         assert!(core.remote.lock().running.is_none());
         let saved = read_stored(&dir.path().join("core.sock.remote.json")).unwrap();

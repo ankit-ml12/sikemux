@@ -1005,7 +1005,10 @@ async fn run_requests(
                 });
             }
             Request::SignRegistration { nonce, user_id } => {
-                let signed = core.remote.sign_registration(&nonce, &user_id);
+                let signed = core
+                    .remote
+                    .may_join(&user_id, &client.peer)
+                    .and_then(|()| core.remote.sign_registration(&nonce, &user_id));
                 tokio::spawn(async move {
                     let result = match signed {
                         Ok((key, signature)) => {
@@ -1027,7 +1030,7 @@ async fn run_requests(
             }
             Request::SetOwner { owner } => {
                 tokio::spawn(async move {
-                    let result = remote::set_owner(&core, owner).await;
+                    let result = remote::set_owner(&core, owner, &client.peer).await;
                     client.respond(
                         request_id,
                         result.map(|status| Response::Remote {
