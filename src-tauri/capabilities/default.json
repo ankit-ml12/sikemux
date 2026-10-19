@@ -95,8 +95,6 @@
     "allow-grammar-load",
     "allow-state-save",
     "allow-available-agents",
-    "allow-agent-sessions-watch-start",
-    "allow-agent-sessions-watch-stop",
     "allow-read-dir",
     "allow-read-dirs",
     "allow-path-kinds",

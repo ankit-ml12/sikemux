@@ -324,8 +324,6 @@ pub fn run() {
             grammars::grammar_load,
             state::state_save,
             agents::executable::available_agents,
-            agents::watch::agent_sessions_watch_start,
-            agents::watch::agent_sessions_watch_stop,
             fs::read_dir,
             fs::read_dirs,
             fs::path_kinds,

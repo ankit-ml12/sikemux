@@ -1,4 +1,4 @@
-import { agentApi, type AgentSession } from "../../api/agents";
+import { agentApi } from "../../api/agents";
 import { acpApi } from "../../api/acp";
 import { acpAccount } from "../../agents/accounts";
 import { coreCall } from "../../api/core";
@@ -16,10 +16,9 @@ import {
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
 import { agentHasBackgroundWork, isAgentBusy, type AgentShown } from "../agentStatus";
-import { chatShown } from "../../chat/chatViews";
 import { confirmDialog } from "../dialog";
 import { invalidate, peekResource } from "../resources";
-import { agentCatalogR, agentSessionsR } from "../resources.defs";
+import { agentCatalogR } from "../resources.defs";
 import { getState, mutate, type StoreState } from "../store";
 import { notify, reportError, swallow } from "../toast";
 import { agentExecutablePath, profileOf } from "./agentLaunchCommand";
@@ -32,7 +31,6 @@ import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
 
-const FALLBACK_AGENT_TITLE_MAX = 13;
 /** Providers list a session under at most this many characters. */
 const SESSION_TITLE_MAX = 72;
 
@@ -42,22 +40,6 @@ function detectedExecutablePath(state: StoreState, type: AgentType): string | un
     return peekResource(agentCatalogR, runtime)?.find((agent) => agent.type === type && agent.available !== false)?.command;
 }
 
-function usableAgentSessionTitle(row: AgentSession, current: string): string {
-    const title = row.title.trim();
-    if (!title) return current;
-    if (title.length <= FALLBACK_AGENT_TITLE_MAX && row.id.startsWith(title)) return current;
-    return title;
-}
-
-export function agentSessionMetadataPending(agent: Agent): boolean {
-    if (!agent.resumeId) return true;
-    const title = agent.title.trim();
-    if (!title || title.toLowerCase() === agent.type) return true;
-    return title.length <= FALLBACK_AGENT_TITLE_MAX && agent.resumeId.startsWith(title);
-}
-
-/** Moves a chat with nothing in it to another agent, account or model provider.
-    `model` picks its model there, on `modelProvider` when one is named. */
 export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string): void {
     const before = getState().agents[id];
     const account = profileId ? profileOf(getState(), { profileId, type }) : undefined;
@@ -80,7 +62,6 @@ export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?:
         agent.model = model;
         agent.modelProvider = modelProvider;
         delete agent.effort;
-        delete agent.baselineSessionIds;
     });
 }
 
@@ -124,7 +105,6 @@ export interface AddAgentOptions {
     profileId?: string | null;
     model?: string;
     effort?: AgentEffort;
-    baselineSessionIds?: string[];
     cwd?: string;
     /** Pin launches to the project that opened the picker. */
     sessionId?: string;
@@ -181,13 +161,6 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
             launchState: "live",
         };
-        // Fresh agents (no resumeId) record the sessions that already exist so
-        // reconciliation never adopts the session you were just in. The rail
-        // keeps this list warm; on a cold cache we fall back to an mtime check.
-        if (!resumeId) {
-            const known = options.baselineSessionIds ?? peekResource(agentSessionsR, type, cwd, profile?.configPath)?.map((row) => row.id);
-            if (known) agent.baselineSessionIds = [...new Set(known)];
-        }
         d.agents[agent.id] = agent;
         d.lastAgentType = type;
         const win = agentWindow(agent, cwd);
@@ -220,81 +193,6 @@ export function openSavedChat(chat: SavedChat, options: { background?: boolean; 
 }
 
 /** An agent another agent starts in a terminal, as the core asks the window to open it. */
-export function reconcileAgentSessions(type: AgentType, cwd: string, configPath: string | undefined, rows: AgentSession[]): void {
-    if (rows.length === 0) return;
-    const unsavedNames: { sessionId: string; name: string; executablePath?: string }[] = [];
-    mutate((d) => {
-        const rowById = new Map(rows.map((row) => [row.id, row]));
-        const matchingAgents: Agent[] = [];
-        for (const sessionId of d.sessionOrder) {
-            const session = d.sessions[sessionId];
-            if (session?.kind !== "project") continue;
-            for (const agentId of agentIdsOf(d, sessionId)) {
-                const agent = d.agents[agentId];
-                const agentConfigPath = agent ? profileOf(d, agent)?.configPath : undefined;
-                if (agent?.type === type && (agent.cwd || session.cwd) === cwd && agentConfigPath === configPath) matchingAgents.push(agent);
-            }
-        }
-        if (matchingAgents.length === 0) return;
-
-        const claimed = new Set<string>();
-        for (const agent of matchingAgents) {
-            if (!agent.resumeId) continue;
-            claimed.add(agent.resumeId);
-            const row = rowById.get(agent.resumeId);
-            if (!row) continue;
-            if (agent.renamed) {
-                if (row.title !== agent.title)
-                    unsavedNames.push({ sessionId: row.id, name: agent.title, executablePath: agentExecutablePath(d, agent) });
-                continue;
-            }
-            const nextTitle = usableAgentSessionTitle(row, agent.title);
-            if (nextTitle !== agent.title) {
-                agent.title = nextTitle;
-                const winId = agentWindowId(d, agent.id);
-                if (winId) d.windows[winId].name = nextTitle;
-            }
-        }
-
-        const candidates = rows.filter((row) => !claimed.has(row.id)).sort((a, b) => b.mtime - a.mtime);
-        if (candidates.length === 0) return;
-
-        const freshAgents = matchingAgents
-            .filter((agent) => !agent.resumeId && !chatShown(agent.id))
-            .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-        for (const agent of freshAgents) {
-            // Only adopt a session that didn't exist when this agent launched,
-            // otherwise it grabs the session you were just in and renames its
-            // tab. `baselineSessionIds` is the snapshot taken at creation; when
-            // it's missing (legacy agent / cold cache) fall back to "written at
-            // or after launch", since a genuinely new session file appears
-            // post-launch — never before.
-            const baseline = agent.baselineSessionIds;
-            const launchedAt = Math.floor((agent.createdAt ?? Date.now()) / 1000);
-            const idx = candidates.findIndex((row) => (baseline ? !baseline.includes(row.id) : row.mtime >= launchedAt));
-            if (idx < 0) continue;
-            const [row] = candidates.splice(idx, 1);
-            agent.resumeId = row.id;
-            if (agent.renamed) unsavedNames.push({ sessionId: row.id, name: agent.title, executablePath: agentExecutablePath(d, agent) });
-            else agent.title = usableAgentSessionTitle(row, agent.title);
-            delete agent.baselineSessionIds;
-            claimed.add(row.id);
-        }
-    });
-    for (const { sessionId, name, executablePath } of unsavedNames) {
-        void saveSessionName({ type, cwd, sessionId, configPath, executablePath }, name).catch(swallow("save chat name"));
-    }
-}
-
-export function attachAgentSession(id: string, resumeId: string): void {
-    mutate((d) => {
-        const agent = d.agents[id];
-        if (!agent || agent.resumeId === resumeId || !isResumeId(agent.type, resumeId)) return;
-        agent.resumeId = resumeId;
-        delete agent.baselineSessionIds;
-    });
-}
-
 /** Moves an agent's working directory, and with it the worktree it belongs to, or none. */
 export function setAgentWorktree(id: string, cwd: string, worktree: AgentWorktree | null): void {
     mutate((d) => {
@@ -373,11 +271,6 @@ function placeAgentInProject(id: string, cwd: string): void {
         agent.cwd = cwd;
         const root = d.windows[winId].root;
         if (root.type === "pane") root.cwd = cwd;
-        if (agent.resumeId) return;
-        const configPath = profileOf(d, agent)?.configPath;
-        const known = peekResource(agentSessionsR, agent.type, cwd, configPath)?.map((row) => row.id);
-        if (known) agent.baselineSessionIds = [...new Set(known)];
-        else delete agent.baselineSessionIds;
     });
 }
 

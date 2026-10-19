@@ -44,6 +44,7 @@ mod sandbox;
 mod saved;
 mod saved_sessions;
 mod seen;
+mod session_watch;
 mod session;
 mod share;
 mod skill_library;
@@ -325,6 +326,7 @@ pub(crate) struct Core {
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
     pub(crate) lifecycle: lifecycle::Lifecycle,
+    pub(crate) session_watch: session_watch::SessionWatch,
     pub(crate) activity_log: Arc<activity_log::ActivityLog>,
     /// Pokes the device view awake once something may be watching it.
     pub(crate) view_watched: Notify,
@@ -393,6 +395,7 @@ impl Core {
             workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
             lifecycle: lifecycle::Lifecycle::default(),
+            session_watch: session_watch::SessionWatch::default(),
             activity_log: Arc::new(activity_log::ActivityLog::new(data_dir)),
             view_watched: Notify::new(),
             view_stale: Notify::new(),

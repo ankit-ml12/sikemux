@@ -314,6 +314,9 @@ impl Chat {
             self.note_tool_call(&payload);
             self.note_session(&payload);
         }
+        if kind == ChatEventKind::TurnStarted {
+            self.note_resumable();
+        }
         self.feed.emit(kind, payload);
         if kind == ChatEventKind::SessionUpdate {
             self.finish_held();
@@ -324,6 +327,22 @@ impl Chat {
 
     /// Keeps on the agent's record what the session says of it: the title the
     /// agent gave it, and the account it moved to.
+    /// Keeps on the agent's record the session a turn just ran in, which the
+    /// provider saved, so the agent can be resumed on it.
+    fn note_resumable(&self) {
+        let (Some(core), Some(start)) = (self.core.upgrade(), self.feed.start()) else {
+            return;
+        };
+        let known = core.workspaces.agent(self.agent_id());
+        if known.is_none_or(|agent| agent.resume_id.as_deref() == Some(start.session_id.as_str())) {
+            return;
+        }
+        let patch = serde_json::Map::from_iter([("resumeId".to_owned(), Value::from(start.session_id))]);
+        if core.workspaces.update_agent(self.agent_id(), patch).is_ok() {
+            core.publish_device_view();
+        }
+    }
+
     fn note_session(&self, payload: &Value) {
         let kind = payload
             .pointer("/update/sessionUpdate")
@@ -1910,7 +1929,11 @@ pub(crate) fn prompt(
     }
     super::messages::worked(core, agent_id);
     let words = context.first().map(|context| context.title.as_str());
-    let title = feed::title(if text.trim().is_empty() { words.unwrap_or_default() } else { &text });
+    let title = feed::title(if text.trim().is_empty() {
+        words.unwrap_or_default()
+    } else {
+        &text
+    });
     super::workspace::retitle(core, agent_id, title, true);
     core.chats.running(agent_id)?.send(ChatCommand::Prompt {
         from,

@@ -128,7 +128,6 @@ export interface Agent {
      * it may only attach to a session file that appeared after launch. Cleared
      * once attached.
      */
-    baselineSessionIds?: string[];
     /** Restored tabs stay dormant until the user explicitly resumes them. */
     launchState?: "live" | "dormant";
     /** Exempts a resumable live agent from automatic idle sleeping. */

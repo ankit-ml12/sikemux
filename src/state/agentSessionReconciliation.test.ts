@@ -5,8 +5,7 @@ vi.mock("../api/agents", async (importOriginal) => {
     const actual = await importOriginal<typeof import("../api/agents")>();
     return { ...actual, agentApi: { ...actual.agentApi, renameSession } };
 });
-import { showingChat } from "../chat/chatViews";
-import { agentSessionMetadataPending, reconcileAgentSessions, renameAgent } from "./commands";
+import { renameAgent } from "./commands";
 import { getState, setState } from "./store";
 import { agentWindowId } from "./selectors";
 import { withAgents } from "../test/agents";
@@ -18,51 +17,12 @@ beforeEach(() => {
     renameSession.mockClear();
 });
 
-describe("agent session reconciliation", () => {
-    it("replaces a generic title when the provider session title reaches disk", () => {
-        const state = getState();
-        const sessionId = state.activeSessionId;
-        const agentId = "agent-new";
-        const transcriptId = "019fd81d-c861-7920-bc88-a41a6b17aca4";
-        const slices = withAgents(state, sessionId, [
-            { id: agentId, type: "codex", title: "codex", createdAt: 100_000, baselineSessionIds: [], launchState: "live" },
-        ]);
-        setState({
-            ...slices,
-            sessions: {
-                ...state.sessions,
-                [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo", activeWindowId: agentWindowId(slices, agentId)! },
-            },
-        });
-
-        reconcileAgentSessions("codex", "/repo", undefined, [{ id: transcriptId, title: transcriptId.slice(0, 8), mtime: 101 }]);
-        expect(getState().agents[agentId]).toMatchObject({ resumeId: transcriptId, title: "codex" });
-        expect(agentSessionMetadataPending(getState().agents[agentId])).toBe(true);
-
-        reconcileAgentSessions("codex", "/repo", undefined, [{ id: transcriptId, title: "Hello", mtime: 102 }]);
-        expect(getState().agents[agentId]).toMatchObject({ resumeId: transcriptId, title: "Hello" });
-        expect(agentSessionMetadataPending(getState().agents[agentId])).toBe(false);
-    });
-    it("does not guess a transcript for an ACP session", () => {
-        const state = getState();
-        const sessionId = state.activeSessionId;
-        const agentId = "acp-new";
-        setState({
-            sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo" } },
-            ...withAgents(state, sessionId, [{ id: agentId, type: "codex", title: "codex", createdAt: 100_000, baselineSessionIds: [] }]),
-        });
-        showingChat(agentId);
-        reconcileAgentSessions("codex", "/repo", undefined, [{ id: "another-session", title: "Another chat", mtime: 101 }]);
-        expect(getState().agents[agentId].resumeId).toBeUndefined();
-    });
-    it("keeps a name the user gave over every title the provider sends later", () => {
+describe("naming an agent", () => {
+    it("keeps the name the person gave an agent", () => {
         const state = getState();
         const sessionId = state.activeSessionId;
         const agentId = "renamed-agent";
-        const transcriptId = "019fd81d-c861-7920-bc88-a41a6b17aca4";
-        const slices = withAgents(state, sessionId, [
-            { id: agentId, type: "claude", title: "claude", createdAt: 100_000, baselineSessionIds: [], launchState: "live" },
-        ]);
+        const slices = withAgents(state, sessionId, [{ id: agentId, type: "claude", title: "claude", createdAt: 100_000, launchState: "live" }]);
         setState({
             ...slices,
             sessions: {
@@ -75,15 +35,6 @@ describe("agent session reconciliation", () => {
         expect(getState().agents[agentId]).toMatchObject({ title: "Parser rewrite", renamed: true });
         expect(renameSession).not.toHaveBeenCalled();
         expect(getState().windows[agentWindowId(getState(), agentId)!].name).toBe("Parser rewrite");
-
-        reconcileAgentSessions("claude", "/repo", undefined, [{ id: transcriptId, title: "Provider title", mtime: 101 }]);
-        reconcileAgentSessions("claude", "/repo", undefined, [{ id: transcriptId, title: "Newer provider title", mtime: 102 }]);
-        expect(getState().agents[agentId]).toMatchObject({ resumeId: transcriptId, title: "Parser rewrite" });
-        expect(renameSession).toHaveBeenCalledWith("claude", "/repo", transcriptId, "Parser rewrite", undefined, undefined);
-
-        renameSession.mockClear();
-        reconcileAgentSessions("claude", "/repo", undefined, [{ id: transcriptId, title: "Parser rewrite", mtime: 103 }]);
-        expect(renameSession).not.toHaveBeenCalled();
     });
     it("writes the new name of an open chat to the provider's own session", () => {
         const state = getState();

@@ -13,13 +13,6 @@ export function setPanePty(paneId: string, ptyId: number): void {
     });
 }
 
-export function setAgentPty(agentId: string, ptyId: number): void {
-    mutate((d) => {
-        const agent = d.agents[agentId];
-        if (agent && agent.ptyId !== ptyId) agent.ptyId = ptyId;
-    });
-}
-
 /** Shows live the terminal agents whose terminal still runs. */
 export function showAgentsLive(ids: readonly string[]): void {
     mutate((d) => {

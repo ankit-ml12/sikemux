@@ -163,7 +163,6 @@ pub struct RuntimeDiagnostics {
     lsp_servers: usize,
     lsp_open_documents: usize,
     lsp_idle_servers: usize,
-    agent_session_watchers: usize,
     plugin_streams: usize,
     observability: crate::observability::ObservabilitySnapshot,
 }
@@ -228,7 +227,6 @@ pub async fn runtime_diagnostics(
         lsp_servers: crate::lsp::server_count(),
         lsp_open_documents,
         lsp_idle_servers,
-        agent_session_watchers: crate::agents::watch_count(),
         plugin_streams: plugins.count(),
         observability: crate::observability::global_observability().snapshot(),
     })

@@ -194,7 +194,4 @@ export const agentApi = {
         coreCall<void>("deleteSession", { agent, cwd, sessionId, executablePath, configPath }),
     relocateSession: (agent: AgentType, fromCwd: string, toCwd: string, sessionId: string, configPath?: string): Promise<void> =>
         coreCall<void>("relocateSession", { agent, fromCwd, toCwd, sessionId, configPath }),
-    watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
-        invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),
-    watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),
 };

@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
     startChat: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     switchAccount: vi.fn(async () => {}),
-    attachAgentSession: vi.fn(),
 }));
 
 vi.mock("../api/agents", () => ({
@@ -41,7 +40,6 @@ vi.mock("../api/acp", () => ({
 }));
 vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
-    attachAgentSession: mocks.attachAgentSession,
     setAgentPermissionMode: vi.fn(),
     setAgentModelPreferences: vi.fn(),
     setAgentTitle: vi.fn(),
@@ -155,10 +153,9 @@ describe("AgentChatPane with a chat the core kept", () => {
         expect(transcript()).toContain("Earlier question");
         expect(transcript()).toContain("Earlier answer");
         expect(screen.getByRole("region", { name: "Permission required for Touch a file" })).toBeInTheDocument();
-        expect(mocks.attach).toHaveBeenCalledWith({ agentId: agent.id, provider: "claude", cwd: "/repo", configPath: undefined });
+        expect(mocks.attach).toHaveBeenCalledWith(agent.id);
         expect(mocks.startChat).not.toHaveBeenCalled();
         expect(mocks.stop).not.toHaveBeenCalled();
-        expect(mocks.attachAgentSession).toHaveBeenCalledWith(agent.id, "session-kept");
 
         emit("session_update", { updates: [said("agent_message_chunk", " and done")] });
         await showsText("Still working on it and done");

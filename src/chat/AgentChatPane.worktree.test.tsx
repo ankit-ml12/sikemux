@@ -53,7 +53,6 @@ vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     setAgentWorktree: mocks.setAgentWorktree,
     setAgentWorktreeDefault: mocks.setAgentWorktreeDefault,
-    attachAgentSession: vi.fn(),
     setAgentPermissionMode: vi.fn(),
     setAgentModelPreferences: vi.fn(),
     setAgentTitle: vi.fn(),

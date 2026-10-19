@@ -88,6 +88,9 @@ pub(crate) async fn start_terminal(
         .workspaces
         .agent(agent_id)
         .ok_or_else(|| CoreError::from("that agent is no longer on this host"))?;
+    if agent.resume_id.is_none() {
+        super::session_watch::note_launch(core, &agent).await;
+    }
     let project = core.workspaces.project_info(&agent.project);
     let book = core.workspaces.accounts().unwrap_or_default();
     let profile = agent.profile_id.as_deref().and_then(|id| book.profile(id));

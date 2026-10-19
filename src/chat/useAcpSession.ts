@@ -144,8 +144,6 @@ export function useAcpSession({
                sign-in or on another account, sometimes on a new session. */
             if (event.kind === "ready" && typeof event.payload.sessionId === "string" && sessionIdRef.current)
                 sessionIdRef.current = event.payload.sessionId;
-            if (event.kind === "turn_started" && sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current)
-                cmd.attachAgentSession(agent.id, sessionIdRef.current);
             const actions = chatActions(event);
             const history = historyRef.current;
             if (history) for (const action of actions) if (reachesSubagent(action, sessionIdRef.current)) history.held.push(action);
@@ -179,7 +177,7 @@ export function useAcpSession({
                 /* A chat the core kept running through a reload or a quit is
                    taken up where it is: its replay rebuilds the transcript the
                    same way a resumed session's history does. */
-                const attach = () => acpApi.attach({ agentId: current.id, provider: current.type, cwd, configPath: profileRef.current?.configPath });
+                const attach = () => acpApi.attach(current.id);
                 let attached = await attach();
                 if (!mounted) return;
                 if (attached.status !== "live") {
@@ -198,7 +196,6 @@ export function useAcpSession({
                 } else historyRef.current = null;
                 const response = attached.start;
                 const appliedMode = attached.permissionMode;
-                if (attached.turned && current.resumeId !== response.sessionId) cmd.attachAgentSession(current.id, response.sessionId);
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
                 flushUpdates();

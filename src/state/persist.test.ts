@@ -476,12 +476,11 @@ describe("frontend persistence", () => {
         const terminalWindowId = getState().sessions[sid].activeWindowId;
         const paneId = getState().windows[terminalWindowId].activePaneId;
         cmd.setPanePty(paneId, 1_759_300_000_001);
-        const agent: Agent = { id: "agent-tui", type: "pi", title: "pi in its terminal" };
+        const agent: Agent = { id: "agent-tui", type: "pi", title: "pi in its terminal", ptyId: 1_759_300_000_002 };
         setState((s) => {
             const slices = withAgents(s, sid, [agent]);
             return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project", cwd: "/repo" } } };
         });
-        cmd.setAgentPty(agent.id, 1_759_300_000_002);
         invoke.mockResolvedValue(undefined);
 
         expect(await flushPersist()).toBe(true);

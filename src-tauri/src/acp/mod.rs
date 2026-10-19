@@ -3,7 +3,7 @@
 //! it keeps; the app forwards every command to it, and its events come back
 //! on its connection and reach the page as `acp_event`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -32,79 +32,30 @@ struct AcpEvent<'a> {
     payload: Value,
 }
 
-/// Names the conversation on disk so the session watcher can leave it alone
-/// while a turn writes to it.
-#[derive(Clone)]
-struct StreamMark {
-    provider: String,
-    cwd: String,
-    config_path: Option<String>,
-    session_id: String,
-}
-
-impl StreamMark {
-    fn set(&self, streaming: bool) {
-        crate::agents::note_streaming_session(
-            &self.provider,
-            &self.cwd,
-            self.config_path.as_deref(),
-            &self.session_id,
-            streaming,
-        );
-    }
-}
-
 #[derive(Default)]
 pub struct AcpManager {
     /// The chats this app shows, which hear the core's events for them.
-    shown: Mutex<HashMap<String, StreamMark>>,
+    shown: Mutex<HashSet<String>>,
 }
 
 impl AcpManager {
-    fn show(&self, agent_id: &str, mark: StreamMark, streaming: bool) {
-        mark.set(streaming);
+    fn show(&self, agent_id: &str) {
         if let Ok(mut shown) = self.shown.lock() {
-            if let Some(previous) = shown.insert(agent_id.to_owned(), mark) {
-                previous.set(false);
-            }
+            shown.insert(agent_id.to_owned());
         }
     }
 
     fn forget(&self, agent_id: &str) {
-        let mark = self
-            .shown
-            .lock()
-            .ok()
-            .and_then(|mut shown| shown.remove(agent_id));
-        if let Some(mark) = mark {
-            mark.set(false);
-        }
-    }
-
-    fn mark(&self, agent_id: &str, streaming: bool) {
-        if let Some(mark) = self
-            .shown
-            .lock()
-            .ok()
-            .and_then(|shown| shown.get(agent_id).cloned())
-        {
-            mark.set(streaming);
+        if let Ok(mut shown) = self.shown.lock() {
+            shown.remove(agent_id);
         }
     }
 
     fn take_shown(&self) -> Vec<String> {
-        let shown = self
-            .shown
+        self.shown
             .lock()
-            .map(|mut shown| std::mem::take(&mut *shown))
-            .unwrap_or_default();
-        shown
-            .into_iter()
-            .map(|(agent_id, mark)| {
-                mark.set(false);
-                agent_id
-            })
-            .collect()
+            .map(|mut shown| std::mem::take(&mut *shown).into_iter().collect())
+            .unwrap_or_default()
     }
 }
 
@@ -133,20 +84,12 @@ fn kind_name(kind: ChatEventKind) -> &'static str {
     }
 }
 
-/// Hands one event from the core to the page, keeping the session watcher's
-/// marks in step with the turns.
+/// Hands one event from the core to the page.
 pub(crate) fn deliver(app: &AppHandle, agent_id: &str, event: ChatEvent) {
-    if let Some(manager) = app.try_state::<AcpManager>() {
-        match event.kind {
-            ChatEventKind::TurnStarted => manager.mark(agent_id, true),
-            ChatEventKind::TurnCompleted => manager.mark(agent_id, false),
-            ChatEventKind::Status
-                if matches!(event.payload["state"].as_str(), Some("stopped" | "error")) =>
-            {
-                manager.forget(agent_id)
-            }
-            _ => {}
-        }
+    let ended = event.kind == ChatEventKind::Status
+        && matches!(event.payload["state"].as_str(), Some("stopped" | "error"));
+    if let (true, Some(manager)) = (ended, app.try_state::<AcpManager>()) {
+        manager.forget(agent_id);
     }
     emit(app, agent_id, kind_name(event.kind), event.payload);
 }
@@ -277,9 +220,6 @@ pub async fn acp_attach(
     manager: State<'_, AcpManager>,
     pty: State<'_, PtyManager>,
     agent_id: String,
-    provider: String,
-    cwd: String,
-    config_path: Option<String>,
 ) -> Result<Attachment, String> {
     bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
     let client = core(&pty).await?;
@@ -328,17 +268,8 @@ pub async fn acp_attach(
         )
         .map_err(failure)?;
     let attachment = replied.await.map_err(failure)?.map_err(failure)?;
-    if let Attachment::Live { start, running, .. } = &attachment {
-        manager.show(
-            &agent_id,
-            StreamMark {
-                provider,
-                cwd,
-                config_path,
-                session_id: start.session_id.clone(),
-            },
-            *running,
-        );
+    if let Attachment::Live { .. } = &attachment {
+        manager.show(&agent_id);
     }
     Ok(attachment)
 }

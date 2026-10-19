@@ -1,12 +1,10 @@
 pub(crate) mod config;
 pub(crate) mod executable;
-pub(crate) mod watch;
 
 use serde::{Deserialize, Serialize};
 use sikemux_core::agent_accounts::status::AgentStatus;
 
 pub use sikemux_core::agent_catalog::AgentKind;
-pub use watch::{note_streaming_session, watch_count};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

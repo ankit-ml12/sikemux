@@ -40,13 +40,6 @@ export interface AcpHistory {
     olderBefore: number | null;
 }
 
-export interface AcpAttachOptions {
-    agentId: string;
-    provider: AgentType;
-    cwd: string;
-    configPath?: string;
-}
-
 /** Something read elsewhere and handed to the agent whole, such as an issue and its comments. */
 export interface PromptContext {
     uri: string;
@@ -66,13 +59,7 @@ export interface AcpEvent {
 export const acpApi = {
     /** Starts the agent's chat as the core keeps it, unless it runs already; answers once its session is ready. */
     startChat: (agentId: string): Promise<void> => coreCall<void>("startChat", { agentId }),
-    attach: (options: AcpAttachOptions): Promise<AcpAttachment> =>
-        invoke<AcpAttachment>("acp_attach", {
-            agentId: options.agentId,
-            provider: options.provider,
-            cwd: options.cwd,
-            configPath: options.configPath ?? null,
-        }),
+    attach: (agentId: string): Promise<AcpAttachment> => invoke<AcpAttachment>("acp_attach", { agentId }),
     history: (agentId: string, feed: string, before: number, turns: number): Promise<AcpHistory> =>
         invoke<AcpHistory>("acp_history", { agentId, feed, before, turns }),
     list: () => invoke<ChatInfo[]>("acp_list"),

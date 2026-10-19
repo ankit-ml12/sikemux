@@ -1713,6 +1713,7 @@ fn agents_closed(core: &Core, before: HashSet<String>) {
 pub(crate) fn settle(core: &Arc<Core>) {
     core.names
         .set_in_app(core.workspaces.agent_ids(), core.running_agents());
+    super::session_watch::follow(core);
     core.agents_changed();
 }
 

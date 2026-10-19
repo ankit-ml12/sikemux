@@ -3,8 +3,8 @@ use std::path::Path;
 
 use serde_json::Value;
 pub(crate) use sikemux_core::sessions::roots::{
-    agent_config_root, environment_path, grok_root, hermes_root, muse_config_root, muse_data_root,
-    omp_agent_root, omp_session_dirs, pi_agent_root,
+    agent_config_root, environment_path, grok_root, hermes_root, muse_config_root, omp_agent_root,
+    pi_agent_root,
 };
 use sikemux_process::paths::home;
 use sikemux_pty::user_shell::user_variable;

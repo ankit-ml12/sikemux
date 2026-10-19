@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => ({
     stopTask: vi.fn(async () => {}),
     setConfig: vi.fn(),
     setAgentModelPreferences: vi.fn(),
-    attachAgentSession: vi.fn(),
     setAgentPermissionMode: vi.fn(),
     /* Stands for the core starting the chat; the pane takes it up by attaching once. */
     start: vi.fn(async (_agentId: string) => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
@@ -86,7 +85,6 @@ vi.mock("../state/commands", () => ({
     requestOpenFile: mocks.requestOpenFile,
     openUrlOnDesk: mocks.openUrlOnDesk,
     openFileOnDesk: mocks.openFileOnDesk,
-    attachAgentSession: mocks.attachAgentSession,
     setAgentPermissionMode: mocks.setAgentPermissionMode,
     setAgentModelPreferences: mocks.setAgentModelPreferences,
     setAgentTitle: vi.fn(),
@@ -339,16 +337,6 @@ describe("AgentChatPane", () => {
         expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("GPT-5.6 Sol");
         expect(mocks.start).toHaveBeenCalledTimes(1);
         expect(acpApi.stop).not.toHaveBeenCalled();
-    });
-
-    it("attaches a new session when its first turn starts so metadata can update while it runs", async () => {
-        render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
-        await waitFor(() => expect(screen.getByRole("textbox", { name: "Message agent" })).toBeEnabled());
-        expect(mocks.attachAgentSession).not.toHaveBeenCalled();
-
-        emit("turn_started", {});
-
-        expect(mocks.attachAgentSession).toHaveBeenCalledWith(agent.id, "session-1");
     });
 
     it("changes YOLO on the live session without restarting", async () => {

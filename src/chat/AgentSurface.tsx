@@ -221,10 +221,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             visible={visible}
                             spawnWhen={visible}
                             resumePtyId={agent.ptyId}
-                            onPtySession={(id) => {
-                                setTerminal((shown) => ({ ...shown, ptyId: id }));
-                                cmd.setAgentPty(agent.id, id);
-                            }}
+                            onPtySession={(id) => setTerminal((shown) => ({ ...shown, ptyId: id }))}
                             context={agentPtyContext(agent, session)}
                         />
                     </div>

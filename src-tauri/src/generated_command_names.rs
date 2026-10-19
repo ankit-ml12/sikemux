@@ -78,8 +78,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "grammar_load",
     "state_save",
     "available_agents",
-    "agent_sessions_watch_start",
-    "agent_sessions_watch_stop",
     "read_dir",
     "read_dirs",
     "path_kinds",

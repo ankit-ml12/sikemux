@@ -86,11 +86,10 @@ describe("agent launch commands", () => {
         expect(getState().activeSessionId).toBe("other");
     });
 
-    it("launches the provider directly with model and effort overrides", () => {
+    it("keeps model and effort overrides on a new agent", () => {
         addAgent("codex", undefined, "Repair parser", {
             model: "gpt-5.6-codex",
             effort: "high",
-            baselineSessionIds: ["existing-one", "existing-two"],
         });
 
         const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
@@ -99,7 +98,6 @@ describe("agent launch commands", () => {
             effort: "high",
             cwd: "/code/project",
         });
-        expect(agent.baselineSessionIds).toEqual(["existing-one", "existing-two"]);
         expect(agent).not.toHaveProperty("initialInput");
         expect(agent).not.toHaveProperty("worktreePath");
     });
