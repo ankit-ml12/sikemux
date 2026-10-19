@@ -352,7 +352,10 @@ export function IssuesView({ paneId, repo, listState, item, composing, page, cwd
                         small
                         label="Which to list"
                         value={listState}
-                        options={LIST_STATES.map((state) => ({ value: state, label: state === "all" ? "All" : state === "open" ? "Open" : "Closed" }))}
+                        options={LIST_STATES.map((state) => ({
+                            value: state,
+                            label: state === "all" ? "All" : state === "open" ? "Open" : "Closed",
+                        }))}
                         onChange={(state) => setListState(paneId, "issues", state)}
                     />
                     <Tooltip label="New issue">

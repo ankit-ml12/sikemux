@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-    cardColumn,
-    cardQuestion,
-    RUN_WAITS_ON_PERSON,
-    shortTitle,
-    type BoardCard,
-    type BoardColumn,
-    type CardStatus,
-} from "../agents/agentBoard";
+import { cardColumn, cardQuestion, RUN_WAITS_ON_PERSON, shortTitle, type BoardCard, type BoardColumn, type CardStatus } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
