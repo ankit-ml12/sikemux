@@ -65,11 +65,11 @@ fn start_core(core_key: &SecretKey, phone: Option<&SecretKey>) -> TestCore {
         .into_iter()
         .collect();
     let stored = json!({
-        "secretKey": hex::encode(core_key.to_bytes()),
         "enabled": true,
         "devices": devices,
     });
     std::fs::write(remote_file(&socket), serde_json::to_vec(&stored).unwrap()).unwrap();
+    sikemux_core::server::trust_remote_file(&socket, &core_key).unwrap();
     let config = ServerConfig {
         idle_exit: Duration::from_secs(600),
         build: BuildIdentity {

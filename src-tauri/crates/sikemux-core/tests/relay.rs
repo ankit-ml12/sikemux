@@ -94,7 +94,6 @@ async fn a_phone_reaches_a_core_through_the_relay_alone() {
     let socket = dir.path().join("core.sock");
     let any = json!({ "nightly": "0.0.0", "stable": "0.0.0" });
     let stored = json!({
-        "secretKey": hex::encode(core_key.to_bytes()),
         "enabled": true,
         "devices": [{
             "id": phone_key.public().to_string(),
@@ -110,6 +109,7 @@ async fn a_phone_reaches_a_core_through_the_relay_alone() {
         },
     });
     std::fs::write(remote_file(&socket), stored.to_string()).expect("remote file");
+    server::trust_remote_file(&socket, &core_key).expect("host key");
     let config = ServerConfig {
         idle_exit: Duration::from_secs(600),
         build: BuildIdentity {

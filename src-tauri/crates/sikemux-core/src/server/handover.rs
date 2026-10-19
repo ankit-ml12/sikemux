@@ -814,6 +814,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         data_dir,
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
+        secret_store: true,
     };
     let core = Core::new(build, config.data_dir.as_deref())?;
     let mut inherited = Inherited {

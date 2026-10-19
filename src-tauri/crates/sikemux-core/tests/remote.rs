@@ -98,7 +98,6 @@ fn start_core_with(core_key: &SecretKey, devices: &[&Device], keeps_data: bool) 
     let dir = tempfile::tempdir().expect("temp dir");
     let socket = dir.path().join("core.sock");
     let stored = json!({
-        "secretKey": hex::encode(core_key.to_bytes()),
         "enabled": true,
         "owner": "user_2test",
         "devices": devices.iter().map(|device| json!({
@@ -115,6 +114,7 @@ fn start_core_with(core_key: &SecretKey, devices: &[&Device], keeps_data: bool) 
         serde_json::to_vec(&stored).expect("remote file"),
     )
     .expect("write the remote file");
+    server::trust_remote_file(&socket, core_key).expect("host key");
     let config = ServerConfig {
         idle_exit: Duration::from_secs(600),
         build: BuildIdentity {

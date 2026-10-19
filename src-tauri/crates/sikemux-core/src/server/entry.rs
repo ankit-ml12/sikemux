@@ -160,6 +160,7 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
         build,
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
+        secret_store: true,
     }))
 }
 

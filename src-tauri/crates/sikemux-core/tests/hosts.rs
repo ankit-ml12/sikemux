@@ -108,12 +108,12 @@ fn start_core(dir: &Path) -> TestCore {
     let mut remote = socket.as_os_str().to_owned();
     remote.push(".remote.json");
     let stored = json!({
-        "secretKey": hex::encode(SecretKey::generate().to_bytes()),
         "enabled": true,
         "owner": ACCOUNT,
         "devices": [],
     });
     std::fs::write(remote, stored.to_string()).expect("remote file");
+    server::trust_remote_file(&socket, &SecretKey::generate()).expect("host key");
     let config = ServerConfig {
         idle_exit: Duration::from_secs(600),
         cli_endpoint: Some(dir.join("cli.json")),
