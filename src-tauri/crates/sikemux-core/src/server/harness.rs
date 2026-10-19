@@ -310,6 +310,14 @@ impl Harness {
         self.read(|state| state.journals.since(project, after, None))
     }
 
+    /// Something happened to a project's repository, such as a commit landing
+    /// or its check ending, which `events_wait` hears of.
+    pub(crate) fn note_repository(&self, project: &str, kind: &str) {
+        self.change(|state| {
+            state.journals.append(project, kind, None, None);
+        });
+    }
+
     /// Something happened to an agent, which `agent_wait` hears of.
     pub(crate) fn note_agent(&self, project: &str, kind: &str, agent_id: &str) {
         self.change(|state| {
