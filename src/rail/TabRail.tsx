@@ -347,7 +347,8 @@ export function TabRailBody() {
         );
     }
 
-    const noContent = pins.length === 0 && opens.length === 0 && recent.chats.length === 0 && recent.status !== "loading";
+    const noRecents = recent.chats.length === 0 && recent.status !== "loading";
+    const noContent = pins.length === 0 && opens.length === 0 && noRecents;
 
     return (
         <>
@@ -392,7 +393,7 @@ export function TabRailBody() {
                 <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
-                {scope === "all" && <AllProjectsAgents />}
+                {scope === "all" && <AllProjectsAgents showEmpty={noRecents} />}
                 {scope === "project" && noContent && (
                     <RailEmpty
                         icon={catalog.status === "loading" || !needle ? <IconAgent size={20} /> : <IconSearch size={20} />}

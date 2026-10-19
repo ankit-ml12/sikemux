@@ -28,7 +28,7 @@ interface OpenAgentRow {
 }
 
 /** Every agent open in any project, in the order the core lists them. */
-export function AllProjectsAgents() {
+export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
     const windows = useStore((s) => s.windows);
@@ -63,7 +63,8 @@ export function AllProjectsAgents() {
         if (root.current) drawTeamLines(root.current);
     });
 
-    if (open.length === 0) return <RailEmpty icon={<IconAgent size={20} />} title="No agents open" shortcut="agent.new" doing="start one" />;
+    if (open.length === 0)
+        return showEmpty && <RailEmpty icon={<IconAgent size={20} />} title="No agents open" shortcut="agent.new" doing="start one" />;
 
     return (
         <div ref={root} className="agent-all-projects">
