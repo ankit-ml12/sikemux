@@ -1463,7 +1463,11 @@ fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
                     .collect();
                 macos::clip(tab, frame.clip_left, frame.clip_right, holes);
                 macos::dim(tab, frame.dim);
-                macos::fade(tab, frame.opacity);
+                // A video's controls blur what is behind them, and that blur
+                // draws through the mask even when it cuts the whole page away.
+                let page_width = page.map_or(frame.width, |(width, _)| width);
+                let nothing_shows = frame.clip_left + frame.clip_right >= page_width;
+                macos::fade(tab, if nothing_shows { 0.0 } else { frame.opacity });
             }
             viewport::Layout::Parked {
                 page: (width, height),
