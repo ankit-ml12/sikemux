@@ -1,7 +1,10 @@
-//! The project's check, run in the shared checkout after agents commit, so a
-//! commit that breaks what another agent's lines rely on is told at once.
-//! It is the board's check command; a project without one is not checked.
-//! Commits that land while a check runs are checked together once it ends.
+//! The project's check, run on each commit as committed, in the repository's
+//! integration checkout, apart from the work in progress in everyone's own
+//! trees. A failure goes to the agents whose commits it failed after, at
+//! once, and to the person once the project has stayed broken a while. It is
+//! the board's check command; a project without one is not checked. Commits
+//! that land while a check runs are checked together, at the newest, once it
+//! ends.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
@@ -15,8 +18,11 @@ use crate::server::Core;
 
 /// Checks running at once, across projects.
 const MAX_RUNNING: usize = 2;
-/// Failed runs in a row before the person hears of it.
-pub(super) const KEEPS_FAILING: u32 = 2;
+/// How long a project stays broken before the person hears of it, so its
+/// agents have time to mend it first.
+pub(super) const PERSON_AFTER_MS: u64 = 15 * 60_000;
+/// Commits kept as checked per project, so the same one is not run twice.
+const MAX_CHECKED: usize = 64;
 
 pub(super) struct Commit {
     pub sha: String,
@@ -29,6 +35,10 @@ pub(super) struct Checks {
     waiting: HashMap<String, (PathBuf, Vec<Commit>)>,
     running: HashSet<String>,
     failing: HashMap<String, Failing>,
+    /// The commits each project's check ran on or waits to, newest last.
+    checked: HashMap<String, Vec<String>>,
+    /// The broken projects the person was told of.
+    shown: HashSet<String>,
 }
 
 /// A project whose check has failed after its latest commits.
@@ -45,7 +55,16 @@ pub(crate) struct Failing {
 }
 
 impl Checks {
+    /// Queues `commit` of `project` to be checked, unless it was already.
     pub(super) fn wait(&mut self, project: String, dir: PathBuf, commit: Commit) {
+        let checked = self.checked.entry(project.clone()).or_default();
+        if checked.contains(&commit.sha) {
+            return;
+        }
+        if checked.len() >= MAX_CHECKED {
+            checked.remove(0);
+        }
+        checked.push(commit.sha.clone());
         self.waiting
             .entry(project)
             .or_insert_with(|| (dir, Vec::new()))
@@ -53,10 +72,12 @@ impl Checks {
             .push(commit);
     }
 
+    /// The projects broken long enough that the person should hear of it.
     pub(super) fn failing(&self) -> impl Iterator<Item = &Failing> {
+        let now = unix_ms();
         self.failing
             .values()
-            .filter(|failing| failing.runs >= KEEPS_FAILING)
+            .filter(move |failing| failing.since + PERSON_AFTER_MS <= now)
     }
 
     /// The checks that may start now, taken off the waiting list.
@@ -81,16 +102,40 @@ impl Checks {
     }
 }
 
-/// Starts the checks that wait, as far as the limit allows.
+/// Starts the checks that wait, as far as the limit allows, each on the
+/// newest of its commits, and has devices told of a project broken long
+/// enough for the person to hear of it, or mended since.
 pub(super) fn start(core: &Arc<Core>, state: &mut State) {
+    let listed: HashSet<String> = state
+        .checks
+        .failing()
+        .map(|failing| failing.project.clone())
+        .collect();
+    if listed != state.checks.shown {
+        state.checks.shown = listed;
+        state.publish = true;
+    }
     for (project, dir, commits) in state.checks.startable() {
-        let Some(command) = crate::server::board::check_command(core, &project) else {
+        let (Some(command), Some(newest)) = (
+            crate::server::board::check_command(core, &project),
+            commits.last().map(|commit| commit.sha.clone()),
+        ) else {
             state.checks.running.remove(&project);
             continue;
         };
         let core = core.clone();
-        tokio::task::spawn_blocking(move || {
-            let outcome = crate::server::board::run_check(&dir, &command);
+        tokio::spawn(async move {
+            let outcome = match crate::server::sandbox::integration(&core, &dir, &newest).await {
+                Ok(checkout) => {
+                    let command = command.clone();
+                    tokio::task::spawn_blocking(move || {
+                        crate::server::board::run_check(&checkout, &command)
+                    })
+                    .await
+                    .unwrap_or_else(|error| Err(error.to_string()))
+                }
+                Err(error) => Err(format!("the integration checkout is not ready: {error}")),
+            };
             ended(&core, &project, &command, &commits, outcome);
         });
     }
@@ -116,11 +161,7 @@ fn ended(
             return;
         }
     };
-    let was_listed = state
-        .checks
-        .failing
-        .get(project)
-        .is_some_and(|failing| failing.runs >= KEEPS_FAILING);
+    let mut person_at = None;
     if passed {
         state.checks.failing.remove(project);
     } else {
@@ -140,11 +181,13 @@ fn ended(
         failing.runs += 1;
         failing.at = now;
         failing.output = output.clone();
+        person_at = Some(failing.since + PERSON_AFTER_MS);
         for agent in &agents {
             if !failing.agents.contains(agent) {
                 failing.agents.push((*agent).clone());
             }
         }
+        let newest = commits.last().map_or("", |commit| commit.sha.as_str());
         for agent in &agents {
             let yours: Vec<String> = commits
                 .iter()
@@ -161,18 +204,16 @@ fn ended(
                 &mut state,
                 agent,
                 format!(
-                    "The project's check (`{command}`) failed after your commit {}. The shared checkout also holds other agents' uncommitted work, so see whether the failure comes from your change before you fix it:\n\n{output}",
+                    "The project's check (`{command}`) failed on {}, built as committed, after your commit {}. Only committed code was built, so the failure is in what the branch holds now: mend it with a commit.\n\n{output}",
+                    newest.get(..7).unwrap_or(newest),
                     yours.join(", ")
                 ),
             );
         }
     }
-    let listed = state
-        .checks
-        .failing
-        .get(project)
-        .is_some_and(|failing| failing.runs >= KEEPS_FAILING);
-    state.publish |= listed || was_listed;
     drop(state);
     collisions.wake.now();
+    if let Some(at) = person_at.filter(|at| *at > unix_ms()) {
+        collisions.wake.at(at);
+    }
 }

@@ -836,9 +836,43 @@ impl Collisions {
         pairs
     }
 
-    /// The projects whose check keeps failing after commits.
+    /// The projects whose check has failed long enough for the person to hear.
     pub(crate) fn failing(&self) -> Vec<Failing> {
         self.lock().checks.failing().cloned().collect()
+    }
+
+    /// `project`'s branch moved, by whatever commit, an agent's own `git
+    /// commit` or the person's among them: its newest commit waits for the
+    /// project's check, with the agents its footer names.
+    pub(crate) fn head_moved(&self, core: &Arc<Core>, project: &str) {
+        if crate::server::board::check_command(core, project).is_none() {
+            return;
+        }
+        let (core, project) = (core.clone(), project.to_owned());
+        tokio::task::spawn_blocking(move || {
+            let dir = PathBuf::from(&project);
+            let Ok(head) = edits::git(&dir, &["log", "-1", "--format=%H%x00%s"]) else {
+                return;
+            };
+            let Some((sha, subject)) = head.trim_end().split_once('\0') else {
+                return;
+            };
+            let agents = edits::footer::verified(&core, &dir, sha)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|agent| agent.chat)
+                .collect();
+            let commit = checks::Commit {
+                sha: sha.to_owned(),
+                subject: subject.to_owned(),
+                agents,
+            };
+            core.collisions
+                .lock()
+                .checks
+                .wait(project.clone(), dir, commit);
+            core.collisions.wake.now();
+        });
     }
 }
 

@@ -255,7 +255,7 @@ pub(crate) async fn for_agent(core: &Arc<Core>, params: ForAgentParams) -> CoreR
         .into_iter()
         .find(|project| project.id == agent.project)
         .map_or(agent.cwd, |project| project.path);
-    let setup_error = set_up(core, &project, &params.agent_id, &tree_cwd).await;
+    let setup_error = set_up(core, &project, Some(&params.agent_id), &tree_cwd).await;
     let mut patch = Map::new();
     patch.insert("worktree".into(), serde_json::to_value(&worktree)?);
     patch.insert(
@@ -274,10 +274,90 @@ pub(crate) async fn for_agent(core: &Arc<Core>, params: ForAgentParams) -> CoreR
     })
 }
 
+/// The checkout of `project`'s repository that commits are built and checked
+/// in, apart from the work in progress in everyone's own trees, moved to
+/// `commit`. It stays at one place beside the repository, so each build after
+/// the first only redoes what the commits changed.
+pub(crate) async fn integration(
+    core: &Arc<Core>,
+    project: &Path,
+    commit: &str,
+) -> Result<PathBuf, String> {
+    let (repo, commit) = (project.to_path_buf(), commit.to_owned());
+    let (top, path, fresh) = blocking(move || {
+        let top = PathBuf::from(git(
+            &repo,
+            &["rev-parse", "--path-format=absolute", "--show-toplevel"],
+        )?);
+        let path = worktrees_folder(&top).join(INTEGRATION);
+        let fresh = !path.join(".git").exists();
+        let target = path.to_string_lossy().into_owned();
+        if fresh {
+            let _ = git(&top, &["worktree", "prune"]);
+            git_in(
+                &top,
+                &["worktree", "add", "--detach", "--force", &target, &commit],
+                SLOW,
+            )?;
+            copy_included(&top, &path);
+            link_installed(&top, &path);
+        } else {
+            git_in(
+                &path,
+                &["checkout", "--detach", "--force", "--quiet", &commit],
+                SLOW,
+            )?;
+            git(&path, &["clean", "-fdq"])?;
+        }
+        Ok((top, path, fresh))
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    if fresh {
+        if let Some(error) = set_up(core, &top, None, &path).await {
+            return Err(error);
+        }
+    }
+    Ok(path.join(inside(project, &top)))
+}
+
+/// The integration checkout's folder in the repository's worktrees folder.
+const INTEGRATION: &str = ".integration";
+
+/// Links each `node_modules` beside a `package.json` at the top of `main`, or
+/// one folder down, into `tree`, so its checks run with what is installed.
+fn link_installed(main: &Path, tree: &Path) {
+    let mut folders = vec![PathBuf::new()];
+    if let Ok(entries) = std::fs::read_dir(main) {
+        folders.extend(
+            entries
+                .flatten()
+                .filter(|entry| entry.path().join("package.json").is_file())
+                .map(|entry| PathBuf::from(entry.file_name())),
+        );
+    }
+    for folder in folders {
+        let installed = main.join(&folder).join("node_modules");
+        let link = tree.join(&folder).join("node_modules");
+        if installed.is_dir()
+            && link.symlink_metadata().is_err()
+            && link.parent().is_some_and(Path::is_dir)
+        {
+            let _ = std::os::unix::fs::symlink(&installed, &link);
+        }
+    }
+}
+
 /// Runs `project`'s `worktree.onCreate` commands in the new checkout at `cwd`
-/// once the person trusts its `sikemux.json`. Why they did not all finish,
-/// when they did not.
-async fn set_up(core: &Arc<Core>, project: &Path, agent_id: &str, cwd: &Path) -> Option<String> {
+/// once the person trusts its `sikemux.json`, asked on behalf of `agent_id`
+/// when an agent wants the checkout. Why they did not all finish, when they
+/// did not.
+async fn set_up(
+    core: &Arc<Core>,
+    project: &Path,
+    agent_id: Option<&str>,
+    cwd: &Path,
+) -> Option<String> {
     let load = {
         let project = project.to_path_buf();
         blocking(move || Ok(config::load(&project))).await.ok()?
@@ -300,7 +380,7 @@ async fn set_up(core: &Arc<Core>, project: &Path, agent_id: &str, cwd: &Path) ->
     if hooks.is_empty() {
         return None;
     }
-    if !tasks::config_trusted(core, project, Some(agent_id)).await {
+    if !tasks::config_trusted(core, project, agent_id).await {
         return Some(
             "The worktree setup in sikemux.json was not trusted, so it did not run".into(),
         );

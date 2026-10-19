@@ -174,8 +174,14 @@ pub(crate) fn follow_projects(core: &Core) {
     let weak: Weak<Core> = core.me.clone();
     let changed: watch::Changed = Arc::new(move |projects, paths| {
         let Some(core) = weak.upgrade() else { return };
+        let state_moved = paths
+            .as_ref()
+            .is_none_or(|paths| paths.iter().any(|path| path == watch::GIT_STATE));
         for project in projects {
             core.changes.changed("git", Some(project), paths.clone());
+            if state_moved {
+                core.collisions.head_moved(&core, project);
+            }
         }
     });
     tokio::task::spawn_blocking(move || {
