@@ -317,7 +317,10 @@ export class ChatSession {
   };
 
   dropQueued = (id: string) => {
-    void this.ask((connection) => connection.call('dropQueued', JSON.stringify({ agentId: this.agentId, ids: [id] })), 'Could not take it back');
+    void this.ask(
+      (connection) => connection.call('dropQueued', JSON.stringify({ agentId: this.agentId, ids: [id] })),
+      'Could not take it back',
+    );
   };
 
   /** Stops the running turn. Messages waiting behind it go back to the composer rather than out. */
