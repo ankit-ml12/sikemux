@@ -1,0 +1,8 @@
+{
+  "id": "sikemux.kubernetes",
+  "name": "Kubernetes",
+  "version": "0.1.0",
+  "sikemux": ">=0.4",
+  "callTimeoutSecs": 60,
+  "tools": []
+}
