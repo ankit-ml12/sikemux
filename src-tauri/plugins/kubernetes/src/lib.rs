@@ -9,8 +9,10 @@
 //   workloads — Deployments, StatefulSets, DaemonSets, Jobs and CronJobs, and what is wrong with them
 //   events   — a namespace's recent events, warnings first in mind
 //   network  — Services with their ports and selectors, and Ingresses with their routes
+//   config   — ConfigMaps and Secrets by key name and size; no value is ever read
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 
+mod config;
 mod contexts;
 mod describe;
 mod error;
@@ -69,6 +71,7 @@ impl Plugin for Kubernetes {
                 "workloads" => answer(workloads::list(params(input)?)).await,
                 "events" => answer(events::list(params(input)?)).await,
                 "network" => answer(network::list(params(input)?)).await,
+                "config" => answer(config::list(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -132,6 +135,11 @@ mod tests {
             .await
             .expect("network");
         println!("network {network}");
+        let config = plugin
+            .call(&ctx, "config", serde_json::json!({ "namespace": "shop" }))
+            .await
+            .expect("config");
+        println!("config {config}");
         for each in events.as_array().into_iter().flatten() {
             println!(
                 "event {} {} x{} {}",
