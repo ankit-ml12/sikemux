@@ -255,14 +255,14 @@
     transition: transform var(--dur-1) var(--ease-out);
 }
 
-.kanban-lane-head[aria-expanded="true"] .kanban-lane-chevron {
+[aria-expanded="true"] .kanban-lane-chevron {
     transform: rotate(90deg);
 }
 
 /* The lane sinks below the pane, the card rises above it on a solid surface. */
 .kanban-column {
     display: flex;
-    flex: 1 0 236px;
+    flex: 1 0 160px;
     flex-direction: column;
     max-width: 320px;
     gap: 6px;

@@ -299,6 +299,8 @@ export const SCENES = [
     setup: async (page) => {
       await openWindow(page, "s-sikemux", "w-tab-rail");
       await run(page, () => showcase.cmd.openBoard());
+      await page.waitForSelector(".kanban-card");
+      await page.click(".kanban-card");
     },
     crops: { stage: ".stage" },
   },

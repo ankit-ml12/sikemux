@@ -4,7 +4,6 @@ import {
     cardQuestion,
     RUN_WAITS_ON_PERSON,
     shortTitle,
-    ticketAbove,
     type BoardCard,
     type BoardColumn,
     type CardStatus,
@@ -21,7 +20,6 @@ import { Switch } from "../ui/Controls";
 import { AutoPanel } from "./AutoPanel";
 import { CardPanel } from "./CardPanel";
 import { MessagesPanel } from "./MessagesPanel";
-import { AgentMark } from "../agents/AgentMark";
 import { Owner } from "./cardParts";
 import "../styles/board.css";
 
@@ -98,13 +96,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
             (!wanted || [card.title, card.details, card.ownerName ?? "", card.ticket?.key ?? ""].some((text) => text.toLowerCase().includes(wanted))),
     );
 
-    const teams = new Map<string | null, BoardCard[]>();
-    for (const card of [...shown].sort((a, b) => b.updatedAt - a.updatedAt)) {
-        const list = teams.get(card.team) ?? [];
-        list.push(card);
-        teams.set(card.team, list);
-    }
-    const bands = [...teams.entries()].sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : 0));
+    const lanes = useMemo(() => cardLanes(cards, shown, byId), [cards, shown, byId]);
     const current = typeof selected === "number" ? byId.get(selected) : undefined;
     const panel = selected === "new" || selected === "auto" || selected === "messages" || current;
     const autoOn = auto?.settings.auto ?? false;
@@ -120,8 +112,6 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
         const done = under.filter((other) => other.status === "done").length;
         const waits = each.waitsOn.map((id) => byId.get(id)).filter((other): other is BoardCard => !!other);
         const after = waits[0] ?? (each.dependsOn.length > 0 ? byId.get(each.dependsOn[0]) : undefined);
-        const filed = each.ticket ? null : ticketAbove(each, byId);
-        const parent = each.parent === null ? undefined : byId.get(each.parent);
         return (
             <button
                 key={each.id}
@@ -158,24 +148,18 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                         )}
                     </span>
                 )}
-                <span className="kanban-card-foot">
-                    {each.ticket ? (
-                        <>
-                            <span className="kanban-key">{each.ticket.key}</span>
-                            {each.ticket.source && <span className="kanban-meta">{each.ticket.source}</span>}
-                        </>
-                    ) : filed ? (
-                        <span className="kanban-meta">under {filed}</span>
-                    ) : parent ? (
-                        <span className="kanban-meta">under {shortTitle(parent.title)}</span>
-                    ) : null}
-                    <span className="kanban-grow" />
-                    {each.owner ? (
-                        <Owner id={each.owner} name={each.ownerName} cli={each.ownerCli} paidBy={each.paidBy} />
-                    ) : (
-                        <span className="board-nobody">Nobody yet</span>
-                    )}
-                </span>
+                {(each.ticket || each.owner) && (
+                    <span className="kanban-card-foot">
+                        {each.ticket && (
+                            <>
+                                <span className="kanban-key">{each.ticket.key}</span>
+                                {each.ticket.source && <span className="kanban-meta">{each.ticket.source}</span>}
+                            </>
+                        )}
+                        <span className="kanban-grow" />
+                        {each.owner && <Owner id={each.owner} name={each.ownerName} cli={each.ownerCli} paidBy={each.paidBy} />}
+                    </span>
+                )}
             </button>
         );
     };
@@ -202,22 +186,25 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
         </div>
     );
 
-    const bandHead = (team: string | null, list: BoardCard[]): ReactNode => {
-        if (team === null)
+    const laneHead = ({ parent, cards: list }: Lane): ReactNode => {
+        if (!parent)
             return (
-                <>
-                    <b>Nobody yet</b>
-                    <span className="kanban-meta">{autoOn ? `${count(list)} · Auto picks these up` : count(list)}</span>
-                </>
+                <span className="board-lane-title">
+                    <b>On their own</b>
+                    <span className="kanban-meta">{autoOn ? `${count(list)} · Auto picks up the open ones` : count(list)}</span>
+                </span>
             );
-        const keys = [...new Set(list.flatMap((each) => (each.ticket ? [each.ticket.key] : [])))];
-        const workers = [...new Set(list.flatMap((each) => (each.owner && each.owner !== team && each.ownerName ? [each.ownerName] : [])))];
+        const under = cards.filter((other) => other.parent === parent.id);
+        const done = under.filter((other) => other.status === "done").length;
+        const above = parent.parent === null ? undefined : byId.get(parent.parent);
         return (
-            <>
-                <TeamMark id={team} cli={list.find((each) => each.owner === team)?.ownerCli ?? null} />
-                <b>{list[0]?.teamName ?? "An agent"}'s team</b>
-                <span className="kanban-meta">{[count(list), ...keys, workers.join(", ")].filter(Boolean).join(" · ")}</span>
-            </>
+            <button type="button" className="board-lane-title" aria-pressed={selected === parent.id} onClick={() => setSelected(parent.id)}>
+                <b>{parent.title}</b>
+                <span className="kanban-meta">
+                    {[`${done} of ${under.length} done`, parent.ticket?.key, above && `under ${shortTitle(above.title)}`].filter(Boolean).join(" · ")}
+                </span>
+                {parent.owner && <Owner id={parent.owner} name={parent.ownerName} cli={parent.ownerCli} paidBy={parent.paidBy} />}
+            </button>
         );
     };
 
@@ -302,18 +289,22 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                     <EmptyState message="No card matches." />
                 ) : (
                     <div className="kanban-lanes">
-                        {bands.map(([team, list]) => {
-                            const lane = team ?? "nobody";
-                            return (
-                                <div key={lane} className="kanban-lane">
-                                    <button type="button" className="kanban-lane-head" aria-expanded={!folded.has(lane)} onClick={() => fold(lane)}>
+                        {lanes.map((lane) => (
+                            <div key={lane.key} className="kanban-lane">
+                                <div className="kanban-lane-head board-lane-head">
+                                    <button
+                                        type="button"
+                                        className="kanban-icon-button"
+                                        aria-expanded={!folded.has(lane.key)}
+                                        aria-label={folded.has(lane.key) ? "Show its cards" : "Hide its cards"}
+                                        onClick={() => fold(lane.key)}>
                                         <IconChevron size={12} className="kanban-lane-chevron" />
-                                        {bandHead(team, list)}
                                     </button>
-                                    {!folded.has(lane) && columns(list)}
+                                    {laneHead(lane)}
                                 </div>
-                            );
-                        })}
+                                {!folded.has(lane.key) && columns(lane.cards)}
+                            </div>
+                        ))}
                     </div>
                 )}
             </section>
@@ -339,6 +330,27 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
 
 const count = (list: readonly BoardCard[]) => (list.length === 1 ? "1 card" : `${list.length} cards`);
 
-function TeamMark({ id, cli }: { id: string; cli: string | null }) {
-    return <AgentMark agentId={id} cli={cli} />;
+interface Lane {
+    key: string;
+    parent: BoardCard | null;
+    cards: BoardCard[];
+}
+
+/** One lane per card that has cards under it, holding them, then one for the cards on their own; the newest work first. */
+function cardLanes(cards: readonly BoardCard[], shown: readonly BoardCard[], byId: ReadonlyMap<number, BoardCard>): Lane[] {
+    const parents = new Set(cards.flatMap((card) => (card.parent === null ? [] : [card.parent])));
+    const lanes = new Map<string, Lane>();
+    const laneOf = (parent: BoardCard | null): Lane => {
+        const key = parent ? `card-${parent.id}` : "alone";
+        let lane = lanes.get(key);
+        if (!lane) lanes.set(key, (lane = { key, parent, cards: [] }));
+        return lane;
+    };
+    for (const card of [...shown].sort((a, b) => b.updatedAt - a.updatedAt)) {
+        if (parents.has(card.id)) laneOf(card);
+        else laneOf((card.parent === null ? undefined : byId.get(card.parent)) ?? null).cards.push(card);
+    }
+    const alone = lanes.get("alone");
+    lanes.delete("alone");
+    return alone ? [...lanes.values(), alone] : [...lanes.values()];
 }
