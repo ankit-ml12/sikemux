@@ -282,7 +282,7 @@ async fn a_chat_knows_how_its_agent_can_be_signed_in() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_prompt_turned_away_mid_turn_is_not_kept() {
+async fn a_prompt_sent_mid_turn_is_kept_only_once_the_agent_takes_it() {
     let core = TestCore::start();
     let (sender, mut heard) = core.connect().await;
     sender
@@ -310,21 +310,30 @@ async fn a_prompt_turned_away_mid_turn_is_not_kept() {
         )
         .await
         .expect("prompt");
-    heard.until_kind(ChatEventKind::Error).await;
-    heard.until_kind(ChatEventKind::TurnCompleted).await;
 
+    let prompts = |replay: &[ChatEvent]| -> Vec<Value> {
+        replay
+            .iter()
+            .filter(|event| event.kind == ChatEventKind::Prompt)
+            .map(|event| event.payload["text"].clone())
+            .collect()
+    };
     let (late, _) = core.connect().await;
     let ChatAttachment::Live { replay, .. } =
         late.acp_attach("agent-c".into()).await.expect("attach")
     else {
         panic!("the chat was not live");
     };
-    let sent: Vec<_> = replay
-        .iter()
-        .filter(|event| event.kind == ChatEventKind::Prompt)
-        .map(|event| event.payload["text"].clone())
-        .collect();
-    assert_eq!(sent, ["hold 400"]);
+    assert_eq!(prompts(&replay), ["hold 400"]);
+
+    heard.until_kind(ChatEventKind::TurnCompleted).await;
+    heard.until_kind(ChatEventKind::TurnStarted).await;
+    let ChatAttachment::Live { replay, .. } =
+        late.acp_attach("agent-c".into()).await.expect("attach")
+    else {
+        panic!("the chat was not live");
+    };
+    assert_eq!(prompts(&replay), ["hold 400", "too soon"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
