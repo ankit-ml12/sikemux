@@ -412,7 +412,7 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                                 role="menuitem"
                                 onClick={(event) => pickAgent(event.currentTarget, findTasksRequest(project))}>
                                 <IconAgent size={12} />
-                                <span>Find this project's tasks with an agent…</span>
+                                <span>Find tasks with an agent…</span>
                             </button>
                         </div>
                     </>

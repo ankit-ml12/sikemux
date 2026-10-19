@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { notify, reportError } from "../state/toast";
+import { Segmented } from "../ui/Controls";
 import { tasksApi } from "./coreTasks";
 
 type Scope = "team" | "personal";
@@ -46,42 +47,40 @@ export function AddTaskForm({ project, onDone }: { project: string; onDone: (tas
             </label>
             <label className="tb-run-add-field">
                 <span>Command</span>
-                <input value={command} onChange={(event) => setCommand(event.target.value)} placeholder="bash tool/run.sh" spellCheck={false} />
+                <input
+                    className="mono"
+                    value={command}
+                    onChange={(event) => setCommand(event.target.value)}
+                    placeholder="bash tool/run.sh"
+                    spellCheck={false}
+                />
             </label>
             <label className="tb-run-add-field">
                 <span>Folder</span>
-                <input value={cwd} onChange={(event) => setCwd(event.target.value)} placeholder="the project root" spellCheck={false} />
+                <input value={cwd} onChange={(event) => setCwd(event.target.value)} placeholder="The project root" spellCheck={false} />
             </label>
             <div className="tb-run-add-field">
-                <span>Save</span>
-                <span className="tb-run-add-scope" role="radiogroup" aria-label="Who gets this task">
-                    <button
-                        type="button"
-                        role="radio"
-                        aria-checked={scope === "team"}
-                        className={scope === "team" ? "on" : ""}
-                        onClick={() => setScope("team")}>
-                        For the team
-                    </button>
-                    <button
-                        type="button"
-                        role="radio"
-                        aria-checked={scope === "personal"}
-                        className={scope === "personal" ? "on" : ""}
-                        onClick={() => setScope("personal")}>
-                        Only me
-                    </button>
+                <Segmented
+                    fill
+                    small
+                    label="Who gets this task"
+                    value={scope}
+                    options={[
+                        { value: "team", label: "For the team" },
+                        { value: "personal", label: "Only me" },
+                    ]}
+                    onChange={setScope}
+                />
+                <span className="tb-run-add-hint">
+                    {scope === "team" ? "Goes in sikemux.json, which you commit." : "Kept in .sikemux/, which Git ignores."}
                 </span>
             </div>
             <div className="tb-run-add-foot">
-                <span className="tb-run-add-hint">
-                    {scope === "team" ? "Goes in sikemux.json, which you commit" : "Kept in .sikemux/, which Git ignores"}
-                </span>
                 <button type="button" className="tb-run-check-btn" onClick={() => onDone(null)}>
                     Cancel
                 </button>
                 <button type="submit" className="tb-run-check-btn primary" disabled={!ready}>
-                    {saving ? "Adding…" : "Add"}
+                    {saving ? "Adding…" : "Add task"}
                 </button>
             </div>
         </form>
