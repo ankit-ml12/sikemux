@@ -80,6 +80,7 @@ pub(crate) fn hold(core: &Core, project: &str, id: u64, agent: &str, why: String
             card.owner = None;
             card.owner_name = None;
             card.owner_cli = None;
+            card.team = None;
             card.status = Status::Open;
         }
         run.stage = Stage::Held;

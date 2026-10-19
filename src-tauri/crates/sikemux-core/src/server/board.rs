@@ -102,6 +102,13 @@ pub(crate) struct Ticket {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct Team {
+    lead: String,
+    name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Card {
     id: u64,
     title: String,
@@ -129,6 +136,9 @@ struct Card {
     created_by: Option<String>,
     #[serde(default)]
     created_by_name: Option<String>,
+    /// The team it was last seen in, for after the team's agents close.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    team: Option<Team>,
     #[serde(default)]
     result: Option<String>,
     #[serde(default)]
@@ -646,12 +656,31 @@ impl Card {
 /// The team a card belongs to: the agent at the top of its owner's chain of
 /// leads, else its maker's, else its parent card's. None for a card only the
 /// person has touched.
-fn team_of(core: &Core, board: &Board, card: &Card) -> Option<String> {
+fn team_of(core: &Core, board: &Board, card: &Card) -> Option<Team> {
     let mut current = Some(card);
     let mut steps = 0;
     while let Some(card) = current {
         if let Some(agent) = card.owner.as_deref().or(card.created_by.as_deref()) {
-            return Some(core.names.team_of(agent));
+            if core.names.name(agent).is_none() {
+                return card.team.clone().or_else(|| {
+                    Some(Team {
+                        lead: agent.to_owned(),
+                        name: name_of(core, agent),
+                    })
+                });
+            }
+            let lead = core.names.team_of(agent);
+            let name = core
+                .names
+                .name(&lead)
+                .or_else(|| {
+                    card.team
+                        .as_ref()
+                        .filter(|team| team.lead == lead)
+                        .map(|team| team.name.clone())
+                })
+                .unwrap_or_else(|| lead.clone());
+            return Some(Team { lead, name });
         }
         steps += 1;
         if steps > board.cards.len() {
@@ -660,6 +689,16 @@ fn team_of(core: &Core, board: &Board, card: &Card) -> Option<String> {
         current = card.parent.and_then(|parent| board.card(parent).ok());
     }
     None
+}
+
+fn remember_team(core: &Core, board: &mut Board, id: u64) {
+    let Ok(card) = board.card(id) else {
+        return;
+    };
+    let team = team_of(core, board, card);
+    if let Ok(card) = board.card_mut(id) {
+        card.team = team;
+    }
 }
 
 /// The card as the app draws it.
@@ -675,8 +714,8 @@ fn app_view(core: &Core, board: &Board, card: &Card) -> Value {
         "ownerName": card.owner_name(core),
         "ownerCli": card.owner.as_deref().and_then(|owner| cli_of(core, owner)).or_else(|| card.owner_cli.clone()),
         "paidBy": card.owner.as_deref().and_then(|owner| paid_by(core, owner)),
-        "team": team,
-        "teamName": team.as_deref().map(|team| name_of(core, team)),
+        "team": team.as_ref().map(|team| &team.lead),
+        "teamName": team.as_ref().map(|team| &team.name),
         "parent": card.parent,
         "dependsOn": card.depends_on,
         "waitsOn": board.waits_on(card),
@@ -827,6 +866,7 @@ fn add_card(
         depends_on: adding.depends_on,
         created_by_name: maker.as_deref().map(|agent| name_of(core, agent)),
         created_by: maker,
+        team: None,
         result: None,
         ticket: adding.ticket,
         auto: None,
@@ -844,6 +884,7 @@ fn add_card(
         }
     }
     board.cards.push(card);
+    remember_team(core, board, id);
     let card = board.card(id)?;
     let mut view = agent_view(core, board, card, true);
     if let By::Agent(agent) = by {
@@ -895,6 +936,7 @@ fn claim_card(core: &Core, project: &str, agent: &str, id: u64) -> Result<Value,
     }
     let card = board.card_mut(id)?;
     take(core, card, agent);
+    remember_team(core, board, id);
     let card = board.card(id)?;
     let view = agent_view(core, board, card, true);
     state.woken.remove(agent);
@@ -975,6 +1017,7 @@ fn change_card(
             card.owner = None;
             card.owner_name = None;
             card.owner_cli = None;
+            card.team = None;
             card.auto = None;
         }
         Some(Status::Done) => {
@@ -992,7 +1035,8 @@ fn change_card(
         None => {}
     }
     card.updated_at = unix_ms();
-    let after = card.clone();
+    remember_team(core, board, id);
+    let after = board.card(id)?.clone();
     let mut notices = Vec::new();
     let changer = match by {
         By::Person => Some("The person".to_owned()),
@@ -1252,7 +1296,7 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         let team = core.names.team_of(&agent);
         let rank = |card: &Card| {
             let mine = card.owner.as_deref() == Some(agent.as_str());
-            let ours = team_of(&core, board, card).as_deref() == Some(team.as_str());
+            let ours = team_of(&core, board, card).is_some_and(|ours| ours.lead == team);
             let place = if mine {
                 0
             } else if ours {
@@ -1817,7 +1861,7 @@ fn offer(core: &Arc<Core>) -> Option<u64> {
                             .iter()
                             .any(|other| other.parent == Some(card.id))
                         && !offered.contains(&(project.clone(), card.id, agent.clone()))
-                        && team_of(core, board, card).as_deref() == Some(team.as_str())
+                        && team_of(core, board, card).is_some_and(|ours| ours.lead == team)
                 })
                 .take(MAX_OFFERED)
                 .collect();

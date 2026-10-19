@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::review::Review;
-use super::{blind, finish, git, Board, Card, Status};
+use super::{blind, finish, git, Board, Card, Status, Team};
 use crate::launch::providers;
 use crate::protocol::Event;
 use crate::server::connection::blocking;
@@ -434,6 +434,7 @@ pub(super) fn start_free(core: &Arc<Core>) {
                     card.owner = Some(agent.clone());
                     card.owner_name = None;
                     card.owner_cli = None;
+                    card.team = None;
                     card.status = Status::Progress;
                     card.auto = Some(Run::starting(agent.clone()));
                     card.updated_at = now;
@@ -561,6 +562,10 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
     let placed = finish::change_run(core, project, id, agent, |card, run| {
         card.owner_name = Some(name.clone());
         card.owner_cli = Some(provider.clone());
+        card.team = Some(Team {
+            lead: agent.to_owned(),
+            name: name.clone(),
+        });
         run.repo = tree.repo.to_string_lossy().into_owned();
         run.worktree = tree.path.to_string_lossy().into_owned();
         run.branch = tree.branch.clone();
