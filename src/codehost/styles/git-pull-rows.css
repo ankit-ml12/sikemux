@@ -322,10 +322,12 @@
     display: inline-flex;
     gap: var(--space-1);
 }
-.release-kinds {
-    margin: 0 var(--space-2);
+/* A segment that spans the side panel under its head, its choices sharing the width. */
+.side-seg.fill {
+    display: flex;
+    margin: 0 var(--space-2) var(--space-2);
 }
-.release-kinds > .gha-chip {
+.side-seg.fill > .gha-chip {
     flex: 1 1 0;
     justify-content: center;
 }
@@ -410,4 +412,7 @@
 .release-asset-when {
     width: 72px;
     justify-content: flex-end;
+}
+.git-side-actions + .side-seg.fill {
+    margin-top: var(--space-2);
 }

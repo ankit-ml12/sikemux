@@ -206,7 +206,7 @@ export function ReleasesView({ paneId, repo, active }: Props) {
                     </Tooltip>
                     <ShellAccount />
                 </div>
-                <div className="gha-chips gha-seg side-seg release-kinds" role="group" aria-label="Which releases to list">
+                <div className="gha-chips gha-seg side-seg fill" role="group" aria-label="Which releases to list">
                     {KINDS.map((each) => (
                         <button
                             key={each.id}

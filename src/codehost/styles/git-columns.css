@@ -306,7 +306,7 @@ button.git-file-row {
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
 }
-.git-side-head > :is(.gha-callout, .gha-attempts, .gha-approvals) {
+.git-side-head > :is(.gha-callout, .gha-approvals) {
     margin: 0 var(--space-2) var(--space-2);
 }
 /* A job's mark fills its box edge to edge, unlike a file's icon, so it keeps a gap from the branch's tick. */

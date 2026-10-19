@@ -225,8 +225,7 @@ function RunHead({
                 </div>
             )}
             {ci.attempts && open.latestAttempt > 1 && (
-                <div className="gha-attempts">
-                    <span className="gha-dim">Attempts</span>
+                <div className="gha-chips gha-seg side-seg fill" role="group" aria-label="Attempts">
                     {Array.from({ length: open.latestAttempt }, (_, index) => index + 1).map((number) => (
                         <button
                             key={number}
@@ -234,7 +233,7 @@ function RunHead({
                             className="gha-chip"
                             data-on={(open.attempt ?? open.latestAttempt) === number ? "1" : "0"}
                             onClick={() => open.setAttempt(number === open.latestAttempt ? null : number)}>
-                            #{number}
+                            Attempt {number}
                         </button>
                     ))}
                 </div>

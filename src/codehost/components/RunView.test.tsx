@@ -163,7 +163,7 @@ describe("RunView", () => {
 
     it("asks a newly opened run for its latest attempt, not the attempt picked on the one before", async () => {
         const view = await renderRun(makeRun({ attempt: 2 }));
-        fireEvent.click(screen.getByRole("button", { name: "#1" }));
+        fireEvent.click(screen.getByRole("button", { name: "Attempt 1" }));
         await act(async () => {});
         expect(api.runAttempt).toHaveBeenCalledWith(repo, "7", 1);
         api.runAttempt.mockClear();
