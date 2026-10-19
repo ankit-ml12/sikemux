@@ -1504,6 +1504,139 @@ pub(crate) async fn person_add(core: &Arc<Core>, params: Value) -> Result<Value,
     .map_err(|error| error.to_string())
 }
 
+const MAX_TICKET_DETAILS_CHARS: usize = 4000;
+
+/// A ticket made a card: its title on one line and its description cut to
+/// what a card holds.
+fn ticket_card(value: &Value) -> Result<Adding, String> {
+    let text = |key: &str| value.get(key).and_then(Value::as_str).unwrap_or_default();
+    let title = text("title")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let details = text("details");
+    let details = if chars(details) <= MAX_TICKET_DETAILS_CHARS {
+        details.to_owned()
+    } else {
+        let kept: String = details.chars().take(MAX_TICKET_DETAILS_CHARS).collect();
+        format!("{kept}\n\n[Cut short; the ticket has the rest.]")
+    };
+    let mut adding = Adding::from_params(
+        &serde_json::json!({ "title": clipped(&title, MAX_TITLE_CHARS), "details": details }),
+    )?;
+    adding.ticket = ticket_of(value.get("ticket").unwrap_or(&Value::Null))?;
+    Ok(adding)
+}
+
+/// The card on `project`'s board for ticket `key`: its id, parent and what
+/// it waits on.
+fn card_of_ticket(core: &Core, project: &str, key: &str) -> Option<(u64, Option<u64>, Vec<u64>)> {
+    let state = core.boards.lock();
+    let card = state.boards.get(project)?.cards.iter().find(|card| {
+        card.ticket
+            .as_ref()
+            .is_some_and(|ticket| ticket.key.eq_ignore_ascii_case(key))
+    })?;
+    Some((card.id, card.parent, card.depends_on.clone()))
+}
+
+/// The person puts a ticket on the board: its subtasks go under it, it waits
+/// on the tickets that block it and the ones it blocks wait on it, when those
+/// are on the board too. Answers with the board, and what could not be done
+/// besides adding the ticket.
+pub(crate) async fn person_add_ticket(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+    let (view, notices) = {
+        let core = core.clone();
+        blocking(move || {
+            let project = project_param(&core, &params)?;
+            add_card(&core, &project, &By::Person, ticket_card(&params)?, false)?;
+            let key_of = |value: &Value| {
+                value
+                    .get("ticket")
+                    .and_then(|ticket| ticket.get("key"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            };
+            let keys = |field: &str| -> Vec<String> {
+                params
+                    .get(field)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|key| key.as_str().map(str::to_owned))
+                    .collect()
+            };
+            let key = key_of(&params).ok_or("a ticket needs its key, such as PROJ-12")?;
+            let (made, _, _) =
+                card_of_ticket(&core, &project, &key).ok_or("The ticket's card is gone")?;
+            let mut notices = Vec::new();
+            let mut problems = Vec::new();
+            let change = |id: u64, changes: Value| {
+                Changes::from_params(&changes)
+                    .and_then(|changes| change_card(&core, &project, &By::Person, id, changes))
+                    .map(|(_, sent)| sent)
+            };
+            let mut note = |done: Result<Vec<Notice>, String>, what: String| match done {
+                Ok(sent) => notices.extend(sent),
+                Err(error) => problems.push(format!("Could not {what}: {error}")),
+            };
+            let subtasks = params
+                .get("subtasks")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for sub in &subtasks {
+                let Some(sub_key) = key_of(sub) else { continue };
+                match card_of_ticket(&core, &project, &sub_key) {
+                    None => note(
+                        ticket_card(sub).and_then(|mut adding| {
+                            adding.parent = Some(made);
+                            add_card(&core, &project, &By::Person, adding, false)
+                                .map(|_| Vec::new())
+                        }),
+                        format!("put {sub_key} under it"),
+                    ),
+                    Some((id, None, _)) => note(
+                        change(id, serde_json::json!({ "parent": made })),
+                        format!("put {sub_key} under it"),
+                    ),
+                    Some(_) => {}
+                }
+            }
+            let waits: Vec<u64> = keys("blockedBy")
+                .iter()
+                .filter_map(|blocker| card_of_ticket(&core, &project, blocker).map(|(id, _, _)| id))
+                .collect();
+            if !waits.is_empty() {
+                note(
+                    change(made, serde_json::json!({ "dependsOn": waits })),
+                    "make it wait on its blockers".into(),
+                );
+            }
+            for blocked in keys("blocks") {
+                if let Some((id, _, mut depends)) = card_of_ticket(&core, &project, &blocked) {
+                    if !depends.contains(&made) {
+                        depends.push(made);
+                        note(
+                            change(id, serde_json::json!({ "dependsOn": depends })),
+                            format!("make {blocked} wait on it"),
+                        );
+                    }
+                }
+            }
+            let mut view = project_view(&core, &project);
+            if let (Some(object), false) = (view.as_object_mut(), problems.is_empty()) {
+                object.insert("problems".into(), problems.into());
+            }
+            Ok((view, notices))
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    send_notices(core, notices);
+    Ok(view)
+}
+
 /// The person changes or moves a card. Answers with the board.
 pub(crate) async fn person_update(core: &Arc<Core>, params: Value) -> Result<Value, String> {
     let (view, notices) = {

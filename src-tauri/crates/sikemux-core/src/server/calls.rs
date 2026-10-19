@@ -27,6 +27,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "boardSettings" | "boardRetry" | "renameAgent" | "shares" | "agentAccounts"
         | "agentStatus" | "agentAccountStatus" | "agentUsage" | "cancelResume" | "steerQueued"
         | "dropQueued" => Needs::Full,
+        "boardAddTicket" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" | "linkHost" | "shareChat" | "stopShare"
         | "commitStaged" | "setAgentAccounts" | "addAgentAccount" | "forgetAgentStatus"
         | "markAgentSignedOut" | "addProject" | "removeProject" | "updateProject"
@@ -203,6 +204,7 @@ pub(crate) async fn call(
         "boards" => answer(board::boards(&core)),
         "board" => answer(board::board(&core, params).await?),
         "boardAdd" => answer(board::person_add(&core, params).await?),
+        "boardAddTicket" => answer(board::person_add_ticket(&core, params).await?),
         "boardUpdate" => answer(board::person_update(&core, params).await?),
         "boardRemove" => answer(board::person_remove(&core, params).await?),
         "boardSettings" => answer(board::person_settings(&core, params).await?),
