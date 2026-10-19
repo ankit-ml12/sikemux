@@ -119,12 +119,7 @@ export function JiraBoard({
     const lanesOf = (shown: JiraColumn[]) => (
         <div className="kanban-columns">
             {shown.map((column, index) => (
-                <div
-                    key={column.name}
-                    className={`kanban-column${drag.dragging?.over === String(index) ? " drop" : ""}`}
-                    data-column={index}
-                    role="list"
-                    aria-label={column.name}>
+                <div key={column.name} className="kanban-column" data-column={index} role="list" aria-label={column.name}>
                     <div className="kanban-column-head">
                         <span className="kanban-column-name">{column.name}</span>
                         <span className="kanban-count">{column.issues.length}</span>

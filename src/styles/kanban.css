@@ -339,8 +339,20 @@
 }
 
 .kanban-card.dragging {
-    opacity: 0.5;
-    cursor: grabbing;
+    border-style: dashed;
+    border-color: var(--border-strong);
+    opacity: 0.4;
+}
+
+.kanban-card-lifted {
+    z-index: 1000;
+    box-shadow:
+        0 12px 28px rgb(0 0 0 / 28%),
+        0 2px 6px rgb(0 0 0 / 18%);
+    background: var(--surface-raised);
+    opacity: 0.96;
+    transition: none;
+    will-change: transform;
 }
 
 .kanban-card.moving {
@@ -361,4 +373,11 @@
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+/* While a card is carried, everything under the pointer shows it is being dragged, and no text gets selected. */
+.kanban-dragging,
+.kanban-dragging * {
+    cursor: grabbing;
+    user-select: none;
 }
