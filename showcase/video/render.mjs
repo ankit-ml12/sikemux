@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdir, readdir, rename, stat } from "node:fs/promises";
+import { mkdir, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { FIXED_TIME, launchChrome, startShowcase } from "../harness.mjs";
 import { Director, FPS } from "./director.mjs";
+import { mix, premiumParts } from "./mix.mjs";
 import { STAGE } from "../stage.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -15,6 +16,9 @@ const { values: options, positionals: only } = parseArgs({
     height: { type: "string", default: "1440" },
     draft: { type: "boolean", default: false },
     at: { type: "string" },
+    premium: { type: "boolean", default: false },
+    music: { type: "string" },
+    "music-hit": { type: "string" },
   },
 });
 
@@ -30,11 +34,18 @@ for (const name of chosen)
 // A draft is a quick, softer look at the timing.
 const scale = options.draft ? 1 : 2;
 const height = options.draft ? 1080 : Number(options.height);
+// A premium render takes two pictures a frame and blends them, a little motion blur on fast moves,
+// and lays the scene's sounds, and music when given, under it.
+const fps = options.premium ? FPS * 2 : FPS;
+const pictureFilter = [
+  ...(options.premium ? ["tmix=frames=2", `fps=${FPS}`] : []),
+  `scale=-2:${height}:flags=lanczos`,
+].join(",");
 
 // `--at 0.5,9,30` saves the frames at those seconds as pictures, for judging a look without a whole render.
 const stillsAt = options.at
   ?.split(",")
-  .map((seconds) => Math.round(Number(seconds) * FPS));
+  .map((seconds) => Math.round(Number(seconds) * fps));
 
 function picture(png, path) {
   const ffmpeg = spawn(
@@ -66,9 +77,9 @@ function encoder(path) {
         "-f",
         "image2pipe",
         "-framerate",
-        String(FPS),
+        String(fps),
       ],
-      ...["-c:v", "png", "-i", "-", "-vf", `scale=-2:${height}:flags=lanczos`],
+      ...["-c:v", "png", "-i", "-", "-vf", pictureFilter],
       ...["-c:v", "libx264", "-preset", options.draft ? "veryfast" : "slow"],
       ...["-crf", options.draft ? "24" : "14", "-pix_fmt", "yuv420p"],
       ...["-profile:v", "high", "-movflags", "+faststart", path],
@@ -121,7 +132,8 @@ for (const name of chosen) {
     ? resolve(root, "showcase/out/video")
     : resolve(options.out, name);
   await mkdir(folder, { recursive: true });
-  const path = resolve(folder, options.draft ? `${name}.mp4` : "clip.mp4");
+  const clip = options.premium ? "clip-premium.mp4" : "clip.mp4";
+  const path = resolve(folder, options.draft ? `${name}.mp4` : clip);
   const stills = [];
   // Encoded beside the clip and moved over it once whole, so the clip on disk always plays.
   const partial = `${path}.partial.mp4`;
@@ -131,6 +143,7 @@ for (const name of chosen) {
     app: null,
     start: start + 1000,
     density: scale,
+    fps,
     capture: async () => {
       if (stillsAt && !stillsAt.includes(director.recorded)) return;
       // The page's own clock is held still, so the browser's real frames are waited on: a busy page,
@@ -151,7 +164,7 @@ for (const name of chosen) {
       const still = resolve(
         root,
         "showcase/out/video",
-        `${name}-${(director.recorded / FPS).toFixed(1)}s.png`,
+        `${name}-${director.seconds.toFixed(1)}s.png`,
       );
       await mkdir(resolve(root, "showcase/out/video"), { recursive: true });
       await picture(png, still);
@@ -188,6 +201,21 @@ for (const name of chosen) {
     continue;
   }
   await video.close();
+  if (options.premium) {
+    // The silent picture and its events stay in the showcase's output, so new music can be laid under them without a render.
+    const { silent, timeline } = premiumParts(name);
+    await mkdir(resolve(root, "showcase/out/video"), { recursive: true });
+    await writeFile(timeline, JSON.stringify(director.events, null, 1));
+    await rename(partial, silent);
+    await mix({
+      video: silent,
+      events: director.events,
+      music: options.music,
+      musicHit: options["music-hit"] && Number(options["music-hit"]),
+      out: partial,
+    });
+    console.log(`  events: ${timeline}`);
+  }
   await rename(partial, path);
   const { size } = await stat(path);
   console.log(

@@ -68,7 +68,9 @@ export async function mapleAnswers(
   await s.zoomOut({ wait: false });
   await s.app(() => showcase.backend.cue("maple-answers"));
   await swipeTabs(s);
-  await s.live({ agent: MAPLE, steps: 2, pace: 0.3 });
+  await s.live({ agent: MAPLE, steps: 1, pace: 0.3 });
+  s.mark("message");
+  await s.live({ agent: MAPLE, steps: 1, pace: 0.3 });
   await s.zoom(
     { selector: ".agent-letter", last: true },
     { scale: 1.7, at: { x: 0.5, y: 1.3 } },
@@ -87,10 +89,13 @@ export async function boardMoves(s, { hold = 1000 } = {}) {
   s.zoom(otterLane, { pad: 40, wait: false });
   await s.move(card("Ledger import onto amounts"));
   await s.still();
+  s.mark("card");
   await s.live({ agent: MAPLE, steps: 1, pace: 0, shortest: 0 });
   await s.wait(700 + hold);
   await s.app(() => showcase.backend.cue("otter-takes-refunds"));
-  await s.live({ agent: OTTER, steps: 4, pace: 0.15, shortest: 100 });
+  await s.live({ agent: OTTER, steps: 2, pace: 0.15, shortest: 100 });
+  s.mark("card");
+  await s.live({ agent: OTTER, steps: 2, pace: 0.15, shortest: 100 });
   await s.move(card("Totals are off by a cent"));
   await s.live({ agent: OTTER, steps: 1, pace: 0, shortest: 0 });
   await s.wait(hold);
@@ -143,20 +148,32 @@ export async function browserCheck(s, { hold = 1300 } = {}) {
   const height = (width * STAGE.height) / STAGE.width;
   const around = async (target) => {
     const box = await s.rect(target);
-    return { x: chat.x - chat.width * 0.29, y: box.y + box.height / 2 - height / 2, width, height };
+    return {
+      x: chat.x - chat.width * 0.29,
+      y: box.y + box.height / 2 - height / 2,
+      width,
+      height,
+    };
   };
   s.move(".agent-chat-pane", { at: { x: 0.78, y: 0.8 }, wait: false });
   await s.live({ agent: WREN, steps: 2, pace: 0.4 });
-  await s.zoom(await around({ selector: ".chat-message", last: true }), { pad: 0 });
+  await s.zoom(await around({ selector: ".chat-message", last: true }), {
+    pad: 0,
+  });
   await s.live({ agent: WREN, steps: 1, shortest: 0, pace: 0 });
   await s.wait(hold);
   await s.live({ agent: WREN, steps: 1, shortest: 0, pace: 0 });
   await s.wait(hold);
   // The chat scrolls the reply and its picture in at once, so the camera stands back while they arrive.
   await s.zoomOut({ wait: false });
-  await s.live({ agent: WREN, pace: 0.25, shortest: 120 });
+  const reply = s.live({ agent: WREN, pace: 0.25, shortest: 120 });
+  await s.appear({ selector: ".chat-image", last: true });
+  s.mark("shot");
+  await reply;
   await s.steady({ selector: ".chat-image", last: true }, { frames: 6 });
-  await s.zoom(await around({ selector: ".chat-image", last: true }), { pad: 0 });
+  await s.zoom(await around({ selector: ".chat-image", last: true }), {
+    pad: 0,
+  });
   await s.wait(1000);
 }
 
@@ -198,6 +215,7 @@ export async function approveFromNotch(
   await s.wait(ask);
   s.cursor.shape = "hand";
   await s.click(ALLOW, { at: { x: 0.685, y: 0.56 }, pause: 160, after: 0 });
+  s.mark("allow");
   s.cursor.shape = null;
   await s.app(() =>
     document.querySelector(".chat-permission-actions button")?.click(),
