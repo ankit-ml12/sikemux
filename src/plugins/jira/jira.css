@@ -16,7 +16,8 @@
 
 .jira-sidebar,
 .jira-list-pane,
-.jira-detail {
+.jira-detail,
+.jira-pane > .kanban {
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     background: var(--jira-panel);
