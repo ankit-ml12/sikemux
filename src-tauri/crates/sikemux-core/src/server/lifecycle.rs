@@ -1,11 +1,15 @@
-//! When the core puts a chat to sleep and wakes it. A chat no client has on
-//! screen sleeps once it has been idle for a while, the oldest first when more
-//! than a few sit idle, and one a client brings on screen wakes again. A chat
-//! at work, or one the person keeps alive, is never put to sleep.
+//! When the core puts a chat to sleep and wakes it, and starts a terminal
+//! agent again. A chat no client has on screen sleeps once it has been idle for
+//! a while, the oldest first when more than a few sit idle, and one a client
+//! brings on screen wakes again. A chat at work, or one the person keeps
+//! alive, is never put to sleep. A terminal agent that crashes comes back on
+//! its saved session below its last screen, unless it crashes again at once.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use crate::protocol::{Continuation, SessionId};
 
 use super::remote::unix_ms;
 use super::{launching, Core, CoreResult};
@@ -16,11 +20,20 @@ const IDLE_SLEEP_MS: u64 = 10 * 60_000;
 /// back to most come back at once.
 const MAX_WARM: usize = 3;
 const CHECK_EVERY: Duration = Duration::from_secs(30);
+/// A terminal agent that dies this soon after it was started again is in a
+/// crash loop, and the person decides what next.
+const RESUME_WINDOW: Duration = Duration::from_secs(30);
+/// The person's Ctrl-C and Ctrl-\, which a CLI quitting on them reports as
+/// SIGINT and SIGQUIT, or exits with 128 plus their number.
+const PERSON_SIGNALS: [u32; 2] = [2, 3];
+const SIGNAL_EXIT_BASE: u32 = 128;
 
 #[derive(Default)]
 pub(crate) struct Lifecycle {
     /// Agents whose chat is starting, so two clients waking one start it once.
     starting: Mutex<HashSet<String>>,
+    /// When each terminal agent was last started again after a crash.
+    resumed: Mutex<HashMap<String, Instant>>,
 }
 
 /// Holds an agent's place among those starting until it is dropped.
@@ -99,6 +112,106 @@ pub(crate) fn sleep(core: &Core, agent_id: &str) -> bool {
     stopped
 }
 
+/// Whether a terminal agent's process ended the way a crash does, rather than
+/// by the person quitting it, Sikemux stopping it, or a program that cannot run.
+fn crashed(code: Option<u32>, signal: Option<&str>, killed: bool) -> bool {
+    if killed {
+        return false;
+    }
+    if let Some(signal) = signal {
+        return !signal_number(signal).is_some_and(|number| PERSON_SIGNALS.contains(&number));
+    }
+    match code {
+        None => true,
+        Some(0 | 126 | 127) => false,
+        Some(code) => {
+            !(code > SIGNAL_EXIT_BASE && PERSON_SIGNALS.contains(&(code - SIGNAL_EXIT_BASE)))
+        }
+    }
+}
+
+/// macOS names a signal "Interrupt: 2", Linux "Interrupt".
+fn signal_number(signal: &str) -> Option<u32> {
+    let trailing = signal.rsplit([' ', ':']).next()?.trim();
+    trailing
+        .parse()
+        .ok()
+        .or(match signal.split(':').next()?.trim() {
+            "Interrupt" => Some(2),
+            "Quit" => Some(3),
+            _ => None,
+        })
+}
+
+/// Starts a terminal agent whose terminal crashed again on its saved session,
+/// below the screen it left.
+pub(crate) fn terminal_exited(
+    core: &Core,
+    pty: SessionId,
+    agent_id: &str,
+    code: Option<u32>,
+    signal: Option<&str>,
+    killed: bool,
+) {
+    let Some(agent) = core.workspaces.agent(agent_id) else {
+        return;
+    };
+    let resumable = agent.pty_id == Some(pty) && agent.resume_id.is_some() && !agent.asleep;
+    if !resumable || !crashed(code, signal, killed) {
+        return;
+    }
+    let now = Instant::now();
+    let Ok(mut resumed) = core.lifecycle.resumed.lock() else {
+        return;
+    };
+    resumed.retain(|_, at| now.duration_since(*at) < RESUME_WINDOW);
+    if resumed.insert(agent_id.to_owned(), now).is_some() {
+        return;
+    }
+    drop(resumed);
+    let (Some(core), agent_id) = (core.arc(), agent_id.to_owned()) else {
+        return;
+    };
+    let label = crate::agent_catalog::agent(&agent.provider)
+        .map_or(agent.provider.as_str(), |entry| entry.label);
+    let continues = Continuation {
+        session: pty,
+        note: format!("— Resuming {label} —"),
+    };
+    tokio::spawn(async move {
+        if let Err(error) =
+            launching::start_terminal(&core, &agent_id, (80, 24), Some(continues)).await
+        {
+            eprintln!("sikemux core: {agent_id} did not start again: {error}");
+        }
+    });
+}
+
+/// Settles the terminal agents whose terminal did not outlive the last core:
+/// one with a saved session starts again on it when shown, and one without
+/// has nothing left to show.
+fn settle_terminals(core: &Core) {
+    let gone: Vec<_> = core
+        .workspaces
+        .agent_ids()
+        .into_iter()
+        .filter_map(|agent_id| core.workspaces.agent(&agent_id))
+        .filter(|agent| agent.pty_id.is_some_and(|pty| core.session(pty).is_none()))
+        .collect();
+    let mut closed = Vec::new();
+    for agent in gone {
+        if agent.resume_id.is_some() {
+            let patch = serde_json::Map::from_iter([("ptyId".to_owned(), serde_json::Value::Null)]);
+            let _ = core.workspaces.update_agent(&agent.id, patch);
+        } else {
+            closed.push(agent.id);
+        }
+    }
+    if !closed.is_empty() {
+        super::workspace::close_gone(core, &closed);
+    }
+}
+
 /// Puts every idle chat to sleep now, on screen or not, but those the person
 /// keeps alive. Answers how many slept.
 pub(crate) fn sleep_idle(core: &Core) -> usize {
@@ -112,6 +225,7 @@ pub(crate) fn sleep_idle(core: &Core) -> usize {
 
 /// Puts to sleep the chats that have sat idle off every screen long enough.
 pub(crate) async fn serve(core: Arc<Core>) {
+    settle_terminals(&core);
     let began = unix_ms();
     let mut ticker = tokio::time::interval(CHECK_EVERY);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -166,4 +280,44 @@ fn idle(core: &Core, agent_id: &str) -> bool {
     core.chats
         .get(agent_id)
         .is_some_and(|chat| chat.state_now() == "idle")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::crashed;
+
+    #[test]
+    fn the_person_quitting_is_no_crash() {
+        assert!(!crashed(Some(0), None, false));
+        for signal in ["Interrupt: 2", "Interrupt", "Quit: 3"] {
+            assert!(!crashed(Some(1), Some(signal), false), "{signal}");
+        }
+        assert!(!crashed(Some(130), None, false));
+        assert!(!crashed(Some(131), None, false));
+    }
+
+    #[test]
+    fn any_other_signal_or_failing_code_is_a_crash() {
+        for signal in [
+            "Killed: 9",
+            "Segmentation fault: 11",
+            "Abort trap: 6",
+            "Terminated: 15",
+            "Hangup",
+        ] {
+            assert!(crashed(Some(1), Some(signal), false), "{signal}");
+        }
+        for code in [1, 2, 101, 129, 137, 139, 143] {
+            assert!(crashed(Some(code), None, false), "{code}");
+        }
+        assert!(crashed(None, None, false));
+    }
+
+    #[test]
+    fn a_cli_the_shell_could_not_run_or_one_sikemux_stopped_is_no_crash() {
+        assert!(!crashed(Some(126), None, false));
+        assert!(!crashed(Some(127), None, false));
+        assert!(!crashed(Some(1), Some("Hangup"), true));
+        assert!(!crashed(Some(143), None, true));
+    }
 }

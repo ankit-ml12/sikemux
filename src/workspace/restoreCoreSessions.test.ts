@@ -21,10 +21,8 @@ function terminal(id: number, running = true, exit: SessionInfo["exit"] = runnin
 function deps(sessions: SessionInfo[], chats: ChatInfo[] = []) {
     const scheduled: Array<() => void> = [];
     const kill = vi.fn(async (_id: number) => {});
-    const resume = vi.fn(async (_agentId: string, _ptyId: number) => {});
     const restore: CoreSessionRestoreDeps = {
         list: async () => sessions,
-        resume,
         kill,
         chats: async () => chats,
         schedule: (callback, delay) => {
@@ -32,7 +30,7 @@ function deps(sessions: SessionInfo[], chats: ChatInfo[] = []) {
             scheduled.push(callback);
         },
     };
-    return { restore, kill, resume, runScheduled: () => scheduled.splice(0).forEach((callback) => callback()) };
+    return { restore, kill, runScheduled: () => scheduled.splice(0).forEach((callback) => callback()) };
 }
 
 function layoutWithSessions() {
@@ -66,7 +64,7 @@ describe("restoring what the core kept", () => {
         takeResumableSession(103);
     });
 
-    it("wakes agents whose terminal runs, lets the others sleep, and stops only unclaimed terminals after the grace", async () => {
+    it("shows live the agents whose terminal runs, leaves the others asleep, and stops only unclaimed terminals after the grace", async () => {
         const { sid } = layoutWithSessions();
         const { restore, kill, runScheduled } = deps([terminal(101), terminal(102), terminal(103, false), terminal(104), terminal(105)]);
 
@@ -74,47 +72,13 @@ describe("restoring what the core kept", () => {
 
         expect(getState().agents["agent-live"]).toMatchObject({ launchState: "live", ptyId: 102 });
         expect(getState().agents["agent-ended"].launchState).toBe("dormant");
-        expect(getState().agents["agent-ended"].ptyId).toBeUndefined();
         expect(agentWindowId(getState(), "agent-ended")).toBeTruthy();
         expect(kill).not.toHaveBeenCalled();
 
         cmd.newWindow();
         cmd.setPanePty(getState().windows[getState().sessions[sid].activeWindowId].activePaneId, 104);
         runScheduled();
-        expect(kill.mock.calls.map(([id]) => id).sort()).toEqual([103, 105]);
-    });
-
-    it("resumes an agent whose terminal crashed while the app was closed, in the pane that showed it", async () => {
-        layoutWithSessions();
-        offerSavedSessions();
-        const { restore, resume, kill, runScheduled } = deps([terminal(101), terminal(102), terminal(103, false, { code: 1, signal: "Killed: 9" })]);
-
-        await restoreCoreSessions(restore);
-
-        expect(getState().agents["agent-ended"]).toMatchObject({ launchState: "live", ptyId: 103 });
-        expect(isResumableSession(103)).toBe(true);
-        expect(resume).toHaveBeenCalledExactlyOnceWith("agent-ended", 103);
-        runScheduled();
-        expect(kill).not.toHaveBeenCalled();
-        for (const id of [101, 102, 103]) takeResumableSession(id);
-    });
-
-    it("lets an agent the person quit sleep instead of resuming it", async () => {
-        layoutWithSessions();
-        const { restore, resume } = deps([terminal(101), terminal(102), terminal(103, false, { code: 0, signal: null })]);
-        await restoreCoreSessions(restore);
-        expect(resume).not.toHaveBeenCalled();
-        expect(getState().agents["agent-ended"].launchState).toBe("dormant");
-    });
-
-    it("closes a terminal agent with nothing to resume once its terminal is gone", async () => {
-        const sid = getState().activeSessionId;
-        setState((s) => {
-            const slices = withAgents(s, sid, [{ id: "agent-gone", type: "pi", title: "gone", startup: "pi", ptyId: 7 }]);
-            return { ...slices, sessions: { ...s.sessions, [sid]: { ...s.sessions[sid], kind: "project" } } };
-        });
-        await restoreCoreSessions(deps([]).restore);
-        expect(getState().agents["agent-gone"]).toBeUndefined();
+        expect(kill.mock.calls.map(([id]) => id).sort()).toEqual([105]);
     });
 
     it("says once that terminals kept running", async () => {

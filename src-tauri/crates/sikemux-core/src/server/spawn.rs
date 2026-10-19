@@ -14,7 +14,7 @@ use sikemux_pty::agent_detection::AgentKind;
 
 use crate::cli::protocol::HarnessRequest;
 use crate::launch::providers::ROUTED_ENV;
-use crate::protocol::{Event, WindowCall};
+use crate::protocol::Event;
 
 use super::chat;
 use super::connection::blocking;
@@ -33,9 +33,6 @@ const MAX_SESSION_ID_CHARS: usize = 4_096;
 /// How much of a worker's final answer its lead is sent.
 const MAX_REPORT_BYTES: usize = 6 * 1024;
 
-/// The window call that opens a terminal agent another agent started.
-const OPEN_TERMINAL_METHOD: &str = "agent.terminal";
-const OPEN_TERMINAL_WAIT: Duration = Duration::from_secs(30);
 /// How long a terminal agent may take to show its prompt box before its lead
 /// hears that it has not got its task yet.
 const TERMINAL_READY_WAIT: Duration = Duration::from_secs(120);
@@ -581,7 +578,6 @@ struct Opening {
     lead_id: String,
     lead_name: String,
     lead_cli: String,
-    project: String,
     reports: bool,
 }
 
@@ -606,9 +602,6 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
         return Err("provider works only for a chat; leave mode out to start one".into());
     }
     let reports = reports_back(params)?;
-    if !core.window.is_open() {
-        return Err(super::window::not_open("start an agent in a terminal"));
-    }
     if super::hosts::route::lead_host(core, &lead_id).is_some() {
         return Err("your team's lead runs on another host, so the agents you start run as chats; leave out mode".into());
     }
@@ -650,43 +643,46 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
         provider,
         lead_id,
         lead_name,
-        project: named.project,
         reports,
     })
 }
 
-/// Asks the window to open the terminal agent in its lead's project.
-async fn open_terminal(core: &Core, opening: &Opening) -> Result<(), String> {
-    let request = HarnessRequest {
-        id: uuid::Uuid::new_v4().to_string(),
-        project: opening.project.clone(),
-        agent_id: Some(opening.lead_id.clone()),
-        method: OPEN_TERMINAL_METHOD.to_owned(),
-        params: json!({
-            "agentId": opening.agent_id,
-            "cli": opening.provider,
-            "name": opening.name,
-            "lead": opening.lead_id,
-            "model": opening.model,
-            "permissionMode": opening.permission_mode,
-            "launcher": opening.launcher,
-        }),
+/// Starts the terminal agent in its lead's project, as an agent of the
+/// workspace every client shows, on the lead's account when it runs the same CLI.
+async fn open_terminal(core: &Arc<Core>, opening: &Opening) -> Result<(), String> {
+    let lead = core
+        .workspaces
+        .agent(&opening.lead_id)
+        .ok_or("the agent that asked for it is no longer open in Sikemux")?;
+    let same = lead.provider == opening.provider;
+    let on_launcher = opening.launcher.as_deref().and_then(|launcher| {
+        launcher
+            .strip_prefix(&format!("{}:", opening.provider))
+            .map(str::to_owned)
+    });
+    let agent = json!({
+        "id": opening.agent_id,
+        "provider": opening.provider,
+        "project": lead.project,
+        "cwd": lead.cwd,
+        "title": opening.provider,
+        "lead": lead.id,
+        "permissionMode": opening.permission_mode,
+        "profileId": on_launcher.or(lead.profile_id.filter(|_| same)),
+        "model": opening.model,
+        "effort": lead.effort.filter(|_| same),
+        "worktree": lead.worktree,
+    });
+    let Value::Object(agent) = agent else {
+        return Err("the agent could not be described".into());
     };
-    let request = serde_json::to_value(&request).map_err(|error| error.to_string())?;
-    let call = core.window.call(
-        WindowCall::Harness { request },
-        "start an agent in a terminal",
-        false,
-    )?;
-    let id = call.id;
-    match tokio::time::timeout(OPEN_TERMINAL_WAIT, call.answer).await {
-        Ok(Ok(answer)) => answer.map(|_| ()),
-        Ok(Err(_)) => Err("Sikemux's window closed before it opened the terminal".into()),
-        Err(_) => {
-            core.window.forget(id);
-            Err("Sikemux's window did not open the terminal in time".into())
-        }
-    }
+    core.workspaces
+        .put_agent(agent)
+        .map_err(|error| error.to_string())?;
+    super::launching::start_terminal(core, &opening.agent_id, (100, 30), None)
+        .await
+        .map(drop)
+        .map_err(|error| error.to_string())
 }
 
 async fn spawn_terminal(

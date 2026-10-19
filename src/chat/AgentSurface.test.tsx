@@ -13,9 +13,6 @@ const mocks = vi.hoisted(() => ({
     terminalProps: vi.fn(),
     screen: [] as string[],
     addAgent: vi.fn(),
-    relaunch: vi.fn(async () => {}),
-    clearRecovery: vi.fn(),
-    resume: { recovery: null as null | { phase: "resuming" } | { phase: "failed"; detail: string | null }, generation: 0 },
     state: { deskPanes: {} as Record<string, string>, windows: {} as Record<string, unknown>, keybindingOverrides: {}, agentStatus: {} },
 }));
 
@@ -42,11 +39,6 @@ vi.mock("../state/store", () => ({
     useStore: (select: (state: typeof mocks.state) => unknown) => select(mocks.state),
     getState: () => mocks.state,
 }));
-vi.mock("../agents/tuiResume", () => ({
-    useTuiResume: () => mocks.resume,
-    relaunchTuiAgent: mocks.relaunch,
-    clearTuiRecovery: mocks.clearRecovery,
-}));
 vi.mock("../state/commands", () => ({
     addAgent: mocks.addAgent,
     toggleDesk: mocks.toggleDesk,
@@ -71,8 +63,6 @@ afterEach(() => {
     mocks.toggleDesk.mockClear();
     mocks.renameAgent.mockClear();
     mocks.addAgent.mockClear();
-    mocks.relaunch.mockClear();
-    mocks.resume = { recovery: null, generation: 0 };
     mocks.state = { deskPanes: {}, windows: {}, keybindingOverrides: {}, agentStatus: {} };
 });
 
@@ -184,30 +174,4 @@ it("types a delivered issue into a terminal agent as text", () => {
     expect(mocks.typed).toHaveBeenCalledWith(
         "fix this\n\n### #12 Login crashes\nhttps://github.com/o/r/issues/12\n\n```\nIssue #12: Login crashes\n```",
     );
-});
-
-it("offers Retry and Start new chat when a terminal agent could not be resumed", () => {
-    mocks.resume = { recovery: { phase: "failed", detail: "The agent exited with code 1." }, generation: 0 };
-    const crashed: Agent = { ...agent, type: "pi", startup: "pi", resumeId: "r1", ptyId: 40, profileId: "pi-work", cwd: "/repo/sub" };
-    render(<AgentSurface agent={crashed} session={session} visible />);
-    expect(screen.getByText("Couldn't resume this agent")).toBeInTheDocument();
-    expect(screen.getByText("The agent exited with code 1.")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(mocks.relaunch).toHaveBeenCalledWith("agent-1", 40);
-
-    fireEvent.click(screen.getByRole("button", { name: "Start new chat" }));
-    expect(mocks.addAgent).toHaveBeenCalledWith("pi", undefined, undefined, {
-        permissionMode: "workspace-write",
-        profileId: "pi-work",
-        detectedExecutablePath: undefined,
-        cwd: "/repo/sub",
-    });
-});
-
-it("shows no resume state in the chat view", () => {
-    mocks.resume = { recovery: { phase: "failed", detail: null }, generation: 0 };
-    render(<AgentSurface agent={agent} session={session} visible />);
-    expect(screen.queryByText("Couldn't resume this agent")).not.toBeInTheDocument();
-    expect(screen.queryByText("Resuming…")).not.toBeInTheDocument();
 });

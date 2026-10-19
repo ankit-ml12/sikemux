@@ -23,6 +23,8 @@ pub struct AgentEntry {
     pub usage: bool,
     pub deletable_chats: bool,
     pub bypass: bool,
+    /// The reasoning efforts the CLI's own flag takes.
+    pub efforts: &'static [&'static str],
 }
 
 pub const AGENTS: &[AgentEntry] = &[
@@ -35,6 +37,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: true,
         deletable_chats: true,
         bypass: true,
+        efforts: &["low", "medium", "high", "xhigh", "max"],
     },
     AgentEntry {
         kind: "codex",
@@ -45,6 +48,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: true,
         deletable_chats: true,
         bypass: true,
+        efforts: &["minimal", "low", "medium", "high", "xhigh", "max"],
     },
     AgentEntry {
         kind: "hermes",
@@ -55,6 +59,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: false,
         deletable_chats: false,
         bypass: true,
+        efforts: &["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
     },
     AgentEntry {
         kind: "pi",
@@ -65,6 +70,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: false,
         deletable_chats: false,
         bypass: false,
+        efforts: &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
     },
     AgentEntry {
         kind: "opencode",
@@ -75,6 +81,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: false,
         deletable_chats: false,
         bypass: false,
+        efforts: &[],
     },
     AgentEntry {
         kind: "omp",
@@ -85,6 +92,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: false,
         deletable_chats: false,
         bypass: true,
+        efforts: &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
     },
     AgentEntry {
         kind: "grok",
@@ -95,6 +103,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: false,
         deletable_chats: false,
         bypass: true,
+        efforts: &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
     },
     AgentEntry {
         kind: "muse",
@@ -105,6 +114,7 @@ pub const AGENTS: &[AgentEntry] = &[
         usage: false,
         deletable_chats: false,
         bypass: true,
+        efforts: &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
     },
 ];
 

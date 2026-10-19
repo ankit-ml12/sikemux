@@ -1,5 +1,5 @@
 import type { AgentEffort, AgentPermissionMode, AgentType } from "../state/types";
-import { canBypassPermissions, isAgentType } from "./catalog";
+import { agentEfforts, canBypassPermissions, isAgentType } from "./catalog";
 
 export interface AgentLaunchOptions {
     resumeId?: string;
@@ -19,20 +19,6 @@ export function isResumeId(type: AgentType, id: string): boolean {
         (type === "pi" || type === "omp") && id.startsWith("/") && id.endsWith(".jsonl") && id.length <= 4_096 && ![...id].some((char) => char < " ")
     );
 }
-
-const AGENT_EFFORTS: Readonly<Record<AgentType, readonly AgentEffort[]>> = {
-    claude: ["low", "medium", "high", "xhigh", "max"],
-    codex: ["minimal", "low", "medium", "high", "xhigh", "max"],
-    hermes: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
-    pi: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-    // The interactive OpenCode command has --model and --prompt, but its
-    // provider-specific --variant effort flag belongs to `opencode run`.
-    opencode: [],
-    omp: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-    grok: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-    // Meta's provider refuses "none".
-    muse: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
-};
 
 export const AGENT_PERMISSION_MODES: readonly AgentPermissionMode[] = ["workspace-write", "bypass"];
 
@@ -90,7 +76,7 @@ export const isYolo = (mode: string | null | undefined): boolean => mode === "by
 export const canSwitchMode = (type: string): boolean => isAgentType(type) && canBypassPermissions(type);
 
 export function supportedEfforts(type: AgentType): readonly AgentEffort[] {
-    return AGENT_EFFORTS[type];
+    return agentEfforts(type) as readonly AgentEffort[];
 }
 
 /** Convert the portable effort choice to the closest level the local CLI accepts. */

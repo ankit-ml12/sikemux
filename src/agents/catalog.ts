@@ -47,6 +47,11 @@ export function canDeleteChats(type: AgentType): boolean {
     return BY_TYPE.get(type)?.deletableChats === true;
 }
 
+/** The reasoning efforts the agent's CLI takes. */
+export function agentEfforts(type: AgentType): readonly string[] {
+    return BY_TYPE.get(type)?.efforts ?? [];
+}
+
 /** Whether the agent's CLI can start without asking for permissions. */
 export function canBypassPermissions(type: AgentType): boolean {
     return BY_TYPE.get(type)?.bypass === true;

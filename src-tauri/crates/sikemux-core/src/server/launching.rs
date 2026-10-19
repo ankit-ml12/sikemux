@@ -7,11 +7,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::cli::protocol::TOOLS_OFFER_ENV;
+use crate::launch::terminal::{self, TerminalRun};
 use crate::launch::tools::Tools;
 use crate::launch::AgentSpec;
 use crate::protocol::{
-    ChatAccount, ChatLaunch, Event, RequestId, Response, TerminalSpawn, WAKE_WAIT,
+    ChatAccount, ChatLaunch, Continuation, Event, LaunchIdentity, RequestId, Response, SessionId,
+    SpawnTarget, TerminalSpawn, WAKE_WAIT,
 };
+use sikemux_pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
 
 use super::chat;
 use super::connection::{blocking, ClientConn};
@@ -69,6 +72,76 @@ pub(crate) async fn terminal_agent(core: &Arc<Core>, spawn: &mut TerminalSpawn) 
     if let Ok(launch) = launch {
         spawn.env.extend(launch.env);
     }
+}
+
+/// Starts a terminal agent as its record says, on its saved session and the
+/// account it runs on, below the screen of `continues` when it carries one on,
+/// and answers its terminal. Every terminal agent, however it starts, starts
+/// here.
+pub(crate) async fn start_terminal(
+    core: &Arc<Core>,
+    agent_id: &str,
+    (cols, rows): (u16, u16),
+    continues: Option<Continuation>,
+) -> CoreResult<SessionId> {
+    let agent = core
+        .workspaces
+        .agent(agent_id)
+        .ok_or_else(|| CoreError::from("that agent is no longer on this host"))?;
+    let project = core.workspaces.project_info(&agent.project);
+    let book = core.workspaces.accounts().unwrap_or_default();
+    let profile = agent.profile_id.as_deref().and_then(|id| book.profile(id));
+    let run = TerminalRun {
+        resume_id: agent.resume_id.as_deref(),
+        permission_mode: &agent.permission_mode,
+        model: agent.model.as_deref(),
+        effort: agent.effort.as_deref(),
+    };
+    let cwd = agent.cwd.to_string_lossy().into_owned();
+    let spawn = TerminalSpawn {
+        cols,
+        rows,
+        cwd: Some(cwd.clone()),
+        startup: None,
+        direct_command: Some(PtyDirectCommand {
+            program: profile
+                .and_then(|profile| profile.executable_path.clone())
+                .unwrap_or_else(|| agent.provider.clone()),
+            args: terminal::args(&agent.provider, &run),
+            profile: profile.map(|profile| PtyAgentProfile {
+                config_path: profile.config_path.clone(),
+                environment_keys: profile.environment_keys.clone(),
+            }),
+        }),
+        context: Some(PtyContext {
+            session_id: agent.project.clone(),
+            session_name: project.map(|project| project.name).unwrap_or_default(),
+            session_kind: "project".into(),
+            project: Some(cwd),
+            window_id: None,
+            pane_id: None,
+            agent_id: Some(agent.id.clone()),
+            agent_type: Some(agent.provider.clone()),
+            initial_prompt_submitted: false,
+            shell_integration: false,
+        }),
+        env: Default::default(),
+        continues,
+    };
+    let config = core.listening.get().map(|listening| &listening.config);
+    let launch = LaunchIdentity {
+        version: core.build.version.clone(),
+        cli_executable: std::env::current_exe().ok(),
+        cli_endpoint: config.and_then(|config| config.cli_endpoint.clone()),
+    };
+    let target = Box::new(SpawnTarget::Terminal(spawn));
+    let pending = super::connection::spawn(core.clone(), launch, target, None).await?;
+    let id = pending.id();
+    pending.start(core);
+    let patch = serde_json::Map::from_iter([("ptyId".to_owned(), serde_json::Value::from(id))]);
+    core.workspaces.update_agent(agent_id, patch)?;
+    core.publish_device_view();
+    Ok(id)
 }
 
 /// Gives a chat about to start the tools that are its own: those the launch

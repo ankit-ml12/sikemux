@@ -12,7 +12,6 @@ import { TabRail } from "./rail/TabRail";
 import { RailPeek } from "./rail/RailPeek";
 import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
-import { watchTerminalAgentExits } from "./agents/tuiResume";
 import { watchSshLinks } from "./terminal/sshLinks";
 import { watchTerminalTitles } from "./terminal/terminalTitles";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
@@ -782,7 +781,6 @@ export default function App() {
 
     useEffect(watchInbox, []);
 
-    useEffect(() => watchTerminalAgentExits(), []);
     useEffect(() => watchSshLinks(), []);
     useEffect(() => watchTerminalTitles(), []);
     useEffect(() => watchFocusForAgentStatus(), []);

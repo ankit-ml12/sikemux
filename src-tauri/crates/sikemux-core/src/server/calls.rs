@@ -112,6 +112,12 @@ pub(crate) async fn call(
             answer(json!({ "stopped": super::lifecycle::sleep(&core, &params.agent_id) }))
         }
         "sleepIdleChats" => answer(json!({ "slept": super::lifecycle::sleep_idle(&core) })),
+        "startTerminalAgent" => {
+            let params: TerminalParams = parse(params)?;
+            let size = (params.cols, params.rows);
+            let pty = super::launching::start_terminal(&core, &params.agent_id, size, None).await?;
+            answer(json!({ "ptyId": pty }))
+        }
         "startChat" => {
             let params: AgentParams = parse(params)?;
             answer(super::launching::start_saved(&core, &params.agent_id).await?)
@@ -186,7 +192,6 @@ pub(crate) async fn call(
         "shares" => answer(share::list(&core)),
         "pairing" => answer(remote::pairing(&core)),
         "linkHost" => answer(super::hosts::link_host(&core, parse(params)?).await?),
-        "setLinkSignIns" => answer(super::hosts::sign_ins::set(&core, parse(params)?)?),
         "signHostRequest" => {
             let request: crate::accounts::HostRequest = parse(params)?;
             answer(signed(core.remote.sign_host_request(&request)?))
@@ -195,6 +200,7 @@ pub(crate) async fn call(
             let params: NonceParams = parse(params)?;
             answer(signed(core.remote.sign_share_viewer(&params.nonce)?))
         }
+        "setLinkSignIns" => answer(super::hosts::sign_ins::set(&core, parse(params)?)?),
         "answerPairing" => answer(remote::answer_pairing(&core, parse(params)?)?),
         "changeDevice" => answer(remote::change_device(&core, parse(params)?)?),
         "questions" => answer(questions::views(&core)),
@@ -489,6 +495,14 @@ struct QueuedParams {
 #[serde(rename_all = "camelCase")]
 struct AgentParams {
     agent_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalParams {
+    agent_id: String,
+    cols: u16,
+    rows: u16,
 }
 
 /// The name the core gave an agent the app starts or opens again, given now

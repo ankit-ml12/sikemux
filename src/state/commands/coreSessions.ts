@@ -1,7 +1,5 @@
 import { mutate } from "../store";
 import { collectPanes } from "../layout";
-import type { AgentSessionPlan } from "../coreSessionClaims";
-import { dropAgents } from "./agents";
 
 /** Records the core terminal a pane shows, so the next launch can take it back. */
 export function setPanePty(paneId: string, ptyId: number): void {
@@ -22,18 +20,12 @@ export function setAgentPty(agentId: string, ptyId: number): void {
     });
 }
 
-/**
- * Terminal agents still running in the core come back live, and so do ones
- * whose terminal crashed, to be resumed in it; the rest stay asleep without
- * their old terminal.
- */
-export function applyAgentSessionPlan(plan: AgentSessionPlan): void {
+/** Shows live the terminal agents whose terminal still runs. */
+export function showAgentsLive(ids: readonly string[]): void {
     mutate((d) => {
-        for (const id of [...plan.live, ...plan.resume]) {
+        for (const id of ids) {
             const agent = d.agents[id];
             if (agent) agent.launchState = "live";
         }
-        for (const id of plan.gone) delete d.agents[id]?.ptyId;
     });
-    dropAgents(plan.dropped);
 }

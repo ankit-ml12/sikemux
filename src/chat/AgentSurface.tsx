@@ -11,10 +11,10 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { putDraft, takeDraft } from "./draftHandoff";
 import { promptDraft } from "../terminal/promptDraft";
 import { screenWithin } from "../state/terminalScreens";
-import { isResumableSession } from "../terminal/sessionResume";
+import { isResumableSession, offerResumableSessions } from "../terminal/sessionResume";
 import { AgentBuddy } from "../buddies/Buddy";
 import { openBuddyPicker } from "../buddies/commands";
-import { AgentIcon, IconAgent, IconMoreVertical, IconPanelRight, IconPlug, IconTerminal } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconMoreVertical, IconPanelRight, IconTerminal } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -23,12 +23,10 @@ import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
-import { ResumeActions } from "./ResumeActions";
 import { showingChat } from "./chatViews";
 import { YoloToggle } from "./YoloToggle";
 import { ShareButton } from "../share/ShareControls";
 import { agentCwd, agentPtyContext } from "../agents/agentPtyContext";
-import { claimAgentTerminal, clearTuiRecovery, relaunchTuiAgent, useTuiResume } from "../agents/tuiResume";
 import "../styles/chat.css";
 
 type AgentView = "gui" | "tui";
@@ -77,19 +75,6 @@ function AgentMenuButton({ agent, session, onRetitle }: { agent: Agent; session:
 }
 
 /* Matches the chat's failed-resume row, so both kinds of agent read the same. */
-function TuiRecoveryNotice({ agent, profile, cwd, detail }: { agent: Agent; profile?: ProviderProfile; cwd?: string; detail: string | null }) {
-    return (
-        <div className="agent-tui-recovery">
-            <div className="chat-reconnect" role="status">
-                <IconPlug size={13} />
-                <span>Couldn&apos;t resume this agent</span>
-                {detail && <span className="chat-recovery-detail">{detail}</span>}
-                <ResumeActions agent={agent} profile={profile} cwd={cwd} retry="Retry" onRetry={() => void relaunchTuiAgent(agent.id, agent.ptyId)} />
-            </div>
-        </div>
-    );
-}
-
 export function AgentSurface({ agent, session, profile, visible }: { agent: Agent; session: Session; profile?: ProviderProfile; visible: boolean }) {
     const supportsGui = agentSupportsChat(agent.type);
     /* A terminal agent that kept running while the app was closed comes back in its terminal. */
@@ -102,7 +87,13 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const busy = chatBusy || working;
     const [renaming, setRenaming] = useState(false);
     const buddies = useStore((state) => state.buddies);
-    const { recovery, generation } = useTuiResume(agent.id);
+    /* The core starts a terminal agent again after a crash, in a terminal of its own that the pane takes up. */
+    const [terminal, setTerminal] = useState({ ptyId: agent.ptyId, generation: 0 });
+    useEffect(() => {
+        if (agent.ptyId === undefined || agent.ptyId === terminal.ptyId) return;
+        offerResumableSessions([agent.ptyId]);
+        setTerminal(({ generation }) => ({ ptyId: agent.ptyId, generation: generation + 1 }));
+    }, [agent.ptyId, terminal.ptyId]);
     const cwd = agentCwd(agent, session);
 
     const tuiLayer = useRef<HTMLDivElement>(null);
@@ -113,7 +104,6 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
             setCarried(next === "tui" ? takeDraft(agent.id) : "");
             if (next === "gui" && tuiLayer.current) putDraft(agent.id, promptDraft(screenWithin(tuiLayer.current)));
             if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
-            clearTuiRecovery(agent.id);
             setView(next);
             window.requestAnimationFrame(() => setSwitching(false));
         },
@@ -176,12 +166,6 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 </div>
                 <div className="agent-surface-end">
                     <div className="agent-surface-controls">
-                        {view === "tui" && recovery?.phase === "resuming" && (
-                            <span className="agent-surface-resuming" role="status">
-                                <span className="chat-activity-loader" aria-hidden="true" />
-                                Resuming…
-                            </span>
-                        )}
                         {agent.worktree && (
                             <Suspense fallback={null}>
                                 <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
@@ -229,20 +213,20 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 {view === "tui" && !switching && (
                     <div className="agent-tui-layer" ref={tuiLayer}>
                         <TerminalPane
-                            key={`${agent.id}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}:${generation}`}
+                            key={`${agent.id}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}:${terminal.generation}`}
                             cwd={cwd}
-                            startup={agent.startup}
-                            directCommand={agent.directCommand}
                             initialDraft={carried || undefined}
                             onInitialInputDelivered={() => setCarried("")}
                             active={visible}
                             visible={visible}
                             spawnWhen={visible}
                             resumePtyId={agent.ptyId}
-                            onPtySession={(id) => claimAgentTerminal(agent.id, id)}
+                            onPtySession={(id) => {
+                                setTerminal((shown) => ({ ...shown, ptyId: id }));
+                                cmd.setAgentPty(agent.id, id);
+                            }}
                             context={agentPtyContext(agent, session)}
                         />
-                        {recovery?.phase === "failed" && <TuiRecoveryNotice agent={agent} profile={profile} cwd={cwd} detail={recovery.detail} />}
                     </div>
                 )}
                 {switching && (

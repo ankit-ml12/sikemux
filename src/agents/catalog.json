@@ -10,6 +10,7 @@
             "usage": true,
             "deletableChats": true,
             "bypass": true,
+            "efforts": ["low", "medium", "high", "xhigh", "max"],
             "install": "curl -fsSL https://claude.ai/install.sh | bash",
             "login": ["auth", "login"]
         },
@@ -23,6 +24,7 @@
             "usage": true,
             "deletableChats": true,
             "bypass": true,
+            "efforts": ["minimal", "low", "medium", "high", "xhigh", "max"],
             "install": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
             "login": ["login"]
         },
@@ -36,6 +38,7 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
+            "efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
             "install": "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
             "login": ["model"]
         },
@@ -49,6 +52,7 @@
             "usage": false,
             "deletableChats": false,
             "bypass": false,
+            "efforts": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
             "install": "curl -fsSL https://pi.dev/install.sh | sh",
             "login": null
         },
@@ -62,6 +66,7 @@
             "usage": false,
             "deletableChats": false,
             "bypass": false,
+            "efforts": [],
             "install": "curl -fsSL https://opencode.ai/install | bash",
             "login": ["auth", "login"]
         },
@@ -75,6 +80,7 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
+            "efforts": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
             "install": "curl -fsSL https://omp.sh/install | sh",
             "login": ["login"]
         },
@@ -88,6 +94,7 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
+            "efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
             "install": "curl -fsSL https://x.ai/cli/install.sh | bash",
             "login": ["login"]
         },
@@ -101,6 +108,7 @@
             "usage": false,
             "deletableChats": false,
             "bypass": true,
+            "efforts": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
             "install": null,
             "login": null
         }

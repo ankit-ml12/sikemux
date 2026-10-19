@@ -585,7 +585,7 @@ impl Workspaces {
 
     /// Adds an agent, or replaces the one with its id. Without an id the core
     /// names it.
-    fn put_agent(&self, mut draft: Map<String, Value>) -> CoreResult<WorkspaceAgent> {
+    pub(crate) fn put_agent(&self, mut draft: Map<String, Value>) -> CoreResult<WorkspaceAgent> {
         if !draft.contains_key("id") {
             let id = format!("agent-{}", uuid::Uuid::new_v4().simple());
             draft.insert("id".into(), Value::String(id));
@@ -959,6 +959,10 @@ impl Workspaces {
             account: None,
             fallbacks: Vec::new(),
         })
+    }
+
+    pub(crate) fn project_info(&self, id: &str) -> Option<ProjectInfo> {
+        self.lock().saved.project(id).cloned()
     }
 
     pub(crate) fn project_path(&self, id: &str) -> CoreResult<PathBuf> {
@@ -1681,6 +1685,15 @@ pub(crate) fn retitle(core: &Core, agent_id: &str, title: Option<String>, stand_
         return;
     };
     if core.workspaces.note_title(agent_id, &title, stand_in) {
+        core.publish_device_view();
+    }
+}
+
+/// Takes out of the workspace agents that have nothing left to show.
+pub(crate) fn close_gone(core: &Core, agent_ids: &[String]) {
+    let before = core.workspaces.agent_ids();
+    if core.workspaces.close_agents(agent_ids).is_ok() {
+        agents_closed(core, before);
         core.publish_device_view();
     }
 }

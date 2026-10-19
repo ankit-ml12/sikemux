@@ -16,9 +16,3 @@ export function chatLaunchers(profiles: readonly ProviderProfile[]): { id: strin
         }));
     });
 }
-
-/** The provider profile a chat was started with, read back from its launcher's id. */
-export function profileOfLauncher(launcher: string | null, profiles: readonly ProviderProfile[], type: AgentType): string | undefined {
-    const profileId = launcher?.startsWith(`${type}:`) ? launcher.slice(type.length + 1) : undefined;
-    return profiles.some((profile) => profile.id === profileId && profile.provider === type) ? profileId : undefined;
-}

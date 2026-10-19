@@ -56,6 +56,13 @@ for (const agent of agents) {
       throw new Error(`${agent.type} does not say whether it has ${flag}`);
   }
   if (
+    !Array.isArray(agent.efforts) ||
+    !agent.efforts.every((effort) => /^[a-z]+$/.test(effort))
+  )
+    throw new Error(
+      `${agent.type} efforts must list the reasoning efforts its CLI takes`,
+    );
+  if (
     agent.install !== null &&
     !/^curl -fsSL https:\/\/\S+ \| (ba)?sh$/.test(agent.install ?? "")
   )
@@ -101,6 +108,7 @@ const entries = agents.map((agent) => ({
   command: agent.command,
   brand: agent.brand,
   ...Object.fromEntries(FLAGS.map((flag) => [flag, agent[flag]])),
+  efforts: agent.efforts,
   install: agent.install,
   login: agent.login,
 }));
@@ -155,6 +163,8 @@ pub struct AgentEntry {
     pub command: &'static str,
     pub brand: &'static str,
 ${FLAGS.map((flag) => `    pub ${snake(flag)}: bool,`).join("\n")}
+    /// The reasoning efforts the CLI's own flag takes.
+    pub efforts: &'static [&'static str],
 }
 
 pub const AGENTS: &[AgentEntry] = &[
@@ -166,6 +176,7 @@ ${agents
         command: ${rustString(agent.command)},
         brand: ${rustString(agent.brand)},
 ${FLAGS.map((flag) => `        ${snake(flag)}: ${agent[flag]},`).join("\n")}
+        efforts: &[${agent.efforts.map(rustString).join(", ")}],
     },`,
   )
   .join("\n")}

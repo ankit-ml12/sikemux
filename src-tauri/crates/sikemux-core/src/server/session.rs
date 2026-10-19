@@ -771,7 +771,7 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         _ => None,
     };
     if session.is_task() {
-        if let Some(failed) = core.harness.session_exited(session.id, code, signal) {
+        if let Some(failed) = core.harness.session_exited(session.id, code, signal.clone()) {
             super::harness::tell_agent_run_failed(core, failed);
         }
         super::tasks::ended(core, session.id);
@@ -779,6 +779,14 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
     if let Some(agent) = session.agent.as_ref() {
         let mid_turn = agent.busy();
         agent::note_exit(core, agent, status);
+        super::lifecycle::terminal_exited(
+            core,
+            session.id,
+            agent.agent_id(),
+            code,
+            signal.as_deref(),
+            session.is_killed(),
+        );
         let failed = failed.filter(|_| !session.is_killed());
         if let Some(reason) = &failed {
             core.note_activity(agent.agent_id(), super::activity::Activity::Problem(reason));

@@ -3,11 +3,10 @@ import { coreSessionsApi } from "../api/coreSessions";
 import type { ChatInfo, SessionInfo } from "../api/generated/wire";
 import { QUIT_AND_STOP_SHORTCUT } from "../commands/keybindings";
 import * as cmd from "../state/commands";
-import { agentSessionPlan, claimedSessionIds, unclaimedTerminals } from "../state/coreSessionClaims";
+import { claimedSessionIds, runningTerminalAgents, unclaimedTerminals } from "../state/coreSessionClaims";
 import { getState, setState } from "../state/store";
 import { notify } from "../state/toast";
 import { offerResumableSessions, spawnedThisPage } from "../terminal/sessionResume";
-import { relaunchTuiAgent } from "../agents/tuiResume";
 
 /** Long enough for every pane of a restored layout to have taken its terminal back. */
 export const UNCLAIMED_GRACE_MS = 30_000;
@@ -23,7 +22,6 @@ export function offerSavedSessions(): void {
 
 export interface CoreSessionRestoreDeps {
     list(): Promise<SessionInfo[]>;
-    resume(agentId: string, ptyId: number): Promise<void>;
     kill(id: number): Promise<void>;
     chats(): Promise<ChatInfo[]>;
     schedule(callback: () => void, delayMs: number): void;
@@ -32,7 +30,6 @@ export interface CoreSessionRestoreDeps {
 function defaultDeps(): CoreSessionRestoreDeps {
     return {
         list: coreSessionsApi.list,
-        resume: relaunchTuiAgent,
         kill: coreSessionsApi.kill,
         chats: acpApi.list,
         schedule: (callback, delayMs) => void window.setTimeout(callback, delayMs),
@@ -41,10 +38,10 @@ function defaultDeps(): CoreSessionRestoreDeps {
 
 /**
  * Takes back what the core kept while the app was closed or reloading:
- * terminal agents still running come back live, ones that crashed meanwhile
- * are resumed in their pane, and terminals from before this page that nothing
- * in the layout names are stopped after a grace, so none of them runs forever
- * unseen. Chats are the core's: their panes take them up as they mount.
+ * terminal agents still running come back live, and terminals from before this
+ * page that nothing in the layout names are stopped after a grace, so none of
+ * them runs forever unseen. Agents are the core's, which starts crashed ones
+ * again: their panes take them up as they mount.
  */
 export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = defaultDeps()): Promise<void> {
     let sessions: SessionInfo[];
@@ -54,12 +51,7 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
         return;
     }
     const chats = await deps.chats().catch(() => []);
-    const plan = agentSessionPlan(getState(), sessions);
-    cmd.applyAgentSessionPlan(plan);
-    for (const id of plan.resume) {
-        const ptyId = getState().agents[id]?.ptyId;
-        if (ptyId !== undefined) void deps.resume(id, ptyId).catch(() => {});
-    }
+    cmd.showAgentsLive(runningTerminalAgents(getState(), sessions));
     const tasks = sessions.filter((session) => session.kind === "task" && session.running).length;
 
     const claimed = claimedSessionIds(getState());

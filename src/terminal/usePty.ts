@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from "react";
 import { Channel } from "@tauri-apps/api/core";
+import { coreCall } from "../api/core";
+import { workspaceSent } from "../state/workspaceSent";
 import { invokeCommand as invoke } from "../api/invoke";
 import { registerPtyDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
@@ -73,8 +75,16 @@ function decodeAttachResponse(body: ArrayBuffer): PtyAttachResult {
 }
 
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
+    /* A terminal agent's command line is the core's, built from the agent it keeps. */
     spawn: async (request) => {
-        const id = await invoke<number>("pty_spawn", { ...request });
+        const agentId = request.context?.agentId;
+        const id =
+            agentId && !request.directCommand && !request.startup
+                ? await workspaceSent().then(
+                      async () =>
+                          (await coreCall<{ ptyId: number }>("startTerminalAgent", { agentId, cols: request.cols, rows: request.rows })).ptyId,
+                  )
+                : await invoke<number>("pty_spawn", { ...request });
         noteSpawnedSession(id);
         return id;
     },
