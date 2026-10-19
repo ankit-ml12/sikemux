@@ -6,7 +6,7 @@
 //! On macOS a core signed by Sikemux's team trusts only peers its team signed
 //! as the app or the notch. A build without that signature, such as a dev or
 //! community build, cannot ask for it, so it trusts the app and notch at their
-//! paths beside its own binary. On Linux that path is all there is, and it is
+//! paths in the bundle or build it runs from. On Linux that path is all there is, and it is
 //! weaker: a process can connect and then `exec` the app, keeping the
 //! connection. A dev build also trusts the program that started it, such as a
 //! test.
@@ -19,9 +19,9 @@ use tokio::net::UnixStream;
 
 use super::access::Peer;
 
-/// The window's executable, beside the core's own in the app or the build.
+/// The window's executable, beside the core's own in a build.
 const APP: &str = "sikemux";
-/// The notch inside a release bundle; the core runs from `Contents/MacOS`.
+const BUNDLED_APP: &str = "Contents/MacOS/sikemux";
 const BUNDLED_NOTCH: &str = "Contents/Helpers/Sikemux Notch.app";
 const NOTCH_EXECUTABLE: &str = "Contents/MacOS/sikemux-notch";
 /// The programs beside a dev build's own binary that act as its app.
@@ -48,7 +48,7 @@ pub(crate) fn settle() {
 fn trust() -> &'static Trust {
     TRUST.get_or_init(|| {
         let team_signed = platform::own_code_signed_by_team();
-        let app_paths = match own_directory() {
+        let app_paths = match own_executable() {
             Some(own) if !team_signed => app_paths_beside(&own),
             _ => Vec::new(),
         };
@@ -60,17 +60,24 @@ fn trust() -> &'static Trust {
 }
 
 fn app_paths_beside(own: &Path) -> Vec<PathBuf> {
-    let mut paths = vec![own.join(APP)];
-    if let Some(bundle) = own
-        .ends_with("Contents/MacOS")
-        .then(|| own.parent()?.parent())
-        .flatten()
-    {
-        let notch = bundle.join(BUNDLED_NOTCH);
-        paths.extend([bundle.to_path_buf(), notch.join(NOTCH_EXECUTABLE), notch]);
+    let Some(directory) = own.parent() else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    match sikemux_process::paths::app_bundle_of_core(own) {
+        Some(bundle) => {
+            let notch = bundle.join(BUNDLED_NOTCH);
+            paths.extend([
+                bundle.join(BUNDLED_APP),
+                bundle.to_path_buf(),
+                notch.join(NOTCH_EXECUTABLE),
+                notch,
+            ]);
+        }
+        None => paths.push(directory.join(APP)),
     }
     if cfg!(debug_assertions) {
-        paths.extend(DEV_PROGRAMS.iter().map(|dev| own.join(dev)));
+        paths.extend(DEV_PROGRAMS.iter().map(|dev| directory.join(dev)));
     }
     paths
 }
@@ -94,10 +101,21 @@ pub(crate) async fn identify(stream: &UnixStream) -> Peer {
     }
 }
 
+/// Whether this core tells its app by the code signature, which nothing on
+/// this host can forge, rather than by where the program lives.
+pub(crate) fn app_is_signed() -> bool {
+    trust().team_signed
+}
+
+/// Root may do anything on this host already, so it acts as the app, unless
+/// the core runs as root and its agents do too.
 fn is_app(credentials: &platform::Credentials) -> bool {
     let pid = credentials.pid();
     let trust = trust();
-    if pid == std::process::id()
+    // SAFETY: geteuid takes nothing and cannot fail.
+    let core_is_root = unsafe { libc::geteuid() } == 0;
+    if credentials.uid() == 0 && !core_is_root
+        || pid == std::process::id()
         || cfg!(debug_assertions)
             && !trust.team_signed
             && pid == std::os::unix::process::parent_id()
@@ -113,9 +131,8 @@ fn is_app(credentials: &platform::Credentials) -> bool {
         .is_some_and(|program| trust.app_paths.contains(&program))
 }
 
-fn own_directory() -> Option<PathBuf> {
-    let own = std::env::current_exe().ok()?.canonicalize().ok()?;
-    own.parent().map(Path::to_path_buf)
+fn own_executable() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.canonicalize().ok()
 }
 
 struct Examined {
@@ -144,14 +161,14 @@ mod platform {
 
     const SOL_LOCAL: libc::c_int = 0;
     const LOCAL_PEERTOKEN: libc::c_int = 6;
+    const TOKEN_EUID: usize = 1;
     const TOKEN_PID: usize = 5;
 
-    /// Signed by Sikemux's team as its app or its notch. `sikemux-editor`, the
-    /// command agents run, carries the app's identifier too, but no bundle
-    /// naming it the executable.
+    /// Signed by Sikemux's team as its app or its notch, never as the core
+    /// agents run as their `sikemux` command.
     const SIGNED_APP: &str = concat!(
         team!(),
-        r#" and (identifier "com.nodelike.sikemux" and info[CFBundleExecutable] = "sikemux" or identifier "com.nodelike.sikemux.notch")"#
+        r#" and (identifier "com.nodelike.sikemux" or identifier "com.nodelike.sikemux.notch")"#
     );
 
     pub(super) fn own_code_signed_by_team() -> bool {
@@ -170,6 +187,10 @@ mod platform {
     impl Credentials {
         pub(super) fn pid(&self) -> u32 {
             self.0.get(TOKEN_PID).copied().unwrap_or_default()
+        }
+
+        pub(super) fn uid(&self) -> u32 {
+            self.0.get(TOKEN_EUID).copied().unwrap_or(u32::MAX)
         }
     }
 
@@ -225,11 +246,18 @@ mod platform {
 
     use super::Examined;
 
-    pub(super) struct Credentials(u32);
+    pub(super) struct Credentials {
+        pid: u32,
+        uid: u32,
+    }
 
     impl Credentials {
         pub(super) fn pid(&self) -> u32 {
-            self.0
+            self.pid
+        }
+
+        pub(super) fn uid(&self) -> u32 {
+            self.uid
         }
     }
 
@@ -251,7 +279,10 @@ mod platform {
                 &mut length,
             )
         };
-        (read == 0 && credentials.pid > 0).then(|| Credentials(credentials.pid.unsigned_abs()))
+        (read == 0 && credentials.pid > 0).then(|| Credentials {
+            pid: credentials.pid.unsigned_abs(),
+            uid: credentials.uid,
+        })
     }
 
     pub(super) fn own_code_signed_by_team() -> bool {
@@ -261,7 +292,7 @@ mod platform {
     pub(super) fn examine(credentials: &Credentials) -> Examined {
         Examined {
             signed_app: false,
-            program: std::fs::read_link(format!("/proc/{}/exe", credentials.0)).ok(),
+            program: std::fs::read_link(format!("/proc/{}/exe", credentials.pid)).ok(),
         }
     }
 }
@@ -277,6 +308,10 @@ mod platform {
     impl Credentials {
         pub(super) fn pid(&self) -> u32 {
             0
+        }
+
+        pub(super) fn uid(&self) -> u32 {
+            u32::MAX
         }
     }
 

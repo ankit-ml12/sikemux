@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The folders macOS keeps its own tools in. Claude Code reads its sign-in
 /// with `/usr/bin/security`, so a PATH without these signs every agent out.
@@ -44,4 +44,18 @@ pub fn config_file(stem: &str, extension: &str) -> Option<PathBuf> {
         name.push_str(extension);
     }
     Some(config_dir()?.join(name))
+}
+
+/// Where a macOS release keeps its core, relative to the app bundle. It is an
+/// app of its own because only an app can carry the provisioning profile that
+/// lets it use the keychain only Sikemux can read.
+pub const BUNDLED_CORE: &str = "Contents/Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor";
+
+/// The app bundle a release's core runs inside; None for any other build.
+pub fn app_bundle_of_core(core: &Path) -> Option<&Path> {
+    if !core.ends_with(BUNDLED_CORE) {
+        return None;
+    }
+    core.ancestors()
+        .nth(Path::new(BUNDLED_CORE).components().count())
 }

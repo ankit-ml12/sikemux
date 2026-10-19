@@ -26,6 +26,11 @@ pub fn cli_executable_path() -> Option<PathBuf> {
     let bundled = directory
         .parent()
         .and_then(Path::parent)
+        .filter(|bundle| {
+            bundle
+                .extension()
+                .is_some_and(|extension| extension == "app")
+        })
         .map(|bundle| bundle.join(sikemux_process::paths::BUNDLED_CORE));
     let filename = if cfg!(windows) {
         "sikemux-editor.exe"
