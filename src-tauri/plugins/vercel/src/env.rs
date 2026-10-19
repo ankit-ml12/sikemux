@@ -209,12 +209,16 @@ pub async fn change(data_dir: &Path, input: Value) -> VercelResult<Value> {
         .map_err(|_| VercelError::BadArg("action is set or remove".into()))?;
     match action {
         Action::Set => {
-            let input: Set = serde_json::from_value(input).map_err(|error| VercelError::BadArg(error.to_string()))?;
+            let input: Set = serde_json::from_value(input)
+                .map_err(|error| VercelError::BadArg(error.to_string()))?;
             set(data_dir, input).await
         }
         Action::Remove => {
-            let input: Remove = serde_json::from_value(input).map_err(|error| VercelError::BadArg(error.to_string()))?;
-            remove(data_dir, input).await.map(|()| json!({ "removed": true }))
+            let input: Remove = serde_json::from_value(input)
+                .map_err(|error| VercelError::BadArg(error.to_string()))?;
+            remove(data_dir, input)
+                .await
+                .map(|()| json!({ "removed": true }))
         }
     }
 }
