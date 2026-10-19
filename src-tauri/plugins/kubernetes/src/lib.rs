@@ -2,6 +2,7 @@
 // logs and events, in a pane and as agent tools. It runs the person's own kubectl,
 // so every way their clusters sign in keeps working.
 //
+//   actions  — restarting and scaling workloads, replacing a pod, running or pausing a CronJob
 //   kubectl  — running kubectl in a context and namespace, and its errors in words
 //   contexts — the kubeconfig's clusters, the current one, and each one's namespaces
 //   pods     — pods with their status as kubectl words it, restarts and owning workload
@@ -12,6 +13,7 @@
 //   config   — ConfigMaps and Secrets by key name and size; no value is ever read
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 
+mod actions;
 mod config;
 mod contexts;
 mod describe;
@@ -72,6 +74,7 @@ impl Plugin for Kubernetes {
                 "events" => answer(events::list(params(input)?)).await,
                 "network" => answer(network::list(params(input)?)).await,
                 "config" => answer(config::list(params(input)?)).await,
+                "act" => answer(actions::act(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
