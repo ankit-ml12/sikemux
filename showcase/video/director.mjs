@@ -319,7 +319,7 @@ export class Director {
       scale,
       pad = 48,
       at = { x: 0.5, y: 0.5 },
-      duration = 1200,
+      duration = 700,
       wait = true,
     } = {},
   ) {
