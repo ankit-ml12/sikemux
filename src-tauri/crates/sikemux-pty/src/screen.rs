@@ -13,21 +13,69 @@ pub const PARSER_SCROLLBACK: usize = 3_000;
 pub const IDLE_SCROLLBACK: usize = 1_000;
 pub const MAX_ATTACH_SNAPSHOT_BYTES: usize = 8 * 1024 * 1024;
 
+const MAX_TITLE_CHARS: usize = 120;
+
 #[derive(Default)]
 pub struct SemanticCallbacks {
     pub window_title: String,
+    /// Set when the title changed and nobody has taken the change yet.
+    pub title_changed: bool,
+    /// The folder a shell last reported, which names its terminal.
+    titled_cwd: Option<String>,
     pub shell: Option<ShellProtocolParser>,
+}
+
+impl SemanticCallbacks {
+    pub fn take_title_change(&mut self) -> Option<String> {
+        std::mem::take(&mut self.title_changed).then(|| self.window_title.clone())
+    }
+
+    /// A shell that reports its folder is named after it each time it moves.
+    pub fn title_from_cwd(&mut self) {
+        let cwd = self.shell.as_ref().and_then(|shell| shell.snapshot().cwd);
+        if cwd == self.titled_cwd {
+            return;
+        }
+        self.titled_cwd = cwd;
+        let Some(name) = self.titled_cwd.as_deref().map(|cwd| {
+            std::path::Path::new(cwd).file_name().map_or_else(
+                || cwd.to_owned(),
+                |name| name.to_string_lossy().into_owned(),
+            )
+        }) else {
+            return;
+        };
+        let title = readable_title(name.as_bytes());
+        if title != self.window_title {
+            self.window_title = title;
+            self.title_changed = true;
+        }
+    }
+}
+
+/// Titles are untrusted child-process output: control characters become
+/// spaces, runs of space become one, and a long title ends in an ellipsis.
+fn readable_title(raw: &[u8]) -> String {
+    let text = String::from_utf8_lossy(raw);
+    let words: Vec<&str> = text
+        .split(|ch: char| ch.is_control() || ch.is_whitespace())
+        .filter(|word| !word.is_empty())
+        .collect();
+    let title = words.join(" ");
+    if title.chars().count() <= MAX_TITLE_CHARS {
+        return title;
+    }
+    let kept: String = title.chars().take(MAX_TITLE_CHARS - 1).collect();
+    format!("{kept}…")
 }
 
 impl vt100::Callbacks for SemanticCallbacks {
     fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
-        // Titles are untrusted child-process output. Keep only printable text
-        // and impose a small scalar limit before retaining it for detection.
-        self.window_title = String::from_utf8_lossy(title)
-            .chars()
-            .filter(|ch| !ch.is_control())
-            .take(512)
-            .collect();
+        let title = readable_title(title);
+        if title != self.window_title {
+            self.window_title = title;
+            self.title_changed = true;
+        }
     }
 }
 
@@ -49,8 +97,8 @@ pub fn semantic_parser_with_shell(
         cols,
         scrollback,
         SemanticCallbacks {
-            window_title: String::new(),
             shell: enabled.then(ShellProtocolParser::default),
+            ..SemanticCallbacks::default()
         },
     )
 }
@@ -335,6 +383,15 @@ mod tests {
         let mut parser = semantic_parser(24, 80, PARSER_SCROLLBACK);
         parser.process(b"\x1b]2;Action\n required\x07");
         assert_eq!(parser.callbacks().window_title, "Action required");
+        assert_eq!(
+            parser.callbacks_mut().take_title_change().as_deref(),
+            Some("Action required")
+        );
+        assert_eq!(parser.callbacks_mut().take_title_change(), None);
+        parser.process(format!("\x1b]2;{}\x07", "🧪".repeat(140)).as_bytes());
+        let title = &parser.callbacks().window_title;
+        assert_eq!(title.chars().count(), 120);
+        assert!(title.ends_with('…'));
     }
 
     #[test]

@@ -22,7 +22,7 @@ import { needsTerminalRedraw } from "./redraw";
 import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 import { cellWidthCorrection, lineHeightCorrection, measureChar } from "./cellMetrics";
 import { safeWebUrl } from "../lib/urls";
-import { isTerminalFindShortcut, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
+import { isTerminalFindShortcut, terminalBufferText, type TerminalSearchOptions } from "./interactions";
 import { screenRows } from "./promptDraft";
 import { registerScreen } from "../state/terminalScreens";
 import { scheduleNextFrame } from "../lib/instrumentation";
@@ -134,7 +134,6 @@ export function useXterm(opts: {
     visible: boolean;
     onFindRequest?: (seed: string) => void;
     onSearchResults?: (result: ISearchResultChangeEvent) => void;
-    onTitleChange?: (title: string) => void;
     onShellMetadata?: (metadata: PtyShellMetadataSnapshot | null) => void;
     onExit?: () => void;
 }): TerminalController {
@@ -143,8 +142,6 @@ export function useXterm(opts: {
     onFindRequestRef.current = opts.onFindRequest;
     const onSearchResultsRef = useRef(opts.onSearchResults);
     onSearchResultsRef.current = opts.onSearchResults;
-    const onTitleChangeRef = useRef(opts.onTitleChange);
-    onTitleChangeRef.current = opts.onTitleChange;
     const onShellMetadataRef = useRef(opts.onShellMetadata);
     onShellMetadataRef.current = opts.onShellMetadata;
     const onExitRef = useRef(opts.onExit);
@@ -337,14 +334,6 @@ export function useXterm(opts: {
                 targetRef.current = { term, search };
                 const searchResultsSub = search.onDidChangeResults((result) => onSearchResultsRef.current?.(result));
                 resourceDisposers.push(() => searchResultsSub.dispose());
-                let lastTitle: string | null = null;
-                const titleSub = term.onTitleChange((raw) => {
-                    const title = sanitizeTerminalTitle(raw);
-                    if (!title || title === lastTitle) return;
-                    lastTitle = title;
-                    onTitleChangeRef.current?.(title);
-                });
-                resourceDisposers.push(() => titleSub.dispose());
                 let renderer: TerminalRenderer = "dom";
                 let webgl: WebglAddon | null = null;
                 let contextLossSub: { dispose(): void } | null = null;

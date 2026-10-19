@@ -1310,6 +1310,9 @@ pub struct SessionInfo {
     pub started_by: Option<String>,
     /// The name the app gives an agent terminal.
     pub title: Option<String>,
+    /// What the program in the terminal last set its title to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_title: Option<String>,
     /// The agent finished or asked for something while the person was not
     /// looking at it in the app.
     pub unread: bool,
@@ -1439,6 +1442,12 @@ pub enum Event {
         title: String,
         body: String,
         agent_id: String,
+    },
+    /// The program in a terminal set its title. Sent only to clients on this
+    /// host; devices read it in their view.
+    TerminalTitle {
+        id: SessionId,
+        title: String,
     },
     /// What a client reads through `Call` under `topic` changed, for
     /// `project` or for every project when it is absent, so the client reads

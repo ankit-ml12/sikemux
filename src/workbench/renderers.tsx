@@ -94,7 +94,6 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
             retainPtyOnUnmount
             resumePtyId={pane.ptyId}
             onPtySession={(id) => cmd.setPanePty(pane.id, id)}
-            onTitleChange={(title) => cmd.setTerminalTitle(pane.id, title)}
         />
     ),
 };

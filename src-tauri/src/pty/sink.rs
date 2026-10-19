@@ -182,6 +182,10 @@ impl EventSink for AppSink {
                 self.emit("focus_agent", agent_id);
             }
             Event::DeviceView { view } => self.view.changed(&self.app, view),
+            Event::TerminalTitle { id, title } => self.emit(
+                "terminal_title",
+                serde_json::json!({ "id": id, "title": title }),
+            ),
             Event::Changed {
                 topic,
                 project,

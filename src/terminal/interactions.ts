@@ -1,23 +1,9 @@
 import type { IBuffer } from "@xterm/xterm";
 
-const MAX_TERMINAL_TITLE_CHARS = 120;
-
 export interface TerminalSearchOptions {
     caseSensitive: boolean;
     regex: boolean;
     wholeWord: boolean;
-}
-
-/** Terminal titles are process-controlled, so never forward control bytes or unbounded text to UI state. */
-export function sanitizeTerminalTitle(raw: string): string | null {
-    const withoutControls = Array.from(raw, (char) => {
-        const code = char.charCodeAt(0);
-        return code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? " " : char;
-    }).join("");
-    const clean = withoutControls.replace(/\s+/g, " ").trim();
-    if (!clean) return null;
-    const chars = Array.from(clean);
-    return chars.length <= MAX_TERMINAL_TITLE_CHARS ? clean : `${chars.slice(0, MAX_TERMINAL_TITLE_CHARS - 1).join("")}…`;
 }
 
 /** Produce readable text from the active xterm buffer while preserving soft-wrapped lines. */

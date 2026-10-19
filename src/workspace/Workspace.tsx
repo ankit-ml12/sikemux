@@ -303,16 +303,18 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
      * strip are subscribed to rather than the whole record — one `cd` used to
      * re-render every strip and every layer in the app.
      */
-    const termPaneIds = useMemo(
+    const termPtyIds = useMemo(
         () =>
             (windowIds ?? EMPTY_IDS).flatMap((id) => {
                 const win = windowsById[id];
-                return win ? collectPanes(win.root).flatMap((pane) => (pane.kind === "terminal" ? [pane.id] : [])) : [];
+                return win
+                    ? collectPanes(win.root).flatMap((pane) => (pane.kind === "terminal" && pane.ptyId !== undefined ? [String(pane.ptyId)] : []))
+                    : [];
             }),
         [windowIds, windowsById],
     );
-    const termTitleList = useStore(useShallow((s) => termPaneIds.map((id) => s.terminalTitles[id] ?? "")));
-    const termTitles = useMemo(() => Object.fromEntries(termPaneIds.map((id, index) => [id, termTitleList[index]])), [termPaneIds, termTitleList]);
+    const termTitleList = useStore(useShallow((s) => termPtyIds.map((id) => s.terminalTitles[id] ?? "")));
+    const termTitles = useMemo(() => Object.fromEntries(termPtyIds.map((id, index) => [id, termTitleList[index]])), [termPtyIds, termTitleList]);
 
     const closeShortcut = useShortcutLabel("pane.close");
     const permissionsShortcut = useShortcutLabel("agent.permissions");
@@ -660,11 +662,14 @@ const WindowLayer = memo(function WindowLayer({
      * prompt or `cd` anywhere re-rendered every retained layer in the app, and
      * every pane inside them.
      */
-    const stackPaneIds = useMemo(() => stacks.flatMap((stack) => stack.tabs.map((pane) => pane.id)), [stacks]);
-    const stackTitleList = useStore(useShallow((s) => stackPaneIds.map((id) => s.terminalTitles[id] ?? "")));
+    const stackPtyIds = useMemo(
+        () => stacks.flatMap((stack) => stack.tabs.flatMap((pane) => (pane.ptyId !== undefined ? [String(pane.ptyId)] : []))),
+        [stacks],
+    );
+    const stackTitleList = useStore(useShallow((s) => stackPtyIds.map((id) => s.terminalTitles[id] ?? "")));
     const stackTitles = useMemo(
-        () => Object.fromEntries(stackPaneIds.map((id, index) => [id, stackTitleList[index]])),
-        [stackPaneIds, stackTitleList],
+        () => Object.fromEntries(stackPtyIds.map((id, index) => [id, stackTitleList[index]])),
+        [stackPtyIds, stackTitleList],
     );
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);
     const zoomActive = live && zoomedPaneId != null;

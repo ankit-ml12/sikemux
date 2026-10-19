@@ -290,7 +290,6 @@ export function disposePaneState(d: StoreState, paneId: string): void {
     delete d.dirtyEditorPaths[paneId];
     delete d.gitViews[paneId];
     dropDeskPaneState(d, paneId);
-    delete d.terminalTitles[paneId];
     delete d.agents[paneId];
     forgetAgentDeliveries(paneId);
 }

@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
     terminals: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
     unregisterTheme: vi.fn(),
     searchDispose: vi.fn(),
-    titleDispose: vi.fn(),
     webglDispose: vi.fn(),
     terminalOptions: [] as Array<Record<string, unknown>>,
     invoke: vi.fn(async () => undefined),
@@ -38,9 +37,6 @@ vi.mock("@xterm/xterm", () => ({
         loadAddon() {}
         open(host: HTMLElement) {
             host.append(this.element);
-        }
-        onTitleChange() {
-            return { dispose: mocks.titleDispose };
         }
         onData() {
             return { dispose: vi.fn() };
@@ -116,7 +112,6 @@ beforeEach(() => {
     mocks.invoke.mockClear();
     mocks.unregisterTheme.mockClear();
     mocks.searchDispose.mockClear();
-    mocks.titleDispose.mockClear();
     mocks.webglDispose.mockClear();
     Object.defineProperty(document, "fonts", {
         configurable: true,
@@ -150,7 +145,6 @@ describe("useXterm renderer boot", () => {
         expect(mocks.terminals[0].dispose).toHaveBeenCalledOnce();
         expect(mocks.unregisterTheme).toHaveBeenCalledOnce();
         expect(mocks.searchDispose).toHaveBeenCalledOnce();
-        expect(mocks.titleDispose).toHaveBeenCalledOnce();
         expect(onExit).not.toHaveBeenCalled();
         expect((view.container.firstElementChild as HTMLElement).dataset.terminalOutput).toBe("recovering");
 

@@ -29,7 +29,7 @@ export function seedProjects(options: { terminal?: boolean; agentLaunch?: "live"
         id: "win-shell",
         name: "shell",
         role: "terminal" as const,
-        root: { type: "pane" as const, id: "pane-1", cwd: "/code", kind: terminal ? ("terminal" as const) : ("editor" as const), title: "zsh" },
+        root: { type: "pane" as const, id: "pane-1", cwd: "/code", kind: terminal ? ("terminal" as const) : ("editor" as const), title: "zsh", ptyId: 1 },
         activePaneId: "pane-1",
     };
     setState({
@@ -68,7 +68,7 @@ export function seedProjects(options: { terminal?: boolean; agentLaunch?: "live"
             "agent-9": { id: "agent-9", type: "codex", title: "Elsewhere" },
         },
         agentStatus: {},
-        terminalTitles: { "pane-1": "npm run dev" },
+        terminalTitles: { 1: "npm run dev" },
         desks: {},
         deskPanes: {},
     } as never);

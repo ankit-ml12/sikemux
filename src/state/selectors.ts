@@ -75,7 +75,7 @@ export function terminalLabel(win: Window | undefined, pane: PaneNode, titles: R
     if (pane.startup) return win?.customName || win?.name || pane.title;
     const home = win?.role === "term" ? collectPanes(win.root).find((candidate) => candidate.kind === "terminal") : undefined;
     if (win?.customName && home?.id === pane.id) return win.customName;
-    return titles[pane.id] || pane.title || win?.name || "Terminal";
+    return (pane.ptyId !== undefined ? titles[pane.ptyId] : undefined) || pane.title || win?.name || "Terminal";
 }
 
 /** The open project in this folder. */

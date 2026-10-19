@@ -43,7 +43,6 @@ export function TerminalPane({
     retainPtyOnUnmount = false,
     resumePtyId,
     onPtySession,
-    onTitleChange,
     onExit,
 }: {
     cwd?: string;
@@ -70,7 +69,6 @@ export function TerminalPane({
     resumePtyId?: number;
     /** Hears which terminal this pane shows, so it can be found again after a restart. */
     onPtySession?: (id: number) => void;
-    onTitleChange?: (title: string) => void;
     /** Fires when the shell process ends. Remount with a fresh key to respawn. */
     onExit?: () => void;
 }) {
@@ -84,8 +82,6 @@ export function TerminalPane({
     const [shellMetadata, setShellMetadata] = useState<PtyShellMetadataSnapshot | null>(null);
     const hostRef = useRef<HTMLDivElement>(null);
     const rendererTokenRef = useRef(Symbol("terminal-renderer"));
-    const titleChangeRef = useRef(onTitleChange);
-    titleChangeRef.current = onTitleChange;
     const shellIntegration = !taskTerminalKey && context?.shellIntegration === true;
     const applyShellEvent = useCallback((event: PtyShellMetadataEvent) => {
         setShellMetadata((current) => applyPtyShellMetadataEvent(current, event));
@@ -135,11 +131,6 @@ export function TerminalPane({
     }, [shellIntegration]);
 
     useEffect(() => {
-        if (!shellIntegration || !shellMetadata?.cwd) return;
-        titleChangeRef.current?.(basename(shellMetadata.cwd));
-    }, [shellIntegration, shellMetadata?.cwd]);
-
-    useEffect(() => {
         const token = rendererTokenRef.current;
         const evict = () => {
             hiddenRendererEvictions.delete(token);
@@ -173,7 +164,6 @@ export function TerminalPane({
             setFindOpen(true);
         },
         onSearchResults: setFindResult,
-        onTitleChange,
         onShellMetadata: shellIntegration ? applyShellSnapshot : undefined,
         onExit,
     });

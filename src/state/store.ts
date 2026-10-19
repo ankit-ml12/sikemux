@@ -231,6 +231,7 @@ export interface ViewState {
     diagnosticsOpen: boolean;
     whatsNewOpen: boolean;
     commandPopup: { id: string; title: string; startup: string; cwd: string; context: import("./types").PtyContext } | null;
+    /** What the program in each core terminal last called it, by session id. */
     terminalTitles: Record<string, string>;
     lastSessionId: string | null;
 

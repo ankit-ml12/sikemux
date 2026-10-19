@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isTerminalFindShortcut, sanitizeTerminalTitle, terminalBufferText } from "./interactions";
+import { isTerminalFindShortcut, terminalBufferText } from "./interactions";
 
 describe("terminal interactions", () => {
-    it("sanitizes and bounds process-controlled titles without splitting Unicode", () => {
-        expect(sanitizeTerminalTitle("\u0000 build\n  ready\t")).toBe("build ready");
-        expect(sanitizeTerminalTitle("\u0000\n")).toBeNull();
-        expect(Array.from(sanitizeTerminalTitle("🧪".repeat(140)) ?? "")).toHaveLength(120);
-        expect(sanitizeTerminalTitle("🧪".repeat(140))).toMatch(/…$/);
-    });
-
     it("copies buffer text without adding newlines inside wrapped output", () => {
         const rows = [
             { text: "long ", isWrapped: false },

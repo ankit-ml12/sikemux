@@ -248,7 +248,8 @@ describe("naming a terminal tab", () => {
 
     it("shows the given name over the terminal's own title, and can go back to it", async () => {
         const win = terminalWindow();
-        cmd.setTerminalTitle(win.activePaneId, "zsh");
+        cmd.setPanePty(win.activePaneId, 7);
+        setState({ terminalTitles: { 7: "zsh" } });
         render(<Stage />);
         expect(screen.getByRole("tab", { name: "zsh" })).toBeInTheDocument();
 
@@ -260,7 +261,7 @@ describe("naming a terminal tab", () => {
         expect(await screen.findByRole("tab", { name: "api server" })).toBeInTheDocument();
         expect(getState().windows[win.id].customName).toBe("api server");
 
-        act(() => cmd.setTerminalTitle(win.activePaneId, "vim"));
+        act(() => setState({ terminalTitles: { 7: "vim" } }));
         expect(screen.getByRole("tab", { name: "api server" })).toBeInTheDocument();
 
         fireEvent.contextMenu(screen.getByRole("tab", { name: "api server" }));

@@ -104,8 +104,14 @@ pub(crate) struct Session {
     /// started again.
     reader_frozen: AtomicBool,
     shell_integration: Option<ShellLaunchIntegration>,
+    /// A title change waits to be sent, with any that follow it soon after.
+    title_pending: AtomicBool,
     _capacity_permit: CapacityPermit,
 }
+
+/// Programs that animate their title, such as a spinner, send at most one
+/// change per this long.
+const TITLE_GAP: Duration = Duration::from_millis(200);
 
 /// Everything a session is made of besides its process handle and terminal,
 /// for a session spawned here or adopted from an earlier core.
@@ -165,6 +171,7 @@ impl Session {
             agent: parts.agent,
             reader_frozen: AtomicBool::new(false),
             shell_integration: parts.shell_integration,
+            title_pending: AtomicBool::new(false),
             _capacity_permit: capacity_permit,
         });
         (session, input_jobs)
@@ -233,16 +240,14 @@ impl Session {
     }
 
     pub(crate) fn info(&self) -> SessionInfo {
-        let ((rows, cols), ssh) = self
+        let ((rows, cols), ssh, window_title) = self
             .parser
             .lock()
             .map(|parser| {
-                let ssh = parser
-                    .callbacks()
-                    .shell
-                    .as_ref()
-                    .and_then(|shell| shell.ssh());
-                (parser.screen().size(), ssh)
+                let callbacks = parser.callbacks();
+                let ssh = callbacks.shell.as_ref().and_then(|shell| shell.ssh());
+                let title = Some(callbacks.window_title.clone()).filter(|title| !title.is_empty());
+                (parser.screen().size(), ssh, title)
             })
             .unwrap_or_default();
         SessionInfo {
@@ -269,6 +274,7 @@ impl Session {
             exit: self.exit.lock().ok().and_then(|exit| exit.clone()),
             killed: self.is_killed(),
             title: None,
+            window_title,
             unread: false,
             active_at: None,
             group: None,
@@ -829,7 +835,26 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
     // Frames are queued under the parser lock, the same lock an attach holds
     // while it takes its snapshot, so a client sees every byte exactly once.
     send_to_subscribers(session, bytes);
+    let callbacks = parser.callbacks_mut();
+    callbacks.title_from_cwd();
+    let retitled = callbacks.take_title_change().is_some();
     drop(parser);
+    if retitled && !session.title_pending.swap(true, Ordering::AcqRel) {
+        let (core, id) = (core.clone(), session.id);
+        tokio::spawn(async move {
+            tokio::time::sleep(TITLE_GAP).await;
+            let Some(session) = core.session(id) else {
+                return;
+            };
+            session.title_pending.store(false, Ordering::Release);
+            let title = session
+                .parser
+                .lock()
+                .map(|parser| parser.callbacks().window_title.clone())
+                .unwrap_or_default();
+            core.broadcast_local(&Event::TerminalTitle { id, title });
+        });
+    }
     if let Some(update) = shell_output.ready {
         core.broadcast_event(&Event::ShellMetadata(update.into_event(session.id)));
     }
