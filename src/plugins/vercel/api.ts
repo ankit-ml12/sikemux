@@ -119,6 +119,32 @@ export type SettingsChange = Partial<
     Pick<VercelSettings, "framework" | "buildCommand" | "outputDirectory" | "installCommand" | "devCommand" | "rootDirectory" | "nodeVersion">
 >;
 
+export interface DnsRecord {
+    type: string;
+    name: string;
+    value: string;
+    /** What the record is for, in words. */
+    why: string;
+}
+
+export interface DomainDetail {
+    name: string;
+    verified: boolean;
+    misconfigured: boolean;
+    redirect: string | null;
+    redirectStatusCode: number | null;
+    gitBranch: string | null;
+    /** What is left to add at the domain's DNS provider; none once it is set up. */
+    records: DnsRecord[];
+}
+
+export interface DomainRouting {
+    /** Serve this branch instead of production; "" for production again. */
+    branch?: string;
+    /** Redirect visitors to this domain instead; "" to stop redirecting. */
+    redirect?: string;
+}
+
 export type VercelTarget = "production" | "preview" | "development";
 
 export interface VariableChange {
@@ -148,6 +174,13 @@ export const vercelApi = {
     redeploy: (team: string, id: string, target?: "production") => backend.call<VercelDeployment>("redeploy", { team, id, target }),
     promote: (team: string, id: string) => backend.call<VercelDeployment>("promote", { team, id }),
     cancel: (team: string, id: string) => backend.call<VercelDeployment>("cancel", { team, id }),
+    domain: (team: string, project: string, domain: string) => backend.call<DomainDetail>("domain", { team, project, domain }),
+    addDomain: (team: string, project: string, domain: string, routing: DomainRouting) =>
+        backend.call<DomainDetail>("addDomain", { team, project, domain, ...routing }),
+    updateDomain: (team: string, project: string, domain: string, routing: DomainRouting) =>
+        backend.call<DomainDetail>("updateDomain", { team, project, domain, ...routing }),
+    verifyDomain: (team: string, project: string, domain: string) => backend.call<DomainDetail>("verifyDomain", { team, project, domain }),
+    removeDomain: (team: string, project: string, domain: string) => backend.call<void>("removeDomain", { team, project, domain }),
     setEnv: (team: string, project: string, change: VariableChange) => backend.call<VercelVariable>("setEnv", { team, project, ...change }),
     removeEnv: (team: string, project: string, id: string) => backend.call<void>("removeEnv", { team, project, id }),
     settings: (team: string, project: string) => backend.call<VercelSettings>("settings", { team, project }),

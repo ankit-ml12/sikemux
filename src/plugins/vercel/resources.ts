@@ -15,3 +15,9 @@ export const vercelDomainsR = vercel.resource("domains", (team: string, project:
 export const vercelEnvR = vercel.resource("env", (team: string, project: string) => vercelApi.env(team, project), 60_000);
 
 export const vercelSettingsR = vercel.resource("settings", (team: string, project: string) => vercelApi.settings(team, project), 60_000);
+
+export const vercelDomainR = vercel.resource(
+    "domain",
+    (team: string, project: string, domain: string) => vercelApi.domain(team, project, domain),
+    30_000,
+);

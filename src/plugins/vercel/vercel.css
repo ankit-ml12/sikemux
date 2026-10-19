@@ -817,3 +817,45 @@
     gap: 14px;
     font-size: var(--text-xs);
 }
+
+.vercel-domain-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.vercel-records {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.vercel-records > p {
+    margin: 0;
+    font-size: var(--text-xs);
+}
+
+.vercel-table-row.record {
+    display: grid;
+    grid-template-columns: 70px minmax(120px, 1fr) minmax(0, 2fr);
+    gap: 12px;
+    padding: 8px 12px;
+    font-size: var(--text-xs);
+}
+
+.vercel-table-row.record.head {
+    color: var(--text-tertiary);
+}
+
+.vercel-record-value {
+    overflow-wrap: anywhere;
+    text-align: left;
+}
+
+.vercel-domain > .vercel-domain-head,
+.vercel-domain > .vercel-records,
+.vercel-domain > form {
+    flex-basis: 100%;
+}

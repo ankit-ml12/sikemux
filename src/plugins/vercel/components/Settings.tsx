@@ -2,11 +2,10 @@ import { useState } from "react";
 import { confirmDialog, notify } from "../../../plugin-api/host";
 import { errorText, formatAgo } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, Loaded, Pending } from "../../../plugin-api/ui";
+import { EmptyState, Pending } from "../../../plugin-api/ui";
 import { vercelApi, type VercelVariable } from "../api";
-import { vercel, vercelDomainsR, vercelEnvR } from "../resources";
+import { vercel, vercelEnvR } from "../resources";
 import { VariableForm } from "./VariableForm";
-import { IconExternal, visit } from "./parts";
 
 const ALL_TARGETS = ["production", "preview", "development"];
 
@@ -88,37 +87,5 @@ export function Environment({ active, team, project, find }: { active: boolean; 
                 </div>
             )}
         </div>
-    );
-}
-
-/** A project's domains as Vercel lists them, each with whether it is set up right. */
-export function Domains({ active, team, project }: { active: boolean; team: string; project: string }) {
-    const domains = useResourceEnabled(active, vercelDomainsR, team, project);
-    return (
-        <Loaded handle={domains} loading="Loading domains" rows={3} empty={(found) => (found.length > 0 ? null : "No domains.")}>
-            {(found) => (
-                <div className="vercel-settings">
-                    {found.map((domain) => (
-                        <section key={domain.name} className="vercel-box vercel-domain">
-                            <button type="button" className="vercel-link vercel-domain-name" onClick={() => visit(`https://${domain.name}`)}>
-                                {domain.name}
-                                <IconExternal />
-                            </button>
-                            <span className="vercel-status">
-                                <span className={`vercel-dot ${domain.verified ? "ready" : "error"}`} aria-hidden="true" />
-                                {domain.verified ? "Valid Configuration" : "Invalid Configuration"}
-                            </span>
-                            <span className="vercel-muted">
-                                {domain.redirect
-                                    ? `Redirects to ${domain.redirect}`
-                                    : domain.gitBranch
-                                      ? `Assigned to the ${domain.gitBranch} branch`
-                                      : "Production"}
-                            </span>
-                        </section>
-                    ))}
-                </div>
-            )}
-        </Loaded>
     );
 }

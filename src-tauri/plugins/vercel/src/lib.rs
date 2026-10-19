@@ -7,6 +7,7 @@
 //   auth        — signing in with the browser or an access token, choosing a team, and the account's status
 //   projects    — projects, their domains, and the names of their environment variables
 //   deployments — listing and reading deployments, build logs, redeploy, promote and cancel
+//   domains     — adding a domain, the DNS records it needs, verifying, routing and removing it
 //   env         — adding, changing and removing environment variables; values only go to Vercel
 //   settings    — a project's framework, commands, root directory and Node version, read and changed
 
@@ -14,6 +15,7 @@ mod auth;
 mod client;
 mod config;
 mod deployments;
+mod domains;
 mod env;
 mod error;
 mod oauth;
@@ -67,6 +69,12 @@ impl Plugin for Vercel {
                 "redeploy" => answer(deployments::redeploy(data_dir, params(input)?)).await,
                 "promote" => answer(deployments::promote(data_dir, params(input)?)).await,
                 "cancel" => answer(deployments::cancel(data_dir, params(input)?)).await,
+                "domain" => answer(domains::detail(data_dir, params(input)?)).await,
+                "addDomain" => answer(domains::add(data_dir, params(input)?)).await,
+                "updateDomain" => answer(domains::update(data_dir, params(input)?)).await,
+                "verifyDomain" => answer(domains::verify(data_dir, params(input)?)).await,
+                "removeDomain" => answer(domains::remove(data_dir, params(input)?)).await,
+                "changeDomain" => answer(domains::change(data_dir, input)).await,
                 "setEnv" => answer(env::set(data_dir, params(input)?)).await,
                 "removeEnv" => answer(env::remove(data_dir, params(input)?)).await,
                 "changeEnv" => answer(env::change(data_dir, input)).await,

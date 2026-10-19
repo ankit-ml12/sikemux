@@ -124,6 +124,21 @@
         "team": { "type": "string" }
       },
       "required": ["project", "action", "key"]
+    },
+    {
+      "name": "vercel_domain_change",
+      "row": {"verb": "change", "kind": "edit", "icon": "globe", "target": ["{domain}"], "detail": ["{action}"]},
+      "method": "changeDomain",
+      "description": "Add, route, verify or remove a project's domain; answers with the DNS records it still needs. Only when the person asked for it.",
+      "properties": {
+        "project": { "type": "string" },
+        "action": { "type": "string", "enum": ["add", "update", "verify", "remove"] },
+        "domain": { "type": "string" },
+        "branch": { "type": "string", "description": "Serve this branch; \"\" for production." },
+        "redirect": { "type": "string", "description": "Redirect to this domain; \"\" to stop." },
+        "team": { "type": "string" }
+      },
+      "required": ["project", "action", "domain"]
     }
   ]
 }

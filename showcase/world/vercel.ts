@@ -192,6 +192,43 @@ const find = (id: unknown) =>
   DEPLOYMENTS.find((each) => each.id === id) ?? DEPLOYMENTS[2];
 
 export const VERCEL: Record<string, (params: Params) => unknown> = {
+  domain: ({ domain }) =>
+    String(domain).startsWith("beta.")
+      ? {
+          name: domain,
+          verified: false,
+          misconfigured: true,
+          redirect: null,
+          redirectStatusCode: null,
+          gitBranch: "beta",
+          records: [
+            {
+              type: "TXT",
+              name: "_vercel.acme.dev",
+              value: "vc-domain-verify=beta.acme.dev,8f2c41d9e0",
+              why: "Proves the domain is yours",
+            },
+            {
+              type: "CNAME",
+              name: "beta",
+              value: "cname.vercel-dns.com",
+              why: "Points the domain at Vercel",
+            },
+          ],
+        }
+      : {
+          name: domain,
+          verified: true,
+          misconfigured: false,
+          redirect: null,
+          redirectStatusCode: null,
+          gitBranch: null,
+          records: [],
+        },
+  addDomain: ({ domain }) => VERCEL.domain!({ domain }),
+  updateDomain: ({ domain }) => VERCEL.domain!({ domain }),
+  verifyDomain: ({ domain }) => VERCEL.domain!({ domain }),
+  removeDomain: () => null,
   setEnv: ({ key, targets, branch }) => ({
     id: `env_${String(key)}`,
     key,
