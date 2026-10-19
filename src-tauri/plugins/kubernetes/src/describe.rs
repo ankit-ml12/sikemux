@@ -16,7 +16,8 @@ pub struct Detail {
     pub pod: Pod,
     pub labels: Vec<(String, String)>,
     pub conditions: Vec<Condition>,
-    pub containers: Vec<Container>,
+    /// Each container's state, kept apart from the pod's own `containers`, which counts them.
+    pub container_states: Vec<Container>,
     pub volumes: Vec<Volume>,
     pub events: Vec<Event>,
 }
@@ -321,7 +322,7 @@ pub fn detail_of(pod: &Value, events: &Value) -> Option<Detail> {
                 })
             })
             .collect(),
-        containers,
+        container_states: containers,
         volumes: items(pod, "/spec/volumes")
             .into_iter()
             .filter_map(volume_of)
@@ -387,7 +388,7 @@ mod tests {
             { "type": "Warning", "reason": "BackOff", "message": "Back-off restarting failed container worker", "count": 12, "lastTimestamp": "2026-10-19T08:05:00Z", "involvedObject": { "kind": "Pod", "name": "worker" } }
         ] });
         let detail = detail_of(&crashing_with_spec(), &events).unwrap();
-        let worker = &detail.containers[0];
+        let worker = &detail.container_states[0];
         assert_eq!(
             (worker.state.as_str(), worker.reason.as_deref()),
             ("waiting", Some("CrashLoopBackOff"))
@@ -424,9 +425,10 @@ mod tests {
         assert_eq!(worker.limits, [("memory".to_string(), "128Mi".to_string())]);
         assert_eq!(worker.probes, ["readiness GET /healthz"]);
         assert_eq!(worker.ports, ["8080/TCP"]);
-        assert!(!serde_json::to_string(&detail)
-            .unwrap()
-            .contains("tok_live_123"));
+        let written = serde_json::to_value(&detail).unwrap();
+        assert!(!written.to_string().contains("tok_live_123"));
+        assert_eq!(written["containers"], 1);
+        assert_eq!(written["containerStates"][0]["name"], "worker");
         assert_eq!(
             detail.volumes,
             [Volume {
