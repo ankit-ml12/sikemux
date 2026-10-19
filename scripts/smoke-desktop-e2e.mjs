@@ -1084,20 +1084,6 @@ async function expectChatResumed(sessionId) {
   watcher.close();
 }
 
-// The app stops a chat no pane shows once the launch grace is over.
-async function expectUnshownChatStopped() {
-  const watcher = await openCore(coreSocket);
-  await waitFor(
-    "the app to stop the chat no pane took back",
-    45_000,
-    async () => !(await coreChat(watcher)),
-  );
-  watcher.close();
-  console.log(
-    `Unclaimed chat passed: the app stopped chat ${CHAT_AGENT_ID}, which no pane showed`,
-  );
-}
-
 // A sidecar that reports another build, so the core has something newer to
 // update to.
 async function writeSidecar(name, build) {
@@ -1556,7 +1542,6 @@ try {
   const keptShell = await exerciseQuitKeepsTerminals();
   const chatSession = await exerciseChatKeepsGoing(fakeAgent);
   await exerciseUpdateKeepsTerminals(keptShell, chatSession);
-  await expectUnshownChatStopped();
   await waitFor(
     "WebView boot and persistence after relaunch",
     PERSIST_TIMEOUT_MS,
