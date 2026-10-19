@@ -7,11 +7,12 @@ import { rankBy } from "../lib/fuzzy";
 import * as cmd from "../state/commands";
 import { fetchResource, peekResource, useResource } from "../state/resources";
 import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
-import { agentIdsOf } from "../state/selectors";
+import { agentDisplayOf, agentIdsOf } from "../state/selectors";
 import { useStore } from "../state/store";
 import type { Agent, AgentPermissionMode, AgentType, PinnedChat } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
 import { agentHandle } from "./AgentLabel";
+import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
 import { inCoreOrder, useInbox } from "../rail/useInbox";
 import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../ui/Icons";
 import { formatAge } from "../lib/format";
@@ -76,6 +77,7 @@ export function AgentPalette() {
     const windows = useStore((state) => state.windows);
     const agentsById = useStore((state) => state.agents);
     const pinnedChats = useStore((state) => state.pinnedChats);
+    const agentStatus = useStore((state) => state.agentStatus);
     const { inbox } = useInbox();
     const profiles = useStore((state) => state.providerProfiles);
     const profileSelections = useStore((state) => state.selectedProviderProfileIds);
@@ -338,6 +340,7 @@ export function AgentPalette() {
                         const provider = agents.find((agent) => agent.type === type);
                         const install = installable(item, provider);
                         const available = provider?.available !== false || install;
+                        const display = item.kind === "resume" && item.agent ? agentDisplayOf({ agentStatus }, item.agent.id) : null;
                         const signIn = item.kind === "new" && !!item.signIn;
                         const key = item.kind === "new" ? `${signIn ? "sign-in" : "new"}-${type}` : `${type}-${item.row.id}`;
                         const name = signIn
@@ -374,23 +377,29 @@ export function AgentPalette() {
                                     )}
                                     <span className="picker-name">{name}</span>
                                     {item.kind === "resume" && item.agent?.name && <span className="picker-sub">{agentHandle(item.agent.name)}</span>}
-                                    <span className="picker-sub">
-                                        {signIn
-                                            ? "Signed out"
-                                            : install
-                                              ? agentAbout(type)
-                                              : !available
-                                                ? provider?.error || "Agent executable is unavailable"
-                                                : launchMode(type) !== mode
-                                                  ? "opens safe"
-                                                  : item.kind === "new"
-                                                    ? provider?.status?.state === "signedOut"
-                                                        ? "signed out"
-                                                        : ""
-                                                    : item.row.mtime
-                                                      ? formatAge(item.row.mtime * 1000)
-                                                      : ""}
-                                    </span>
+                                    {display && showsAgentState(display) ? (
+                                        <span className="picker-state">
+                                            <AgentStateIndicator display={display} />
+                                        </span>
+                                    ) : (
+                                        <span className="picker-sub">
+                                            {signIn
+                                                ? "Signed out"
+                                                : install
+                                                  ? agentAbout(type)
+                                                  : !available
+                                                    ? provider?.error || "Agent executable is unavailable"
+                                                    : launchMode(type) !== mode
+                                                      ? "opens safe"
+                                                      : item.kind === "new"
+                                                        ? provider?.status?.state === "signedOut"
+                                                            ? "signed out"
+                                                            : ""
+                                                        : item.row.mtime
+                                                          ? formatAge(item.row.mtime * 1000)
+                                                          : ""}
+                                        </span>
+                                    )}
                                 </button>
                             </Fragment>
                         );
