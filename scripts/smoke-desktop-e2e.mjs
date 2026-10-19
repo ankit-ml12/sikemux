@@ -808,7 +808,7 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
     "workspace.inspect with the window closed",
   );
   if (
-    inspected.window !== null ||
+    "windows" in inspected ||
     !inspected.note ||
     !inspected.runs.some((run) => run.executionId === started.executionId)
   )
