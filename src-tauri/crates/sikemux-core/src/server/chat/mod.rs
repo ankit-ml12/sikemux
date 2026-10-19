@@ -1434,7 +1434,10 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
         return Err("ACP working directory must be absolute".into());
     }
     if let Some(resume_id) = launch.resume_id.as_deref() {
-        bounded_text("session id", resume_id, 4_096)?;
+        let agent = crate::agent_catalog::AgentKind::from_name(&launch.provider);
+        if !crate::sessions::is_session_id(agent, resume_id) {
+            return Err(format!("{resume_id:?} is not a {} session id", launch.provider).into());
+        }
     }
     if launch.program.as_os_str().is_empty() {
         return Err("ACP agent program is missing".into());
