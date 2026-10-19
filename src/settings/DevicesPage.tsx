@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { accountApi, type AccountHost, type AccountStatus } from "../api/account";
 import { portsApi } from "../api/ports";
 import { AccountAvatar } from "../account/AccountAvatar";
@@ -374,6 +374,14 @@ function HostsSection({ now }: { now: number }) {
             reread();
         }
     };
+    const allowSignIns = async (host: LinkedHost, allowed: boolean) => {
+        try {
+            await remoteApi.setLinkSignIns(host.id, allowed);
+        } catch (error) {
+            reportError("Sign-ins for linked host")(error);
+        }
+        reread();
+    };
     const unlink = async (host: LinkedHost) => {
         try {
             await remoteApi.revokeDevice(host.id);
@@ -390,20 +398,32 @@ function HostsSection({ now }: { now: number }) {
                 Link another computer on your account. Someone there allows it once, then agents here can start agents there, on that computer&apos;s
                 own sign-ins.
             </p>
+            <p className="settings-hint">
+                Agents a linked host starts or messages here can&apos;t use this host&apos;s plugin sign-ins, database logins or signed-in browser tabs
+                until you allow that host.
+            </p>
             {links.length === 0 && hosts.length === 0 ? (
                 <p className="settings-hint">No other computers on your account. Sign in to Sikemux on one to link it.</p>
             ) : (
                 <SettingsRows>
                     {links.map((host) => (
-                        <SettingsRow key={host.id} label={host.name || "Unnamed computer"} desc={linkedLine(host, now)}>
-                            <button
-                                className="settings-btn danger"
-                                type="button"
-                                onClick={() => void unlink(host)}
-                                title="Unlink this computer; agents on either side can no longer start agents on the other">
-                                <IconTrash size={12} /> Remove
-                            </button>
-                        </SettingsRow>
+                        <Fragment key={host.id}>
+                            <SettingsRow label={host.name || "Unnamed computer"} desc={linkedLine(host, now)}>
+                                <button
+                                    className="settings-btn danger"
+                                    type="button"
+                                    onClick={() => void unlink(host)}
+                                    title="Unlink this computer; agents on either side can no longer start agents on the other">
+                                    <IconTrash size={12} /> Remove
+                                </button>
+                            </SettingsRow>
+                            <SettingsRow
+                                label={`Let agents from ${host.name || "it"} use sign-ins here`}
+                                desc="They act as you in every plugin, database and signed-in tab on this host"
+                                asLabel>
+                                <Switch checked={host.signIns} onChange={(allowed) => void allowSignIns(host, allowed)} />
+                            </SettingsRow>
+                        </Fragment>
                     ))}
                     {hosts.map((host) => (
                         <SettingsRow

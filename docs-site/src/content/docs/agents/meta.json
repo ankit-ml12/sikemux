@@ -5,6 +5,7 @@
     "supported",
     "chats",
     "permissions",
-    "accounts"
+    "accounts",
+    "linked-hosts"
   ]
 }

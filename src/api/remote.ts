@@ -1,3 +1,4 @@
+import { coreCall } from "./core";
 import { invokeCommand as invoke } from "./invoke";
 import type { PublishedBuddies } from "../buddies/published";
 import { getIpcTransport } from "./transport";
@@ -15,6 +16,8 @@ export const remoteApi = {
     setEnabled: (enabled: boolean) => invoke<RemoteStatus>("remote_set_enabled", { enabled }),
     setDeviceAccess: (id: string, access: DeviceAccess) => invoke<RemoteStatus>("remote_set_device_access", { id, access }),
     revokeDevice: (id: string) => invoke<RemoteStatus>("remote_revoke_device", { id }),
+    /** Lets agents a linked host started or messaged use this host's sign-ins, or stops them. */
+    setLinkSignIns: (id: string, allowed: boolean) => coreCall<RemotePairing>("setLinkSignIns", { id, allowed }),
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
     allowDevices: (devices: readonly AllowedDevice[]) => invoke<RemoteStatus>("remote_allow_devices", { devices }),
     publishOnScreen: (agentIds: readonly string[], focused: boolean) => invoke<void>("remote_publish_on_screen", { agentIds, focused }),
