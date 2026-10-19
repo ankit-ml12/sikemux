@@ -85,9 +85,13 @@ may or may not have.
   read on one host cannot reach the other's services.
 - A lead whose worker runs on another host hears its reports, so it too is refused this host's
   sign-ins until the person allows the worker's host.
-- The check covers what Sikemux hands agents. An agent that runs without approvals still has its
-  shell, so sign-ins a CLI keeps in its own files on the host stay within its reach until it runs
-  in a sandbox of its own ([ADR 0014](./0014-agents-run-on-hosts-and-every-client-is-a-way-in.md)).
+- The check covers what Sikemux hands agents: plugin calls, the browser tools and the launch
+  environment. An agent that runs without approvals still has its shell, so sign-in files the
+  host's command-line tools keep, such as `~/.aws`, `~/.ssh` and `gh`'s, stay within its reach.
+  Only the per-agent sandboxes of
+  [ADR 0014](./0014-agents-run-on-hosts-and-every-client-is-a-way-in.md) close that. Until then
+  the per-host switch is the trust line: a host whose agents the person would not let read those
+  files should not be linked.
 - Starting a worker on another host sends the lead's code to it. A large repository the other host
   lacks takes its first bundle's time; a later worker for the same project sends only what is new.
 - A worker's checkout stays on its host after it closes, as a worktree beside the project or under
@@ -112,3 +116,8 @@ may or may not have.
   that forgot to check would hand out its sign-in, and the core already answers every tool call.
 - **Refusing only the agents a linked host started, not those it messaged.** Rejected: a message
   steers an agent as well as a prompt does.
+- **Hiding the host's sign-in files from a linked host's agents with a profile around their
+  process** (`sandbox-exec` on macOS, a mount namespace on Linux). Rejected: a determined agent
+  gets its commands run outside the profile, so it guards only against reading them by accident,
+  and macOS refuses a sandbox inside another, which breaks Codex's own sandbox in Normal mode.
+  The sandboxes of ADR 0014 replace it.

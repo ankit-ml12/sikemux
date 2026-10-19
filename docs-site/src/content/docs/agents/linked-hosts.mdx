@@ -13,4 +13,6 @@ An agent that a linked host's agent started or messaged can't use this host's si
 
 To allow it, turn on **Let agents from … use sign-ins here** under that host in **Settings → Devices**, or **Let its agents use sign-ins here** in the host's sheet on your phone. It is off for every new link and only you can change it; agents can't.
 
-Agents in YOLO mode still have their shell, so sign-ins that command-line tools keep in their own files on the host stay within their reach.
+### What the switch doesn't cover
+
+With the switch off, agents from that host get no plugin tools, no browser tabs and none of the plugin settings an agent is started with. They still have a shell on this host, like any agent, so they can read the sign-in files command-line tools keep there, such as `~/.aws`, `~/.ssh` and `gh`'s. Sikemux can't close that until each agent runs in a sandbox of its own. Until then, link only hosts whose agents you would trust with those files.
