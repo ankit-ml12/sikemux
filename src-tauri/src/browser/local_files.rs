@@ -129,8 +129,8 @@ impl LocalFiles {
     }
 }
 
-/// A page can read every file under the folder it came from. That is fine inside a project, but
-/// Downloads, Desktop and the like gather files from anywhere, so a page there sees only itself.
+/// A page can read every file under the folder it came from, so only a git project shares its
+/// folder. A repository at home, Downloads, Desktop or the like gathers files from anywhere and does not count.
 fn serves_its_folder(folder: &Path) -> bool {
     let Some(home) = std::env::var("HOME")
         .ok()
@@ -146,14 +146,10 @@ fn serves_its_folder(folder: &Path) -> bool {
     let broad = |path: &Path| {
         path.parent().is_none() || home.starts_with(path) || catch_alls.iter().any(|f| f == path)
     };
-    if folder
+    folder
         .ancestors()
         .find(|ancestor| ancestor.join(".git").exists())
         .is_some_and(|project| !broad(project))
-    {
-        return true;
-    }
-    !broad(folder) && !catch_alls.iter().any(|f| folder.starts_with(f))
 }
 
 const CATCH_ALL_FOLDERS: &[&str] = &[
@@ -525,7 +521,7 @@ mod tests {
         assert!(!serves_its_folder(&home));
         assert!(!serves_its_folder(&home.join("Downloads")));
         assert!(!serves_its_folder(&home.join("Downloads/site")));
-        assert!(serves_its_folder(&home.join("project")));
+        assert!(!serves_its_folder(&home.join("site-without-git")));
         let downloads = tempfile::tempdir().unwrap();
         let repo = downloads.path().canonicalize().unwrap().join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
