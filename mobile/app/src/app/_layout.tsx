@@ -104,11 +104,11 @@ function Routes({ background }: { background: string }) {
   }, [ready, late]);
 
   useEffect(() => {
-    if (isLoaded) lockFor(!!isSignedIn);
+    if (isLoaded) void lockFor(!!isSignedIn);
   }, [isLoaded, isSignedIn]);
 
   if (!ready) return late && !isLoaded ? <Unreachable /> : null;
-  if (isSignedIn && !lock.opened) return <LockScreen />;
+  if (isSignedIn && !lock.opened) return lock.on ? <LockScreen /> : null;
   return (
     <>
       <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: background } }}>

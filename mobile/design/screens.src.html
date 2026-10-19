@@ -1046,7 +1046,7 @@
 </section>
 
   <h2>The lock</h2>
-  <p>A signed-in phone shows no host, chat or device, and opens no link or notification, until the person passes Face ID, Touch ID or the phone's passcode. Signing in on the phone counts; nothing is asked of a phone that is signed out.</p>
+  <p>Off until the person turns on Lock Sikemux in the account sheet. Then a signed-in phone shows no host, chat or device, and opens no link or notification, until the person passes Face ID, Touch ID or the phone's passcode. Signing in on the phone counts; nothing is asked of a phone that is signed out.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -1059,21 +1059,7 @@
         <div class="footer"><div class="btn primary">Unlock</div></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Locked</b><div class="note">Each launch opens here, after the splash, and the system's Face ID, Touch ID or passcode prompt comes up by itself; passing it shows the app where it was. Cancelled or failed, the prompt goes and Unlock asks again. The app locks again once it has been away for a minute, the way password managers allow a quick look at another app; until then, and whenever it is not in front, a plain ground covers it, so the app switcher's picture shows nothing. A link or a tapped notification waits behind the lock and opens once it is passed; on iPhone, Allow and Reject on a card answer only then. Android's cards answer from the notification itself, Allow behind the phone's own lock.</div></figcaption>
-    </figure>
-
-    <figure><div class="phone"><div class="island"></div>
-      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
-      <div class="screen">
-        <div class="stack" style="padding-bottom:120px">
-          <div class="prompt-glyph">{{IconLock:34}}</div>
-          <h2 style="font-size:22px">Set a passcode</h2>
-          <p>Sikemux opens only on a phone with a passcode. Set one in Settings, then come back.</p>
-        </div>
-        <div class="footer"><div class="btn primary">Try again</div></div>
-      </div>
-      <div class="home-bar"></div></div>
-      <figcaption><b>No passcode</b><div class="note">A phone with no passcode has nothing to lock with, so the app stays shut until one is set. Coming back to the app asks again by itself; so does Try again.</div></figcaption>
+      <figcaption><b>Locked</b><div class="note">With the lock on, each launch opens here, after the splash, and the system's Face ID, Touch ID or passcode prompt comes up by itself; passing it shows the app where it was. Cancelled or failed, the prompt goes and Unlock asks again. The app locks again once it has been away for a minute, the way password managers allow a quick look at another app; until then, and whenever it is not in front, a plain ground covers it, so the app switcher's picture shows nothing. A link or a tapped notification waits behind the lock and opens once it is passed; on iPhone, Allow and Reject on a card answer only then. Android's cards answer from the notification itself, Allow behind the phone's own lock.</div></figcaption>
     </figure>
 
   </div>
@@ -1171,12 +1157,13 @@
         </div>
         <div class="row boxed"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t" style="font-size:15px">Kishore's Pixel</div><div class="s">This phone · <span class="m">3308a907</span></div></div></div>
         <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconInbox:18}}</span><div class="body"><div class="t" style="font-size:15px">Notifications</div></div><span class="toggle"></span></div>
+        <div class="row boxed" style="margin-top:8px"><span class="mark">{{IconLock:18}}</span><div class="body"><div class="t" style="font-size:15px">Lock Sikemux</div></div><span class="toggle off"></span></div>
         <div class="btn danger" style="margin-top:16px">{{IconLogOut:17}}Sign out</div>
         <div class="text-link" style="height:44px;line-height:44px;margin-top:4px">Delete account…</div>
         <div class="sheet-version">Sikemux 0.1.0-nightly.5 · update 1b46d28 (6 Oct)</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Deleting the account is a quiet link under it, leading to a screen that explains it first. The last line is the installed release, nightly number included, quiet like the Mac's About, then the commit of the code running on it: the build's own, or once an over-the-air update replaced it, "update", that update's commit and the day it was made.</div></figcaption>
+      <figcaption><b>Account</b><div class="note">Who is signed in: the picture, the name, the email and how they signed in; without a name the email leads. This phone as the account knows it. Lock Sikemux starts off; turning it on asks for Face ID, Touch ID or the passcode once, so it is known to work, and a phone with no passcode reads "Set a passcode in Settings first" under it instead. Signing out turns it off. Deleting the account is a quiet link under it, leading to a screen that explains it first. The last line is the installed release, nightly number included, quiet like the Mac's About, then the commit of the code running on it: the build's own, or once an over-the-air update replaced it, "update", that update's commit and the day it was made.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

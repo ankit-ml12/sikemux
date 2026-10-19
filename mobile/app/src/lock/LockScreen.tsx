@@ -8,20 +8,11 @@ import { unlock, useLock } from './lock';
 
 /** What shows until the person passes Face ID, Touch ID or the passcode. It asks by itself as it opens. */
 export function LockScreen() {
-  const { phase, asking } = useLock();
+  const { asking } = useLock();
   useEffect(() => {
     void unlock();
   }, []);
 
-  if (phase === 'noPasscode')
-    return (
-      <PromptScreen
-        icon="IconLock"
-        title="Set a passcode"
-        detail="Sikemux opens only on a phone with a passcode. Set one in Settings, then come back."
-        actions={<Button kind="primary" title="Try again" busy={asking} onPress={() => void unlock()} />}
-      />
-    );
   return (
     <PromptScreen
       icon="IconLock"

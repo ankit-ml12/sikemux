@@ -15,6 +15,7 @@ import { useDeviceId } from '@/device/identity';
 import { shortKey } from '@/devices/paired';
 import { versionFromBuild } from '@/network/versions';
 import { phoneName } from '@/device/name';
+import { LockRow } from '@/lock/LockRow';
 import { NotificationsRow } from '@/notify/NotificationsRow';
 import { stopPush } from '@/notify/token';
 import { Icon } from '@/ui/Icon';
@@ -106,6 +107,7 @@ export function AccountSheet({ visible, onClose }: { visible: boolean; onClose: 
         ) : null}
       </View>
       <NotificationsRow />
+      <LockRow />
       {unconfirmed ? (
         <>
           <Text style={styles.noteTitle}>{unconfirmed}</Text>

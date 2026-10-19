@@ -1,5 +1,6 @@
 import { forget } from '@/devices/hub';
 import { pairedDevices } from '@/devices/paired';
+import { turnLockOff } from '@/lock/lock';
 import { choose } from '@/notify/setting';
 import { forgetPush } from '@/notify/token';
 import { rotateDeviceKey } from '@/device/identity';
@@ -25,6 +26,7 @@ export function signOutHere(signOut: () => Promise<unknown>, { farewell = null, 
     stopLive();
     await forgetPush().catch(() => {});
     await choose(undefined).catch(() => {});
+    await turnLockOff().catch(() => {});
     const devices = await pairedDevices().catch(() => []);
     await Promise.allSettled(devices.map((device) => forget(device.core)));
     await forgetCursor().catch(() => {});
