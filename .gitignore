@@ -37,3 +37,4 @@ graphify-out/
 .claude/scheduled_tasks.lock
 src-tauri/notch/.build/
 src-tauri/binaries/notch/
+src-tauri/binaries/core/

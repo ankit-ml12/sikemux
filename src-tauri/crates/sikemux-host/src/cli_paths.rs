@@ -10,9 +10,10 @@ pub fn cli_endpoint_path() -> Option<PathBuf> {
     sikemux_core::cli::endpoint::default_endpoint_path()
 }
 
-/// The sidecar bundled beside this app. `SIKEMUX_BIN_PATH` is not read here:
-/// every Sikemux terminal sets it, so an app started from one would run another
-/// build's sidecar. Tests point the app elsewhere with `SIKEMUX_SIDECAR_PATH`.
+/// The core this app ships: inside a macOS release bundle, or beside the app's
+/// executable. `SIKEMUX_BIN_PATH` is not read here: every Sikemux terminal sets
+/// it, so an app started from one would run another build's sidecar. Tests
+/// point the app elsewhere with `SIKEMUX_SIDECAR_PATH`.
 pub fn cli_executable_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SIKEMUX_SIDECAR_PATH") {
         let path = PathBuf::from(path);
@@ -21,13 +22,20 @@ pub fn cli_executable_path() -> Option<PathBuf> {
         }
     }
     let current = std::env::current_exe().ok()?;
+    let directory = current.parent()?;
+    let bundled = directory
+        .parent()
+        .and_then(Path::parent)
+        .map(|bundle| bundle.join(sikemux_process::paths::BUNDLED_CORE));
     let filename = if cfg!(windows) {
         "sikemux-editor.exe"
     } else {
         "sikemux-editor"
     };
-    let sibling = current.parent()?.join(filename);
-    sibling.is_file().then_some(sibling)
+    bundled
+        .into_iter()
+        .chain([directory.join(filename)])
+        .find(|path| path.is_file())
 }
 
 static CLI_ON_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();

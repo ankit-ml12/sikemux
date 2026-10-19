@@ -45,13 +45,14 @@ unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE
 
 APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
 APP_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
-ENTITLEMENTS="$ROOT/src-tauri/Entitlements.plist"
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
 APP="$BUNDLE/macos/${APP_NAME}.app"
 TAR="$BUNDLE/macos/${APP_NAME}.app.tar.gz"
 SIG="$TAR.sig"
 NOTCH_APP="$APP/Contents/Helpers/Sikemux Notch.app"
-SIDECAR="$APP/Contents/MacOS/sikemux-editor"
+CORE_APP="$APP/Contents/Helpers/Sikemux Core.app"
+CORE_LINK="$APP/Contents/MacOS/sikemux-editor"
+CORE_LINK_TARGET="../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor"
 
 WORK="$(mktemp -d)"
 MOUNT=""
@@ -63,17 +64,23 @@ trap cleanup EXIT
 
 # The app came from a machine that ran the dependencies. A link could point
 # codesign or ditto at files outside it, and code this script does not know
-# would ship signed without anyone choosing to.
+# would ship signed without anyone choosing to. The one link allowed leads to
+# the core, where installed `sikemux` commands point.
 [[ -d "$APP" ]] || fail "missing $APP"
-[[ -z "$(find "$APP" ! -type f ! -type d -print -quit)" ]] || fail "$APP holds something other than files and folders"
+[[ -L "$CORE_LINK" && "$(readlink "$CORE_LINK")" == "$CORE_LINK_TARGET" ]] ||
+  fail "Contents/MacOS/sikemux-editor does not link to the bundled core"
+[[ -z "$(find "$APP" ! -type f ! -type d ! -path "$CORE_LINK" -print -quit)" ]] ||
+  fail "$APP holds something other than files, folders and the link to its core"
 EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
 expected_code="$(printf '%s\n' "Contents/Helpers/Sikemux Notch.app/Contents/MacOS/sikemux-notch" \
-  "Contents/MacOS/$EXECUTABLE_NAME" "Contents/MacOS/sikemux-editor" | sort)"
+  "Contents/MacOS/$EXECUTABLE_NAME" "Contents/Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor" | sort)"
 found_code="$(cd "$APP" && find . -type f -print0 | while IFS= read -r -d '' file; do
   if /usr/bin/file -b "$file" | grep -q '^Mach-O'; then echo "${file#./}"; fi
 done | sort)"
-[[ "$found_code" == "$expected_code" ]] || fail "$APP carries other code than the app, its CLI and the notch helper: $found_code"
+[[ "$found_code" == "$expected_code" ]] || fail "$APP carries other code than the app, its core and the notch helper: $found_code"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" == "$APP_IDENTIFIER" ]] || fail "app identifier is wrong"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CORE_APP/Contents/Info.plist")" == "$APP_IDENTIFIER.core" ]] || fail "core identifier is wrong"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$CORE_APP/Contents/Info.plist")" == "sikemux-editor" ]] || fail "core executable is wrong"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" == "$VERSION" ]] || fail "app version is not $VERSION"
 shopt -s nullglob
 DMGS=("$BUNDLE"/dmg/*.dmg)
@@ -104,13 +111,16 @@ notarize() {
 }
 
 echo "→ Signing $APP_NAME.app as $IDENTITY"
+# The profiles let the app and its core claim the keychain group they share.
+/usr/bin/ditto "$ROOT/src-tauri/macos/sikemux-developer-id.provisionprofile" "$APP/Contents/embedded.provisionprofile"
+/usr/bin/ditto "$ROOT/src-tauri/macos/sikemux-core-developer-id.provisionprofile" "$CORE_APP/Contents/embedded.provisionprofile"
+"$ROOT/scripts/mac-entitlements.sh" app >"$WORK/app.entitlements"
+"$ROOT/scripts/mac-entitlements.sh" core >"$WORK/core.entitlements"
 /usr/bin/codesign --force --options runtime ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} --sign "$IDENTITY" "$NOTCH_APP"
-# Agents run under the CLI, so macOS only honours the person's privacy grants
-# for them when it is signed with the app's identifier.
-/usr/bin/codesign --force --options runtime ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} --identifier "$APP_IDENTIFIER" \
-  --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$SIDECAR"
 /usr/bin/codesign --force --options runtime ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} \
-  --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+  --entitlements "$WORK/core.entitlements" --sign "$IDENTITY" "$CORE_APP"
+/usr/bin/codesign --force --options runtime ${TIMESTAMP[@]+"${TIMESTAMP[@]}"} \
+  --entitlements "$WORK/app.entitlements" --sign "$IDENTITY" "$APP"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP" || fail "app signature is invalid"
 if [[ "$NOTARIZED" == "1" ]]; then
   /usr/bin/ditto -c -k --keepParent "$APP" "$WORK/app.zip"

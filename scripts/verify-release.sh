@@ -99,10 +99,42 @@ ARCHS="$(/usr/bin/lipo -archs "$ARCHIVE_APP/Contents/MacOS/$EXECUTABLE_NAME")"
 APP_CDHASH="$(cdhash_of "$APP")"
 [[ -n "$APP_CDHASH" && "$(cdhash_of "$ARCHIVE_APP")" == "$APP_CDHASH" ]] || fail "updater archive does not contain the exact signed app"
 
-CLI_EXECUTABLE="$ARCHIVE_APP/Contents/MacOS/sikemux-editor"
-grep -qx "Identifier=$APP_IDENTIFIER" <<<"$(signing_info "$CLI_EXECUTABLE")" ||
-  fail "CLI sidecar is not signed as $APP_IDENTIFIER"
-grep -q 'flags=.*runtime' <<<"$(signing_info "$CLI_EXECUTABLE")" || fail "CLI sidecar lacks the hardened runtime"
+CORE_APP="$ARCHIVE_APP/Contents/Helpers/Sikemux Core.app"
+CLI_EXECUTABLE="$CORE_APP/Contents/MacOS/sikemux-editor"
+[[ "$(readlink "$ARCHIVE_APP/Contents/MacOS/sikemux-editor")" == "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor" ]] ||
+  fail "Contents/MacOS/sikemux-editor does not link to the bundled core"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CORE_APP/Contents/Info.plist")" == "$APP_IDENTIFIER.core" ]] ||
+  fail "the core's CFBundleIdentifier is not $APP_IDENTIFIER.core"
+grep -qx "Identifier=$APP_IDENTIFIER.core" <<<"$(signing_info "$CORE_APP")" || fail "the core is not signed as $APP_IDENTIFIER.core"
+
+# The app and its core keep secrets in a keychain group only they may use,
+# which macOS allows only with the profile that names them.
+TEAM=D577WD6Z5U
+check_keychain_entitlements() {
+  local bundle="$1" kind="$2" profile="$ROOT/src-tauri/macos/$3" name signed decoded application now
+  name="$(basename "$bundle")"
+  signed="$EXTRACTED/$kind.entitlements"
+  decoded="$EXTRACTED/$kind.provisionprofile.plist"
+  grep -q 'flags=.*runtime' <<<"$(signing_info "$bundle")" || fail "$name lacks the hardened runtime"
+  /usr/bin/cmp -s "$bundle/Contents/embedded.provisionprofile" "$profile" ||
+    fail "$name does not embed $(basename "$profile")"
+  /usr/bin/codesign -d --entitlements - --xml "$bundle" 2>/dev/null | /usr/bin/plutil -convert xml1 -o "$signed" - ||
+    fail "could not read the entitlements $name is signed with"
+  /usr/bin/cmp -s "$signed" <("$ROOT/scripts/mac-entitlements.sh" "$kind" | /usr/bin/plutil -convert xml1 -o - -) ||
+    fail "$name is not signed with the entitlements scripts/mac-entitlements.sh $kind prints"
+  [[ "$(/usr/bin/plutil -extract keychain-access-groups json -o - "$signed")" == "[\"$TEAM.$APP_IDENTIFIER\"]" ]] ||
+    fail "$name's keychain group is not exactly $TEAM.$APP_IDENTIFIER"
+  /usr/bin/security cms -D -i "$profile" -o "$decoded" 2>/dev/null || fail "could not read $(basename "$profile")"
+  application="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$signed")"
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$decoded")" == "$application" ]] ||
+    fail "$(basename "$profile") does not authorize $application"
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$decoded")" == "$TEAM" ]] ||
+    fail "$(basename "$profile") belongs to another team than $TEAM"
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  [[ "$(/usr/bin/plutil -extract ExpirationDate raw -o - "$decoded")" > "$now" ]] || fail "$(basename "$profile") has expired"
+}
+check_keychain_entitlements "$ARCHIVE_APP" app sikemux-developer-id.provisionprofile
+check_keychain_entitlements "$CORE_APP" core sikemux-core-developer-id.provisionprofile
 NOTCH_APP="$ARCHIVE_APP/Contents/Helpers/Sikemux Notch.app"
 grep -q 'flags=.*runtime' <<<"$(signing_info "$NOTCH_APP")" || fail "notch helper lacks the hardened runtime"
 
@@ -122,12 +154,16 @@ for helper in "$VOICE" "$SIM"; do
     fail "the app does not expect the $name about to be published"
 done
 
-# Only starting the signed copies proves they survive the hardened runtime. An
-# empty agent id is the earliest thing the CLI's tools MCP server checks.
-TOOLS_START="$(SIKEMUX_TOOLS_AGENT_ID='' "$CLI_EXECUTABLE" --tools-mcp 2>&1 || true)"
-if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$TOOLS_START"; then
-  echo "$TOOLS_START" >&2
-  fail "signed tools MCP server does not start"
+# Only starting the signed copies proves they survive the hardened runtime, and
+# that macOS accepts the profile behind the core's keychain group. It kills a
+# core signed ad hoc at once, since nothing vouches for that group. An empty
+# agent id is the earliest thing the core's tools MCP server checks.
+if [[ "$NOTARIZED" == "1" ]]; then
+  TOOLS_START="$(SIKEMUX_TOOLS_AGENT_ID='' "$CLI_EXECUTABLE" --tools-mcp 2>&1 || true)"
+  if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$TOOLS_START"; then
+    echo "$TOOLS_START" >&2
+    fail "signed tools MCP server does not start"
+  fi
 fi
 if [[ "$(/usr/bin/lipo -archs "$VOICE")" == *"$(uname -m)"* ]]; then
   "$VOICE" --version | grep -Fq "sikemux-voice" || fail "signed voice helper does not start"

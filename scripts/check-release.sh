@@ -12,7 +12,7 @@ else
   PNPM=(corepack pnpm)
 fi
 
-bash -n scripts/build-mac.sh scripts/release.sh scripts/sign-helper.sh scripts/sign-mac.sh scripts/verify-release.sh scripts/publish-release.sh scripts/icons.sh scripts/check-release.sh
+bash -n scripts/build-mac.sh scripts/release.sh scripts/sign-helper.sh scripts/sign-mac.sh scripts/mac-entitlements.sh scripts/verify-release.sh scripts/publish-release.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
 node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
@@ -45,6 +45,7 @@ const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.j
 const linuxConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.linux.conf.json", "utf8"));
 const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
 const notchConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.notch.conf.json", "utf8"));
+const coreConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.core.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
 const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
 const publish = fs.readFileSync("scripts/publish-release.sh", "utf8");
@@ -83,7 +84,12 @@ if (sidecarConfig.bundle?.resources?.["resources/sikemux_pi_tools.ts"] !== "sike
 if (!pkg.scripts?.["build:windows"]?.includes("build:sidecar")) fail("Windows build does not build sidecars");
 if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("Windows build does not bundle the CLI sidecar");
 if (!macBuild.includes("build-cli-sidecar.mjs")) fail("macOS build does not build the CLI sidecar");
-if (!macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build does not bundle the CLI sidecar");
+if (!macBuild.includes("tauri.core.conf.json") || macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build must bundle the core as its own app, not as a sidecar");
+if (coreConfig.bundle?.macOS?.files?.["Helpers/Sikemux Core.app"] !== "binaries/core/Helpers/Sikemux Core.app") fail("the macOS bundle must carry the core app");
+if (coreConfig.bundle?.macOS?.files?.MacOS !== "binaries/core/MacOS") fail("the macOS bundle must link Contents/MacOS/sikemux-editor to the core");
+for (const profile of ["sikemux-developer-id", "sikemux-core-developer-id"]) {
+  if (!fs.existsSync(`src-tauri/macos/${profile}.provisionprofile`)) fail(`src-tauri/macos/${profile}.provisionprofile is missing`);
+}
 if (!sidecarBuild.includes("smokeBrowserSidecar")) fail("sidecar build does not run the browser smoke test");
 const endpoints = config.plugins?.updater?.endpoints;
 if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {

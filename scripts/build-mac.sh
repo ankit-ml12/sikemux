@@ -28,7 +28,7 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 
 BUILD_ARGS=("$@")
-BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.sidecar.conf.json")
+BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.core.conf.json")
 BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.notch.conf.json")
 BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
 # No signing material reaches the build. The bundler would notarize whenever
@@ -103,15 +103,19 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 [[ -x "$EXECUTABLE" ]] || fail "bundle executable is missing or not executable"
 ARCHS="$(/usr/bin/lipo -archs "$EXECUTABLE")"
 [[ -n "$ARCHS" ]] || fail "could not determine executable architecture"
-CLI_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-editor"
-[[ -x "$CLI_EXECUTABLE" ]] || fail "bundled CLI sidecar is missing or not executable"
+CORE_APP="$APP_PATH/Contents/Helpers/Sikemux Core.app"
+CLI_EXECUTABLE="$CORE_APP/Contents/MacOS/sikemux-editor"
+[[ -x "$CLI_EXECUTABLE" && ! -L "$CLI_EXECUTABLE" ]] || fail "bundled core is missing or not executable"
+[[ "$(readlink "$APP_PATH/Contents/MacOS/sikemux-editor")" == "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor" ]] ||
+  fail "Contents/MacOS/sikemux-editor does not link to the bundled core"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CORE_APP/Contents/Info.plist")" == "$APP_IDENTIFIER.core" ]] ||
+  fail "the core's CFBundleIdentifier is not $APP_IDENTIFIER.core"
+CORE_SIGNATURE="$(/usr/bin/codesign -dv "$CORE_APP" 2>&1)"
+grep -qx "Identifier=$APP_IDENTIFIER.core" <<<"$CORE_SIGNATURE" || fail "the core is not signed as $APP_IDENTIFIER.core"
+grep -q 'flags=.*runtime' <<<"$CORE_SIGNATURE" || fail "the core lacks the hardened runtime"
 CLI_ARCHS="$(/usr/bin/lipo -archs "$CLI_EXECUTABLE")"
-[[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "CLI sidecar architecture ($CLI_ARCHS) differs from app ($ARCHS)"
-# Agents run under the core, so macOS only honours the user's privacy grants for
-# them when the core is signed with the app's identifier.
-grep -qx "Identifier=$APP_IDENTIFIER" <<<"$(/usr/bin/codesign -dv "$CLI_EXECUTABLE" 2>&1)" ||
-  fail "CLI sidecar is not signed as $APP_IDENTIFIER"
-[[ -s "$APP_PATH/Contents/Resources/sikemux_pi_tools.ts" ]] || fail "bundled Pi browser extension is missing"
+[[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "core architecture ($CLI_ARCHS) differs from app ($ARCHS)"
+[[ -s "$CORE_APP/Contents/Resources/sikemux_pi_tools.ts" ]] || fail "bundled Pi browser extension is missing"
 # The voice helper is published beside the release and downloaded with the
 # speech model, so it must be built and signed but stay out of the app.
 VOICE_TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
@@ -150,7 +154,7 @@ fi
 CLI_DYNAMIC_LIBS="$(/usr/bin/otool -L "$CLI_EXECUTABLE")"
 if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$CLI_DYNAMIC_LIBS"; then
   echo "$CLI_DYNAMIC_LIBS" >&2
-  fail "CLI sidecar links to a package-manager library"
+  fail "the core links to a package-manager library"
 fi
 VOICE_DYNAMIC_LIBS="$(/usr/bin/otool -L "$VOICE_EXECUTABLE")"
 if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$VOICE_DYNAMIC_LIBS"; then
@@ -163,10 +167,10 @@ if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$SIM_DYNAM
   fail "simulator helper links to a package-manager library"
 fi
 
-# Bundling is what gives the sidecar the hardened runtime, so only starting the
-# bundled copy proves it survives signing: the copy built beside it is signed
-# without the hardened runtime and starts whether or not the bundle would. An
-# empty agent id is the earliest thing its tools MCP server checks.
+# Only starting the bundled core proves it survives the hardened runtime: the
+# copy built beside it is signed without it and starts whether or not the
+# bundle would. An empty agent id is the earliest thing its tools MCP server
+# checks.
 TOOLS_START="$(SIKEMUX_TOOLS_AGENT_ID='' "$CLI_EXECUTABLE" --tools-mcp 2>&1 || true)"
 if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$TOOLS_START"; then
   echo "$TOOLS_START" >&2
@@ -196,6 +200,6 @@ echo "✓ Verified macOS bundle"
 echo "  app: $APP_PATH"
 echo "  version: $APP_VERSION"
 echo "  architectures: $ARCHS"
-echo "  cli: $CLI_EXECUTABLE ($CLI_ARCHS)"
+echo "  core: $CLI_EXECUTABLE ($CLI_ARCHS)"
 echo "  voice helper: $VOICE_EXECUTABLE ($VOICE_ARCHS)"
 echo "  simulator helper: $SIM_EXECUTABLE ($SIM_ARCHS)"

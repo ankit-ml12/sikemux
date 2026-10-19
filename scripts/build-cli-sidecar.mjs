@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 
-import { chmodSync, copyFileSync, mkdirSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -66,6 +74,74 @@ function buildFor(target, explicitTarget) {
   return (name) => join(releaseDir, executableName(name, target));
 }
 
+// A macOS release runs the core as an app of its own, since only an app can
+// carry the provisioning profile its keychain needs. Contents/MacOS links to it.
+function bundleCore(binary) {
+  const staging = join(binariesDir, "core");
+  const app = join(staging, "Helpers", "Sikemux Core.app");
+  const contents = join(app, "Contents");
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(join(contents, "MacOS"), { recursive: true });
+  mkdirSync(join(contents, "Resources"), { recursive: true });
+  const config = JSON.parse(
+    readFileSync(join(tauriDir, "tauri.conf.json"), "utf8"),
+  );
+  const appInfo = JSON.parse(
+    run(
+      "plutil",
+      ["-convert", "json", "-o", "-", join(tauriDir, "Info.plist")],
+      { capture: true },
+    ),
+  );
+  const info = {
+    CFBundleIdentifier: `${config.identifier}.core`,
+    CFBundleName: "Sikemux Core",
+    CFBundleExecutable: "sikemux-editor",
+    CFBundleIconFile: "sikemux.icns",
+    CFBundleInfoDictionaryVersion: "6.0",
+    CFBundlePackageType: "APPL",
+    CFBundleShortVersionString: config.version,
+    CFBundleVersion: config.version,
+    LSMinimumSystemVersion: "11.0",
+    LSUIElement: true,
+  };
+  for (const [key, value] of Object.entries(appInfo)) {
+    if (key.endsWith("UsageDescription")) info[key] = value;
+  }
+  const plist = join(contents, "Info.plist");
+  writeFileSync(plist, JSON.stringify(info));
+  run("plutil", ["-convert", "xml1", plist]);
+  copyFileSync(
+    join(tauriDir, "icons", "icon.icns"),
+    join(contents, "Resources", "sikemux.icns"),
+  );
+  copyFileSync(
+    join(tauriDir, "resources", "sikemux_pi_tools.ts"),
+    join(contents, "Resources", "sikemux_pi_tools.ts"),
+  );
+  const executable = join(contents, "MacOS", "sikemux-editor");
+  copyFileSync(binary, executable);
+  chmodSync(executable, 0o755);
+  mkdirSync(join(staging, "MacOS"));
+  symlinkSync(
+    "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-editor",
+    join(staging, "MacOS", "sikemux-editor"),
+  );
+  const identity = process.env.APPLE_SIGNING_IDENTITY || "-";
+  run("codesign", [
+    "--force",
+    "--options",
+    "runtime",
+    ...(identity === "-" ? [] : ["--timestamp"]),
+    "--entitlements",
+    join(tauriDir, "Entitlements.plist"),
+    "--sign",
+    identity,
+    app,
+  ]);
+  return app;
+}
+
 const requestedTarget = option("--target") || hostTriple();
 if (requestedTarget.includes("apple-darwin")) {
   run("bash", [join(root, "scripts", "icons.sh")]);
@@ -115,4 +191,9 @@ if (runnable && !args.includes("--skip-smoke")) {
 
 for (const [name, destination] of shipped) {
   console.log(`✓ ${name} ready: ${destination.slice(root.length + 1)}`);
+}
+
+if (requestedTarget.includes("apple-darwin")) {
+  const app = bundleCore(shipped.get("sikemux-editor"));
+  console.log(`✓ Sikemux Core.app ready: ${app.slice(root.length + 1)}`);
 }

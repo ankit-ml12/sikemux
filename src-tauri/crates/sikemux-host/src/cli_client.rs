@@ -616,12 +616,7 @@ fn launch_app() -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        if let Some(bundle) = current
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::parent)
-            .filter(|path| path.extension().is_some_and(|extension| extension == "app"))
-        {
+        if let Some(bundle) = sikemux_process::paths::app_bundle_of_core(&current) {
             sikemux_process::user_environment::command("/usr/bin/open")
                 .arg(bundle)
                 .stdin(Stdio::null())

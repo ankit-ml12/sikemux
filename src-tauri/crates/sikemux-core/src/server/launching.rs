@@ -23,7 +23,7 @@ use super::{lifecycle, Core, CoreError, CoreResult};
 pub(crate) fn tools(core: &Core) -> Option<Tools> {
     let config = &core.listening.get()?.config;
     Some(Tools {
-        executable: std::env::current_exe().ok()?,
+        executable: std::env::current_exe().ok()?.canonicalize().ok()?,
         endpoint: config.cli_endpoint.clone()?,
         data_dir: config.data_dir.clone(),
     })

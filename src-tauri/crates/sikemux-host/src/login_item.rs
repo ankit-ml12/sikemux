@@ -75,7 +75,7 @@ pub fn headless_launch() -> Option<CoreLaunch> {
         (data.clone(), data.join("logs"))
     };
     Some(CoreLaunch {
-        binary: std::env::current_exe().ok()?,
+        binary: std::env::current_exe().ok()?.canonicalize().ok()?,
         socket: sikemux_core::default_socket_path()?,
         log: logs.join("core.log"),
         args: core_args(Some(data)),
