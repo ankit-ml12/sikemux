@@ -1,8 +1,9 @@
 import { Seg } from "../../../plugin-api/ui";
 import { useState } from "react";
-import type { Workload } from "../api";
+import type { Scope, Workload } from "../api";
 import { age, shortImage, workloadTone } from "../format";
 import { Dot, ReadyBar } from "./parts";
+import { WorkloadActions } from "./WorkloadActions";
 
 type KindFilter = "all" | "trouble" | "Deployment" | "StatefulSet" | "DaemonSet" | "CronJob" | "Job";
 
@@ -16,11 +17,13 @@ export function matches(workload: Workload, find: string, filter: KindFilter): b
 export function Workloads({
     workloads,
     find,
+    scope,
     showNamespace,
     onOpen,
 }: {
     workloads: Workload[];
     find: string;
+    scope: Scope;
     showNamespace: boolean;
     onOpen: (workload: Workload) => void;
 }) {
@@ -48,6 +51,7 @@ export function Workloads({
                             <th>Ready</th>
                             <th>Images</th>
                             <th>Age</th>
+                            <th aria-label="Actions" />
                         </tr>
                     </thead>
                     <tbody>
@@ -72,6 +76,7 @@ export function Workloads({
                                 <td className="k8s-muted">
                                     {workload.kind}
                                     {workload.schedule ? <span className="k8s-mono"> · {workload.schedule}</span> : null}
+                                    {workload.suspended ? <span className="k8s-chip">paused</span> : null}
                                 </td>
                                 <td>
                                     {workload.ready !== null && workload.desired !== null ? (
@@ -84,6 +89,9 @@ export function Workloads({
                                     {workload.images.map(shortImage).join(", ")}
                                 </td>
                                 <td className="k8s-muted">{age(workload.created)}</td>
+                                <td className="k8s-cell-actions">
+                                    <WorkloadActions workload={workload} scope={{ context: scope.context, namespace: workload.namespace }} />
+                                </td>
                             </tr>
                         ))}
                     </tbody>

@@ -652,3 +652,24 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+
+.k8s-button.small {
+    padding: 2px 8px;
+    font-size: var(--text-2xs);
+}
+
+.k8s-cell-actions {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.k8s-row-actions {
+    display: inline-flex;
+    gap: 4px;
+    opacity: 0;
+}
+
+.k8s-row:hover .k8s-row-actions,
+.k8s-row:focus-within .k8s-row-actions {
+    opacity: 1;
+}

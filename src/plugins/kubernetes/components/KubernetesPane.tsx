@@ -181,6 +181,7 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                                 <Workloads
                                     workloads={workloads.data}
                                     find={view.find}
+                                    scope={scope}
                                     showNamespace={all}
                                     onOpen={(workload) =>
                                         updateKubeView(paneId, {
