@@ -19,9 +19,9 @@ use crate::server::{ci, messages, Core};
 /// How long a pushed commit may go without a CI run before Auto takes it
 /// that the project has none.
 const CI_START_WAIT_MS: u64 = 3 * 60 * 1000;
-/// How long a run waiting on its checks goes without a look when the core's
-/// CI check sees nothing move on its repository.
-const CHECKS_FALLBACK_MS: u64 = 60_000;
+/// How long a run whose checks could not be read waits before it reads them again.
+const CHECKS_RETRY_MS: u64 = 60_000;
+const CHECKS_FAILED_READ: &str = "unread";
 const REVIEW_EVERY_MS: u64 = 60_000;
 /// How many times the wait between looks at a pull request doubles while
 /// nothing on it changes.
@@ -539,7 +539,24 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                 let every = match run.stage {
                     Stage::Checking => {
                         checking_any = true;
-                        CHECKS_FALLBACK_MS
+                        let looked = state.polled.get(&(project.clone(), card.id, "pull"));
+                        let unread = state
+                            .polled
+                            .get(&(project.clone(), card.id, CHECKS_FAILED_READ))
+                            .map(|at| at + CHECKS_RETRY_MS);
+                        let start_deadline = run.checks_since.unwrap_or(0) + CI_START_WAIT_MS;
+                        let at_deadline = looked
+                            .is_some_and(|looked| *looked < start_deadline)
+                            .then_some(start_deadline);
+                        let again = match looked {
+                            None => Some(now),
+                            Some(_) => sooner(unread, at_deadline),
+                        };
+                        match again {
+                            Some(at) if at <= now => due.push((project.clone(), card.id, run.stage)),
+                            at => next = sooner(next, at),
+                        }
+                        continue;
                     }
                     Stage::Review => {
                         let quiet = state.polled.get(&(project.clone(), card.id, QUIET));
@@ -576,6 +593,9 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
         }
         for (project, id, _) in &due {
             state.polled.insert((project.clone(), *id, "pull"), now);
+            state
+                .polled
+                .remove(&(project.clone(), *id, CHECKS_FAILED_READ));
         }
         for key in present {
             state.polled.remove(&key);
@@ -642,6 +662,10 @@ async fn checking(core: &Arc<Core>, step: Step) {
     let checks = match codehost::checks(&pull, &step.run.branch, &head).await {
         Ok(checks) => checks,
         Err(error) => {
+            core.boards.lock().polled.insert(
+                (step.project.clone(), step.id, CHECKS_FAILED_READ),
+                unix_ms(),
+            );
             step.note(
                 core,
                 Stage::Checking,
