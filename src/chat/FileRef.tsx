@@ -81,13 +81,13 @@ function menuItems(ref: PathRef, state: PathState, cwd: string, deskAgentId: str
             icon: deskAgentId ? <IconEditor size={13} /> : <IconFile size={13} />,
             run: () => openFileRef(ref, state),
         },
+        { sep: true },
+        reveal,
         {
             label: "Open Containing Folder",
             icon: <IconFolder size={13} />,
             run: () => void fsapi.revealInFinder(dirname(ref.path)).catch(reportError("reveal")),
         },
-        { sep: true },
-        reveal,
         { sep: true },
         ...copies,
     ];
