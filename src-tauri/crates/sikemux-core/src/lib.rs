@@ -29,6 +29,8 @@ pub use sikemux_client::remote;
 pub mod server;
 #[cfg(unix)]
 pub mod sessions;
+#[cfg(unix)]
+pub mod pages;
 pub mod skills;
 pub mod tasks;
 pub mod trailers;

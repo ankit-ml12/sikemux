@@ -10,9 +10,6 @@ export interface PageRef {
 
 export const pagesApi = {
     theme: (dark: boolean, variables: Record<string, string>) => invoke<void>("page_theme", { dark, variables }),
-    /** Keeps the page for the agent's reply, closing the tab its draft was checked in. */
-    publish: (agentId: string | null, path: string, title: string, height?: number) =>
-        invoke<PageRef>("page_publish", { agentId, path, title, height: height ?? null }),
-    /** Opens the page in a tab on the agent's desk and answers with the tab. */
-    open: (agentId: string, id: string) => invoke<string>("page_open", { agentId, id }),
+    /** Closes the tab the agent checked its draft in, and opens the kept page on its desk when `desk` is set. */
+    shown: (agentId: string, id: string, desk: boolean) => invoke<void>("page_shown", { agentId, id, desk }),
 };

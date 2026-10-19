@@ -1,7 +1,6 @@
 import { invokeCommand } from "../api/invoke";
 import { browserApi } from "../api/browser";
 import { pagesApi } from "../api/pages";
-import { chatShown } from "../chat/chatViews";
 import { loadProjectConfig } from "../projects/projectConfig";
 import { collectPanes } from "../state/layout";
 import { agentIdsOf, projectSessionId } from "../state/selectors";
@@ -68,23 +67,15 @@ function projectSession(request: HarnessRequest) {
     return session;
 }
 
-/* A chat draws the page from the call's answer; an agent in its terminal has
-   no chat, so the page opens on its desk instead. */
+/* The core kept the page. A chat draws it from the call's answer; an agent in
+   its terminal has no chat, so the page opens on its desk instead. */
 async function showPage(request: HarnessRequest) {
     const { params, agentId } = request;
-    const path = text(params, "path")!;
-    if (!path.startsWith("/")) throw new Error("path must be absolute");
-    const height = params.height === undefined ? undefined : integer(params, "height", 0, 4000, 1);
-    const page = await pagesApi.publish(agentId, path, text(params, "title")!, height);
-    if (agentId && !chatShown(agentId)) {
-        await pagesApi.open(agentId, page.id);
-        commands.showDeskBrowser(agentId);
-        return { page, note: "The page is open on your desk, beside your terminal, where the person can see it." };
-    }
-    return {
-        page,
-        note: "The person sees the page in your reply, above the text you write next. Do not describe or restate it; write only what it does not already say.",
-    };
+    if (!agentId) return {};
+    const desk = params.desk === true;
+    await pagesApi.shown(agentId, text(params, "id")!, desk);
+    if (desk) commands.showDeskBrowser(agentId);
+    return {};
 }
 
 export async function handleHarnessRequest(request: HarnessRequest, signal?: AbortSignal): Promise<unknown> {

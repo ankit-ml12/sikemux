@@ -716,7 +716,7 @@ async fn run(
                 .get("width")
                 .and_then(Value::as_u64)
                 .unwrap_or(PAGE_WIDTH);
-            let html = tauri::async_runtime::spawn_blocking(move || crate::pages::build(&source))
+            let html = tauri::async_runtime::spawn_blocking(move || sikemux_core::pages::build(&source))
                 .await
                 .map_err(|error| error.to_string())??;
             let url = crate::pages::preview_url(app, agent_id, &html)?;
