@@ -32,7 +32,7 @@ use crate::remote::CORE_ALPN;
 
 use super::access::{Peer, Setup, Standing};
 use super::connection::{blocking, serve_client};
-use super::host_key::{HostKey, Keeper};
+use super::host_key::{secret_from_hex, HostKey, Keeper};
 use super::{Core, CoreError, CoreResult, ServerConfig};
 
 /// How long signing out waits for the account to confirm this host left.
@@ -50,6 +50,10 @@ const HOST_REQUEST_SKEW_SECS: u64 = 60;
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Stored {
+    /// Where the host's key lived before the secret store; read once to take
+    /// that host off its account, never written again.
+    #[serde(default, skip_serializing)]
+    secret_key: Option<String>,
     enabled: bool,
     devices: Vec<DeviceInfo>,
     owner: Option<String>,
@@ -260,6 +264,9 @@ struct Inner {
     kept: (String, Option<String>),
     direct_only: bool,
     secret: Option<SecretKey>,
+    /// A key this host moved off while it was on an account, until that
+    /// account lets it go.
+    retired: Option<SecretKey>,
     stored: Stored,
     running: Option<Running>,
     connected: HashMap<String, usize>,
@@ -553,12 +560,7 @@ impl Remote {
     }
 
     fn sign_live(&self, nonce: &str) -> Option<(String, String)> {
-        crate::accounts::check_live(nonce).ok()?;
-        let inner = self.lock();
-        let secret = inner.secret.as_ref()?;
-        let key = secret.public().to_string();
-        let message = crate::accounts::live_message(nonce, &key);
-        Some((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
+        sign_live(self.lock().secret.as_ref()?, nonce)
     }
 
     /// The core's key and its signature over the share text for `nonce`.
@@ -932,16 +934,20 @@ impl Remote {
         };
         let kept = (inner.stored.trusted()?, inner.bound.clone());
         if kept != inner.kept {
-            if let (Some(keeper), Some(secret)) = (&inner.keeper, &inner.secret) {
-                keeper.save(&HostKey {
-                    secret: secret.clone(),
-                    trusted: kept.0.clone(),
-                    account: kept.1.clone(),
-                })?;
-            }
+            keep(inner, &kept)?;
             inner.kept = kept;
         }
         write_stored(&path, &inner.stored)
+    }
+
+    fn forget_retired(&self) {
+        let mut inner = self.lock();
+        if inner.retired.take().is_none() {
+            return;
+        }
+        if let Err(error) = keep(&inner, &inner.kept) {
+            eprintln!("sikemux core: could not forget the key this host moved off: {error}");
+        }
     }
 
     fn change<T>(&self, edit: impl FnOnce(&mut Stored) -> CoreResult<T>) -> CoreResult<T> {
@@ -974,6 +980,25 @@ impl Remote {
             }
         }
     }
+}
+
+fn keep(inner: &Inner, (trusted, account): &(String, Option<String>)) -> CoreResult<()> {
+    if let (Some(keeper), Some(secret)) = (&inner.keeper, &inner.secret) {
+        keeper.save(&HostKey {
+            secret: secret.clone(),
+            trusted: trusted.clone(),
+            account: account.clone(),
+            retired: inner.retired.clone(),
+        })?;
+    }
+    Ok(())
+}
+
+fn sign_live(secret: &SecretKey, nonce: &str) -> Option<(String, String)> {
+    crate::accounts::check_live(nonce).ok()?;
+    let key = secret.public().to_string();
+    let message = crate::accounts::live_message(nonce, &key);
+    Some((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
 }
 
 fn notifications(inner: &Inner) -> Vec<PhoneNotifications> {
@@ -1031,6 +1056,7 @@ pub fn trust_remote_file(socket: &Path, key: &SecretKey) -> Result<(), String> {
             secret: key.clone(),
             trusted: stored.trusted()?,
             account: stored.owner.clone(),
+            retired: None,
         })
     };
     trust().map_err(|error: CoreError| error.to_string())
@@ -1046,6 +1072,7 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
     let loaded = blocking(move || {
         let keeper = Keeper::new(&socket, secret_store)?;
         let mut stored = read_stored(&loading)?;
+        let file_key = stored.secret_key.take();
         let key = match keeper.load()? {
             Some(key) if key.trusted == stored.trusted()? => key,
             Some(key) => {
@@ -1057,12 +1084,17 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
                 key
             }
             None => {
+                let on_account = stored.owner.is_some() || stored.pending_leave.is_some();
                 let account = stored.owner.clone();
                 stored.distrust();
                 HostKey {
                     secret: SecretKey::generate(),
                     trusted: String::new(),
                     account,
+                    retired: file_key
+                        .filter(|_| on_account)
+                        .as_deref()
+                        .and_then(secret_from_hex),
                 }
             }
         };
@@ -1102,10 +1134,12 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
         inner.direct_only = direct_only;
         inner.never_too_old = cfg!(debug_assertions);
         inner.secret = Some(key.secret);
+        inner.retired = key.retired;
         inner.stored = stored;
         inner.accounts_api = config.accounts_api.clone();
     }
     ensure_live(core);
+    leave_with_retired_key(core);
     super::share::restore(core);
     if enabled {
         if let Err(error) = listen(core).await {
@@ -1452,6 +1486,27 @@ pub(crate) fn ensure_live(core: &Arc<Core>) {
     inner.live = Some(LiveTask { task, changed });
 }
 
+/// Takes the host that held the retired key off its account, trying again
+/// until the account answers.
+fn leave_with_retired_key(core: &Arc<Core>) {
+    let inner = core.remote.lock();
+    let (Some(key), Some(base)) = (inner.retired.clone(), inner.accounts_api.clone()) else {
+        return;
+    };
+    let app = LiveApp {
+        platform: super::host::PLATFORM,
+        version: core.build.version.clone(),
+    };
+    let account = Arc::new(RetiredHost {
+        core: Arc::downgrade(core),
+        key,
+    });
+    tokio::spawn(async move {
+        let (_changed, watching) = watch::channel(());
+        live::run(account, live::url(&base), app, Arc::default(), watching).await;
+    });
+}
+
 pub(crate) fn stop_live(core: &Core) {
     let mut inner = core.remote.lock();
     inner.link = None;
@@ -1546,6 +1601,43 @@ impl live::Account for HostAccount {
             }
         }
     }
+}
+
+/// The host as it was under its retired key, connecting only to leave.
+struct RetiredHost {
+    core: Weak<Core>,
+    key: SecretKey,
+}
+
+impl live::Account for RetiredHost {
+    fn sign_live(&self, nonce: &str) -> Option<(String, String)> {
+        sign_live(&self.key, nonce)
+    }
+
+    fn want(&self) -> Want {
+        match self.core.upgrade() {
+            Some(core) if core.remote.lock().retired.is_some() => Want::Leave,
+            _ => Want::Stop,
+        }
+    }
+
+    fn cursor(&self) -> i64 {
+        0
+    }
+
+    fn apply(&self, _: &[AccountEvent]) {}
+
+    fn rewind(&self, _: i64) {}
+
+    fn link(&self, _: Link) {}
+
+    fn removed(&self, _: Option<RevokeReason>) {
+        if let Some(core) = self.core.upgrade() {
+            core.remote.forget_retired();
+        }
+    }
+
+    fn pushed(&self, _: Push, _: PushResult) {}
 }
 
 fn revoke_reason(reason: Option<RevokeReason>) -> &'static str {
@@ -1808,6 +1900,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nested/core.sock.remote.json");
         let stored = Stored {
+            secret_key: None,
             enabled: true,
             owner: Some("user_2abc".into()),
             account_event_id: 7,
@@ -1838,11 +1931,6 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
-    }
-
-    fn secret_from_hex(text: &str) -> Option<SecretKey> {
-        let bytes: [u8; 32] = hex::decode(text).ok()?.try_into().ok()?;
-        Some(SecretKey::from_bytes(&bytes))
     }
 
     #[test]
@@ -2163,6 +2251,87 @@ mod tests {
         assert_eq!(status.account, None);
         assert_eq!(devices(&core), vec!["Kept"]);
         assert!(core.remote.lock().stored.pending_leave.is_none());
+    }
+
+    /// A host whose key was in the file, on an account, takes the old host off
+    /// the account with that key, even when the first start is offline.
+    #[tokio::test]
+    async fn a_key_moved_out_of_the_file_leaves_the_account() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_websockets::{Message, ServerBuilder};
+
+        let dir = tempfile::tempdir().unwrap();
+        let socket_path = dir.path().join("core.sock");
+        let old = SecretKey::generate();
+        std::fs::write(
+            file_path(&socket_path),
+            serde_json::json!({
+                "secretKey": hex::encode(old.to_bytes()),
+                "enabled": true,
+                "devices": [],
+                "owner": "user_2abc",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let config = |api: String| ServerConfig {
+            remote_direct_only: true,
+            accounts_api: Some(api),
+            ..ServerConfig::new(socket_path.clone())
+        };
+        let retired = || {
+            Keeper::new(&socket_path, false)
+                .unwrap()
+                .load()
+                .unwrap()
+                .unwrap()
+                .retired
+                .map(|key| key.public())
+        };
+
+        let offline = Core::new(crate::protocol::BuildIdentity::default(), None).unwrap();
+        start(&offline, &config("http://127.0.0.1:9".into())).await;
+        assert_eq!(retired(), Some(old.public()));
+        let file = std::fs::read_to_string(file_path(&socket_path)).unwrap();
+        assert!(!file.contains("secretKey"));
+        assert_ne!(offline.remote.core_id().unwrap(), old.public().to_string());
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let core = Core::new(crate::protocol::BuildIdentity::default(), None).unwrap();
+        start(&core, &config(base)).await;
+        let (stream, _) = listener.accept().await.unwrap();
+        let (_, mut socket) = ServerBuilder::new().accept(stream).await.unwrap();
+        let send = |value: serde_json::Value| Message::text(value.to_string());
+        socket
+            .send(send(serde_json::json!({ "type": "challenge", "nonce": "ab".repeat(32), "expiresAt": "2026-10-03T00:00:30Z" })))
+            .await
+            .unwrap();
+        let hello = socket.next().await.unwrap().unwrap();
+        let hello: serde_json::Value = serde_json::from_str(hello.as_text().unwrap()).unwrap();
+        assert_eq!(hello["key"], old.public().to_string());
+        socket
+            .send(send(
+                serde_json::json!({ "type": "ready", "latest": 1, "heartbeatMs": 25000 }),
+            ))
+            .await
+            .unwrap();
+        let leave = socket.next().await.unwrap().unwrap();
+        assert_eq!(leave.as_text(), Some(r#"{"type":"leave"}"#));
+        socket
+            .send(send(
+                serde_json::json!({ "type": "revoked", "reason": "signed_out" }),
+            ))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while retired().is_some() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the retired key is forgotten once the account lets it go");
+        assert!(core.remote.lock().retired.is_none());
     }
 
     #[tokio::test]

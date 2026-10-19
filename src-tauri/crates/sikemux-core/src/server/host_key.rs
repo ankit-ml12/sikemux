@@ -22,6 +22,9 @@ pub(super) struct HostKey {
     /// Kept through signing out, so a program here can sign the host back in
     /// only to the account that let it go.
     pub account: Option<String>,
+    /// The key this host kept in `<socket>.remote.json` while on an account,
+    /// until the account has let that host go.
+    pub retired: Option<SecretKey>,
 }
 
 pub(super) enum Keeper {
@@ -63,10 +66,14 @@ impl Keeper {
 
     pub(super) fn save(&self, key: &HostKey) -> CoreResult<()> {
         let text = format!(
-            "{}.{}.{}",
+            "{}.{}.{}.{}",
             hex::encode(key.secret.to_bytes()),
             key.trusted,
-            key.account.as_deref().unwrap_or_default()
+            key.account.as_deref().unwrap_or_default(),
+            key.retired
+                .as_ref()
+                .map(|retired| hex::encode(retired.to_bytes()))
+                .unwrap_or_default()
         );
         match self {
             Self::Store { account } => sikemux_keychain::write(SERVICE, account, &text)
@@ -79,14 +86,20 @@ impl Keeper {
     }
 }
 
+pub(super) fn secret_from_hex(text: &str) -> Option<SecretKey> {
+    let bytes: [u8; 32] = hex::decode(text).ok()?.try_into().ok()?;
+    Some(SecretKey::from_bytes(&bytes))
+}
+
 fn decode(text: &str) -> Option<HostKey> {
-    let mut parts = text.trim().splitn(3, '.');
-    let bytes: [u8; 32] = hex::decode(parts.next()?).ok()?.try_into().ok()?;
+    let mut parts = text.trim().splitn(4, '.');
+    let secret = secret_from_hex(parts.next()?)?;
     let trusted = parts.next()?.to_owned();
     let account = parts.next()?;
     Some(HostKey {
-        secret: SecretKey::from_bytes(&bytes),
+        secret,
         trusted,
         account: (!account.is_empty()).then(|| account.to_owned()),
+        retired: parts.next().and_then(secret_from_hex),
     })
 }
