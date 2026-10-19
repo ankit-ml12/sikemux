@@ -5,8 +5,10 @@
 //   kubectl  — running kubectl in a context and namespace, and its errors in words
 //   contexts — the kubeconfig's clusters, the current one, and each one's namespaces
 //   pods     — pods with their status as kubectl words it, restarts and owning workload
+//   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 
 mod contexts;
+mod describe;
 mod error;
 mod kubectl;
 mod pods;
@@ -54,6 +56,7 @@ impl Plugin for Kubernetes {
                 "contexts" => answer(contexts::contexts()).await,
                 "namespaces" => answer(contexts::namespaces(params(input)?)).await,
                 "pods" => answer(pods::list(params(input)?)).await,
+                "pod" => answer(describe::describe(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -96,6 +99,17 @@ mod tests {
                 pod["restarts"],
                 pod["owner"]
             );
+        }
+        if let Some(first) = pods.get(0) {
+            let detail = plugin
+                .call(
+                    &ctx,
+                    "pod",
+                    serde_json::json!({ "namespace": first["namespace"], "name": first["name"] }),
+                )
+                .await
+                .expect("pod");
+            println!("{detail:#}");
         }
     }
 
