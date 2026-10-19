@@ -52,7 +52,11 @@ When a Maven, Gradle, Vitest, Jest, pytest, Go or Cargo test task finishes, the 
 
 ## Agents in their own worktrees
 
-A new agent worktree gets the files a fresh checkout is missing but needs to run: the `.env` files at its root and one folder down, or the files a `.worktreeinclude` at the project's root lists, one path or pattern per line. When an agent starts a Spring Boot, Next.js, FastAPI or Flask app and its port is taken, often by another agent's copy, Sikemux runs it on the next free port and tells the agent where.
+An agent can start a teammate in a worktree of its own, so each builds and tests apart from the others' unfinished work; the teammate lands its commits on your branch when its piece is done, merged into any file you changed and have not committed. A new agent worktree gets the files a fresh checkout is missing but needs to run: the `.env` files at its root and one folder down, or the files a `.worktreeinclude` at the project's root lists, one path or pattern per line. When an agent starts a Spring Boot, Next.js, FastAPI or Flask app and its port is taken, often by another agent's copy, Sikemux runs it on the next free port and tells the agent where.
+
+## A check on every commit
+
+When the board has a check command, Sikemux runs it on each commit as committed, in a checkout of its own beside the project, so the work agents have not committed yet never decides the result. The agents whose commits it failed after hear at once; you hear if the project stays broken for 15 minutes. Files a project builds from its other files and commits, such as generated types, go in `sikemux.json` under `generate`, with the command that makes them and the files it writes: after each commit Sikemux runs it there and commits what changed, so agents never commit them by hand.
 
 ## Review an agent's work
 

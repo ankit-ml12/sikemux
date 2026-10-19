@@ -37,6 +37,34 @@ enum Step {
     Keep,
 }
 
+/// What moving the project's checkout to new commits does to each file, and
+/// whether someone had changed it there.
+#[derive(Default)]
+pub(super) struct Steps(Vec<(String, Step, bool)>);
+
+/// Carries out `steps` in the project's checkout at `repo`, which its branch
+/// just moved from `before` to `after`, and brings its index along. The files
+/// someone had changed, which took the new lines merged in.
+pub(super) fn apply(repo: &Path, steps: Steps, before: &str, after: &str) -> Vec<String> {
+    let mut merged = Vec::new();
+    for (path, step, dirty) in steps.0 {
+        let file = repo.join(&path);
+        let done = match step {
+            Step::Write(bytes) => std::fs::write(&file, bytes),
+            Step::Delete => std::fs::remove_file(&file),
+            Step::Keep => Ok(()),
+        };
+        if let Err(error) = done {
+            eprintln!("sikemux core: {path} did not take the new commits: {error}");
+        }
+        if dirty {
+            merged.push(path);
+        }
+    }
+    share_index(repo, before, after);
+    merged
+}
+
 /// Lands `agent_id`'s commits from its own checkout onto its base branch.
 pub(super) fn land(core: &Core, agent_id: &str) -> Result<Landed, String> {
     let record = core
@@ -92,7 +120,7 @@ fn land_from(worktree: &AgentWorktree, signing: &Signing) -> Result<Landed, Stri
         let steps = if checked_out {
             steps(&worktree.repo, &tip, &landed)?
         } else {
-            Vec::new()
+            Steps::default()
         };
         let moved = run(
             &worktree.repo,
@@ -110,24 +138,10 @@ fn land_from(worktree: &AgentWorktree, signing: &Signing) -> Result<Landed, Stri
         if moved.is_err() {
             continue;
         }
-        let mut merged = Vec::new();
-        for (path, step, dirty) in steps {
-            let file = worktree.repo.join(&path);
-            let done = match step {
-                Step::Write(bytes) => std::fs::write(&file, bytes),
-                Step::Delete => std::fs::remove_file(&file),
-                Step::Keep => Ok(()),
-            };
-            if let Err(error) = done {
-                eprintln!("sikemux core: {path} did not take the landed commits: {error}");
-            }
-            if dirty {
-                merged.push(path);
-            }
-        }
-        if checked_out {
-            share_index(&worktree.repo, &tip, &landed);
-        }
+        let merged = match checked_out {
+            true => apply(&worktree.repo, steps, &tip, &landed),
+            false => Vec::new(),
+        };
         if let Err(error) = git(&worktree.path, &["reset", "--keep", "--quiet", &landed]) {
             eprintln!("sikemux core: the landed checkout stays where it was: {error}");
         }
@@ -153,7 +167,7 @@ fn land_from(worktree: &AgentWorktree, signing: &Signing) -> Result<Landed, Stri
 /// What each file the landing changes needs in the project's checkout at
 /// `repo`, from `before` to `after`, and whether someone had changed it there.
 /// A clash with what someone changed refuses the landing.
-fn steps(repo: &Path, before: &str, after: &str) -> Result<Vec<(String, Step, bool)>, String> {
+pub(super) fn steps(repo: &Path, before: &str, after: &str) -> Result<Steps, String> {
     let changed = git(
         repo,
         &["diff", "-z", "--name-only", "--no-renames", before, after],
@@ -196,7 +210,7 @@ fn steps(repo: &Path, before: &str, after: &str) -> Result<Vec<(String, Step, bo
             clashes.join(", ")
         ));
     }
-    Ok(steps)
+    Ok(Steps(steps))
 }
 
 fn blob(repo: &Path, commit: &str, path: &str) -> Option<String> {

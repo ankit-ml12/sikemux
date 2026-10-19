@@ -7,6 +7,7 @@
 
 pub(crate) mod commit;
 pub(crate) mod footer;
+pub(crate) mod generate;
 pub(crate) mod guard;
 mod land;
 mod lines;

@@ -51,6 +51,11 @@ export interface SikemuxProjectConfig {
     worktree?: {
         onCreate: ProjectWorktreeCreateHook[];
     };
+    /** What rebuilds the committed files made from others, and those files. */
+    generate?: {
+        command: string;
+        outputs: string[];
+    };
 }
 
 export type ProjectConfigValidationCode =

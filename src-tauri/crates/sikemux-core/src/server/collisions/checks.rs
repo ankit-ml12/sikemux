@@ -1,6 +1,6 @@
 //! The project's check, run on each commit as committed, in the repository's
 //! integration checkout, apart from the work in progress in everyone's own
-//! trees. A failure goes to the agents whose commits it failed after, at
+//! trees, once the files it generates are brought up to date. A failure goes to the agents whose commits it failed after, at
 //! once, and to the person once the project has stayed broken a while. It is
 //! the board's check command; a project without one is not checked. Commits
 //! that land while a check runs are checked together, at the newest, once it
@@ -125,16 +125,36 @@ pub(super) fn start(core: &Arc<Core>, state: &mut State) {
         };
         let core = core.clone();
         tokio::spawn(async move {
+            let agents: Vec<String> = commits
+                .iter()
+                .flat_map(|commit| commit.agents.iter().cloned())
+                .collect();
             let outcome = match crate::server::sandbox::integration(&core, &dir, &newest).await {
                 Ok(checkout) => {
-                    let command = command.clone();
+                    let (owner, command) = (core.clone(), command.clone());
                     tokio::task::spawn_blocking(move || {
-                        crate::server::board::run_check(&checkout, &command)
+                        use crate::server::edits::generate::regenerate;
+                        match regenerate(&owner, &dir, &checkout, &newest, &agents) {
+                            Ok(Some(_)) => Ok(None),
+                            Ok(None) => {
+                                crate::server::board::run_check(&checkout, &command).map(Some)
+                            }
+                            Err(error) => Ok(Some((false, error))),
+                        }
                     })
                     .await
                     .unwrap_or_else(|error| Err(error.to_string()))
                 }
                 Err(error) => Err(format!("the integration checkout is not ready: {error}")),
+            };
+            let outcome = match outcome {
+                Ok(Some(outcome)) => Ok(outcome),
+                Ok(None) => {
+                    core.collisions.lock().checks.running.remove(&project);
+                    core.collisions.wake.now();
+                    return;
+                }
+                Err(error) => Err(error),
             };
             ended(&core, &project, &command, &commits, outcome);
         });

@@ -15,7 +15,7 @@ pub const CONFIG_FILE: &str = "sikemux.json";
 pub const CONFIG_VERSION: u64 = 1;
 
 const ROOT_FIELDS: &[&str] = &[
-    "version", "$schema", "icon", "actions", "tasks", "preview", "worktree",
+    "version", "$schema", "icon", "actions", "tasks", "preview", "worktree", "generate",
 ];
 const ACTION_FIELDS: &[&str] = &[
     "id",
@@ -30,6 +30,8 @@ const TASK_FIELDS: &[&str] = &["id", "label", "command", "cwd", "env"];
 const PREVIEW_FIELDS: &[&str] = &["url", "command"];
 const WORKTREE_FIELDS: &[&str] = &["onCreate"];
 const HOOK_FIELDS: &[&str] = &["id", "label", "command"];
+const GENERATE_FIELDS: &[&str] = &["command", "outputs"];
+const MAX_OUTPUTS: usize = 50;
 const MAX_CONFIG_BYTES: usize = 256 * 1024;
 const MAX_ACTIONS: usize = 100;
 const MAX_TASKS: usize = 100;
@@ -162,6 +164,15 @@ pub struct WorktreeConfig {
     pub on_create: Vec<WorktreeHook>,
 }
 
+/// What makes the files a project commits but builds from its other files,
+/// and which files they are, so the core keeps them up to date on its own.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateConfig {
+    pub command: String,
+    pub outputs: Vec<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectConfig {
@@ -178,6 +189,8 @@ pub struct ProjectConfig {
     pub preview: Option<ProjectPreview>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<WorktreeConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generate: Option<Box<GenerateConfig>>,
 }
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -353,6 +366,7 @@ pub fn validate(value: &Value) -> Result<ProjectConfig, Vec<ConfigError>> {
     let tasks = parse_tasks(root.get("tasks"), &mut errors);
     let preview = parse_preview(root.get("preview"), &mut errors);
     let worktree = parse_worktree(root.get("worktree"), &mut errors);
+    let generate = parse_generate(root.get("generate"), &mut errors);
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -364,6 +378,7 @@ pub fn validate(value: &Value) -> Result<ProjectConfig, Vec<ConfigError>> {
         tasks,
         preview,
         worktree,
+        generate,
     })
 }
 
@@ -397,7 +412,11 @@ pub fn trust_summary(config: &ProjectConfig) -> TrustSummary {
             if hooks == 1 { "hook" } else { "hooks" }
         ));
     }
-    let executable_entries = actions + tasks + previews + hooks;
+    let generates = usize::from(config.generate.is_some());
+    if generates > 0 {
+        reasons.push("a command that regenerates committed files".to_owned());
+    }
+    let executable_entries = actions + tasks + previews + hooks + generates;
     TrustSummary {
         requires_approval: executable_entries > 0,
         executable_entries,
@@ -1016,6 +1035,64 @@ fn parse_worktree(value: Option<&Value>, errors: &mut Vec<ConfigError>) -> Optio
         }
     }
     Some(WorktreeConfig { on_create: hooks })
+}
+
+fn parse_generate(
+    value: Option<&Value>,
+    errors: &mut Vec<ConfigError>,
+) -> Option<Box<GenerateConfig>> {
+    let Some(record) = value?.as_object() else {
+        errors.push(issue(
+            "$.generate",
+            ConfigErrorCode::InvalidType,
+            "Generate must be an object.",
+        ));
+        return None;
+    };
+    reject_unknown_fields(record, GENERATE_FIELDS, "$.generate", errors);
+    let command = parse_command(record.get("command"), "$.generate.command", errors);
+    let Some(listed) = record.get("outputs").and_then(Value::as_array) else {
+        errors.push(issue(
+            "$.generate.outputs",
+            ConfigErrorCode::MissingField,
+            "outputs must list the files the command writes.",
+        ));
+        return None;
+    };
+    if listed.is_empty() || listed.len() > MAX_OUTPUTS {
+        errors.push(issue(
+            "$.generate.outputs",
+            ConfigErrorCode::LimitExceeded,
+            format!("outputs must list between 1 and {MAX_OUTPUTS} files."),
+        ));
+        return None;
+    }
+    let mut outputs = Vec::new();
+    for (index, output) in listed.iter().enumerate() {
+        let path = format!("$.generate.outputs[{index}]");
+        let Some(output) = bounded_required(Some(output), &path, "Output", 512, errors) else {
+            continue;
+        };
+        let normalized = output.replace('\\', "/");
+        if normalized.starts_with('/')
+            || has_drive_prefix(&normalized)
+            || normalized
+                .split('/')
+                .any(|part| matches!(part, "" | "." | ".."))
+        {
+            errors.push(issue(
+                path,
+                ConfigErrorCode::InvalidValue,
+                "Each output must be a normalized project-relative file path without dot segments.",
+            ));
+            continue;
+        }
+        outputs.push(normalized);
+    }
+    Some(Box::new(GenerateConfig {
+        command: command?,
+        outputs,
+    }))
 }
 
 fn parse_icon(value: Option<&Value>, errors: &mut Vec<ConfigError>) -> Option<String> {

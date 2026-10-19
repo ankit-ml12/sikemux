@@ -348,7 +348,7 @@ fn config_ask(path: &str, fingerprint: &str, config: &config::ProjectConfig) -> 
 }
 
 /// What the person must trust before `config` runs, or none.
-fn config_needs(core: &Core, config: &ConfigLoad) -> Option<TrustAsk> {
+pub(crate) fn config_needs(core: &Core, config: &ConfigLoad) -> Option<TrustAsk> {
     let ConfigLoad::Valid {
         path,
         config,
