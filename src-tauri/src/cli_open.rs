@@ -3,12 +3,13 @@
 //! tabs close.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
 use sikemux_core::cli::protocol::{
     CliCloseReason, CliFrontendRequest, CliOpenFailure, CliOpenOutcome, CliOpenRequest,
-    CliOpenResult, CliTargetKind,
+    CliOpenResult, CliOpenTarget, CliTargetKind, MAX_CLI_TARGETS,
 };
 use sikemux_core::protocol::CallId;
 use tauri::{AppHandle, Emitter, Manager};
@@ -240,12 +241,7 @@ pub fn answer(app: &AppHandle, call_id: CallId, request: CliOpenRequest) {
             return;
         }
     };
-    if let Some(window) = app.get_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
-    let _ = app.emit_to("main", CLI_EVENT, &request_id);
+    hand_to_window(app, &request_id);
     let outcome = match accepted.recv_timeout(FRONTEND_ACCEPT_TIMEOUT) {
         Ok(outcome) => outcome,
         Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -276,6 +272,52 @@ pub fn answer(app: &AppHandle, call_id: CallId, request: CliOpenRequest) {
             client.window_open_closed(call_id);
         }
     }
+}
+
+/// Opens the files and folders Finder or another app handed over, as `sikemux open` would.
+pub fn open_paths(app: &AppHandle, paths: Vec<PathBuf>) {
+    let targets: Vec<CliOpenTarget> = paths
+        .into_iter()
+        .filter_map(|path| {
+            let kind = match std::fs::metadata(&path) {
+                Ok(metadata) if metadata.is_dir() => CliTargetKind::Directory,
+                Ok(metadata) if metadata.is_file() => CliTargetKind::File,
+                _ => return None,
+            };
+            let project_root = sikemux_host::cli_client::project_root(&path, kind);
+            Some(CliOpenTarget {
+                id: format!("target-{}", uuid::Uuid::new_v4().simple()),
+                kind,
+                path: path.to_string_lossy().into_owned(),
+                project_root: project_root.to_string_lossy().into_owned(),
+                line: None,
+                column: None,
+            })
+        })
+        .take(MAX_CLI_TARGETS)
+        .collect();
+    let Some(first) = targets.first() else {
+        return;
+    };
+    let request = CliOpenRequest {
+        id: format!("request-{}", uuid::Uuid::new_v4().simple()),
+        cwd: first.project_root.clone(),
+        wait: false,
+        targets,
+    };
+    let request_id = request.id.clone();
+    if app.state::<CliOpens>().enqueue(request).is_ok() {
+        hand_to_window(app, &request_id);
+    }
+}
+
+fn hand_to_window(app: &AppHandle, request_id: &str) {
+    if let Some(window) = app.get_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+    let _ = app.emit_to("main", CLI_EVENT, request_id);
 }
 
 #[tauri::command]

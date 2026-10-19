@@ -415,20 +415,34 @@ fn split_location(raw: &str) -> Result<(&str, Option<u32>, Option<u32>), String>
 }
 
 fn infer_project_root(path: &Path, kind: CliTargetKind, cwd: &Path) -> PathBuf {
-    let start = if kind == CliTargetKind::Directory {
-        path
-    } else {
-        path.parent().unwrap_or(path)
-    };
-    for ancestor in start.ancestors() {
-        if ancestor.join(".git").exists() {
-            return ancestor.to_path_buf();
-        }
+    if let Some(root) = git_root(path, kind) {
+        return root;
     }
     if path.starts_with(cwd) && cwd.is_dir() {
         return cwd.to_path_buf();
     }
-    start.to_path_buf()
+    enclosing_folder(path, kind).to_path_buf()
+}
+
+/// The project a path opened from outside a shell belongs to: its repository,
+/// or else the folder itself, or the folder a file sits in.
+pub fn project_root(path: &Path, kind: CliTargetKind) -> PathBuf {
+    git_root(path, kind).unwrap_or_else(|| enclosing_folder(path, kind).to_path_buf())
+}
+
+fn git_root(path: &Path, kind: CliTargetKind) -> Option<PathBuf> {
+    enclosing_folder(path, kind)
+        .ancestors()
+        .find(|ancestor| ancestor.join(".git").exists())
+        .map(Path::to_path_buf)
+}
+
+fn enclosing_folder(path: &Path, kind: CliTargetKind) -> &Path {
+    if kind == CliTargetKind::Directory {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    }
 }
 
 fn endpoint_path() -> Result<PathBuf, String> {

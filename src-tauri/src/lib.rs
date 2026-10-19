@@ -416,6 +416,8 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = &event {
                 deep_link::receive(app_handle, urls);
+                let paths = urls.iter().filter_map(|url| url.to_file_path().ok());
+                cli_open::open_paths(app_handle, paths.collect());
             }
             if let tauri::RunEvent::ExitRequested { code, .. } = &event {
                 relaunch::note_exit_requested(*code);
