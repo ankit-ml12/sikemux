@@ -9,6 +9,7 @@
 //   deployments — listing and reading deployments, build logs, redeploy, promote and cancel
 //   domains     — adding a domain, the DNS records it needs, verifying, routing and removing it
 //   env         — adding, changing and removing environment variables; values only go to Vercel
+//   runtime     — a deployment's runtime logs, followed live or listened to for a while
 //   settings    — a project's framework, commands, root directory and Node version, read and changed
 
 mod auth;
@@ -20,6 +21,7 @@ mod env;
 mod error;
 mod oauth;
 mod projects;
+mod runtime;
 mod settings;
 
 use std::sync::Arc;
@@ -75,6 +77,7 @@ impl Plugin for Vercel {
                 "verifyDomain" => answer(domains::verify(data_dir, params(input)?)).await,
                 "removeDomain" => answer(domains::remove(data_dir, params(input)?)).await,
                 "changeDomain" => answer(domains::change(data_dir, input)).await,
+                "runtimeLogs" => answer(runtime::listen(data_dir, params(input)?)).await,
                 "setEnv" => answer(env::set(data_dir, params(input)?)).await,
                 "removeEnv" => answer(env::remove(data_dir, params(input)?)).await,
                 "changeEnv" => answer(env::change(data_dir, input)).await,
@@ -89,12 +92,13 @@ impl Plugin for Vercel {
         &'a self,
         ctx: &'a PluginContext,
         method: &'a str,
-        _input: Value,
+        input: Value,
         sink: StreamSink,
     ) -> PluginFuture<'a, ()> {
         Box::pin(async move {
             let data_dir = ctx.data_dir();
             match method {
+                "followRuntimeLogs" => runtime::follow(data_dir, input, &sink).await,
                 "signInWithBrowser" => {
                     auth::sign_in_with_browser(data_dir, &sink).await?;
                     sink.send(reply(auth::status(data_dir).await)?)

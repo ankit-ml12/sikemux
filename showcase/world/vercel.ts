@@ -344,3 +344,41 @@ export const VERCEL: Record<string, (params: Params) => unknown> = {
   promote: ({ id }) => find(id),
   cancel: ({ id }) => find(id),
 };
+
+export function vercelRuntimeLines() {
+  const now = Date.now();
+  const line = (
+    ago: number,
+    level: string,
+    method: string,
+    path: string,
+    status: number,
+    message: string,
+    source = "serverless",
+  ) => ({
+    at: now - ago,
+    level,
+    source,
+    message,
+    method,
+    path,
+    status,
+    domain: "shop.acme.dev",
+  });
+  return {
+    lines: [
+      line(9_000, "info", "GET", "/", 200, "GET / 200 in 41ms", "static"),
+      line(7_400, "info", "GET", "/api/products", 200, "products: 24 from cache"),
+      line(5_100, "warning", "GET", "/favicon.png", 404, "No such file", "static"),
+      line(3_000, "info", "POST", "/api/cart", 200, "cart c_81f: 3 items"),
+      line(
+        1_200,
+        "error",
+        "POST",
+        "/api/checkout",
+        500,
+        "TypeError: Cannot read properties of undefined (reading 'items')\n    at checkout (/var/task/app/api/checkout/route.js:18:27)",
+      ),
+    ],
+  };
+}

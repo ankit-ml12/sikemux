@@ -1,4 +1,4 @@
-import { browserSignIn, createPluginBackend } from "../../plugin-api/backend";
+import { browserSignIn, createPluginBackend, type PluginStream, type PluginStreamHandlers } from "../../plugin-api/backend";
 import { VERCEL_PLUGIN } from "./kinds";
 
 const backend = createPluginBackend(VERCEL_PLUGIN.id);
@@ -145,6 +145,17 @@ export interface DomainRouting {
     redirect?: string;
 }
 
+export interface RuntimeLogLine {
+    at: number;
+    level: "info" | "warning" | "error" | string;
+    source: string;
+    message: string;
+    method: string | null;
+    path: string | null;
+    status: number | null;
+    domain: string | null;
+}
+
 export type VercelTarget = "production" | "preview" | "development";
 
 export interface VariableChange {
@@ -181,6 +192,8 @@ export const vercelApi = {
         backend.call<DomainDetail>("updateDomain", { team, project, domain, ...routing }),
     verifyDomain: (team: string, project: string, domain: string) => backend.call<DomainDetail>("verifyDomain", { team, project, domain }),
     removeDomain: (team: string, project: string, domain: string) => backend.call<void>("removeDomain", { team, project, domain }),
+    followRuntimeLogs: (team: string, project: string, id: string, handlers: PluginStreamHandlers<{ lines: RuntimeLogLine[] }>): PluginStream =>
+        backend.stream("followRuntimeLogs", { team, project, id }, handlers),
     setEnv: (team: string, project: string, change: VariableChange) => backend.call<VercelVariable>("setEnv", { team, project, ...change }),
     removeEnv: (team: string, project: string, id: string) => backend.call<void>("removeEnv", { team, project, id }),
     settings: (team: string, project: string) => backend.call<VercelSettings>("settings", { team, project }),

@@ -342,4 +342,12 @@ export const TOOL_ROWS = {
     vercel_env: { verb: "list", kind: "read", icon: "code", target: ["{project} environment"], plugin: "sikemux.vercel" },
     vercel_env_change: { verb: "change", kind: "edit", icon: "code", target: ["{key} in {project}"], detail: ["{action}"], plugin: "sikemux.vercel" },
     vercel_domain_change: { verb: "change", kind: "edit", icon: "globe", target: ["{domain}"], detail: ["{action}"], plugin: "sikemux.vercel" },
+    vercel_runtime_logs: {
+        verb: "listen",
+        kind: "read",
+        icon: "log-lines",
+        target: ["{id} runtime logs"],
+        detail: ["{path}"],
+        plugin: "sikemux.vercel",
+    },
 } satisfies Record<string, ToolRowSpec>;

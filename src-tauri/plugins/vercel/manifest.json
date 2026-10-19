@@ -117,10 +117,10 @@
         "project": { "type": "string" },
         "action": { "type": "string", "enum": ["set", "remove"] },
         "key": { "type": "string" },
-        "value": { "type": "string", "description": "For set. Left out when changing one, it stays." },
-        "id": { "type": "string", "description": "To change or remove one of several with this key." },
+        "value": { "type": "string", "description": "For set; left out, it stays." },
+        "id": { "type": "string", "description": "One of several with this key." },
         "targets": { "type": "array", "items": { "type": "string", "enum": ["production", "preview", "development"] } },
-        "branch": { "type": "string", "description": "Only this preview branch." },
+        "branch": { "type": "string", "description": "Preview branch only." },
         "team": { "type": "string" }
       },
       "required": ["project", "action", "key"]
@@ -134,11 +134,27 @@
         "project": { "type": "string" },
         "action": { "type": "string", "enum": ["add", "update", "verify", "remove"] },
         "domain": { "type": "string" },
-        "branch": { "type": "string", "description": "Serve this branch; \"\" for production." },
-        "redirect": { "type": "string", "description": "Redirect to this domain; \"\" to stop." },
+        "branch": { "type": "string", "description": "\"\" for production." },
+        "redirect": { "type": "string", "description": "\"\" to stop." },
         "team": { "type": "string" }
       },
       "required": ["project", "action", "domain"]
+    },
+    {
+      "name": "vercel_runtime_logs",
+      "row": {"verb": "listen", "kind": "read", "icon": "log-lines", "target": ["{id} runtime logs"], "detail": ["{path}"]},
+      "method": "runtimeLogs",
+      "description": "Listen to a deployment's function and edge logs for `seconds` (default 20); none are kept from before, so have the person retry meanwhile.",
+      "properties": {
+        "project": { "type": "string" },
+        "id": { "type": "string" },
+        "seconds": { "type": "integer" },
+        "minStatus": { "type": "integer" },
+        "path": { "type": "string" },
+        "levels": { "type": "array", "items": { "type": "string", "enum": ["info", "warning", "error"] } },
+        "team": { "type": "string" }
+      },
+      "required": ["project", "id"]
     }
   ]
 }

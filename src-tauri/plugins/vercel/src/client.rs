@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use reqwest::Method;
+use reqwest::{Method, Response};
 use serde_json::Value;
 use sikemux_plugin_api::http::{self, Deadline, Http, Redirects};
 use sikemux_plugin_api::store::{self, Held};
@@ -15,6 +15,8 @@ const API: &str = "https://api.vercel.com";
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 pub static HTTP: Http<Vercel> = Http::new(Redirects::Follow, Deadline::WholeAnswer, 8);
+/// For answers that keep coming, such as runtime logs, so only a long silence ends them.
+static STREAMING: Http<Vercel> = Http::new(Redirects::Follow, Deadline::QuietTransfer, 4);
 static TOKENS: Held<String> = Held::secrets();
 
 /// The value at `path` in `value`, or null when there is none.
@@ -92,6 +94,34 @@ impl Session {
 
     pub async fn get(&self, path: &str, query: &[(&str, String)]) -> VercelResult<Value> {
         self.send(Method::GET, path, query, None).await
+    }
+
+    /// The answer as it arrives, for a stream that keeps going.
+    pub async fn open(&self, path: &str, query: &[(&str, String)]) -> VercelResult<Response> {
+        let mut query = query.to_vec();
+        if let Some(team) = &self.team {
+            query.push(team_param(team));
+        }
+        let builder = STREAMING
+            .client()?
+            .get(format!("{API}{path}"))
+            .bearer_auth(&self.token)
+            .query(&query);
+        let response = builder.send().await?;
+        let status = response.status().as_u16();
+        if (200..300).contains(&status) {
+            return Ok(response);
+        }
+        let bytes = http::read_body(response, MAX_RESPONSE_BYTES).await?;
+        Err(checked(
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+        .err()
+        .unwrap_or(VercelError::Http {
+            status,
+            message: "Vercel refused the request".into(),
+        }))
     }
 
     pub async fn send(

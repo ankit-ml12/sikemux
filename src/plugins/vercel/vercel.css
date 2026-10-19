@@ -859,3 +859,58 @@
 .vercel-domain > form {
     flex-basis: 100%;
 }
+
+.vercel-runtime-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.vercel-runtime-filters .vercel-find {
+    min-width: 160px;
+}
+
+.vercel-runtime-empty {
+    margin: 0;
+    padding: 12px 14px;
+    font-size: var(--text-xs);
+}
+
+.vercel-log-line.runtime {
+    display: flex;
+    gap: 10px;
+}
+
+.vercel-log-line.runtime.error {
+    box-shadow: inset 2px 0 var(--danger);
+}
+
+.vercel-log-line.runtime.warning {
+    box-shadow: inset 2px 0 var(--warn);
+}
+
+.vercel-log-status {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+
+.vercel-log-status.s4 {
+    color: var(--warn);
+}
+
+.vercel-log-status.s5 {
+    color: var(--danger);
+}
+
+.vercel-log-path {
+    flex: none;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
