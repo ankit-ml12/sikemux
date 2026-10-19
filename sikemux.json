@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "worktree": {
+    "onCreate": [
+      {
+        "id": "link-build-outputs",
+        "label": "Link the app's build outputs",
+        "command": "main=\"$(git rev-parse --path-format=absolute --git-common-dir)/..\"; for built in dist src-tauri/binaries src-tauri/icons/build src-tauri/gen; do if [ -e \"$main/$built\" ] && [ ! -e \"$built\" ]; then ln -s \"$main/$built\" \"$built\"; fi; done"
+      }
+    ]
+  }
+}

@@ -222,6 +222,7 @@ pub(crate) fn cut_for(
     let base = git(&repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
     let (branch, path) = cut(&repo, name, &start_sha)?;
     copy_included(&main, &path);
+    link_installed(&main, &path);
     let inside = if cwd.starts_with(&repo) {
         inside(cwd, &repo)
     } else {
@@ -333,7 +334,7 @@ pub(crate) async fn integration(
 const INTEGRATION: &str = ".integration";
 
 /// Links each `node_modules` beside a `package.json` at the top of `main`, or
-/// one folder down, into `tree`, so its checks run with what is installed.
+/// one folder down, into `tree`, so what runs there finds what is installed.
 fn link_installed(main: &Path, tree: &Path) {
     let mut folders = vec![PathBuf::new()];
     if let Ok(entries) = std::fs::read_dir(main) {
