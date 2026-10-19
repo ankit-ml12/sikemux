@@ -21,3 +21,5 @@ export const vercelDomainR = vercel.resource(
     (team: string, project: string, domain: string) => vercelApi.domain(team, project, domain),
     30_000,
 );
+
+export const vercelCronsR = vercel.resource("crons", (team: string, project: string) => vercelApi.crons(team, project), 60_000);

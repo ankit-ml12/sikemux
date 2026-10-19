@@ -9,6 +9,7 @@ import { updateVercelView, useVercelView, type VercelSection } from "../state";
 import { Deployment } from "./Deployment";
 import { Deployments } from "./Deployments";
 import { BuildSettings } from "./BuildSettings";
+import { Crons } from "./Crons";
 import { Domains } from "./Domains";
 import { Environment } from "./Settings";
 import { Overview } from "./Overview";
@@ -35,6 +36,7 @@ const SECTIONS: { value: VercelSection; label: string }[] = [
     { value: "deployments", label: "Deployments" },
     { value: "env", label: "Environment Variables" },
     { value: "domains", label: "Domains" },
+    { value: "crons", label: "Cron Jobs" },
     { value: "settings", label: "Settings" },
 ];
 
@@ -221,6 +223,8 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                             onFilter={(patch) => updateVercelView(paneId, patch)}
                             onOpen={(id) => updateVercelView(paneId, { deployment: id })}
                         />
+                    ) : view.section === "crons" ? (
+                        <Crons active={active} team={team} project={project} />
                     ) : view.section === "settings" ? (
                         <BuildSettings active={active} team={team} project={project.name} />
                     ) : view.section === "env" ? (

@@ -37,6 +37,36 @@ pub fn settings_of(project: &Value) -> Value {
     Value::Object(read)
 }
 
+/// A project's cron jobs as its production deployment declared them in vercel.json.
+pub fn crons_of(project: &Value) -> Value {
+    let crons = at(project, "/crons");
+    let jobs: Vec<Value> = at(crons, "/definitions")
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|job| {
+            json!({
+                "path": at(job, "/path"),
+                "schedule": at(job, "/schedule"),
+                "host": at(job, "/host"),
+            })
+        })
+        .collect();
+    json!({
+        "enabled": !crons.is_null() && at(crons, "/disabledAt").is_null(),
+        "deploymentId": at(crons, "/deploymentId"),
+        "updatedAt": at(crons, "/updatedAt"),
+        "jobs": jobs,
+    })
+}
+
+pub async fn crons(data_dir: &Path, input: ProjectRef) -> VercelResult<Value> {
+    let project = segment("project", &input.project)?;
+    let session = Session::of(data_dir, input.team.as_deref()).await?;
+    let data = session.get(&format!("/v9/projects/{project}"), &[]).await?;
+    Ok(crons_of(&data))
+}
+
 pub async fn settings(data_dir: &Path, input: ProjectRef) -> VercelResult<Value> {
     let project = segment("project", &input.project)?;
     let session = Session::of(data_dir, input.team.as_deref()).await?;
@@ -130,6 +160,25 @@ mod tests {
         assert_eq!(read["outputDirectory"], "dist");
         assert_eq!(read["rootDirectory"], "apps/web");
         assert!(!read.to_string().contains("hunter2"));
+    }
+
+    #[test]
+    fn crons_read_from_what_production_declared() {
+        let raw = json!({ "crons": {
+            "enabledAt": 1, "disabledAt": null, "updatedAt": 5, "deploymentId": "dpl_9",
+            "definitions": [{ "host": "shop.acme.dev", "path": "/api/cron/sync", "schedule": "0 9 * * *" }]
+        } });
+        let read = crons_of(&raw);
+        assert_eq!(read["enabled"], true);
+        assert_eq!(read["jobs"][0]["path"], "/api/cron/sync");
+        assert_eq!(read["jobs"][0]["schedule"], "0 9 * * *");
+        let none = crons_of(&json!({}));
+        assert_eq!(
+            (none["enabled"].clone(), none["jobs"].clone()),
+            (json!(false), json!([]))
+        );
+        let off = crons_of(&json!({ "crons": { "disabledAt": 7, "definitions": [] } }));
+        assert_eq!(off["enabled"], false);
     }
 
     #[test]

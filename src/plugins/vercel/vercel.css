@@ -914,3 +914,12 @@
     color: var(--text-secondary);
     white-space: nowrap;
 }
+
+.vercel-table-row.cron {
+    display: grid;
+    grid-template-columns: 10px minmax(160px, 1.3fr) minmax(140px, 1fr) minmax(90px, auto) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    font-size: var(--text-xs);
+}

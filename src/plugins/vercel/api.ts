@@ -156,6 +156,15 @@ export interface RuntimeLogLine {
     domain: string | null;
 }
 
+export interface VercelCrons {
+    /** Off when the person turned crons off in Vercel's settings. */
+    enabled: boolean;
+    /** The production deployment that declared them. */
+    deploymentId: string | null;
+    updatedAt: number | null;
+    jobs: { path: string; schedule: string; host: string | null }[];
+}
+
 export type VercelTarget = "production" | "preview" | "development";
 
 export interface VariableChange {
@@ -196,6 +205,7 @@ export const vercelApi = {
         backend.stream("followRuntimeLogs", { team, project, id }, handlers),
     setEnv: (team: string, project: string, change: VariableChange) => backend.call<VercelVariable>("setEnv", { team, project, ...change }),
     removeEnv: (team: string, project: string, id: string) => backend.call<void>("removeEnv", { team, project, id }),
+    crons: (team: string, project: string) => backend.call<VercelCrons>("crons", { team, project }),
     settings: (team: string, project: string) => backend.call<VercelSettings>("settings", { team, project }),
     updateSettings: (team: string, project: string, settings: SettingsChange) =>
         backend.call<VercelSettings>("updateSettings", { team, project, settings }),

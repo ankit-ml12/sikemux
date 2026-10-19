@@ -192,6 +192,16 @@ const find = (id: unknown) =>
   DEPLOYMENTS.find((each) => each.id === id) ?? DEPLOYMENTS[2];
 
 export const VERCEL: Record<string, (params: Params) => unknown> = {
+  crons: () => ({
+    enabled: true,
+    deploymentId: "dpl_live",
+    updatedAt: Date.now() - 95 * 60_000,
+    jobs: [
+      { path: "/api/cron/sync-inventory", schedule: "*/15 * * * *", host: null },
+      { path: "/api/cron/abandoned-carts", schedule: "0 9 * * *", host: null },
+      { path: "/api/cron/weekly-report", schedule: "0 6 * * 1", host: null },
+    ],
+  }),
   domain: ({ domain }) =>
     String(domain).startsWith("beta.")
       ? {

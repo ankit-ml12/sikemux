@@ -81,6 +81,7 @@ impl Plugin for Vercel {
                 "setEnv" => answer(env::set(data_dir, params(input)?)).await,
                 "removeEnv" => answer(env::remove(data_dir, params(input)?)).await,
                 "changeEnv" => answer(env::change(data_dir, input)).await,
+                "crons" => answer(settings::crons(data_dir, params(input)?)).await,
                 "settings" => answer(settings::settings(data_dir, params(input)?)).await,
                 "updateSettings" => answer(settings::update(data_dir, params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
