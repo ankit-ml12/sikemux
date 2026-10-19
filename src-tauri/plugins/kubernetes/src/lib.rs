@@ -5,12 +5,14 @@
 //   kubectl  — running kubectl in a context and namespace, and its errors in words
 //   contexts — the kubeconfig's clusters, the current one, and each one's namespaces
 //   pods     — pods with their status as kubectl words it, restarts and owning workload
+//   logs     — a container's logs, read once, from before its last restart, or followed
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 
 mod contexts;
 mod describe;
 mod error;
 mod kubectl;
+mod logs;
 mod pods;
 
 use std::sync::Arc;
@@ -18,7 +20,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
+    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
 use crate::error::KubeResult;
@@ -57,6 +59,22 @@ impl Plugin for Kubernetes {
                 "namespaces" => answer(contexts::namespaces(params(input)?)).await,
                 "pods" => answer(pods::list(params(input)?)).await,
                 "pod" => answer(describe::describe(params(input)?)).await,
+                "logs" => answer(logs::read(params(input)?)).await,
+                _ => Err(PluginError::unknown_method(method)),
+            }
+        })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        _ctx: &'a PluginContext,
+        method: &'a str,
+        input: Value,
+        sink: StreamSink,
+    ) -> PluginFuture<'a, ()> {
+        Box::pin(async move {
+            match method {
+                "followLogs" => logs::follow(params(input)?, &sink).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
@@ -110,6 +128,27 @@ mod tests {
                 .await
                 .expect("pod");
             println!("{detail:#}");
+            let logs = plugin
+                .call(
+                    &ctx,
+                    "logs",
+                    serde_json::json!({ "namespace": first["namespace"], "pod": first["name"], "previous": true, "tail": 5 }),
+                )
+                .await
+                .expect("logs");
+            println!("previous logs: {logs:#}");
+            let (tell, mut heard) = tokio::sync::mpsc::unbounded_channel();
+            let sink = sikemux_plugin_api::StreamSink::new(move |item| tell.send(item).is_ok());
+            let follow = plugin.stream(
+                &ctx,
+                "followLogs",
+                serde_json::json!({ "namespace": "shop", "pod": "web-56fd9f5c8b-fgprx", "tail": 3 }),
+                sink,
+            );
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(3), follow).await;
+            while let Ok(batch) = heard.try_recv() {
+                println!("followed: {batch}");
+            }
         }
     }
 
