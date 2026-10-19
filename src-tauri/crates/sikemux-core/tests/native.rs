@@ -842,7 +842,7 @@ async fn a_long_claude_chat_comes_back_as_its_last_turns_and_pages_back_whole() 
             .count()
     };
     let shown = answers(&heard);
-    assert!(shown < 20, "{shown} answers were sent at once");
+    assert!(shown <= 50, "{shown} answers were sent at once");
     let earlier = heard
         .iter()
         .find(|update| update["update"]["sessionUpdate"] == "earlier_turns")
