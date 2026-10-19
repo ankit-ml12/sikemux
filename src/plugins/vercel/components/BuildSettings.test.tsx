@@ -1,3 +1,4 @@
+import { vercel } from "../resources";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VercelSettings } from "../api";
@@ -7,7 +8,6 @@ vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>(
 const host = vi.hoisted(() => ({ confirmDialog: vi.fn(), notify: vi.fn() }));
 vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), ...host }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { BuildSettings, changesOf } from "./BuildSettings";
 
 const web: VercelSettings = {
@@ -25,7 +25,7 @@ const web: VercelSettings = {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("vercel."));
+    vercel.refresh();
 });
 beforeEach(() => {
     api.settings.mockReset().mockResolvedValue(web);

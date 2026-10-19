@@ -645,7 +645,7 @@
 
 .vercel-table-row.env {
     display: grid;
-    grid-template-columns: minmax(160px, 1.4fr) minmax(120px, 1fr) auto minmax(110px, auto);
+    grid-template-columns: minmax(160px, 1.4fr) minmax(120px, 1fr) auto minmax(110px, auto) auto;
     gap: 12px;
     padding: 12px 14px;
 }
@@ -784,4 +784,36 @@
 
 .vercel-form-foot .vercel-muted {
     margin-right: auto;
+}
+
+.vercel-row-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.vercel-link.danger {
+    color: var(--danger);
+}
+
+.vercel-variable-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.vercel-form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.vercel-variable-targets {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    font-size: var(--text-xs);
 }

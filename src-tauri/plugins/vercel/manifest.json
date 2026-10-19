@@ -107,6 +107,23 @@
         "team": { "type": "string" }
       },
       "required": ["project"]
+    },
+    {
+      "name": "vercel_env_change",
+      "row": {"verb": "change", "kind": "edit", "icon": "code", "target": ["{key} in {project}"], "detail": ["{action}"]},
+      "method": "changeEnv",
+      "description": "Set or remove a project's environment variable. A value is only sent, never read back. Only when the person asked for it.",
+      "properties": {
+        "project": { "type": "string" },
+        "action": { "type": "string", "enum": ["set", "remove"] },
+        "key": { "type": "string" },
+        "value": { "type": "string", "description": "For set. Left out when changing one, it stays." },
+        "id": { "type": "string", "description": "To change or remove one of several with this key." },
+        "targets": { "type": "array", "items": { "type": "string", "enum": ["production", "preview", "development"] } },
+        "branch": { "type": "string", "description": "Only this preview branch." },
+        "team": { "type": "string" }
+      },
+      "required": ["project", "action", "key"]
     }
   ]
 }

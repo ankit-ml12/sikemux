@@ -119,6 +119,19 @@ export type SettingsChange = Partial<
     Pick<VercelSettings, "framework" | "buildCommand" | "outputDirectory" | "installCommand" | "devCommand" | "rootDirectory" | "nodeVersion">
 >;
 
+export type VercelTarget = "production" | "preview" | "development";
+
+export interface VariableChange {
+    /** The variable being changed; none adds a new one. */
+    id?: string;
+    key: string;
+    /** Left out when changing a variable, its value stays as it is. */
+    value?: string;
+    targets: VercelTarget[];
+    branch?: string;
+    kind?: "encrypted" | "sensitive";
+}
+
 /** Every call names its team, so the pane never acts on another team than the one it shows. */
 export const vercelApi = {
     status: () => backend.call<VercelStatus>("status"),
@@ -135,6 +148,8 @@ export const vercelApi = {
     redeploy: (team: string, id: string, target?: "production") => backend.call<VercelDeployment>("redeploy", { team, id, target }),
     promote: (team: string, id: string) => backend.call<VercelDeployment>("promote", { team, id }),
     cancel: (team: string, id: string) => backend.call<VercelDeployment>("cancel", { team, id }),
+    setEnv: (team: string, project: string, change: VariableChange) => backend.call<VercelVariable>("setEnv", { team, project, ...change }),
+    removeEnv: (team: string, project: string, id: string) => backend.call<void>("removeEnv", { team, project, id }),
     settings: (team: string, project: string) => backend.call<VercelSettings>("settings", { team, project }),
     updateSettings: (team: string, project: string, settings: SettingsChange) =>
         backend.call<VercelSettings>("updateSettings", { team, project, settings }),

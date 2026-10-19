@@ -192,6 +192,15 @@ const find = (id: unknown) =>
   DEPLOYMENTS.find((each) => each.id === id) ?? DEPLOYMENTS[2];
 
 export const VERCEL: Record<string, (params: Params) => unknown> = {
+  setEnv: ({ key, targets, branch }) => ({
+    id: `env_${String(key)}`,
+    key,
+    target: targets,
+    type: "encrypted",
+    gitBranch: branch ?? null,
+    updatedAt: Date.now(),
+  }),
+  removeEnv: () => null,
   settings: ({ project }) => ({
     id: `prj_${String(project)}`,
     name: project,

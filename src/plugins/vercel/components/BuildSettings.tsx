@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { confirmDialog, notify } from "../../../plugin-api/host";
-import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
+import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, SkeletonRows } from "../../../plugin-api/ui";
 import { errorText } from "../../../plugin-api/format";
 import { vercelApi, type SettingsChange, type VercelSettings } from "../api";
-import { vercelSettingsR } from "../resources";
+import { vercel, vercelSettingsR } from "../resources";
 
 /** The frameworks Vercel presets most projects use, by the slug Vercel stores. */
 export const FRAMEWORKS: { value: string; label: string }[] = [
@@ -80,7 +80,7 @@ export function BuildSettings({ active, team, project }: { active: boolean; team
         setSaving(true);
         try {
             await vercelApi.updateSettings(team, project, changes);
-            invalidate((kind) => kind === "vercel.settings");
+            vercel.refresh(vercelSettingsR);
             notify("success", `Saved ${project}'s settings`);
         } catch (error) {
             notify("error", `Save settings: ${errorText(error)}`);

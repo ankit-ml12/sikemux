@@ -340,4 +340,5 @@ export const TOOL_ROWS = {
     vercel_cancel: { verb: "cancel", kind: "execute", icon: "stop", target: ["{id}"], plugin: "sikemux.vercel" },
     vercel_domains: { verb: "list", kind: "read", icon: "globe", target: ["{project} domains"], plugin: "sikemux.vercel" },
     vercel_env: { verb: "list", kind: "read", icon: "code", target: ["{project} environment"], plugin: "sikemux.vercel" },
+    vercel_env_change: { verb: "change", kind: "edit", icon: "code", target: ["{key} in {project}"], detail: ["{action}"], plugin: "sikemux.vercel" },
 } satisfies Record<string, ToolRowSpec>;

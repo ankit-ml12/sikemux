@@ -7,12 +7,14 @@
 //   auth        — signing in with the browser or an access token, choosing a team, and the account's status
 //   projects    — projects, their domains, and the names of their environment variables
 //   deployments — listing and reading deployments, build logs, redeploy, promote and cancel
+//   env         — adding, changing and removing environment variables; values only go to Vercel
 //   settings    — a project's framework, commands, root directory and Node version, read and changed
 
 mod auth;
 mod client;
 mod config;
 mod deployments;
+mod env;
 mod error;
 mod oauth;
 mod projects;
@@ -65,6 +67,9 @@ impl Plugin for Vercel {
                 "redeploy" => answer(deployments::redeploy(data_dir, params(input)?)).await,
                 "promote" => answer(deployments::promote(data_dir, params(input)?)).await,
                 "cancel" => answer(deployments::cancel(data_dir, params(input)?)).await,
+                "setEnv" => answer(env::set(data_dir, params(input)?)).await,
+                "removeEnv" => answer(env::remove(data_dir, params(input)?)).await,
+                "changeEnv" => answer(env::change(data_dir, input)).await,
                 "settings" => answer(settings::settings(data_dir, params(input)?)).await,
                 "updateSettings" => answer(settings::update(data_dir, params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
