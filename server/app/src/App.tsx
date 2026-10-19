@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { Avatar } from "./Avatar.tsx";
 import { Backdrop } from "./Backdrop.tsx";
-import { Consent, CONSENT, Panel } from "./Consent.tsx";
+import { Consent, CONSENT, Panel, SIGNED_IN, SignedIn } from "./Consent.tsx";
 import {
   AccountDeleted,
   DeleteAccount,
@@ -60,7 +60,7 @@ export function App() {
         ? "Signing in · Sikemux"
         : path === DELETE_ACCOUNT
           ? "Delete your account · Sikemux"
-          : path === CONSENT
+          : path === CONSENT || path === SIGNED_IN
             ? "Sign in on your computer · Sikemux"
             : path === HOST
               ? "Add a host · Sikemux"
@@ -112,14 +112,20 @@ export function App() {
             />
           </main>
         ) : path === "/sso-callback" ? (
-          <section className="panel">
-            <p className="quiet">Signing you in…</p>
-            <HandleSSOCallback
-              navigateToApp={afterSignIn}
-              navigateToSignIn={afterSignIn}
-              navigateToSignUp={afterSignIn}
-            />
-          </section>
+          <main className="center">
+            <Panel>
+              <p className="quiet">Signing you in…</p>
+              <HandleSSOCallback
+                navigateToApp={afterSignIn}
+                navigateToSignIn={afterSignIn}
+                navigateToSignUp={afterSignIn}
+              />
+            </Panel>
+          </main>
+        ) : path === SIGNED_IN ? (
+          <main className="center">
+            <SignedIn />
+          </main>
         ) : path === CONSENT ? (
           <main className="center">
             {signedIn ? <Consent /> : <SignIn ready={isLoaded} />}
