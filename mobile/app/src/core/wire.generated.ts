@@ -175,6 +175,8 @@ export interface SessionInfo {
   startedBy?: string;
   /** The name the app gives an agent terminal. */
   title?: string;
+  /** What the program in the terminal last set its title to. */
+  windowTitle?: string;
   /**
    * The agent finished or asked for something while the person was not
    * looking at it in the app.
