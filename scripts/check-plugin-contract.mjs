@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Fails when a plugin's TypeScript, or one of its agent tools, asks for a
-// method its Rust side does not serve. Rust serves the string arms of each
-// `match method {` in the plugin's lib.rs and in the modules lib.rs hands
-// `method` to. TypeScript asks with a literal in the `method` parameter of
-// any function that takes one, such as a backend's `call` and `stream`.
+// Fails when a plugin's two sides disagree. Its TypeScript, and each of its
+// agent tools, may ask only for methods its Rust side serves: the string arms
+// of each `match method {` in lib.rs and in the modules lib.rs hands `method`
+// to. TypeScript asks with a literal in the `method` parameter of any function
+// that takes one, such as a backend's `call` and `stream`. And a plugin whose
+// Rust names its service, in error.rs, names it as its manifest does.
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
@@ -252,6 +253,21 @@ function sharedAsks(text) {
   return asks;
 }
 
+/** The id and name a plugin's Rust gives its service in error.rs, or null when it gives none. */
+async function serviceIdentity(plugin) {
+  const file = join(RUST_PLUGINS, plugin, "src/error.rs");
+  if (!(await exists(file))) return null;
+  const impl = /\bimpl Service for \w+ \{([\s\S]*?)\n\}/u.exec(
+    await readFile(file, "utf8"),
+  );
+  if (!impl) return null;
+  const constant = (name) =>
+    new RegExp(`\\bconst ${name}: &'static str = "([^"]*)";`, "u").exec(
+      impl[1],
+    )?.[1];
+  return { file, id: constant("ID"), name: constant("NAME") };
+}
+
 const problems = [];
 for (const plugin of plugins) {
   const rust = join(RUST_PLUGINS, plugin);
@@ -260,6 +276,21 @@ for (const plugin of plugins) {
       `src/plugins/${plugin} has no Rust side at ${where(rust)}/src/lib.rs`,
     );
     continue;
+  }
+  const manifest = JSON.parse(
+    await readFile(join(rust, "manifest.json"), "utf8"),
+  );
+  const service = await serviceIdentity(plugin);
+  if (service) {
+    const id = manifest.id.replace(/^sikemux\./u, "");
+    if (service.id !== id)
+      problems.push(
+        `${where(service.file)}: the service's ID is ${JSON.stringify(service.id)}, but its manifest's id ${manifest.id} says "${id}"`,
+      );
+    if (service.name !== manifest.name)
+      problems.push(
+        `${where(service.file)}: the service's NAME is ${JSON.stringify(service.name)}, but its manifest names it "${manifest.name}"`,
+      );
   }
   const methods = await served(plugin);
   if (methods.size === 0) {
@@ -281,9 +312,6 @@ for (const plugin of plugins) {
         `${where(file)}:${line}: asks ${plugin} for "${method}", which ${where(rust)}/src does not serve`,
       );
   }
-  const manifest = JSON.parse(
-    await readFile(join(rust, "manifest.json"), "utf8"),
-  );
   for (const tool of manifest.tools ?? []) {
     if (tool.method && !methods.has(tool.method)) {
       problems.push(
@@ -297,4 +325,6 @@ if (problems.length > 0) {
   console.error(problems.join("\n"));
   process.exit(1);
 }
-console.log("✓ every method the plugins ask for is one their Rust side serves");
+console.log(
+  "✓ every plugin's TypeScript, tools and service name agree with its Rust side",
+);

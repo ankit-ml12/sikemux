@@ -140,8 +140,8 @@ jobs:
       - name: Check the file icons match the installed icon theme
         run: pnpm file-icons:check
 
-      - name: Check the plugins ask their Rust side only for methods it serves
-        run: pnpm plugin-methods:check
+      - name: Check each plugin's TypeScript, tools and service name agree with its Rust side
+        run: pnpm plugin-contract:check
 
       - name: Test the dev launcher
         run: pnpm dev-launcher:test
