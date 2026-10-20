@@ -39,12 +39,12 @@ import type {
     HostAccountEntry,
 } from "../../plugin-api/codehost";
 import { createCodeHostClient } from "../../plugin-api/codehost";
-import { GITHUB_PLUGIN_ID } from "./kinds";
+import { GITHUB_PLUGIN } from "./kinds";
 
 export type * from "../../plugin-api/codehost";
 export { failureMessage } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(GITHUB_PLUGIN_ID, { signInStatus: (kind) => kind === "host.status" || kind === "host.githubStatus" });
+const backend = createPluginBackend(GITHUB_PLUGIN.id, { signInStatus: (kind) => kind === "host.status" || kind === "host.githubStatus" });
 const { call, image, watch } = createCodeHostClient(backend);
 
 export type TokenSource = "keychain" | "environment" | "ghCli";

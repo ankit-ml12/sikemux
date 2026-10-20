@@ -36,11 +36,11 @@ import type {
     WorkflowFile,
 } from "../../plugin-api/codehost";
 import { createCodeHostClient } from "../../plugin-api/codehost";
-import { BITBUCKET_PLUGIN_ID } from "./kinds";
+import { BITBUCKET_PLUGIN } from "./kinds";
 
 export { failureMessage } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(BITBUCKET_PLUGIN_ID, { signInStatus: (kind) => kind === "host.status" || kind === "host.bitbucketStatus" });
+const backend = createPluginBackend(BITBUCKET_PLUGIN.id, { signInStatus: (kind) => kind === "host.status" || kind === "host.bitbucketStatus" });
 const { call, image, watch } = createCodeHostClient(backend);
 
 export interface BitbucketStatus {

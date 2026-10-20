@@ -1,10 +1,10 @@
 import { browserSignIn, createPluginBackend } from "../../plugin-api/backend";
 import { invalidate } from "../../plugin-api/resources";
-import { VERCEL_PLUGIN_ID } from "./kinds";
+import { VERCEL_PLUGIN } from "./kinds";
 
 export { failureMessage } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(VERCEL_PLUGIN_ID, { signInStatus: (kind) => kind === "vercel.status" });
+const backend = createPluginBackend(VERCEL_PLUGIN.id, { signInStatus: (kind) => kind === "vercel.status" });
 
 export interface VercelAccount {
     id: string;

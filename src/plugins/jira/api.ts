@@ -1,10 +1,10 @@
 import { browserSignIn, createPluginBackend } from "../../plugin-api/backend";
 import { invalidate } from "../../plugin-api/resources";
-import { JIRA_PLUGIN_ID } from "./kinds";
+import { JIRA_PLUGIN } from "./kinds";
 
 export { failureMessage } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(JIRA_PLUGIN_ID, { signInStatus: (kind) => kind === "jira.status" });
+const backend = createPluginBackend(JIRA_PLUGIN.id, { signInStatus: (kind) => kind === "jira.status" });
 
 export interface JiraSite {
     host: string;

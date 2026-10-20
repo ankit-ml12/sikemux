@@ -1,10 +1,10 @@
 import { createPluginBackend } from "../../plugin-api/backend";
 import { invalidate } from "../../plugin-api/resources";
-import { SLACK_PLUGIN_ID } from "./kinds";
+import { SLACK_PLUGIN } from "./kinds";
 
 export { failureMessage } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(SLACK_PLUGIN_ID, { signInStatus: (kind) => kind === "slack.status" });
+const backend = createPluginBackend(SLACK_PLUGIN.id, { signInStatus: (kind) => kind === "slack.status" });
 
 export interface SlackWorkspace {
     id: string;

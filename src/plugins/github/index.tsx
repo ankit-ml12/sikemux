@@ -4,11 +4,10 @@ import { openGitArea } from "../../plugin-api/host";
 import { avatarForEmail, avatarForLogin, githubHostApi } from "./api";
 import { GithubSignIn } from "./components/ActionsSignIn";
 import { GithubMark } from "./components/GithubMark";
-import { GITHUB_PLUGIN_ID } from "./kinds";
+import { GITHUB_PLUGIN } from "./kinds";
 
 registerCodeHost({
-    id: GITHUB_PLUGIN_ID,
-    name: "GitHub",
+    ...GITHUB_PLUGIN,
     ciName: "Actions",
     icon: (size) => <GithubMark size={size} className="icon-github" />,
     capabilities: {
@@ -40,11 +39,11 @@ registerCodeHost({
 });
 
 registerFrontendPlugin({
-    id: GITHUB_PLUGIN_ID,
+    id: GITHUB_PLUGIN.id,
     surfaces: [],
     open: () => void openGitArea("pulls"),
-    openTitle: "Open GitHub",
+    openTitle: `Open ${GITHUB_PLUGIN.name}`,
     mark: (size) => <GithubMark size={size} className="icon-github" />,
     linkHosts: ["github.com"],
-    TopBarItem: hostCiGlyph(GITHUB_PLUGIN_ID),
+    TopBarItem: hostCiGlyph(GITHUB_PLUGIN.id),
 });

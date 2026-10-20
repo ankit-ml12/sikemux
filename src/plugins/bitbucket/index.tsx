@@ -4,11 +4,10 @@ import { openGitArea } from "../../plugin-api/host";
 import { bitbucketHostApi } from "./api";
 import { BitbucketMark } from "./components/BitbucketMark";
 import { BitbucketSignIn } from "./components/BitbucketSignIn";
-import { BITBUCKET_PLUGIN_ID } from "./kinds";
+import { BITBUCKET_PLUGIN } from "./kinds";
 
 registerCodeHost({
-    id: BITBUCKET_PLUGIN_ID,
-    name: "Bitbucket",
+    ...BITBUCKET_PLUGIN,
     ciName: "Pipelines",
     icon: (size) => <BitbucketMark size={size} />,
     capabilities: {
@@ -37,11 +36,11 @@ registerCodeHost({
 });
 
 registerFrontendPlugin({
-    id: BITBUCKET_PLUGIN_ID,
+    id: BITBUCKET_PLUGIN.id,
     surfaces: [],
     open: () => void openGitArea("pulls"),
-    openTitle: "Open Bitbucket",
+    openTitle: `Open ${BITBUCKET_PLUGIN.name}`,
     mark: (size) => <BitbucketMark size={size} />,
     linkHosts: ["bitbucket.org"],
-    TopBarItem: hostCiGlyph(BITBUCKET_PLUGIN_ID),
+    TopBarItem: hostCiGlyph(BITBUCKET_PLUGIN.id),
 });

@@ -35,11 +35,11 @@ import type {
     WorkflowFile,
 } from "../../plugin-api/codehost";
 import { createCodeHostClient } from "../../plugin-api/codehost";
-import { GITLAB_PLUGIN_ID } from "./kinds";
+import { GITLAB_PLUGIN } from "./kinds";
 
 export { failureMessage } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(GITLAB_PLUGIN_ID, { signInStatus: (kind) => kind === "host.status" || kind === "host.gitlabStatus" });
+const backend = createPluginBackend(GITLAB_PLUGIN.id, { signInStatus: (kind) => kind === "host.status" || kind === "host.gitlabStatus" });
 const { call, image, watch } = createCodeHostClient(backend);
 
 export interface GitlabStatus {

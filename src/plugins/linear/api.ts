@@ -1,10 +1,10 @@
 import { browserSignIn, createPluginBackend } from "../../plugin-api/backend";
 import { invalidate } from "../../plugin-api/resources";
-import { LINEAR_PLUGIN_ID } from "./kinds";
+import { LINEAR_PLUGIN } from "./kinds";
 
 export { failureMessage } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(LINEAR_PLUGIN_ID, { signInStatus: (kind) => kind === "linear.status" });
+const backend = createPluginBackend(LINEAR_PLUGIN.id, { signInStatus: (kind) => kind === "linear.status" });
 
 export interface LinearWorkspace {
     id: string;
