@@ -1,7 +1,6 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { accountApi } from "../api/account";
 import { coreCall } from "../api/core";
-import { sshApi } from "../api/ssh";
 import { approvalItem, copyOn, installHere, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
@@ -14,26 +13,6 @@ import { StatusDot } from "../ui/StatusDot";
 import type { CtxItem } from "./FileTree";
 
 type OpenMenu = (event: MouseEvent, items: CtxItem[]) => void;
-
-/** The SSH hosts in ~/.ssh/config, read again whenever the app comes back to the front. */
-function useSshAliases(): readonly string[] {
-    const [aliases, setAliases] = useState<readonly string[]>([]);
-    useEffect(() => {
-        let current = true;
-        const read = () =>
-            void sshApi
-                .hosts()
-                .then((hosts) => current && setAliases(hosts.map((host) => host.alias)))
-                .catch(swallow("read ~/.ssh/config"));
-        read();
-        window.addEventListener("focus", read);
-        return () => {
-            current = false;
-            window.removeEventListener("focus", read);
-        };
-    }, []);
-    return aliases;
-}
 
 /** How many agents work on a host the app reaches, from what it last showed. */
 function remoteAgents(state: Pick<StoreState, "hostViews">, host: string): number {
@@ -249,12 +228,11 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
     );
 }
 
-/** Every host in one list: this one, every host on the account, and every SSH host (ADR 0018). */
+/** Every host in one list: this one, every host on the account, and the SSH hosts open now (ADR 0018). */
 export function HostRows({ sshSessions, onMenu }: { sshSessions: readonly Session[]; onMenu: OpenMenu }) {
     const hosts = useStore((s) => s.hosts);
-    const aliases = useSshAliases();
     const installed = new Set(hosts.flatMap((host) => host.ssh ?? []));
-    const sshNames = [...new Set([...aliases, ...sshSessions.map((session) => session.name)])].filter((alias) => !installed.has(alias));
+    const sshNames = [...new Set(sshSessions.map((session) => session.name))].filter((alias) => !installed.has(alias));
     return (
         <>
             <ThisHostRow onMenu={onMenu} />
