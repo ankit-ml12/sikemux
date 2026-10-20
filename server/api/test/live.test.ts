@@ -510,6 +510,12 @@ describe("impersonation", () => {
     ).toBe(403);
     expect(await upgradeStatus(api.url, { origin: APP_ORIGIN })).toBe(101);
   });
+
+  it("lets in the phone, whose WebSocket names the API as its origin", async () => {
+    await start();
+    const { origin } = new URL(api.url.replace(/^ws/, "http"));
+    expect(await upgradeStatus(api.url, { origin })).toBe(101);
+  });
 });
 
 describe("the web app's connection", () => {

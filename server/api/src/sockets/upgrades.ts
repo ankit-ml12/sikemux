@@ -17,7 +17,10 @@ import {
 export interface SocketRoute {
   path: string;
   kind: SocketKind;
-  /** The browser pages that may connect; a connection without an Origin is not a browser. */
+  /**
+   * The browser pages that may connect. A connection without an Origin is not a browser, and
+   * neither is one naming the API itself, which the phone's WebSocket sends and no page has.
+   */
   origins: string[];
   options: SocketOptions & { maxSockets: number };
   maxPayloadBytes: number;
@@ -91,7 +94,11 @@ export function routeSockets(
     if (stopping)
       return refuse(socket, log, 503, "unavailable", "The API is restarting.");
     const origin = request.headers.origin;
-    if (origin !== undefined && !route.origins.includes(origin))
+    if (
+      origin !== undefined &&
+      !route.origins.includes(origin) &&
+      URL.parse(origin)?.host !== request.headers.host
+    )
       return refuse(
         socket,
         log,
