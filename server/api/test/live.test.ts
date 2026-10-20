@@ -328,9 +328,7 @@ describe("events never cross accounts", () => {
     await host("user_a");
     await removeAs("user_a", phoneA.key, "sess_web");
     await new Promise((resolve) => setTimeout(resolve, 200));
-    const woken = new Set(
-      wake.mock.contexts.map((socket) => (socket as LiveSocket).userId),
-    );
+    const woken = new Set(wake.mock.calls.map(([who]) => who.userId));
     expect(woken).toEqual(new Set(["user_a"]));
 
     const fromB = [...(await b.quiet()), ...(await pb.quiet())];
