@@ -54,8 +54,8 @@ pub async fn send(
     let response = HTTP.send(request).await?;
     let status = response.status();
     let bytes = read_limited(response).await?;
-    let parsed: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     if !status.is_success() {
+        let parsed: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         let message = error_message(&parsed)
             .unwrap_or_else(|| String::from_utf8_lossy(&bytes).chars().take(400).collect());
         if matches!(status.as_u16(), 401 | 403) && matches!(credentials.auth, Auth::ApiKey(_)) {
@@ -69,6 +69,11 @@ pub async fn send(
             message,
         });
     }
+    let parsed: Value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes)?
+    };
     if parsed
         .get("status")
         .and_then(Value::as_str)
