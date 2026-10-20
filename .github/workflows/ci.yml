@@ -252,6 +252,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # A runner's first boot of a device takes minutes, so it boots while the helper builds.
+      - name: Start booting an iPhone 17 Pro simulator
+        run: |
+          udid=$(xcrun simctl create "Sikemux CI" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro)
+          xcrun simctl boot "$udid"
+          echo "SIKEMUX_SIM_DEVICE=$udid" >>"$GITHUB_ENV"
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -286,14 +293,9 @@ jobs:
       - name: Prepare Tauri resource placeholder
         run: mkdir -p src-tauri/icons/build && touch src-tauri/icons/build/Assets.car
 
-      # A runner's first boot of a device takes minutes, longer than one tool call waits.
-      - name: Boot an iPhone 17 Pro simulator
+      - name: Wait for the simulator to finish booting
         timeout-minutes: 10
-        run: |
-          udid=$(xcrun simctl create "Sikemux CI" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro)
-          xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
-          echo "SIKEMUX_SIM_DEVICE=$udid" >>"$GITHUB_ENV"
+        run: xcrun simctl bootstatus "$SIKEMUX_SIM_DEVICE" -b
 
       - name: Drive a real simulator and the fixture app as an agent would
         working-directory: src-tauri
