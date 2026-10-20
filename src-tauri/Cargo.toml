@@ -8,6 +8,7 @@ default-run = "sikemux"
 
 [workspace]
 members = ["crates/*", "plugins/*"]
+exclude = ["crates/sikemux-gpui"]
 
 [workspace.package]
 version = "0.5.4-nightly.3"

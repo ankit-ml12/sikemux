@@ -41,3 +41,6 @@ src-tauri/binaries/core/
 
 # Research notes, kept local only.
 docs/research/
+
+# The GPUI prototype builds in its own workspace, with the fork checked out inside.
+src-tauri/crates/sikemux-gpui/target/
