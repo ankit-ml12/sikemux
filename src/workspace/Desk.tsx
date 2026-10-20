@@ -749,9 +749,10 @@ function BrowserPage({
        where it lands. */
     useEffect(() => {
         placeRef.current();
-        if (!moving) return;
+        // A screen that is not painting has no page to carry along.
+        if (!moving || !painted) return;
         return onStageFrame(() => placeRef.current());
-    }, [moving]);
+    }, [moving, painted]);
 
     useEffect(
         () => () => {
