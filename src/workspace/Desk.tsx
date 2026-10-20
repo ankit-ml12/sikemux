@@ -544,7 +544,7 @@ function DeskOutline() {
         /* The pane resizes every frame while the desk slides; its corner and the
            switcher do not, so those are read again only when the switcher changes. */
         let corner = { radius: 0, gap: 0, cut: { width: 0, height: 0 } };
-        let size = { width: pane.offsetWidth, height: pane.offsetHeight };
+        let size = { width: 0, height: 0 };
         const measureCorner = () => {
             const style = getComputedStyle(pane);
             const radius = parseFloat(style.borderTopLeftRadius) || 0;
@@ -569,10 +569,9 @@ function DeskOutline() {
             }
             draw();
         });
+        /* Both are first measured in the observer's opening call, once layout has run, so mounting forces none. */
         resize.observe(pane, { box: "border-box" });
         resize.observe(kinds);
-        measureCorner();
-        draw();
         return () => resize.disconnect();
     }, []);
     return (
@@ -660,11 +659,11 @@ function BrowserPage({
     const viewportRef = useRef<HTMLDivElement>(null);
     const placeRef = useRef<() => void>(() => {});
     const occluded = useNativeViewsOccluded();
-    const appHoles = useNativeViewHoles();
     const moving = useStageMoving();
     const activeTab = useMemo(() => snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId) ?? snapshot.tabs[0], [snapshot]);
     const blank = activeTab?.url === BLANK_URL;
     const hasTab = !!activeTab;
+    const appHoles = useNativeViewHoles((visible || painted) && !hidden && !blank && hasTab);
     const still = usePageStill(agentId, activeTab?.id);
     const hasStill = !!still;
     useStillUpkeep(

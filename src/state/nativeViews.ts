@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { externalValue, useExternalValue } from "../lib/externalValue";
 import { mergeHoles, watchOverlays } from "./overlayHoles";
 
@@ -64,8 +64,11 @@ function sameHole(a: NativeViewHole, b: NativeViewHole): boolean {
     return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height && a.radius === b.radius;
 }
 
-export function useNativeViewHoles(): NativeViewHole[] {
-    return useExternalValue(holes);
+const watchNothing = () => () => {};
+
+/** The holes to cut while `wanted`; the DOM is watched for them only while some page wants them. */
+export function useNativeViewHoles(wanted = true): NativeViewHole[] {
+    return useSyncExternalStore(wanted ? holes.subscribe : watchNothing, () => (wanted ? holes.get() : NO_HOLES));
 }
 
 /* A swipe slides the stage sideways by transform, which carries every pane on
