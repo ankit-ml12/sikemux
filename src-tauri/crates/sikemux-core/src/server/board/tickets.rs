@@ -42,15 +42,6 @@ fn site_of(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_owned())
 }
 
-/// Where a failed update of a ticket to `status` notes when it failed.
-fn failed_key(status: Status) -> &'static str {
-    match status {
-        Status::Open => "open-failed",
-        Status::Progress => "progress-failed",
-        Status::Done => "done-failed",
-    }
-}
-
 enum Work {
     /// Move the ticket to match the card, then comment.
     Push {
@@ -77,11 +68,13 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                 if tracker(ticket).is_none() {
                     continue;
                 }
-                let at = |what: &'static str| {
-                    state.polled.get(&(project.clone(), card.id, what)).copied()
-                };
-                let since =
-                    |what: &'static str| at(what).map_or(u64::MAX, |at| now.saturating_sub(at));
+                let kept = state.work_of(project, card.id);
+                let failed = kept
+                    .and_then(|kept| kept.ticket_failed)
+                    .filter(|(status, _)| *status == card.status)
+                    .map(|(_, at)| at);
+                let looked = kept.and_then(|kept| kept.ticket_looked);
+                let since = |at: Option<u64>| at.map_or(u64::MAX, |at| now.saturating_sub(at));
                 let wanted = match card.status {
                     Status::Open => None,
                     Status::Progress => Some("indeterminate"),
@@ -89,11 +82,8 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                 };
                 let work = match wanted {
                     Some(to) if ticket.synced != Some(card.status) => {
-                        if since(failed_key(card.status)) < RETRY_AFTER_MS {
-                            next = sooner(
-                                next,
-                                at(failed_key(card.status)).map(|at| at + RETRY_AFTER_MS),
-                            );
+                        if since(failed) < RETRY_AFTER_MS {
+                            next = sooner(next, failed.map(|at| at + RETRY_AFTER_MS));
                             continue;
                         }
                         let comment = (card.status == Status::Done)
@@ -106,16 +96,16 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                             comment,
                         }
                     }
-                    _ if card.status != Status::Done && since("look") >= UPSTREAM_EVERY_MS => {
+                    _ if card.status != Status::Done && since(looked) >= UPSTREAM_EVERY_MS => {
                         Work::Look
                     }
                     _ if card.status != Status::Done => {
-                        next = sooner(next, at("look").map(|at| at + UPSTREAM_EVERY_MS));
+                        next = sooner(next, looked.map(|at| at + UPSTREAM_EVERY_MS));
                         continue;
                     }
                     _ => continue,
                 };
-                if state.syncing.contains(&(project.clone(), card.id)) {
+                if kept.is_some_and(|kept| kept.syncing) {
                     continue;
                 }
                 due.push((project.clone(), card.id, ticket.clone(), work));
@@ -124,10 +114,10 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
         for (project, id, _, work) in &due {
             match work {
                 Work::Push { .. } => {
-                    state.syncing.insert((project.clone(), *id));
+                    state.work(project, *id).syncing = true;
                 }
                 Work::Look => {
-                    state.polled.insert((project.clone(), *id, "look"), now);
+                    state.work(project, *id).ticket_looked = Some(now);
                     next = sooner(next, Some(now + UPSTREAM_EVERY_MS));
                 }
             }
@@ -140,7 +130,10 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
             let pushing = matches!(work, Work::Push { .. });
             run(&core, &project, id, &ticket, work).await;
             if pushing {
-                core.boards.state.locked().syncing.remove(&(project, id));
+                core.boards
+                    .state
+                    .locked()
+                    .change_work(&project, id, |kept| kept.syncing = false);
                 core.boards.wake.now();
             }
         });
@@ -267,18 +260,18 @@ fn settle(
     let Some(ticket) = card.ticket.as_mut().filter(|ticket| ticket.key == key) else {
         return;
     };
-    let failed = (project.to_owned(), id, failed_key(status));
-    match outcome {
+    let failed = match outcome {
         Ok(()) => {
             ticket.synced = Some(status);
             ticket.sync_note = None;
-            state.polled.remove(&failed);
+            None
         }
         Err(error) => {
             ticket.sync_note = Some(format!("{key} was not updated in Jira: {error}"));
-            state.polled.insert(failed, epoch_ms());
+            Some((status, epoch_ms()))
         }
-    }
+    };
+    state.change_work(project, id, |kept| kept.ticket_failed = failed);
     core.boards.save(&mut state, project);
 }
 

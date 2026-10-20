@@ -352,10 +352,10 @@ pub(super) fn start_free(core: &Arc<Core>) {
                 state.dirty.insert(project.clone());
             }
             let stepping: HashSet<u64> = state
-                .jobs
+                .work
                 .iter()
-                .filter(|(other, _)| *other == project)
-                .map(|(_, id)| *id)
+                .filter(|((other, _), work)| *other == project && work.job)
+                .map(|((_, id), _)| *id)
                 .collect();
             let Some(board) = state.boards.get_mut(&project) else {
                 continue;
@@ -391,14 +391,16 @@ pub(super) fn start_free(core: &Arc<Core>) {
             }
             core.boards.save(&mut state, &project);
         }
-        state.jobs.extend(state_jobs);
+        for (project, id) in state_jobs {
+            state.work(&project, id).job = true;
+        }
         starts
     };
     for (project, id, agent) in starts {
         let core = core.clone();
         tokio::spawn(async move {
             let started = start(&core, &project, id, &agent).await;
-            core.boards.end_job(&(project.clone(), id));
+            core.boards.end_job(&project, id);
             if let Err(error) = started {
                 let gone = core.chats.get(&agent).is_none();
                 if gone {

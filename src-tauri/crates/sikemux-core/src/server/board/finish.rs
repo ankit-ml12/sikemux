@@ -23,12 +23,10 @@ use crate::server::{ci, messages, Core};
 const CI_START_WAIT_MS: u64 = 3 * 60 * 1000;
 /// How long a run whose checks could not be read waits before it reads them again.
 const CHECKS_RETRY_MS: u64 = 60_000;
-const CHECKS_FAILED_READ: &str = "unread";
 const REVIEW_EVERY_MS: u64 = 60_000;
 /// How many times the wait between looks at a pull request doubles while
 /// nothing on it changes.
 const MAX_QUIET_DOUBLINGS: u64 = 3;
-const QUIET: &str = "quiet";
 /// How long a run's agent may be missing before Auto takes it that the agent
 /// is gone, such as after Sikemux's background process restarted without it.
 const GONE_AFTER_MS: u64 = 60_000;
@@ -116,19 +114,19 @@ pub(super) fn clear_dropped(core: &Arc<Core>) {
         let dropped = std::mem::take(&mut state.dropped);
         let (ready, waiting): (Vec<Dropped>, Vec<Dropped>) = dropped
             .into_iter()
-            .partition(|dropped| !state.jobs.contains(&(dropped.project.clone(), dropped.id)));
+            .partition(|dropped| !state.busy(&dropped.project, dropped.id));
         state.dropped = waiting;
         for dropped in &ready {
-            state.jobs.insert((dropped.project.clone(), dropped.id));
+            state.work(&dropped.project, dropped.id).job = true;
         }
         ready
     };
     for dropped in ready {
         let core = core.clone();
         tokio::spawn(async move {
-            let key = (dropped.project.clone(), dropped.id);
+            let (project, id) = (dropped.project.clone(), dropped.id);
             clear(&core, dropped).await;
-            core.boards.end_job(&key);
+            core.boards.end_job(&project, id);
         });
     }
 }
@@ -218,10 +216,9 @@ where
 {
     let step = {
         let mut state = core.boards.state.locked();
-        let key = (project.clone(), id);
-        if state.jobs.contains(&key) {
+        if state.busy(&project, id) {
             if stage == Some(Stage::Shipping) {
-                state.reship.insert(key);
+                state.work(&project, id).reship = true;
             }
             return;
         }
@@ -245,7 +242,7 @@ where
             card: card.clone(),
             settings,
         };
-        state.jobs.insert(key);
+        state.work(&project, id).job = true;
         if stage.is_some() {
             core.boards.save(&mut state, &project);
         }
@@ -253,12 +250,18 @@ where
     };
     let core = core.clone();
     tokio::spawn(async move {
-        let key = (step.project.clone(), step.id);
+        let (project, id) = (step.project.clone(), step.id);
         work(core.clone(), step).await;
-        let again = core.boards.state.locked().reship.remove(&key);
-        core.boards.end_job(&key);
+        let mut again = false;
+        core.boards
+            .state
+            .locked()
+            .change_work(&project, id, |work| {
+                again = std::mem::take(&mut work.reship)
+            });
+        core.boards.end_job(&project, id);
         if again {
-            ship(&core, key.0, key.1);
+            ship(&core, project, id);
         }
     });
 }
@@ -512,7 +515,7 @@ pub(crate) fn ci_moved(core: &Core, repo: &ci::Shown) {
         .map(|(project, card)| (project.clone(), card.id))
         .collect();
     for (project, id) in &waiting {
-        state.polled.remove(&(project.clone(), *id, "pull"));
+        state.change_work(project, *id, |work| work.looked = None);
     }
     drop(state);
     if !waiting.is_empty() {
@@ -536,20 +539,20 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
         for (project, board) in &state.boards {
             for card in &board.cards {
                 let Some(run) = &card.auto else { continue };
-                if state.jobs.contains(&(project.clone(), card.id)) {
+                let work = state.work_of(project, card.id);
+                if work.is_some_and(|work| work.job) {
                     continue;
                 }
                 let every = match run.stage {
                     Stage::Checking => {
                         checking_any = true;
-                        let looked = state.polled.get(&(project.clone(), card.id, "pull"));
-                        let unread = state
-                            .polled
-                            .get(&(project.clone(), card.id, CHECKS_FAILED_READ))
+                        let looked = work.and_then(|work| work.looked);
+                        let unread = work
+                            .and_then(|work| work.checks_unread)
                             .map(|at| at + CHECKS_RETRY_MS);
                         let start_deadline = run.checks_since.unwrap_or(0) + CI_START_WAIT_MS;
                         let at_deadline = looked
-                            .is_some_and(|looked| *looked < start_deadline)
+                            .is_some_and(|looked| looked < start_deadline)
                             .then_some(start_deadline);
                         let again = match looked {
                             None => Some(now),
@@ -564,13 +567,13 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                         continue;
                     }
                     Stage::Review => {
-                        let quiet = state.polled.get(&(project.clone(), card.id, QUIET));
-                        REVIEW_EVERY_MS << quiet.copied().unwrap_or(0).min(MAX_QUIET_DOUBLINGS)
+                        let quiet = work.map_or(0, |work| work.quiet);
+                        REVIEW_EVERY_MS << quiet.min(MAX_QUIET_DOUBLINGS)
                     }
                     Stage::Shipping | Stage::Merging | Stage::Starting => 0,
                     Stage::Reviewing if run.verdict.is_some() || run.reviewer.is_none() => 0,
                     Stage::Working | Stage::Fixing | Stage::Reviewing => {
-                        let key = (project.clone(), card.id, "gone");
+                        let key = (project.clone(), card.id);
                         let watched = match (&run.reviewer, run.stage) {
                             (Some(reviewer), Stage::Reviewing) => &reviewer.agent,
                             _ => &run.agent,
@@ -584,11 +587,7 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                     }
                     _ => continue,
                 };
-                let last = state
-                    .polled
-                    .get(&(project.clone(), card.id, "pull"))
-                    .copied()
-                    .unwrap_or(0);
+                let last = work.and_then(|work| work.looked).unwrap_or(0);
                 if every > 0 && now.saturating_sub(last) < every {
                     next = sooner(next, Some(last + every));
                     continue;
@@ -597,19 +596,18 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
             }
         }
         for (project, id, _) in &due {
-            state.polled.insert((project.clone(), *id, "pull"), now);
-            state
-                .polled
-                .remove(&(project.clone(), *id, CHECKS_FAILED_READ));
+            let work = state.work(project, *id);
+            work.looked = Some(now);
+            work.checks_unread = None;
         }
-        for key in present {
-            state.polled.remove(&key);
+        for (project, id) in present {
+            state.change_work(&project, id, |work| work.missing_since = None);
         }
-        for (key, stage) in missing {
-            let since = *state.polled.entry(key.clone()).or_insert(now);
+        for ((project, id), stage) in missing {
+            let since = *state.work(&project, id).missing_since.get_or_insert(now);
             if now.saturating_sub(since) >= GONE_AFTER_MS {
-                state.polled.remove(&key);
-                due.push((key.0, key.1, stage));
+                state.change_work(&project, id, |work| work.missing_since = None);
+                due.push((project, id, stage));
             } else {
                 next = sooner(next, Some(since + GONE_AFTER_MS));
             }
@@ -667,10 +665,11 @@ async fn checking(core: &Arc<Core>, step: Step) {
     let checks = match codehost::checks(&pull, &step.run.branch, &head).await {
         Ok(checks) => checks,
         Err(error) => {
-            core.boards.state.locked().polled.insert(
-                (step.project.clone(), step.id, CHECKS_FAILED_READ),
-                epoch_ms(),
-            );
+            core.boards
+                .state
+                .locked()
+                .work(&step.project, step.id)
+                .checks_unread = Some(epoch_ms());
             step.note(
                 core,
                 Stage::Checking,
@@ -959,13 +958,12 @@ async fn reviewing(core: &Arc<Core>, step: Step) {
 
 /// Counts the looks in a row at the card's pull request that found nothing new.
 fn quiet(core: &Core, step: &Step, nothing_new: bool) {
-    let mut state = core.boards.state.locked();
-    let key = (step.project.clone(), step.id, QUIET);
-    if nothing_new {
-        *state.polled.entry(key).or_insert(0) += 1;
-    } else {
-        state.polled.remove(&key);
-    }
+    core.boards
+        .state
+        .locked()
+        .change_work(&step.project, step.id, |work| {
+            work.quiet = if nothing_new { work.quiet + 1 } else { 0 };
+        });
 }
 
 async fn hand_review(core: &Arc<Core>, step: &Step, mut seen: review::Review, new: Vec<Feedback>) {

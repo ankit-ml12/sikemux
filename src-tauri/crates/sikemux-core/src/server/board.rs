@@ -4,7 +4,7 @@
 //! in `boards/` in the data folder, one file per project, so a board outlives
 //! a window reload, a restart and an update.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -280,18 +280,62 @@ struct State {
     /// Agents whose turn the board started to offer them cards, and that have
     /// done nothing on the board since.
     woken: HashSet<String>,
-    /// Cards Auto is busy with, by project and card.
-    jobs: HashSet<(String, u64)>,
-    /// Cards whose work is to ship again once the step under way ends.
-    reship: HashSet<(String, u64)>,
+    /// What is kept about each card while Auto or the ticket sync works on
+    /// it, by project and card.
+    work: HashMap<(String, u64), CardWork>,
     /// Runs Auto no longer holds, whose agents and worktrees are to go.
     dropped: Vec<finish::Dropped>,
     /// Reviewers whose review ended, whose agents and checkouts are to go.
     dismissed: Vec<blind::Reviewer>,
-    /// Cards whose ticket is being updated.
-    syncing: HashSet<(String, u64)>,
-    /// When each card's pull request or ticket was last asked about.
-    polled: BTreeMap<(String, u64, &'static str), u64>,
+}
+
+/// What the core keeps about a card only while it runs, never saved. It goes
+/// with the card, and once nothing is left in it.
+#[derive(Default, PartialEq)]
+pub(super) struct CardWork {
+    /// A step of Auto's is under way on the card.
+    pub job: bool,
+    /// Its work is to ship again once the step under way ends.
+    pub reship: bool,
+    /// Its ticket is being updated.
+    pub syncing: bool,
+    /// When Auto last looked at its pull request.
+    pub looked: Option<u64>,
+    /// When reading its checks last failed.
+    pub checks_unread: Option<u64>,
+    /// The looks in a row at its pull request that found nothing new.
+    pub quiet: u64,
+    /// Since when the agent its run waits on has been missing.
+    pub missing_since: Option<u64>,
+    /// When its ticket was last looked at in its tracker.
+    pub ticket_looked: Option<u64>,
+    /// The status its ticket last failed to move to, and when.
+    pub ticket_failed: Option<(Status, u64)>,
+}
+
+impl State {
+    fn work(&mut self, project: &str, id: u64) -> &mut CardWork {
+        self.work.entry((project.to_owned(), id)).or_default()
+    }
+
+    fn work_of(&self, project: &str, id: u64) -> Option<&CardWork> {
+        self.work.get(&(project.to_owned(), id))
+    }
+
+    /// Whether a step of Auto's is under way on the card.
+    fn busy(&self, project: &str, id: u64) -> bool {
+        self.work_of(project, id).is_some_and(|work| work.job)
+    }
+
+    /// Changes what is kept about the card, forgetting it once nothing is left.
+    fn change_work(&mut self, project: &str, id: u64, change: impl FnOnce(&mut CardWork)) {
+        let key = (project.to_owned(), id);
+        let work = self.work.entry(key.clone()).or_default();
+        change(work);
+        if *work == CardWork::default() {
+            self.work.remove(&key);
+        }
+    }
 }
 
 pub(crate) struct Boards {
@@ -362,8 +406,10 @@ impl Boards {
     }
 
     /// A step Auto took on the card is over.
-    fn end_job(&self, key: &(String, u64)) {
-        self.state.locked().jobs.remove(key);
+    fn end_job(&self, project: &str, id: u64) {
+        self.state
+            .locked()
+            .change_work(project, id, |work| work.job = false);
         self.wake.now();
     }
 }
@@ -1078,6 +1124,7 @@ fn remove_card(core: &Core, project: &str, id: u64) -> Result<Vec<Notice>, Strin
         }
     }
     let mut notices = unblocked(board, &blocked_before, &By::Person);
+    state.work.remove(&(project.to_owned(), id));
     let run = removed.auto.clone().filter(|run| !run.stage.is_over());
     let dropping = run.is_some();
     if let Some(run) = run {
