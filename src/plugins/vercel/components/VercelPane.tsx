@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { errorText } from "../../../plugin-api/format";
 import { notify, openSignInUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, ResizeHandle, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { Dropdown, Pending, ResizeHandle, SignedIn, StaleNotice } from "../../../plugin-api/ui";
 import { vercelApi, type VercelProject, type VercelStatus } from "../api";
 import { vercel, vercelProjectsR } from "../resources";
 import { updateVercelView, useVercelView, type VercelSection } from "../state";
@@ -186,10 +186,8 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                 </header>
                 <div className="vercel-page">
                     <StaleNotice handle={projects} />
-                    {projects.status === "error" && !projects.data ? (
-                        <p className="vercel-note">{projects.error}</p>
-                    ) : !projects.data ? (
-                        <SkeletonRows rows={6} label="Loading projects" />
+                    {!projects.data ? (
+                        <Pending handle={projects} loading="Loading projects" />
                     ) : !project ? (
                         <Projects projects={projects.data} find={view.find} onOpen={(name) => open({ project: name, section: "overview" })} />
                     ) : view.deployment ? (

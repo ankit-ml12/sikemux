@@ -2,7 +2,7 @@ import { useState } from "react";
 import { copyWithNotice } from "../../../plugin-api/host";
 import { formatAgo, formatDuration } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { ContextMenu, EmptyState, SendToAgentMenu, SkeletonRows } from "../../../plugin-api/ui";
+import { ContextMenu, Pending, SendToAgentMenu } from "../../../plugin-api/ui";
 import type { VercelLogLine } from "../api";
 import { vercelLogR } from "../resources";
 import { deploymentForAgent, isUnderway } from "../state";
@@ -33,8 +33,7 @@ export function Deployment({
     const underway = deployment ? isUnderway(deployment.state) : false;
     useUnderwayPoll(active, underway, log.refresh);
 
-    if (log.status === "error" && !deployment) return <EmptyState message={log.error ?? `Vercel could not open ${id}.`} tone="error" />;
-    if (!deployment) return <SkeletonRows rows={8} label={`Loading ${id}`} />;
+    if (!deployment) return <Pending handle={log} loading={`Loading ${id}`} rows={8} />;
 
     const current = deployment.id === production;
     const ready = deployment.state === "READY";

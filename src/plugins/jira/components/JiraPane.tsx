@@ -22,10 +22,11 @@ import {
     IconTimer,
     IconUser,
     IconUserMinus,
+    Loaded,
     Markdown,
+    Pending,
     ResizeHandle,
     SignedIn,
-    SkeletonRows,
     StaleNotice,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
@@ -367,57 +368,51 @@ function IssueList({
 }) {
     const found = useResourceEnabled(active, jiraSearchR, jql, site);
     const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
-    if (found.status === "error" && !found.data)
-        return (
-            <div className="jira-list-pane">
-                <EmptyState message={found.error ?? "Jira could not run that search."} tone="error" />
-            </div>
-        );
-    if (!found.data)
-        return (
-            <div className="jira-list-pane">
-                <SkeletonRows rows={8} label="Loading issues" />
-            </div>
-        );
-    if (found.data.issues.length === 0)
-        return (
-            <div className="jira-list-pane">
-                <EmptyState message={empty} />
-            </div>
-        );
-    const counts = statusCounts(found.data.issues);
-    const shown = new Set([...picked].filter((status) => counts.some((each) => each.status === status)));
-    const toggle = (status: string) => {
-        const next = new Set(shown);
-        if (!next.delete(status)) next.add(status);
-        setPicked(next);
-    };
     return (
         <div className="jira-list-pane">
-            <StaleNotice handle={found} />
-            {counts.length > 1 && (
-                <div className="jira-status-filter" role="group" aria-label="Filter by status">
-                    <button type="button" className="jira-status-pick" aria-pressed={shown.size === 0} onClick={() => setPicked(new Set())}>
-                        All <span className="jira-status-count">{found.data.issues.length}</span>
-                    </button>
-                    {counts.map(({ status, category, count }) => (
-                        <button
-                            key={status}
-                            type="button"
-                            className="jira-status-pick"
-                            aria-pressed={shown.has(status)}
-                            onClick={() => toggle(status)}>
-                            <span className={`jira-dot jira-dot-${category || "new"}`} />
-                            {status} <span className="jira-status-count">{count}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-            <div className="jira-issues" role="list">
-                {withStatuses(found.data.issues, shown).map((issue) => (
-                    <IssueRow key={issue.key} issue={issue} selected={issue.key === selected} onSelect={() => onSelect(issue.key)} />
-                ))}
-            </div>
+            <Loaded handle={found} loading="Loading issues" rows={8} empty={(page) => (page.issues.length === 0 ? empty : null)}>
+                {(page) => {
+                    const counts = statusCounts(page.issues);
+                    const shown = new Set([...picked].filter((status) => counts.some((each) => each.status === status)));
+                    const toggle = (status: string) => {
+                        const next = new Set(shown);
+                        if (!next.delete(status)) next.add(status);
+                        setPicked(next);
+                    };
+                    return (
+                        <>
+                            <StaleNotice handle={found} />
+                            {counts.length > 1 && (
+                                <div className="jira-status-filter" role="group" aria-label="Filter by status">
+                                    <button
+                                        type="button"
+                                        className="jira-status-pick"
+                                        aria-pressed={shown.size === 0}
+                                        onClick={() => setPicked(new Set())}>
+                                        All <span className="jira-status-count">{page.issues.length}</span>
+                                    </button>
+                                    {counts.map(({ status, category, count }) => (
+                                        <button
+                                            key={status}
+                                            type="button"
+                                            className="jira-status-pick"
+                                            aria-pressed={shown.has(status)}
+                                            onClick={() => toggle(status)}>
+                                            <span className={`jira-dot jira-dot-${category || "new"}`} />
+                                            {status} <span className="jira-status-count">{count}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="jira-issues" role="list">
+                                {withStatuses(page.issues, shown).map((issue) => (
+                                    <IssueRow key={issue.key} issue={issue} selected={issue.key === selected} onSelect={() => onSelect(issue.key)} />
+                                ))}
+                            </div>
+                        </>
+                    );
+                }}
+            </Loaded>
         </div>
     );
 }
@@ -474,16 +469,10 @@ function useMenu(): [ReactNode, (event: MouseEvent, items: ContextMenuItem[]) =>
 
 function IssueDetail({ active, issueKey, site, onClose }: { active: boolean; issueKey: string; site: string; onClose: () => void }) {
     const found = useResourceEnabled(active, jiraIssueR, issueKey, site);
-    if (found.status === "error" && !found.data)
+    if (found.data === undefined)
         return (
             <div className="jira-detail">
-                <EmptyState message={found.error ?? `Jira could not open ${issueKey}.`} tone="error" />
-            </div>
-        );
-    if (!found.data)
-        return (
-            <div className="jira-detail">
-                <SkeletonRows rows={6} label={`Loading ${issueKey}`} />
+                <Pending handle={found} loading={`Loading ${issueKey}`} />
             </div>
         );
     return (

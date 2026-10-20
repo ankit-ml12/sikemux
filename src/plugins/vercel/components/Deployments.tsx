@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { formatAgo, formatDuration } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { ContextMenu, Dropdown, EmptyState, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { ContextMenu, Dropdown, EmptyState, Pending, StaleNotice } from "../../../plugin-api/ui";
 import type { VercelDeployment, VercelProject } from "../api";
 import { vercelDeploymentsR } from "../resources";
 import { isUnderway, type EnvironmentFilter, type StatusFilter, type VercelView } from "../state";
@@ -73,10 +73,8 @@ export function Deployments({
                 />
             </div>
             <StaleNotice handle={deployments} />
-            {deployments.status === "error" && !deployments.data ? (
-                <p className="vercel-note">{deployments.error}</p>
-            ) : !deployments.data ? (
-                <SkeletonRows rows={6} label="Loading deployments" />
+            {!deployments.data ? (
+                <Pending handle={deployments} loading="Loading deployments" />
             ) : shown.length === 0 ? (
                 <EmptyState message={deployments.data.length === 0 ? "No deployments yet." : "No deployment matches these filters."} />
             ) : (

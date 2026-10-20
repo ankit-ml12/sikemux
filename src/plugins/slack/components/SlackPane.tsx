@@ -2,7 +2,7 @@ import { useState } from "react";
 import { errorText } from "../../../plugin-api/format";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { Dropdown, EmptyState, Loaded, Markdown, SendToAgentMenu, SignedIn, StaleNotice } from "../../../plugin-api/ui";
 import { slackApi, type SlackChannel, type SlackMessage, type SlackStatus } from "../api";
 import { slack, slackChannelsR, slackHistoryR, slackThreadR } from "../resources";
 import { threadForAgent, updateSlackView, useSlackView } from "../state";
@@ -107,18 +107,16 @@ function SlackWorkspace({ paneId, active, status }: { paneId: string; active: bo
                     spellCheck={false}
                 />
                 <StaleNotice handle={channels} />
-                {channels.status === "error" && !channels.data ? (
-                    <p className="slack-note">{channels.error}</p>
-                ) : !channels.data ? (
-                    <SkeletonRows rows={6} label="Loading channels" />
-                ) : (
-                    <div className="slack-channels">
-                        {rooms.length > 0 && <div className="slack-heading">Channels</div>}
-                        {rooms.map(row)}
-                        {people.length > 0 && <div className="slack-heading">Direct messages</div>}
-                        {people.map(row)}
-                    </div>
-                )}
+                <Loaded handle={channels} loading="Loading channels">
+                    {() => (
+                        <div className="slack-channels">
+                            {rooms.length > 0 && <div className="slack-heading">Channels</div>}
+                            {rooms.map(row)}
+                            {people.length > 0 && <div className="slack-heading">Direct messages</div>}
+                            {people.map(row)}
+                        </div>
+                    )}
+                </Loaded>
                 <button
                     type="button"
                     className="slack-signout"
@@ -207,17 +205,18 @@ function ChannelView({
             </header>
             <StaleNotice handle={history} />
             <div className="slack-messages">
-                {history.status === "error" && !history.data ? (
-                    <EmptyState message={history.error ?? "Slack could not read this channel."} tone="error" />
-                ) : !history.data ? (
-                    <SkeletonRows rows={6} label="Loading messages" />
-                ) : history.data.length === 0 ? (
-                    <EmptyState message="No messages here yet." />
-                ) : (
-                    history.data.map((message) => (
-                        <MessageView key={message.ts} message={message} open={(message.threadTs ?? message.ts) === openThread} onThread={onThread} />
-                    ))
-                )}
+                <Loaded handle={history} loading="Loading messages" empty={(messages) => (messages.length > 0 ? null : "No messages here yet.")}>
+                    {(messages) =>
+                        messages.map((message) => (
+                            <MessageView
+                                key={message.ts}
+                                message={message}
+                                open={(message.threadTs ?? message.ts) === openThread}
+                                onThread={onThread}
+                            />
+                        ))
+                    }
+                </Loaded>
             </div>
         </section>
     );
@@ -290,13 +289,9 @@ function ThreadView({
             </header>
             <StaleNotice handle={thread} />
             <div className="slack-messages">
-                {thread.status === "error" && !found ? (
-                    <EmptyState message={thread.error ?? "Slack could not read this thread."} tone="error" />
-                ) : !found ? (
-                    <SkeletonRows rows={4} label="Loading the thread" />
-                ) : (
-                    found.messages.map((message) => <MessageView key={message.ts} message={message} />)
-                )}
+                <Loaded handle={thread} loading="Loading the thread" rows={4}>
+                    {(open) => open.messages.map((message) => <MessageView key={message.ts} message={message} />)}
+                </Loaded>
             </div>
             <div className="slack-composer">
                 <textarea

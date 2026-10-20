@@ -9,6 +9,7 @@ import {
     IconMove,
     IconRefresh,
     IconSearch,
+    Pending,
     SkeletonRows,
     StaleNotice,
     useCardDrag,
@@ -71,8 +72,7 @@ export function JiraBoard({
         if (issue) void move(issue, Number(column));
     });
 
-    if (whole.status === "error" && !whole.data) return <EmptyState message={whole.error ?? "Jira could not open this board."} tone="error" />;
-    if (!whole.data) return <SkeletonRows rows={6} label="Loading the board" />;
+    if (!whole.data) return <Pending handle={whole} loading="Loading the board" />;
     const board = whole.data;
     const narrowed = picked.size === 0 ? board : found.data;
     const columns = narrowed ? matchingCards(withMoves(narrowed, moves), words) : [];

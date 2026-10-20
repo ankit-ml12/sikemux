@@ -2,7 +2,7 @@ import { useState } from "react";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { errorText } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { Dropdown, EmptyState, Loaded, Markdown, Pending, SendToAgentMenu, SignedIn, StaleNotice } from "../../../plugin-api/ui";
 import { linearApi, type LinearChange, type LinearIssue, type LinearStatus } from "../api";
 import { linear, linearIssueR, linearIssuesR } from "../resources";
 import { issueForAgent, updateLinearView, useLinearView } from "../state";
@@ -83,15 +83,12 @@ function LinearWorkspace({ paneId, active, status }: { paneId: string; active: b
                 />
                 <div className="linear-heading">{view.query ? `Matching “${view.query}”` : "My open issues"}</div>
                 <StaleNotice handle={issues} />
-                {issues.status === "error" && !issues.data ? (
-                    <p className="linear-note">{issues.error}</p>
-                ) : !issues.data ? (
-                    <SkeletonRows rows={6} label="Loading issues" />
-                ) : issues.data.length === 0 ? (
-                    <EmptyState message={view.query ? "No issue matches." : "Nothing assigned to you is open."} />
-                ) : (
-                    <div className="linear-rows">{issues.data.map(row)}</div>
-                )}
+                <Loaded
+                    handle={issues}
+                    loading="Loading issues"
+                    empty={(found) => (found.length > 0 ? null : view.query ? "No issue matches." : "Nothing assigned to you is open.")}>
+                    {(found) => <div className="linear-rows">{found.map(row)}</div>}
+                </Loaded>
                 <button
                     type="button"
                     className="linear-signout"
@@ -148,17 +145,10 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
             .finally(() => setBusy(false));
     };
 
-    if (found.status === "error" && !issue) {
-        return (
-            <section className="linear-detail">
-                <EmptyState message={found.error ?? `Linear could not open ${id}.`} tone="error" />
-            </section>
-        );
-    }
     if (!issue) {
         return (
             <section className="linear-detail">
-                <SkeletonRows rows={6} label={`Loading ${id}`} />
+                <Pending handle={found} loading={`Loading ${id}`} />
             </section>
         );
     }
