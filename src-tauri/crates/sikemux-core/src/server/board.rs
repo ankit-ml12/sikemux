@@ -85,7 +85,6 @@ impl Status {
     }
 }
 
-/// The Jira or Linear ticket the person put a card on the board for.
 /// Where a card's ticket lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -94,6 +93,7 @@ pub(crate) enum Tracker {
     Linear,
 }
 
+/// The Jira or Linear ticket the person put a card on the board for.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Ticket {
@@ -725,7 +725,6 @@ fn remember_team(core: &Core, board: &mut Board, id: u64) {
     }
 }
 
-/// The card as the app draws it.
 /// A card as the app and devices read it.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

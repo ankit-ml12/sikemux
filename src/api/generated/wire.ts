@@ -490,10 +490,7 @@ export interface ProjectBoard {
     problems?: string[];
 }
 
-/**
- * The card as the app draws it.
- * A card as the app and devices read it.
- */
+/** A card as the app and devices read it. */
 export interface BoardCard {
     id: number;
     title: string;
@@ -522,6 +519,7 @@ export interface BoardCard {
 
 export type CardStatus = "open" | "progress" | "done";
 
+/** The Jira or Linear ticket the person put a card on the board for. */
 export interface CardTicket {
     key: string;
     url?: string;
@@ -537,10 +535,7 @@ export interface CardTicket {
     syncNote?: string;
 }
 
-/**
- * The Jira or Linear ticket the person put a card on the board for.
- * Where a card's ticket lives.
- */
+/** Where a card's ticket lives. */
 export type Tracker = "jira" | "linear";
 
 /** A card's run as the app and devices read it. */
