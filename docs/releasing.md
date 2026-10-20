@@ -13,7 +13,7 @@ A run is titled with its tag, so the approval names what it will publish, and it
 
 1. **Build the helpers** compiles the voice and simulator helpers (`scripts/release.sh --stage helpers`).
 2. **Sign the helpers** signs them with the Developer ID (`scripts/sign-helper.sh`). The app is compiled with their SHA-256 and refuses any other download, so they are signed before it is built.
-3. **Build the app** builds the app and the DMG around the signed helpers, ad hoc signed (`scripts/release.sh --stage app`).
+3. **Build the app** builds the app and the DMG around the signed helpers, ad hoc signed (`scripts/release.sh --stage app`). It bundles the core that **Build the Mac core** compiled alongside the helpers, handed over as `PREBUILT_CORE`, since the core does not embed their hashes.
 4. **Sign and notarize the app** signs the app on a fresh machine with Apple's tools and a Tauri CLI pinned by hash, notarizes it, packs and signs the updater archive, and puts the signed app back into the DMG (`scripts/sign-mac.sh`).
 5. **Verify the signed release** checks every signature, notarization ticket, hash, architecture and size, starts the signed CLI and helpers, and writes `latest.json` (`scripts/verify-release.sh`).
 
