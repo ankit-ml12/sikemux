@@ -475,6 +475,10 @@ export interface BuddyLook {
   color: string;
 }
 
+/** What a client reads again, as `Event::Changed` names it. */
+export type CoreChangeTopic =
+  'activity' | 'agentAccounts' | 'agentSignIn' | 'boards' | 'ci' | 'git' | 'ports' | 'runs' | 'shares' | 'skills' | 'tasks' | 'trust';
+
 /** The computer a core runs on, as a person would recognise it. */
 export interface HostInfo {
   /** The name set in System Settings, such as "Kishore's MacBook Pro". */

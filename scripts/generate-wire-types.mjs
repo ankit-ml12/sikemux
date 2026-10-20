@@ -20,6 +20,7 @@ const SOURCES = [
   `${WIRE}/pty/task.rs`,
   `${WIRE}/accounts/protocol.rs`,
   `${CORE}/server/inbox.rs`,
+  `${CORE}/server/changed.rs`,
   `${CORE}/server/workspace.rs`,
   `${CORE}/server/remote.rs`,
   `${CORE}/server/hosts/mod.rs`,
@@ -52,6 +53,7 @@ const RENAMES = {
     Shown: "AgentShown",
   },
   [`${CORE}/server/workspace.rs`]: { Buddies: "PublishedBuddies" },
+  [`${CORE}/server/changed.rs`]: { Topic: "CoreChangeTopic" },
   [`${CORE}/server/remote.rs`]: {
     Pairing: "RemotePairing",
     LinkedHost: "StoredLink",
@@ -67,6 +69,7 @@ const JSON_FIELDS = {
 
 const TS_ROOTS = [
   "DeviceView",
+  "CoreChangeTopic",
   "HostInfo",
   "RemoteStatus",
   "AllowedDevice",
