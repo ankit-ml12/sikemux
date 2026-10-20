@@ -685,7 +685,13 @@ async fn checking(core: &Arc<Core>, step: Step) {
         Checks::None if waited < CI_START_WAIT_MS => {
             step.note(core, Stage::Checking, "Waiting for its checks to start");
         }
-        Checks::None => match step.settings.check.clone() {
+        Checks::None => match {
+            let (core, project) = (core.clone(), step.project.clone());
+            blocking(move || Ok(super::check_command(&core, &project)))
+                .await
+                .ok()
+                .flatten()
+        } {
             Some(command) => {
                 step.note(core, Stage::Checking, &format!("Running {command}"));
                 let cwd = step.tree();

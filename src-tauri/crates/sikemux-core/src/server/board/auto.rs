@@ -23,7 +23,6 @@ pub(super) const MAX_SLOTS: u32 = 8;
 const DEFAULT_SLOTS: u32 = 2;
 const MAX_LAUNCHER_CHARS: usize = 256;
 const MAX_MODEL_CHARS: usize = 200;
-const MAX_CHECK_BYTES: usize = 4096;
 
 /// Where a card's run ends when its checks pass.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,9 +58,6 @@ pub(crate) struct Settings {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub finish: Finish,
-    /// What proves a change sound when no CI runs on its pull request, run in
-    /// the card's worktree.
-    pub check: Option<String>,
     /// Who reviews each change before it merges; none for any signed-in
     /// agent on another CLI than its builder's.
     pub reviewer: Option<ReviewerChoice>,
@@ -76,7 +72,6 @@ impl Default for Settings {
             provider: None,
             model: None,
             finish: Finish::Merge,
-            check: None,
             reviewer: None,
         }
     }
@@ -137,9 +132,6 @@ impl Settings {
         }
         if let Some(model) = optional(params, "model", MAX_MODEL_CHARS)? {
             settings.model = model;
-        }
-        if let Some(check) = optional(params, "check", MAX_CHECK_BYTES)? {
-            settings.check = check;
         }
         if let Some(reviewer) = params.get("reviewer") {
             settings.reviewer = reviewer_choice(reviewer)?;

@@ -15,7 +15,7 @@ pub const CONFIG_FILE: &str = "sikemux.json";
 pub const CONFIG_VERSION: u64 = 1;
 
 const ROOT_FIELDS: &[&str] = &[
-    "version", "$schema", "icon", "actions", "tasks", "preview", "worktree", "generate",
+    "version", "$schema", "icon", "actions", "tasks", "preview", "worktree", "generate", "check",
 ];
 const ACTION_FIELDS: &[&str] = &[
     "id",
@@ -191,6 +191,10 @@ pub struct ProjectConfig {
     pub worktree: Option<WorktreeConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generate: Option<Box<GenerateConfig>>,
+    /// What proves the project sound: run on each commit, and on a card's
+    /// change when its pull request has no CI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<String>,
 }
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -367,6 +371,9 @@ pub fn validate(value: &Value) -> Result<ProjectConfig, Vec<ConfigError>> {
     let preview = parse_preview(root.get("preview"), &mut errors);
     let worktree = parse_worktree(root.get("worktree"), &mut errors);
     let generate = parse_generate(root.get("generate"), &mut errors);
+    let check = root
+        .get("check")
+        .and_then(|value| parse_command(Some(value), "$.check", &mut errors));
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -379,6 +386,7 @@ pub fn validate(value: &Value) -> Result<ProjectConfig, Vec<ConfigError>> {
         preview,
         worktree,
         generate,
+        check,
     })
 }
 
@@ -416,7 +424,11 @@ pub fn trust_summary(config: &ProjectConfig) -> TrustSummary {
     if generates > 0 {
         reasons.push("a command that regenerates committed files".to_owned());
     }
-    let executable_entries = actions + tasks + previews + hooks + generates;
+    let checks = usize::from(config.check.is_some());
+    if checks > 0 {
+        reasons.push("a check command".to_owned());
+    }
+    let executable_entries = actions + tasks + previews + hooks + generates + checks;
     TrustSummary {
         requires_approval: executable_entries > 0,
         executable_entries,

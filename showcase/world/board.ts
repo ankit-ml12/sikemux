@@ -70,7 +70,6 @@ export const DEMO_BOARD: ProjectBoard = {
     provider: null,
     model: null,
     finish: "merge",
-    check: "pnpm check",
     reviewer: null,
   },
   running: 1,

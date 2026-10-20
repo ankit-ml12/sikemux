@@ -86,7 +86,12 @@ export function ProjectSettingsPane({ project, visible }: { project: string; vis
             <div className="project-settings-main">
                 <SettingsPage>
                     {page === "general" && <GeneralPage project={project} />}
-                    {page === "tasks" && <TasksPage project={project} tasks={tasks?.tasks ?? null} />}
+                    {page === "tasks" && (
+                        <>
+                            <TasksPage project={project} tasks={tasks?.tasks ?? null} />
+                            <CheckSection project={project} config={config} onChanged={setConfig} />
+                        </>
+                    )}
                     {page === "git" && <GitSection project={project} visible={visible} />}
                     {page === "config" && <ConfigSection project={project} config={config} onChanged={setConfig} />}
                 </SettingsPage>
@@ -302,6 +307,47 @@ function ConfigSection({
     );
 }
 
+function CheckSection({
+    project,
+    config,
+    onChanged,
+}: {
+    project: string;
+    config: ProjectConfigLoadResult | null;
+    onChanged: (next: ProjectConfigLoadResult) => void;
+}) {
+    const saved = config?.status === "valid" ? (config.config.check ?? "") : "";
+    const [draft, setDraft] = useState<string | null>(null);
+    const save = async () => {
+        const next = (draft ?? saved).trim();
+        setDraft(null);
+        if (next === saved) return;
+        try {
+            await tasksApi.setCheck(project, next);
+            onChanged(await loadProjectConfig(project));
+        } catch (error) {
+            reportError("save the check command")(error);
+        }
+    };
+    return (
+        <SettingsSection title="Check" sub="Sikemux runs it on each commit, and agents run it on a card's change when its pull request has no CI.">
+            <SettingsRows>
+                <SettingsRow label="Check command" desc="Saved in sikemux.json for everyone. Leave it empty for none." wide>
+                    <input
+                        className="settings-input mono"
+                        value={draft ?? saved}
+                        placeholder="pnpm check"
+                        aria-label="Check command"
+                        spellCheck={false}
+                        disabled={config?.status === "invalid"}
+                        onChange={(event) => setDraft(event.target.value)}
+                        onBlur={() => void save()}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") event.currentTarget.blur();
+                        }}
+                    />
+                </SettingsRow>
+            </SettingsRows>
 function GitSection({ project, visible }: { project: string; visible: boolean }) {
     const { repo, repos } = useProjectRepo(project, visible);
     const chosen = useStore((s) => s.defaultGitRepos[project]);

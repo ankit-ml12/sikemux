@@ -373,10 +373,6 @@ button.board-lane-title:hover,
     background: color-mix(in srgb, var(--surface) 70%, transparent);
 }
 
-.board-auto-input.mono {
-    font-family: var(--mono);
-    font-size: var(--text-xs);
-}
 
 .board-auto-input:focus {
     border-color: var(--border-selected);

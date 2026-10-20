@@ -53,8 +53,6 @@ export interface BoardSettings {
     readonly model: string | null;
     /** Merge once checks pass, or stop at the opened pull request. */
     readonly finish: "merge" | "pr";
-    /** What proves a change sound when no CI runs on its pull request. */
-    readonly check: string | null;
     /** Who reviews each change before it merges; null for any signed-in agent on another CLI than its builder's. */
     readonly reviewer: ReviewerChoice | null;
 }

@@ -266,6 +266,7 @@ pub(crate) async fn call(
         }
         "addTask" => answer(super::tasks::add(&core, parse(params)?).await?),
         "removeTask" => answer(super::tasks::remove(&core, parse(params)?).await?),
+        "setCheck" => answer(super::tasks::set_check(&core, parse(params)?).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => answer(plugins::window_call(&core, parse(params)?).await),
         "pluginManifests" => answer(plugins::manifests()),

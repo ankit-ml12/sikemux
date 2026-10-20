@@ -115,6 +115,8 @@ export const tasksApi = {
     add: (project: string, task: { label: string; command: string; cwd: string; team: boolean; replaces?: string }) =>
         coreCall<{ taskId: string }>("addTask", { project, ...task }),
     remove: (project: string, taskId: string) => coreCall<void>("removeTask", { project, taskId }),
+    /** Names the project's check command in its sikemux.json; empty takes it out. */
+    setCheck: (project: string, command: string) => coreCall<void>("setCheck", { project, command }),
 };
 
 let runs: readonly TaskRun[] = [];

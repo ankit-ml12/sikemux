@@ -1119,6 +1119,40 @@ pub(crate) async fn add(core: &Arc<Core>, params: AddParams) -> CoreResult<Value
     .await
 }
 
+pub(crate) struct CheckParams {
+    project: String,
+    command: String,
+}
+
+/// Names the project's check command in its `sikemux.json`. A file the person
+/// trusted stays trusted, since they wrote this change themselves.
+pub(crate) async fn set_check(core: &Arc<Core>, params: CheckParams) -> CoreResult<Value> {
+    let core = core.clone();
+    blocking(move || {
+        let project = PathBuf::from(&params.project);
+        let trusted = match config::load(&project) {
+            ConfigLoad::Absent { .. } => true,
+            load @ ConfigLoad::Valid { .. } => config_needs(&core, &load).is_none(),
+            ConfigLoad::Invalid { .. } => false,
+        };
+        detect::save_check(&project, &params.command)?;
+        if let (
+            true,
+            ConfigLoad::Valid {
+                path, fingerprint, ..
+            },
+        ) = (trusted, config::load(&project))
+        {
+            core.tasks
+                .grant(Grant::Config(TrustedConfig { path, fingerprint }));
+        }
+        core.harness.changed();
+        core.changes.changed("tasks", Some(&params.project), None);
+        Ok(Value::Null)
+    })
+    .await
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RemoveParams {

@@ -1735,14 +1735,17 @@ pub(crate) async fn person_settings(core: &Arc<Core>, params: Value) -> Result<V
     .map_err(|error| error.to_string())
 }
 
-/// The command that proves a change sound in `project`, when the person set
-/// one in the board's settings.
+/// The command that proves a change sound in `project`: the `check` its
+/// `sikemux.json` names, once the person trusts that file.
 pub(crate) fn check_command(core: &Core, project: &str) -> Option<String> {
-    core.boards
-        .lock()
-        .boards
-        .get(project)
-        .and_then(|board| board.settings.check.clone())
+    let load = crate::tasks::config::load(Path::new(project));
+    let crate::tasks::config::ConfigLoad::Valid { config, .. } = &load else {
+        return None;
+    };
+    let command = config.check.clone()?;
+    crate::server::tasks::config_needs(core, &load)
+        .is_none()
+        .then_some(command)
 }
 
 /// Runs the project's check command in `dir`: whether it passed, and the end

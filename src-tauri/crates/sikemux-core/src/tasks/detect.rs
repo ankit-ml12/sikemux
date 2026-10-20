@@ -776,6 +776,22 @@ pub fn save_team(project: &Path, task: &AddedTask) -> Result<String, String> {
     Ok(id)
 }
 
+/// Names the project's check command in `sikemux.json`, or takes it out when
+/// `command` is empty, leaving everything else in the file as it was.
+pub fn save_check(project: &Path, command: &str) -> Result<(), String> {
+    let path = project.join(PROJECT_CONFIG);
+    let mut config = read_object(&path)?.unwrap_or_else(|| {
+        let mut config = Map::new();
+        config.insert("version".to_owned(), json!(1));
+        config
+    });
+    match command.trim() {
+        "" => config.remove("check"),
+        command => config.insert("check".to_owned(), json!(command)),
+    };
+    write_json(&path, config)
+}
+
 /// Takes a task the person added out of `sikemux.json` or `.sikemux/tasks.json`,
 /// leaving everything else in the file as it was.
 pub fn remove_saved(project: &Path, task_id: &str) -> Result<(), String> {

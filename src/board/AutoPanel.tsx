@@ -29,20 +29,18 @@ function TextSetting({
     value,
     placeholder,
     label,
-    mono = false,
     onSave,
 }: {
     value: string;
     placeholder: string;
     label: string;
-    mono?: boolean;
     onSave: (next: string) => void;
 }) {
     const [draft, setDraft] = useState<string | null>(null);
     const shown = draft ?? value;
     return (
         <input
-            className={`board-auto-input${mono ? " mono" : ""}`}
+            className="board-auto-input"
             value={shown}
             placeholder={placeholder}
             aria-label={label}
@@ -208,17 +206,6 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                     )}
                 </div>
                 <span className="board-auto-hint">The agent that checks each change against its card before it merges.</span>
-            </section>
-            <section className="board-section">
-                <span className="board-section-name">Check</span>
-                <TextSetting
-                    value={settings?.check ?? ""}
-                    placeholder="pnpm check"
-                    label="Check command"
-                    mono
-                    onSave={(check) => void save({ check: check || null })}
-                />
-                <span className="board-auto-hint">Agents run it when the pull request has no CI.</span>
             </section>
         </aside>
     );
