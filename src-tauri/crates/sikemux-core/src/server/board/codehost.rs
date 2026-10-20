@@ -312,31 +312,21 @@ pub(crate) async fn log_tail(
 /// A run's id as its code host takes it from an address on it: GitHub's
 /// `/actions/runs/<id>`, or Bitbucket's `/pipelines/results/<number>`.
 pub(crate) fn run_in(address: &str) -> Option<Value> {
-    let number = |rest: &str| -> Option<String> {
-        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-        (!digits.is_empty()).then_some(digits)
-    };
-    if let Some((_, rest)) = address.split_once("/actions/runs/") {
-        return number(rest)?.parse::<u64>().ok().map(Value::from);
-    }
-    let (_, rest) = address.split_once("/pipelines/results/")?;
-    number(rest).map(Value::from)
+    let rest = address
+        .split_once("/actions/runs/")
+        .or_else(|| address.split_once("/pipelines/results/"))?
+        .1;
+    digits(rest)
 }
 
 /// The job an address on a GitHub run points at, `/job/<id>`.
 pub(crate) fn job_in(address: &str) -> Option<Value> {
-    let (_, rest) = address.split_once("/job/")?;
-    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-    digits.parse::<u64>().ok().map(Value::from)
+    digits(address.split_once("/job/")?.1)
 }
 
-/// A run id as typed, for the code host `repo` is on: GitHub's are numbers,
-/// Bitbucket's build numbers are sent as text.
-pub(crate) fn run_id(repo: &Repo, typed: &str) -> Value {
-    match (repo.host, typed.parse::<u64>()) {
-        ("github", Ok(number)) => number.into(),
-        _ => typed.into(),
-    }
+fn digits(rest: &str) -> Option<Value> {
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    (!digits.is_empty()).then(|| digits.into())
 }
 
 /// Where a pull request stands.

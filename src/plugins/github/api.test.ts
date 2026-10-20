@@ -61,25 +61,6 @@ describe("a refused token", () => {
     });
 });
 
-describe("ids", () => {
-    it("names GitHub's numbered runs and jobs by text, and asks GitHub by number", async () => {
-        fake.call.mockResolvedValue({
-            run: { id: 7, workflowId: 2 },
-            jobs: [
-                { id: 30, checkRunId: 31 },
-                { id: 40, checkRunId: null },
-            ],
-        });
-        const detail = await actionsApi.run(repo, "7");
-        expect(fake.call).toHaveBeenCalledWith("run", { ...repo, runId: 7 });
-        expect(detail.run).toMatchObject({ id: "7", workflowId: "2" });
-        expect(detail.jobs).toMatchObject([
-            { id: "30", checkRunId: "31" },
-            { id: "40", checkRunId: null },
-        ]);
-    });
-});
-
 describe("avatarForEmail", () => {
     it("reads the account number out of GitHub's private commit email", () => {
         expect(avatarForEmail("145369993+Sujal85526@users.noreply.github.com")).toBe("https://avatars.githubusercontent.com/u/145369993?s=64");
@@ -140,32 +121,15 @@ describe("failures", () => {
 });
 
 describe("requests", () => {
-    it("asks for runs of one workflow by number, or of every workflow", async () => {
-        fake.call.mockResolvedValue({ runs: [{ id: 9, workflowId: 3 }], total: 1 });
-        const page = await actionsApi.runs({ ...repo, workflowId: "3", page: 1 } as never);
-        expect(fake.call).toHaveBeenLastCalledWith("runs", expect.objectContaining({ workflowId: 3 }));
-        expect(page.runs[0]).toMatchObject({ id: "9", workflowId: "3" });
-
-        await actionsApi.runs({ ...repo, page: 1 } as never);
-        expect((fake.call.mock.calls[1] as [string, { workflowId?: number }])[1].workflowId).toBeUndefined();
-    });
-
-    it("names workflows and artifacts by text", async () => {
-        fake.call.mockResolvedValue([{ id: 12, name: "CI" }]);
-        await expect(actionsApi.workflows(repo)).resolves.toEqual([{ id: "12", name: "CI" }]);
-        await expect(actionsApi.artifacts(repo, "5")).resolves.toEqual([{ id: "12", name: "CI" }]);
-        expect(fake.call).toHaveBeenLastCalledWith("artifacts", { ...repo, runId: 5 });
-    });
-
     it("re-runs without debug logging unless asked", async () => {
         fake.call.mockResolvedValue(undefined);
         await actionsApi.rerun(repo, "8", true);
         await actionsApi.rerunJob(repo, "9", true);
         await actionsApi.reviewDeployment(repo, "8", [1], "approved");
         expect(fake.call.mock.calls).toEqual([
-            ["rerun", { ...repo, runId: 8, failedOnly: true, debug: false }],
-            ["rerunJob", { ...repo, jobId: 9, debug: true }],
-            ["reviewDeployment", { ...repo, runId: 8, environmentIds: [1], state: "approved", comment: "" }],
+            ["rerun", { ...repo, runId: "8", failedOnly: true, debug: false }],
+            ["rerunJob", { ...repo, jobId: "9", debug: true }],
+            ["reviewDeployment", { ...repo, runId: "8", environmentIds: [1], state: "approved", comment: "" }],
         ]);
     });
 });
@@ -222,15 +186,22 @@ describe("downloads", () => {
 });
 
 describe("watching a run", () => {
-    it("hands over ticks with text ids and keeps the views while signed in", () => {
+    it("hands over ticks and keeps the views while signed in", () => {
         let onTick: (tick: unknown) => void = () => {};
         fake.stream.mockImplementation((_method: string, _params: unknown, handlers: PluginStreamHandlers<unknown>) => {
             onTick = handlers.onItem;
         });
         const seen = vi.fn();
         actionsApi.watch(repo, "7", { onItem: seen });
-        expect(fake.stream).toHaveBeenCalledWith("watchRun", { ...repo, runId: 7 }, expect.anything());
-        onTick({ run: { id: 7, workflowId: 1 }, jobs: [{ id: 5, checkRunId: 6 }], error: null, finished: false, fatal: false, signedOut: false });
+        expect(fake.stream).toHaveBeenCalledWith("watchRun", { ...repo, runId: "7" }, expect.anything());
+        onTick({
+            run: { id: "7", workflowId: "1" },
+            jobs: [{ id: "5", checkRunId: "6" }],
+            error: null,
+            finished: false,
+            fatal: false,
+            signedOut: false,
+        });
         expect(seen.mock.calls[0][0]).toMatchObject({ run: { id: "7" }, jobs: [{ id: "5", checkRunId: "6" }] });
         expect(fake.invalidate).not.toHaveBeenCalled();
     });

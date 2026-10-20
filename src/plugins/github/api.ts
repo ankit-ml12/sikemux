@@ -16,14 +16,12 @@ import type {
     Pull,
     PullCommit,
     RateLimit,
-    Job,
     Release,
     RepoListing,
     RepoRef,
     Resolved,
     Review,
     ReviewEvent,
-    Run,
     RunDetail,
     RunPage,
     RunQuery,
@@ -62,36 +60,6 @@ export interface ActionsStatus {
     message: string | null;
 }
 
-/** GitHub numbers its runs, jobs, workflows and artifacts, and the Git pane names them by text, as every host can. */
-interface GithubRun extends Omit<Run, "id" | "workflowId"> {
-    id: number;
-    workflowId: number;
-}
-
-interface GithubJob extends Omit<Job, "id" | "checkRunId"> {
-    id: number;
-    checkRunId: number | null;
-}
-
-interface GithubRunDetail {
-    run: GithubRun;
-    jobs: GithubJob[];
-}
-
-interface GithubRunPage extends Omit<RunPage, "runs"> {
-    runs: GithubRun[];
-}
-
-interface GithubRunTick extends Omit<RunTick, "run" | "jobs"> {
-    run: GithubRun | null;
-    jobs: GithubJob[];
-}
-
-const fromRun = (run: GithubRun): Run => ({ ...run, id: String(run.id), workflowId: String(run.workflowId) });
-const fromJob = (job: GithubJob): Job => ({ ...job, id: String(job.id), checkRunId: job.checkRunId === null ? null : String(job.checkRunId) });
-const fromDetail = (detail: GithubRunDetail): RunDetail => ({ run: fromRun(detail.run), jobs: detail.jobs.map(fromJob) });
-const withTextId = <T extends { id: number }>(item: T): Omit<T, "id"> & { id: string } => ({ ...item, id: String(item.id) });
-
 interface DownloadTick extends DownloadProgress {
     saved: SavedArtifact | null;
 }
@@ -119,26 +87,19 @@ export const actionsApi = {
     resolveRemote: (url: string) => backend.call<Resolved>("resolveRemote", { url }),
     myRepos: (account: string | null, limit = 50) => call<RepoListing[]>("myRepos", { account, limit }),
 
-    workflows: (repo: RepoRef) => call<(Omit<Workflow, "id"> & { id: number })[]>("workflows", repo).then((rows): Workflow[] => rows.map(withTextId)),
+    workflows: (repo: RepoRef) => call<Workflow[]>("workflows", repo),
     branches: (repo: RepoRef) => call<string[]>("branches", repo),
-    runs: (query: RunQuery) =>
-        call<GithubRunPage>("runs", { ...query, workflowId: query.workflowId === undefined ? undefined : Number(query.workflowId) }).then(
-            (page): RunPage => ({ ...page, runs: page.runs.map(fromRun) }),
-        ),
-    run: (repo: RepoRef, runId: string) => call<GithubRunDetail>("run", { ...repo, runId: Number(runId) }).then(fromDetail),
-    jobLog: (repo: RepoRef, jobId: string) => call<JobLog>("jobLog", { ...repo, jobId: Number(jobId) }),
-    annotations: (repo: RepoRef, checkRunId: string) => call<Annotation[]>("annotations", { ...repo, checkRunId: Number(checkRunId) }),
-    jobSummary: (repo: RepoRef, checkRunId: string) => call<JobSummary | null>("jobSummary", { ...repo, checkRunId: Number(checkRunId) }),
-    runTiming: (repo: RepoRef, runId: string) => call<RunTiming>("runTiming", { ...repo, runId: Number(runId) }),
-    workflowFile: (repo: RepoRef, workflowId: string) => call<WorkflowFile>("workflowFile", { ...repo, workflowId: Number(workflowId) }),
+    runs: (query: RunQuery) => call<RunPage>("runs", query),
+    run: (repo: RepoRef, runId: string) => call<RunDetail>("run", { ...repo, runId }),
+    jobLog: (repo: RepoRef, jobId: string) => call<JobLog>("jobLog", { ...repo, jobId }),
+    annotations: (repo: RepoRef, checkRunId: string) => call<Annotation[]>("annotations", { ...repo, checkRunId }),
+    jobSummary: (repo: RepoRef, checkRunId: string) => call<JobSummary | null>("jobSummary", { ...repo, checkRunId }),
+    runTiming: (repo: RepoRef, runId: string) => call<RunTiming>("runTiming", { ...repo, runId }),
+    workflowFile: (repo: RepoRef, workflowId: string) => call<WorkflowFile>("workflowFile", { ...repo, workflowId }),
     workflowFileAt: (repo: RepoRef, path: string, gitRef: string) => call<WorkflowFile>("workflowFileAt", { ...repo, path, gitRef }),
-    artifacts: (repo: RepoRef, runId: string) =>
-        call<(Omit<Artifact, "id"> & { id: number })[]>("artifacts", { ...repo, runId: Number(runId) }).then((rows): Artifact[] =>
-            rows.map(withTextId),
-        ),
-    pendingApprovals: (repo: RepoRef, runId: string) => call<PendingApproval[]>("pendingApprovals", { ...repo, runId: Number(runId) }),
-    runAttempt: (repo: RepoRef, runId: string, attempt: number) =>
-        call<GithubRunDetail>("runAttempt", { ...repo, runId: Number(runId), attempt }).then(fromDetail),
+    artifacts: (repo: RepoRef, runId: string) => call<Artifact[]>("artifacts", { ...repo, runId }),
+    pendingApprovals: (repo: RepoRef, runId: string) => call<PendingApproval[]>("pendingApprovals", { ...repo, runId }),
+    runAttempt: (repo: RepoRef, runId: string, attempt: number) => call<RunDetail>("runAttempt", { ...repo, runId, attempt }),
 
     pulls: (repo: RepoRef, state: string) => call<Pull[]>("pulls", { ...repo, state }),
     pullCounts: (repo: RepoRef) => call<{ open: number; closed: number }>("pullCounts", { ...repo }),
@@ -170,23 +131,18 @@ export const actionsApi = {
     markAllRead: (account: string | null) => call<void>("markAllRead", { account }),
 
     dispatch: (repo: RepoRef, workflowId: string, gitRef: string, inputs: Record<string, string>) =>
-        call<void>("dispatch", { ...repo, workflowId: Number(workflowId), gitRef, inputs }),
-    rerun: (repo: RepoRef, runId: string, failedOnly: boolean, debug = false) =>
-        call<void>("rerun", { ...repo, runId: Number(runId), failedOnly, debug }),
-    rerunJob: (repo: RepoRef, jobId: string, debug = false) => call<void>("rerunJob", { ...repo, jobId: Number(jobId), debug }),
-    cancel: (repo: RepoRef, runId: string) => call<void>("cancel", { ...repo, runId: Number(runId) }),
-    deleteRunLogs: (repo: RepoRef, runId: string) => call<void>("deleteRunLogs", { ...repo, runId: Number(runId) }),
-    deleteRun: (repo: RepoRef, runId: string) => call<void>("deleteRun", { ...repo, runId: Number(runId) }),
+        call<void>("dispatch", { ...repo, workflowId, gitRef, inputs }),
+    rerun: (repo: RepoRef, runId: string, failedOnly: boolean, debug = false) => call<void>("rerun", { ...repo, runId, failedOnly, debug }),
+    rerunJob: (repo: RepoRef, jobId: string, debug = false) => call<void>("rerunJob", { ...repo, jobId, debug }),
+    cancel: (repo: RepoRef, runId: string) => call<void>("cancel", { ...repo, runId }),
+    deleteRunLogs: (repo: RepoRef, runId: string) => call<void>("deleteRunLogs", { ...repo, runId }),
+    deleteRun: (repo: RepoRef, runId: string) => call<void>("deleteRun", { ...repo, runId }),
     downloadArtifact: (repo: RepoRef, artifactId: string, name: string, onProgress?: (progress: DownloadProgress) => void) =>
-        download("downloadArtifact", { ...repo, artifactId: Number(artifactId), fileName: name }, onProgress),
+        download("downloadArtifact", { ...repo, artifactId, fileName: name }, onProgress),
     reviewDeployment: (repo: RepoRef, runId: string, environmentIds: number[], state: "approved" | "rejected", comment = "") =>
-        call<void>("reviewDeployment", { ...repo, runId: Number(runId), environmentIds, state, comment }),
+        call<void>("reviewDeployment", { ...repo, runId, environmentIds, state, comment }),
 
-    watch: (repo: RepoRef, runId: string, handlers: PluginStreamHandlers<RunTick>) =>
-        watch<GithubRunTick>(
-            { ...repo, runId: Number(runId) },
-            { ...handlers, onItem: (tick) => handlers.onItem({ ...tick, run: tick.run && fromRun(tick.run), jobs: tick.jobs.map(fromJob) }) },
-        ),
+    watch: (repo: RepoRef, runId: string, handlers: PluginStreamHandlers<RunTick>) => watch<RunTick>({ ...repo, runId }, handlers),
 };
 
 /** GitHub serves every avatar from one place, and a company's own GitHub serves its users' from itself. */

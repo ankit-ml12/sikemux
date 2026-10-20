@@ -41,9 +41,10 @@ mod workflows;
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sikemux_plugin_api::account::{as_account, chosen};
+use sikemux_plugin_api::codehost::Resolved;
 use sikemux_plugin_api::store::Accounts;
 use sikemux_plugin_api::{
     answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
@@ -70,20 +71,12 @@ struct RemoteQuery {
 /// What a git remote points at, and whether it is the GitHub this is signed in
 /// to. A repository on another host is still described, so the view can say so
 /// rather than showing nothing.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Resolved {
-    repo: Option<repo::Repo>,
-    slug: Option<String>,
-    same_host: bool,
-}
-
 fn resolve(data_dir: &std::path::Path, query: RemoteQuery) -> Resolved {
     let config = config::load(data_dir).unwrap_or_default();
     let found = repo::from_remote(&query.url);
     Resolved {
         same_host: found.as_ref().is_some_and(|repo| config.serves(&repo.host)),
-        slug: found.as_ref().map(repo::Repo::slug),
+        slug: found.as_ref().map(repo::slug),
         repo: found,
     }
 }
@@ -348,9 +341,10 @@ mod live {
             .expect("runs");
         let rows = page["runs"].as_array().expect("run rows");
         assert!(rows.len() <= 5);
-        let Some(run_id) = rows.first().and_then(|row| row["id"].as_u64()) else {
+        let Some(run_id) = rows.first().and_then(|row| row["id"].as_str()) else {
             return;
         };
+        let run_id: u64 = run_id.parse().expect("a run id is a number");
 
         let detail = plugin
             .call(
@@ -360,12 +354,13 @@ mod live {
             )
             .await
             .expect("run detail");
-        assert_eq!(detail["run"]["id"], run_id);
+        assert_eq!(detail["run"]["id"], run_id.to_string());
 
         if let Some(job_id) = detail["jobs"]
             .as_array()
             .and_then(|jobs| jobs.first())
-            .and_then(|job| job["id"].as_u64())
+            .and_then(|job| job["id"].as_str())
+            .and_then(|id| id.parse::<u64>().ok())
         {
             let log = plugin
                 .call(

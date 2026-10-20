@@ -249,8 +249,7 @@ pub(super) async fn find(
                     repo.slug()
                 ));
             }
-            let id =
-                codehost::run_in(&address).unwrap_or_else(|| codehost::run_id(&repo, &address));
+            let id = codehost::run_in(&address).unwrap_or_else(|| address.as_str().into());
             (id, codehost::job_in(&address))
         }
         Asked::Latest { branch, workflow } => {
