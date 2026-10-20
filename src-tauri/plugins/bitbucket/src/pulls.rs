@@ -874,7 +874,9 @@ fn strategy_of(method: &str) -> BitbucketResult<&'static str> {
         "merge" => Ok("merge_commit"),
         "squash" => Ok("squash"),
         "fast_forward" => Ok("fast_forward"),
-        _ => Err(BitbucketError::Unsupported("merge that way")),
+        other => Err(BitbucketError::MergeMethod(format!(
+            "Bitbucket cannot merge by {other}"
+        ))),
     }
 }
 
@@ -909,7 +911,15 @@ pub async fn merge(data_dir: &Path, input: Merge) -> BitbucketResult<()> {
         });
     }
     let path = pull_path(&input.thread.repo, input.thread.number, "/merge")?;
-    client::post_empty(data_dir, &path, Some(&body)).await
+    match client::post_empty(data_dir, &path, Some(&body)).await {
+        Err(BitbucketError::Http {
+            status: 400,
+            message,
+        }) if message.to_ascii_lowercase().contains("strategy") => {
+            Err(BitbucketError::MergeMethod(message))
+        }
+        outcome => outcome,
+    }
 }
 
 #[derive(Deserialize)]

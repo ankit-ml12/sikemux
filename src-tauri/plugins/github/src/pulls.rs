@@ -602,6 +602,15 @@ pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
             message: "the branch moved since you looked; reload the pull request and try again"
                 .into(),
         }),
+        Err(GithubError::Http {
+            status: 405,
+            message,
+        }) if message
+            .to_ascii_lowercase()
+            .contains("not allowed on this repository") =>
+        {
+            Err(GithubError::MergeMethod(message))
+        }
         outcome => outcome,
     }
 }

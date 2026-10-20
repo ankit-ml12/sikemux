@@ -483,7 +483,7 @@ pub fn merge_body(method: &str, sha: Option<&str>) -> GitlabResult<Value> {
         "squash" => true,
         "merge" => false,
         other => {
-            return Err(GitlabError::BadArg(format!(
+            return Err(GitlabError::MergeMethod(format!(
                 "GitLab cannot merge by {other}"
             )))
         }

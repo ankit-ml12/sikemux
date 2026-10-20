@@ -38,6 +38,8 @@ pub enum ServiceError<S> {
     BadArg(String),
     NotFound(String),
     Unsupported(&'static str),
+    /// The repository does not take this way of merging, though another may work.
+    MergeMethod(String),
     Keychain(String),
     Transport(String),
     Unreachable {
@@ -68,7 +70,9 @@ impl<S: Service> fmt::Display for ServiceError<S> {
             Self::RateLimited {
                 resets_in_secs: None,
             } => write!(formatter, "{id}: too many requests; try again in a minute"),
-            Self::Api(message) | Self::Transport(message) => write!(formatter, "{id}: {message}"),
+            Self::Api(message) | Self::Transport(message) | Self::MergeMethod(message) => {
+                write!(formatter, "{id}: {message}")
+            }
             Self::Http { status, message } => write!(formatter, "{id}: http {status}: {message}"),
             Self::BadArg(message) | Self::NotFound(message) => formatter.write_str(message),
             Self::Unsupported(what) => write!(formatter, "{} cannot {what}", S::NAME),
@@ -153,6 +157,7 @@ impl<S: Service> From<ServiceError<S>> for PluginError {
             ServiceError::BadArg(_) => PluginError::bad_params(message),
             ServiceError::NotFound(_) => PluginError::new("not-found", message).with_status(404),
             ServiceError::Unsupported(_) => PluginError::new("unsupported", message),
+            ServiceError::MergeMethod(_) => PluginError::new("merge-method", message),
             ServiceError::Keychain(_) => PluginError::new("keychain", message),
             ServiceError::Unreachable { kind, .. } => {
                 PluginError::new(network::category(kind), message)
