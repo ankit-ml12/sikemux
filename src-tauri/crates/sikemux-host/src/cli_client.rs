@@ -4,7 +4,6 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use uuid::Uuid;
@@ -15,6 +14,7 @@ use sikemux_core::cli::protocol::{
     CliOpenTarget, CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, MAX_CLI_RESPONSE_BYTES,
     TOOLS_REPLY_TIMEOUT,
 };
+use sikemux_core::waiting;
 use sikemux_process::vars;
 
 use crate::cli_paths::endpoint_to_read;
@@ -456,24 +456,19 @@ pub fn current_project() -> Result<String, String> {
 /// The endpoint once Sikemux's window is open, starting the app first when
 /// it is not running or only its background core is.
 fn connect_or_launch(endpoint_path: &Path) -> Result<CliEndpointDescriptor, String> {
-    if let Ok(descriptor) = read_endpoint(endpoint_path) {
-        if probe(&descriptor) == Ok(true) {
-            return Ok(descriptor);
-        }
+    let open = || {
+        read_endpoint(endpoint_path)
+            .ok()
+            .filter(|descriptor| probe(descriptor) == Ok(true))
+    };
+    if let Some(descriptor) = open() {
+        return Ok(descriptor);
     }
     launch_app()?;
-    let started = Instant::now();
-    let mut delay = Duration::from_millis(40);
-    while started.elapsed() < APP_START_TIMEOUT {
-        if let Ok(descriptor) = read_endpoint(endpoint_path) {
-            if probe(&descriptor) == Ok(true) {
-                return Ok(descriptor);
-            }
-        }
-        thread::sleep(delay);
-        delay = (delay * 2).min(Duration::from_millis(400));
-    }
-    Err("Sikemux did not become ready within 15 seconds".into())
+    let socket = sikemux_core::default_socket_path().ok_or("home directory is unavailable")?;
+    waiting::wait_until(&socket, Instant::now() + APP_START_TIMEOUT, open)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Sikemux did not become ready within 15 seconds".into())
 }
 
 /// Whether the window is open, once the endpoint answers.
@@ -690,7 +685,7 @@ mod tests {
     fn answer_hello_with(token: &'static str) -> CliEndpointDescriptor {
         let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
-        thread::spawn(move || {
+        std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
             let mut hello = String::new();
             BufReader::new(&stream).read_line(&mut hello).unwrap();

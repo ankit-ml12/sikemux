@@ -1098,6 +1098,7 @@ pub(crate) async fn run_core(
     ];
     let mut shutdown = core.shutdown.subscribe();
     let mut frozen = core.frozen.subscribe();
+    crate::waiting::wake(&config.socket);
     let mut ticker = tokio::time::interval(
         (config.idle_exit / 10).clamp(Duration::from_millis(10), Duration::from_secs(1)),
     );
@@ -1146,6 +1147,7 @@ pub(crate) async fn run_core(
     drop(listener);
     let _ = std::fs::remove_file(&config.socket);
     drop(lock);
+    crate::waiting::wake(&config.socket);
     Ok(())
 }
 

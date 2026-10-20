@@ -14,8 +14,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use sikemux_core::client::{
-    await_deferred_upgrade, await_upgrade, ensure_running, frozen_request, Attached, ClientError,
-    CoreClient, Reply,
+    await_deferred_upgrade, await_upgrade, frozen_request, Attached, ClientError, CoreClient, Reply,
 };
 use sikemux_core::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
 use sikemux_core::protocol::{BuildIdentity, Request, SessionInfo, SessionKind};
@@ -171,18 +170,16 @@ impl PtyManager {
             .settings
             .get()
             .ok_or_else(|| AppError::Pty("the terminal core is not configured yet".into()))?;
-        let binary = settings.binary.clone().ok_or_else(|| {
+        let launch = self.core_launch().ok_or_else(|| {
             AppError::Pty("the sikemux-host sidecar that runs terminals is missing".into())
         })?;
-        let socket = settings.socket.clone();
-        let log = settings.log.clone();
-        let core_args = settings.core_args.clone();
-        if let Some(directory) = log.parent() {
+        let binary = launch.binary.clone();
+        if let Some(directory) = launch.log.parent() {
             let _ = std::fs::create_dir_all(directory);
         }
-        let starting = binary.clone();
+        let identifier = settings.app.config().identifier.clone();
         let found = tauri::async_runtime::spawn_blocking(move || {
-            ensure_running(&socket, &starting, &log, &core_args)
+            crate::login_item::start_core(&identifier, &launch)
         })
         .await
         .map_err(|error| AppError::Pty(format!("core start join: {error}")))?;

@@ -523,6 +523,9 @@ async fn run_requests(
             }
             Request::RegisterWindow => {
                 core.window.register(client.clone());
+                if let Some(listening) = core.listening.get() {
+                    crate::waiting::wake(&listening.config.socket);
+                }
                 core.agents_changed();
                 client.respond(request_id, Ok(Response::Done));
             }

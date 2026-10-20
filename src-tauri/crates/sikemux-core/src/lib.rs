@@ -38,6 +38,8 @@ pub mod tasks;
 mod text;
 pub mod trailers;
 pub mod usage;
+#[cfg(unix)]
+pub mod waiting;
 
 use std::path::PathBuf;
 

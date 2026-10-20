@@ -41,20 +41,9 @@ final class CoreLink {
 
     /// False when nothing listens on the socket.
     func connect() -> Bool {
+        guard var address = UnixAddress.of(socketPath) else { return false }
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { return false }
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-        let pathBytes = Array(socketPath.utf8)
-        let capacity = MemoryLayout.size(ofValue: address.sun_path)
-        guard pathBytes.count < capacity else {
-            Darwin.close(descriptor)
-            return false
-        }
-        withUnsafeMutableBytes(of: &address.sun_path) { raw in
-            raw.copyBytes(from: pathBytes)
-            raw[pathBytes.count] = 0
-        }
         let connected = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
@@ -179,6 +168,64 @@ final class CoreLink {
             for reply in pending.values { reply(.failure(.closed)) }
             self.onClose?(reason)
         }
+    }
+}
+
+enum UnixAddress {
+    /// Nil for a path too long for a socket address.
+    static func of(_ path: String) -> sockaddr_un? {
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8)
+        guard bytes.count < MemoryLayout.size(ofValue: address.sun_path) else { return nil }
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in
+            raw.copyBytes(from: bytes)
+            raw[bytes.count] = 0
+        }
+        return address
+    }
+}
+
+/// A socket in the folder beside the core's that the core writes to whenever
+/// it starts, stops or opens a window, so the notch tries the core again then
+/// rather than on a timer.
+final class CoreWaiter {
+    private let path: String
+    private let descriptor: Int32
+    private let source: DispatchSourceRead
+
+    init?(socket: String, woken: @escaping () -> Void) {
+        let folder = socket + ".waiting"
+        mkdir(folder, 0o700)
+        path = folder + "/notch-\(getpid())"
+        unlink(path)
+        guard var address = UnixAddress.of(path) else { return nil }
+        let descriptor = Darwin.socket(AF_UNIX, SOCK_DGRAM, 0)
+        guard descriptor >= 0 else { return nil }
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard bound == 0 else {
+            Darwin.close(descriptor)
+            return nil
+        }
+        _ = fcntl(descriptor, F_SETFL, O_NONBLOCK)
+        self.descriptor = descriptor
+        source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: .main)
+        source.setEventHandler { [descriptor] in
+            var signal: UInt8 = 0
+            while recv(descriptor, &signal, 1, 0) > 0 {}
+            woken()
+        }
+        source.resume()
+    }
+
+    deinit {
+        source.cancel()
+        Darwin.close(descriptor)
+        unlink(path)
     }
 }
 

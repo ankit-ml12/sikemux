@@ -12,10 +12,11 @@ use serde::Serialize;
 use serde_json::json;
 use sikemux_core::cli::protocol::CliServerResponse;
 use sikemux_core::client::{
-    ensure_running, probe, ClientError, ClientEvent, CoreClient, ProbeError,
+    probe, wait_for_core, ClientError, ClientEvent, CoreClient, ProbeError,
 };
 use sikemux_core::protocol::{AccountLinkState, DeviceAccess, Event, PendingDevice, RemoteStatus};
 use sikemux_core::server::plugins::{Failure, StreamEvent};
+use sikemux_core::waiting;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::login_item::{self, CoreLaunch, IDENTIFIER};
@@ -23,7 +24,6 @@ use crate::style;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(10);
-const SETTLE_POLL: Duration = Duration::from_millis(200);
 /// What `status` exits with while the core is not running, as `systemctl status` does.
 const NOT_RUNNING: i32 = 3;
 
@@ -81,15 +81,13 @@ fn running_pid(socket: &Path) -> Option<u32> {
     probe(socket, PROBE_TIMEOUT).ok().map(|hello| hello.pid)
 }
 
-fn wait_until(socket: &Path, running: bool) -> bool {
+/// Whether the core at `socket` stopped within the time a core takes to settle.
+fn stopped(socket: &Path) -> bool {
     let deadline = Instant::now() + SETTLE_TIMEOUT;
-    while running_pid(socket).is_some() != running {
-        if Instant::now() >= deadline {
-            return false;
-        }
-        std::thread::sleep(SETTLE_POLL);
-    }
-    true
+    waiting::wait_until(socket, deadline, || {
+        running_pid(socket).is_none().then_some(())
+    })
+    .is_ok_and(|stopped| stopped.is_some())
 }
 
 /// Starts the core, through the service that starts it at boot when there is
@@ -100,15 +98,10 @@ fn start() -> Result<PathBuf, String> {
         style::done("The core is already running", &format!("pid {pid}"));
         return Ok(launch.socket);
     }
-    if starts_at_boot().is_some() {
-        login_item::start(IDENTIFIER);
-        wait_until(&launch.socket, true);
-    }
     if let Some(logs) = launch.log.parent() {
         std::fs::create_dir_all(logs).map_err(|error| error.to_string())?;
     }
-    let hello = ensure_running(&launch.socket, &launch.binary, &launch.log, &launch.args)
-        .map_err(|error| error.to_string())?;
+    let hello = login_item::start_core(IDENTIFIER, &launch).map_err(|error| error.to_string())?;
     style::done("Started the core", &format!("pid {}", hello.pid));
     Ok(launch.socket)
 }
@@ -140,7 +133,7 @@ fn stop() -> Result<(), String> {
         Err(ClientError::VersionMismatch { pid, .. }) => return terminate(pid, &socket),
         Err(error) => return Err(error.to_string()),
     }
-    if !wait_until(&socket, false) {
+    if !stopped(&socket) {
         return Err(format!("the core, pid {pid}, is still running"));
     }
     style::done(
@@ -161,7 +154,7 @@ fn terminate(pid: u32, socket: &Path) -> Result<(), String> {
     if unsafe { libc::kill(id, libc::SIGTERM) } != 0 {
         return Err(std::io::Error::last_os_error().to_string());
     }
-    if !wait_until(socket, false) {
+    if !stopped(socket) {
         return Err(format!("the core, pid {pid}, is still running"));
     }
     style::done("Stopped the core", &format!("pid {pid}"));
@@ -181,7 +174,7 @@ fn enable() -> Result<(), String> {
     match running_pid(&launch.socket) {
         None => {
             login_item::start(IDENTIFIER);
-            wait_until(&launch.socket, true);
+            wait_for_core(&launch.socket, SETTLE_TIMEOUT).map_err(|error| error.to_string())?;
         }
         Some(pid) if starts_by_service(pid) => {}
         Some(pid) => style::note(&format!(

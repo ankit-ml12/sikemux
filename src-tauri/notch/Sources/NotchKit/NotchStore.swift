@@ -18,6 +18,7 @@ final class NotchStore {
     @ObservationIgnored let options: Options
     @ObservationIgnored private var link: CoreLink?
     @ObservationIgnored private var startedCore = false
+    @ObservationIgnored private var waiter: CoreWaiter?
     @ObservationIgnored private var questions: [AgentQuestion] = []
     @ObservationIgnored private var heard = false
     @ObservationIgnored private var errorTimer: DispatchWorkItem?
@@ -44,6 +45,7 @@ final class NotchStore {
     // MARK: Connection
 
     func connect() {
+        guard link == nil, waitForCore() else { return }
         let link = CoreLink(socket: options.socket, protocolVersion: options.protocolVersion)
         link.onReady = { [weak self, weak link] in
             link?.request(["op": "watchView"])
@@ -57,19 +59,28 @@ final class NotchStore {
             guard let self else { return }
             self.link = nil
             self.disconnected()
-            if let reason { self.fail(reason) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.connect() }
+            guard let reason else { return self.connect() }
+            self.fail(reason)
+            _ = self.waitForCore()
         }
         if link.connect() {
             self.link = link
+            waiter = nil
             return
         }
         if !startedCore {
             startedCore = true
             CoreStarter.start(options) { [weak self] in self?.connect() }
-            return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.connect() }
+    }
+
+    /// Listens for the core starting, stopping or opening a window. It listens
+    /// before each try, so a core that comes up during one still wakes it.
+    private func waitForCore() -> Bool {
+        if waiter != nil { return true }
+        waiter = CoreWaiter(socket: options.socket) { [weak self] in self?.connect() }
+        if waiter == nil { fail("the notch could not wait for Sikemux's core at \(options.socket)") }
+        return waiter != nil
     }
 
     private func receive(_ event: [String: Any]) {
