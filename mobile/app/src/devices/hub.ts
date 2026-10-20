@@ -441,6 +441,11 @@ function useHost<T>(core: string, read: () => T): T {
   return useSyncExternalStore((listener) => subscribeHost(core, listener), read);
 }
 
+/** The host's connection while it is open. */
+export function connectionOf(live: Live | undefined): ConnectionLike | undefined {
+  return live?.status === 'open' ? live.connection : undefined;
+}
+
 /**
  * One device's live state; the device stays connected while this is mounted and `watching`. Only that host's
  * changes re-render.
@@ -464,7 +469,7 @@ export function useHostStatus(core: string, watching = true): HostStatus {
 export async function forget(core: string) {
   forgotten.add(core);
   const found = entries.get(core);
-  const connection = found?.live.status === 'open' ? found.live.connection : undefined;
+  const connection = connectionOf(found?.live);
   const goodbye = (async () => {
     await withdrawKey(core, connection).catch(() => {});
     await connection?.unpair();

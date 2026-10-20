@@ -2,6 +2,7 @@ import { memo, useRef, useState } from 'react';
 import { Image, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 
+import { counted } from '@/devices/words';
 import { Button, Chip } from '@/ui/controls';
 import { haptics } from '@/ui/haptics';
 import { Icon } from '@/ui/Icon';
@@ -114,7 +115,7 @@ export function AttachSheet({
       scrolls
       expand={gallery ? { full, peek, onFull: setFull } : undefined}
       footer={
-        chosen.length ? <Button kind="primary" title={`Add ${chosen.length} photo${chosen.length === 1 ? '' : 's'}`} onPress={add} /> : null
+        chosen.length ? <Button kind="primary" title={`Add ${chosen.length} ${counted('photo', chosen.length)}`} onPress={add} /> : null
       }>
       {full ? (
         <View style={styles.head}>

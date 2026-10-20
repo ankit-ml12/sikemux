@@ -1,7 +1,8 @@
 import { ChatAttachment, MobileError, type ChatMark, type ConnectionLike } from '@sikemux/native';
 import { File } from 'expo-file-system';
 
-import { chatActions, recordOf } from '@mac/chat/acpEvents';
+import { chatActions } from '@mac/chat/acpEvents';
+import { recordOf } from '@mac/lib/guards';
 import { earlierMessages, type EarlierPage, PAGE_TURNS, withEarlier } from '@mac/chat/earlier';
 import type { QueuedMessage } from '@mac/chat/queuedMessages';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';

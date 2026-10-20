@@ -8,7 +8,7 @@ import { agentLabel } from '@mac/agents/catalog';
 import { formatAge } from '@mac/lib/format';
 import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import type { AgentShown } from '@/core/wire.generated';
-import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
+import { connectionOf, problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
 import { deviceKind, deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { Board } from '@/devices/Board';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
@@ -16,7 +16,7 @@ import { ProjectSheet } from '@/devices/ProjectSheet';
 import { WorkerRow, workersOf } from '@/devices/RemoteWorker';
 import { summary } from '@/devices/status';
 import { agentDisplay } from '@mac/state/agentStatus';
-import { folder, inProject, itemIn } from '@/devices/words';
+import { inProject, itemIn, projectName } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
 import { AgentFace } from '@/ui/Buddy';
@@ -34,11 +34,6 @@ type Tab = 'agents' | 'terminals' | 'board';
 const NEW_CHAT_HEIGHT = 52;
 /** Recent chats shown before Show more. */
 const RECENT_SHOWN = 10;
-
-/** The name of the project with this id or folder. */
-function projectName(snapshot: Snapshot, where: string): string {
-  return snapshot.workspace.projects.find((project) => project.id === where || project.path === where)?.name ?? folder(where);
-}
 
 /** What runs in a project, as its row in the project sheet shows it. */
 function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: ProjectInfo }) {
@@ -96,8 +91,6 @@ function Recent({
     (chat) => (!scope || chat.project === scope.id) && (provider === 'all' || chat.provider === provider),
   );
   const shown = all ? chats : chats.slice(0, RECENT_SHOWN);
-  const projectOf = (chat: RecentInfo) =>
-    snapshot.workspace.projects.find((project) => project.id === chat.project)?.name ?? folder(chat.cwd);
 
   const resume = async (chat: RecentInfo) => {
     if (resuming) return;
@@ -141,7 +134,7 @@ function Recent({
           <RecentRow
             key={chat.id}
             chat={chat}
-            place={scope ? undefined : projectOf(chat)}
+            place={scope ? undefined : projectName(snapshot, chat.project, chat.cwd)}
             resuming={resuming === chat.id}
             minute={minute}
             onResume={onResume}
@@ -201,7 +194,7 @@ function Agents({
 }) {
   const styles = useStyles(makeStyles);
   const open = openAgents(snapshot, scope, provider);
-  const workers = snapshot.inbox.remoteAgents ?? [];
+  const workers = snapshot.inbox.remoteAgents;
   const leads = new Set(open.map((agent) => (agent.kind === 'chat' ? agent.chat.agentId : agent.session.agentId)));
   const strays = scope
     ? []
@@ -297,7 +290,9 @@ const TerminalAgentRow = memo(function TerminalAgentRow({
   const { group } = agentDisplay(shown);
   return (
     <Row
-      mark={<AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} named={!!session.agentName} group={group} size={20} />}
+      mark={
+        <AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} named={!!session.agentName} group={group} size={20} />
+      }
       name={session.agentName}
       title={shown.title}
       place={place}
@@ -613,13 +608,7 @@ export default function Device() {
                     ) : tab === 'terminals' ? (
                       <Terminals snapshot={snapshot} scope={scope} />
                     ) : (
-                      <Board
-                        core={core}
-                        connection={live.status === 'open' ? live.connection : undefined}
-                        snapshot={snapshot}
-                        scope={scope}
-                        onScope={scopeTo}
-                      />
+                      <Board core={core} connection={connectionOf(live)} snapshot={snapshot} scope={scope} onScope={scopeTo} />
                     )
                   ) : null}
                 </View>

@@ -7,8 +7,9 @@ import { ACCESS_OPTIONS, platformName } from '@mac/remote/access';
 import { formatAgo } from '@mac/lib/format';
 import { type DeviceAccess, type LinkedHost, type DeviceInfo, type RemotePairing, readPairing } from '@/core/protocol';
 import { useDeviceId } from '@/device/identity';
-import { problem as problemOf, useDevices, useLive } from '@/devices/hub';
+import { connectionOf, problem as problemOf, useDevices, useLive } from '@/devices/hub';
 import { deviceName } from '@/devices/paired';
+import { counted } from '@/devices/words';
 import { useCardArrivals } from '@/notify/responses';
 import { haptics } from '@/ui/haptics';
 import { DeviceIcon, Icon } from '@/ui/Icon';
@@ -181,7 +182,7 @@ function LinkSheet({
   );
 }
 
-const agentCount = (count: number) => `${count} agent${count === 1 ? '' : 's'}`;
+const agentCount = (count: number) => `${count} ${counted('agent', count)}`;
 
 function linkDetail(link: LinkedHost, now: number): string {
   const reach = link.connected ? 'connected' : link.lastSeen ? `seen ${formatAgo(link.lastSeen, now)}` : 'never connected';
@@ -198,7 +199,7 @@ export default function HostPairing() {
   const { devices } = useDevices();
   const device = devices.find((known) => known.core === core);
   const live = useLive(core);
-  const connection = live.status === 'open' ? live.connection : undefined;
+  const connection = connectionOf(live);
   const { pairing, problem, busy, reread, answer, setAccess, setSignIns } = usePairing(connection);
   const [editing, setEditing] = useState<string>();
   const [linkOpen, setLinkOpen] = useState<string>();

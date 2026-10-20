@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react';
 
-import { onChatEvents, useLive } from '@/devices/hub';
+import type { ConnectionLike } from '@sikemux/native';
+
+import { connectionOf, onChatEvents, useLive } from '@/devices/hub';
 import { ChatSession, type ChatSnapshot } from './session';
 
 /** Every chat this phone opened since it started, so going back to one finds it as it was left. */
@@ -17,10 +19,13 @@ export function chatSession(core: string, agentId: string): ChatSession {
 }
 
 /** One chat on one host, attached while this is mounted and the host is connected. */
-export function useChat(core: string, agentId: string): { session: ChatSession; chat: ChatSnapshot } {
+export function useChat(
+  core: string,
+  agentId: string,
+): { session: ChatSession; chat: ChatSnapshot; connection: ConnectionLike | undefined } {
   const live = useLive(core);
   const session = chatSession(core, agentId);
-  const connection = live.status === 'open' ? live.connection : undefined;
+  const connection = connectionOf(live);
   useEffect(() => session.hold(connection), [session, connection]);
 
   const snapshot = live.snapshot;
@@ -32,7 +37,7 @@ export function useChat(core: string, agentId: string): { session: ChatSession; 
   }, [session, snapshot, info, agentId]);
 
   const chat = useSyncExternalStore(session.subscribe, session.snapshot);
-  return { session, chat };
+  return { session, chat, connection };
 }
 
 export function useDraft(session: ChatSession): string {

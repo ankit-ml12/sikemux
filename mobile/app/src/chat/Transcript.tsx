@@ -7,7 +7,7 @@ import { durationLabel } from '@mac/chat/durationLabel';
 import { basename } from '@mac/lib/paths';
 import { rateLabel, sentLabel, type RowMeta } from '@mac/chat/messageMeta';
 import { cutLongText, showRestLabel } from '@mac/chat/longText';
-import { contextChip, type SentContext } from '@mac/chat/promptContext';
+import { contextChip, type ContextChip, type SentContext } from '@mac/chat/promptContext';
 import {
   attachmentName,
   groupParts,
@@ -26,6 +26,7 @@ import { CopyButton } from '@/ui/CopyButton';
 import { haptics } from '@/ui/haptics';
 import { AgentFace } from '@/ui/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
+import type { IconName } from '@/ui/icons.generated';
 import { Working } from '@/ui/status';
 import { fonts, italic, mixed, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
 import { useAnimating } from '@/ui/motion';
@@ -225,6 +226,12 @@ function PageCard({ page }: { page: PageRef }) {
   );
 }
 
+const CHIP_LOOKS: Record<NonNullable<ContextChip['kind']> | 'other', { label: string; icon: IconName }> = {
+  issue: { label: 'Issue', icon: 'IconIssue' },
+  pull: { label: 'Pull request', icon: 'IconPullRequest' },
+  other: { label: 'Context', icon: 'IconFile' },
+};
+
 /** An issue, pull request or other item handed over with a message, by its number and title rather than its whole text. */
 function ContextChips({ items }: { items: SentContext[] }) {
   const colors = useColors();
@@ -233,17 +240,14 @@ function ContextChips({ items }: { items: SentContext[] }) {
     <View style={styles.contextChips}>
       {items.map((item) => {
         const chip = contextChip(item);
+        const { label, icon } = CHIP_LOOKS[chip.kind ?? 'other'];
         return (
           <View
             key={item.uri}
             style={styles.contextChip}
             accessible
-            accessibilityLabel={`${chip.kind === 'issue' ? 'Issue' : chip.kind === 'pull' ? 'Pull request' : 'Context'} ${chip.number ? `#${chip.number} ` : ''}${chip.title}`}>
-            <Icon
-              name={chip.kind === 'issue' ? 'IconIssue' : chip.kind === 'pull' ? 'IconPullRequest' : 'IconFile'}
-              size={14}
-              color={chip.kind ? colors.live : colors.inkFaint}
-            />
+            accessibilityLabel={`${label} ${chip.number ? `#${chip.number} ` : ''}${chip.title}`}>
+            <Icon name={icon} size={14} color={chip.kind ? colors.live : colors.inkFaint} />
             {chip.number ? <Text style={styles.contextNumber}>#{chip.number}</Text> : null}
             <Text style={styles.contextTitle} numberOfLines={1}>
               {chip.title}

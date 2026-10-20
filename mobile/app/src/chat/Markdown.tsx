@@ -1,5 +1,5 @@
 import { Fragment, memo, useMemo, type ReactNode } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 
 import { fencedDiff } from '@mac/chat/diff';
 import { namesWholePath } from '@mac/chat/filePath';
@@ -7,6 +7,7 @@ import { decodedFenceName } from '@mac/chat/transcript';
 import { safeWebUrl } from '@mac/lib/urls';
 import { CopyButton } from '@/ui/CopyButton';
 import { Icon } from '@/ui/Icon';
+import { openLink } from '@/ui/prompt';
 import { fonts, italic, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
 import { DiffRow, SidewaysRows } from './Diff';
 import { FileRef, fileRuns, hostImagePath, LinkedImage, namesFile } from './FileRef';
@@ -19,7 +20,7 @@ const openable = (url: string) => safeWebUrl(url) ?? (/^mailto:/i.test(url) ? ur
 
 function Link({ url, children, styles }: { url: string; children: ReactNode; styles: Styles }) {
   return (
-    <Text style={styles.link} onPress={() => Linking.openURL(url).catch(() => {})} accessibilityRole="link">
+    <Text style={styles.link} onPress={() => openLink(url)} accessibilityRole="link">
       {children}
     </Text>
   );
