@@ -6,28 +6,24 @@
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 use tokio::sync::mpsc;
-use tokio_websockets::Message;
 
 use super::super::Core;
 use serde_json::json;
 
 use super::{answer, published, save, take_snapshot, waiting_on, Running, ShareState, ToLink};
-use crate::accounts::live::{backoff, connect, rfc3339, socket_url, Socket};
+use crate::accounts::live::{rfc3339, socket_url};
 use crate::accounts::share::{
     ShareClientMessage, ShareClose, ShareCloseCode, ShareEndReason, ShareFrame, ShareHello,
     ShareOpen, SharePong, SharePublish, ShareRefusal, ShareRole, ShareServerMessage,
 };
+use crate::accounts::socket::{self, send, Closed, Failures, Frame};
 
-const CHALLENGE_WAIT: Duration = Duration::from_secs(10);
-const HEARTBEAT: Duration = Duration::from_secs(25);
 /// How often expiries and chats that started again are looked for.
 const TICK: Duration = Duration::from_secs(3);
-const REPLACED_WAIT: Duration = Duration::from_secs(60);
-const OVER_LIMIT_WAIT: Duration = Duration::from_secs(30);
 
 enum Ended {
     /// Nothing is shared any more.
@@ -44,7 +40,7 @@ pub(super) async fn run(
     mut queue: mpsc::UnboundedReceiver<ToLink>,
 ) {
     let url = socket_url(&base, "/v1/share");
-    let mut failures: u32 = 0;
+    let mut failures = Failures::default();
     loop {
         let ended = match core.upgrade() {
             Some(core) => session(&core, &url, &mut queue).await,
@@ -72,11 +68,7 @@ pub(super) async fn run(
         let Ended::Retry { hint, was_open } = ended else {
             return;
         };
-        if was_open {
-            failures = 0;
-        }
-        failures = failures.saturating_add(1);
-        let wait = backoff(failures).max(hint.unwrap_or_default());
+        let wait = failures.wait(hint, was_open);
         let deadline = tokio::time::Instant::now() + wait;
         // What arrives while offline is let go of; the snapshot after the
         // reconnect carries it.
@@ -87,40 +79,13 @@ pub(super) async fn run(
                     Some(ToLink::Heard(..) | ToLink::Send(_)) => {}
                     Some(ToLink::Open(_) | ToLink::Close(_)) => break,
                     Some(ToLink::Retry) => {
-                        failures = 0;
+                        failures.forget();
                         break;
                     }
                     None => return,
                 },
             }
         }
-    }
-}
-
-async fn send(socket: &mut Socket, message: ShareClientMessage) -> bool {
-    let Ok(text) = serde_json::to_string(&message) else {
-        return false;
-    };
-    socket.send(Message::text(text)).await.is_ok()
-}
-
-enum Frame {
-    Server(ShareServerMessage),
-    Closed(Option<u16>),
-    Other,
-}
-
-async fn next_frame(socket: &mut Socket, wait: Duration) -> Frame {
-    let message = match tokio::time::timeout(wait, socket.next()).await {
-        Ok(Some(Ok(message))) => message,
-        _ => return Frame::Closed(None),
-    };
-    if let Some((code, _)) = message.as_close() {
-        return Frame::Closed(Some(code.into()));
-    }
-    match message.as_text().map(serde_json::from_str) {
-        Some(Ok(message)) => Frame::Server(message),
-        _ => Frame::Other,
     }
 }
 
@@ -223,15 +188,15 @@ async fn session(
     queue: &mut mpsc::UnboundedReceiver<ToLink>,
 ) -> Ended {
     let retry = |hint, was_open| Ended::Retry { hint, was_open };
-    let Some(mut socket) = connect(url).await else {
+    let Some(mut socket) = socket::connect(url).await else {
         return retry(None, false);
     };
-    let nonce = loop {
-        match next_frame(&mut socket, CHALLENGE_WAIT).await {
-            Frame::Server(ShareServerMessage::Challenge(challenge)) => break challenge.nonce,
-            Frame::Server(_) | Frame::Other => continue,
-            Frame::Closed(_) => return retry(None, false),
-        }
+    let nonce = socket::challenge(&mut socket, |message| match message {
+        ShareServerMessage::Challenge(challenge) => Some(challenge.nonce),
+        _ => None,
+    });
+    let Some(nonce) = nonce.await else {
+        return retry(None, false);
     };
     let Some((key, signature)) = core.remote.sign_share(&nonce) else {
         return retry(None, false);
@@ -245,25 +210,27 @@ async fn session(
         proof: None,
         since: None,
     });
-    if !send(&mut socket, hello).await {
+    if !send(&mut socket, &hello).await {
         return retry(None, false);
     }
 
     let mut open = false;
     let mut hint: Option<Duration> = None;
-    let mut silence = HEARTBEAT * 2;
+    let mut silence = socket::HEARTBEAT * 2;
     let mut ticker = tokio::time::interval(TICK);
     loop {
         let message = tokio::select! {
-            frame = next_frame(&mut socket, silence) => match frame {
+            frame = socket::next_frame(&mut socket, silence) => match frame {
                 Frame::Server(message) => message,
                 Frame::Other => continue,
                 Frame::Closed(code) => {
                     let code = code.and_then(|code| ShareCloseCode::from_code(code.into()));
                     return match code {
-                        Some(ShareCloseCode::Replaced) => retry(Some(REPLACED_WAIT), open),
+                        Some(ShareCloseCode::Replaced) => {
+                            retry(socket::wait_after(Closed::Replaced, hint), open)
+                        }
                         Some(ShareCloseCode::OverLimit) => {
-                            retry(Some(hint.unwrap_or_default().max(OVER_LIMIT_WAIT)), open)
+                            retry(socket::wait_after(Closed::OverLimit, hint), open)
                         }
                         _ => retry(hint, open),
                     };
@@ -291,7 +258,7 @@ async fn session(
                     ToLink::Retry => None,
                 };
                 if let Some(outgoing) = outgoing {
-                    if !send(&mut socket, outgoing).await {
+                    if !send(&mut socket, &outgoing).await {
                         return retry(hint, open);
                     }
                 }
@@ -300,7 +267,7 @@ async fn session(
             _ = ticker.tick() => {
                 if open {
                     for message in tick(core) {
-                        if !send(&mut socket, message).await {
+                        if !send(&mut socket, &message).await {
                             return retry(hint, open);
                         }
                     }
@@ -319,9 +286,7 @@ async fn session(
         let sent = match message {
             ShareServerMessage::Ready(ready) => {
                 open = true;
-                if let Ok(ms) = u64::try_from(ready.heartbeat_ms) {
-                    silence = Duration::from_millis(ms) * 2;
-                }
+                silence = socket::silence(ready.heartbeat_ms);
                 let (opening, closing): (Vec<_>, Vec<_>) = {
                     let inner = core.shares.inner.locked();
                     (
@@ -346,7 +311,7 @@ async fn session(
                 };
                 let mut sent = true;
                 for message in opening.into_iter().chain(closing) {
-                    sent = sent && send(&mut socket, message).await;
+                    sent = sent && send(&mut socket, &message).await;
                 }
                 sent
             }
@@ -408,12 +373,10 @@ async fn session(
                 true
             }
             ShareServerMessage::Ping(_) => {
-                send(&mut socket, ShareClientMessage::Pong(SharePong {})).await
+                send(&mut socket, &ShareClientMessage::Pong(SharePong {})).await
             }
             ShareServerMessage::Bye(bye) => {
-                hint = Some(Duration::from_millis(
-                    u64::try_from(bye.reconnect_after_ms).unwrap_or_default(),
-                ));
+                hint = Some(socket::asked_wait(bye.reconnect_after_ms));
                 true
             }
             _ => true,

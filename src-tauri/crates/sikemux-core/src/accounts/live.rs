@@ -4,37 +4,22 @@
 //! connection drops.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
 use time::OffsetDateTime;
-use tokio::net::TcpStream;
 use tokio::sync::{watch, Notify};
-use tokio_websockets::{ClientBuilder, Connector, MaybeTlsStream, Message, WebSocketStream};
 
 use super::protocol::{
     AccountEvent, LiveAck, LiveApp, LiveCloseCode, LiveDeviceMessage, LiveHello, LiveLeave,
     LivePong, LivePush, LiveRole, LiveServerMessage, PushKind, PushResult, RevokeReason,
 };
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-const CHALLENGE_WAIT: Duration = Duration::from_secs(10);
-/// How often the server pings until its `ready` says. Two of these without
-/// a frame means the connection is dead even if the network has not said so.
-const HEARTBEAT: Duration = Duration::from_secs(25);
-const BACKOFF_BASE: Duration = Duration::from_secs(1);
-const BACKOFF_CAP: Duration = Duration::from_secs(5 * 60);
-/// Another connection with this key took over, which happens while a core
-/// hands over to its replacement. Coming straight back would push it off.
-const REPLACED_WAIT: Duration = Duration::from_secs(60);
-/// The server's limits count over a minute, so coming back sooner only
-/// prolongs the lockout.
-const OVER_LIMIT_WAIT: Duration = Duration::from_secs(30);
+use super::socket::{self, send, Closed, Failures, Frame, Socket};
 
 const CLOSE_WAIT: Duration = Duration::from_secs(2);
 
@@ -224,7 +209,7 @@ pub async fn run<A: Account>(
     outbox: Arc<Outbox>,
     mut changed: watch::Receiver<()>,
 ) {
-    let mut failures: u32 = 0;
+    let mut failures = Failures::default();
     account.link(Link::Connecting);
     loop {
         if changed.has_changed().is_err() || account.want() == Want::Stop {
@@ -234,13 +219,7 @@ pub async fn run<A: Account>(
         outbox.unanswered();
         let wait = match ended {
             Ended::Done => continue,
-            Ended::Retry { hint, was_live } => {
-                if was_live {
-                    failures = 0;
-                }
-                failures = failures.saturating_add(1);
-                backoff(failures).max(hint.unwrap_or_default())
-            }
+            Ended::Retry { hint, was_live } => failures.wait(hint, was_live),
         };
         account.link(Link::Offline);
         tokio::select! {
@@ -249,20 +228,10 @@ pub async fn run<A: Account>(
                 if gone.is_err() {
                     return;
                 }
-                // Something changed, such as the network coming back: start the backoff over.
-                failures = 0;
+                failures.forget();
             }
         }
     }
-}
-
-/// Full jitter: anywhere from nothing to the doubled delay, capped.
-pub(crate) fn backoff(failures: u32) -> Duration {
-    let ceiling = BACKOFF_BASE
-        .saturating_mul(1u32 << failures.saturating_sub(1).min(16))
-        .min(BACKOFF_CAP);
-    let fraction = (uuid::Uuid::new_v4().as_u128() % 1000) as u32;
-    ceiling.mul_f64(f64::from(fraction) / 1000.0)
 }
 
 enum Ended {
@@ -273,54 +242,9 @@ enum Ended {
     },
 }
 
-pub(crate) type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
-fn connector() -> &'static Connector {
-    static CONNECTOR: OnceLock<Connector> = OnceLock::new();
-    CONNECTOR.get_or_init(|| match super::tls_config() {
-        Some(config) => Connector::Rustls(tokio_rustls::TlsConnector::from(config)),
-        None => Connector::Plain,
-    })
-}
-
-pub(crate) async fn connect(url: &str) -> Option<Socket> {
-    let builder = ClientBuilder::new().uri(url).ok()?.connector(connector());
-    match tokio::time::timeout(CONNECT_TIMEOUT, builder.connect()).await {
-        Ok(Ok((socket, _))) => Some(socket),
-        _ => None,
-    }
-}
-
-async fn send(socket: &mut Socket, message: LiveDeviceMessage) -> bool {
-    let Ok(text) = serde_json::to_string(&message) else {
-        return false;
-    };
-    socket.send(Message::text(text)).await.is_ok()
-}
-
-enum Frame {
-    Server(LiveServerMessage),
-    Closed(Option<u16>),
-    Other,
-}
-
-async fn next_frame(socket: &mut Socket, wait: Duration) -> Frame {
-    let message = match tokio::time::timeout(wait, socket.next()).await {
-        Ok(Some(Ok(message))) => message,
-        _ => return Frame::Closed(None),
-    };
-    if let Some((code, _)) = message.as_close() {
-        return Frame::Closed(Some(code.into()));
-    }
-    match message.as_text().map(serde_json::from_str) {
-        Some(Ok(message)) => Frame::Server(message),
-        _ => Frame::Other,
-    }
-}
-
 async fn flush(socket: &mut Socket, outbox: &Outbox) -> bool {
     for push in outbox.take() {
-        if !send(socket, LiveDeviceMessage::Push(push)).await {
+        if !send(socket, &LiveDeviceMessage::Push(push)).await {
             return false;
         }
     }
@@ -335,15 +259,15 @@ async fn session<A: Account>(
     changed: &mut watch::Receiver<()>,
 ) -> Ended {
     let retry = |hint, was_live| Ended::Retry { hint, was_live };
-    let Some(mut socket) = connect(url).await else {
+    let Some(mut socket) = socket::connect(url).await else {
         return retry(None, false);
     };
-    let nonce = loop {
-        match next_frame(&mut socket, CHALLENGE_WAIT).await {
-            Frame::Server(LiveServerMessage::Challenge(challenge)) => break challenge.nonce,
-            Frame::Server(_) | Frame::Other => continue,
-            Frame::Closed(_) => return retry(None, false),
-        }
+    let nonce = socket::challenge(&mut socket, |message| match message {
+        LiveServerMessage::Challenge(challenge) => Some(challenge.nonce),
+        _ => None,
+    });
+    let Some(nonce) = nonce.await else {
+        return retry(None, false);
     };
     let Some((key, signature)) = account.sign_live(&nonce) else {
         return retry(None, false);
@@ -355,17 +279,17 @@ async fn session<A: Account>(
         token: None,
         app: Some(app.clone()),
     });
-    if !send(&mut socket, hello).await {
+    if !send(&mut socket, &hello).await {
         return retry(None, false);
     }
 
     let mut ready = false;
     let mut leaving = false;
     let mut hint = None;
-    let mut silence = HEARTBEAT * 2;
+    let mut silence = socket::HEARTBEAT * 2;
     loop {
         let frame = tokio::select! {
-            frame = next_frame(&mut socket, silence) => frame,
+            frame = socket::next_frame(&mut socket, silence) => frame,
             _ = outbox.ready.notified(), if ready && !leaving => {
                 if !flush(&mut socket, outbox).await {
                     return retry(hint, ready);
@@ -379,7 +303,7 @@ async fn session<A: Account>(
                         return Ended::Done;
                     }
                     Want::Leave if ready && !leaving => {
-                        leaving = send(&mut socket, LiveDeviceMessage::Leave(LiveLeave {})).await;
+                        leaving = send(&mut socket, &LiveDeviceMessage::Leave(LiveLeave {})).await;
                     }
                     _ => {}
                 }
@@ -399,9 +323,11 @@ async fn session<A: Account>(
                         account.removed(None);
                         Ended::Done
                     }
-                    Some(LiveCloseCode::Replaced) => retry(Some(REPLACED_WAIT), ready),
+                    Some(LiveCloseCode::Replaced) => {
+                        retry(socket::wait_after(Closed::Replaced, hint), ready)
+                    }
                     Some(LiveCloseCode::OverLimit) => {
-                        retry(Some(hint.unwrap_or_default().max(OVER_LIMIT_WAIT)), ready)
+                        retry(socket::wait_after(Closed::OverLimit, hint), ready)
                     }
                     _ => retry(hint, ready),
                 };
@@ -410,14 +336,12 @@ async fn session<A: Account>(
         let answered = match message {
             LiveServerMessage::Ready(server) => {
                 ready = true;
-                if let Ok(ms) = u64::try_from(server.heartbeat_ms) {
-                    silence = Duration::from_millis(ms) * 2;
-                }
+                silence = socket::silence(server.heartbeat_ms);
                 account.rewind(server.latest);
                 account.link(Link::Live);
                 if account.want() == Want::Leave {
                     leaving = true;
-                    send(&mut socket, LiveDeviceMessage::Leave(LiveLeave {})).await
+                    send(&mut socket, &LiveDeviceMessage::Leave(LiveLeave {})).await
                 } else {
                     flush(&mut socket, outbox).await
                 }
@@ -436,19 +360,17 @@ async fn session<A: Account>(
                 if !fresh.is_empty() {
                     account.apply(&fresh);
                 }
-                send(&mut socket, LiveDeviceMessage::Ack(LiveAck { id: last })).await
+                send(&mut socket, &LiveDeviceMessage::Ack(LiveAck { id: last })).await
             }
             LiveServerMessage::Reset(reset) => {
                 account.rewind(reset.latest);
                 true
             }
             LiveServerMessage::Ping(_) => {
-                send(&mut socket, LiveDeviceMessage::Pong(LivePong {})).await
+                send(&mut socket, &LiveDeviceMessage::Pong(LivePong {})).await
             }
             LiveServerMessage::Bye(bye) => {
-                hint = Some(Duration::from_millis(
-                    u64::try_from(bye.reconnect_after_ms).unwrap_or_default(),
-                ));
+                hint = Some(socket::asked_wait(bye.reconnect_after_ms));
                 true
             }
             LiveServerMessage::Pushed(pushed) => {

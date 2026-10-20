@@ -35,6 +35,7 @@ use tokio::sync::Semaphore;
 use super::remote::{self, LinkedHost};
 use super::wake::{sooner, Wake};
 use super::{Core, CoreError, CoreResult};
+use crate::backoff::Backoff;
 
 pub(crate) use join::link_host;
 pub(crate) use link::{Failed, LINK_ALPN};
@@ -42,8 +43,10 @@ pub(crate) use outbox::Sending;
 
 const DIAL_WAIT: Duration = Duration::from_secs(15);
 const ASK_WAIT: Duration = Duration::from_secs(30);
-const RETRY_FIRST_MS: u64 = 2_000;
-const RETRY_MAX_MS: u64 = 60_000;
+const REDIAL: Backoff = Backoff {
+    first: Duration::from_secs(2),
+    cap: Duration::from_secs(60),
+};
 /// How long a host that runs workers may be out of reach before their leads
 /// hear of it.
 const OUT_OF_REACH_MS: u64 = 2 * 60_000;
@@ -55,7 +58,8 @@ const MAX_ADDRESSES: usize = 8;
 struct Down {
     since: u64,
     retry_at: u64,
-    wait_ms: u64,
+    /// Dials in a row that failed.
+    failures: u32,
     /// Its workers' leads were told it is out of reach.
     told: bool,
 }
@@ -123,7 +127,7 @@ impl Hosts {
             .or_insert(Down {
                 since: now,
                 retry_at: now,
-                wait_ms: RETRY_FIRST_MS,
+                failures: 0,
                 told: false,
             });
         self.wake.now();
@@ -512,7 +516,7 @@ pub(crate) fn settle(core: &Arc<Core>) {
             let down = state.down.entry(link.id.clone()).or_insert(Down {
                 since: now,
                 retry_at: now,
-                wait_ms: RETRY_FIRST_MS,
+                failures: 0,
                 told: false,
             });
             if !down.told && core.hosts.team.has_host(&link.id) {
@@ -544,8 +548,8 @@ pub(crate) fn settle(core: &Arc<Core>) {
                 state.dialing.remove(&link.id);
                 if dialed.is_err() {
                     if let Some(down) = state.down.get_mut(&link.id) {
-                        down.retry_at = epoch_ms() + down.wait_ms;
-                        down.wait_ms = (down.wait_ms * 2).min(RETRY_MAX_MS);
+                        down.failures = down.failures.saturating_add(1);
+                        down.retry_at = epoch_ms() + REDIAL.after(down.failures).as_millis() as u64;
                     }
                 }
             }

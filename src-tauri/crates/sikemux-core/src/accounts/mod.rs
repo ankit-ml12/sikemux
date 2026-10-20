@@ -4,6 +4,8 @@
 pub mod host;
 #[cfg(unix)]
 pub mod live;
+#[cfg(unix)]
+pub(crate) mod socket;
 pub mod share;
 
 #[cfg(unix)]

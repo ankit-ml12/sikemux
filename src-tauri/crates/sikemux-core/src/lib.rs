@@ -8,6 +8,7 @@ pub mod acp;
 pub mod agent_accounts;
 #[rustfmt::skip]
 pub mod agent_catalog;
+mod backoff;
 pub mod cli;
 #[cfg(unix)]
 pub mod client;

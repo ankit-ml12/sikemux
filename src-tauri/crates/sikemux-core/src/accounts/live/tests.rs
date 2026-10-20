@@ -1,11 +1,14 @@
 use std::sync::Mutex;
 
+use futures_util::StreamExt;
 use iroh::SecretKey;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
-use tokio_websockets::{CloseCode, ServerBuilder};
+use tokio::net::TcpStream;
+use tokio_websockets::{CloseCode, Message, ServerBuilder, WebSocketStream};
 
 use super::*;
+use crate::accounts::socket::OVER_LIMIT_WAIT;
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -221,14 +224,6 @@ fn urls_follow_the_api_scheme() {
         "wss://api.sikemux.com/v1/live"
     );
     assert_eq!(url("http://127.0.0.1:4000/"), "ws://127.0.0.1:4000/v1/live");
-}
-
-#[test]
-fn backoff_never_passes_its_cap() {
-    for failures in [1, 2, 10, 40, u32::MAX] {
-        assert!(backoff(failures) <= BACKOFF_CAP);
-    }
-    assert!(backoff(1) <= BACKOFF_BASE);
 }
 
 #[tokio::test]
