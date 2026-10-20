@@ -78,9 +78,16 @@ pub(crate) struct Launcher {
     pub agent: AgentSpec,
     pub permission_mode: String,
     /// Whether the agent is ready, signed out or cannot tell, as the core last checked.
-    pub status: Option<String>,
+    pub status: Option<AgentStatus>,
     /// The program the core last found for the agent.
     pub program: Option<PathBuf>,
+}
+
+impl Launcher {
+    /// Why it cannot be started now, as the core last checked.
+    fn refusal(&self) -> Option<String> {
+        self.status.as_ref()?.refusal(&self.label)
+    }
 }
 
 /// An agent as the core keeps it: what every client sees, and the accounts
@@ -932,7 +939,7 @@ impl Workspaces {
                 && launcher.agent.config_path.as_deref() == config_path
         });
         for launcher in on_account {
-            launcher.status = Some(status.state().to_owned());
+            launcher.status = Some(status.clone());
         }
     }
 
@@ -1316,7 +1323,10 @@ impl Workspaces {
                         label: launcher.label.clone(),
                         permission_mode: launcher.permission_mode.clone(),
                         config_options,
-                        status: launcher.status.clone(),
+                        status: launcher
+                            .status
+                            .as_ref()
+                            .map(|status| status.state().to_owned()),
                         model,
                         effort,
                     }
@@ -1424,20 +1434,8 @@ impl Workspaces {
             })?;
             (*launcher).clone()
         };
-        match launcher.status.as_deref() {
-            Some("missing") => {
-                return Err(format!("{} is not installed on this host", launcher.label))
-            }
-            Some("signedOut") => {
-                return Err(format!(
-                    "{} is signed out on this host; ask the person to sign in",
-                    launcher.label
-                ))
-            }
-            Some("broken") => {
-                return Err(format!("{} does not start on this host", launcher.label))
-            }
-            _ => {}
+        if let Some(refusal) = launcher.refusal() {
+            return Err(refusal);
         }
         let model = model.or_else(|| {
             lead_own
@@ -1478,12 +1476,7 @@ impl Workspaces {
         let chosen = {
             let published = self.published.locked();
             let launchers = &published.launchers;
-            let usable = |launcher: &&Launcher| {
-                !matches!(
-                    launcher.status.as_deref(),
-                    Some("missing" | "signedOut" | "broken")
-                )
-            };
+            let usable = |launcher: &&Launcher| launcher.refusal().is_none();
             match launcher {
                 Some(id) => launchers
                     .iter()
@@ -1497,11 +1490,8 @@ impl Workspaces {
             }
             .clone()
         };
-        match chosen.status.as_deref() {
-            Some("missing") => return Err(format!("{} is not installed", chosen.label)),
-            Some("signedOut") => return Err(format!("{} is signed out", chosen.label)),
-            Some("broken") => return Err(format!("{} does not start", chosen.label)),
-            _ => {}
+        if let Some(refusal) = chosen.refusal() {
+            return Err(refusal);
         }
         let launch = self.chat_launch(&chosen, still_there(&chosen)?, cwd, provider, model)?;
         Ok((launch, chosen.id))
@@ -1531,7 +1521,7 @@ impl Workspaces {
                 .launchers
                 .iter()
                 .filter(other)
-                .find(|launcher| launcher.status.as_deref() == Some("ready"))
+                .find(|launcher| matches!(launcher.status, Some(AgentStatus::Ready { .. })))
                 .map(|launcher| launcher.id.clone()));
         };
         let launcher = published
@@ -1813,7 +1803,7 @@ async fn refresh(core: Arc<Core>, asked: u64) {
                 let agent = &launcher.agent;
                 let status = status::cached(&agent.provider, agent.config_path.as_deref());
                 Some(Launcher {
-                    status: status.map(|status| status.state().to_owned()),
+                    status,
                     program: Some(program),
                     ..launcher
                 })
@@ -1922,7 +1912,7 @@ mod tests {
     fn a_device_sees_whether_each_launcher_is_signed_in() {
         let workspaces = Workspaces::new(None);
         let signed_out = Launcher {
-            status: Some("signedOut".into()),
+            status: Some(AgentStatus::SignedOut),
             ..launcher()
         };
         offer(&workspaces, vec![signed_out]);

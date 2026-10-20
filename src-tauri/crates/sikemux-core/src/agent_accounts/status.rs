@@ -46,6 +46,18 @@ impl AgentStatus {
             Self::Unknown => "unknown",
         }
     }
+
+    /// Why an agent labelled `label` cannot be started now, if it cannot.
+    pub fn refusal(&self, label: &str) -> Option<String> {
+        match self {
+            Self::Missing => Some(format!("{label} is not installed on this host")),
+            Self::SignedOut => Some(format!(
+                "{label} is signed out on this host; ask the person to sign in"
+            )),
+            Self::Broken { .. } => Some(format!("{label} does not start on this host")),
+            Self::Ready { .. } | Self::Unknown => None,
+        }
+    }
 }
 
 #[derive(Serialize, Debug, Default, PartialEq)]
