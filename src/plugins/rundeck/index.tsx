@@ -1,7 +1,6 @@
 import { lazy } from "react";
-import { registerFrontendPlugin, signInOf } from "../../plugin-api";
-import { useResource } from "../../plugin-api/resources";
-import { rndStatusR } from "./resources";
+import { registerFrontendPlugin } from "../../plugin-api";
+import { rundeck } from "./resources";
 import { IconRundeck } from "../../plugin-api/ui";
 import { RundeckOverlay } from "./components/RundeckOverlay";
 import { RundeckTopBarItem } from "./components/RundeckTopBarItem";
@@ -26,8 +25,5 @@ registerFrontendPlugin({
     mark: (size) => <IconRundeck size={size} />,
     Overlay: RundeckOverlay,
     TopBarItem: RundeckTopBarItem,
-    useSignIn: function useRundeckSignIn() {
-        const status = useResource(rndStatusR);
-        return signInOf(status);
-    },
+    useSignIn: rundeck.useSignIn,
 });

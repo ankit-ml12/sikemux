@@ -1,12 +1,10 @@
 import { peekResource, useResource } from "../../plugin-api/resources";
-import { pluginResources } from "../../plugin-api/service";
+import { defineService } from "../../plugin-api/service";
 import { rundeckApi, type PlanRequest, type RundeckJob } from "./api";
 import { RUNDECK_PLUGIN } from "./kinds";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS } from "./shape";
 
-export const rundeck = pluginResources(RUNDECK_PLUGIN);
-
-export const rndStatusR = rundeck.resource("status", () => rundeckApi.status(), 60_000);
+export const rundeck = defineService(RUNDECK_PLUGIN, rundeckApi.status);
 
 export const rndProjectsR = rundeck.resource("projects", () => rundeckApi.projects(), 5 * 60_000);
 

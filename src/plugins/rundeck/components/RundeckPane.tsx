@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
 import * as cmd from "../state";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { rndStatusR, rundeck } from "../resources";
+import { rundeck } from "../resources";
 import { EmptyState, IconWarning } from "../../../plugin-api/ui";
 import { RundeckConnection } from "./RundeckConnection";
 import { RundeckLogin } from "./RundeckLogin";
@@ -21,7 +21,7 @@ interface Props {
 
 export function RundeckPane({ paneId, active }: Props) {
     const view = cmd.useRundeckView(paneId);
-    const status = useResourceEnabled(active, rndStatusR);
+    const status = useResourceEnabled(active, rundeck.statusR);
     const treeHidden = cmd.rundeckSettings.useSelect((s) => s.treeHidden);
     const treeWidth = cmd.useRundeck((s) => s.treeWidth);
 
@@ -31,14 +31,14 @@ export function RundeckPane({ paneId, active }: Props) {
         if (status.status === "loading" && !status.data) {
             return <RundeckLoading />;
         }
-        if (status.data && (!status.data.configured || (!status.data.ok && status.data.authFailed))) {
+        if (status.data && (!status.data.configured || status.data.authFailed)) {
             return (
                 <RundeckLogin
                     key={status.data.configured ? "expired" : "new"}
                     initialUrl={status.data.url}
                     initialUser={status.data.user}
                     initialAllowInsecurePrivateHttp={status.data.allowInsecurePrivateHttp}
-                    status={{ authFailed: status.data.configured, message: status.data.message ?? "Authentication failed" }}
+                    status={status.data}
                     onDone={() => rundeck.refresh()}
                 />
             );
