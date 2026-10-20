@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ConnectionLike } from '@sikemux/native';
 
-import { problem } from '@/devices/hub';
+import { problem } from '@/core/problem';
 
 /** What the host last answered a call with, and why the latest read failed if it did. */
 export type HostRead<T> = { data?: T; problem?: string };

@@ -10,7 +10,7 @@ import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { useLibrary, type LibraryPhoto } from './library';
 import { libraryPhotos, pickFiles, pickPhotos, takePhoto } from './pick';
-import type { Attachment } from './session';
+import type { Attachment } from './uploads';
 
 const COLUMNS = 4;
 /** The space around each square in the grid. */

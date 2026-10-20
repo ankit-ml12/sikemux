@@ -5,7 +5,7 @@ import { unreadAnswers, waitingQuestions, type AgentQuestion, type QuestionAnswe
 import type { ChatMessage } from '@mac/chat/types';
 
 import { useHostCall } from '@/core/hostCalls';
-import { problem } from '@/devices/hub';
+import { problem } from '@/core/problem';
 
 const NONE: AgentQuestion[] = [];
 

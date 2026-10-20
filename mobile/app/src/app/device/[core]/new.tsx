@@ -12,9 +12,11 @@ import { ChatTitle } from '@/chat/ChatTitle';
 import { AttachSheet } from '@/chat/AttachSheet';
 import { YoloToggle } from '@/chat/Composer';
 import { ComposerInput } from '@/chat/ComposerInput';
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type Attachment } from '@/chat/session';
+import { fitting, pathsOf, uploadEach, type Attachment } from '@/chat/uploads';
+import { MAX_ATTACHMENTS } from '@/core/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
-import { problem as problemOf, useLive } from '@/devices/hub';
+import { problem as problemOf } from '@/core/problem';
+import { useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
 import { AgentFace } from '@/ui/Buddy';
@@ -112,35 +114,22 @@ export default function NewChat() {
   const attach = (picking: Promise<Attachment[]>) => {
     picking
       .then((picked) => {
-        const tooBig = picked.filter((attachment) => attachment.size > MAX_ATTACHMENT_BYTES);
-        if (tooBig.length) {
-          const names = tooBig.map((attachment) => attachment.name).join(', ');
-          setProblem(`${names} ${tooBig.length === 1 ? 'is' : 'are'} over 10 MB, too big to send`);
-        }
-        const fits = picked.filter((attachment) => attachment.size <= MAX_ATTACHMENT_BYTES);
-        setAttachments((now) => [...now, ...fits].slice(0, MAX_ATTACHMENTS));
+        const { fits, notice } = fitting(attachments.length, picked);
+        if (notice) setProblem(notice);
+        setAttachments((now) => [...now, ...fits]);
       })
-      .catch((error: unknown) => setProblem(`Could not pick: ${error instanceof Error ? error.message : String(error)}`));
+      .catch((error: unknown) => setProblem(`Could not pick: ${problemOf(error)}`));
   };
 
   const upload = async (connection: ConnectionLike, agentId: string): Promise<string[]> => {
-    let sent = attachments;
-    for (const attachment of attachments) {
-      if (attachment.path) continue;
-      const mark = (change: Partial<Attachment>) => {
-        sent = sent.map((known) => (known.id === attachment.id ? { ...known, ...change } : known));
-        setAttachments(sent);
-      };
-      mark({ upload: 'sending', problem: undefined });
-      try {
-        const bytes = await new File(attachment.uri).arrayBuffer();
-        mark({ upload: undefined, path: await connection.attachFile(agentId, attachment.name, attachment.mime, bytes) });
-      } catch (error) {
-        mark({ upload: 'failed', problem: problemOf(error) });
-        throw error;
-      }
-    }
-    return sent.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+    const sent = await uploadEach(
+      attachments,
+      async (attachment) => connection.attachFile(agentId, attachment.name, attachment.mime, await new File(attachment.uri).arrayBuffer()),
+      (id, change) => setAttachments((now) => now.map((known) => (known.id === id ? { ...known, ...change } : known))),
+      problemOf,
+    );
+    if (!sent) throw new Error('Could not send every file to the host');
+    return pathsOf(sent);
   };
 
   const start = async () => {

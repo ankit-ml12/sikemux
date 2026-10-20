@@ -38,7 +38,8 @@ import { SentAttachments } from './Attachments';
 import { hostImagePath } from './FileRef';
 import { useHostFile } from './hostFiles';
 import { ImageViewer } from './ImageViewer';
-import type { Attachment, Held, Unsent } from './session';
+import type { Held, Unsent } from './session';
+import type { Attachment } from './uploads';
 import { ToolGroup } from './Tools';
 import { AnsweredQuestion } from './Question';
 

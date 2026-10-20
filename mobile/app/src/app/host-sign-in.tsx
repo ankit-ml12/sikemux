@@ -5,6 +5,7 @@ import type { PendingHost } from '@protocol';
 
 import { formatAgo } from '@mac/lib/format';
 import { platformName } from '@mac/remote/access';
+import { problem as problemOf } from '@/core/problem';
 import { api } from '@/account/api';
 import { ConfirmItsYou, ReverifyCancelled, useRecentSignIn } from '@/account/ConfirmItsYou';
 import { retryHosts } from '@/account/session';
@@ -53,7 +54,7 @@ export default function HostSignIn() {
     } catch (error) {
       if (error instanceof ReverifyCancelled) return;
       haptics.failure();
-      setProblem(error instanceof Error ? error.message : String(error));
+      setProblem(problemOf(error));
     } finally {
       setBusy(undefined);
     }

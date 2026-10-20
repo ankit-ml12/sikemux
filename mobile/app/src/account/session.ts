@@ -7,6 +7,7 @@ import * as Notifications from 'expo-notifications';
 import type { Device } from '@protocol';
 import { liveUrl } from '@protocol/live';
 
+import { problem as problemOf } from '@/core/problem';
 import { notifier } from '../../modules/notify';
 import { deviceIdentity } from '@/device/identity';
 import { hostsArrived } from '@/devices/arrivals';
@@ -63,7 +64,7 @@ export function useAccountHostsFeed() {
       .then((hosts) => current && publishHosts({ hosts, loaded: true }))
       .catch((error: unknown) => {
         console.warn('sikemux: could not list the hosts on the account', error);
-        if (current) publishHosts({ ...accountHostsNow, problem: error instanceof Error ? error.message : String(error) });
+        if (current) publishHosts({ ...accountHostsNow, problem: problemOf(error) });
       });
     return () => {
       current = false;

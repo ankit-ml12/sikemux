@@ -5,37 +5,21 @@ import { chatActions } from '@mac/chat/acpEvents';
 import { recordOf } from '@mac/lib/guards';
 import { earlierMessages, type EarlierPage, PAGE_TURNS, withEarlier } from '@mac/chat/earlier';
 import type { QueuedMessage } from '@mac/chat/queuedMessages';
+import { answerText } from '@mac/chat/answerText';
 import { chatReducer, initialChatState } from '@mac/chat/reducer';
 import type { AcpPermissionRequest, ChatAction, ChatState } from '@mac/chat/types';
 
+import { problem as problemOf } from '@/core/problem';
 import type { ChatInfo, CoreChatEvent } from '@/core/protocol';
 import type { ChatDelivery } from '@/devices/hub';
 import { parsed } from './chatEvents';
 import { Folds } from './folds';
+import { fitting, pathsOf, uploadEach, type Attachment } from './uploads';
 
 export type Attached = 'attaching' | 'live' | 'missing';
 
 /** A message this phone wrote that the host has not taken yet. */
 export type Unsent = { state: 'sending' | 'failed'; problem?: string };
-
-/** The host's own limit on a file sent to a chat. */
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-export const MAX_ATTACHMENTS = 10;
-
-/** A photo or file picked on this phone for the next message. */
-export type Attachment = {
-  id: string;
-  kind: 'image' | 'file';
-  name: string;
-  mime: string;
-  /** Where it is on this phone. */
-  uri: string;
-  size: number;
-  /** Where the host keeps it, once it is there. */
-  path?: string;
-  upload?: 'sending' | 'failed';
-  problem?: string;
-};
 
 /** A message waiting behind the running turn. */
 /** A message waiting in the host's queue behind the running turn. */
@@ -98,11 +82,6 @@ const TOO_LONG = 'This chat is too long for the phone. Open it on the host.';
  * which comes on its own schedule, has caught up with it.
  */
 const PERMISSION_GRACE_MS = 2000;
-
-function reason(error: unknown): string {
-  if (MobileError.Refused.instanceOf(error) || MobileError.Connection.instanceOf(error)) return error.inner.message;
-  return error instanceof Error ? error.message : String(error);
-}
 
 function readFile(uri: string): Promise<ArrayBuffer> {
   return new File(uri).arrayBuffer();
@@ -241,18 +220,9 @@ export class ChatSession {
 
   /** Adds what was picked for the next message, leaving out what the host would refuse. */
   attach = (picked: Attachment[]) => {
-    const tooBig = picked.filter((attachment) => attachment.size > MAX_ATTACHMENT_BYTES);
-    const fits = picked.filter((attachment) => attachment.size <= MAX_ATTACHMENT_BYTES);
-    const room = Math.max(0, MAX_ATTACHMENTS - this.attachments.length);
-    this.attachments = [...this.attachments, ...fits.slice(0, room)];
-    if (tooBig.length) {
-      const names = tooBig.map((attachment) => attachment.name).join(', ');
-      this.notice = `${names} ${tooBig.length === 1 ? 'is' : 'are'} over 10 MB, too big to send`;
-    } else if (fits.length > room) {
-      this.notice = `a message takes at most ${MAX_ATTACHMENTS} files`;
-    } else {
-      this.notice = null;
-    }
+    const { fits, notice } = fitting(this.attachments.length, picked);
+    this.attachments = [...this.attachments, ...fits];
+    this.notice = notice;
     this.emit();
   };
 
@@ -268,14 +238,10 @@ export class ChatSession {
    */
   send = async (text: string): Promise<boolean> => {
     this.notice = null;
-    let attachments: Attachment[] = [];
-    if (this.attachments.length) {
-      if (this.uploading()) return false;
-      attachments = await this.upload();
-      if (!attachments.length) return false;
-    }
+    const attachments = this.attachments.length ? await this.upload() : [];
+    if (!attachments) return false;
     if (this.busy()) {
-      const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+      const paths = pathsOf(attachments);
       void this.ask((connection) => connection.prompt(this.agentId, text, paths), 'Could not send the message');
       return true;
     }
@@ -289,17 +255,9 @@ export class ChatSession {
    */
   answerWith = async (text: string, answer: (text: string) => Promise<boolean>): Promise<boolean> => {
     this.notice = null;
-    let attachments: Attachment[] = [];
-    if (this.attachments.length) {
-      if (this.uploading()) return false;
-      attachments = await this.upload();
-      if (!attachments.length) return false;
-    }
-    const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
-    const full = [text, ...(paths.length ? [`Attached:\n${paths.map((path) => `- ${path}`).join('\n')}`] : [])]
-      .filter(Boolean)
-      .join('\n\n');
-    if (await answer(full)) return true;
+    const attachments = this.attachments.length ? await this.upload() : [];
+    if (!attachments) return false;
+    if (await answer(answerText(text, pathsOf(attachments)))) return true;
     this.attachments = [...attachments, ...this.attachments];
     this.emit();
     return false;
@@ -527,25 +485,23 @@ export class ChatSession {
     this.emit();
   }
 
-  /** Puts each picked file the host does not have yet on it, one at a time. Answers them all once all got there. */
-  private async upload(): Promise<Attachment[]> {
+  /** Puts the picked files on the host and takes them out of the composer, or answers null when one did not get there. */
+  private async upload(): Promise<Attachment[] | null> {
+    if (this.uploading()) return null;
     const connection = this.connection;
-    const waiting = this.attachments.filter((attachment) => !attachment.path);
-    for (const attachment of waiting) this.patch(attachment.id, { upload: 'sending', problem: undefined });
-    for (const attachment of waiting) {
-      try {
+    const sent = await uploadEach(
+      this.attachments,
+      async (attachment) => {
         if (!connection?.isOpen()) throw new Error('the host is not connected');
         const bytes = await (this.options.read ?? readFile)(attachment.uri);
         const path = await connection.attachFile(this.agentId, attachment.name, attachment.mime, bytes);
         this.sentFiles = new Map([...this.sentFiles, [path, attachment]]);
-        this.patch(attachment.id, { upload: undefined, path });
-      } catch (error) {
-        this.patch(attachment.id, { upload: 'failed', problem: reason(error) });
-      }
-    }
-    if (this.attachments.some((attachment) => !attachment.path)) return [];
-    const sent = this.attachments;
-    this.attachments = [];
+        return path;
+      },
+      (id, change) => this.patch(id, change),
+      problemOf,
+    );
+    if (sent) this.attachments = [];
     return sent;
   }
 
@@ -660,7 +616,7 @@ export class ChatSession {
       })
       .catch((error: unknown) => {
         if (run !== this.run) return;
-        this.problem = reason(error);
+        this.problem = problemOf(error);
         this.attached = 'missing';
         this.emit();
       });
@@ -745,7 +701,7 @@ export class ChatSession {
   }
 
   private deliver(text: string, attachments: Attachment[]) {
-    const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+    const paths = pathsOf(attachments);
     this.apply([{ type: 'local_prompt', text, paths }]);
     this.optimistic = true;
     const entry: Outgoing = {
@@ -776,7 +732,7 @@ export class ChatSession {
           this.optimistic = false;
           this.agent = { ...this.agent, running: false };
         }
-        this.update(entry, { state: 'failed', problem: reason(error) });
+        this.update(entry, { state: 'failed', problem: problemOf(error) });
       });
   }
 
@@ -797,7 +753,7 @@ export class ChatSession {
         this.emit();
       })
       .catch((error: unknown) => {
-        this.notice = `${what}: ${reason(error)}`;
+        this.notice = `${what}: ${problemOf(error)}`;
         this.emit();
       });
   }
