@@ -175,6 +175,7 @@ function SharedChat({ session }: { session: ShareSession }) {
               <View style={styles.transcript}>
                 <FlashList
                   ref={list}
+                  showsVerticalScrollIndicator={false}
                   data={state.messages}
                   keyExtractor={(message) => message.id}
                   getItemType={(message, index) => {

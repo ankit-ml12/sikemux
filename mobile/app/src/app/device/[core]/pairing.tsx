@@ -203,6 +203,7 @@ export default function HostPairing() {
     <Screen>
       <Nav back="Back" title="Paired devices" />
       <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.body, { paddingBottom: bottom + 24 }]}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reread} />}>
         <ApprovalRow connection={connection} />

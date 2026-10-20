@@ -181,7 +181,7 @@ function Terminal({ part, command, group }: { part: ToolPart; command: string | 
               <Text style={[styles.mono, styles.outputText]}>{lines.slice(0, OUTPUT_FOLD_LINES).join('\n')}</Text>
             </Sideways>
           ) : (
-            <ScrollView style={styles.whole} nestedScrollEnabled>
+            <ScrollView style={styles.whole} nestedScrollEnabled showsVerticalScrollIndicator={false}>
               <Sideways>
                 <Text style={[styles.mono, styles.outputText]} selectable>
                   {output.text}

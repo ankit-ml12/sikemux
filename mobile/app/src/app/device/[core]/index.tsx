@@ -590,6 +590,7 @@ export default function Device() {
               maskElement={<UnderBar height={barHeight} open={unpinned} bottom={bottom + NEW_CHAT_HEIGHT + 24} />}>
               <Animated.ScrollView
                 {...scrollPause}
+                showsVerticalScrollIndicator={false}
                 onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrolled } } }], { useNativeDriver: true })}
                 scrollEventThrottle={16}
                 style={status.online ? undefined : styles.stale}
