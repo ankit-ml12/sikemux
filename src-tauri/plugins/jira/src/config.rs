@@ -10,7 +10,7 @@ use sikemux_plugin_api::store::{self, Accounts};
 
 use crate::error::{JiraError, JiraResult};
 
-const TOKEN_SERVICE: &str = keychain_service!("sikemux-jira-token");
+pub const TOKEN_SERVICE: &str = keychain_service!("sikemux-jira-token");
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -37,7 +37,7 @@ pub enum SignIn {
 
 impl Site {
     /// Several sites from one browser sign-in share one Keychain entry.
-    fn keychain_account(&self) -> String {
+    pub fn keychain_account(&self) -> String {
         match &self.sign_in {
             SignIn::Token { email } => format!("{}:{email}", self.host),
             SignIn::Atlassian { .. } => format!("atlassian:{}", self.account_id),

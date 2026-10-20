@@ -76,7 +76,10 @@ pub async fn send(
     let (mut status, mut bytes) = send_once(credentials, None, &method, path, query, body).await?;
     if status == StatusCode::UNAUTHORIZED {
         if let Auth::Atlassian { site, token } = &credentials.auth {
-            let renewed = oauth::renew(site, token).await?;
+            let renewed = oauth::ACCESS
+                .renew(&site.account_id, token, oauth::entry(site))
+                .await?
+                .token;
             (status, bytes) =
                 send_once(credentials, Some(&renewed), &method, path, query, body).await?;
         }
@@ -122,7 +125,12 @@ pub async fn fetch(
     if response.status() == StatusCode::UNAUTHORIZED {
         if let Auth::Atlassian { site, token } = &credentials.auth {
             response = HTTP
-                .send(get(Some(oauth::renew(site, token).await?))?)
+                .send(get(Some(
+                    oauth::ACCESS
+                        .renew(&site.account_id, token, oauth::entry(site))
+                        .await?
+                        .token,
+                ))?)
                 .await?;
         }
     }

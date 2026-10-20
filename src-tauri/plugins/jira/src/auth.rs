@@ -1,9 +1,9 @@
 use std::path::Path;
-use std::time::Duration;
 
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
+use sikemux_plugin_api::oauth::Tokens;
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::{SignInStatus, StreamSink};
 
@@ -11,9 +11,6 @@ use crate::client::{self, Auth, Credentials};
 use crate::config::{self, normalise_host, JiraConfig, SignIn as SiteSignIn, Site};
 use crate::error::{JiraError, JiraResult};
 use crate::oauth;
-
-/// How long a browser sign-in waits for the person to finish before giving up the port.
-const BROWSER_WAIT: Duration = Duration::from_secs(300);
 
 /// Who is asking, on the site named or the default one.
 pub async fn credentials(data_dir: &Path, host: Option<&str>) -> JiraResult<(Site, Credentials)> {
@@ -36,7 +33,10 @@ pub async fn credentials(data_dir: &Path, host: Option<&str>) -> JiraResult<(Sit
             url: format!("{}/{cloud_id}", oauth::API_URL),
             auth: Auth::Atlassian {
                 site: site.clone(),
-                token: oauth::access_token(&site).await?,
+                token: oauth::ACCESS
+                    .access(&site.account_id, oauth::entry(&site))
+                    .await?
+                    .token,
             },
         },
     };
@@ -107,21 +107,7 @@ pub async fn sign_in(data_dir: &Path, request: SignIn) -> JiraResult<()> {
 /// Opens Atlassian's sign-in in the browser, through the URL sent down the stream, and
 /// signs in to every Jira site the account reaches. Stopping the stream stops the wait.
 pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> JiraResult<()> {
-    if !oauth::available() {
-        return Err(JiraError::Auth(
-            "this build cannot sign in through the browser; use an API token instead".into(),
-        ));
-    }
-    let callback = oauth::listen().await?;
-    let state = oauth::new_state()?;
-    let verifier = oauth::new_verifier()?;
-    sink.send(json!({ "url": oauth::authorize_url(&state, &verifier) }))
-        .map_err(|_| JiraError::Auth("the sign-in was closed".into()))?;
-    let code = tokio::time::timeout(BROWSER_WAIT, oauth::code(&callback, &state))
-        .await
-        .map_err(|_| JiraError::Auth("nobody finished signing in".into()))??;
-    drop(callback);
-    let tokens = oauth::exchange(&code, &verifier).await?;
+    let tokens: Tokens = oauth::APP.sign_in(&client::HTTP, sink).await?;
     let cloud_sites = oauth::sites(&tokens.access_token).await?;
     let Some(first) = cloud_sites.first() else {
         return Err(JiraError::Auth(
@@ -155,7 +141,7 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> JiraRes
         Ok(())
     })
     .await?;
-    oauth::remember(&me.account_id, &tokens).await;
+    oauth::ACCESS.remember(&me.account_id, &tokens).await;
     Ok(())
 }
 
@@ -183,7 +169,7 @@ pub async fn sign_out(data_dir: &Path, request: SignOut) -> JiraResult<()> {
     })
     .await?;
     if let Some(account_id) = unused {
-        oauth::forget(&account_id).await;
+        oauth::ACCESS.forget(Some(&account_id)).await;
     }
     Ok(())
 }
@@ -251,7 +237,7 @@ fn status_of(sites: Vec<SiteStatus>, error: Option<JiraError>) -> Status {
             .map(|error| error.to_string()),
         details: Sites {
             sites,
-            browser_sign_in: oauth::available(),
+            browser_sign_in: oauth::APP.available(),
         },
     }
 }

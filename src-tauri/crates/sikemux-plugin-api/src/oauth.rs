@@ -332,9 +332,29 @@ impl<S: Service> Refreshing<S> {
         Ok(access)
     }
 
+    /// The service refused `rejected`, so it is dropped and a fresh one
+    /// fetched. A request that renewed it meanwhile is answered with that one
+    /// rather than refreshing again.
+    pub async fn renew(
+        &self,
+        account: &str,
+        rejected: &str,
+        entry: KeychainEntry,
+    ) -> Result<Access, ServiceError<S>> {
+        {
+            let mut held = self.held.lock().await;
+            if held
+                .get(account)
+                .is_some_and(|access| access.token == rejected)
+            {
+                held.remove(account);
+            }
+        }
+        self.access(account, entry).await
+    }
+
     /// Sends with the access token, and when the service refuses it, renews
-    /// it and sends once more. A request that renewed it meanwhile is answered
-    /// with that one rather than refreshing again.
+    /// it and sends once more.
     pub async fn with_access<T, F, Fut>(
         &self,
         account: &str,
@@ -349,16 +369,7 @@ impl<S: Service> Refreshing<S> {
         let rejected = access.token.clone();
         match send(access).await {
             Err(ServiceError::Auth(_)) => {
-                {
-                    let mut held = self.held.lock().await;
-                    if held
-                        .get(account)
-                        .is_some_and(|access| access.token == rejected)
-                    {
-                        held.remove(account);
-                    }
-                }
-                send(self.access(account, entry()).await?).await
+                send(self.renew(account, &rejected, entry()).await?).await
             }
             answered => answered,
         }
