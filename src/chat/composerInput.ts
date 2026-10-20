@@ -1,8 +1,7 @@
+import { MAX_ATTACHMENTS } from "../api/generated/wire";
 import { rankBy } from "../lib/fuzzy";
 import { basename } from "../lib/paths";
 import type { AcpAvailableCommand } from "./types";
-
-export const MAX_ATTACHMENTS = 32;
 
 export function mergePaths(current: string[], incoming: readonly string[]): string[] {
     const merged = [...current];

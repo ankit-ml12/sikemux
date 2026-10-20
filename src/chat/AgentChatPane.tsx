@@ -32,6 +32,7 @@ import { mentionContext, useMates } from "./agentMentions";
 import { deliverToAgent } from "../agents/agentInbox";
 import type { AgentQuestion } from "../agents/agentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
+import { answerText } from "./answerText";
 import { useChatQuestions } from "./useChatQuestions";
 import { ResumeActions } from "./ResumeActions";
 import { ChatFailureActions, NetworkFailureActions, type SignInMethod } from "./ChatFailureActions";
@@ -69,17 +70,6 @@ function useReadAfterReplay(replaying: boolean, messages: readonly ChatMessage[]
 
 function heldTranscript(shown: ChatState, next: ChatState): ChatState {
     return { ...next, messages: shown.messages, revision: shown.revision };
-}
-
-/** What the person sent as the answer to a question, with what they attached named in it. */
-function answerText({ text, paths, context }: OutgoingMessage): string {
-    return [
-        text,
-        ...(paths.length > 0 ? [`Attached:\n${paths.map((path) => `- ${path}`).join("\n")}`] : []),
-        ...context.map((item) => `${item.title}:\n${item.text}`),
-    ]
-        .filter(Boolean)
-        .join("\n\n");
 }
 
 const ChatFind = lazy(() => import("./ChatFind"));
@@ -232,7 +222,7 @@ export function AgentChatPane({
     const sendMessage = (message: OutgoingMessage, steerNow: boolean): boolean => {
         const question = questions.composing;
         if (!question) return worktree.sendMessage(message, steerNow);
-        const text = answerText(message);
+        const text = answerText(message.text, message.paths, message.context);
         if (!text) return false;
         if (!questions.writing) {
             questions.pick(question, { answer: { answer: text }, shown: text });
