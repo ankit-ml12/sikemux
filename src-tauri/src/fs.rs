@@ -18,7 +18,10 @@ pub async fn files_call(
     params: Value,
 ) -> AppResult<Value> {
     use sikemux_core::files;
-    let path = params.get("path").and_then(Value::as_str).map(PathBuf::from);
+    let path = params
+        .get("path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
     let (method, answer) = spawn_blocking(move || {
         let answer = files::run(&method, params, files::MAX_TEXT_BYTES);
         (method, answer)
@@ -452,5 +455,4 @@ mod tests {
             "contents that are not base64 must be refused"
         );
     }
-
 }
