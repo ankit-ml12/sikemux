@@ -241,6 +241,12 @@ impl Process {
         status
     }
 
+    /// Stops the agent and waits until it has exited.
+    pub async fn stop(&self) {
+        kill_group(self.pid);
+        self.exited().await;
+    }
+
     /// The last lines the agent wrote to its error stream.
     pub fn stderr(&self) -> String {
         String::from_utf8_lossy(&self.stderr_bytes())

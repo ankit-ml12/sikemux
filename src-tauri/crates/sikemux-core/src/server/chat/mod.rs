@@ -202,6 +202,8 @@ pub(crate) struct Chat {
     readiness: watch::Sender<Readiness>,
     /// A prompt this side sent is being answered.
     pub running: AtomicBool,
+    /// Wakes whatever waits for the running turn to end.
+    turn_over: tokio::sync::Notify,
     /// The agent is working on a turn nobody here prompted.
     pub unprompted: AtomicBool,
     turned: AtomicBool,
@@ -625,6 +627,24 @@ impl Chat {
         }
         if let Some((tool_call_id, changes)) = self.edits.note(update) {
             core.edits.record(self, tool_call_id, changes);
+        }
+    }
+
+    /// The running turn is over. Answers whether one was running.
+    pub(crate) fn stop_running(&self) -> bool {
+        let was = self.running.swap(false, Ordering::AcqRel);
+        self.turn_over.notify_waiters();
+        was
+    }
+
+    /// Resolves once no turn is running.
+    pub(crate) async fn turn_ended(&self) {
+        loop {
+            let over = self.turn_over.notified();
+            if !self.running.load(Ordering::Acquire) {
+                return;
+            }
+            over.await;
         }
     }
 
@@ -1346,6 +1366,7 @@ impl Chats {
             permissions: Mutex::new(HashMap::new()),
             readiness: watch::channel(Readiness::Starting).0,
             running: AtomicBool::new(flags.running),
+            turn_over: tokio::sync::Notify::new(),
             unprompted: AtomicBool::new(flags.unprompted),
             turned: AtomicBool::new(flags.turned),
             held: AtomicBool::new(flags.held),

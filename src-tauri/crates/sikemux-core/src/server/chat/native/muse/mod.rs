@@ -11,7 +11,6 @@ mod state;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -665,19 +664,10 @@ impl Muse {
         let mut launch = self.launch.clone();
         launch.resume_id = Some(self.session_id());
         let host = Host::start(&launch, mode, sink, session).await?;
-        drop(std::mem::replace(&mut self.host, host));
+        let old = std::mem::replace(&mut self.host, host);
         // The old host lets go of the session only once it has died.
-        let mut tries = 0;
-        loop {
-            match Self::open(&self.host, &launch, mode, false).await {
-                Ok(_) => return Ok(()),
-                Err(_) if tries < 20 => {
-                    tries += 1;
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                Err(error) => return Err(error),
-            }
-        }
+        old.process.stop().await;
+        Self::open(&self.host, &launch, mode, false).await.map(drop)
     }
 }
 

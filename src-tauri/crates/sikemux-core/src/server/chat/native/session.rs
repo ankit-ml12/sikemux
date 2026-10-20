@@ -193,7 +193,7 @@ impl Sink {
         chat.unprompted.store(false, Ordering::Release);
         chat.cancel_permissions();
         let settle = || {
-            chat.running.store(false, Ordering::Release);
+            chat.stop_running();
             let _ = self.settled.send(turn);
         };
         match end {
@@ -280,19 +280,18 @@ impl Sink {
     }
 }
 
-const HELD_PROMPT_POLL: std::time::Duration = std::time::Duration::from_millis(100);
-
 /// Sends `command` to the chat's loop again once the running turn has ended.
 fn after_turn(chat: Arc<Chat>, command: ChatCommand) {
     tokio::spawn(async move {
-        while chat.running.load(Ordering::Acquire) && !chat.commands.is_closed() {
-            tokio::time::sleep(HELD_PROMPT_POLL).await;
+        tokio::select! {
+            () = chat.turn_ended() => {
+                let _ = chat.send(command);
+            }
+            () = chat.commands.closed() => {}
         }
-        let _ = chat.send(command);
     });
 }
 
-/// The session an agent opened, as the chat reads it.
 /// How many subagents' histories a resumed chat reads.
 const MAX_SUBAGENT_HISTORIES: usize = 64;
 
@@ -319,6 +318,7 @@ where
     histories
 }
 
+/// The session an agent opened, as the chat reads it.
 pub(crate) struct Opened {
     pub session_id: String,
     pub capabilities: Value,
@@ -644,7 +644,7 @@ pub(crate) async fn run<B: Backend>(
                     continue;
                 }
                 if let Some(switching) = state.switching.take() {
-                    chat.running.store(false, Ordering::Release);
+                    chat.stop_running();
                     if let Some(response) = failed.response {
                         chat.emit(ChatEventKind::TurnCompleted, response);
                     }
@@ -684,7 +684,7 @@ pub(crate) async fn run<B: Backend>(
                 if let Some(rebind) = retry {
                     break Outcome::Rebind(Box::new(rebind));
                 }
-                chat.running.store(false, Ordering::Release);
+                chat.stop_running();
                 let failure = failed.failure.payload(current.as_deref());
                 chat.turn_failing(&failure);
                 if let Some(response) = failed.response {
@@ -716,7 +716,7 @@ pub(crate) async fn run<B: Backend>(
             Woke::Stalled(stalled) => {
                 if chat.running.load(Ordering::Acquire) && state.turn == stalled {
                     if let Some(switching) = state.switching.take() {
-                        chat.running.store(false, Ordering::Release);
+                        chat.stop_running();
                         chat.emit(
                             ChatEventKind::TurnCompleted,
                             json!({ "stopReason": "cancelled" }),
@@ -728,7 +728,7 @@ pub(crate) async fn run<B: Backend>(
                     }
                     let why = "It was still at work a while after it was asked to stop.";
                     if state.reloadable {
-                        chat.running.store(false, Ordering::Release);
+                        chat.stop_running();
                         chat.emit(
                             ChatEventKind::TurnCompleted,
                             json!({ "stopReason": "cancelled" }),
@@ -1131,7 +1131,7 @@ impl SessionState {
 /// A chat whose agent this core could not take over: it goes on in a new
 /// agent process on the same session, and says so.
 fn not_taken_over(chat: &Chat, launch: &ChatLaunch, error: &str) -> Outcome {
-    if chat.running.swap(false, Ordering::AcqRel) {
+    if chat.stop_running() {
         chat.emit(
             ChatEventKind::TurnCompleted,
             json!({ "stopReason": "cancelled" }),
@@ -1171,7 +1171,7 @@ async fn restart(
     }
     let launch = chat.relaunch(launch)?;
     let wait = chat.restart_after()?;
-    chat.running.store(false, Ordering::Release);
+    chat.stop_running();
     chat.cancel_permissions();
     chat.end_cut_turn();
     tokio::time::sleep(wait).await;
@@ -1193,7 +1193,7 @@ async fn begin<B: Backend>(chat: &Arc<Chat>, backend: &mut B, turn: u64, prompt:
     chat.unprompted.store(false, Ordering::Release);
     chat.emit(ChatEventKind::TurnStarted, json!({}));
     if let Err(error) = backend.prompt(turn, prompt).await {
-        chat.running.store(false, Ordering::Release);
+        chat.stop_running();
         chat.emit(ChatEventKind::Error, error_message(error));
     }
 }
