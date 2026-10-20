@@ -17,6 +17,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 use tokio::sync::mpsc;
 
+use crate::text::clipped_line;
 use crate::accounts::live::Push;
 use crate::accounts::protocol::PushKind;
 use crate::protocol::{Attention, Event, NotifyPrefs, NotifyWhen, PendingDevice};
@@ -476,20 +477,6 @@ fn name(core: &Core, agent_id: &str) -> Option<Named> {
     })
 }
 
-pub(crate) fn clip(text: &str, limit: usize) -> String {
-    let line = text
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("");
-    if line.chars().count() <= limit {
-        return line.to_owned();
-    }
-    let mut clipped: String = line.chars().take(limit.saturating_sub(1)).collect();
-    clipped.push('…');
-    clipped
-}
-
 impl Named {
     /// "Fix the tests on MacBook Pro": the chat, or its project, and the host.
     fn whereabouts(&self, core: &Core, prefer_title: bool) -> String {
@@ -522,7 +509,7 @@ impl Named {
             chat_title: self
                 .title
                 .as_deref()
-                .map(|title| clip(title, MAX_TITLE_CHARS)),
+                .map(|title| clipped_line(title, MAX_TITLE_CHARS)),
             title: String::new(),
             body: String::new(),
             detail: None,
@@ -548,16 +535,16 @@ fn permission(core: &Core, attention: &Attention) -> Option<Draft> {
         attention.at,
         PERMISSION_LIFE_MS,
     );
-    draft.title = clip(
+    draft.title = clipped_line(
         &format!("{} needs permission", named.agent),
         MAX_TITLE_CHARS,
     );
-    draft.body = clip(&named.whereabouts(core, false), MAX_BODY_CHARS);
+    draft.body = clipped_line(&named.whereabouts(core, false), MAX_BODY_CHARS);
     let choices = &attention.choices;
     draft.detail = choices
         .title
         .as_deref()
-        .map(|title| clip(title, MAX_DETAIL_CHARS));
+        .map(|title| clipped_line(title, MAX_DETAIL_CHARS));
     draft.request_id = Some(attention.id.clone());
     draft.allow_option_id = option_id(&choices.allow_once);
     draft.reject_option_id = option_id(&choices.reject);
@@ -573,9 +560,9 @@ fn question(core: &Core, agent_id: &str, id: &str, asked: &Asked) -> Option<Draf
         asked.at,
         PERMISSION_LIFE_MS,
     );
-    draft.title = clip(&format!("{} asks you", asked.name), MAX_TITLE_CHARS);
-    draft.body = clip(&asked.text, MAX_BODY_CHARS);
-    draft.detail = Some(clip(&named.whereabouts(core, true), MAX_DETAIL_CHARS));
+    draft.title = clipped_line(&format!("{} asks you", asked.name), MAX_TITLE_CHARS);
+    draft.body = clipped_line(&asked.text, MAX_BODY_CHARS);
+    draft.detail = Some(clipped_line(&named.whereabouts(core, true), MAX_DETAIL_CHARS));
     Some(draft)
 }
 
@@ -588,11 +575,11 @@ fn needs_input(core: &Core, agent_id: &str, now: u64) -> Option<Draft> {
         now,
         INPUT_LIFE_MS,
     );
-    draft.title = clip(
+    draft.title = clipped_line(
         &format!("{} needs your input", named.agent),
         MAX_TITLE_CHARS,
     );
-    draft.body = clip(&named.whereabouts(core, true), MAX_BODY_CHARS);
+    draft.body = clipped_line(&named.whereabouts(core, true), MAX_BODY_CHARS);
     Some(draft)
 }
 
@@ -605,8 +592,8 @@ fn finished(core: &Core, agent_id: &str, now: u64) -> Option<Draft> {
         now,
         FINISHED_LIFE_MS,
     );
-    draft.title = clip(&format!("{} finished", named.agent), MAX_TITLE_CHARS);
-    draft.body = clip(&named.whereabouts(core, true), MAX_BODY_CHARS);
+    draft.title = clipped_line(&format!("{} finished", named.agent), MAX_TITLE_CHARS);
+    draft.body = clipped_line(&named.whereabouts(core, true), MAX_BODY_CHARS);
     Some(draft)
 }
 
@@ -619,12 +606,12 @@ fn problem(core: &Core, agent_id: &str, message: &str, now: u64) -> Option<Draft
         now,
         PROBLEM_LIFE_MS,
     );
-    draft.title = clip(
+    draft.title = clipped_line(
         &format!("{} ran into a problem", named.agent),
         MAX_TITLE_CHARS,
     );
-    draft.body = clip(&named.whereabouts(core, true), MAX_BODY_CHARS);
-    draft.detail = Some(clip(message, MAX_DETAIL_CHARS)).filter(|detail| !detail.is_empty());
+    draft.body = clipped_line(&named.whereabouts(core, true), MAX_BODY_CHARS);
+    draft.detail = Some(clipped_line(message, MAX_DETAIL_CHARS)).filter(|detail| !detail.is_empty());
     Some(draft)
 }
 
@@ -641,8 +628,8 @@ fn pairing(core: &Core, device: &PendingDevice) -> Draft {
         chat: false,
         provider: String::new(),
         chat_title: None,
-        title: clip(&format!("{name} wants to connect"), MAX_TITLE_CHARS),
-        body: clip(
+        title: clipped_line(&format!("{name} wants to connect"), MAX_TITLE_CHARS),
+        body: clipped_line(
             &format!("To {}, from your Sikemux account", core.notify.host_name()),
             MAX_BODY_CHARS,
         ),
@@ -741,9 +728,9 @@ fn address(draft: &Draft, host: &str, host_name: &str, target: &NotifyTarget) ->
         collapse_id,
         thread: format!("{host}/{}", draft.agent_id),
         host_key: host.to_owned(),
-        host_name: clip(host_name, MAX_TITLE_CHARS),
+        host_name: clipped_line(host_name, MAX_TITLE_CHARS),
         agent_id: draft.agent_id.clone(),
-        provider: clip(&draft.provider, MAX_TITLE_CHARS),
+        provider: clipped_line(&draft.provider, MAX_TITLE_CHARS),
         chat_title: draft.chat_title.clone(),
         title: draft.title.clone(),
         body: draft.body.clone(),
@@ -759,7 +746,7 @@ fn address(draft: &Draft, host: &str, host_name: &str, target: &NotifyTarget) ->
     if plaintext.len() > MAX_PLAINTEXT {
         notification.detail = None;
         notification.chat_title = None;
-        notification.body = clip(&notification.body, 60);
+        notification.body = clipped_line(&notification.body, 60);
         plaintext = serde_json::to_vec(&notification).ok()?;
     }
     push::seal(&target.key, host, &target.device_id, &plaintext)

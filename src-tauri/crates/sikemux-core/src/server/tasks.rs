@@ -567,7 +567,7 @@ fn test_results(project: &Path, tasks: &[Definition]) -> Vec<Value> {
                         } else {
                             format!("{}.{}", failure.class_name, failure.name)
                         },
-                        "message": shorten(&failure.message, 1000),
+                        "message": crate::text::clipped(&failure.message, 1000),
                     });
                     if let (Some(file), Some(object)) = (&failure.file, entry.as_object_mut()) {
                         object.insert("file".into(), relative(project, Path::new(file)).into());
@@ -578,13 +578,6 @@ fn test_results(project: &Path, tasks: &[Definition]) -> Vec<Value> {
             }))
         })
         .collect()
-}
-
-fn shorten(text: &str, chars: usize) -> String {
-    match text.char_indices().nth(chars) {
-        Some((at, _)) => format!("{}…", &text[..at]),
-        None => text.to_owned(),
-    }
 }
 
 /// The terminal a task's runs share, so a rerun shows in the same one.

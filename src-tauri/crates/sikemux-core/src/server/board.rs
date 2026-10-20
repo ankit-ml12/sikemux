@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
+use crate::text::clipped;
 use crate::cli::protocol::HarnessRequest;
 use crate::launch::providers::{self, ROUTED_ENV};
 
@@ -376,16 +377,6 @@ impl Boards {
 
 fn chars(text: &str) -> usize {
     text.chars().count()
-}
-
-fn clipped(text: &str, max: usize) -> String {
-    let text = text.trim();
-    if chars(text) <= max {
-        return text.to_owned();
-    }
-    let mut clipped: String = text.chars().take(max.saturating_sub(1)).collect();
-    clipped.push('…');
-    clipped
 }
 
 fn title_of(value: &str) -> Result<String, String> {

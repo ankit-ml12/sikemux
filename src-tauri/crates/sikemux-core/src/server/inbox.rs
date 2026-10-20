@@ -11,12 +11,13 @@ use serde_json::{json, Value};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
+use crate::text::{clipped, clipped_line};
 use crate::protocol::{
     AgentGroup, AgentStatus, ChatInfo, PermissionChoices, SessionId, SessionInfo,
 };
 
 use super::board::{self, Summary, Waits};
-use super::notify::{clip, provider_name};
+use super::notify::provider_name;
 use super::Core;
 
 /// Agents whose latest turn is kept; the longest-finished go first.
@@ -353,7 +354,7 @@ fn handoff(core: &Core, agent_id: &str) -> Handoff {
         handoff.answer = chat
             .feed
             .last_answer()
-            .map(|answer| clip_text(&answer, MAX_ANSWER_CHARS));
+            .map(|answer| clipped(&answer, MAX_ANSWER_CHARS));
         let project = core.names.get(agent_id).map(|named| named.project);
         let filter = serde_json::from_value(json!({
             "project": project.clone().unwrap_or_default(),
@@ -373,17 +374,6 @@ fn handoff(core: &Core, agent_id: &str) -> Handoff {
     }
     turn(&mut core.inbox.turns.locked(), agent_id).handoff = Some(handoff.clone());
     handoff
-}
-
-/// Keeps whole lines up to `limit` characters, unlike [`clip`]'s first line.
-fn clip_text(text: &str, limit: usize) -> String {
-    let text = text.trim();
-    if text.chars().count() <= limit {
-        return text.to_owned();
-    }
-    let mut clipped: String = text.chars().take(limit.saturating_sub(1)).collect();
-    clipped.push('…');
-    clipped
 }
 
 /// An agent as the inbox names it.
@@ -595,7 +585,7 @@ fn agent_item(core: &Core, agent: &Agent, working: bool) -> Item {
             what.into(),
             ended_at.unwrap_or(agent.at),
         );
-        item.detail = problem.map(|problem| clip(&problem, MAX_LINE_CHARS));
+        item.detail = problem.map(|problem| clipped_line(&problem, MAX_LINE_CHARS));
         item.handoff = Some(handoff);
         item
     };
@@ -624,7 +614,7 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
             .command
             .clone()
             .or_else(|| attention.choices.title.clone())
-            .map(|text| clip(&text, MAX_LINE_CHARS));
+            .map(|text| clipped_line(&text, MAX_LINE_CHARS));
         item.request_id = Some(attention.id);
         item.choices = Some(attention.choices);
         items.push(item);
@@ -634,13 +624,13 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
         let (kind, what) = match (&question.assumption, question.blocked) {
             (Some(assumption), false) => (
                 Kind::Assumption,
-                format!("Went on assuming {}", clip(assumption, MAX_LINE_CHARS)),
+                format!("Went on assuming {}", clipped_line(assumption, MAX_LINE_CHARS)),
             ),
             _ => (Kind::Question, "Asks you".to_owned()),
         };
         let mut item = Item::new(format!("question:{}", question.id), kind, what, question.at)
             .by(&question.agent_id, find(&question.agent_id));
-        item.detail = Some(clip(&question.text, MAX_LINE_CHARS));
+        item.detail = Some(clipped_line(&question.text, MAX_LINE_CHARS));
         item.question_id = Some(question.id.clone());
         items.push(item);
     }
@@ -699,7 +689,7 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
             .lines()
             .rev()
             .find(|line| !line.trim().is_empty())
-            .map(|line| clip(line, MAX_LINE_CHARS));
+            .map(|line| clipped_line(line, MAX_LINE_CHARS));
         items.push(item);
     }
     for session in sessions {

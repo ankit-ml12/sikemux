@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
+use crate::text::clipped;
 use crate::cli::protocol::HarnessRequest;
 use crate::protocol::WindowCall;
 
@@ -411,16 +412,6 @@ fn text_param(params: &Value, key: &str, max: usize) -> Result<Option<String>, S
         )),
         Some(_) => Err(format!("{key} must be nonempty text")),
     }
-}
-
-fn clipped(text: &str, max: usize) -> String {
-    let text = text.trim();
-    if text.chars().count() <= max {
-        return text.to_owned();
-    }
-    let mut clipped: String = text.chars().take(max.saturating_sub(1)).collect();
-    clipped.push('…');
-    clipped
 }
 
 fn choices(value: Option<&Value>) -> Result<Vec<Choice>, String> {
