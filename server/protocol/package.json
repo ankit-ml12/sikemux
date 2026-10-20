@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./api": "./src/api.ts",
+    "./live": "./src/live.ts",
     "./openapi.json": "./generated/openapi.json"
   },
   "scripts": {

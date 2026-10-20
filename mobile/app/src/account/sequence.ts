@@ -1,5 +1,6 @@
+import { reconnectDelay } from '@protocol/live';
+
 import { AccountDeleting, ApiProblem } from './api';
-import { reconnectDelay } from './live';
 
 /** How far signing this phone in to the account has got, so a screen can say why it stopped. */
 export type AccountStatus =

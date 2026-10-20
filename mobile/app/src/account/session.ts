@@ -5,6 +5,7 @@ import { useAuth } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
 import * as Notifications from 'expo-notifications';
 import type { Device } from '@protocol';
+import { liveUrl } from '@protocol/live';
 
 import { notifier } from '../../modules/notify';
 import { deviceIdentity } from '@/device/identity';
@@ -17,7 +18,7 @@ import { accountHosts, registerPhone } from './api';
 import { apiUrl } from './config';
 import { farewellFor } from './farewell';
 import { signOutHere } from './leave';
-import { LiveAccount, liveUrl, runLive, savedCursor } from './live';
+import { LiveAccount, runLive, savedCursor } from './live';
 import { AccountSequence, type AccountStatus } from './sequence';
 
 let hostsVersion = 0;

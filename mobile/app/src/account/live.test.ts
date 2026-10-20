@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AccountEvent, LiveServerMessage, RevokeReason } from '@protocol';
 
-import { afterByeDelay, LiveAccount, liveUrl, readEvents, reconnectDelay, type LiveDeps, type SocketHandlers } from './live';
+import { afterByeDelay, liveUrl, reconnectDelay, type SocketHandlers } from '@protocol/live';
+
+import { LiveAccount, readEvents, type LiveDeps } from './live';
 
 const OWN = 'aa'.repeat(32);
 const HOST = 'bb'.repeat(32);
