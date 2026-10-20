@@ -5,18 +5,12 @@ import { invalidate } from "../state/resources";
 import { reportError } from "../state/toast";
 import { hasAccounts, type AccountAgentType } from "./catalog";
 import { adoptAgentAccounts } from "../state/persist";
-import { DEFAULT_PROVIDER_PROFILES, type Agent, type AgentProvider, type AgentType, type ProviderProfile } from "../state/types";
+import { DEFAULT_PROVIDER_PROFILES, type Agent, type ProviderProfile } from "../state/types";
 import { errorText } from "../lib/format";
 
 /* An account is a provider profile: its directory holds one sign-in. */
 
-export type AccountProvider = AccountAgentType;
-
-export function isAccountProvider(type: AgentType | AgentProvider | null | undefined): type is AccountProvider {
-    return hasAccounts(type);
-}
-
-export function accountsOf(provider: AccountProvider, profiles: readonly ProviderProfile[]): ProviderProfile[] {
+export function accountsOf(provider: AccountAgentType, profiles: readonly ProviderProfile[]): ProviderProfile[] {
     return profiles.filter((profile) => profile.provider === provider);
 }
 
@@ -38,14 +32,14 @@ export function moveChat(agent: Agent, account: ProviderProfile): void {
 
 /** Makes `account` the one `provider` runs on: new chats start there, and the core moves open ones there with any
     turn carrying on. Chats kept where the account cannot see them, and agents in a terminal, stay where they are. */
-export async function switchAccount(provider: AccountProvider, account: ProviderProfile): Promise<void> {
+export async function switchAccount(provider: AccountAgentType, account: ProviderProfile): Promise<void> {
     adoptAgentAccounts(await agentApi.selectAccount(provider, account.id));
 }
 
 const sameDirectory = (a: string | null | undefined, b: string | null | undefined) => (a || null) === (b || null);
 
 /** Reads an account's sign-in and limits again, after they changed. */
-async function refreshAccount(provider: AccountProvider, configPath: string | undefined): Promise<void> {
+async function refreshAccount(provider: AccountAgentType, configPath: string | undefined): Promise<void> {
     await agentApi.forgetAccount(provider, configPath).catch(() => {});
     invalidate(
         (kind, args) =>
@@ -80,7 +74,7 @@ export function useSignIn(profileId: string): SignInState | undefined {
  * the page it opened is kept for when no browser came up. True once signed in.
  */
 export async function signIn(profile: ProviderProfile, executablePath?: string): Promise<boolean> {
-    if (!isAccountProvider(profile.provider) || signIns.get(profile.id)?.phase === "waiting") return false;
+    if (!hasAccounts(profile.provider) || signIns.get(profile.id)?.phase === "waiting") return false;
     const provider = profile.provider;
     setSignIn(profile.id, { phase: "waiting", url: null });
     const listening = new AbortController();
@@ -105,7 +99,7 @@ export async function signIn(profile: ProviderProfile, executablePath?: string):
 }
 
 export function cancelSignIn(profile: ProviderProfile): void {
-    if (isAccountProvider(profile.provider)) void agentApi.cancelSignIn(profile.provider, profile.configPath).catch(() => {});
+    if (hasAccounts(profile.provider)) void agentApi.cancelSignIn(profile.provider, profile.configPath).catch(() => {});
 }
 
 export function dismissSignIn(profileId: string): void {
@@ -113,11 +107,11 @@ export function dismissSignIn(profileId: string): void {
 }
 
 export async function submitSignInCode(profile: ProviderProfile, code: string): Promise<void> {
-    if (isAccountProvider(profile.provider)) await agentApi.signInCode(profile.provider, profile.configPath, code);
+    if (hasAccounts(profile.provider)) await agentApi.signInCode(profile.provider, profile.configPath, code);
 }
 
 export async function signOut(profile: ProviderProfile, executablePath?: string): Promise<void> {
-    if (!isAccountProvider(profile.provider)) return;
+    if (!hasAccounts(profile.provider)) return;
     try {
         await agentApi.signOut(profile.provider, executablePath, profile.configPath);
     } finally {
@@ -126,7 +120,7 @@ export async function signOut(profile: ProviderProfile, executablePath?: string)
 }
 
 /** Makes a new account a folder of its own that shares the default one's chats and settings. */
-export async function addAccount(provider: AccountProvider, name: string, accent: string): Promise<ProviderProfile> {
+export async function addAccount(provider: AccountAgentType, name: string, accent: string): Promise<ProviderProfile> {
     const configPath = await agentApi.addAccount(provider, name);
     const profile: ProviderProfile = {
         id: `profile-${Date.now().toString(36)}`,
@@ -142,7 +136,7 @@ export async function addAccount(provider: AccountProvider, name: string, accent
 
 /** The sign-in dialog: a new account for `provider`, or `profileId` signing in again. */
 export interface AccountDialogRequest {
-    provider: AccountProvider;
+    provider: AccountAgentType;
     profileId?: string;
 }
 

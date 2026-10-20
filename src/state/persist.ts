@@ -13,8 +13,8 @@ import type { ProjectInfo, Workspace, WorkspaceAgent } from "../api/generated/wi
 import { normaliseKeybindingOverrides } from "../commands/keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
-import { effectiveMode, normalizePermissionMode } from "../agents/agentLaunch";
-import { ACCOUNT_AGENT_TYPES, AGENT_TYPES, hasAccounts, isAgentType } from "../agents/catalog";
+import { AGENT_PERMISSION_MODES, effectiveMode, normalizePermissionMode } from "../agents/agentLaunch";
+import { ACCOUNT_AGENT_TYPES, AGENT_TYPES, hasAccounts, isAgentType, type AccountAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
 import { clampPaneStrength, mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { agentInWindow, agentPaneId } from "./selectors";
@@ -33,7 +33,6 @@ import type {
     Agent,
     AgentPermissionMode,
     AgentWorktree,
-    AgentProvider,
     AgentType,
     CorePaneKind,
     Desk,
@@ -228,7 +227,19 @@ function packPrefs(s: StoreState): PersistedPrefs {
     };
 }
 
-const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "ssh-config", "named", "agent", "shared", "board", "project-settings"]);
+const WINDOW_ROLES = new Set<WindowRole>([
+    "term",
+    "files",
+    "git",
+    "diff",
+    "search",
+    "ssh-config",
+    "named",
+    "agent",
+    "shared",
+    "board",
+    "project-settings",
+]);
 
 function normaliseSpaces(value: unknown): ProjectSpace[] {
     if (!Array.isArray(value)) return [];
@@ -342,11 +353,8 @@ function isRecent(value: unknown): value is RecentEntry {
     return isRecord(value) && isSessionKind(value.kind) && typeof value.name === "string" && typeof value.cwd === "string";
 }
 
-const AGENT_PROVIDERS = new Set<AgentProvider>(["claude", "codex", "gemini"]);
-const AGENT_PERMISSION_MODES = new Set<AgentPermissionMode>(["read-only", "workspace-write", "full-access", "bypass"]);
-
 function isAgentPermissionMode(value: unknown): value is AgentPermissionMode {
-    return AGENT_PERMISSION_MODES.has(value as AgentPermissionMode);
+    return (AGENT_PERMISSION_MODES as readonly unknown[]).includes(value);
 }
 
 function normaliseProviderProfiles(value: unknown, fallback: ProviderProfile[]): ProviderProfile[] {
@@ -355,14 +363,14 @@ function normaliseProviderProfiles(value: unknown, fallback: ProviderProfile[]):
     const seen = new Set<string>();
     for (const row of value) {
         if (!isRecord(row) || typeof row.id !== "string" || !row.id.trim() || seen.has(row.id)) continue;
-        if (typeof row.name !== "string" || !row.name.trim() || !AGENT_PROVIDERS.has(row.provider as AgentProvider)) continue;
+        if (typeof row.name !== "string" || !row.name.trim() || !hasAccounts(row.provider as string)) continue;
         if (typeof row.accent !== "string" || !/^#[\da-f]{6}$/i.test(row.accent)) continue;
         const id = row.id.trim().slice(0, 100);
         if (seen.has(id)) continue;
         const profile: ProviderProfile = {
             id,
             name: row.name.trim().slice(0, 100),
-            provider: row.provider as AgentProvider,
+            provider: row.provider as AccountAgentType,
             accent: row.accent.toLowerCase(),
         };
         const executablePath = boundedOptionalString(row.executablePath, 4096);
@@ -436,16 +444,7 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (name) agent.name = name;
     const lead = boundedOptionalString(value.lead, 200);
     if (lead) agent.lead = lead;
-    const requestedPermissionMode = isAgentPermissionMode(value.permissionMode)
-        ? value.permissionMode
-        : value.skipPermissions === true
-          ? "bypass"
-          : value.skipPermissions === false
-            ? "workspace-write"
-            : undefined;
-    const permissionMode = requestedPermissionMode ? normalizePermissionMode(value.type as AgentType, requestedPermissionMode) : undefined;
-    if (permissionMode) agent.permissionMode = permissionMode;
-    if (permissionMode === "bypass") agent.skipPermissions = true;
+    if (isAgentPermissionMode(value.permissionMode)) agent.permissionMode = normalizePermissionMode(value.type as AgentType, value.permissionMode);
     const profileId = boundedOptionalString(value.profileId, 100);
     const executablePath = boundedOptionalString(value.executablePath, 4096);
     const cwd = boundedOptionalString(value.cwd, 4096);
@@ -478,7 +477,6 @@ function persistedSession(sess: Session): PersistedSession {
 
 /** The fields of an agent the core keeps. Startup commands are rebuilt from the type and resume id, never saved. */
 export function persistedAgent(agent: Agent): PersistedAgent {
-    const permissionMode = agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write");
     return {
         id: agent.id,
         type: agent.type,
@@ -486,8 +484,7 @@ export function persistedAgent(agent: Agent): PersistedAgent {
         ...(agent.lead ? { lead: agent.lead } : {}),
         title: agent.title,
         resumeId: agent.resumeId,
-        permissionMode,
-        ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
+        permissionMode: effectiveMode(agent),
         ...(agent.profileId ? { profileId: agent.profileId } : {}),
         ...(agent.executablePath ? { executablePath: agent.executablePath } : {}),
         ...(agent.cwd ? { cwd: agent.cwd } : {}),

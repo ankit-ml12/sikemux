@@ -608,7 +608,7 @@ describe("frontend persistence", () => {
         setState({
             providerProfiles: [{ id: "codex-work", name: "Codex Work", provider: "codex", accent: "#abcdef" }],
             selectedProviderProfileIds: { codex: "codex-work" },
-            defaultAgentPermissionMode: "full-access",
+            defaultAgentPermissionMode: "bypass",
         });
         invoke.mockResolvedValue(undefined);
 

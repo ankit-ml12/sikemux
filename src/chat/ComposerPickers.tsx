@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconChevron } from "../ui/Icons";
 import type { ChatAgentType } from "../agents/agentLaunch";
-import { agentLabel } from "../agents/catalog";
+import { agentLabel, hasAccounts } from "../agents/catalog";
 import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
-import { accountsOf, isAccountProvider, moveChat } from "../agents/accounts";
+import { accountsOf, moveChat } from "../agents/accounts";
 import { fetchResource, peekResource } from "../state/resources";
 import { agentAccountR } from "../state/resources.defs";
 import { useStore } from "../state/store";
@@ -212,7 +212,7 @@ interface Movable {
 function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movable[], (fresh: boolean) => void] {
     const profiles = useStore((s) => s.providerProfiles);
     const [movable, setMovable] = useState<Movable[]>([]);
-    const provider = isAccountProvider(agent.type) ? agent.type : undefined;
+    const provider = hasAccounts(agent.type) ? agent.type : undefined;
     const accounts = useMemo(() => (provider ? accountsOf(provider, profiles) : []), [provider, profiles]);
     const load = useCallback(
         (fresh: boolean) => {

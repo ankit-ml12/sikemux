@@ -57,7 +57,6 @@ export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?:
         agent.title = profile?.name || type;
         agent.executablePath = profile?.executablePath;
         agent.permissionMode = mode;
-        agent.skipPermissions = mode === "bypass";
         delete agent.resumeId;
         agent.model = model;
         agent.modelProvider = modelProvider;
@@ -81,7 +80,6 @@ export function setAgentPermissionMode(id: string, requestedMode: AgentPermissio
         const next = normalizePermissionMode(a.type, requestedMode);
         if (next === effectiveMode(a)) return;
         a.permissionMode = next;
-        a.skipPermissions = next === "bypass";
     });
 }
 
@@ -161,7 +159,6 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             ...(options.worktree ? { worktree: options.worktree } : {}),
             model,
             effort: options.effort,
-            ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
             launchState: "live",
         };
         d.agents[agent.id] = agent;

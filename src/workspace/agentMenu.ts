@@ -5,7 +5,7 @@ import * as cmd from "../state/commands";
 import { promptDialog } from "../state/dialog";
 import { notify, reportError } from "../state/toast";
 import type { Agent, Session } from "../state/types";
-import { agentSupportsChat } from "../agents/agentLaunch";
+import { agentSupportsChat, isYolo } from "../agents/agentLaunch";
 import { canBypassPermissions } from "../agents/catalog";
 import { openShareDialog } from "../share/macShares";
 import { openBuddyPicker } from "../buddies/commands";
@@ -92,7 +92,7 @@ export function agentMenu(
         { label: "Close Others", icon: menuIcon(IconClose), disabled: others.length === 0, run: () => cmd.closeAgents(others.map((x) => x.id)) },
     ];
     if (canBypassPermissions(agent.type)) {
-        const skip = agent.permissionMode === "bypass" || agent.skipPermissions === true;
+        const skip = isYolo(agent.permissionMode);
         items.push(
             { sep: true },
             {

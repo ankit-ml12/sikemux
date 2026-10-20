@@ -5,7 +5,7 @@ import { dispatchPaths, resolvePathDropTarget } from "../state/dropRegistry";
 import { insertText, textInsertTargetWithin } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile, Session } from "../state/types";
 import { acpApi } from "../api/acp";
-import { agentSupportsChat } from "../agents/agentLaunch";
+import { agentSupportsChat, effectiveMode } from "../agents/agentLaunch";
 import { canBypassPermissions } from "../agents/catalog";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { putDraft, takeDraft } from "./draftHandoff";
@@ -211,7 +211,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 {view === "tui" && !switching && (
                     <div className="agent-tui-layer" ref={tuiLayer}>
                         <TerminalPane
-                            key={`${agent.id}:${agent.permissionMode ?? (agent.skipPermissions ? "bypass" : "workspace-write")}:${terminal.generation}`}
+                            key={`${agent.id}:${effectiveMode(agent)}:${terminal.generation}`}
                             cwd={cwd}
                             initialDraft={carried || undefined}
                             onInitialInputDelivered={() => setCarried("")}

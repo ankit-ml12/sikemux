@@ -25,10 +25,9 @@ import {
     useAccountDialog,
     useSignIn,
     type AccountDialogRequest,
-    type AccountProvider,
 } from "./accounts";
-import { providerAccent, selectedProviderProfile } from "./agentProfiles";
-import { agentLabel } from "./catalog";
+import { selectedProviderProfile } from "./agentProfiles";
+import { agentBrand, agentLabel, type AccountAgentType } from "./catalog";
 
 export function AccountDialogHost() {
     const request = useAccountDialog();
@@ -89,7 +88,7 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
         if (!trimmed || busy) return;
         setBusy(true);
         try {
-            const account = await addAccount(provider, trimmed, providerAccent(provider));
+            const account = await addAccount(provider, trimmed, agentBrand(provider));
             setCreated(account.id);
             setProfileId(account.id);
             start(account);
@@ -189,7 +188,7 @@ function AccountDialog({ request }: { request: AccountDialogRequest }) {
 }
 
 /** Accounts signed out of, to sign in to again or remove. */
-function SignedOutAccounts({ provider, onSignIn }: { provider: AccountProvider; onSignIn: (account: ProviderProfile) => void }) {
+function SignedOutAccounts({ provider, onSignIn }: { provider: AccountAgentType; onSignIn: (account: ProviderProfile) => void }) {
     const profiles = useStore((s) => s.providerProfiles);
     const [signedOut, setSignedOut] = useState<string[]>([]);
     useEffect(() => {
@@ -279,7 +278,7 @@ function BrowserHelp({ url, account }: { url: string; account: ProviderProfile }
     );
 }
 
-function SignedIn({ provider, account, mark }: { provider: AccountProvider; account: ProviderProfile; mark: ReactNode }) {
+function SignedIn({ provider, account, mark }: { provider: AccountAgentType; account: ProviderProfile; mark: ReactNode }) {
     const status = useResource(agentAccountR, provider, account.configPath);
     const current = useStore((s) => selectedProviderProfile(provider, s.providerProfiles, s.selectedProviderProfileIds));
     const currentStatus = useResource(agentAccountR, provider, current?.configPath);

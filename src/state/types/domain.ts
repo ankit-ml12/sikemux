@@ -1,4 +1,4 @@
-import { agentBrand, type AgentType } from "../../agents/catalog";
+import { ACCOUNT_AGENT_TYPES, agentBrand, agentLabel, type AccountAgentType, type AgentType } from "../../agents/catalog";
 import type { PluginKind } from "../../plugins/kinds";
 import type { SpaceIcon } from "../projectSpaces";
 
@@ -42,7 +42,8 @@ export type LayoutNode = PaneNode | SplitNode;
 
 export type SessionKind = "project" | "command" | "ssh" | PluginKind;
 
-export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "ssh-config" | "named" | "agent" | "shared" | "board" | "project-settings" | PluginKind;
+export type WindowRole =
+    "term" | "files" | "git" | "diff" | "search" | "ssh-config" | "named" | "agent" | "shared" | "board" | "project-settings" | PluginKind;
 
 export interface Window {
     id: string;
@@ -59,14 +60,11 @@ export interface Window {
 
 export type { AgentType };
 
-/** The permission boundary applied when starting an agent process. */
-export type AgentPermissionMode = "read-only" | "workspace-write" | "full-access" | "bypass";
+/** Whether an agent asks before it acts (the provider's own approvals and sandbox) or acts without asking. */
+export type AgentPermissionMode = "workspace-write" | "bypass";
 
 /** Provider-neutral reasoning levels; unsupported levels are normalized per CLI. */
 export type AgentEffort = "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-
-/** Supported profile backends. Gemini is profile-ready ahead of a dedicated agent tab. */
-export type AgentProvider = "claude" | "codex" | "gemini";
 
 /**
  * Durable, non-secret configuration for an agent executable.
@@ -76,7 +74,7 @@ export type AgentProvider = "claude" | "codex" | "gemini";
 export interface ProviderProfile {
     id: string;
     name: string;
-    provider: AgentProvider;
+    provider: AccountAgentType;
     accent: string;
     executablePath?: string;
     configPath?: string;
@@ -85,16 +83,18 @@ export interface ProviderProfile {
 
 export type ProviderProfileSelection = Partial<Record<AgentType, string>>;
 
-export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = [
-    { id: "builtin-claude", name: "Claude", provider: "claude", accent: agentBrand("claude") },
-    { id: "builtin-codex", name: "Codex", provider: "codex", accent: agentBrand("codex") },
-    { id: "builtin-gemini", name: "Gemini", provider: "gemini", accent: "#4285f4" },
-];
+const builtinProfileId = (type: AccountAgentType): string => `builtin-${type}`;
 
-export const DEFAULT_PROVIDER_PROFILE_SELECTION: Readonly<ProviderProfileSelection> = {
-    claude: "builtin-claude",
-    codex: "builtin-codex",
-};
+export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = ACCOUNT_AGENT_TYPES.map((type) => ({
+    id: builtinProfileId(type),
+    name: agentLabel(type),
+    provider: type,
+    accent: agentBrand(type),
+}));
+
+export const DEFAULT_PROVIDER_PROFILE_SELECTION: Readonly<ProviderProfileSelection> = Object.fromEntries(
+    ACCOUNT_AGENT_TYPES.map((type) => [type, builtinProfileId(type)]),
+);
 
 export interface Agent {
     id: string;
@@ -106,7 +106,6 @@ export interface Agent {
     title: string;
     resumeId?: string;
     createdAt?: number;
-    /** Explicit launch boundary. Absent on legacy in-memory records. */
     permissionMode?: AgentPermissionMode;
     /** Non-secret provider profile selected for this launch. */
     profileId?: string;
@@ -120,8 +119,6 @@ export interface Agent {
     modelProvider?: string;
     /** Optional provider reasoning-effort override selected at launch. */
     effort?: AgentEffort;
-    /** @deprecated Compatibility bridge for snapshots and command builders. */
-    skipPermissions?: boolean;
     /**
      * Session ids that already existed when this fresh agent launched. Used to
      * keep it from adopting a pre-existing session during reconciliation —

@@ -33,25 +33,15 @@ export function normalizePermissionMode(type: AgentType, mode: AgentPermissionMo
 }
 
 /** The permission mode an agent runs in. */
-export function effectiveMode(agent: { type: AgentType; permissionMode?: AgentPermissionMode; skipPermissions?: boolean }): AgentPermissionMode {
-    return agent.permissionMode ?? (agent.skipPermissions ? "bypass" : normalizePermissionMode(agent.type, "workspace-write"));
+export function effectiveMode(agent: { permissionMode?: AgentPermissionMode }): AgentPermissionMode {
+    return agent.permissionMode ?? "workspace-write";
 }
 
-export const AGENT_PERMISSION_COPY: Record<AgentPermissionMode, { label: string; detail: string; tone: "safe" | "balanced" | "open" | "danger" }> = {
-    "read-only": {
-        label: "Observe",
-        detail: "Inspect and plan. Changes require a relaunch with a wider boundary.",
-        tone: "safe",
-    },
+export const AGENT_PERMISSION_COPY: Record<AgentPermissionMode, { label: string; detail: string; tone: "balanced" | "danger" }> = {
     "workspace-write": {
         label: "Normal",
         detail: "Use the provider's normal approval and sandbox behavior.",
         tone: "balanced",
-    },
-    "full-access": {
-        label: "Operate",
-        detail: "Use the whole machine, with the provider's approval flow intact.",
-        tone: "open",
     },
     bypass: {
         label: "YOLO",
@@ -60,7 +50,7 @@ export const AGENT_PERMISSION_COPY: Record<AgentPermissionMode, { label: string;
     },
 };
 
-/** Whether a mode lets the agent act without asking. "full-access" widens the sandbox but keeps the approvals. */
+/** Whether a mode lets the agent act without asking. */
 export const isYolo = (mode: string | null | undefined): boolean => mode === "bypass";
 
 /* The core switches a running chat between safe and YOLO for every agent that

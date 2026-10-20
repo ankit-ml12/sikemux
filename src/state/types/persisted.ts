@@ -38,7 +38,6 @@ export type PersistedAgent = Pick<
     | "model"
     | "modelProvider"
     | "effort"
-    | "skipPermissions"
     | "keepAlive"
     | "renamed"
     | "worktree"

@@ -48,7 +48,6 @@ const DURABLE_AGENT_KEYS = [
     "lead",
     "resumeId",
     "permissionMode",
-    "skipPermissions",
     "profileId",
     "cwd",
     "model",
