@@ -9,6 +9,7 @@
 
 mod sink;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -78,6 +79,16 @@ struct Saved {
     name: String,
     platform: String,
     slot: u64,
+}
+
+/// `hosts.json`: the hosts the app joined, and the slot each host key ever
+/// had. A slot stays with its key after the host is left, so a tab kept from
+/// that host never reaches another one, and finds it again if it is rejoined.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostsFile {
+    hosts: Vec<Saved>,
+    slots: BTreeMap<String, u64>,
 }
 
 /// A host as the page lists it.
@@ -166,6 +177,7 @@ pub struct Hosts {
     app: OnceLock<AppHandle>,
     device: tokio::sync::OnceCell<Arc<Device>>,
     hosts: Mutex<Vec<Arc<Host>>>,
+    slots: Mutex<BTreeMap<String, u64>>,
     saving: Mutex<()>,
 }
 
@@ -217,11 +229,12 @@ impl Hosts {
     /// while there is none.
     pub fn start(&self, app: &AppHandle) {
         let _ = self.app.set(app.clone());
-        let saved: Vec<Saved> = hosts_file(app)
+        let file: HostsFile = hosts_file(app)
             .and_then(|file| std::fs::read(file).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
-        for saved in saved {
+        *self.slots.locked() = file.slots;
+        for saved in file.hosts {
             self.add(saved);
         }
     }
@@ -271,12 +284,15 @@ impl Hosts {
             return;
         };
         let _saving = self.saving.locked();
-        let saved: Vec<Saved> = self
-            .hosts
-            .locked()
-            .iter()
-            .map(|host| host.saved.clone())
-            .collect();
+        let saved = HostsFile {
+            hosts: self
+                .hosts
+                .locked()
+                .iter()
+                .map(|host| host.saved.clone())
+                .collect(),
+            slots: self.slots.locked().clone(),
+        };
         if let Ok(bytes) = serde_json::to_vec_pretty(&saved) {
             if let Some(directory) = file.parent() {
                 let _ = std::fs::create_dir_all(directory);
@@ -325,20 +341,19 @@ impl Hosts {
         Ok(Some((host, core_session(id))))
     }
 
-    fn next_slot(&self) -> AppResult<u64> {
-        let slot = self
-            .hosts
-            .locked()
-            .iter()
-            .map(|host| host.saved.slot)
-            .max()
-            .unwrap_or(0)
-            + 1;
+    /// The slot `id` had before, or one no host key ever had.
+    fn slot_for(&self, id: &str) -> AppResult<u64> {
+        let mut slots = self.slots.locked();
+        if let Some(slot) = slots.get(id) {
+            return Ok(*slot);
+        }
+        let slot = slots.values().max().copied().unwrap_or(0) + 1;
         if slot > MAX_SLOT {
             return Err(AppError::Other(
                 "this app has joined as many hosts as it can".into(),
             ));
         }
+        slots.insert(id.to_owned(), slot);
         Ok(slot)
     }
 }
@@ -443,10 +458,10 @@ pub async fn host_join(
         forget(&hosts, &known);
     }
     let saved = Saved {
+        slot: hosts.slot_for(&id)?,
         id,
         name,
         platform,
-        slot: hosts.next_slot()?,
     };
     let host = hosts
         .add(saved)
