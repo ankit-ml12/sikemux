@@ -1,15 +1,9 @@
 import { useAuth } from "@clerk/react";
 import type { PendingHost } from "@sikemux/protocol";
+import { errorCode, orReverify } from "@sikemux/protocol/account";
 import { useState, type SubmitEvent } from "react";
 
-import {
-  api,
-  formatDay,
-  orReverify,
-  problemText,
-  signedInToken,
-} from "./api.ts";
-import { errorCode } from "./clerkErrors.ts";
+import { api, formatDay, problemText, signedInToken } from "./api.ts";
 import { Panel } from "./Consent.tsx";
 import { useReverified } from "./Reverify.tsx";
 

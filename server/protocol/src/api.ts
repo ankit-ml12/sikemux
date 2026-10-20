@@ -6,7 +6,7 @@ export class ApiProblem extends Error {
   /** The API's status, or undefined when it could not be reached at all. */
   readonly status: number | undefined;
   readonly code: ErrorCode | undefined;
-  /** With reverify_required: how recently the person must have proved who they are. */
+  /** Only with reverify_required: how recently the person must have proved who they are. */
   readonly reverifyWithinMinutes: number | undefined;
 
   constructor(message: string, status?: number, detail?: ErrorDetail) {
@@ -19,11 +19,6 @@ export class ApiProblem extends Error {
   /** Nothing changed on the server: it was out of reach, or failed on its side. */
   get unreachable(): boolean {
     return this.status === undefined || this.status >= 500;
-  }
-
-  /** The API wants the person to prove who they are again before it does this. */
-  get reverify(): boolean {
-    return this.code === "reverify_required";
   }
 }
 

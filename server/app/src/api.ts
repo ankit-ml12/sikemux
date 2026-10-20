@@ -1,31 +1,8 @@
 import type { useAuth } from "@clerk/react";
+import { TRY_AGAIN } from "@sikemux/protocol/account";
 import { ApiProblem, connectApi } from "@sikemux/protocol/api";
 
 import { config } from "./config.ts";
-
-/**
- * Runs `call`; when the API wants the person to prove who they are again, answers what Clerk's
- * `useReverification` takes as "ask them to sign in again", with how recently the API wants it.
- */
-export async function orReverify<T>(call: () => Promise<T>) {
-  try {
-    return await call();
-  } catch (error) {
-    if (!(error instanceof ApiProblem) || !error.reverify) throw error;
-    return {
-      clerk_error: {
-        type: "forbidden",
-        reason: "reverification-error",
-        metadata: {
-          reverification: {
-            level: "first_factor",
-            afterMinutes: error.reverifyWithinMinutes ?? 0,
-          },
-        },
-      },
-    } as const;
-  }
-}
 
 type GetToken = ReturnType<typeof useAuth>["getToken"];
 
@@ -42,9 +19,7 @@ export async function signedInToken(
 
 /** What went wrong, in words for the person. */
 export function problemText(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "Something went wrong; try again.";
+  return error instanceof Error ? error.message : TRY_AGAIN;
 }
 
 /** A day the way the app writes one, like 12 November 2026. */

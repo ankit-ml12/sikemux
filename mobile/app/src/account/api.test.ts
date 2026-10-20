@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { errorCode, explain } from '@protocol/account';
 
 import { accountHosts, ApiProblem, clearPushToken, deleteAccount, joinTicket, registerPhone, removePhone, setPushToken } from './api';
-import { errorCode, explain } from './clerkErrors';
 
 const identity = vi.hoisted(() => ({
   deviceIdentity: vi.fn(async () => ({
@@ -176,7 +176,7 @@ describe('deleteAccount', () => {
 
   it('asks the person to prove it is them again when the server says reverify', async () => {
     answers.push({ status: 403, body: { error: { code: 'reverify_required', message: 'reverify', requestId: 'r' } } });
-    await expect(deleteAccount(token)).rejects.toMatchObject({ reverify: true });
+    await expect(deleteAccount(token)).rejects.toMatchObject({ code: 'reverify_required' });
   });
 
   it('passes on any other refusal', async () => {

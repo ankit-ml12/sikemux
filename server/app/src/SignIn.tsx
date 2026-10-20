@@ -1,7 +1,7 @@
 import { useSignIn, useSignUp } from "@clerk/react";
+import { errorCode, explain } from "@sikemux/protocol/account";
 import { useEffect, useRef, useState, type SubmitEvent } from "react";
 
-import { errorCode, explain } from "./clerkErrors.ts";
 import {
   AppleMark,
   BackIcon,
