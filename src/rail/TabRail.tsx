@@ -28,7 +28,7 @@ import { AGENT_SETUP_SECTION } from "../settings/AgentSetupSection";
 import { usagePeak } from "./usageFormat";
 import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
-import { ScopeTabs } from "./ScopeTabs";
+import { HostScopeTabs, ScopeTabs } from "./ScopeTabs";
 import { NewRow } from "./RailNewRow";
 import { RailPages } from "./RailPages";
 import { FilesPage, TerminalsPage } from "./ProjectPages";
@@ -37,6 +37,8 @@ import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
 import { NewOnHost, remoteChatRows, useRemoteCopies } from "./RemoteRows";
+import { chosenHostOf } from "../hosts/hosts";
+import { HostChats } from "./HostLists";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -97,6 +99,7 @@ export const TabRail = memo(function TabRail() {
 export function TabRailBody() {
     const pageVisible = usePageVisible();
     const session = useStore((s) => s.sessions[s.activeSessionId]);
+    const host = useStore(chosenHostOf);
     const agentStatus = useStore((s) => s.agentStatus);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
@@ -182,7 +185,7 @@ export function TabRailBody() {
     const recentProjects = useMemo(() => (scope === "all" ? projectCwds : cwd ? [cwd] : []), [scope, projectCwds, cwd]);
     const needle = query.trim().toLowerCase();
     const recent = useRecentChats({
-        enabled: isProject && recentProviders.length > 0 && recentProjects.length > 0,
+        enabled: isProject && !host && recentProviders.length > 0 && recentProjects.length > 0,
         providers: recentProviders,
         projects: recentProjects,
         open: openChats,
@@ -259,6 +262,62 @@ export function TabRailBody() {
         seen.current = { session: session?.id, active, ids, view, stagger: last.stagger };
     });
 
+    const toggleSearch = () => {
+        setQuery("");
+        setSearchOpen((open) => !open);
+    };
+
+    const header = (
+        <AgentHeader
+            agents={availableAgents}
+            type={selectedType}
+            setType={setType}
+            searchOpen={isProject && !host && searchOpen}
+            onToggleSearch={toggleSearch}
+            usagePeaks={usagePeaks}
+            canOpenPalette={catalogAgents.length > 0}
+            allAgents={allAgents}
+        />
+    );
+    // The rail's footer: plan limits sit under the agents they apply to, out of the way of the list you came here to use.
+    const accounts = !allAgents && hasUsage(selectedType) && selectedUsage && <AgentAccountsPanel provider={selectedType} usage={selectedUsage} />;
+    const actions = (
+        <div className="agent-actions">
+            <NewOnHost />
+            {selectedType && (
+                <NewRow
+                    icon={<IconPlus size={15} />}
+                    title="New chat"
+                    shortcut="agent.new"
+                    onClick={() =>
+                        allAgents || scope === "all"
+                            ? void cmd.startAgent()
+                            : cmd.addAgent(selectedType, undefined, undefined, {
+                                  profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
+                                  detectedExecutablePath: selectedProvider?.command,
+                              })
+                    }
+                />
+            )}
+            <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
+            <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
+        </div>
+    );
+
+    if (host) {
+        return (
+            <>
+                {header}
+                <div className="tab-rail-top">
+                    {actions}
+                    <HostScopeTabs host={host} />
+                </div>
+                <div className="rail-scroll">{scope === "all" ? <AllProjectsAgents showEmpty /> : <HostChats choice={host} />}</div>
+                {accounts}
+            </>
+        );
+    }
+
     if (!session) return null;
 
     const sessionAgents = agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
@@ -309,26 +368,6 @@ export function TabRailBody() {
         (item) => item.tier === "needs" && itemSessionId({ sessionOrder, sessions, windows: windowsById, windowsBySession }, item) !== session.id,
     ).length;
 
-    const toggleSearch = () => {
-        setQuery("");
-        setSearchOpen((open) => !open);
-    };
-
-    const header = (
-        <AgentHeader
-            agents={availableAgents}
-            type={selectedType}
-            setType={setType}
-            searchOpen={isProject && searchOpen}
-            onToggleSearch={toggleSearch}
-            usagePeaks={usagePeaks}
-            canOpenPalette={catalogAgents.length > 0}
-            allAgents={allAgents}
-        />
-    );
-    // The rail's footer: plan limits sit under the agents they apply to, out of the way of the list you came here to use.
-    const accounts = !allAgents && hasUsage(selectedType) && selectedUsage && <AgentAccountsPanel provider={selectedType} usage={selectedUsage} />;
-
     if (!isProject) {
         return (
             <>
@@ -364,27 +403,8 @@ export function TabRailBody() {
                 </div>
             )}
             <div className="tab-rail-top">
-                <div className="agent-actions">
-                    <NewOnHost />
-                    {selectedType && (
-                        <NewRow
-                            icon={<IconPlus size={15} />}
-                            title="New chat"
-                            shortcut="agent.new"
-                            onClick={() =>
-                                allAgents || scope === "all"
-                                    ? void cmd.startAgent()
-                                    : cmd.addAgent(selectedType, undefined, undefined, {
-                                          profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
-                                          detectedExecutablePath: selectedProvider?.command,
-                                      })
-                            }
-                        />
-                    )}
-                    <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
-                    <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
-                </div>
-                <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
+                {actions}
+                <ScopeTabs scope={scope} name={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 {scope === "all" && <AllProjectsAgents showEmpty={noRecents} />}

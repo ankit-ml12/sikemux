@@ -7,12 +7,13 @@ import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
 import { createSshSession } from "../state/commands/sessions";
 import { offerResumableSessions } from "../terminal/sessionResume";
-import { agentWindowId } from "../state/selectors";
+import { agentWindowId, ownerSessionId } from "../state/selectors";
 import { collectPanes } from "../state/layout";
 import { getState, mutate, setState, useStore, type StoreState } from "../state/store";
 import { notify, reportError, swallow } from "../state/toast";
 import { accountApi } from "../api/account";
 import type { Agent, PaneNode, Session } from "../state/types";
+import type { Draft } from "immer";
 
 /** Another host on the account the app joined, as the app reaches it. */
 export interface HostEntry {
@@ -134,25 +135,84 @@ export function copyOn(state: Pick<StoreState, "hosts" | "hostViews" | "projectI
     return remoteCopiesOf(state, session).find((copy) => copy.host.id === host);
 }
 
-/** Opens a terminal on another host from its row under Hosts, in the session that row keeps for it. */
-export function openHostTerminal(host: string, name: string): void {
+/** A host the side rail chooses: this one or one on the account, by its core's key (none for this one), or an SSH host by its alias. */
+export type HostChoice = { readonly kind: "core"; readonly host?: string } | { readonly kind: "ssh"; readonly alias: string };
+
+/** A chosen host, with the session that was in front when it was chosen or that it brought forward since. */
+export type ChosenHost = HostChoice & { readonly over: string };
+
+/** The host chosen in the side rail, while the session it was chosen over is still in front. */
+export function chosenHostOf(state: Pick<StoreState, "chosenHost" | "activeSessionId">): HostChoice | undefined {
+    return state.chosenHost?.over === state.activeSessionId ? state.chosenHost : undefined;
+}
+
+export function sameHost(a: HostChoice | undefined, b: HostChoice): boolean {
+    if (!a) return false;
+    return a.kind === "core" ? b.kind === "core" && a.host === b.host : b.kind === "ssh" && a.alias === b.alias;
+}
+
+/** Chooses a host's row in the side rail as a project's row is chosen; what is in front stays. */
+export function chooseHost(choice: HostChoice): void {
     mutate((d) => {
-        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((session) => session?.kind === "command" && session.host === host);
-        const window = remoteTerminalWindow(host, "");
-        d.windows[window.id] = window;
-        if (existing) {
-            d.windowsBySession[existing.id] = [...(d.windowsBySession[existing.id] ?? []), window.id];
-            existing.activeWindowId = window.id;
-            d.activeSessionId = existing.id;
-        } else {
-            const id = `${REMOTE_SESSION_PREFIX}${host}`;
-            d.sessions[id] = { id, name, kind: "command", cwd: "", pinned: false, activeWindowId: window.id, host };
-            d.sessionOrder.push(id);
-            d.windowsBySession[id] = [window.id];
-            d.activeSessionId = id;
-        }
-        d.zoomedPaneId = null;
+        d.chosenHost = { ...choice, over: d.activeSessionId };
+        d.settingsOpen = false;
+        d.pickerOpen = false;
     });
+}
+
+/** Brings `sessionId` forward for something opened from a host, keeping that host chosen. */
+function bringForward(d: Draft<StoreState>, sessionId: string): void {
+    if (d.chosenHost?.over === d.activeSessionId) d.chosenHost.over = sessionId;
+    d.activeSessionId = sessionId;
+    d.zoomedPaneId = null;
+}
+
+/** Shows a tab that is open already, from a chosen host's list. */
+export function showTab(windowId: string): void {
+    mutate((d) => {
+        const sessionId = ownerSessionId(d, windowId);
+        if (!sessionId) return;
+        d.sessions[sessionId].activeWindowId = windowId;
+        bringForward(d, sessionId);
+    });
+}
+
+/** The session a host keeps for its terminals and chats outside any project open here, made the first time. */
+function hostSession(d: Draft<StoreState>, host: string): Draft<Session> {
+    const id = `${REMOTE_SESSION_PREFIX}${host}`;
+    if (!d.sessions[id]) {
+        d.sessions[id] = { id, name: hostName(d, host) ?? host, kind: "command", cwd: "", pinned: false, activeWindowId: "", host };
+        d.sessionOrder.push(id);
+        d.windowsBySession[id] = [];
+    }
+    return d.sessions[id];
+}
+
+/**
+ * Where something at `path` on `host` belongs here: the project there that holds it, and the session open here for
+ * that project, which is null when none is and it opens in the host's own.
+ */
+export function placeOn(
+    state: Pick<StoreState, "hostViews" | "sessionOrder" | "sessions" | "projectIdentities">,
+    host: string,
+    path: string | null | undefined,
+): { project: ProjectInfo | undefined; sessionId: string | null } {
+    const project = state.hostViews[host]?.workspace.projects.find((candidate) => inFolder(path, candidate.path));
+    const sessionId =
+        project &&
+        state.sessionOrder.find((id) => {
+            const session = state.sessions[id];
+            if (session?.kind !== "project") return false;
+            return session.host
+                ? id === remoteSessionId(host, project.id)
+                : !!project.identity && state.projectIdentities[session.cwd] === project.identity;
+        });
+    return { project, sessionId: sessionId ?? null };
+}
+
+/** Opens a terminal on another host outside any project, in the session that host keeps. */
+export function openHostTerminal(host: string): void {
+    newRemoteTerminal(null, host, "");
 }
 
 /**
@@ -169,6 +229,12 @@ export async function approvalItem(host?: string): Promise<{ label: string; sele
         disabled: false,
         run: () => void coreCall("setRequireApproval", { requireApproval: !read.requireApproval }, host).catch(reportError(label)),
     };
+}
+
+/** What the rail calls a host. */
+export function hostTitle(state: Pick<StoreState, "hosts">, choice: HostChoice): string {
+    if (choice.kind === "ssh") return choice.alias;
+    return hostName(state, choice.host) ?? "This host";
 }
 
 export function hostName(state: Pick<StoreState, "hosts">, id: string | undefined): string | undefined {
@@ -230,56 +296,56 @@ function remoteTerminalWindow(host: string, cwd: string) {
     return window;
 }
 
-/** Opens a terminal on `host` in `cwd`, a folder there, as a tab of `sessionId`. */
-export function newRemoteTerminal(sessionId: string, host: string, cwd: string): void {
+/** The session `sessionId` names, or the one `host` keeps for what runs outside a project when it is null. */
+function sessionIn(d: Draft<StoreState>, sessionId: string | null, host: string): Draft<Session> | undefined {
+    return sessionId === null ? hostSession(d, host) : d.sessions[sessionId];
+}
+
+/** Opens a terminal on `host` in `cwd`, a folder there, as a tab of `sessionId`, or of the host's own session when null. */
+export function newRemoteTerminal(sessionId: string | null, host: string, cwd: string): void {
     mutate((d) => {
-        const session = d.sessions[sessionId];
+        const session = sessionIn(d, sessionId, host);
         if (!session) return;
         const window = remoteTerminalWindow(host, cwd);
         d.windows[window.id] = window;
-        d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), window.id];
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
         session.activeWindowId = window.id;
-        d.activeSessionId = sessionId;
-        d.zoomedPaneId = null;
+        bringForward(d, session.id);
     });
 }
 
-/** Shows a terminal already running on `host` as a tab of `sessionId`. */
-export function openRemoteTerminal(sessionId: string, host: string, terminal: SessionInfo, cwd: string): void {
+/** Shows a terminal already running on `host` as a tab of `sessionId`, or of the host's own session when null. */
+export function openRemoteTerminal(sessionId: string | null, host: string, terminal: SessionInfo, cwd: string): void {
     const open = Object.values(getState().windows).find((window) => window.root.type === "pane" && window.root.ptyId === terminal.id);
+    if (open) return showTab(open.id);
     mutate((d) => {
-        const session = d.sessions[sessionId];
+        const session = sessionIn(d, sessionId, host);
         if (!session) return;
-        let windowId = open?.id;
-        if (!windowId) {
-            const window = remoteTerminalWindow(host, cwd);
-            window.root = { ...(window.root as PaneNode), ptyId: terminal.id };
-            d.windows[window.id] = window;
-            d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), window.id];
-            windowId = window.id;
-        }
-        session.activeWindowId = windowId;
-        d.activeSessionId = sessionId;
-        d.zoomedPaneId = null;
+        const window = remoteTerminalWindow(host, cwd);
+        window.root = { ...(window.root as PaneNode), ptyId: terminal.id };
+        d.windows[window.id] = window;
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
+        session.activeWindowId = window.id;
+        bringForward(d, session.id);
     });
 }
 
-/** Shows a chat running on `host` as a tab of `sessionId`, taking it up there. */
-export function openRemoteChat(sessionId: string, host: string, chat: Pick<ChatInfo, "agentId" | "provider" | "title" | "name" | "cwd">): void {
+/** Shows a chat running on `host` as a tab of `sessionId`, or of the host's own session when null, taking it up there. */
+export function openRemoteChat(
+    sessionId: string | null,
+    host: string,
+    chat: Pick<ChatInfo, "agentId" | "provider" | "title" | "name" | "cwd">,
+): void {
     if (!isAgentType(chat.provider)) {
         notify("info", `This app can't show ${chat.provider} chats yet`);
         return;
     }
     const type = chat.provider;
+    const open = agentWindowId(getState(), chat.agentId);
+    if (open) return showTab(open);
     mutate((d) => {
-        const session = d.sessions[sessionId];
+        const session = sessionIn(d, sessionId, host);
         if (!session) return;
-        const windowId = agentWindowId(d, chat.agentId);
-        if (windowId) {
-            session.activeWindowId = windowId;
-            d.activeSessionId = sessionId;
-            return;
-        }
         const agent: Agent = {
             id: chat.agentId,
             type,
@@ -294,10 +360,9 @@ export function openRemoteChat(sessionId: string, host: string, chat: Pick<ChatI
         d.agents[agent.id] = agent;
         const window = agentWindow(agent, chat.cwd);
         d.windows[window.id] = window;
-        d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), window.id];
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
         session.activeWindowId = window.id;
-        d.activeSessionId = sessionId;
-        d.zoomedPaneId = null;
+        bringForward(d, session.id);
     });
 }
 

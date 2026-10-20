@@ -1,7 +1,18 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { accountApi } from "../api/account";
 import { coreCall } from "../api/core";
-import { approvalItem, copyOn, installHere, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
+import {
+    approvalItem,
+    chooseHost,
+    chosenHostOf,
+    copyOn,
+    installHere,
+    openHostTerminal,
+    sameHost,
+    startRemoteChat,
+    type HostChoice,
+    type HostEntry,
+} from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
 import { getState, useStore, type StoreState } from "../state/store";
@@ -66,8 +77,7 @@ function HostRow({
     load,
     detail,
     status,
-    active,
-    onOpen,
+    choice,
     menu,
     onMenu,
 }: {
@@ -76,11 +86,11 @@ function HostRow({
     load?: string | null;
     detail?: string | null;
     status: ReactNode;
-    active: boolean;
-    onOpen: () => void;
+    choice: HostChoice;
     menu: () => Promise<CtxItem[]>;
     onMenu: OpenMenu;
 }) {
+    const chosen = useStore((s) => !s.settingsOpen && sameHost(chosenHostOf(s), choice));
     const show = (event: MouseEvent) => {
         event.preventDefault();
         void menu().then((items) => onMenu(event, items));
@@ -88,7 +98,7 @@ function HostRow({
     const icon = kind === "this" ? <IconLaptop size={14} /> : <IconServer size={14} />;
     return (
         <div className="session-row-shell host-row" onContextMenu={show}>
-            <button type="button" className={`sess-row${active ? " active" : ""}`} onClick={onOpen}>
+            <button type="button" className={`sess-row${chosen ? " active" : ""}`} onClick={() => chooseHost(choice)}>
                 <span className={`sess-icon host-${kind}`}>
                     <span className="sess-icon-glyph">{icon}</span>
                 </span>
@@ -104,21 +114,17 @@ function HostRow({
     );
 }
 
+const THIS_HOST: HostChoice = { kind: "core" };
+
 function ThisHostRow({ onMenu }: { onMenu: OpenMenu }) {
     const agents = useStore((s) => Object.values(s.agents).filter((agent) => !agent.host).length);
-    const active = useStore((s) => s.sessions[s.activeSessionId]?.kind === "command" && !s.sessions[s.activeSessionId]?.host);
-    const open = () =>
-        getState().sessionOrder.some((id) => getState().sessions[id]?.kind === "command" && !getState().sessions[id]?.host)
-            ? cmd.focusCommandSession()
-            : cmd.createCommandSession();
     return (
         <HostRow
             kind="this"
             name="This host"
             detail={agentsLabel(agents)}
             status={<StatusDot tone="ok" label="This host" />}
-            active={active}
-            onOpen={open}
+            choice={THIS_HOST}
             menu={async () => [
                 { label: "New terminal here", icon: <IconTerminal size={13} />, run: cmd.createCommandSession },
                 { sep: true },
@@ -131,7 +137,7 @@ function ThisHostRow({ onMenu }: { onMenu: OpenMenu }) {
 
 function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu }) {
     const agents = useStore((s) => remoteAgents(s, host.id));
-    const active = useStore((s) => s.sessions[s.activeSessionId]?.kind === "command" && s.sessions[s.activeSessionId]?.host === host.id);
+    const choice = useMemo<HostChoice>(() => ({ kind: "core", host: host.id }), [host.id]);
     const connected = host.reach === "connected";
     const load = useHostLoad(host.id, connected);
     const chat = () => {
@@ -175,11 +181,10 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
                     label={connected ? "Connected" : host.reach === "away" ? "Out of reach" : "Connecting"}
                 />
             }
-            active={active}
-            onOpen={() => openHostTerminal(host.id, host.name)}
+            choice={choice}
             menu={async () => [
                 { label: "New chat here", icon: <IconPlus size={13} />, run: chat, disabled: !hasProject },
-                { label: "New terminal here", icon: <IconTerminal size={13} />, run: () => openHostTerminal(host.id, host.name) },
+                { label: "New terminal here", icon: <IconTerminal size={13} />, run: () => openHostTerminal(host.id) },
                 { label: "Files", icon: <IconFolder size={13} />, run: files, disabled: !hasProject },
                 { sep: true },
                 { ...(await approvalItem(host.id)), icon: <IconLock size={13} /> },
@@ -193,9 +198,8 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
 
 function SshHostRow({ alias, session, onMenu }: { alias: string; session: Session | undefined; onMenu: OpenMenu }) {
     const tone = useSshTone(session?.id ?? "");
-    const active = useStore((s) => !!session && s.activeSessionId === session.id);
+    const choice = useMemo<HostChoice>(() => ({ kind: "ssh", alias }), [alias]);
     const [installing, setInstalling] = useState(false);
-    const open = () => cmd.createSshSession(alias);
     const install = () => {
         setInstalling(true);
         installHere(alias)
@@ -213,14 +217,13 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
                     label={installing ? "Installing" : session ? tone : "Not connected"}
                 />
             }
-            active={active}
-            onOpen={open}
+            choice={choice}
             menu={async () => [
                 {
                     label: "New SSH terminal",
                     icon: <IconTerminal size={13} />,
                     run: () => {
-                        open();
+                        cmd.createSshSession(alias);
                         cmd.newSshTerminal(alias);
                     },
                 },

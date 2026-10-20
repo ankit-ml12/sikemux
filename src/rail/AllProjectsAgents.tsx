@@ -130,8 +130,10 @@ export function OpenAgentRow({
     active,
     project,
     sessionCwd,
+    hostShown = true,
     title,
     wrap,
+    onOpen = () => cmd.revealAgent(agent.id),
     onDoubleClick,
     onContextMenu,
 }: {
@@ -141,8 +143,11 @@ export function OpenAgentRow({
     active: boolean;
     project?: { name: string; sessionId: string };
     sessionCwd: string;
+    /** Whether the row says which other host the agent runs on; a host's own list leaves it out. */
+    hostShown?: boolean;
     title?: ReactNode;
     wrap?: { ref: Ref<HTMLDivElement>; "data-agent-id": string; "data-session": string };
+    onOpen?: () => void;
     onDoubleClick?: () => void;
     onContextMenu?: (event: MouseEvent) => void;
 }) {
@@ -157,7 +162,7 @@ export function OpenAgentRow({
             ) : (
                 <button
                     className={`agent-row${project ? " two-line" : ""}${active ? " active" : ""}`}
-                    onClick={() => cmd.revealAgent(agent.id)}
+                    onClick={onOpen}
                     onDoubleClick={onDoubleClick}
                     onContextMenu={onContextMenu}>
                     {glyph}
@@ -165,7 +170,7 @@ export function OpenAgentRow({
                         <span className="agent-title">{agent.title}</span>
                         {project && <AgentRowProject name={project.name} />}
                     </span>
-                    <HostLabel host={agent.host} />
+                    {hostShown && <HostLabel host={agent.host} />}
                     {agent.name && <span className="agent-row-name">{agentHandle(agent.name)}</span>}
                     <BackgroundCounts display={display} />
                 </button>
