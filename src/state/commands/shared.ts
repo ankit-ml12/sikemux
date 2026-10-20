@@ -3,6 +3,7 @@ import { forgetAgentDeliveries } from "../../agents/agentInbox";
 import { browserApi } from "../../api/browser";
 import { basename } from "../../lib/paths";
 import { emit } from "../bus";
+import type { Draft } from "immer";
 import { getState, mutate, setState, type StoreState } from "../store";
 import { deskEditorId } from "../desks";
 import { notify, reportError } from "../toast";
@@ -18,23 +19,23 @@ export const patchWindow = (id: string, fn: (w: Window) => Window): void =>
     mutate((d) => {
         const cur = d.windows[id];
         if (!cur) return;
-        d.windows[id] = fn(cur as Window);
+        d.windows[id] = fn(cur);
     });
 
-export const withActiveSession = (fn: (d: StoreState, session: Session) => void): void =>
+export const withActiveSession = (fn: (d: Draft<StoreState>, session: Draft<Session>) => void): void =>
     mutate((d) => {
         const session = d.sessions[d.activeSessionId];
         if (!session) return;
-        fn(d as unknown as StoreState, session as Session);
+        fn(d, session);
     });
 
-export const withActiveWindow = (fn: (d: StoreState, win: Window, session: Session) => void): void =>
+export const withActiveWindow = (fn: (d: Draft<StoreState>, win: Draft<Window>, session: Draft<Session>) => void): void =>
     mutate((d) => {
         const session = d.sessions[d.activeSessionId];
         if (!session) return;
         const win = d.windows[session.activeWindowId];
         if (!win) return;
-        fn(d as unknown as StoreState, win as Window, session as Session);
+        fn(d, win, session);
     });
 
 export function makeWindow(
@@ -109,7 +110,7 @@ export function ensureRoleWindow(role: WindowRole, kind: PaneKind, name: string,
     });
 }
 
-export function attachSession(d: StoreState, session: Session, windows: Window[]): void {
+export function attachSession(d: Draft<StoreState>, session: Session, windows: Window[]): void {
     d.sessions[session.id] = session;
     d.sessionOrder.push(session.id);
     for (const w of windows) d.windows[w.id] = w;
@@ -132,7 +133,7 @@ export function keepOpenedProjectInView(cwd: string): void {
     else setState({ projectSpaces: { ...projectSpaces, [cwd]: activeSpaceId } });
 }
 
-export function openProjectSession(d: StoreState, cwd: string): string {
+export function openProjectSession(d: Draft<StoreState>, cwd: string): string {
     const existing = projectSessionId(d, cwd);
     if (!existing) {
         const windows = [makeWindow(cwd, "Terminal", { role: "term" })];

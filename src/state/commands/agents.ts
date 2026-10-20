@@ -281,7 +281,7 @@ function placeAgentInProject(id: string, cwd: string): void {
         const fromId = winId ? ownerSessionId(d, winId) : null;
         if (!agent || !winId || !fromId) return;
         keepOpenedProjectInView(cwd);
-        const toId = openProjectSession(d as unknown as StoreState, cwd);
+        const toId = openProjectSession(d, cwd);
         if (toId === fromId) return;
         const from = d.sessions[fromId];
         const left = d.windowsBySession[fromId].filter((wid) => wid !== winId);

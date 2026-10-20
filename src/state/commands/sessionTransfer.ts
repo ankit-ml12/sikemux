@@ -1,4 +1,4 @@
-import { getState, mutate, type StoreState } from "../store";
+import { getState, mutate } from "../store";
 import { notify } from "../toast";
 import { parseSessionBundle } from "../sessionBundle";
 import { agentIdsOf } from "../selectors";
@@ -64,7 +64,7 @@ export async function importSessionFromClipboard(): Promise<void> {
             pinned: false,
             activeWindowId: importedWindows[0].id,
         };
-        attachSession(d as unknown as StoreState, session, importedWindows);
+        attachSession(d, session, importedWindows);
         for (const row of bundle.agents) {
             const id = newId("agent");
             d.agents[id] = {
