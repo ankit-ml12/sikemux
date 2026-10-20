@@ -1473,8 +1473,7 @@ fn launch(
         }
         let result = loop {
             let launch = ending.current_launch();
-            let kind = native::Kind::of(ending.provider());
-            let ran = native::run(kind, ending.clone(), launch, &mut queue, begin).await;
+            let ran = native::run(ending.clone(), launch, &mut queue, begin).await;
             if !matches!(ran, Ok(rebind::Outcome::Released)) {
                 ending.feed.agent_gone();
             }
