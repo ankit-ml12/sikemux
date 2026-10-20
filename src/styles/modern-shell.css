@@ -94,14 +94,12 @@ textarea:focus,
     width: var(--tab-rail-w);
 }
 
-/* The scrollbar is always there and fills the right gutter, so the rows keep
- * their width whether or not the list scrolls. */
 .rail-scroll {
-    padding: var(--gutter-rail) 0 var(--space-4) var(--gutter-rail);
-    overflow-y: scroll;
+    padding: var(--gutter-rail) var(--gutter-rail) var(--space-4);
+    scrollbar-width: none;
 }
 .rail-scroll::-webkit-scrollbar {
-    width: var(--gutter-rail);
+    display: none;
 }
 
 /* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
