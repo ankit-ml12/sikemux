@@ -10,7 +10,9 @@ import type { SpaceIcon } from "../projectSpaces";
  * are tabs, and the active pane decides which is on top.
  */
 export type SplitDir = "row" | "column" | "stack";
-export type CorePaneKind = "terminal" | "editor" | "git" | "diff" | "search" | "agent" | "desk" | "shared" | "board" | "project-settings";
+import type { CorePaneKind, WindowRole } from "../windowRoles";
+
+export type { CorePaneKind, WindowRole };
 export type PaneKind = CorePaneKind | PluginKind;
 
 export interface PaneNode {
@@ -41,9 +43,6 @@ export interface SplitNode {
 export type LayoutNode = PaneNode | SplitNode;
 
 export type SessionKind = "project" | "command" | "ssh" | PluginKind;
-
-export type WindowRole =
-    "term" | "files" | "git" | "diff" | "search" | "ssh-config" | "named" | "agent" | "shared" | "board" | "project-settings" | PluginKind;
 
 export interface Window {
     id: string;

@@ -3,11 +3,11 @@ import { mutate, type StoreState } from "../store";
 import { ensureRoleWindow } from "./shared";
 
 export function requestOpenFile(path: string, line?: number, character?: number): void {
-    ensureRoleWindow("files", "editor", "editor", path);
+    ensureRoleWindow("editor", path);
     emit({ type: "open-file", path, line, character });
 }
 
-export const openEditorPane = (): void => ensureRoleWindow("files", "editor", "editor");
+export const openEditorPane = (): void => ensureRoleWindow("editor");
 
 /** Opens `path` as a tab, and returns the preview tab it took the place of, if any. */
 export function openEditorTab(paneId: string, path: string, activate = true, preview = false): string | null {

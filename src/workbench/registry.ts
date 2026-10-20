@@ -1,6 +1,7 @@
 import { isPluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import type { CorePaneKind, PaneKind, PaneNode } from "../state/types/domain";
+import { CORE_PANE_KINDS, isCorePaneKind } from "../state/windowRoles";
 import type { DeskBrowserTab, DeskSavedSimulator, DeskView, EditorPaneView } from "../state/types/view";
 
 declare const ITEM_ID_BRAND: unique symbol;
@@ -257,10 +258,9 @@ const NULL_CODEC = nullCodec();
 
 function builtinDefinition<Kind extends CorePaneKind, State>(
     kind: Kind,
-    defaultTitle: string,
     persisted: VersionedPersistedCodec<State>,
 ): WorkbenchItemDefinition<Kind, State> {
-    return Object.freeze({ kind, defaultTitle, persisted });
+    return Object.freeze({ kind, defaultTitle: CORE_PANE_KINDS[kind].title, persisted });
 }
 
 type BuiltinDefinitionMap = {
@@ -269,16 +269,16 @@ type BuiltinDefinitionMap = {
 
 /** This keyed shape intentionally makes additions to CorePaneKind a compile-time exhaustiveness error. */
 export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
-    terminal: builtinDefinition("terminal", "Terminal", NULL_CODEC),
-    editor: builtinDefinition("editor", "Files", EDITOR_CODEC),
-    git: builtinDefinition("git", "Git", NULL_CODEC),
-    diff: builtinDefinition("diff", "Diff", NULL_CODEC),
-    search: builtinDefinition("search", "Search", NULL_CODEC),
-    agent: builtinDefinition("agent", "Agent", NULL_CODEC),
-    desk: builtinDefinition("desk", "Desk", DESK_CODEC),
-    shared: builtinDefinition("shared", "Shared chat", NULL_CODEC),
-    board: builtinDefinition("board", "Agent board", NULL_CODEC),
-    "project-settings": builtinDefinition("project-settings", "Project settings", NULL_CODEC),
+    terminal: builtinDefinition("terminal", NULL_CODEC),
+    editor: builtinDefinition("editor", EDITOR_CODEC),
+    git: builtinDefinition("git", NULL_CODEC),
+    diff: builtinDefinition("diff", NULL_CODEC),
+    search: builtinDefinition("search", NULL_CODEC),
+    agent: builtinDefinition("agent", NULL_CODEC),
+    desk: builtinDefinition("desk", DESK_CODEC),
+    shared: builtinDefinition("shared", NULL_CODEC),
+    board: builtinDefinition("board", NULL_CODEC),
+    "project-settings": builtinDefinition("project-settings", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {
@@ -286,11 +286,7 @@ export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): str
     return kind === "terminal" && startup ? startup : BUILTIN_WORKBENCH_ITEM_MANIFEST[kind].defaultTitle;
 }
 
-const BUILTIN_KIND_SET = new Set<string>(Object.keys(BUILTIN_WORKBENCH_ITEM_MANIFEST));
-
-export function isBuiltinWorkbenchItemKind(value: unknown): value is CorePaneKind {
-    return typeof value === "string" && BUILTIN_KIND_SET.has(value);
-}
+const isBuiltinWorkbenchItemKind = isCorePaneKind;
 
 /** Plugin kinds are accepted whether or not the plugin is in this build, so its panes survive a build without it. */
 export function isWorkbenchItemKind(value: unknown): value is PaneKind {

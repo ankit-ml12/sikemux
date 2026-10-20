@@ -11,7 +11,8 @@ import { choiceDialog, confirmDialog } from "../dialog";
 import { editorPaneOf, projectSessionId } from "../selectors";
 import { isAgentBusy } from "../agentStatus";
 import { collectPanes, makePane, newId } from "../layout";
-import type { PaneKind, Session, SessionKind, Window, WindowRole } from "../types";
+import type { CorePaneKind, PaneKind, Session, SessionKind, Window, WindowRole } from "../types";
+import { CORE_PANE_KINDS } from "../windowRoles";
 import { focusPane } from "./panes";
 import { selectWindowId } from "./tabs";
 
@@ -79,7 +80,8 @@ const SPLITTABLE_TOOLS: ReadonlySet<PaneKind> = new Set(["git", "search"]);
  * none. `seedEditorPath` pre-opens a file so a freshly created editor hydrates
  * from the store the same way a restored session does.
  */
-export function ensureRoleWindow(role: WindowRole, kind: PaneKind, name: string, seedEditorPath?: string): void {
+export function ensureRoleWindow(kind: CorePaneKind, seedEditorPath?: string): void {
+    const { role, title } = CORE_PANE_KINDS[kind];
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     if (!session || session.kind !== "project") return;
@@ -101,7 +103,7 @@ export function ensureRoleWindow(role: WindowRole, kind: PaneKind, name: string,
     }
     mutate((d) => {
         const sess = d.sessions[session.id];
-        const w = makeWindow(sess.cwd, name, { kind, role });
+        const w = makeWindow(sess.cwd, title, { kind, role });
         d.windows[w.id] = w;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), w.id];
         if (seedEditorPath) d.editorViews[w.activePaneId] = { openTabs: [seedEditorPath], activePath: seedEditorPath };

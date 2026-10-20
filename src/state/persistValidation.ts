@@ -1,8 +1,7 @@
 import { isPluginKind } from "../plugins/kinds";
 import { isValidWorkbenchItemId, isWorkbenchItemKind } from "../workbench/registry";
-import type { LayoutNode, SessionKind, Window, WindowRole } from "./types";
-
-export const PERSISTED_WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "search", "ssh-config", "named", "agent", "shared", "board", "project-settings"]);
+import type { LayoutNode, SessionKind, Window } from "./types";
+import { isWindowRole } from "./windowRoles";
 
 const CORE_SESSION_KINDS = new Set<string>(["project", "command", "ssh"]);
 
@@ -45,11 +44,7 @@ export function isCoreSessionId(value: unknown): value is number {
 }
 
 function isPersistedTab(value: unknown, maxLength: number): boolean {
-    return (
-        isRecord(value) &&
-        boundedString(value.name, maxLength, true) &&
-        (PERSISTED_WINDOW_ROLES.has(value.role as WindowRole) || isPluginKind(value.role))
-    );
+    return isRecord(value) && boundedString(value.name, maxLength, true) && isWindowRole(value.role);
 }
 
 /**
@@ -119,7 +114,7 @@ export function validatePersistedWindow(
 ): { window: Window; layout: ValidLayout } | null {
     if (!isRecord(value)) return null;
     if (!boundedString(value.id, limits.maxStringLength) || !boundedString(value.name, limits.maxStringLength, true)) return null;
-    if (!PERSISTED_WINDOW_ROLES.has(value.role as WindowRole) && !isPluginKind(value.role)) return null;
+    if (!isWindowRole(value.role)) return null;
     if (!boundedString(value.activePaneId, limits.maxStringLength)) return null;
     if (value.transient !== undefined) return null;
     if (value.fixed !== undefined && typeof value.fixed !== "boolean") return null;

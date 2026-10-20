@@ -26,7 +26,8 @@ import { getState, setState, useStore, type StoreState } from "./store";
 import { notify } from "./toast";
 import { errorText } from "../lib/format";
 import { isCoreSessionId, isSessionKind, validatePersistedLayout } from "./persistValidation";
-import { isPluginId, isPluginKind } from "../plugins/kinds";
+import { isWindowRole } from "./windowRoles";
+import { isPluginId } from "../plugins/kinds";
 import { isSpaceIcon, spaceName } from "./projectSpaces";
 import { createWorkbenchItemRef, workbenchItemRegistry, workbenchItemRefFromPane, type BuiltinWorkbenchItemState } from "../workbench/registry";
 import type {
@@ -50,7 +51,6 @@ import type {
     RecentEntry,
     Session,
     Window,
-    WindowRole,
 } from "./types";
 
 function isPinnedChat(value: unknown): value is PinnedChat {
@@ -63,14 +63,6 @@ function isPinnedChat(value: unknown): value is PinnedChat {
         typeof value.project === "string" &&
         value.project.length > 0
     );
-}
-
-function deriveRole(w: Window): WindowRole {
-    if (WINDOW_ROLES.has(w.role) || isPluginKind(w.role)) return w.role;
-    if (w.name === "files") return "files";
-    if (w.name === "git") return "git";
-    if (w.name === "term" || /^\d+$/.test(w.name)) return "term";
-    return "named";
 }
 
 export const VERSION = 21;
@@ -227,20 +219,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
     };
 }
 
-const WINDOW_ROLES = new Set<WindowRole>([
-    "term",
-    "files",
-    "git",
-    "diff",
-    "search",
-    "ssh-config",
-    "named",
-    "agent",
-    "shared",
-    "board",
-    "project-settings",
-]);
-
 function normaliseSpaces(value: unknown): ProjectSpace[] {
     if (!Array.isArray(value)) return [];
     const spaces: ProjectSpace[] = [];
@@ -300,6 +278,7 @@ function isWindow(value: unknown): value is Window {
         typeof value.id === "string" &&
         typeof value.name === "string" &&
         typeof value.activePaneId === "string" &&
+        isWindowRole(value.role) &&
         isLayout(value.root)
     );
 }
@@ -979,7 +958,6 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
             const restored: Window = {
                 ...row,
                 root: sessions[sid].kind === "ssh" ? upgradeSshStartup(row.root, sessions[sid].name) : row.root,
-                role: deriveRole(row),
                 activePaneId: ids.panes.includes(row.activePaneId) ? row.activePaneId : ids.panes[0],
             };
             if (sessions[sid].kind === "project") delete restored.fixed;

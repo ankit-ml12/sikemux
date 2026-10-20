@@ -133,7 +133,7 @@ export function selectSession(id: string): void {
 /** Opens `sessionId`'s project with its settings tab in front, or the active project's. */
 export function openProjectSettings(sessionId?: string): void {
     if (sessionId) selectSession(sessionId);
-    ensureRoleWindow("project-settings", "project-settings", "Project settings");
+    ensureRoleWindow("project-settings");
 }
 
 /** Makes a space and returns its id, or null when the name is blank. */

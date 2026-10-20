@@ -2,9 +2,8 @@ import { pluginDocuments, usePluginDocumentsVersion } from "../plugins/documents
 import { memo, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { Agent, CorePaneKind, Divider, PaneKind, PaneNode, Rect, Session, TabRef, Window as WindowT, WindowRole } from "../state/types";
-import { isPluginKind, type PluginKind } from "../plugins/kinds";
-import { pluginSurface } from "../plugins/registry";
+import type { Agent, Divider, PaneNode, Rect, Session, TabRef, Window as WindowT } from "../state/types";
+import { isPluginKind } from "../plugins/kinds";
 import { collectPanes, computeLayout, findSplit, MIN_FRAC, openSides } from "../state/layout";
 import { cellPlacement, dividerKey, dividerPlacement, stackPlacement } from "../state/layoutPaint";
 import * as cmd from "../state/commands";
@@ -36,7 +35,7 @@ import { IconArrowUp, IconClose, IconMove, IconPlus, WindowIcon } from "../ui/Ic
 import { agentHandle } from "../agents/AgentLabel";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
-import { PROJECT_SURFACES } from "../workbench/surfaces";
+import { paneRole, windowRoleLabel } from "../state/windowRoles";
 import { FileIcon } from "../ui/FileIcon";
 import { useStageMotion } from "../state/nativeViews";
 import { basename } from "../lib/paths";
@@ -47,22 +46,6 @@ import { useDocumentSlide } from "./useDocumentSlide";
 import { fileTabMenu, renameTerminalTab, windowTabMenu } from "./tabMenus";
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
-
-const CORE_PANE_ROLE: Record<CorePaneKind, WindowRole> = {
-    terminal: "term",
-    editor: "files",
-    git: "git",
-    diff: "diff",
-    search: "search",
-    agent: "agent",
-    /* A desk is a pane beside its agent, not a window role of its own. */
-    desk: "named",
-    shared: "shared",
-    board: "board",
-    "project-settings": "project-settings",
-};
-
-const paneRole = (kind: PaneKind): WindowRole => (isPluginKind(kind) ? kind : CORE_PANE_ROLE[kind]);
 
 /*
  * How many off-screen workbench screens stay mounted.
@@ -192,22 +175,6 @@ function WindowScrollIndicator({ count, index, ms }: { count: number; index: num
 }
 
 const EMPTY_IDS: readonly string[] = [];
-
-const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
-    term: "Terminal",
-    files: PROJECT_SURFACES.files.label,
-    git: PROJECT_SURFACES.git.label,
-    diff: "Diff",
-    search: PROJECT_SURFACES.search.label,
-    "ssh-config": "SSH config",
-    named: "Window",
-    agent: "Agent",
-    shared: "Shared chat",
-    board: PROJECT_SURFACES.board.label,
-    "project-settings": "Project settings",
-};
-
-const roleLabel = (role: WindowRole): string => (isPluginKind(role) ? (pluginSurface(role)?.title ?? role) : CORE_ROLE_LABEL[role]);
 
 /** A workspace tab, already carrying the ids the strip and the live layer pair up with. */
 type WorkspaceTab = TabDescriptor & { tabId: string; panelId: string };
@@ -366,7 +333,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             }
             const path = pane.kind === "editor" ? editorViews[pane.id]?.activePath : null;
             if (path) return { label: basename(path), title: path, icon: <FileIcon name={basename(path)} size={14} /> };
-            const label = roleLabel(paneRole(pane.kind));
+            const label = windowRoleLabel(paneRole(pane.kind));
             return {
                 label,
                 title: label,
@@ -427,7 +394,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             }
             const shown = collectPanes(win.root).find((pane) => pane.id === win.activePaneId);
             const role = shown?.kind === "terminal" ? "term" : win.role;
-            const label = role === "term" && shown ? terminalLabel(win, shown, termTitles) : roleLabel(role);
+            const label = role === "term" && shown ? terminalLabel(win, shown, termTitles) : windowRoleLabel(role);
             return [
                 {
                     id: key,
