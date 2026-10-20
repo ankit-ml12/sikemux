@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { fsapi } from "../api/fs";
 import { lsp } from "../api/lsp";
 import { useProjectRepo } from "../git/projectRepo";
@@ -10,33 +10,34 @@ import { confirmDialog } from "../state/dialog";
 import { useStore } from "../state/store";
 import { notify, reportError } from "../state/toast";
 import { AddTaskDialog } from "../tasks/AddTaskDialog";
-import { tasksApi, useProjectTasks, type ProjectTask, type TaskSourceKind } from "../tasks/coreTasks";
+import { tasksApi, useProjectTasks, type ProjectTask } from "../tasks/coreTasks";
 import { runProjectTask } from "../tasks/projectTaskActions";
 import { Switch } from "../ui/Controls";
 import { Dropdown } from "../ui/Dropdown";
-import { IconFolder, IconGit, IconPencil, IconPlus, IconRun, IconTrash } from "../ui/Icons";
+import { IconChevron, IconCode, IconFolder, IconGit, IconPencil, IconPlus, IconRun, IconSettings, IconTrash } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { loadProjectConfig, type ProjectConfigLoadResult } from "./projectConfig";
 import { trustProjectConfig } from "./projectConfigRuntime";
 import "../styles/settings.css";
 import "../styles/project-settings.css";
 
-const SOURCE_NAMES: Record<TaskSourceKind, string> = {
-    project: "sikemux.json",
-    personal: "Only you",
-    detected: "Build files",
-    rerun: "Rerun",
-    command: "Command",
-};
+type Page = "general" | "tasks" | "git" | "config";
+
+const PAGES: readonly { id: Page; label: string; icon: ReactNode }[] = [
+    { id: "general", label: "General", icon: <IconSettings size={13} /> },
+    { id: "tasks", label: "Tasks", icon: <IconRun size={13} /> },
+    { id: "git", label: "Git", icon: <IconGit size={13} /> },
+    { id: "config", label: "sikemux.json", icon: <IconCode size={13} /> },
+];
 
 const editable = (task: ProjectTask) => task.source === "project" || task.source === "personal";
 
 /** One project's own settings, kept in its repository or in Sikemux. */
 export function ProjectSettingsPane({ project, visible }: { project: string; visible: boolean }) {
     const home = useStore((s) => s.home);
+    const [page, setPage] = useState<Page>("general");
     const tasks = useProjectTasks(visible ? project : null);
     const [config, setConfig] = useState<ProjectConfigLoadResult | null>(null);
-    const [dialog, setDialog] = useState<{ editing?: ProjectTask } | null>(null);
 
     useEffect(() => {
         if (!visible) return;
@@ -51,66 +52,144 @@ export function ProjectSettingsPane({ project, visible }: { project: string; vis
         };
     }, [project, visible, tasks]);
 
-    const own = tasks?.tasks.filter(editable) ?? [];
-    const found = tasks?.tasks.filter((task) => task.source === "detected") ?? [];
-
     return (
         <div className="project-settings-pane">
-            <SettingsPage>
-                <header className="project-settings-head">
-                    <span className="project-settings-glyph">
-                        <IconFolder size={16} />
-                    </span>
-                    <span className="project-settings-title">
-                        <h1>{basename(project)}</h1>
-                        <span className="project-settings-path">{prettyPath(project, home)}</span>
-                    </span>
-                    <button
-                        type="button"
-                        className="settings-btn"
-                        onClick={() => void fsapi.revealInFinder(project).catch(reportError("reveal the project"))}>
-                        Reveal in Finder
-                    </button>
-                </header>
-
-                <SettingsSection
-                    title="Tasks"
-                    meta={tasks ? `${own.length} yours · ${found.length} found` : undefined}
-                    sub="Commands the run button and agents start. For the team goes in sikemux.json, which you commit; Only me stays in .sikemux/, which Git ignores.">
-                    <div className="settings-list">
-                        {own.map((task) => (
-                            <TaskRow key={task.id} task={task} project={project} onEdit={() => setDialog({ editing: task })} />
-                        ))}
-                        {tasks && own.length === 0 && <div className="settings-empty">No tasks of your own yet.</div>}
-                        <div className="settings-list-add">
-                            <button type="button" className="settings-btn" onClick={() => setDialog({})}>
-                                <IconPlus size={11} />
-                                Add a task
-                            </button>
-                        </div>
-                    </div>
-                    {found.length > 0 && (
-                        <div className="settings-list">
-                            <div className="project-task-group">Found in the build files</div>
-                            {found.map((task) => (
-                                <TaskRow key={task.id} task={task} project={project} />
-                            ))}
-                        </div>
-                    )}
-                </SettingsSection>
-
-                <ConfigSection project={project} config={config} onChanged={setConfig} />
-
-                <GitSection project={project} visible={visible} />
-
-                <AgentsSection project={project} />
-            </SettingsPage>
-            {dialog && <AddTaskDialog project={project} editing={dialog.editing} onDone={() => setDialog(null)} />}
+            <aside className="project-settings-nav">
+                <div className="project-settings-title">
+                    <h1>{basename(project)}</h1>
+                    <span className="project-settings-path">{prettyPath(project, home)}</span>
+                </div>
+                <nav aria-label="Project settings sections">
+                    {PAGES.map((entry) => (
+                        <button
+                            key={entry.id}
+                            type="button"
+                            className={`settings-rail-item${page === entry.id ? " active" : ""}`}
+                            aria-current={page === entry.id ? "page" : undefined}
+                            onClick={() => setPage(entry.id)}>
+                            <span className="settings-rail-icon" aria-hidden="true">
+                                {entry.icon}
+                            </span>
+                            <span className="settings-rail-name">{entry.label}</span>
+                            {entry.id === "config" && config?.status === "invalid" && <span className="project-settings-flag">!</span>}
+                        </button>
+                    ))}
+                </nav>
+                <button
+                    type="button"
+                    className="settings-btn project-settings-reveal"
+                    onClick={() => void fsapi.revealInFinder(project).catch(reportError("reveal the project"))}>
+                    <IconFolder size={12} />
+                    Reveal in Finder
+                </button>
+            </aside>
+            <div className="project-settings-main">
+                <SettingsPage>
+                    {page === "general" && <GeneralPage project={project} />}
+                    {page === "tasks" && <TasksPage project={project} tasks={tasks?.tasks ?? null} />}
+                    {page === "git" && <GitSection project={project} visible={visible} />}
+                    {page === "config" && <ConfigSection project={project} config={config} onChanged={setConfig} />}
+                </SettingsPage>
+            </div>
         </div>
     );
 }
 
-function TaskRow({ task, project, onEdit }: { task: ProjectTask; project: string; onEdit?: () => void }) {
+function TasksPage({ project, tasks }: { project: string; tasks: readonly ProjectTask[] | null }) {
+    const [dialog, setDialog] = useState<{ editing?: ProjectTask } | null>(null);
+    const [filter, setFilter] = useState("");
+    const own = tasks?.filter(editable) ?? [];
+    const words = filter.trim().toLowerCase();
+    const found = (tasks ?? []).filter(
+        (task) => task.source === "detected" && (!words || `${task.label} ${task.command} ${task.cwd}`.toLowerCase().includes(words)),
+    );
+    const folders = new Map<string, ProjectTask[]>();
+    for (const task of found) folders.set(task.cwd, [...(folders.get(task.cwd) ?? []), task]);
+
+    return (
+        <>
+            <SettingsSection
+                title={
+                    <span className="project-settings-heading">
+                        Your tasks
+                        <button type="button" className="settings-btn" onClick={() => setDialog({})}>
+                            <IconPlus size={11} />
+                            Add a task
+                        </button>
+                    </span>
+                }
+                sub="Commands the run button and agents start. For the team goes in sikemux.json, which you commit; Only me stays in .sikemux/, which Git ignores.">
+                {own.length > 0 ? (
+                    <div className="settings-list">
+                        {own.map((task) => (
+                            <TaskRow key={task.id} task={task} project={project} onEdit={() => setDialog({ editing: task })} />
+                        ))}
+                    </div>
+                ) : (
+                    tasks && <div className="settings-empty project-settings-empty">No tasks of your own yet.</div>
+                )}
+            </SettingsSection>
+
+            {tasks && tasks.some((task) => task.source === "detected") && (
+                <SettingsSection
+                    title="Found in the build files"
+                    meta={`${found.length} tasks`}
+                    sub="Read from package.json, Cargo, Maven, Gradle and the rest; change those files to change these.">
+                    <input
+                        className="settings-input wide"
+                        placeholder="Filter tasks"
+                        aria-label="Filter tasks"
+                        value={filter}
+                        onChange={(event) => setFilter(event.target.value)}
+                        spellCheck={false}
+                    />
+                    <div className="settings-list">
+                        {[...folders].map(([cwd, group]) => (
+                            <FoundGroup key={cwd} project={project} cwd={cwd} tasks={group} open={words !== "" || folders.size === 1} />
+                        ))}
+                        {found.length === 0 && <div className="settings-empty">No task matches.</div>}
+                    </div>
+                </SettingsSection>
+            )}
+            {dialog && <AddTaskDialog project={project} editing={dialog.editing} onDone={() => setDialog(null)} />}
+        </>
+    );
+}
+
+function FoundGroup({ project, cwd, tasks, open: openAlways }: { project: string; cwd: string; tasks: readonly ProjectTask[]; open: boolean }) {
+    const [open, setOpen] = useState(cwd === ".");
+    const shown = open || openAlways;
+    const suffix = ` (${cwd})`;
+    return (
+        <div className="project-task-folder">
+            <button type="button" className="project-task-folder-head" aria-expanded={shown} onClick={() => setOpen(!shown)}>
+                <IconChevron size={11} className={`project-task-chevron${shown ? " open" : ""}`} />
+                <span className="project-task-folder-name">{cwd === "." ? "Project root" : cwd}</span>
+                <span className="project-task-folder-count">{tasks.length}</span>
+            </button>
+            {shown &&
+                tasks.map((task) => (
+                    <div className="project-found-row" key={task.id}>
+                        <span className="project-found-label">{task.label.endsWith(suffix) ? task.label.slice(0, -suffix.length) : task.label}</span>
+                        <span className="project-found-command" title={task.command}>
+                            {task.command}
+                        </span>
+                        <Tooltip label={`Run ${task.label}`}>
+                            <button
+                                type="button"
+                                className="settings-row-x"
+                                aria-label={`Run ${task.label}`}
+                                onClick={() => void runProjectTask(project, task)}>
+                                <IconRun size={11} />
+                            </button>
+                        </Tooltip>
+                    </div>
+                ))}
+        </div>
+    );
+}
+
+function TaskRow({ task, project, onEdit }: { task: ProjectTask; project: string; onEdit: () => void }) {
     const remove = async () => {
         const ok = await confirmDialog({
             title: `Remove ${task.label}?`,
@@ -135,7 +214,7 @@ function TaskRow({ task, project, onEdit }: { task: ProjectTask; project: string
             </span>
             <span className="project-task-meta">
                 {task.cwd !== "." && <span className="project-task-cwd">{task.cwd}</span>}
-                <span>{SOURCE_NAMES[task.source]}</span>
+                <span>{task.source === "project" ? "Team" : "Only me"}</span>
             </span>
             <span className="project-task-actions">
                 <Tooltip label={`Run ${task.label}`}>
@@ -147,20 +226,16 @@ function TaskRow({ task, project, onEdit }: { task: ProjectTask; project: string
                         <IconRun size={11} />
                     </button>
                 </Tooltip>
-                {onEdit && (
-                    <Tooltip label="Edit">
-                        <button type="button" className="settings-row-x" aria-label={`Edit ${task.label}`} onClick={onEdit}>
-                            <IconPencil size={11} />
-                        </button>
-                    </Tooltip>
-                )}
-                {onEdit && (
-                    <Tooltip label="Remove">
-                        <button type="button" className="settings-row-x" aria-label={`Remove ${task.label}`} onClick={() => void remove()}>
-                            <IconTrash size={11} />
-                        </button>
-                    </Tooltip>
-                )}
+                <Tooltip label="Edit">
+                    <button type="button" className="settings-row-x" aria-label={`Edit ${task.label}`} onClick={onEdit}>
+                        <IconPencil size={11} />
+                    </button>
+                </Tooltip>
+                <Tooltip label="Remove">
+                    <button type="button" className="settings-row-x" aria-label={`Remove ${task.label}`} onClick={() => void remove()}>
+                        <IconTrash size={11} />
+                    </button>
+                </Tooltip>
             </span>
         </div>
     );
@@ -270,13 +345,13 @@ function GitSection({ project, visible }: { project: string; visible: boolean })
     );
 }
 
-function AgentsSection({ project }: { project: string }) {
+function GeneralPage({ project }: { project: string }) {
     const worktree = useStore((s) => s.agentWorktreeDefaults[project] === true);
     const languageServers = useStore((s) => s.languageServerTrust[project] === true);
     const spaces = useStore((s) => s.spaces);
     const space = useStore((s) => s.projectSpaces[project] ?? "");
     return (
-        <SettingsSection title="Agents and editor" sub="Kept in Sikemux, not in the repository.">
+        <SettingsSection title="General" sub="Kept in Sikemux, not in the repository.">
             <SettingsRows>
                 <SettingsRow
                     label="New chats start in a worktree"
