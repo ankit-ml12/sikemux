@@ -71,7 +71,10 @@ export function AgentFace({
     logoClass: string;
     buddyClass: string;
 }) {
-    const on = wearsBuddy(useStore((s) => s.buddies), !!agent.name);
+    const on = wearsBuddy(
+        useStore((s) => s.buddies),
+        !!agent.name,
+    );
     return on ? (
         <span className={buddyClass}>
             <AgentBuddy agent={agent} size={size} />

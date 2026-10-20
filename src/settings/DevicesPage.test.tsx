@@ -113,7 +113,9 @@ describe("DevicesPage and the account", () => {
 
     it("shows when the connection to the account is down", async () => {
         account = SIGNED_IN;
-        transport.registerCoreRequest("remoteStatus", () => ({ status: status({ owner: "user_2abc", account: { state: "offline", reason: null, since: 1 } }) }));
+        transport.registerCoreRequest("remoteStatus", () => ({
+            status: status({ owner: "user_2abc", account: { state: "offline", reason: null, since: 1 } }),
+        }));
         render(<DevicesPage />);
 
         expect(await screen.findByText("Can't reach your account, retrying")).toBeInTheDocument();
@@ -124,7 +126,9 @@ describe("DevicesPage and the account", () => {
 
     it("signs out and says why when the account lets this host go", async () => {
         account = SIGNED_IN;
-        transport.registerCoreRequest("remoteStatus", () => ({ status: status({ owner: "user_2abc", account: { state: "live", reason: null, since: 1 } }) }));
+        transport.registerCoreRequest("remoteStatus", () => ({
+            status: status({ owner: "user_2abc", account: { state: "live", reason: null, since: 1 } }),
+        }));
         render(<DevicesPage />);
 
         expect(await screen.findByText("me@example.com")).toBeInTheDocument();
@@ -188,7 +192,9 @@ describe("DevicesPage and notifications", () => {
     const phone = { id: PHONE, name: "Pixel", platform: "android", access: "watch" as const, pairedAt: 1, lastSeen: null };
 
     it("says beside each phone whether its notifications reach it", async () => {
-        transport.registerCoreRequest("remoteStatus", () => ({ status: status({ devices: [phone], notifications: [{ deviceId: PHONE, state: "notReaching", since: 1 }] }) }));
+        transport.registerCoreRequest("remoteStatus", () => ({
+            status: status({ devices: [phone], notifications: [{ deviceId: PHONE, state: "notReaching", since: 1 }] }),
+        }));
         render(<DevicesPage />);
         expect(await screen.findByText("notifications aren't reaching it")).toHaveClass("device-warning");
     });
