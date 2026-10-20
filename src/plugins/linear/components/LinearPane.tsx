@@ -56,12 +56,12 @@ function LinearWorkspace({ paneId, active, status }: { paneId: string; active: b
                     ) : (
                         <span className="linear-workspace">{workspace.name}</span>
                     )}
-                    <button type="button" className="linear-chip" onClick={() => void issues.refresh()}>
+                    <button type="button" className="plugin-chip" onClick={() => void issues.refresh()}>
                         Refresh
                     </button>
                 </div>
                 <input
-                    className="linear-input"
+                    className="plugin-input"
                     value={words}
                     onChange={(event) => setWords(event.target.value)}
                     onKeyDown={(event) => {
@@ -75,7 +75,7 @@ function LinearWorkspace({ paneId, active, status }: { paneId: string; active: b
                     aria-label="Search Linear issues"
                     spellCheck={false}
                 />
-                <div className="linear-heading">{view.query ? `Matching “${view.query}”` : "My open issues"}</div>
+                <div className="plugin-heading">{view.query ? `Matching “${view.query}”` : "My open issues"}</div>
                 <StaleNotice handle={issues} />
                 <Loaded
                     handle={issues}
@@ -85,7 +85,7 @@ function LinearWorkspace({ paneId, active, status }: { paneId: string; active: b
                 </Loaded>
                 <button
                     type="button"
-                    className="linear-signout"
+                    className="plugin-signout"
                     onClick={() =>
                         void linearApi
                             .signOut(workspace.id)
@@ -154,16 +154,16 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
             <header className="linear-detail-head">
                 <span className="linear-row-id">{issue.identifier}</span>
                 <span className="linear-detail-actions">
-                    <button type="button" className="linear-chip" onClick={() => void openUrl(issue.url).catch(swallow("open the issue"))}>
+                    <button type="button" className="plugin-chip" onClick={() => void openUrl(issue.url).catch(swallow("open the issue"))}>
                         Open in Linear
                     </button>
-                    <button type="button" className="linear-chip" onClick={() => copyWithNotice(issue.branchName, "the branch name")}>
+                    <button type="button" className="plugin-chip" onClick={() => copyWithNotice(issue.branchName, "the branch name")}>
                         Copy branch
                     </button>
-                    <button type="button" className="linear-chip" onClick={(event) => setMenu({ x: event.clientX, y: event.clientY })}>
+                    <button type="button" className="plugin-chip" onClick={(event) => setMenu({ x: event.clientX, y: event.clientY })}>
                         Send to agent
                     </button>
-                    <button type="button" className="linear-chip" aria-label="Close the issue" onClick={onClose}>
+                    <button type="button" className="plugin-chip" aria-label="Close the issue" onClick={onClose}>
                         ✕
                     </button>
                 </span>
@@ -183,7 +183,7 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
                 {!issue.assignee && (
                     <button
                         type="button"
-                        className="linear-chip"
+                        className="plugin-chip"
                         disabled={busy}
                         onClick={() => change({ assignee: "me" }, `${issue.identifier} is yours`)}>
                         Assign to me
@@ -201,10 +201,10 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
                 {issue.description?.trim() ? (
                     <Markdown className="prose linear-description">{issue.description}</Markdown>
                 ) : (
-                    <p className="linear-note">No description.</p>
+                    <p className="plugin-note">No description.</p>
                 )}
-                <h3 className="linear-heading">Comments</h3>
-                {issue.comments.length === 0 && <p className="linear-note">No comments yet.</p>}
+                <h3 className="plugin-heading">Comments</h3>
+                {issue.comments.length === 0 && <p className="plugin-note">No comments yet.</p>}
                 {issue.comments.map((each) => (
                     <article key={each.id} className="linear-comment">
                         <header>
@@ -225,7 +225,7 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
                     placeholder="Comment (⌘↵ to send)"
                     aria-label={`Comment on ${issue.identifier}`}
                 />
-                <button type="button" className="linear-chip primary" disabled={!draft.trim() || busy} onClick={comment}>
+                <button type="button" className="plugin-chip primary" disabled={!draft.trim() || busy} onClick={comment}>
                     {busy ? "Saving…" : "Comment"}
                 </button>
             </div>

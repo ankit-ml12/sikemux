@@ -78,7 +78,7 @@ function SlackWorkspace({ paneId, active, status }: { paneId: string; active: bo
                     </div>
                 )}
                 <input
-                    className="slack-input"
+                    className="plugin-input"
                     value={link}
                     onChange={(event) => setLink(event.target.value)}
                     onKeyDown={(event) => {
@@ -89,7 +89,7 @@ function SlackWorkspace({ paneId, active, status }: { paneId: string; active: bo
                     spellCheck={false}
                 />
                 <input
-                    className="slack-input"
+                    className="plugin-input"
                     value={filter}
                     onChange={(event) => setFilter(event.target.value)}
                     placeholder="Find a channel or person"
@@ -100,16 +100,16 @@ function SlackWorkspace({ paneId, active, status }: { paneId: string; active: bo
                 <Loaded handle={channels} loading="Loading channels">
                     {() => (
                         <div className="slack-channels">
-                            {rooms.length > 0 && <div className="slack-heading">Channels</div>}
+                            {rooms.length > 0 && <div className="plugin-heading">Channels</div>}
                             {rooms.map(row)}
-                            {people.length > 0 && <div className="slack-heading">Direct messages</div>}
+                            {people.length > 0 && <div className="plugin-heading">Direct messages</div>}
                             {people.map(row)}
                         </div>
                     )}
                 </Loaded>
                 <button
                     type="button"
-                    className="slack-signout"
+                    className="plugin-signout"
                     onClick={() =>
                         void slackApi
                             .signOut(workspace.id)
@@ -189,7 +189,7 @@ function ChannelView({
         <section className="slack-main" aria-label={title}>
             <header className="slack-main-head">
                 <h2>{title}</h2>
-                <button type="button" className="slack-chip" onClick={() => void history.refresh()}>
+                <button type="button" className="plugin-chip" onClick={() => void history.refresh()}>
                     Refresh
                 </button>
             </header>
@@ -254,7 +254,7 @@ function ThreadView({
                 <span className="slack-grow" />
                 <button
                     type="button"
-                    className="slack-chip primary"
+                    className="plugin-chip primary"
                     disabled={!found}
                     title="Hand this thread to an agent as context"
                     onClick={(event) => {
@@ -265,15 +265,18 @@ function ThreadView({
                 </button>
                 {found?.permalink && (
                     <>
-                        <button type="button" className="slack-chip" onClick={() => copyWithNotice(found.permalink ?? "", "the link")}>
+                        <button type="button" className="plugin-chip" onClick={() => copyWithNotice(found.permalink ?? "", "the link")}>
                             Copy link
                         </button>
-                        <button type="button" className="slack-chip" onClick={() => void openUrl(found.permalink ?? "").catch(swallow("open Slack"))}>
+                        <button
+                            type="button"
+                            className="plugin-chip"
+                            onClick={() => void openUrl(found.permalink ?? "").catch(swallow("open Slack"))}>
                             Open in Slack
                         </button>
                     </>
                 )}
-                <button type="button" className="slack-chip" aria-label="Close the thread" onClick={onClose}>
+                <button type="button" className="plugin-chip" aria-label="Close the thread" onClick={onClose}>
                     ✕
                 </button>
             </header>
@@ -293,7 +296,7 @@ function ThreadView({
                     placeholder="Reply in the thread (⌘↵ to send)"
                     aria-label="Reply in the thread"
                 />
-                <button type="button" className="slack-chip primary" disabled={!draft.trim() || sending} onClick={() => void reply()}>
+                <button type="button" className="plugin-chip primary" disabled={!draft.trim() || sending} onClick={() => void reply()}>
                     {sending ? "Sending…" : "Reply"}
                 </button>
             </div>
