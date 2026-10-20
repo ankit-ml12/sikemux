@@ -14,6 +14,7 @@ use sikemux_process::clock::{epoch_ms, epoch_secs};
 
 use crate::accounts::protocol::{DeviceList, DeviceRole, JoinTicket};
 use crate::accounts::HostRequest;
+use crate::protocol::Event;
 
 use super::super::{Core, CoreError, CoreResult};
 use super::join::{link_with, LinkParams};
@@ -97,6 +98,30 @@ pub(crate) fn relink(core: &Arc<Core>) {
             eprintln!("sikemux core: could not link with the account's other hosts: {error}");
         }
         core.hosts.linking.store(false, Ordering::Release);
+    });
+}
+
+/// Tells the app that a device or host joined the account, by the name the
+/// account gives it.
+pub(crate) fn tell_joined(core: &Arc<Core>, key: String) {
+    let core = core.clone();
+    tokio::spawn(async move {
+        let devices: CoreResult<DeviceList> =
+            as_host(&core, Method::GET, "/v1/devices", None).await;
+        let Some(device) = devices
+            .ok()
+            .and_then(|list| list.devices.into_iter().find(|device| device.key == key))
+        else {
+            return;
+        };
+        core.broadcast_local(&Event::AccountDevice {
+            key,
+            name: device.name,
+            platform: serde_json::to_value(device.platform)
+                .ok()
+                .and_then(|platform| platform.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+        });
     });
 }
 

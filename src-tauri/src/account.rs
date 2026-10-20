@@ -299,12 +299,12 @@ pub(crate) struct HostSignature {
 
 /// Calls the accounts API as this host, signed with the core's key, which
 /// the server takes until the host is taken off the account.
-async fn as_host<T: DeserializeOwned>(
+async fn host_request(
     core: &CoreClient,
     method: Method,
     path: &str,
     body: Option<&serde_json::Value>,
-) -> AppResult<T> {
+) -> AppResult<Response> {
     let body = match body {
         Some(body) => serde_json::to_vec(body)?,
         None => Vec::new(),
@@ -334,7 +334,25 @@ async fn as_host<T: DeserializeOwned>(
     if !response.status().is_success() {
         return Err(api_failure(response).await);
     }
-    Ok(response.json().await?)
+    Ok(response)
+}
+
+async fn as_host<T: DeserializeOwned>(
+    core: &CoreClient,
+    method: Method,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> AppResult<T> {
+    Ok(host_request(core, method, path, body).await?.json().await?)
+}
+
+/// Takes a device or host off the account, which revokes it on every host at
+/// once.
+#[tauri::command]
+pub async fn account_remove_device(manager: State<'_, PtyManager>, key: String) -> AppResult<()> {
+    let core = manager.client().await?;
+    host_request(&core, Method::DELETE, &format!("/v1/devices/{key}"), None).await?;
+    Ok(())
 }
 
 async fn account_profile(core: &CoreClient) -> AppResult<AccountProfile> {

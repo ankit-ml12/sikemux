@@ -249,6 +249,12 @@ impl Hosts {
         }
     }
 
+    /// The key this app is known by on the account, once it has gone on the
+    /// network.
+    pub(crate) fn own_key(&self) -> Option<String> {
+        self.device.get().map(|device| device.id())
+    }
+
     fn app(&self) -> AppResult<&AppHandle> {
         self.app
             .get()

@@ -1451,6 +1451,13 @@ pub enum Event {
         body: String,
         agent_id: String,
     },
+    /// A device or host joined the person's account, which the app's window
+    /// offers to remove (ADR 0018).
+    AccountDevice {
+        key: String,
+        name: String,
+        platform: String,
+    },
     /// The program in a terminal set its title. Sent only to clients on this
     /// host; devices read it in their view.
     TerminalTitle {

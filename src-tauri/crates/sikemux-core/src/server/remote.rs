@@ -1674,8 +1674,15 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
             AccountEventType::AccountDeleted => {
                 released = Some(Some(RevokeReason::AccountDeleted));
             }
-            AccountEventType::DeviceAdded if event.role == Some(DeviceRole::Host) => {
-                core.hosts.relink.now();
+            AccountEventType::DeviceAdded => {
+                if event.role == Some(DeviceRole::Host) {
+                    core.hosts.relink.now();
+                }
+                if let (Some(key), Some(core)) = (&event.key, core.me.upgrade()) {
+                    if Some(key) != own.as_ref() {
+                        super::hosts::account::tell_joined(&core, key.clone());
+                    }
+                }
             }
             _ => {}
         }

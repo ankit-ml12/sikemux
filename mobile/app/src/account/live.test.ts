@@ -77,6 +77,7 @@ beforeEach(() => {
       },
     },
     hostsChanged: vi.fn<() => void>(),
+    deviceAdded: vi.fn<(key: string) => void>(),
     gone: vi.fn<(reason: RevokeReason) => void>(),
     random: () => 0.5,
   };
@@ -345,6 +346,6 @@ describe('readEvents', () => {
       OWN,
       4,
     );
-    expect(read).toEqual({ newest: 6, handled: 6, hostsChanged: true, gone: 'signed_out' });
+    expect(read).toEqual({ newest: 6, handled: 6, hostsChanged: true, added: [HOST], gone: 'signed_out' });
   });
 });

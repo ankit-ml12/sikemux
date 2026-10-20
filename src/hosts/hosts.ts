@@ -7,7 +7,8 @@ import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
 import { agentWindowId } from "../state/selectors";
 import { getState, mutate, setState, useStore, type StoreState } from "../state/store";
-import { notify, swallow } from "../state/toast";
+import { notify, reportError, swallow } from "../state/toast";
+import { accountApi } from "../api/account";
 import type { Agent, PaneNode, Session } from "../state/types";
 
 /** Another host on the account the app joined, as the app reaches it. */
@@ -215,10 +216,29 @@ export async function startRemoteChat(sessionId: string, copy: RemoteCopy, type:
     openRemoteChat(sessionId, copy.host.id, { agentId: begun.agentId, provider: type, title: null, name: null, cwd: copy.project.path });
 }
 
+/** Says when a device or host joins the account, with one tap to take it off again (ADR 0018). */
+function noticeNewDevices(signal: AbortSignal): void {
+    void getIpcTransport()
+        .subscribe<{ key: string; name: string }>(
+            "account_device",
+            ({ payload }) =>
+                notify("info", `New device on your account: ${payload.name || "a device"}`, {
+                    timeoutMs: null,
+                    action: {
+                        label: "Remove",
+                        run: () => accountApi.removeDevice(payload.key).catch(reportError(`Remove ${payload.name || "the device"}`)),
+                    },
+                }),
+            { signal },
+        )
+        .catch(swallow("follow new devices on the account"));
+}
+
 /** Keeps the store's hosts and their views as the app reaches them. */
 export function startHosts(): () => void {
     const controller = new AbortController();
     const transport = getIpcTransport();
+    noticeNewDevices(controller.signal);
     const setHosts = (hosts: HostEntry[]) => {
         const ids = new Set(hosts.map((host) => host.id));
         setState({

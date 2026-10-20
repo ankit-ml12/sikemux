@@ -177,6 +177,22 @@ impl EventSink for AppSink {
                 "agent_notice",
                 serde_json::json!({ "title": title, "body": body, "agentId": agent_id }),
             ),
+            Event::AccountDevice {
+                key,
+                name,
+                platform,
+            } => {
+                let own = self
+                    .app
+                    .try_state::<crate::hosts::Hosts>()
+                    .and_then(|hosts| hosts.own_key());
+                if own.as_deref() != Some(key.as_str()) {
+                    self.emit(
+                        "account_device",
+                        serde_json::json!({ "key": key, "name": name, "platform": platform }),
+                    );
+                }
+            }
             Event::FocusAgent { agent_id } => {
                 crate::agent_notification::focus_agent(&self.app, agent_id)
             }

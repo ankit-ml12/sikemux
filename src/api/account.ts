@@ -26,6 +26,8 @@ export interface AccountPhone {
 export const ACCOUNT_CHANGED_EVENT = "account_changed";
 
 export const accountApi = {
+    /** Takes a device or host off the account, which revokes it on every host at once. */
+    removeDevice: (key: string) => invoke<void>("account_remove_device", { key }),
     /** What this host knows without asking the network. */
     status: () => invoke<AccountStatus>("account_status"),
     /** Fetches the name and picture again once the cached ones are a few hours old. */

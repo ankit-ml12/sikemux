@@ -16,6 +16,8 @@ export type LiveDeps = {
   cursor: Cursor;
   /** A host joined, changed or left the account: the list of hosts is stale. */
   hostsChanged(): void;
+  /** Another device or host joined the account. */
+  deviceAdded(key: string): void;
   /** The server took this phone's hello, so the account is reachable again. */
   ready?(): void;
   /** This phone is no longer on the account. Called once; the connection stays closed after it. */
@@ -28,10 +30,11 @@ export function readEvents(
   events: AccountEvent[],
   ownKey: string,
   mark: number,
-): { newest: number; handled: number; hostsChanged: boolean; gone?: RevokeReason } {
+): { newest: number; handled: number; hostsChanged: boolean; added: string[]; gone?: RevokeReason } {
   let newest = 0;
   let handled = mark;
   let hostsChanged = false;
+  const added: string[] = [];
   let gone: RevokeReason | undefined;
   for (const event of [...events].sort((a, b) => a.id - b.id)) {
     newest = Math.max(newest, event.id);
@@ -39,9 +42,12 @@ export function readEvents(
     handled = event.id;
     if (event.type === 'account.deleted') gone = 'account_deleted';
     else if (event.type === 'device.revoked' && event.key === ownKey) gone ??= event.reason ?? 'removed';
-    else if (event.role === 'host') hostsChanged = true;
+    else {
+      if (event.type === 'device.added' && event.key && event.key !== ownKey) added.push(event.key);
+      if (event.role === 'host') hostsChanged = true;
+    }
   }
-  return { newest, handled, hostsChanged, gone };
+  return { newest, handled, hostsChanged, added, gone };
 }
 
 /** This phone's connection to the account: hears changes as they happen and learns when it was removed. */
@@ -71,6 +77,7 @@ export class LiveAccount extends LiveClient {
           mark = read.handled;
         }
         if (read.hostsChanged) deps.hostsChanged();
+        for (const key of read.added) deps.deviceAdded(key);
         return { ack: read.newest, gone: read.gone };
       },
     });
