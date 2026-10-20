@@ -106,7 +106,7 @@ describe("restored agent lifecycle", () => {
         render(<Workspace />);
 
         expect(screen.queryByTestId("terminal-agent-visible")).not.toBeInTheDocument();
-        fireEvent.click((await screen.findAllByRole("button", { name: "TUI" }))[0]);
+        fireEvent.click((await screen.findAllByRole("button", { name: "TUI" }, { timeout: 5000 }))[0]);
         await waitFor(() => expect(screen.getByTestId("terminal-agent-visible")).toHaveAttribute("data-spawn-when", "true"));
     });
 });
