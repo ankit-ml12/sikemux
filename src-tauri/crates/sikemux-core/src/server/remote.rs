@@ -1460,6 +1460,9 @@ pub(crate) async fn set_owner(
         }
         Ok(stored.pending_leave.is_some())
     })?;
+    if core.remote.owner().is_none() {
+        unlink_all(core);
+    }
     if core.remote.is_enabled() {
         if let Err(error) = listen(core).await {
             eprintln!("sikemux core: remote access did not start: {error}");
@@ -1768,6 +1771,17 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
 
 /// The account no longer has this host: forget it, keep why until the person
 /// signs in again, and turn remote access off. Paired devices stay.
+/// A host off its account is linked with none of the account's hosts; it
+/// links with them again by itself once it signs in.
+fn unlink_all(core: &Core) {
+    let links = core
+        .remote
+        .change(|stored| Ok(std::mem::take(&mut stored.links)));
+    for link in links.unwrap_or_default() {
+        super::hosts::unlinked(core, &link.id, "this host left your account");
+    }
+}
+
 fn let_go(core: &Core, reason: Option<RevokeReason>) {
     let released = core.remote.change(|stored| {
         let asked = stored.pending_leave.is_some();
@@ -1796,6 +1810,7 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
             core.remote.bind(None)
         }
     });
+    unlink_all(core);
     if let Err(error) = released {
         eprintln!("sikemux core: could not save leaving the account: {error}");
     }
