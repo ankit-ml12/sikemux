@@ -14,6 +14,7 @@ use serde_json::{json, Map, Value};
 use sikemux_plugin_api::codehost::{
     Job, JobLog, LogExcerpt, LogLine, Run, RunDetail, RunPage, RunTiming, Workflow, WorkflowFile,
 };
+use sikemux_process::sync::Locked;
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};
@@ -131,17 +132,16 @@ pub fn run_of(row: &PipelineRow, commit_title: Option<&str>) -> Run {
 static TITLES: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 
 fn known_title(sha: &str) -> Option<String> {
-    TITLES.lock().ok()?.as_ref()?.get(sha).cloned()
+    TITLES.locked().as_ref()?.get(sha).cloned()
 }
 
 fn remember_title(sha: &str, title: &str) {
-    if let Ok(mut titles) = TITLES.lock() {
-        let titles = titles.get_or_insert_with(HashMap::new);
-        if titles.len() >= TITLES_KEPT {
-            titles.clear();
-        }
-        titles.insert(sha.to_string(), title.to_string());
+    let mut titles = TITLES.locked();
+    let titles = titles.get_or_insert_with(HashMap::new);
+    if titles.len() >= TITLES_KEPT {
+        titles.clear();
     }
+    titles.insert(sha.to_string(), title.to_string());
 }
 
 #[derive(Deserialize)]
