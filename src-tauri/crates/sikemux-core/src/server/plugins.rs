@@ -27,6 +27,12 @@ pub struct Failure {
     pub status: Option<u16>,
 }
 
+impl From<Failure> for String {
+    fn from(failure: Failure) -> Self {
+        failure.message
+    }
+}
+
 impl Failure {
     pub fn new(plugin: &str, category: &str, message: impl Into<String>) -> Self {
         Self {
@@ -119,12 +125,8 @@ pub(crate) fn agent_environment(
     plugins.agent_environment(Path::new(&project))
 }
 
-pub(crate) async fn call(plugin: &str, method: &str, params: Value) -> Result<Value, String> {
-    let plugins = plugins(plugin).map_err(|failure| failure.message)?;
-    plugins
-        .call(plugin, method, params)
-        .await
-        .map_err(|failure| failure.message)
+pub(crate) async fn call(plugin: &str, method: &str, params: Value) -> Result<Value, Failure> {
+    plugins(plugin)?.call(plugin, method, params).await
 }
 
 #[derive(Deserialize)]

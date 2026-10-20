@@ -166,7 +166,7 @@ async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Wo
         } => {
             let outcome = match issue {
                 Ok(issue) => push(&ticket.key, &site, &issue, to, comment).await,
-                Err(error) => Err(error),
+                Err(error) => Err(error.into()),
             };
             settle(core, project, id, &ticket.key, status, outcome);
         }
