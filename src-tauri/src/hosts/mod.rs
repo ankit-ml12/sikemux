@@ -80,6 +80,8 @@ pub(crate) fn core_session(id: SessionId) -> SessionId {
 pub(crate) enum Reach {
     Connecting,
     Connected,
+    /// The last try to reach it failed; the app keeps trying.
+    Away,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -463,6 +465,9 @@ async fn stay_connected(app: AppHandle, host: Arc<Host>) {
             }
             Err(error) => {
                 eprintln!("Sikemux could not reach {}: {error}", host.name());
+                if std::mem::replace(&mut *host.reach.locked(), Reach::Away) != Reach::Away {
+                    hosts.changed();
+                }
                 tokio::time::sleep(wait).await;
                 wait = (wait * 2).min(RETRY_MOST);
             }

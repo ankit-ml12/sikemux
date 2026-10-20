@@ -168,8 +168,13 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
             kind="sikemux"
             name={host.name}
             load={load}
-            detail={connected ? agentsLabel(agents) : "asleep"}
-            status={<StatusDot tone={connected ? "ok" : "idle"} label={connected ? "Connected" : "Out of reach"} />}
+            detail={connected ? agentsLabel(agents) : host.reach === "away" ? "out of reach" : "connecting"}
+            status={
+                <StatusDot
+                    tone={connected ? "ok" : host.reach === "away" ? "idle" : "pending"}
+                    label={connected ? "Connected" : host.reach === "away" ? "Out of reach" : "Connecting"}
+                />
+            }
             active={active}
             onOpen={() => openHostTerminal(host.id, host.name)}
             menu={async () => [

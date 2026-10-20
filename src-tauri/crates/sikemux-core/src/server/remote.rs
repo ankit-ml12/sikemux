@@ -47,6 +47,8 @@ const NETWORK_REFRESH: Duration = Duration::from_secs(4 * 60 * 60);
 const NETWORK_RETRY: Duration = Duration::from_secs(5 * 60);
 const SIGNED_OUT: &str = "sign in to use Sikemux on your phone";
 const BOUND: &str = "this host belongs to another Sikemux account; to move it, sign in from Sikemux's app or run `sudo sikemux login`";
+/// How long after a device joins the account the person still hears of it.
+const NEW_DEVICE_NEWS_MS: u64 = 10 * 60_000;
 /// How far a signed request's time may be from now; the server allows the same.
 const HOST_REQUEST_SKEW_SECS: u64 = 60;
 
@@ -1698,7 +1700,11 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
                 if event.role == Some(DeviceRole::Host) {
                     core.hosts.relink.now();
                 }
-                if let (Some(key), Some(core)) = (&event.key, core.me.upgrade()) {
+                // Events a host missed while offline come all at once; only a
+                // device that joined lately is news.
+                let lately = live::parse_rfc3339(&event.at)
+                    .is_some_and(|at| epoch_ms().saturating_sub(at) < NEW_DEVICE_NEWS_MS);
+                if let (true, Some(key), Some(core)) = (lately, &event.key, core.me.upgrade()) {
                     if Some(key) != own.as_ref() {
                         super::hosts::account::tell_joined(&core, key.clone());
                     }

@@ -341,7 +341,7 @@ describe('readEvents', () => {
     const read = readEvents(
       [
         event(6, 'device.revoked', { key: OWN, role: 'client', reason: 'signed_out' }),
-        event(5, 'device.added', { key: HOST, role: 'host' }),
+        event(5, 'device.added', { key: HOST, role: 'host', at: new Date().toISOString() }),
       ],
       OWN,
       4,

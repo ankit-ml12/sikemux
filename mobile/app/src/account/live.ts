@@ -25,6 +25,13 @@ export type LiveDeps = {
   random?: () => number;
 };
 
+/** How long after a device joins the account the person still hears of it; a phone back from days offline is not told of every one. */
+const NEW_DEVICE_NEWS_MS = 10 * 60_000;
+
+function isNews(at: string): boolean {
+  return Date.now() - Date.parse(at) < NEW_DEVICE_NEWS_MS;
+}
+
 /** What a frame of events means to this phone. */
 export function readEvents(
   events: AccountEvent[],
@@ -43,7 +50,7 @@ export function readEvents(
     if (event.type === 'account.deleted') gone = 'account_deleted';
     else if (event.type === 'device.revoked' && event.key === ownKey) gone ??= event.reason ?? 'removed';
     else {
-      if (event.type === 'device.added' && event.key && event.key !== ownKey) added.push(event.key);
+      if (event.type === 'device.added' && event.key && event.key !== ownKey && isNews(event.at)) added.push(event.key);
       if (event.role === 'host') hostsChanged = true;
     }
   }

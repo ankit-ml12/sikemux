@@ -20,7 +20,7 @@ export interface HostEntry {
     readonly id: string;
     readonly name: string;
     readonly platform: string;
-    readonly reach: "connecting" | "connected";
+    readonly reach: "connecting" | "connected" | "away";
     /** The SSH host it was installed on from here, which the rail shows it as. */
     readonly ssh: string | null;
 }
