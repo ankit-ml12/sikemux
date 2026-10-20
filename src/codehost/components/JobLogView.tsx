@@ -14,7 +14,8 @@ import {
     SkeletonRows,
 } from "../../plugin-api/ui";
 import { CARD_HEADER_HEIGHT, CardStream, type CardStreamHandle } from "../../ui/CardStream";
-import { failureMessage, type Job, type LogLine, type RepoRef, type Step } from "../api";
+import { type Job, type LogLine, type RepoRef, type Step } from "../api";
+import { errorText } from "../../lib/format";
 import { stepStarts } from "../jobGraph";
 import { jobLogR } from "../resources";
 import { elapsedMs, outcomeOf } from "../runStatus";
@@ -336,7 +337,7 @@ export function JobLogView({ repo, job, now, active }: Props) {
         return (
             <EmptyState
                 title="Could not read the log"
-                message={failureMessage(log.error)}
+                message={errorText(log.error)}
                 tone="error"
                 action={{ label: "Try again", onClick: () => void log.refresh() }}
             />

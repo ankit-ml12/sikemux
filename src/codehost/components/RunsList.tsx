@@ -14,7 +14,8 @@ import {
     StaleNotice,
     Tooltip,
 } from "../../plugin-api/ui";
-import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
+import { type RepoRef, type Run, type Workflow } from "../api";
+import { errorText } from "../../lib/format";
 import { useHost } from "../registry";
 import { pullsR, runsR, workflowsR } from "../resources";
 import { elapsedMs, isUnfinished, outcomeOf, statusParam } from "../runStatus";
@@ -218,7 +219,7 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
             {!loading && page.error && !page.data && (
                 <EmptyState
                     title="Could not read runs"
-                    message={failureMessage(page.error)}
+                    message={errorText(page.error)}
                     tone="error"
                     action={{ label: "Try again", onClick: () => void page.refresh() }}
                 />

@@ -90,9 +90,9 @@ function readContext(item: ComposerContext): Promise<PromptContext> {
     if (earlier) return import("./earlierChats").then(({ wakeEarlier }) => wakeEarlier(earlier));
     if (!item.tracked) return Promise.reject(new Error(`${item.title} has nothing to send`));
     const { repo, kind, number } = item.tracked;
-    return Promise.all([import("../codehost/tracked"), import("../codehost/api")]).then(([{ loadTrackedContext }, { failureMessage }]) =>
+    return import("../codehost/tracked").then(({ loadTrackedContext }) =>
         loadTrackedContext(repo, kind, number).catch((failure: unknown) => {
-            throw new Error(`Could not read #${number}: ${failureMessage(failure)}`);
+            throw new Error(`Could not read #${number}: ${errorText(failure)}`);
         }),
     );
 }
