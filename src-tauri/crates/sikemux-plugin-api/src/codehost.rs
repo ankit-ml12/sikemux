@@ -399,6 +399,25 @@ pub struct Review {
     pub submitted_at: Option<String>,
 }
 
+/// One thing a reviewer asked of a pull request, general or on a line, for an
+/// agent to answer in its own thread.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewFeedback {
+    /// `comment/`, `inline/` or `review/` and what names it on the host, which
+    /// answering it hands back.
+    pub id: String,
+    pub author: Option<String>,
+    pub bot: bool,
+    pub body: String,
+    pub path: Option<String>,
+    pub line: Option<u64>,
+    /// `CHANGES_REQUESTED` for a reviewer who asked for changes.
+    pub state: Option<String>,
+    pub at: String,
+    pub url: Option<String>,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Issue {
