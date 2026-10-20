@@ -91,24 +91,15 @@ import { dirname } from "./lib/paths";
 import type { StandaloneCommand } from "./commands/registry";
 import { agentDetectionApi } from "./api/agentDetection";
 import { lsp } from "./api/lsp";
-import { projectActionCommand, trustProjectConfig } from "./projects/projectConfigRuntime";
+import { trustProjectConfig } from "./projects/projectConfigRuntime";
+import { projectActionCommands } from "./projects/projectActions";
 import { worktreeHasLiveOwners } from "./git/worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
 import { workbenchRuntime } from "./workbench/runtime";
 import { personRuns, runProjectTask, stopTaskRun } from "./tasks/projectTaskActions";
 import { useProjectTasks, useTaskRuns, type ProjectTask, type TaskRun } from "./tasks/coreTasks";
 import { showTaskTerminals } from "./tasks/taskTerminals";
-import { activeProjectConfigMatches, whenTrusted } from "./projects/projectTrust";
-import {
-    applicationActionContext,
-    applicationActionContextFingerprint,
-    executeApplicationAction,
-    getApplicationActionRevision,
-    loadApplicationActions,
-    resolveApplicationActions,
-    subscribeApplicationActions,
-} from "./actions/bridge";
-import { projectControllerBridge } from "./projects/controllerBridge";
+import { activeProject, refreshProject, setOpenProjects, subscribeProjects, watchProjects } from "./projects/projectState";
 import { onCoreChanged, type CoreChange } from "./api/coreChanged";
 import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
@@ -259,71 +250,27 @@ function projectRepoKeyOf(s: ReturnType<typeof getState>): string {
 }
 
 /*
- * The live project, kept in step with the controller, the task registry and the
- * actions a checked-in sikemux.json contributes.
+ * The live project, kept in step with the controller and the task registry.
  *
- * All of it hangs off which project is in front and what its config says, so it
- * sits below the shell rather than inside it: the shell no longer re-renders
+ * All of it hangs off which project is in front, so it sits below the shell rather than inside it: the shell no longer re-renders
  * because a task started or a worktree list came back.
  */
 function ProjectBridge() {
-    const activeSessionId = useStore((s) => s.activeSessionId);
     const activeProjectCwd = useStore(activeProjectCwdOf);
     const projectRepoKey = useStore(projectRepoKeyOf);
-    const projectControllerSnapshot = useSyncExternalStore(
-        projectControllerBridge.subscribe,
-        projectControllerBridge.getActiveSnapshot,
-        projectControllerBridge.getActiveSnapshot,
-    );
-    const projectConfig = projectControllerSnapshot?.cwd === activeProjectCwd ? (projectControllerSnapshot.config ?? null) : null;
 
-    useEffect(() => {
-        void projectControllerBridge.start();
-        return () => {
-            projectControllerBridge.stop();
-        };
-    }, []);
+    useEffect(() => watchProjects(), []);
 
     useEffect(() => {
         showTaskTerminals();
         return onCoreChanged("tasks", (change) => {
-            if (change.project) void projectControllerBridge.refresh(change.project);
+            if (change.project) void refreshProject(change.project);
         });
     }, []);
 
     useEffect(() => {
-        let cancelled = false;
-        let dispose: (() => void) | null = null;
-        if (!activeProjectCwd || projectConfig?.status !== "valid") return;
-
-        void loadApplicationActions()
-            .then((runtime) => {
-                if (cancelled) return;
-                const registration = runtime.registerProjectActions({
-                    projectId: activeSessionId,
-                    projectRoot: activeProjectCwd,
-                    configPath: projectConfig.path,
-                    actions: projectConfig.config.actions,
-                    isCurrent: () => activeProjectConfigMatches(activeProjectCwd, projectConfig),
-                    execute: (action) => {
-                        whenTrusted(activeProjectCwd, projectConfig, () => cmd.runCustomCommand(projectActionCommand(action)));
-                    },
-                });
-                dispose = () => registration.dispose();
-            })
-            .catch((error: unknown) => {
-                if (!cancelled) reportError("load project actions")(error);
-            });
-
-        return () => {
-            cancelled = true;
-            dispose?.();
-        };
-    }, [activeProjectCwd, activeSessionId, projectConfig]);
-
-    useEffect(() => {
         const roots = projectRepoKey ? projectRepoKey.split("\0") : [];
-        void projectControllerBridge.reconcile(roots, activeProjectCwd || null);
+        setOpenProjects(roots, activeProjectCwd || null);
     }, [activeProjectCwd, projectRepoKey]);
 
     return null;
@@ -353,19 +300,12 @@ function ApplicationCommandPalette() {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
         return id && s.windows[id]?.role === "term" ? id : null;
     });
-    const projectControllerSnapshot = useSyncExternalStore(
-        projectControllerBridge.subscribe,
-        projectControllerBridge.getActiveSnapshot,
-        projectControllerBridge.getActiveSnapshot,
-    );
+    const projectControllerSnapshot = useSyncExternalStore(subscribeProjects, activeProject, activeProject);
     const activeProjectSnapshot = projectControllerSnapshot?.cwd === activeProjectCwd ? projectControllerSnapshot : null;
     const projectConfig = activeProjectSnapshot?.config ?? null;
     const activeWorktrees = activeProjectSnapshot?.worktrees ?? [];
     const offeredTasks = useProjectTasks(activeProjectCwd || null);
     const taskRuns = useTaskRuns();
-    useSyncExternalStore(subscribeApplicationActions, getApplicationActionRevision, getApplicationActionRevision);
-    useStore(applicationActionContextFingerprint);
-    const actionContext = applicationActionContext(getState());
 
     const runStandalone =
         (id: string, execute: () => void): (() => void) =>
@@ -373,19 +313,9 @@ function ApplicationCommandPalette() {
             cmd.noteRecentCommand(`standalone:${id}`);
             execute();
         };
-    const contributedActionCommands: StandaloneCommand[] = resolveApplicationActions(actionContext).map((action) => ({
-        id: action.commandId,
-        title: action.title,
-        detail: action.detail,
-        category: action.category,
-        shortcut: action.shortcut,
-        disabled: !action.enabled,
-        execute: () => {
-            void executeApplicationAction(action.actionId, applicationActionContext(getState())).catch(reportError(`run action ${action.commandId}`));
-        },
-    }));
     const projectCommands: StandaloneCommand[] = [];
     if (projectConfig?.status === "valid") {
+        projectCommands.push(...projectActionCommands(activeProjectCwd, projectConfig));
         if (projectConfig.config.preview?.command) {
             projectCommands.push({
                 id: "project.preview.start",
@@ -492,7 +422,7 @@ function ApplicationCommandPalette() {
                                   return git
                                       .worktreeRemove(activeProjectCwd, worktree.path)
                                       .then(async () => {
-                                          await projectControllerBridge.refresh(activeProjectCwd);
+                                          await refreshProject(activeProjectCwd);
                                           notify("success", `Removed worktree ${worktree.branch ?? worktree.path}`);
                                       })
                                       .catch(reportError("remove worktree"));
@@ -595,7 +525,6 @@ function ApplicationCommandPalette() {
         },
         ...worktreeCommands,
         ...taskCommands,
-        ...contributedActionCommands,
         ...projectCommands,
     ];
 
