@@ -3,6 +3,7 @@ import { uiActivity } from "../lib/activity";
 import { performanceTelemetry } from "../lib/performance";
 import { errorCategory } from "../lib/format";
 import { getIpcTransport } from "./transport";
+import type { IpcCommand } from "./generated/ipcCommands";
 
 export const IPC_INVOKE_METRIC = "ipc.invoke";
 export const IPC_INVOKE_SUCCESS_COUNTER = "ipc.invoke.success";
@@ -37,7 +38,7 @@ function settleInvocation<T>(command: string, args: InvokeArgs | undefined, opti
  * Invoke a native command while retaining only its name, request ID, duration,
  * and outcome. Arguments, return values, and error details remain opaque.
  */
-export async function invokeCommand<T>(command: string, args?: InvokeArgs, options?: InvokeCommandOptions): Promise<T> {
+export async function invokeCommand<T>(command: IpcCommand, args?: InvokeArgs, options?: InvokeCommandOptions): Promise<T> {
     requestSequence += 1;
     const requestId = requestSequence;
     const span = performanceTelemetry.startTrace(IPC_INVOKE_METRIC, { command, requestId });
