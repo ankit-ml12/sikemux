@@ -4,8 +4,8 @@
 //! ack-based flow control the in-process terminals had.
 
 pub(crate) mod commands;
-mod sink;
-mod streams;
+pub(crate) mod sink;
+pub(crate) mod streams;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -24,7 +24,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::error::{AppError, AppResult};
 
 use sink::AppSink;
-use streams::StreamTable;
+pub(crate) use streams::StreamTable;
 
 /// Browser tabs are child webviews of the same app. Every terminal event
 /// belongs to the workbench, so address it by label instead of broadcasting.
@@ -246,56 +246,20 @@ impl PtyManager {
             };
             match manager.client().await {
                 Ok(client) if client.core_pid() == previous => {
-                    manager.reattach(&client).await;
-                    crate::acp::reconnected(&app, Some(&client)).await;
+                    reattach(&client, &manager.streams).await;
+                    crate::acp::reconnected(&app, None, Some(&client)).await;
                 }
                 Ok(client) => {
                     sink::report_all_exited(&manager.streams);
-                    crate::acp::reconnected(&app, Some(&client)).await;
+                    crate::acp::reconnected(&app, None, Some(&client)).await;
                 }
                 Err(error) => {
                     sink::report_all_exited(&manager.streams);
-                    crate::acp::reconnected(&app, None).await;
+                    crate::acp::reconnected(&app, None, None).await;
                     eprintln!("Sikemux could not restart its terminal core: {error}");
                 }
             }
         });
-    }
-
-    /// Sends every pane its screen again from the updated core, followed by
-    /// the live output.
-    async fn reattach(&self, client: &Arc<CoreClient>) {
-        for id in self.streams.core_subscribed() {
-            let streams = self.streams.clone();
-            let submitted = client.submit(Request::Attach { id }, move |reply| match reply {
-                Ok(Reply::Attached(Attached {
-                    alternate_screen,
-                    exited,
-                    replay,
-                    ..
-                })) => {
-                    streams.restart(id);
-                    // An alternate screen repaints itself in full and leaves
-                    // the pane's own normal-screen history alone.
-                    let mut screen = Vec::with_capacity(replay.len() + FULL_RESET.len());
-                    if !alternate_screen {
-                        screen.extend_from_slice(FULL_RESET);
-                    }
-                    screen.extend_from_slice(&replay);
-                    sink::deliver(&streams, id, &screen);
-                    if exited {
-                        streams.channels(id).send(&[]);
-                    }
-                }
-                // A dropped connection is not the session ending; the next
-                // reconnect deals with it.
-                Err(ClientError::Disconnected) => {}
-                _ => sink::report_exited(&streams, id),
-            });
-            if let Ok(replied) = submitted {
-                let _ = replied.await;
-            }
-        }
     }
 
     /// A page load is a quiet moment to move the core to the sidecar's build,
@@ -433,6 +397,46 @@ impl PtyManager {
             blocked_agents: agents("blocked"),
             idle_agents: agents("idle"),
             unknown_agents: agents("unknown"),
+        }
+    }
+}
+
+/// Sends every pane its screen again from a core that came back, followed
+/// by the live output. `streams` holds the page's ids, which the core of
+/// another host knows by its own.
+pub(crate) async fn reattach(client: &Arc<CoreClient>, streams: &Arc<StreamTable>) {
+    for id in streams.core_subscribed() {
+        let table = streams.clone();
+        let request = Request::Attach {
+            id: crate::hosts::core_session(id),
+        };
+        let submitted = client.submit(request, move |reply| match reply {
+            Ok(Reply::Attached(Attached {
+                alternate_screen,
+                exited,
+                replay,
+                ..
+            })) => {
+                table.restart(id);
+                // An alternate screen repaints itself in full and leaves
+                // the pane's own normal-screen history alone.
+                let mut screen = Vec::with_capacity(replay.len() + FULL_RESET.len());
+                if !alternate_screen {
+                    screen.extend_from_slice(FULL_RESET);
+                }
+                screen.extend_from_slice(&replay);
+                sink::deliver(&table, id, &screen);
+                if exited {
+                    table.channels(id).send(&[]);
+                }
+            }
+            // A dropped connection is not the session ending; the next
+            // reconnect deals with it.
+            Err(ClientError::Disconnected) => {}
+            _ => sink::report_exited(&table, id),
+        });
+        if let Ok(replied) = submitted {
+            let _ = replied.await;
         }
     }
 }

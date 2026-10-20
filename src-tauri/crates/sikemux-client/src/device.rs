@@ -125,6 +125,12 @@ impl Device {
         self.key.public().to_string()
     }
 
+    /// This device's signature over the text that registers it with the
+    /// account `user_id`, for the accounts server's challenge `nonce`.
+    pub fn sign_registration(&self, nonce: &str, user_id: &str) -> Result<String, &'static str> {
+        sign_registration(&self.key, nonce, user_id)
+    }
+
     /// Hands the host the ticket names the hello, and waits while the person
     /// there decides. An allowed device is paired with the host.
     pub async fn join(&self, host: PublicKey, hello: &JoinHello) -> Result<JoinReply, JoinError> {

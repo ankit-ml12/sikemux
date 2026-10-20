@@ -49,23 +49,23 @@ impl Streams {
 
 /// What a caller must tell the core after a channel left.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Release {
+pub(crate) enum Release {
     Nothing,
     Ack(usize),
     Detach,
 }
 
-pub(super) struct Delivery {
+pub(crate) struct Delivery {
     channels: Vec<(u32, Channel<Response>)>,
 }
 
 impl Delivery {
-    pub(super) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.channels.is_empty()
     }
 
     /// Returns the subscribers whose webview is gone.
-    pub(super) fn send(&self, bytes: &[u8]) -> Vec<u32> {
+    pub(crate) fn send(&self, bytes: &[u8]) -> Vec<u32> {
         self.channels
             .iter()
             .filter(|(_, channel)| channel.send(Response::new(bytes.to_vec())).is_err())
@@ -76,13 +76,13 @@ impl Delivery {
 
 /// Every session this app has a channel for, keyed by core session id.
 #[derive(Default)]
-pub(super) struct StreamTable {
+pub(crate) struct StreamTable {
     sessions: Mutex<HashMap<SessionId, Streams>>,
     next_sub_id: AtomicU32,
 }
 
 impl StreamTable {
-    pub(super) fn lock(&self) -> StreamGuard<'_> {
+    pub(crate) fn lock(&self) -> StreamGuard<'_> {
         StreamGuard {
             sessions: self.sessions.locked(),
             next_sub_id: &self.next_sub_id,
@@ -95,7 +95,7 @@ impl StreamTable {
 
     /// Hands one chunk of output to every channel of the session, charging it
     /// against each one's credit.
-    pub(super) fn output(&self, id: SessionId, bytes: &[u8]) -> Delivery {
+    pub(crate) fn output(&self, id: SessionId, bytes: &[u8]) -> Delivery {
         let channels = self.with(|guard| {
             let Some(streams) = guard.sessions.get_mut(&id) else {
                 return Vec::new();
@@ -113,7 +113,7 @@ impl StreamTable {
         Delivery { channels }
     }
 
-    pub(super) fn drop_dead(&self, id: SessionId, dead: &[u32]) {
+    pub(crate) fn drop_dead(&self, id: SessionId, dead: &[u32]) {
         self.with(|guard| {
             if let Some(streams) = guard.sessions.get_mut(&id) {
                 for sub_id in dead {
@@ -125,7 +125,7 @@ impl StreamTable {
 
     /// Records a channel's progress. Returns how much the core can be told,
     /// which is how far the slowest channel has come since it was last told.
-    pub(super) fn ack(&self, id: SessionId, sub_id: u32, bytes: usize) -> Option<usize> {
+    pub(crate) fn ack(&self, id: SessionId, sub_id: u32, bytes: usize) -> Option<usize> {
         self.with(|guard| {
             let streams = guard.sessions.get_mut(&id)?;
             let subscriber = streams.subscribers.get_mut(&sub_id)?;
@@ -136,7 +136,7 @@ impl StreamTable {
 
     /// Takes the channels to tell the session is gone, then forgets it if
     /// nothing else holds it.
-    pub(super) fn exited(&self, id: SessionId) -> Delivery {
+    pub(crate) fn exited(&self, id: SessionId) -> Delivery {
         let channels = self
             .with(|guard| {
                 let streams = guard.sessions.get_mut(&id)?;
@@ -152,7 +152,7 @@ impl StreamTable {
         Delivery { channels }
     }
 
-    pub(super) fn channels(&self, id: SessionId) -> Delivery {
+    pub(crate) fn channels(&self, id: SessionId) -> Delivery {
         let channels = self.with(|guard| {
             guard
                 .sessions
@@ -171,7 +171,7 @@ impl StreamTable {
 
     /// Forgets every session at once, returning what must hear that their
     /// processes are gone.
-    pub(super) fn take_all(&self) -> Vec<Delivery> {
+    pub(crate) fn take_all(&self) -> Vec<Delivery> {
         self.with(|guard| {
             std::mem::take(&mut *guard.sessions)
                 .into_values()
@@ -189,7 +189,7 @@ impl StreamTable {
 
     /// Forgets every session without telling anyone it ended, returning the
     /// ones the core was streaming to the app.
-    pub(super) fn release_all(&self) -> Vec<SessionId> {
+    pub(crate) fn release_all(&self) -> Vec<SessionId> {
         self.with(|guard| {
             std::mem::take(&mut *guard.sessions)
                 .into_iter()
@@ -200,7 +200,7 @@ impl StreamTable {
     }
 
     /// Sessions the core was streaming to the app.
-    pub(super) fn core_subscribed(&self) -> Vec<SessionId> {
+    pub(crate) fn core_subscribed(&self) -> Vec<SessionId> {
         self.with(|guard| {
             guard
                 .sessions
@@ -212,7 +212,7 @@ impl StreamTable {
     }
 
     /// A new connection streams the session afresh and owes nothing yet.
-    pub(super) fn restart(&self, id: SessionId) {
+    pub(crate) fn restart(&self, id: SessionId) {
         self.with(|guard| {
             if let Some(streams) = guard.sessions.get_mut(&id) {
                 streams.core_unacked = 0;
@@ -220,7 +220,7 @@ impl StreamTable {
         });
     }
 
-    pub(super) fn subscriber_count(&self) -> usize {
+    pub(crate) fn subscriber_count(&self) -> usize {
         self.with(|guard| {
             guard
                 .sessions
@@ -233,13 +233,13 @@ impl StreamTable {
 
 /// Held while deciding what to ask the core, and while queueing the request,
 /// so the core sees attaches and detaches in the order they were decided.
-pub(super) struct StreamGuard<'a> {
+pub(crate) struct StreamGuard<'a> {
     sessions: MutexGuard<'a, HashMap<SessionId, Streams>>,
     next_sub_id: &'a AtomicU32,
 }
 
 impl StreamGuard<'_> {
-    pub(super) fn begin_attach(&mut self, id: SessionId) -> AppResult<()> {
+    pub(crate) fn begin_attach(&mut self, id: SessionId) -> AppResult<()> {
         let streams = self.sessions.entry(id).or_default();
         let full = streams.subscribers.len() + streams.pending_attaches >= MAX_CHANNELS_PER_SESSION;
         if !full {
@@ -252,7 +252,7 @@ impl StreamGuard<'_> {
 
     /// The core answered an attach with a replay: from here it sends every
     /// byte after it, and owes the app nothing from before.
-    pub(super) fn finish_attach(
+    pub(crate) fn finish_attach(
         &mut self,
         id: SessionId,
         channel: Channel<Response>,
@@ -263,7 +263,7 @@ impl StreamGuard<'_> {
         self.add_channel(id, channel)
     }
 
-    pub(super) fn cancel_attach(&mut self, id: SessionId) {
+    pub(crate) fn cancel_attach(&mut self, id: SessionId) {
         if let Some(streams) = self.sessions.get_mut(&id) {
             streams.pending_attaches = streams.pending_attaches.saturating_sub(1);
         }
@@ -271,7 +271,7 @@ impl StreamGuard<'_> {
     }
 
     /// Adds a channel to a session the core already streams to the app.
-    pub(super) fn add_channel(
+    pub(crate) fn add_channel(
         &mut self,
         id: SessionId,
         channel: Channel<Response>,
@@ -301,7 +301,7 @@ impl StreamGuard<'_> {
 
     /// Removes a channel. The last one out, with no attach on its way, stops
     /// the core streaming the session to the app.
-    pub(super) fn unsubscribe(&mut self, id: SessionId, sub_id: u32) -> Release {
+    pub(crate) fn unsubscribe(&mut self, id: SessionId, sub_id: u32) -> Release {
         let Some(streams) = self.sessions.get_mut(&id) else {
             return Release::Nothing;
         };

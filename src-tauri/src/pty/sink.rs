@@ -26,7 +26,7 @@ pub(super) fn output_totals() -> (u64, u64) {
     )
 }
 
-const PTY_EXITED_EVENT: &str = "pty_exited";
+pub(crate) const PTY_EXITED_EVENT: &str = "pty_exited";
 const PTY_SSH_LINK_EVENT: &str = "pty_ssh_link";
 
 #[derive(Clone, serde::Serialize)]
@@ -40,11 +40,11 @@ struct PtySshLink {
 /// page can bring back an agent that died while its pane was hidden.
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PtyExited {
-    id: SessionId,
-    code: Option<u32>,
-    signal: Option<String>,
-    killed: bool,
+pub(crate) struct PtyExited {
+    pub id: SessionId,
+    pub code: Option<u32>,
+    pub signal: Option<String>,
+    pub killed: bool,
 }
 
 /// Turns what the core sends into webview channel messages and app events.
@@ -71,7 +71,7 @@ impl AppSink {
     }
 }
 
-pub(super) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
+pub(crate) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
     let delivery = streams.output(id, bytes);
     if delivery.is_empty() {
         return;
@@ -84,11 +84,11 @@ pub(super) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
 }
 
 /// An empty chunk is the frontend's sign that the process is gone.
-pub(super) fn report_exited(streams: &StreamTable, id: SessionId) {
+pub(crate) fn report_exited(streams: &StreamTable, id: SessionId) {
     streams.exited(id).send(&[]);
 }
 
-pub(super) fn report_all_exited(streams: &StreamTable) {
+pub(crate) fn report_all_exited(streams: &StreamTable) {
     for delivery in streams.take_all() {
         delivery.send(&[]);
     }

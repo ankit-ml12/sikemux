@@ -28,6 +28,8 @@ pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;
 #[cfg(unix)]
+pub use sikemux_client::device;
+#[cfg(unix)]
 pub use sikemux_client::remote;
 #[cfg(unix)]
 pub mod pages;

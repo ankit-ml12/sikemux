@@ -26,6 +26,8 @@ export interface PaneNode {
     tab?: { name: string; role: WindowRole };
     /** The terminal core session this pane shows, which outlives the app. */
     ptyId?: number;
+    /** The host the terminal runs on, by its core's key, when that is not this one. */
+    host?: string;
     /** Runtime-only marker: this pane borrows a process owned outside its renderer. */
     externalPty?: true;
     /** Runtime-only stable task identity used to reuse its presentation window. */
@@ -135,6 +137,8 @@ export interface Agent {
     worktree?: AgentWorktree;
     /** The terminal core session running this agent's TUI, which outlives the app. */
     ptyId?: number;
+    /** The host the chat runs on, by its core's key, when that is not this one. */
+    host?: string;
     /** The character drawn for this agent. Without a pack and shape it follows the default style in settings. */
     buddy?: AgentBuddy;
 }
@@ -218,6 +222,8 @@ export interface Session {
     cwd: string;
     pinned: boolean;
     activeWindowId: string;
+    /** The host whose folder this is, by its core's key, for a project only another host holds. */
+    host?: string;
 }
 
 /**

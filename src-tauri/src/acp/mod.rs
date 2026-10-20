@@ -3,7 +3,7 @@
 //! it keeps; the app forwards every command to it, and its events come back
 //! on its connection and reach the page as `acp_event`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ use sikemux_core::protocol::{
 use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::hosts::{self, Hosts};
 use crate::pty::PtyManager;
 
 const MAX_AGENT_ID: usize = 200;
@@ -34,23 +35,31 @@ struct AcpEvent<'a, Kind> {
 
 #[derive(Default)]
 pub struct AcpManager {
-    /// The chats this app shows, which hear the core's events for them.
-    shown: Mutex<HashSet<String>>,
+    /// The chats this app shows, which hear the core's events for them, by
+    /// the host each runs on; none is this one.
+    shown: Mutex<HashMap<String, Option<String>>>,
 }
 
 impl AcpManager {
-    fn show(&self, agent_id: &str) {
-        self.shown.locked().insert(agent_id.to_owned());
+    fn show(&self, agent_id: &str, host: Option<String>) {
+        self.shown.locked().insert(agent_id.to_owned(), host);
     }
 
     fn forget(&self, agent_id: &str) {
         self.shown.locked().remove(agent_id);
     }
 
-    fn take_shown(&self) -> Vec<String> {
-        std::mem::take(&mut *self.shown.locked())
-            .into_iter()
-            .collect()
+    fn take_shown(&self, host: Option<&str>) -> Vec<String> {
+        let mut shown = self.shown.locked();
+        let taken: Vec<String> = shown
+            .iter()
+            .filter(|(_, on)| on.as_deref() == host)
+            .map(|(agent_id, _)| agent_id.clone())
+            .collect();
+        for agent_id in &taken {
+            shown.remove(agent_id);
+        }
+        taken
     }
 }
 
@@ -114,13 +123,18 @@ fn replay(app: &AppHandle, agent_id: &str, events: Vec<ChatEvent>) {
     flush(&mut updates);
 }
 
-/// The core went away and came back, still running the chats it lists or
-/// having taken them up again, which the page attaches to again.
-pub(crate) async fn reconnected(app: &AppHandle, client: Option<&Arc<CoreClient>>) {
+/// The core of `host`, or this host's own, went away and came back, still
+/// running the chats it lists or having taken them up again, which the page
+/// attaches to again.
+pub(crate) async fn reconnected(
+    app: &AppHandle,
+    host: Option<&str>,
+    client: Option<&Arc<CoreClient>>,
+) {
     let Some(manager) = app.try_state::<AcpManager>() else {
         return;
     };
-    let shown = manager.take_shown();
+    let shown = manager.take_shown(host);
     if shown.is_empty() {
         return;
     }
@@ -170,8 +184,14 @@ fn failure(error: ClientError) -> String {
     error.to_string()
 }
 
-async fn core(pty: &PtyManager) -> Result<Arc<CoreClient>, String> {
-    pty.client().await.map_err(|error| error.to_string())
+async fn core(
+    pty: &PtyManager,
+    hosts: &Hosts,
+    host: Option<&str>,
+) -> Result<Arc<CoreClient>, String> {
+    hosts::client(pty, hosts, host)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// What the page hears back from an attach. The replay itself arrives as
@@ -203,10 +223,12 @@ pub async fn acp_attach(
     app: AppHandle,
     manager: State<'_, AcpManager>,
     pty: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    host: Option<String>,
     agent_id: String,
 ) -> Result<Attachment, String> {
     bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
-    let client = core(&pty).await?;
+    let client = core(&pty, &hosts, host.as_deref()).await?;
     let replaying = app.clone();
     let replay_agent = agent_id.clone();
     // The replay goes to the page on the connection's reader, before any
@@ -253,7 +275,7 @@ pub async fn acp_attach(
         .map_err(failure)?;
     let attachment = replied.await.map_err(failure)?.map_err(failure)?;
     if let Attachment::Live { .. } = &attachment {
-        manager.show(&agent_id);
+        manager.show(&agent_id, host);
     }
     Ok(attachment)
 }
@@ -262,13 +284,15 @@ pub async fn acp_attach(
 #[tauri::command]
 pub async fn acp_switch_account(
     pty: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    host: Option<String>,
     agent_id: String,
     provider: String,
     account: AccountRequest,
 ) -> Result<(), String> {
     bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
     let account = chat_account(&provider, &account);
-    core(&pty)
+    core(&pty, &hosts, host.as_deref())
         .await?
         .acp_switch_account(agent_id, account)
         .await
@@ -279,10 +303,16 @@ pub async fn acp_switch_account(
 pub async fn acp_stop(
     manager: State<'_, AcpManager>,
     pty: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    host: Option<String>,
     agent_id: String,
 ) -> Result<(), String> {
     manager.forget(&agent_id);
-    core(&pty).await?.acp_stop(agent_id).await.map_err(failure)
+    core(&pty, &hosts, host.as_deref())
+        .await?
+        .acp_stop(agent_id)
+        .await
+        .map_err(failure)
 }
 
 #[cfg(test)]

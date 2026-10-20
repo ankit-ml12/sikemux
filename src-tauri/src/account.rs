@@ -481,6 +481,52 @@ pub async fn account_link_host(
     .map_err(core_error)
 }
 
+/// Adds this app to the account as a device of its own, added by this host,
+/// and asks the account for a ticket that lets it join `host`.
+pub(crate) async fn app_join_ticket(
+    core: &CoreClient,
+    device: &sikemux_core::device::Device,
+    host: &str,
+) -> AppResult<JoinTicket> {
+    let remote = owned(core)
+        .await?
+        .ok_or_else(|| AppError::Other("sign in to reach your other hosts".into()))?;
+    let user_id = remote.owner.unwrap_or_default();
+    let hosts: DeviceList = as_host(core, Method::GET, "/v1/devices?role=host", None).await?;
+    let own = hosts
+        .devices
+        .iter()
+        .find(|known| known.key == remote.core_id)
+        .map_or("this host", |known| known.name.as_str());
+    let challenge: Challenge = as_host(core, Method::POST, "/v1/devices/challenge", None).await?;
+    let signature = device
+        .sign_registration(&challenge.nonce, &user_id)
+        .map_err(|reason| AppError::Other(reason.into()))?;
+    let registration = DeviceRegistration {
+        key: device.id(),
+        role: DeviceRole::Client,
+        name: format!("Sikemux app on {own}").chars().take(64).collect(),
+        platform: sikemux_core::accounts::protocol::Platform::Macos,
+        channel: None,
+        nonce: challenge.nonce,
+        signature,
+    };
+    let _: Device = as_host(
+        core,
+        Method::POST,
+        "/v1/devices",
+        Some(&serde_json::to_value(&registration)?),
+    )
+    .await?;
+    as_host(
+        core,
+        Method::POST,
+        &format!("/v1/devices/{}/join", device.id()),
+        Some(&serde_json::json!({ "host": host })),
+    )
+    .await
+}
+
 fn unpaired_phones(devices: Vec<Device>, paired: &[DeviceInfo]) -> Vec<Device> {
     devices
         .into_iter()

@@ -22,6 +22,7 @@ mod frame_rate;
 mod fs;
 mod grammars;
 mod harness;
+mod hosts;
 mod http_client;
 mod inbox;
 mod lsp;
@@ -202,6 +203,7 @@ pub fn run() {
             tauri::async_runtime::spawn_blocking(simulator::offered);
             wheel::watch(_app.handle());
             _app.state::<PtyManager>().start(_app.handle());
+            _app.state::<hosts::Hosts>().start(_app.handle());
             // See-through window — same recipe as nackle (NSWindow opaque=NO,
             // CGS background blur via private API). No NSVisualEffectView
             // because its frosted look is heavier than the gaussian CGS blur
@@ -232,6 +234,7 @@ pub fn run() {
         })
         .manage(deep_link::DeepLinks::default())
         .manage(PtyManager::default())
+        .manage(hosts::Hosts::default())
         .manage(account::PendingSignIn::default())
         .manage(harness::HarnessBroker::default())
         .manage(cli_open::CliOpens::default())
@@ -257,6 +260,9 @@ pub fn run() {
             pty::commands::pty_reset_modes,
             pty::commands::pty_kill,
             pty::commands::pty_sessions,
+            hosts::hosts_list,
+            hosts::host_join,
+            hosts::host_leave,
             account::account_status,
             account::account_refresh_profile,
             account::account_sign_in,
