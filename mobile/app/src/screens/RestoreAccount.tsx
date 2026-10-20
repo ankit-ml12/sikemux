@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { useAuth } from '@clerk/expo';
 
-import { api, ApiProblem } from '@/account/api';
+import { api } from '@/account/api';
+import { problem as problemOf } from '@/core/problem';
 import { signOutHere } from '@/account/leave';
 import { retryRegistration } from '@/account/session';
 import { Button } from '@/ui/controls';
@@ -25,7 +26,7 @@ export function RestoreAccount({ deletesAt }: { deletesAt: string }) {
       retryRegistration();
     } catch (error) {
       setBusy(false);
-      setProblem(error instanceof ApiProblem ? error.message : 'Something went wrong; try again.');
+      setProblem(problemOf(error));
     }
   };
 
