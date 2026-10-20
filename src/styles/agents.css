@@ -28,6 +28,18 @@
 .sess-icon.host-ssh {
     color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
 }
+/* A host's name takes only its own width, so its load sits right after it. */
+.host-row .sess-name {
+    flex: 0 1 auto;
+}
+/* How busy a host is, quiet beside its name. */
+.host-row-load {
+    flex: none;
+    margin-left: var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+}
 /* What a host is doing, before its dot: its agents, or that it is asleep. */
 .host-row-detail {
     flex: none;

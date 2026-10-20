@@ -42,6 +42,32 @@ function remoteAgents(state: Pick<StoreState, "hostViews">, host: string): numbe
     return view.chats.length + view.sessions.filter((session) => session.running && session.agentId).length;
 }
 
+const LOAD_EVERY_MS = 30_000;
+
+/** How busy a host the app reaches is, read again every half minute while the app is in front; the core has no event for it. */
+function useHostLoad(host: string, connected: boolean): string | null {
+    const [load, setLoad] = useState<string | null>(null);
+    useEffect(() => {
+        if (!connected) return;
+        let current = true;
+        const read = () => {
+            if (document.visibilityState !== "visible") return;
+            void coreCall<{ cpu: number; memoryUsed: number | null }>("hostLoad", null, host)
+                .then(({ cpu, memoryUsed }) => {
+                    if (current) setLoad(memoryUsed === null ? `${cpu}%` : `${cpu}% · ${(memoryUsed / 1024 ** 3).toFixed(1)} GB`);
+                })
+                .catch(swallow("read a host's load"));
+        };
+        read();
+        const timer = window.setInterval(read, LOAD_EVERY_MS);
+        return () => {
+            current = false;
+            window.clearInterval(timer);
+        };
+    }, [host, connected]);
+    return connected ? load : null;
+}
+
 function agentsLabel(count: number): string | null {
     return count === 0 ? null : `${count} ${count === 1 ? "agent" : "agents"}`;
 }
@@ -58,6 +84,7 @@ function sessionsWithCopy(state: StoreState, host: string): { session: Session; 
 function HostRow({
     kind,
     name,
+    load,
     detail,
     status,
     active,
@@ -67,6 +94,7 @@ function HostRow({
 }: {
     kind: "this" | "sikemux" | "ssh";
     name: string;
+    load?: string | null;
     detail?: string | null;
     status: ReactNode;
     active: boolean;
@@ -82,6 +110,7 @@ function HostRow({
                     <span className="sess-icon-glyph">{icon}</span>
                 </span>
                 <span className="sess-name">{name}</span>
+                {load && <span className="host-row-load">{load}</span>}
                 {detail && <span className="host-row-detail">{detail}</span>}
             </button>
             <span className="row-status">{status}</span>
@@ -117,6 +146,7 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
     const agents = useStore((s) => remoteAgents(s, host.id));
     const active = useStore((s) => s.sessions[s.activeSessionId]?.kind === "command" && s.sessions[s.activeSessionId]?.host === host.id);
     const connected = host.reach === "connected";
+    const load = useHostLoad(host.id, connected);
     const chat = () => {
         const state = getState();
         const [first] = sessionsWithCopy(state, host.id);
@@ -150,6 +180,7 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
         <HostRow
             kind="sikemux"
             name={host.name}
+            load={load}
             detail={connected ? agentsLabel(agents) : "asleep"}
             status={<StatusDot tone={connected ? "ok" : "idle"} label={connected ? "Connected" : "Out of reach"} />}
             active={active}

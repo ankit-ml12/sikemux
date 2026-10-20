@@ -29,6 +29,7 @@ mod join;
 mod kept;
 mod launching;
 mod lifecycle;
+mod load;
 mod local_peer;
 mod messages;
 mod model_providers;

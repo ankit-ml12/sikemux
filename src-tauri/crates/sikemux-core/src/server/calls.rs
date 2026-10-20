@@ -80,6 +80,7 @@ calls! { core, client, params;
     "closedAgents": Local => answer(closed_agents(&core, parse(params)?).await?),
     "publishBuddies": Local => answer(core.workspaces.publish_buddies(parse(params)?)?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
+    "hostLoad": Watch, any_program => answer(super::load::now()),
     "stopChatIfIdle": Local => {
         let params: AgentParams = parse(params)?;
         answer(json!({ "stopped": super::lifecycle::sleep(&core, &params.agent_id) }))
