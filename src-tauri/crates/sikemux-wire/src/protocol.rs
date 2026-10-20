@@ -1049,6 +1049,25 @@ pub enum BuildChannel {
     Stable,
 }
 
+impl BuildChannel {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Dev => "dev",
+            Self::Nightly => "nightly",
+            Self::Stable => "stable",
+        }
+    }
+
+    /// A release's channel by its version: `0.5.0-nightly.3` is a nightly.
+    pub fn of_release(version: &str) -> Self {
+        if version.contains("-nightly") {
+            Self::Nightly
+        } else {
+            Self::Stable
+        }
+    }
+}
+
 /// A device approved to reach this core from another machine.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

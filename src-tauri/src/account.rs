@@ -19,18 +19,18 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::{Method, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use sikemux_core::accounts::protocol::{
     AccountProfile, Challenge, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
 };
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{AccountLinkState, DeviceInfo, RemoteStatus};
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
-use sikemux_host::account::{api, channel, http};
+use sha2::{Digest, Sha256};
+use sikemux_host::account::{api, http};
+use sikemux_loopback::{challenge, Callback, Finish, LoopbackError};
+use sikemux_process::sync::Locked;
 
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
@@ -146,10 +146,7 @@ pub struct PendingSignIn(Mutex<Option<oneshot::Sender<()>>>);
 
 impl PendingSignIn {
     fn replace(&self, next: Option<oneshot::Sender<()>>) {
-        let mut pending = self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut pending = self.0.locked();
         if let Some(previous) = std::mem::replace(&mut *pending, next) {
             let _ = previous.send(());
         }
@@ -231,9 +228,7 @@ pub fn notice_remote(app: &AppHandle, remote: &RemoteStatus) {
         return;
     }
     let changed = {
-        let mut last = OWNER
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut last = OWNER.locked();
         let changed = last.as_ref().is_some_and(|last| *last != remote.owner);
         *last = Some(remote.owner.clone());
         changed
@@ -522,60 +517,50 @@ struct Tokens {
     refresh_token: Option<String>,
 }
 
-struct Pkce {
-    verifier: String,
-    challenge: String,
-    state: String,
-}
-
-fn random_text(bytes: usize) -> AppResult<String> {
-    let mut buffer = vec![0u8; bytes];
-    getrandom::fill(&mut buffer).map_err(|error| AppError::Other(error.to_string()))?;
-    Ok(URL_SAFE_NO_PAD.encode(buffer))
-}
-
-impl Pkce {
-    fn new() -> AppResult<Self> {
-        let verifier = random_text(32)?;
-        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-        Ok(Self {
-            verifier,
-            challenge,
-            state: random_text(16)?,
-        })
-    }
-}
-
-fn authorize_url(pkce: &Pkce, redirect: &str) -> String {
+fn authorize_url(redirect: &str, state: &str, challenge: &str) -> String {
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("client_id", CLIENT_ID)
         .append_pair("response_type", "code")
         .append_pair("redirect_uri", redirect)
         .append_pair("scope", SCOPES)
-        .append_pair("state", &pkce.state)
-        .append_pair("code_challenge", &pkce.challenge)
+        .append_pair("state", state)
+        .append_pair("code_challenge", challenge)
         .append_pair("code_challenge_method", "S256")
         .finish();
     format!("{CLERK}/oauth/authorize?{query}")
 }
 
+/// The browser finishes on the web app's page, which looks like the rest of the sign-in.
 async fn sign_in_with_browser() -> AppResult<Tokens> {
-    let pkce = Pkce::new()?;
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-    let redirect = format!(
-        "http://127.0.0.1:{}/callback",
-        listener.local_addr()?.port()
-    );
-    open::that(authorize_url(&pkce, &redirect))?;
-    let code = wait_for_callback(&listener, &pkce.state).await?;
+    let refused = |error: LoopbackError| AppError::Other(error.0);
+    let signed_in = format!("{}/signed-in", sikemux_core::accounts::app_base());
+    let callback = Callback::bind_any(
+        "/callback",
+        Finish::Redirect {
+            refused: format!("{signed_in}?cancelled"),
+            done: signed_in,
+        },
+    )
+    .await
+    .map_err(refused)?;
+    let state = sikemux_loopback::new_state().map_err(refused)?;
+    let verifier = sikemux_loopback::new_verifier().map_err(refused)?;
+    open::that(authorize_url(
+        callback.redirect_uri(),
+        &state,
+        &challenge(&verifier),
+    ))?;
+    let code = callback.code(&state).await.map_err(|error| {
+        AppError::Other(format!("sign-in was not finished: {}", error.0))
+    })?;
     let response = http()
         .post(format!("{CLERK}/oauth/token"))
         .form(&[
             ("grant_type", "authorization_code"),
             ("code", code.as_str()),
-            ("redirect_uri", redirect.as_str()),
+            ("redirect_uri", callback.redirect_uri()),
             ("client_id", CLIENT_ID),
-            ("code_verifier", pkce.verifier.as_str()),
+            ("code_verifier", verifier.as_str()),
         ])
         .send()
         .await?;
@@ -586,99 +571,6 @@ async fn sign_in_with_browser() -> AppResult<Tokens> {
         )));
     }
     Ok(response.json().await?)
-}
-
-/// What the browser lands on, read from the request line of each connection
-/// until the one carrying this sign-in's `state` arrives.
-async fn wait_for_callback(listener: &TcpListener, state: &str) -> AppResult<String> {
-    loop {
-        let (mut stream, _) = listener.accept().await?;
-        let Ok(Ok(target)) =
-            tokio::time::timeout(Duration::from_secs(10), request_target(&mut stream)).await
-        else {
-            continue;
-        };
-        match callback(&target, state) {
-            Callback::Code(code) => {
-                send_to(&mut stream, "/signed-in").await;
-                return Ok(code);
-            }
-            Callback::Refused(reason) => {
-                send_to(&mut stream, "/signed-in?cancelled").await;
-                return Err(AppError::Other(reason));
-            }
-            Callback::Other => not_found(&mut stream).await,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum Callback {
-    Code(String),
-    Refused(String),
-    Other,
-}
-
-fn callback(target: &str, state: &str) -> Callback {
-    let Ok(url) = url::Url::parse(&format!("http://127.0.0.1{target}")) else {
-        return Callback::Other;
-    };
-    if url.path() != "/callback" {
-        return Callback::Other;
-    }
-    let param = |name: &str| {
-        url.query_pairs()
-            .find(|(key, _)| key == name)
-            .map(|(_, value)| value.into_owned())
-    };
-    if param("state").as_deref() != Some(state) {
-        return Callback::Other;
-    }
-    if let Some(error) = param("error") {
-        let description = param("error_description").unwrap_or(error);
-        return Callback::Refused(format!("sign-in was not finished: {description}"));
-    }
-    match param("code") {
-        Some(code) if !code.is_empty() => Callback::Code(code),
-        _ => Callback::Other,
-    }
-}
-
-async fn request_target(stream: &mut TcpStream) -> std::io::Result<String> {
-    let mut buffer = Vec::with_capacity(1024);
-    let mut chunk = [0u8; 1024];
-    while !buffer.windows(4).any(|window| window == b"\r\n\r\n") && buffer.len() < 16 * 1024 {
-        let read = stream.read(&mut chunk).await?;
-        if read == 0 {
-            break;
-        }
-        buffer.extend_from_slice(chunk.get(..read).unwrap_or_default());
-    }
-    let head = String::from_utf8_lossy(&buffer);
-    let line = head.lines().next().unwrap_or_default();
-    let mut parts = line.split(' ');
-    match (parts.next(), parts.next()) {
-        (Some("GET"), Some(target)) => Ok(target.to_owned()),
-        _ => Ok(String::new()),
-    }
-}
-
-/// The browser finishes on the web app's page, which looks like the rest of the sign-in.
-async fn send_to(stream: &mut TcpStream, path: &str) {
-    let location = format!("{}{path}", sikemux_core::accounts::app_base());
-    reply(stream, &format!("303 See Other\r\nLocation: {location}")).await;
-}
-
-async fn not_found(stream: &mut TcpStream) {
-    reply(stream, "404 Not Found").await;
-}
-
-async fn reply(stream: &mut TcpStream, status_and_headers: &str) {
-    let response = format!(
-        "HTTP/1.1 {status_and_headers}\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
-    );
-    let _ = stream.write_all(response.as_bytes()).await;
-    let _ = stream.shutdown().await;
 }
 
 /// The signed-in user's id, read from the access token Clerk just issued to
@@ -724,7 +616,7 @@ async fn register_host(core: &CoreClient, access_token: &str) -> AppResult<Strin
         role: DeviceRole::Host,
         name: signed.name.chars().take(64).collect(),
         platform: sikemux_core::server::HOST_PLATFORM,
-        channel: Some(channel(signed.channel)),
+        channel: Some(signed.channel.into()),
         nonce: challenge.nonce,
         signature: signed.signature,
     };
@@ -761,39 +653,19 @@ mod tests {
     }
 
     #[test]
-    fn the_callback_must_carry_this_sign_in_state() {
-        assert_eq!(
-            callback("/callback?code=abc&state=s1", "s1"),
-            Callback::Code("abc".into())
-        );
-        assert_eq!(
-            callback("/callback?code=abc&state=other", "s1"),
-            Callback::Other
-        );
-        assert_eq!(callback("/callback?code=abc", "s1"), Callback::Other);
-        assert_eq!(callback("/favicon.ico", "s1"), Callback::Other);
-        assert_eq!(
-            callback(
-                "/callback?error=access_denied&error_description=No&state=s1",
-                "s1"
-            ),
-            Callback::Refused("sign-in was not finished: No".into())
-        );
-    }
-
-    #[test]
     fn the_authorize_url_asks_for_a_pkce_code_back_on_this_mac() {
-        let pkce = Pkce::new().unwrap();
-        let url = url::Url::parse(&authorize_url(&pkce, "http://127.0.0.1:5555/callback")).unwrap();
+        let url = url::Url::parse(&authorize_url(
+            "http://127.0.0.1:5555/callback",
+            "s1",
+            &challenge("v1"),
+        ))
+        .unwrap();
         let params: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(params["client_id"], CLIENT_ID);
         assert_eq!(params["redirect_uri"], "http://127.0.0.1:5555/callback");
         assert_eq!(params["code_challenge_method"], "S256");
-        assert_eq!(
-            params["code_challenge"],
-            URL_SAFE_NO_PAD.encode(Sha256::digest(pkce.verifier.as_bytes()))
-        );
-        assert_eq!(params["state"], pkce.state);
+        assert_eq!(params["code_challenge"], challenge("v1"));
+        assert_eq!(params["state"], "s1");
         assert!(!params["scope"].contains("offline_access"));
     }
 
@@ -850,29 +722,4 @@ mod tests {
         let machine = URL_SAFE_NO_PAD.encode(br#"{"sub":"mch_1"}"#);
         assert!(subject(&format!("h.{machine}.s")).is_err());
         assert!(subject("not-a-token").is_err());
-    }
-
-    #[tokio::test]
-    async fn the_listener_answers_strays_and_returns_the_code() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let browser = tokio::spawn(async move {
-            for path in [
-                "/favicon.ico",
-                "/callback?code=c1&state=wrong",
-                "/callback?code=c2&state=s1",
-            ] {
-                let mut stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-                stream
-                    .write_all(format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes())
-                    .await
-                    .unwrap();
-                let mut reply = String::new();
-                stream.read_to_string(&mut reply).await.unwrap();
-                assert!(reply.starts_with("HTTP/1.1 "));
-            }
-        });
-        assert_eq!(wait_for_callback(&listener, "s1").await.unwrap(), "c2");
-        browser.await.unwrap();
-    }
-}
+    }}

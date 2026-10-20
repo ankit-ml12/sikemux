@@ -144,6 +144,16 @@ pub enum Channel {
     Unknown,
 }
 
+impl From<crate::protocol::BuildChannel> for Channel {
+    fn from(build: crate::protocol::BuildChannel) -> Self {
+        match build {
+            crate::protocol::BuildChannel::Dev => Self::Dev,
+            crate::protocol::BuildChannel::Nightly => Self::Nightly,
+            crate::protocol::BuildChannel::Stable => Self::Stable,
+        }
+    }
+}
+
 /// An app older than its channel's version, compared as semantic versions, must update before it connects.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
