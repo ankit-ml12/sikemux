@@ -478,6 +478,127 @@ export interface BuddyLook {
 export type CoreChangeTopic =
     "activity" | "agentAccounts" | "agentSignIn" | "boards" | "ci" | "git" | "ports" | "runs" | "shares" | "skills" | "tasks" | "trust";
 
+/** A board as the app and devices read it. */
+export interface ProjectBoard {
+    project: string;
+    cards: BoardCard[];
+    settings: BoardSettings;
+    /** How many of its cards have an agent of Auto's at work. */
+    running: number;
+    autoNote: string | null;
+    /** What could not be done of what the person asked, a line each. */
+    problems?: string[];
+}
+
+/**
+ * The card as the app draws it.
+ * A card as the app and devices read it.
+ */
+export interface BoardCard {
+    id: number;
+    title: string;
+    details: string;
+    acceptance: string;
+    status: CardStatus;
+    owner: string | null;
+    ownerName: string | null;
+    ownerCli: string | null;
+    /** The model provider paying for the owner's turns, when not its own account. */
+    paidBy: string | null;
+    team: string | null;
+    teamName: string | null;
+    parent: number | null;
+    dependsOn: number[];
+    waitsOn: number[];
+    createdBy: string | null;
+    createdByName: string;
+    result: string | null;
+    ticket: CardTicket | null;
+    auto: CardRun | null;
+    recordings: InboxRecording[];
+    at: number;
+    updatedAt: number;
+}
+
+export type CardStatus = "open" | "progress" | "done";
+
+export interface CardTicket {
+    key: string;
+    url?: string;
+    /** What the ticket is in its tracker, such as Epic, Story or Bug. */
+    source?: string;
+    provider: Tracker;
+    /**
+     * The status last put on the ticket in its tracker, so each change goes
+     * there once.
+     */
+    synced?: CardStatus;
+    /** Why the last change did not reach the ticket. */
+    syncNote?: string;
+}
+
+/**
+ * The Jira or Linear ticket the person put a card on the board for.
+ * Where a card's ticket lives.
+ */
+export type Tracker = "jira" | "linear";
+
+/** A card's run as the app and devices read it. */
+export interface CardRun {
+    agent: string;
+    repo: string;
+    worktree: string;
+    branch: string;
+    base: string;
+    startSha: string;
+    stage: RunStage;
+    note: string | null;
+    pull: CardPull | null;
+}
+
+/** Where a card's run is. */
+export type RunStage =
+    "starting" | "working" | "shipping" | "checking" | "reviewing" | "fixing" | "merging" | "review" | "held" | "merged" | "closed";
+
+/** A run's pull request as the app and devices read it. */
+export interface CardPull {
+    number: number;
+    url: string;
+    host: string;
+}
+
+/** How a project's board runs on its own. */
+export interface BoardSettings {
+    auto: boolean;
+    /** How many of Auto's agents work at once. */
+    slots: number;
+    /** The app's launcher Auto's agents start with; none for the first that works. */
+    launcher: string | null;
+    /** The connected provider its agents run on in place of their own accounts. */
+    provider: string | null;
+    model: string | null;
+    finish: Finish;
+    /**
+     * Who reviews each change before it merges; none for any signed-in
+     * agent on another CLI than its builder's.
+     */
+    reviewer: ReviewerChoice | null;
+}
+
+/** Where a card's run ends when its checks pass. */
+export type Finish = "merge" | "pr";
+
+/** The agent that reviews a card's change before Auto merges it. */
+export interface ReviewerChoice {
+    /**
+     * The app's launcher it starts with, which must run another CLI than
+     * the card's builder.
+     */
+    launcher: string;
+    provider: string | null;
+    model: string | null;
+}
+
 /** The computer a core runs on, as a person would recognise it. */
 export interface HostInfo {
     /** The name set in System Settings, such as "Kishore's MacBook Pro". */

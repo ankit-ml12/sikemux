@@ -21,6 +21,8 @@ const SOURCES = [
   `${WIRE}/accounts/protocol.rs`,
   `${CORE}/server/inbox.rs`,
   `${CORE}/server/changed.rs`,
+  `${CORE}/server/board.rs`,
+  `${CORE}/server/board/auto.rs`,
   `${CORE}/server/workspace.rs`,
   `${CORE}/server/remote.rs`,
   `${CORE}/server/hosts/mod.rs`,
@@ -54,6 +56,20 @@ const RENAMES = {
   },
   [`${CORE}/server/workspace.rs`]: { Buddies: "PublishedBuddies" },
   [`${CORE}/server/changed.rs`]: { Topic: "CoreChangeTopic" },
+  [`${CORE}/server/board.rs`]: {
+    Status: "CardStatus",
+    Ticket: "CardTicket",
+    CardView: "BoardCard",
+    BoardView: "ProjectBoard",
+  },
+  [`${CORE}/server/board/auto.rs`]: {
+    Stage: "RunStage",
+    Settings: "BoardSettings",
+    RunView: "CardRun",
+    PullView: "CardPull",
+    Run: "AutoRun",
+    Pull: "AutoPull",
+  },
   [`${CORE}/server/remote.rs`]: {
     Pairing: "RemotePairing",
     LinkedHost: "StoredLink",
@@ -70,6 +86,7 @@ const JSON_FIELDS = {
 const TS_ROOTS = [
   "DeviceView",
   "CoreChangeTopic",
+  "ProjectBoard",
   "HostInfo",
   "RemoteStatus",
   "AllowedDevice",
@@ -237,7 +254,7 @@ function serde(attrs, where) {
 }
 
 const KNOWN = {
-  container: ["rename_all"],
+  container: ["rename_all", "default"],
   field: ["rename", "default", "skip_serializing_if", "skip", "alias"],
   variant: ["rename", "other", "alias"],
 };

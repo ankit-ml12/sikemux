@@ -30,6 +30,8 @@ const card = (
   result: null,
   ticket: null,
   auto: null,
+  paidBy: null,
+  recordings: [],
   at: now - 3 * HOUR,
   updatedAt: now - fields.id * 600_000,
   ...fields,
