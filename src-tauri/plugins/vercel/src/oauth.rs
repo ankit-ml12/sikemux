@@ -7,8 +7,9 @@
 use serde::Deserialize;
 use serde_json::Value;
 use sikemux_loopback::{redirect_uri, Callback, LoopbackError};
+use sikemux_plugin_api::http;
 
-use crate::client;
+use crate::client::{self, HTTP};
 use crate::error::{VercelError, VercelResult};
 
 const CLIENT_ID: &str = "oac_ShIPirtpIwfcsyfvCWka3qNU";
@@ -75,14 +76,16 @@ pub async fn exchange(code: &str) -> VercelResult<Installed> {
             ("redirect_uri", &redirect_uri(CALLBACK_PATH)),
         ])
         .finish();
-    let response = client::http()?
-        .post(TOKEN_URL)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
+    let response = HTTP
+        .send(
+            HTTP.client()?
+                .post(TOKEN_URL)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(body),
+        )
         .await?;
     let status = response.status().as_u16();
-    let bytes = client::read_body(response).await?;
+    let bytes = http::read_body(response, client::MAX_RESPONSE_BYTES).await?;
     if (200..300).contains(&status) {
         return Ok(serde_json::from_slice(&bytes)?);
     }

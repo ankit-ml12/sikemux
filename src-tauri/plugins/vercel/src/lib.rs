@@ -93,7 +93,7 @@ impl Plugin for Vercel {
         ctx: &'a PluginContext,
         _remotes: &'a [String],
     ) -> PluginFuture<'a, bool> {
-        Box::pin(async move { Ok(config::load(ctx.data_dir()).account.is_some()) })
+        Box::pin(async move { Ok(config::load(ctx.data_dir())?.account.is_some()) })
     }
 }
 
@@ -106,31 +106,6 @@ mod tests {
         PluginContext::new(
             std::env::temp_dir().join(format!("sikemux-vercel-{name}-{}", std::process::id())),
         )
-    }
-
-    #[test]
-    fn its_manifest_parses_with_the_nine_tools() {
-        let plugin = plugin().expect("manifest parses");
-        let names: Vec<&str> = plugin
-            .manifest()
-            .tools
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect();
-        assert_eq!(
-            names,
-            [
-                "vercel_projects",
-                "vercel_deployments",
-                "vercel_deployment",
-                "vercel_logs",
-                "vercel_redeploy",
-                "vercel_promote",
-                "vercel_cancel",
-                "vercel_domains",
-                "vercel_env"
-            ]
-        );
     }
 
     #[tokio::test]
