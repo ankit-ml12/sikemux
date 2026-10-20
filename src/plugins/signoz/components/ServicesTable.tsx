@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconSearch, SkeletonRows, StaleNotice, rankBy } from "../../../plugin-api/ui";
-import { failureMessage } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
 import { SORTERS, mergeByService, perMinute, percent } from "../health";
 import { signozServicesR } from "../resources";
 import { showService, signozSettings, updateSettings, type ServiceSort } from "../state";

@@ -1,9 +1,10 @@
 import { useRef } from "react";
+import { failureMessage } from "../../../plugin-api/backend";
 import { notify, openSignInUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, refreshVercel, vercelApi, type VercelProject, type VercelStatus } from "../api";
-import { vercelProjectsR, vercelStatusR } from "../resources";
+import { Dropdown, ResizeHandle, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { vercelApi, type VercelProject, type VercelStatus } from "../api";
+import { vercel, vercelProjectsR } from "../resources";
 import { updateVercelView, useVercelView, type VercelSection } from "../state";
 import { Deployment } from "./Deployment";
 import { Deployments } from "./Deployments";
@@ -20,10 +21,11 @@ const SIDE_MIN = 180;
 const SIDE_MAX = 420;
 
 export function VercelPane({ paneId, active }: { paneId: string; active: boolean }) {
-    const status = useResourceEnabled(active, vercelStatusR);
-    if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Connecting to Vercel" />;
-    if (!status.data?.configured || status.data.authFailed) return <VercelSignIn status={status.data} onSignedIn={() => refreshVercel()} />;
-    return <Dashboard paneId={paneId} active={active} status={status.data} />;
+    return (
+        <SignedIn service={vercel} active={active} signIn={(status) => <VercelSignIn status={status} onSignedIn={() => vercel.refresh()} />}>
+            {(status) => <Dashboard paneId={paneId} active={active} status={status} />}
+        </SignedIn>
+    );
 }
 
 const SECTIONS: { value: VercelSection; label: string }[] = [
@@ -47,14 +49,14 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
         if (next === ADD_TEAM) {
             void vercelApi
                 .signInWithBrowser((url) => void openSignInUrl(url).catch(swallow("open Vercel")))
-                .done.then(refreshVercel)
+                .done.then(() => vercel.refresh())
                 .catch((error: unknown) => notify("error", `Add a team: ${failureMessage(error)}`));
             return;
         }
         updateVercelView(paneId, { project: null, deployment: null, section: "overview" });
         void vercelApi
             .setTeam(next)
-            .then(refreshVercel)
+            .then(() => vercel.refresh())
             .catch((error: unknown) => notify("error", `Switch team: ${failureMessage(error)}`));
     };
     const open = (patch: Parameters<typeof updateVercelView>[1]) => updateVercelView(paneId, { deployment: null, ...patch });
@@ -134,7 +136,12 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                     <button
                         type="button"
                         className="vercel-link"
-                        onClick={() => void vercelApi.signOut().then(refreshVercel).catch(swallow("sign out of Vercel"))}>
+                        onClick={() =>
+                            void vercelApi
+                                .signOut()
+                                .then(() => vercel.refresh())
+                                .catch(swallow("sign out of Vercel"))
+                        }>
                         Sign out
                     </button>
                 </div>
@@ -173,7 +180,7 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
                     <span className="vercel-topbar-section">
                         {project ? (view.deployment ? "Deployment Details" : SECTIONS.find((each) => each.value === view.section)?.label) : ""}
                     </span>
-                    <button type="button" className="vercel-button" onClick={() => refreshVercel()}>
+                    <button type="button" className="vercel-button" onClick={() => vercel.refresh()}>
                         Refresh
                     </button>
                 </header>

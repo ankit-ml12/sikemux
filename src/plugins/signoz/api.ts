@@ -1,9 +1,7 @@
 import { createPluginBackend, type PluginStreamHandlers } from "../../plugin-api/backend";
 import { SIGNOZ_PLUGIN } from "./kinds";
 
-export { failureMessage } from "../../plugin-api/backend";
-
-const backend = createPluginBackend(SIGNOZ_PLUGIN.id, { signInStatus: (kind) => kind === "signoz.status" });
+const backend = createPluginBackend(SIGNOZ_PLUGIN.id);
 
 export type AuthMode = "session" | "apiKey";
 

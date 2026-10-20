@@ -10,7 +10,8 @@ const fake = vi.hoisted(() => ({
 vi.mock("../../api/plugins", async () => (await import("../../plugin-api/fakeTransport")).fakeTransport(fake));
 vi.mock("../../state/resources", async (importOriginal) => ({ ...(await importOriginal<object>()), invalidate: fake.invalidate }));
 
-import { bitbucketApi, bitbucketHostApi, failureMessage, type BitbucketStatus } from "./api";
+import { failureMessage } from "../../plugin-api/backend";
+import { bitbucketApi, bitbucketHostApi, type BitbucketStatus } from "./api";
 import type { RunTick } from "../../plugin-api/codehost";
 
 const repo = { provider: "sikemux.bitbucket", owner: "team", name: "app" };

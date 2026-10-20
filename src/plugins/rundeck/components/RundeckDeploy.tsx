@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { confirmDialog, currentBranch, git, notify } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { IconRun, IconWarning, SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage, rundeckApi, type JobDetail, type JobOption, type PlanResult } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { rundeckApi, type JobDetail, type JobOption, type PlanResult } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndExecutionsR, rndJobDetailR, rndJobsR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
+import { rndExecutionsR, rndJobDetailR, rndJobsR, rndMatrixR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
 import { branchOf, branchOptionName, envOf, isLiveStatus, isProdTarget, localDateTimeToIso, qualifiedName } from "../shape";
 import { watchRun } from "../runWatch";
 import { useDebounced } from "../../../plugin-api/hooks";
@@ -211,7 +212,7 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
             });
             if (result.recovered) notify("info", "The run request timed out, but the run was found in Rundeck.");
             invalidate(
-                (kind, args) => (kind === "rnd.executions" && args[0] === level.jobId) || (kind === "rnd.matrix" && args[0] === level.project),
+                (kind, args) => (kind === rndExecutionsR.kind && args[0] === level.jobId) || (kind === rndMatrixR.kind && args[0] === level.project),
             );
             watchRun(cmd.jobRefOf(level), result.id);
             cmd.rundeckReplace(paneId, { kind: "execution", ...cmd.jobRefOf(level), executionId: result.id });

@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, type ErrorGroup, type Operation, type Scope, type Series, type ServiceOverview as Overview } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { type ErrorGroup, type Operation, type Scope, type Series, type ServiceOverview as Overview } from "../api";
 import { perMinute, percent } from "../health";
 import { signozErrorGroupsR, signozOperationsR, signozOverviewR } from "../resources";
 import { addFilter, showService, updateView } from "../state";

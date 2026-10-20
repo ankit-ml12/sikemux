@@ -10,7 +10,8 @@ const fake = vi.hoisted(() => ({
 vi.mock("../../api/plugins", async () => (await import("../../plugin-api/fakeTransport")).fakeTransport(fake));
 vi.mock("../../state/resources", async (importOriginal) => ({ ...(await importOriginal<object>()), invalidate: fake.invalidate }));
 
-import { actionsApi, avatarForEmail, avatarForLogin, failureMessage, githubHostApi, type RunTick } from "./api";
+import { failureMessage } from "../../plugin-api/backend";
+import { actionsApi, avatarForEmail, avatarForLogin, githubHostApi, type RunTick } from "./api";
 
 const repo = { provider: "sikemux.github", owner: "nodelike", name: "sikemux" };
 const refused = { category: "auth", message: "github: sign-in failed: Bad credentials" };

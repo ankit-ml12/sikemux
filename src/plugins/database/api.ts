@@ -1,8 +1,5 @@
 import { createPluginBackend } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
 import { DATABASE_PLUGIN } from "./kinds";
-
-export { failureMessage } from "../../plugin-api/backend";
 
 const backend = createPluginBackend(DATABASE_PLUGIN.id);
 
@@ -129,8 +126,6 @@ export interface HistoryEntry {
     error: string | null;
     source: "person" | "agent";
 }
-
-export const refreshDatabase = () => invalidate((kind) => kind.startsWith("database."));
 
 export const databaseApi = {
     profiles: () => backend.call<DatabaseProfile[]>("profiles"),

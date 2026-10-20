@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useResource } from "../../../plugin-api/resources";
 import { EmptyState, IconChevron, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
 import { signozTraceLogsR, signozTraceR } from "../resources";
 import { LogRow } from "./LogRow";
 import { formatDuration } from "../../../plugin-api/format";

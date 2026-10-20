@@ -1,7 +1,6 @@
 import { lazy } from "react";
-import { registerFrontendPlugin, signInOf } from "../../plugin-api";
-import { useResource } from "../../plugin-api/resources";
-import { linearStatusR } from "./resources";
+import { registerFrontendPlugin } from "../../plugin-api";
+import { linear } from "./resources";
 import { LinearMark } from "./components/LinearMark";
 import { LINEAR_ISSUES, LINEAR_PLUGIN } from "./kinds";
 import { openLinear } from "./state";
@@ -22,7 +21,5 @@ registerFrontendPlugin({
     openTitle: `Open ${LINEAR_PLUGIN.name}`,
     mark: (size) => <LinearMark size={size} className="icon-linear" />,
     linkHosts: ["linear.app"],
-    useSignIn: function useServiceSignIn() {
-        return signInOf(useResource(linearStatusR));
-    },
+    useSignIn: linear.useSignIn,
 });

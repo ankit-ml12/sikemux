@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, signozApi, type TraceSummary } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { signozApi, type TraceSummary } from "../api";
 import { signozTracesR } from "../resources";
 import { scopeOf, signozSettings, updateView, useExploreView } from "../state";
 import { logTime } from "./LogRow";

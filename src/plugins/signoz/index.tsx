@@ -1,7 +1,6 @@
 import { lazy } from "react";
-import { registerFrontendPlugin, signInOf } from "../../plugin-api";
-import { useResource } from "../../plugin-api/resources";
-import { signozStatusR } from "./resources";
+import { registerFrontendPlugin } from "../../plugin-api";
+import { signoz } from "./resources";
 import { SignozIcon } from "./components/SignozIcon";
 import { SignozOverlay } from "./components/SignozOverlay";
 import { SIGNOZ_EXPLORE, SIGNOZ_PLUGIN } from "./kinds";
@@ -24,7 +23,5 @@ registerFrontendPlugin({
     openTitle: `Open ${SIGNOZ_PLUGIN.name}`,
     mark: (size) => <SignozIcon size={size} />,
     Overlay: SignozOverlay,
-    useSignIn: function useServiceSignIn() {
-        return signInOf(useResource(signozStatusR));
-    },
+    useSignIn: signoz.useSignIn,
 });

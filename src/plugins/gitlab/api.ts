@@ -1,4 +1,4 @@
-import { createPluginBackend, type PluginStreamHandlers } from "../../plugin-api/backend";
+import type { PluginStreamHandlers } from "../../plugin-api/backend";
 import type {
     Annotation,
     Artifact,
@@ -34,13 +34,10 @@ import type {
     Workflow,
     WorkflowFile,
 } from "../../plugin-api/codehost";
-import { createCodeHostClient } from "../../plugin-api/codehost";
+import { createCodeHostBackend } from "../../plugin-api/codehost";
 import { GITLAB_PLUGIN } from "./kinds";
 
-export { failureMessage } from "../../plugin-api/backend";
-
-const backend = createPluginBackend(GITLAB_PLUGIN.id, { signInStatus: (kind) => kind === "host.status" || kind === "host.gitlabStatus" });
-const { call, image, watch } = createCodeHostClient(backend);
+const { backend, call, image, watch } = createCodeHostBackend(GITLAB_PLUGIN.id);
 
 export interface GitlabStatus {
     configured: boolean;

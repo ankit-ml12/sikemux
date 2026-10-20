@@ -1,9 +1,7 @@
 import { createPluginBackend, isPluginFailure, type PluginStreamHandlers } from "../../plugin-api/backend";
 import { RUNDECK_PLUGIN } from "./kinds";
 
-export { failureMessage } from "../../plugin-api/backend";
-
-const backend = createPluginBackend(RUNDECK_PLUGIN.id, { signInStatus: (kind) => kind === "rnd.status" });
+const backend = createPluginBackend(RUNDECK_PLUGIN.id);
 
 const FORBIDDEN_ACTION: Record<string, string> = {
     projects: "list projects",

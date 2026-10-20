@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconSearch, SkeletonRows, StaleNotice, rankBy } from "../../../plugin-api/ui";
-import { failureMessage } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
 import { signozDashboardsR } from "../resources";
 import { openDashboard } from "../state";
 

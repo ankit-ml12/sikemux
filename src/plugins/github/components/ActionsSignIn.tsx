@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
-import { resource, useResource } from "../../../plugin-api/resources";
+import { useResource } from "../../../plugin-api/resources";
+import { defineService } from "../../../plugin-api/service";
 import { SignInError, SignInScreen, SkeletonRows, useSignInAttempt } from "../../../plugin-api/ui";
 import { actionsApi, type ActionsStatus } from "../api";
+import { GITHUB_PLUGIN } from "../kinds";
 import { GithubMark } from "./GithubMark";
 
 /** The sign-in form wants to know where a borrowed token came from, which only GitHub's own status says. */
-const githubStatusR = resource({
-    kind: "host.githubStatus",
-    fetch: (): Promise<ActionsStatus> => actionsApi.status(),
-    staleAfterMs: 60_000,
-});
+const githubStatusR = defineService(GITHUB_PLUGIN, () => actionsApi.status()).statusR;
 
 export function GithubSignIn({ onSignedIn }: { onSignedIn: (account: string | null) => void }) {
     const status = useResource(githubStatusR);

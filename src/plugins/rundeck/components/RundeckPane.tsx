@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
 import * as cmd from "../state";
-import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { rndStatusR } from "../resources";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { rndStatusR, rundeck } from "../resources";
 import { EmptyState, IconWarning } from "../../../plugin-api/ui";
 import { RundeckConnection } from "./RundeckConnection";
 import { RundeckLogin } from "./RundeckLogin";
@@ -39,7 +39,7 @@ export function RundeckPane({ paneId, active }: Props) {
                     initialUser={status.data.user}
                     initialAllowInsecurePrivateHttp={status.data.allow_insecure_private_http}
                     status={{ authFailed: status.data.configured, message: status.data.message ?? "Authentication failed" }}
-                    onDone={() => invalidate((kind) => kind.startsWith("rnd."))}
+                    onDone={() => rundeck.refresh()}
                 />
             );
         }

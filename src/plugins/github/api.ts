@@ -1,4 +1,4 @@
-import { createPluginBackend, type PluginStreamHandlers } from "../../plugin-api/backend";
+import type { PluginStreamHandlers } from "../../plugin-api/backend";
 import type {
     Annotation,
     Artifact,
@@ -38,14 +38,11 @@ import type {
     HostAccount,
     HostAccountEntry,
 } from "../../plugin-api/codehost";
-import { createCodeHostClient } from "../../plugin-api/codehost";
+import { createCodeHostBackend } from "../../plugin-api/codehost";
 import { GITHUB_PLUGIN } from "./kinds";
 
 export type * from "../../plugin-api/codehost";
-export { failureMessage } from "../../plugin-api/backend";
-
-const backend = createPluginBackend(GITHUB_PLUGIN.id, { signInStatus: (kind) => kind === "host.status" || kind === "host.githubStatus" });
-const { call, image, watch } = createCodeHostClient(backend);
+const { backend, call, image, watch } = createCodeHostBackend(GITHUB_PLUGIN.id);
 
 export type TokenSource = "keychain" | "environment" | "ghCli";
 

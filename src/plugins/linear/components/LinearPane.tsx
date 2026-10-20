@@ -1,18 +1,20 @@
 import { useState } from "react";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
-import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, linearApi, refreshLinear, type LinearChange, type LinearIssue, type LinearStatus } from "../api";
-import { linearIssueR, linearIssuesR, linearStatusR } from "../resources";
+import { failureMessage } from "../../../plugin-api/backend";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { linearApi, type LinearChange, type LinearIssue, type LinearStatus } from "../api";
+import { linear, linearIssueR, linearIssuesR } from "../resources";
 import { issueForAgent, updateLinearView, useLinearView } from "../state";
 import { LinearSignIn } from "./LinearSignIn";
 import "../linear.css";
 
 export function LinearPane({ paneId, active }: { paneId: string; active: boolean }) {
-    const status = useResourceEnabled(active, linearStatusR);
-    if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Connecting to Linear" />;
-    if (!status.data?.configured || status.data.authFailed) return <LinearSignIn status={status.data} onSignedIn={() => refreshLinear()} />;
-    return <LinearWorkspace paneId={paneId} active={active} status={status.data} />;
+    return (
+        <SignedIn service={linear} active={active} signIn={(status) => <LinearSignIn status={status} onSignedIn={() => linear.refresh()} />}>
+            {(status) => <LinearWorkspace paneId={paneId} active={active} status={status} />}
+        </SignedIn>
+    );
 }
 
 function when(at: string): string {
@@ -93,7 +95,12 @@ function LinearWorkspace({ paneId, active, status }: { paneId: string; active: b
                 <button
                     type="button"
                     className="linear-signout"
-                    onClick={() => void linearApi.signOut(workspace.id).then(refreshLinear).catch(reportError("sign out of Linear"))}>
+                    onClick={() =>
+                        void linearApi
+                            .signOut(workspace.id)
+                            .then(() => linear.refresh())
+                            .catch(reportError("sign out of Linear"))
+                    }>
                     Sign out of {workspace.name}
                 </button>
             </nav>
@@ -115,7 +122,7 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const issue = found.data;
 
-    const changed = () => invalidate((kind) => kind === "linear.issues" || kind === "linear.issue");
+    const changed = () => linear.refresh(linearIssuesR, linearIssueR);
     const change = (what: LinearChange, done: string) => {
         setBusy(true);
         void linearApi

@@ -1,18 +1,20 @@
 import { useState } from "react";
+import { failureMessage } from "../../../plugin-api/backend";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
-import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, refreshSlack, slackApi, type SlackChannel, type SlackMessage, type SlackStatus } from "../api";
-import { slackChannelsR, slackHistoryR, slackStatusR, slackThreadR } from "../resources";
+import { useResourceEnabled } from "../../../plugin-api/resources";
+import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { slackApi, type SlackChannel, type SlackMessage, type SlackStatus } from "../api";
+import { slack, slackChannelsR, slackHistoryR, slackThreadR } from "../resources";
 import { threadForAgent, updateSlackView, useSlackView } from "../state";
 import { SlackSignIn } from "./SlackSignIn";
 import "../slack.css";
 
 export function SlackPane({ paneId, active }: { paneId: string; active: boolean }) {
-    const status = useResourceEnabled(active, slackStatusR);
-    if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Connecting to Slack" />;
-    if (!status.data?.configured || status.data.authFailed) return <SlackSignIn status={status.data} onSignedIn={() => refreshSlack()} />;
-    return <SlackWorkspace paneId={paneId} active={active} status={status.data} />;
+    return (
+        <SignedIn service={slack} active={active} signIn={(status) => <SlackSignIn status={status} onSignedIn={() => slack.refresh()} />}>
+            {(status) => <SlackWorkspace paneId={paneId} active={active} status={status} />}
+        </SignedIn>
+    );
 }
 
 function when(at: string): string {
@@ -120,7 +122,12 @@ function SlackWorkspace({ paneId, active, status }: { paneId: string; active: bo
                 <button
                     type="button"
                     className="slack-signout"
-                    onClick={() => void slackApi.signOut(workspace.id).then(refreshSlack).catch(reportError("sign out of Slack"))}>
+                    onClick={() =>
+                        void slackApi
+                            .signOut(workspace.id)
+                            .then(() => slack.refresh())
+                            .catch(reportError("sign out of Slack"))
+                    }>
                     Sign out of {workspace.name}
                 </button>
             </nav>
@@ -242,7 +249,7 @@ function ThreadView({
         try {
             await slackApi.reply(workspace, channel, ts, draft.trim());
             setDraft("");
-            invalidate((kind) => kind === "slack.thread" || kind === "slack.history");
+            slack.refresh(slackThreadR, slackHistoryR);
         } catch (error) {
             notify("error", `Reply: ${failureMessage(error)}`);
         } finally {

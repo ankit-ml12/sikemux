@@ -1,6 +1,7 @@
 import { useState, type MouseEvent, type PointerEvent } from "react";
 import { notify } from "../../../plugin-api/host";
-import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
+import { failureMessage } from "../../../plugin-api/backend";
+import { useResourceEnabled } from "../../../plugin-api/resources";
 import {
     ContextMenu,
     EmptyState,
@@ -13,9 +14,9 @@ import {
     useCardDrag,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
-import { failureMessage, jiraApi, type JiraBoardView, type JiraColumn, type JiraIssueSummary } from "../api";
+import { jiraApi, type JiraBoardView, type JiraColumn, type JiraIssueSummary } from "../api";
 import { boardPeople, matchingCards, pickKey, swimlanes, unassignedCount } from "../boardFilter";
-import { jiraBoardR } from "../resources";
+import { jira, jiraBoardR, jiraIssueR, jiraSearchR } from "../resources";
 import { Avatar, JiraFace } from "./JiraFace";
 import { DueChip, EpicChip, IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
 
@@ -75,7 +76,7 @@ export function JiraBoard({
     const board = whole.data;
     const narrowed = picked.size === 0 ? board : found.data;
     const columns = narrowed ? matchingCards(withMoves(narrowed, moves), words) : [];
-    const refresh = () => invalidate((kind) => kind === "jira.board");
+    const refresh = () => jira.refresh(jiraBoardR);
     const toggle = (who: string) =>
         setPicked((now) => {
             const next = new Set(now);
@@ -96,7 +97,7 @@ export function JiraBoard({
             await jiraApi.moveIssue(issue.key, target, site || undefined);
             refresh();
             await found.refresh();
-            invalidate((kind) => kind === "jira.search" || kind === "jira.issue");
+            jira.refresh(jiraSearchR, jiraIssueR);
         } catch (error) {
             notify("error", `Move ${issue.key}: ${failureMessage(error)}`);
         } finally {

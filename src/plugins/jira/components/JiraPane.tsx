@@ -24,21 +24,14 @@ import {
     IconUserMinus,
     Markdown,
     ResizeHandle,
+    SignedIn,
     SkeletonRows,
     StaleNotice,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
-import {
-    failureMessage,
-    jiraApi,
-    refreshJira,
-    type JiraBoard as JiraBoardInfo,
-    type JiraIssue,
-    type JiraIssueSummary,
-    type JiraPerson,
-    type JiraProject,
-} from "../api";
-import { jiraBoardsR, jiraFiltersR, jiraIssueR, jiraProjectsR, jiraSearchR, jiraStatusR } from "../resources";
+import { failureMessage } from "../../../plugin-api/backend";
+import { jiraApi, type JiraBoard as JiraBoardInfo, type JiraIssue, type JiraIssueSummary, type JiraPerson, type JiraProject } from "../api";
+import { jira, jiraBoardsR, jiraFiltersR, jiraIssueR, jiraProjectsR, jiraSearchR } from "../resources";
 import { copyIssue, issueMenu, openIssue } from "../issueLinks";
 import { jiraSettings, jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { statusCounts, withStatuses } from "../statusFilter";
@@ -75,10 +68,11 @@ const EMPTY: Partial<Record<JiraList["kind"], string>> = {
 };
 
 export function JiraPane({ paneId, active }: { paneId: string; active: boolean }) {
-    const status = useResourceEnabled(active, jiraStatusR);
-    if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Connecting to Jira" />;
-    if (!status.data?.configured || status.data.authFailed) return <JiraSignIn status={status.data} onSignedIn={refreshJira} />;
-    return <JiraWorkspace paneId={paneId} active={active} sites={status.data.sites.map((site) => site.host)} />;
+    return (
+        <SignedIn service={jira} active={active} signIn={(status) => <JiraSignIn status={status} onSignedIn={() => jira.refresh()} />}>
+            {(status) => <JiraWorkspace paneId={paneId} active={active} sites={status.sites.map((site) => site.host)} />}
+        </SignedIn>
+    );
 }
 
 function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: boolean; sites: string[] }) {
@@ -150,7 +144,12 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     type="button"
                     className="jira-signout"
                     title={`Sign out of ${site}`}
-                    onClick={() => void jiraApi.signOut(site).then(refreshJira).catch(reportError("sign out of Jira"))}>
+                    onClick={() =>
+                        void jiraApi
+                            .signOut(site)
+                            .then(() => jira.refresh())
+                            .catch(reportError("sign out of Jira"))
+                    }>
                     <IconLogOut size={14} className="jira-list-mark" />
                     <span className="jira-list-label">Sign out</span>
                 </button>
@@ -518,7 +517,7 @@ function IssueBody({
     const [people, setPeople] = useState<JiraPerson[]>([]);
     const changed = () => {
         refresh();
-        refreshJira();
+        jira.refresh();
     };
     const toggleTask = useCallback<ToggleTask>(
         async (index, text, done) => {

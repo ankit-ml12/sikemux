@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { Checkbox, SignInError, SignInScreen, useSignInAttempt } from "../../../plugin-api/ui";
-import { failureMessage, signozApi, type Inspection, type SignozStatus } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { signozApi, type Inspection, type SignozStatus } from "../api";
 import { SignozIcon } from "./SignozIcon";
 
 type Method = "password" | "apiKey";

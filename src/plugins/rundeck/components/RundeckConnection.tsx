@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
-import { invalidate } from "../../../plugin-api/resources";
 import { Checkbox, IconChevron } from "../../../plugin-api/ui";
-import { failureMessage, rundeckApi, type RundeckStatus } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { rundeckApi, type RundeckStatus } from "../api";
 import * as cmd from "../state";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, splitList } from "../shape";
 import { useMenuKeys } from "./hooks";
-import { useBranchOptions, useProdEnvs } from "../resources";
+import { rundeck, rndJobCellsR, rndListsR, rndMatrixR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
 import { hostFromUrl, Status } from "./parts";
 
 /** The server card at the foot of the sidebar; it opens the plugin's settings above itself. */
@@ -63,7 +63,7 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
         setError(null);
         try {
             await rundeckApi.logout();
-            invalidate((kind) => kind.startsWith("rnd."));
+            rundeck.refresh();
             onSignedOut();
         } catch (e) {
             setError(failureMessage(e));
@@ -83,7 +83,7 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
                 onCommit={(list) =>
                     void rundeckApi
                         .setLists({ prodEnvs: list })
-                        .then(() => invalidate((kind) => kind === "rnd.lists"))
+                        .then(() => rundeck.refresh(rndListsR))
                         .catch((e: unknown) => setError(failureMessage(e)))
                 }
             />
@@ -95,7 +95,7 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
                 onCommit={(list) =>
                     void rundeckApi
                         .setLists({ branchOptions: list })
-                        .then(() => invalidate((kind) => ["rnd.lists", "rnd.matrix", "rnd.jobCells", "rnd.plan"].includes(kind)))
+                        .then(() => rundeck.refresh(rndListsR, rndMatrixR, rndJobCellsR, rndPlanR))
                         .catch((e: unknown) => setError(failureMessage(e)))
                 }
             />

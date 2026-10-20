@@ -17,7 +17,8 @@ import {
     IconRefresh,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
-import { failureMessage, type Connected, type DatabaseProfile, type DatabaseTable } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { type Connected, type DatabaseProfile, type DatabaseTable } from "../api";
 import { addressOf, defaultSchema, engineLabel } from "../profileForm";
 import { databaseSchemasR, databaseTableR, databaseTablesR } from "../resources";
 import { DatabaseMark } from "./DatabaseMark";

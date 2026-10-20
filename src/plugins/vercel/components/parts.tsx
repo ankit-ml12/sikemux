@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
 import { formatAgo } from "../../../plugin-api/format";
-import { invalidate } from "../../../plugin-api/resources";
 import type { ContextMenuItem } from "../../../plugin-api/ui";
-import { failureMessage, vercelApi, type VercelDeployment } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { vercelApi, type VercelDeployment } from "../api";
+import { vercel, vercelDeploymentsR, vercelLogR, vercelProjectsR } from "../resources";
 
 const STATE_LABELS: Record<string, string> = {
     READY: "Ready",
@@ -167,7 +168,7 @@ export function useUnderwayPoll(active: boolean, underway: boolean, refresh: () 
     }, [active, underway, refresh]);
 }
 
-const changed = () => invalidate((kind) => kind.startsWith("vercel.") && kind !== "vercel.status");
+const changed = () => vercel.refresh(vercelProjectsR, vercelDeploymentsR, vercelLogR);
 
 /** What can be done to a deployment, each asking the person first, as Vercel's own menu offers them. */
 export function useDeploymentActions(team: string) {

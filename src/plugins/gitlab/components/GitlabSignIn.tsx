@@ -1,8 +1,10 @@
 import { useState, type KeyboardEvent } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
-import { resource, useResource } from "../../../plugin-api/resources";
+import { useResource } from "../../../plugin-api/resources";
+import { defineService } from "../../../plugin-api/service";
 import { SignInError, SignInScreen, SkeletonRows, useSignInAttempt } from "../../../plugin-api/ui";
 import { gitlabApi, type GitlabStatus } from "../api";
+import { GITLAB_PLUGIN } from "../kinds";
 import { GitlabMark } from "./GitlabMark";
 
 /** Where to make a token: the server's own settings page, which is gitlab.com's unless another server is named. */
@@ -16,11 +18,7 @@ export function tokensPage(host: string): string {
 }
 
 /** The sign-in form says why GitLab stopped taking the token, which only GitLab's own status says. */
-const gitlabStatusR = resource({
-    kind: "host.gitlabStatus",
-    fetch: (): Promise<GitlabStatus> => gitlabApi.status(),
-    staleAfterMs: 60_000,
-});
+const gitlabStatusR = defineService(GITLAB_PLUGIN, () => gitlabApi.status()).statusR;
 
 export function GitlabSignIn({ onSignedIn }: { onSignedIn: (account: string | null) => void }) {
     const status = useResource(gitlabStatusR);

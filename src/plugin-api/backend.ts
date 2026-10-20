@@ -1,5 +1,6 @@
 import { pluginsApi, type PluginFailure } from "../api/plugins";
 import { invalidate } from "../state/resources";
+import { resourceKind } from "./identity";
 
 export interface PluginStreamHandlers<Item> {
     readonly onItem: (item: Item) => void;
@@ -20,11 +21,11 @@ export interface PluginBackend {
 
 export interface PluginBackendOptions {
     /**
-     * The cached answers that say whether the person is signed in. A call that finds them signed out has only these
-     * read again, so the pane turns to its sign-in form. Re-reading every answer would re-read the one that just
-     * failed, which fails again, forever.
+     * Cached answers besides the plugin's own `status` that say whether the person is signed in. A call that finds
+     * them signed out has only these read again, so the pane turns to its sign-in form. Re-reading every answer would
+     * re-read the one that just failed, which fails again, forever.
      */
-    readonly signInStatus?: (kind: string) => boolean;
+    readonly alsoStatus?: readonly string[];
     /** The plugin's own failure categories that also mean the person has to sign in again. */
     readonly signedOutCategories?: readonly string[];
 }
@@ -57,10 +58,9 @@ export function isSignedOutFailure(error: unknown, alsoSignedOut: readonly strin
 }
 
 export function createPluginBackend(pluginId: string, options: PluginBackendOptions = {}): PluginBackend {
-    const { signInStatus, signedOutCategories } = options;
-    const signedOut = () => {
-        if (signInStatus) invalidate(signInStatus);
-    };
+    const { alsoStatus = [], signedOutCategories } = options;
+    const statusKinds = [resourceKind(pluginId, "status"), ...alsoStatus];
+    const signedOut = () => invalidate((kind) => statusKinds.includes(kind));
     const noticeFailure = (error: unknown) => {
         if (isSignedOutFailure(error, signedOutCategories)) signedOut();
     };

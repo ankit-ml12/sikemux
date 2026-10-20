@@ -4,6 +4,7 @@ export { Filter, Seg, StaleNotice, type SegOption } from "./Controls";
 export { Dropdown, type DropdownOption } from "../ui/Dropdown";
 export { EmptyState } from "../ui/Panel";
 export { Markdown, type ProseImageLoader } from "./Prose";
+export { SignedIn } from "./SignedIn";
 export { SignInError, SignInScreen, SignInWaiting, useSignInAttempt, type SignInAttempt, type SignInStatus } from "./SignIn";
 export { SkeletonRows } from "../ui/Skeleton";
 export { Tooltip } from "../ui/Tooltip";

@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { confirmDialog, pickFile, swallow } from "../../../plugin-api/host";
 import { Checkbox, Dropdown } from "../../../plugin-api/ui";
-import { databaseApi, failureMessage, type DatabaseProfile, type ProfileDraft, type Tested, type TlsMode } from "../api";
+import { failureMessage } from "../../../plugin-api/backend";
+import { databaseApi, type DatabaseProfile, type ProfileDraft, type Tested, type TlsMode } from "../api";
 import { ENGINES, TLS_MODES, defaultPort, isServer, missingField, parsePort, withEngine } from "../profileForm";
 
 const SQLITE_FILES = { name: "SQLite database", extensions: ["db", "sqlite", "sqlite3", "db3"] };

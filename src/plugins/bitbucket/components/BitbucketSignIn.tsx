@@ -1,18 +1,16 @@
 import { useState } from "react";
 import { openSignInUrl, openUrl, swallow } from "../../../plugin-api/host";
-import { resource, useResource } from "../../../plugin-api/resources";
+import { useResource } from "../../../plugin-api/resources";
+import { defineService } from "../../../plugin-api/service";
 import { SignInError, SignInScreen, SignInWaiting, SkeletonRows, useSignInAttempt } from "../../../plugin-api/ui";
 import { bitbucketApi, type BitbucketStatus } from "../api";
+import { BITBUCKET_PLUGIN } from "../kinds";
 import { BitbucketMark } from "./BitbucketMark";
 
 const API_TOKENS_PAGE = "https://id.atlassian.com/manage-profile/security/api-tokens";
 
 /** The sign-in form wants to know whether this build can sign in through the browser, which only Bitbucket's own status says. */
-const bitbucketStatusR = resource({
-    kind: "host.bitbucketStatus",
-    fetch: (): Promise<BitbucketStatus> => bitbucketApi.status(),
-    staleAfterMs: 60_000,
-});
+const bitbucketStatusR = defineService(BITBUCKET_PLUGIN, () => bitbucketApi.status()).statusR;
 
 export function BitbucketSignIn({ onSignedIn }: { onSignedIn: (account: string | null) => void }) {
     const status = useResource(bitbucketStatusR);
