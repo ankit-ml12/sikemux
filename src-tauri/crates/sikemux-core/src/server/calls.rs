@@ -44,6 +44,7 @@ macro_rules! calls {
                 method if method.starts_with("git.") => {
                     super::git::call(&$core, &$client.peer, method, $params).await
                 }
+                method if method.starts_with("files.") => files(&$core, method, $params).await,
                 _ => Err(format!("this host does not know {method}").into()),
             }
         }
@@ -55,6 +56,9 @@ macro_rules! calls {
 pub(crate) fn needs(method: &str) -> Needs {
     if method.starts_with("git.") {
         return super::git::needs(method);
+    }
+    if method.starts_with("files.") {
+        return Needs::Full;
     }
     rule(method).map_or(Needs::Local, |(needs, _)| needs)
 }
@@ -303,6 +307,26 @@ calls! { core, client, params;
         not_an_agent(client).await?;
         answer(plugins::sign_in_callback(parse(params)?)?)
     },
+}
+
+/// The file tree's and the editor's methods on this host's disk, each read
+/// answering with at most a piece of a file so other replies keep moving.
+async fn files(core: &Core, method: &str, params: Value) -> CoreResult<Value> {
+    let path = params
+        .get("path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    let method = method.to_owned();
+    let (method, answer) = blocking(move || {
+        let answer = crate::files::run(&method, params, crate::files::PIECE_BYTES)
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        Ok((method, answer))
+    })
+    .await?;
+    if let Some(path) = path.filter(|_| crate::files::saved(&method, &answer)) {
+        core.edits.saved(path);
+    }
+    Ok(answer)
 }
 
 /// Refuses a program an agent started: it could sign the person's plugin in

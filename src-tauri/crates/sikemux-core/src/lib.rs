@@ -12,6 +12,8 @@ mod backoff;
 pub mod cli;
 #[cfg(unix)]
 pub mod client;
+#[cfg(unix)]
+pub mod files;
 pub mod frozen;
 #[cfg(unix)]
 pub mod git;
