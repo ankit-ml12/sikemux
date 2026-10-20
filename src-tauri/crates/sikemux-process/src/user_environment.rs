@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
+use crate::sync::{Locked, Shared};
+
 /// Variables every child process gets on top of this process's own
 /// environment. Launched from the Dock, the app has none of the user's shell
 /// setup, so the app fills this in from their login shell instead of writing
@@ -42,16 +44,12 @@ fn environment() -> Arc<UserEnvironment> {
         return Arc::default();
     };
     let generation = (source.generation)();
-    if let Ok(cached) = ENVIRONMENT.read() {
-        if let Some((built, environment)) = cached.as_ref() {
-            if *built == generation {
-                return environment.clone();
-            }
+    if let Some((built, environment)) = ENVIRONMENT.read_locked().as_ref() {
+        if *built == generation {
+            return environment.clone();
         }
     }
-    let mut cached = ENVIRONMENT
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut cached = ENVIRONMENT.write_locked();
     if let Some((built, environment)) = cached.as_ref() {
         if *built == generation {
             return environment.clone();
@@ -79,9 +77,7 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
 pub fn git_program() -> Option<PathBuf> {
     static FOUND: Mutex<Option<(OsString, PathBuf)>> = Mutex::new(None);
     let path = var_os("PATH").unwrap_or_default();
-    let mut found = FOUND
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut found = FOUND.locked();
     if let Some((searched, git)) = found.as_ref() {
         if *searched == path && git.is_file() {
             return Some(git.clone());
