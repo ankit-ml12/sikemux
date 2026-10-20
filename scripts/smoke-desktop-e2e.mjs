@@ -882,7 +882,20 @@ async function exerciseQuitKeepsTerminals() {
     "the pane's terminal saved in the layout",
     PERSIST_TIMEOUT_MS,
     () => stateMentions(`"ptyId":${shell.id}`),
-  );
+  ).catch(async (error) => {
+    const saved = await Promise.all(
+      [stateDatabase, `${stateDatabase}-wal`].map((path) =>
+        readFile(path, "latin1").catch(() => ""),
+      ),
+    );
+    const terminals = [
+      ...new Set(saved.join("").match(/"ptyId":\d+/g) ?? []),
+    ].join(", ");
+    fail(
+      `${error.message.replace("desktop E2E smoke failed: ", "")}; terminal ${JSON.stringify(shell)}, terminals the saved state names: ${terminals || "none"}`,
+      desktopLog,
+    );
+  });
 
   await quitDesktop();
 
