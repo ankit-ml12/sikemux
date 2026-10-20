@@ -85,6 +85,14 @@ impl Status {
 }
 
 /// The Jira or Linear ticket the person put a card on the board for.
+/// Where a card's ticket lives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Tracker {
+    Jira,
+    Linear,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Ticket {
@@ -94,7 +102,7 @@ pub(crate) struct Ticket {
     /// What the ticket is in its tracker, such as Epic, Story or Bug.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    pub provider: String,
+    pub provider: Tracker,
     /// The status last put on the ticket in its tracker, so each change goes
     /// there once.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -582,10 +590,11 @@ fn ticket_of(value: &Value) -> Result<Option<Ticket>, String> {
     {
         return Err("a ticket's url must be a web address".into());
     }
-    let provider = field("provider", 20)?.unwrap_or_else(|| "jira".to_owned());
-    if !matches!(provider.as_str(), "jira" | "linear") {
-        return Err("a ticket comes from jira or linear".into());
-    }
+    let provider = match value.get("provider") {
+        None | Some(Value::Null) => Tracker::Jira,
+        Some(provider) => Tracker::deserialize(provider)
+            .map_err(|_| "a ticket comes from jira or linear".to_owned())?,
+    };
     Ok(Some(Ticket {
         key,
         url,

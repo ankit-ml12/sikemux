@@ -9,9 +9,9 @@ use serde_json::{json, Value};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
-use super::{change_card, send_notices, By, Changes, Status, Ticket};
+use super::{change_card, send_notices, By, Changes, Status, Ticket, Tracker};
 use crate::server::connection::blocking;
-use crate::server::plugins;
+use crate::server::plugins::{self, Failure};
 use crate::server::wake::sooner;
 use crate::server::Core;
 
@@ -20,18 +20,26 @@ const UPSTREAM_EVERY_MS: u64 = 5 * 60 * 1000;
 /// How long after a failed update the ticket is tried again.
 const RETRY_AFTER_MS: u64 = 5 * 60 * 1000;
 
-/// The tracker a ticket lives in. Only Jira has a plugin; a Linear ticket
-/// waits here for one.
-enum Tracker {
-    Jira { site: Option<String> },
+/// A ticket in Jira, the one tracker with a plugin; a Linear ticket waits
+/// for one.
+struct Jira<'a> {
+    key: &'a str,
+    /// The Jira site, which the ticket's web address names.
+    site: Option<String>,
 }
 
-fn tracker(ticket: &Ticket) -> Option<Tracker> {
-    match ticket.provider.as_str() {
-        "jira" => Some(Tracker::Jira {
+impl<'a> Jira<'a> {
+    fn of(ticket: &'a Ticket) -> Option<Self> {
+        (ticket.provider == Tracker::Jira).then(|| Self {
+            key: &ticket.key,
             site: ticket.url.as_deref().and_then(site_of),
-        }),
-        _ => None,
+        })
+    }
+
+    async fn call(&self, method: &str, mut params: Value) -> Result<Value, Failure> {
+        params["key"] = self.key.into();
+        params["site"] = json!(self.site);
+        plugins::call("sikemux.jira", method, params).await
     }
 }
 
@@ -65,7 +73,7 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
         for (project, board) in &state.boards {
             for card in &board.cards {
                 let Some(ticket) = &card.ticket else { continue };
-                if tracker(ticket).is_none() {
+                if Jira::of(ticket).is_none() {
                     continue;
                 }
                 let kept = state.work_of(project, card.id);
@@ -142,15 +150,10 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
 }
 
 async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Work) {
-    let Some(Tracker::Jira { site }) = tracker(ticket) else {
+    let Some(jira) = Jira::of(ticket) else {
         return;
     };
-    let issue = plugins::call(
-        "sikemux.jira",
-        "issue",
-        json!({ "key": ticket.key, "site": site }),
-    )
-    .await;
+    let issue = jira.call("issue", json!({})).await;
     match work {
         Work::Push {
             to,
@@ -158,7 +161,7 @@ async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Wo
             comment,
         } => {
             let outcome = match issue {
-                Ok(issue) => push(&ticket.key, &site, &issue, to, comment).await,
+                Ok(issue) => push(&jira, &issue, to, comment).await,
                 Err(error) => Err(error.into()),
             };
             settle(core, project, id, &ticket.key, status, outcome);
@@ -175,19 +178,13 @@ async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Wo
 }
 
 async fn push(
-    key: &str,
-    site: &Option<String>,
+    jira: &Jira<'_>,
     issue: &Value,
     category: &str,
     comment: Option<String>,
 ) -> Result<(), String> {
     if issue["statusCategory"].as_str() != Some(category) {
-        let offered = plugins::call(
-            "sikemux.jira",
-            "transition",
-            json!({ "key": key, "site": site }),
-        )
-        .await?;
+        let offered = jira.call("transition", json!({})).await?;
         let Some(id) = into_category(&offered["transitions"], category) else {
             let into = if category == "done" {
                 "a done"
@@ -198,20 +195,10 @@ async fn push(
                 "its workflow has no way into {into} status from where it is now"
             ));
         };
-        plugins::call(
-            "sikemux.jira",
-            "transition",
-            json!({ "key": key, "to": id, "site": site }),
-        )
-        .await?;
+        jira.call("transition", json!({ "to": id })).await?;
     }
     if let Some(body) = comment {
-        plugins::call(
-            "sikemux.jira",
-            "comment",
-            json!({ "key": key, "body": body, "site": site }),
-        )
-        .await?;
+        jira.call("comment", json!({ "body": body })).await?;
     }
     Ok(())
 }
