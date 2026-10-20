@@ -19,6 +19,7 @@ on:
   # A PR that skipped the whole workflow would leave its required checks waiting forever,
   # so PRs always start it and the changes job skips what they don't touch.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
   workflow_call:
 
@@ -42,6 +43,7 @@ jobs:
   # failed keeps running until it passes again.
   changes:
     name: What changed
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -91,6 +93,7 @@ jobs:
 
   frontend:
     name: Frontend quality, build, and tests
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     steps:
       - name: Checkout
