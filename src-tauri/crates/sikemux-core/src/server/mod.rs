@@ -71,7 +71,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, Weak};
 use std::time::{Duration, Instant};
 
-use sikemux_process::sync::Locked;
+use sikemux_process::sync::{Locked, Shared};
 use sikemux_pty::agent_detection::{ManifestRegistry, ManifestReloadReport};
 
 use sikemux_pty::error::PtyError;
@@ -167,10 +167,6 @@ impl std::fmt::Display for CoreError {
 impl CoreError {
     fn pty(error: impl std::fmt::Display) -> Self {
         Self(format!("pty: {error}"))
-    }
-
-    fn poisoned<T>(_: T) -> Self {
-        Self("pty: lock poisoned".into())
     }
 }
 
@@ -440,11 +436,8 @@ impl Core {
         self.clients.locked().values().cloned().collect()
     }
 
-    pub(crate) fn manifest_report(&self) -> CoreResult<ManifestReloadReport> {
-        self.detection
-            .read()
-            .map(|registry| registry.report())
-            .map_err(|_| "agent detection registry lock poisoned".into())
+    pub(crate) fn manifest_report(&self) -> ManifestReloadReport {
+        self.detection.read_locked().report()
     }
 
     /// Rebuilds the detection rules from the bundled ones and the person's
@@ -467,7 +460,7 @@ impl Core {
             None => ManifestRegistry::bundled().map_err(manifests)?,
         };
         let report = replacement.reload().map_err(manifests)?;
-        *self.detection.write().map_err(CoreError::poisoned)? = replacement;
+        *self.detection.write_locked() = replacement;
         // The screens may be unchanged while the rules are not, so every agent
         // is read again on the next poll.
         for session in self.all_sessions() {

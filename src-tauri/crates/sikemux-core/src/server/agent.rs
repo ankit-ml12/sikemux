@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use portable_pty::ExitStatus;
 use serde::{Deserialize, Serialize};
-use sikemux_process::sync::Locked;
+use sikemux_process::sync::{Locked, Shared};
 use sikemux_pty::agent_detection::{
     AgentDetection, AgentDetectionState, AgentKind, DetectionConfidence, DetectionExplain,
     DetectionInput, ManifestRegistry,
@@ -406,7 +406,7 @@ pub(crate) fn asks_now(core: &Core, session: &Session) -> bool {
 fn screen_now(core: &Core, session: &Session) -> Option<AgentDetection> {
     let kind = session.agent.as_ref()?.kind?;
     let (recent, title) = screen_text(session);
-    let registry = core.detection.read().ok()?;
+    let registry = core.detection.read_locked();
     Some(registry.detect(kind, detection_input(&recent, &title)))
 }
 
@@ -442,10 +442,10 @@ pub(crate) fn poll(core: &Core, session: &Session, now: u64) {
     if agent.last_detection_fingerprint.load(Ordering::Acquire) == fingerprint {
         return;
     }
-    let detection = match core.detection.read() {
-        Ok(registry) => registry.detect(kind, detection_input(&recent, &title)),
-        Err(_) => return,
-    };
+    let detection = core
+        .detection
+        .read_locked()
+        .detect(kind, detection_input(&recent, &title));
     if detection.skip_state_update {
         agent
             .last_detection_fingerprint

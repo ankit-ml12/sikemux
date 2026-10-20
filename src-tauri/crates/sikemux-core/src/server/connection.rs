@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use sikemux_process::sync::Locked;
+use sikemux_process::sync::{Locked, Shared};
 use sikemux_pty::validate_pty_dimensions;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
@@ -552,20 +552,15 @@ async fn run_requests(
                 });
             }
             Request::ListManifests => {
-                let result = core.manifest_report();
-                client.respond(
-                    request_id,
-                    result.map(|report| Response::Manifests { report }),
-                );
+                let report = core.manifest_report();
+                client.respond(request_id, Ok(Response::Manifests { report }));
             }
             Request::ExplainAgentDetection { agent_id } => {
                 let result = match core.agent_session(&agent_id) {
                     Some(target) => {
                         let explaining = core.clone();
                         blocking(move || {
-                            let registry = explaining.detection.read().map_err(|_| {
-                                CoreError::from("agent detection registry lock poisoned")
-                            })?;
+                            let registry = explaining.detection.read_locked();
                             agent::explain(&registry, &target)
                         })
                         .await
