@@ -3,12 +3,7 @@ import { browserApi, type BrowserSnapshot } from "../api/browser";
 import { BROWSER_ACTIVE, browserKey, EMPTY_DESK } from "./desks";
 import type { Draft } from "immer";
 import { getState, mutate, type StoreState } from "./store";
-
-/*
- * How long a lost tab report can go unnoticed. Tabs push their own changes, so
- * this is only a net under the subscription.
- */
-const POLL_MS = 15_000;
+import { swallow } from "./toast";
 
 /* A loading page reports itself several times over, so a burst collapses into
    the read already in flight plus one after it. */
@@ -61,14 +56,10 @@ export function useBrowserStrips(): void {
     useEffect(() => {
         const controller = new AbortController();
         const syncAll = () => {
-            for (const agentId of browsingAgentIds()) void refreshBrowserStrip(agentId).catch(() => {});
+            for (const agentId of browsingAgentIds()) void refreshBrowserStrip(agentId).catch(swallow("read a browser strip"));
         };
-        void browserApi.subscribeTabs(syncAll, controller.signal).catch(() => {});
-        const timer = window.setInterval(syncAll, POLL_MS);
+        void browserApi.subscribeTabs(syncAll, controller.signal).catch(swallow("follow browser tabs"));
         syncAll();
-        return () => {
-            controller.abort();
-            window.clearInterval(timer);
-        };
+        return () => controller.abort();
     }, []);
 }
