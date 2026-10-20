@@ -8,6 +8,7 @@ import {
     type DownloadProgress,
     type HostAccount,
     type HostAccountEntry,
+    type HostCapabilities,
     type JobSummary,
     type PendingApproval,
     type RunDetail,
@@ -103,6 +104,29 @@ function entryOf(account: ListedAccount): HostAccountEntry {
         isDefault: account.isDefault,
     };
 }
+
+export const githubCapabilities: HostCapabilities = {
+    ci: {
+        graph: true,
+        attempts: true,
+        approvals: true,
+        dispatch: true,
+        annotations: true,
+        summaries: true,
+        artifacts: true,
+        billing: true,
+        workflowFile: true,
+        rerunFailed: true,
+        rerunJob: true,
+        debugLogs: true,
+        deleteRuns: true,
+        deleteLogs: true,
+    },
+    pulls: { draft: true, mergeMethods: ["squash", "merge", "rebase"], requestChanges: true, reopen: true, mergeability: true },
+    issues: true,
+    releases: true,
+    inbox: true,
+};
 
 /** GitHub as the Git pane reads any code host: the shared calls, and everything Actions has that other hosts' CI does not. */
 export const githubHostApi: CodeHostApi = {
