@@ -25,6 +25,7 @@ registerCodeHost({
             rerunJob: true,
             debugLogs: true,
             deleteRuns: true,
+            deleteLogs: true,
         },
         pulls: { draft: true, mergeMethods: ["squash", "merge", "rebase"], requestChanges: true, reopen: true, mergeability: true },
         issues: true,

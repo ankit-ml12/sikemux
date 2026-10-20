@@ -78,7 +78,7 @@ export function namedArgsHostApi(name: string, ci: HostCapabilities["ci"], host:
         rerun: (repo, runId, failedOnly) => call<void>("rerun", { ...repo, runId, failedOnly }),
         rerunJob: ci.rerunJob ? (repo, jobId) => call<void>("rerunJob", { ...repo, jobId }) : cannot("re-run a single job"),
         cancel: (repo, runId) => call<void>("cancel", { ...repo, runId }),
-        deleteRunLogs: cannot("delete a run's logs alone"),
+        deleteRunLogs: ci.deleteLogs ? (repo, runId) => call<void>("deleteRunLogs", { ...repo, runId }) : cannot("delete a run's logs alone"),
         deleteRun: ci.deleteRuns ? (repo, runId) => call<void>("deleteRun", { ...repo, runId }) : cannot("delete a run"),
         reviewDeployment: cannot("approve a deployment"),
         downloadArtifact: cannot("download artifacts"),

@@ -81,6 +81,7 @@ export const gitlabCapabilities: HostCapabilities = {
         rerunJob: true,
         debugLogs: false,
         deleteRuns: true,
+        deleteLogs: false,
     },
     pulls: { draft: true, mergeMethods: ["merge", "squash"], requestChanges: false, reopen: true, mergeability: true },
     issues: true,

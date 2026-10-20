@@ -81,6 +81,7 @@ export const bitbucketCapabilities: HostCapabilities = {
         rerunJob: false,
         debugLogs: false,
         deleteRuns: false,
+        deleteLogs: false,
     },
     pulls: { draft: true, mergeMethods: ["squash", "merge"], requestChanges: true, reopen: false, mergeability: true },
     issues: true,
