@@ -278,7 +278,7 @@ async fn pair(
     }
     println!(
         "  Join this host from Sikemux on your phone, or link it from your Mac in\n  {}. Each device asks here first.\n",
-        style::bold("Settings → Devices → Computers")
+        style::bold("Settings → Devices → Hosts")
     );
     style::note("Waiting for devices. Press Ctrl-C to stop; `sikemux pair` waits again later.");
     let mut asked = HashSet::new();

@@ -292,9 +292,15 @@ install_host() {
     *) note "Add $(home_path "$bin") to your PATH to run sikemux from any shell." ;;
   esac
 
+  if "$bin/sikemux" status --json 2>/dev/null | grep -q '"account": "'; then
+    say ""
+    say "  This host is signed in. Link it from your Mac in ${BOLD}Settings → Devices → Hosts${RESET}."
+    say ""
+    return 0
+  fi
   say ""
   say "  Next, sign this host in to your Sikemux account, then link it from"
-  say "  your Mac in ${BOLD}Settings → Devices → Computers${RESET}."
+  say "  your Mac in ${BOLD}Settings → Devices → Hosts${RESET}."
   if ! (: </dev/tty) 2>/dev/null; then
     say ""
     note "Sign in with: sikemux login"
