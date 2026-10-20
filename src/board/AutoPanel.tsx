@@ -116,7 +116,9 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                 <Switch checked={settings?.auto ?? false} disabled={busy} onChange={(on) => void save({ auto: on })} label="Auto" />
                 <span>Start agents on cards by itself</span>
             </label>
-            <p className="board-auto-about">Works your open cards on its own branches, then gets each reviewed and lands it.</p>
+            <p className="board-auto-about">
+                Starts agents on your open cards, each on its own branch; another agent reviews the work before it lands.
+            </p>
             {auto?.autoNote && <p className="board-auto-note">{auto.autoNote}</p>}
             <div className="board-facts">
                 <span className="board-fact">
@@ -202,7 +204,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                         </span>
                     )}
                 </div>
-                <span className="board-auto-hint">Checks each change against its card before it merges.</span>
+                <span className="board-auto-hint">The agent that checks each change against its card before it merges.</span>
             </section>
             <section className="board-result">
                 <span className="board-section-name">Check command</span>
@@ -213,7 +215,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                     mono
                     onSave={(check) => void save({ check: check || null })}
                 />
-                <span className="board-auto-hint">Used when the pull request has no CI.</span>
+                <span className="board-auto-hint">Agents run it when the pull request has no CI.</span>
             </section>
             <section className="board-result">
                 <span className="board-section-name">Jira</span>
@@ -237,7 +239,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                         />
                     </span>
                 </div>
-                <span className="board-auto-hint">Tickets move with their cards.</span>
+                <span className="board-auto-hint">Tickets move as agents work their cards.</span>
             </section>
         </aside>
     );
