@@ -44,7 +44,9 @@ on:
       - "src/languages/index.ts"
       - "src/languages/generated/**"
       - "src/lib/fuzzy.ts"
+      - "src/lib/guards.ts"
       - "src/lib/imagePaths.ts"
+      - "src/lib/initials.ts"
       - "src/lib/paths.ts"
       - "src/lib/platform.ts"
       - "src/lib/urls.ts"
@@ -56,7 +58,11 @@ on:
       - "src/terminal/interactions.ts"
       - "src/ui/Icons.tsx"
       - "src/assets/agent-logos/**"
+      - "server/protocol/generated/client.ts"
       - "server/protocol/generated/types.ts"
+      - "server/protocol/src/account.ts"
+      - "server/protocol/src/api.ts"
+      - "server/protocol/src/live.ts"
       - .github/workflows/mobile-update.yml
   workflow_dispatch:
     inputs:
