@@ -17,11 +17,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 /// The oldest version a device may speak and still be served. A change a
 /// device from an older release can still read bumps only `PROTOCOL_VERSION`,
 /// so phones waiting on an app store review keep working.
-pub const OLDEST_PROTOCOL_VERSION: u32 = 9;
+pub const OLDEST_PROTOCOL_VERSION: u32 = 12;
 /// How long a core waits for a sleeping chat it was asked to wake to come
 /// back up, its agent's adapter and CLI with it. A device waits longer, so the
 /// core's reason for giving up reaches it.
