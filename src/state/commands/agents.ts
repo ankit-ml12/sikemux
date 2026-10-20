@@ -22,7 +22,7 @@ import { agentCatalogR } from "../resources.defs";
 import { getState, mutate, type StoreState } from "../store";
 import { notify, reportError, swallow } from "../toast";
 import { agentExecutablePath, profileOf } from "./agentLaunchCommand";
-import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId, projectSessionId } from "../selectors";
+import { activeAgentId, agentForChat, agentIdsOf, agentWindowId, ownerSessionId, projectSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
 import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree } from "../types";
@@ -124,9 +124,10 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         if (!session) return;
         if (session.kind !== "project") return;
         const existing = resumeId
-            ? agentIdsOf(d, session.id)
-                  .map((id) => d.agents[id])
-                  .find((a) => a && a.type === type && a.resumeId === resumeId)
+            ? agentForChat(
+                  agentIdsOf(d, session.id).flatMap((id) => d.agents[id] ?? []),
+                  { agent: type, id: resumeId },
+              )
             : undefined;
         const sess = d.sessions[session.id];
         attached = true;

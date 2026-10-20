@@ -8,7 +8,7 @@ import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { activeAgentId, agentDisplayOf, agentIdsOf } from "../state/selectors";
+import { activeAgentId, agentDisplayOf, agentIdsOf, chatKey, hasChat } from "../state/selectors";
 import { type Agent, type AgentType, type PinnedChat } from "../state/types";
 import { AgentIcon, IconAgent, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -271,10 +271,9 @@ export function TabRailBody() {
     const sessionAgents = agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
         .map((id) => agentsById[id])
         .filter(Boolean) as Agent[];
-    const isPin = (a: Agent, pin: PinnedChat) => a.type === pin.agent && a.resumeId === pin.id;
-    const pins = pinnedChats.filter((pin) => pin.project === session.cwd).map((pin) => ({ pin, agent: sessionAgents.find((a) => isPin(a, pin)) }));
+    const pins = pinnedChats.filter((pin) => pin.project === session.cwd).map((pin) => ({ pin, agent: sessionAgents.find((a) => hasChat(a, pin)) }));
     const opens = inCoreOrder(
-        sessionAgents.filter((a) => !pins.some(({ pin }) => isPin(a, pin))),
+        sessionAgents.filter((a) => !pins.some(({ pin }) => hasChat(a, pin))),
         inbox.agents,
     );
 
@@ -425,7 +424,7 @@ export function TabRailBody() {
                             a ? (
                                 openRow(a)
                             ) : (
-                                <div key={`${pin.agent}:${pin.id}`} className="agent-recent">
+                                <div key={chatKey(pin.agent, pin.id)} className="agent-recent">
                                     <button
                                         className="agent-row recent"
                                         onClick={() =>

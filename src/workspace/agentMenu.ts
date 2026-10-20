@@ -24,6 +24,7 @@ import {
     IconShieldBolt,
     IconTrash,
 } from "../ui/Icons";
+import { hasChat } from "../state/selectors";
 
 /**
  * The menu an agent's tab, its header and its rail row open. `others` are the agents "Close Others" closes.
@@ -38,7 +39,7 @@ export function agentMenu(
 ): CtxItem[] {
     const link = cmd.agentLink(agent, session);
     const resumeId = agent.resumeId;
-    const pinned = !!resumeId && getState().pinnedChats.some((pin) => pin.agent === agent.type && pin.id === resumeId);
+    const pinned = getState().pinnedChats.some((pin) => hasChat(agent, pin));
     const items: CtxItem[] = [
         { label: "Rename…", icon: menuIcon(IconPencil), run: () => void renameAgentNamePrompt(agent) },
         { label: "Edit Title…", icon: menuIcon(IconPencil), run: retitle },

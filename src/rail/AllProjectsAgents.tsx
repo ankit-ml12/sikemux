@@ -6,7 +6,7 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { inTeams, type TeamLink } from "../agents/teams";
 import type { AgentDisplay } from "../state/agentStatus";
-import { activeAgentId, agentDisplayOf, openAgents } from "../state/selectors";
+import { activeAgentId, agentDisplayOf, hasChat, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
 import { IconAgent, IconClose, IconPin } from "../ui/Icons";
@@ -185,7 +185,7 @@ export function OpenAgentRow({
 }
 
 function PinToggle({ agent, chatId, project }: { agent: Agent; chatId: string; project: string }) {
-    const pinned = useStore((s) => s.pinnedChats.some((pin) => pin.agent === agent.type && pin.id === chatId));
+    const pinned = useStore((s) => s.pinnedChats.some((pin) => hasChat(agent, pin)));
     const label = `${pinned ? "Unpin" : "Pin"} ${agent.title}`;
     return (
         <Tooltip label={label}>
