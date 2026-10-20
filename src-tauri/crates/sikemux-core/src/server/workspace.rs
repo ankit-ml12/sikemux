@@ -355,6 +355,10 @@ pub(crate) struct Workspaces {
     data_dir: Option<PathBuf>,
     /// Counts the looks over the agents, so one that took longer never replaces a newer one.
     asked: AtomicU64,
+    /// The newest look whose result is in use.
+    applied: AtomicU64,
+    /// Why each agent the last look missed was missed, so the log says it once.
+    missed: Mutex<BTreeMap<String, String>>,
     /// Tells the core the workspace, or the launchers it offers, changed.
     pub(crate) wake: Wake,
     /// The saved chats may have changed.
@@ -420,6 +424,8 @@ impl Workspaces {
             model_checks: Checks::new(data_dir),
             data_dir: data_dir.map(Path::to_path_buf),
             asked: AtomicU64::new(0),
+            applied: AtomicU64::new(0),
+            missed: Mutex::default(),
             wake: Wake::default(),
             recent_stale: Notify::new(),
         };
@@ -1044,15 +1050,43 @@ impl Workspaces {
             .ok_or_else(|| CoreError::from("that project is not on this host"))
     }
 
+    /// The launcher `id` names. An id with no profile, as a chat saved before
+    /// its agent had accounts asks for, means the account the person chose. One
+    /// the last look did not find is still returned, since starting it looks for
+    /// its program again and says why it failed; one whose profile is gone falls
+    /// back to its agent's own.
     pub(crate) fn launcher(&self, id: &str) -> CoreResult<Launcher> {
-        self.published.locked()
-            .launchers
+        let provider = id.split(':').next().unwrap_or(id);
+        let wanted = {
+            let published = self.published.locked();
+            let chosen = (provider == id)
+                .then(|| published.saved.accounts.as_ref())
+                .flatten()
+                .map(|book| format!("{provider}:{}", book.chosen(provider)));
+            let wanted: Vec<String> = std::iter::once(id.to_owned()).chain(chosen).collect();
+            let found = wanted.iter().find_map(|want| {
+                published
+                    .launchers
+                    .iter()
+                    .find(|launcher| &launcher.id == want)
+                    .cloned()
+            });
+            if let Some(found) = found {
+                return Ok(found);
+            }
+            wanted
+        };
+        let offered = self.offered();
+        wanted
             .iter()
-            .find(|launcher| launcher.id == id)
-            .cloned()
-            .ok_or_else(|| {
-                CoreError::from("that agent is not one Sikemux on this host can start; open Sikemux on the host once so it can say which it can")
+            .find_map(|want| offered.iter().find(|launcher| &launcher.id == want))
+            .or_else(|| {
+                offered
+                    .iter()
+                    .find(|launcher| launcher.agent.provider == provider)
             })
+            .cloned()
+            .ok_or_else(|| CoreError::from(format!("Sikemux has no agent called {provider}")))
     }
 
     pub(crate) fn publish_backdrop(
@@ -1820,10 +1854,16 @@ async fn refresh(core: Arc<Core>, asked: u64) {
         .into_iter()
         .map(|launcher| {
             tokio::spawn(async move {
-                let program = status::find(&launcher.agent).await.ok()?;
+                let program = match status::find(&launcher.agent).await {
+                    Ok(program) => program,
+                    Err(status::AgentStatus::Broken { reason }) => {
+                        return Err((launcher.id, reason))
+                    }
+                    Err(_) => return Err((launcher.id, "not found".to_owned())),
+                };
                 let agent = &launcher.agent;
                 let status = status::cached(&agent.provider, agent.config_path.as_deref());
-                Some(Launcher {
+                Ok(Launcher {
                     status,
                     program: Some(program),
                     ..launcher
@@ -1832,13 +1872,31 @@ async fn refresh(core: Arc<Core>, asked: u64) {
         })
         .collect();
     let mut found = Vec::with_capacity(looking.len());
+    let mut missed = BTreeMap::new();
     for looked in looking {
-        found.extend(looked.await.ok().flatten());
+        match looked.await {
+            Ok(Ok(launcher)) => found.push(launcher),
+            Ok(Err((id, reason))) => {
+                missed.insert(id, reason);
+            }
+            Err(_) => {}
+        }
     }
-    if core.workspaces.asked.load(Ordering::SeqCst) == asked {
-        core.workspaces.set_launchers(found);
-        core.view_changed();
+    // A newer look may finish first; an older one still lands when nothing newer has.
+    if core.workspaces.applied.fetch_max(asked, Ordering::SeqCst) >= asked {
+        return;
     }
+    {
+        let mut logged = core.workspaces.missed.locked();
+        for (id, reason) in &missed {
+            if logged.get(id) != Some(reason) {
+                eprintln!("sikemux core: {id} cannot be started here: {reason}");
+            }
+        }
+        *logged = missed;
+    }
+    core.workspaces.set_launchers(found);
+    core.view_changed();
 }
 
 #[cfg(test)]
@@ -2111,6 +2169,44 @@ mod tests {
         assert!(!workspaces.note_title("agent-2", "Fix the parser", true));
         assert!(!workspaces.note_title("agent-2", "Parser fixes", false));
         assert_eq!(title("agent-2"), "Parser rewrite");
+    }
+
+    // A person on the built-in Claude account only, on 0.5.4-nightly.1 and .2:
+    // their chats ask for plain "claude", the book keeps builtin-claude as a
+    // profile, so only "claude:builtin-claude" was offered and no chat started.
+    #[test]
+    fn a_chat_with_no_profile_starts_on_the_account_the_person_chose() {
+        let builtin = crate::agent_accounts::Profile {
+            id: "builtin-claude".into(),
+            name: "Claude".into(),
+            provider: "claude".into(),
+            accent: "#fff".into(),
+            executable_path: None,
+            config_path: None,
+            environment_keys: Vec::new(),
+        };
+        let workspaces = Workspaces::new(None);
+        workspaces
+            .set_accounts(Book {
+                profiles: vec![builtin],
+                ..Book::default()
+            })
+            .unwrap();
+        assert_eq!(
+            workspaces.launcher("claude").unwrap().id,
+            "claude:builtin-claude"
+        );
+        offer(
+            &workspaces,
+            vec![Launcher {
+                id: "claude:builtin-claude".into(),
+                ..launcher()
+            }],
+        );
+        assert_eq!(
+            workspaces.launcher("claude").unwrap().id,
+            "claude:builtin-claude"
+        );
     }
 
     #[test]
