@@ -539,46 +539,6 @@
     border-color: color-mix(in srgb, var(--danger) 45%, transparent);
     color: var(--danger);
 }
-.tb-run-add {
-    display: grid;
-    gap: var(--space-2);
-    padding: var(--space-1) 9px var(--space-2);
-    font-family: var(--ui);
-}
-.tb-run-add-field {
-    display: grid;
-    gap: var(--space-1);
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
-}
-.tb-run-add-field input {
-    height: 28px;
-    min-width: 0;
-    padding: 0 var(--space-2);
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    color: var(--text-primary);
-    font-family: var(--ui);
-    font-size: var(--text-xs);
-    outline: none;
-}
-.tb-run-add-field input.mono {
-    font-family: var(--mono);
-    font-size: var(--text-2xs);
-}
-.tb-run-add-field input:focus {
-    border-color: var(--border-selected);
-}
-.tb-run-add-foot {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-1h);
-}
-.tb-run-add-hint {
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
-}
 .tb-run-menu .env-dd-item > span {
     min-width: 0;
     overflow: hidden;

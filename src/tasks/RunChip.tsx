@@ -17,7 +17,7 @@ import {
     subscribePendingCheck,
     type PendingCheck,
 } from "./projectTaskActions";
-import { AddTaskForm } from "./AddTaskForm";
+import { AddTaskDialog } from "./AddTaskDialog";
 import { failureFixRequest, findTasksRequest, testFixRequest } from "./agentRequests";
 import { FailureCard, TestResultsCard, type FinishedTestRun } from "./TestResultsCard";
 
@@ -393,20 +393,16 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                             <div className="tb-run-menu-head">
                                 <span>Your own tasks</span>
                             </div>
-                            {adding ? (
-                                <AddTaskForm
-                                    project={project}
-                                    onDone={(id) => {
-                                        setAdding(false);
-                                        if (id) setPicked((current) => ({ ...current, [project]: id }));
-                                    }}
-                                />
-                            ) : (
-                                <button className="env-dd-item" role="menuitem" onClick={() => setAdding(true)}>
-                                    <IconPlus size={12} />
-                                    <span>Add a task…</span>
-                                </button>
-                            )}
+                            <button
+                                className="env-dd-item"
+                                role="menuitem"
+                                onClick={() => {
+                                    setOpen(false);
+                                    setAdding(true);
+                                }}>
+                                <IconPlus size={12} />
+                                <span>Add a task…</span>
+                            </button>
                             <button
                                 className="env-dd-item"
                                 role="menuitem"
@@ -418,6 +414,15 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                     </>
                 )}
             </span>
+            {adding && (
+                <AddTaskDialog
+                    project={project}
+                    onDone={(id) => {
+                        setAdding(false);
+                        if (id) setPicked((current) => ({ ...current, [project]: id }));
+                    }}
+                />
+            )}
             <span className="tb-sep" />
         </>
     );
