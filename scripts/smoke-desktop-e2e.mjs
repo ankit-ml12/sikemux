@@ -100,6 +100,12 @@ const READY_TIMEOUT_MS = 20_000;
 const OPEN_TIMEOUT_MS = 70_000;
 const PERSIST_TIMEOUT_MS = 10_000;
 const MAX_LOG_BYTES = 64 * 1024;
+const startedAt = Date.now();
+
+function report(message) {
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  console.log(`[${seconds}s] ${message}`);
+}
 
 function fail(message, appLog = "") {
   const suffix = appLog.trim() ? `\n\nDesktop output:\n${appLog.trim()}` : "";
@@ -137,7 +143,12 @@ function delay(milliseconds) {
 async function waitFor(description, timeout, predicate) {
   const started = Date.now();
   while (Date.now() - started < timeout) {
-    if (await predicate()) return;
+    if (await predicate()) {
+      const took = Date.now() - started;
+      if (took >= 2_000)
+        report(`${description} took ${(took / 1000).toFixed(1)}s`);
+      return;
+    }
     await delay(100);
   }
   fail(`${description} did not complete within ${timeout} ms`);
@@ -672,7 +683,7 @@ async function driveBrowser(relay, env) {
     server.close();
     server.closeAllConnections();
   }
-  console.log(
+  report(
     "✓ Browser harness E2E passed: navigate, state, click by number across calls, find, click by text, type, screenshot, evaluate, wait on conditions, click by point, reload, Meta+a and replace, element screenshot, desktop viewport, local file",
   );
 }
@@ -849,7 +860,7 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
   );
   if (!resumed.events.some((event) => event.kind === "task.stopped"))
     fail("an event cursor did not survive the relaunch");
-  console.log(
+  report(
     "Harness with the window closed passed: task.read, task.stop, events.wait and inspect answered by the core, cursor kept across relaunch",
   );
 }
@@ -936,7 +947,7 @@ async function exerciseQuitKeepsTerminals() {
   if (!replay.includes("kept-45"))
     fail("the reattached terminal lost its earlier output", desktopLog);
   watcher.close();
-  console.log(
+  report(
     `Quit and relaunch passed: terminal ${shell.id} (pid ${shell.pid}) kept running and its pane took it back with its output`,
   );
   return shell;
@@ -945,6 +956,7 @@ async function exerciseQuitKeepsTerminals() {
 // A stand-in chat agent that speaks just enough ACP, so a chat runs in the
 // core without a provider, an account or the network.
 function buildFakeAgent() {
+  report("building the stand-in chat agent");
   const built = run(
     "cargo",
     [
@@ -961,6 +973,7 @@ function buildFakeAgent() {
   );
   if (built.status !== 0)
     fail(`could not build the stand-in chat agent: ${built.stderr}`);
+  report("built the stand-in chat agent");
   return join(
     process.env.CARGO_TARGET_DIR ?? join(root, "src-tauri", "target"),
     "debug",
@@ -1103,7 +1116,7 @@ async function exerciseChatKeepsGoing(fakeAgent) {
   )
     fail("the answered permission did not reach the chat", desktopLog);
   watcher.close();
-  console.log(
+  report(
     `Chat with the app closed passed: chat ${CHAT_AGENT_ID} finished its turn, held a permission request and came back with its replay`,
   );
   return sessionId;
@@ -1200,7 +1213,7 @@ async function exerciseUpdateKeepsTerminals(shell, chatSession) {
   await waitForBroker(desktop);
   await expectTerminalKept(shell, corePid, "e2e-next", "updated-64");
   await expectChatResumed(chatSession);
-  console.log(
+  report(
     `Update on launch passed: core ${corePid} now runs e2e-next, terminal ${shell.id} (pid ${shell.pid}) kept running with its output and chat ${CHAT_AGENT_ID} resumed on its session`,
   );
 
@@ -1214,7 +1227,7 @@ async function exerciseUpdateKeepsTerminals(shell, chatSession) {
   // The open app finds its core on another build and moves it back to its
   // own sidecar, in the same process again.
   await expectTerminalKept(shell, corePid, "e2e-next", "updated-64");
-  console.log(
+  report(
     `Update while open passed: the app reconnected to core ${corePid}, updated it back to its own build and took terminal ${shell.id} back`,
   );
 }
@@ -1344,7 +1357,7 @@ async function exerciseTerminalAgentResumes() {
       desktopLog,
     ),
   );
-  console.log(
+  report(
     `Terminal agent resume passed: agent terminal ${first.id} was killed and came back as ${second.id} below its old screen`,
   );
 
@@ -1355,7 +1368,7 @@ async function exerciseTerminalAgentResumes() {
   process.kill(second.pid, "SIGKILL");
   const third = await expectTuiAgentResumed(closed, second.id, 3);
   closed.close();
-  console.log(
+  report(
     `Terminal agent resume with the app closed passed: terminal ${second.id} crashed while Sikemux was closed and the core resumed it as ${third.id}`,
   );
 
@@ -1382,7 +1395,7 @@ async function exerciseQuitAndStopEverything(shell) {
     gone?.close();
     return !gone;
   });
-  console.log(
+  report(
     `Quit and Stop Everything passed${stopByMenu ? "" : " (by the core, not the menu)"}: terminal ${shell.id} and the core stopped`,
   );
 }
@@ -1649,7 +1662,7 @@ try {
   if (!(await core.output(shell.id, "core-42", 10_000)))
     fail("the project terminal did not run a command in the core", desktopLog);
   core.close();
-  console.log(
+  report(
     `Terminal core passed: pid ${core.hello.pid}, build ${core.hello.build.commit}, ${terminals.length} terminal(s)`,
   );
 
@@ -1712,7 +1725,7 @@ try {
       if (result.status !== 0) fail(`${method}: ${result.stderr}`, desktopLog);
       return JSON.parse(result.stdout);
     };
-    console.log(
+    report(
       "Waiting for fixture project trust in the isolated Sikemux window...",
     );
     const started = tool("task.start", {
@@ -1790,7 +1803,7 @@ try {
         .executionId !== started.executionId
     )
       fail("retry after stop spawned a new process");
-    console.log(
+    report(
       "Harness task E2E passed: trust, launch, deduplication, output cursor, terminal reveal, stop, retained output, exit code",
     );
   }
@@ -1808,7 +1821,7 @@ try {
   await exerciseTerminalAgentResumes();
   await exerciseQuitAndStopEverything(keptShell);
 
-  console.log(
+  report(
     "✓ Desktop E2E smoke passed: process → core endpoint → Tauri event/commands → WebView editor → SQLite → quit and relaunch → update in place",
   );
 } finally {
