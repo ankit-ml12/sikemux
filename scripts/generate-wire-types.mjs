@@ -97,7 +97,7 @@ const SWIFT_FIELDS = {
   InboxItem:
     "id tier kind agentId name cli project title what detail at session card requestId questionId url",
   InboxCard: "title",
-  PublishedBuddies: "pack shape motion agents boxes",
+  PublishedBuddies: "on pack shape motion agents boxes",
   BuddyLook: "pack shape color",
   RemoteStatus: "pending",
   PendingDevice: "id name platform expiresAt",

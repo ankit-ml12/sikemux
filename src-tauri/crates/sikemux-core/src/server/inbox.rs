@@ -165,7 +165,7 @@ pub(crate) struct View {
     pub remote_agents: Vec<RemoteAgent>,
     /// Every open agent here as devices show it, in the order they list them.
     pub agents: Vec<Shown>,
-    /// The characters the app draws for its agents, while buddies are on.
+    /// The characters the app draws for its agents.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buddies: Option<super::workspace::Buddies>,
 }

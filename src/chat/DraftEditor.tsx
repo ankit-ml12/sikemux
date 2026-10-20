@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type Ref } from "react";
 import { createPortal } from "react-dom";
-import { AgentBuddy } from "../buddies/Buddy";
+import { AgentFace } from "../buddies/Buddy";
 import type { Agent } from "../state/types";
 import { FileIcon } from "../ui/FileIcon";
 import { tagStarts } from "./composerInput";
@@ -14,7 +14,7 @@ export interface DraftChip {
     /** What follows the name on the chip: an issue's title, or a file's name. */
     label?: string;
     /** The agent a chip names, for its buddy or harness mark. */
-    agent?: Pick<Agent, "id" | "type" | "buddy">;
+    agent?: Pick<Agent, "id" | "type" | "buddy" | "name">;
 }
 
 /** The editor as the composer drives it: the draft as a string, and offsets into that string. */
@@ -170,9 +170,13 @@ function ChipBody({ chip }: { chip: DraftChip }) {
             <span className="chat-chip-mark" data-kind={chip.kind}>
                 {chip.kind === "agent" ? (
                     chip.agent && (
-                        <span className="agent-glyph buddy-mark">
-                            <AgentBuddy agent={chip.agent} size={12} />
-                        </span>
+                        <AgentFace
+                            agent={chip.agent}
+                            size={12}
+                            logoSize={12}
+                            logoClass={`agent-glyph ${chip.agent.type}`}
+                            buddyClass="agent-glyph buddy-mark"
+                        />
                     )
                 ) : chip.kind === "file" ? (
                     <FileIcon name={chip.label ?? chip.text} size={12} />

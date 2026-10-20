@@ -39,7 +39,7 @@ mod migrate;
 
 /// Bumped by a change to what [`Saved`] holds that an earlier file needs
 /// carried over to.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const MAX_PROJECTS: usize = 512;
 const MAX_SPACES: usize = 64;
 const MAX_PINNED: usize = 256;
@@ -57,6 +57,11 @@ const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 const MAX_COLOUR_CHARS: usize = 64;
 const MAX_BUDDY_AGENTS: usize = 4096;
 const MAX_BUDDY_BOXES: usize = 512;
+/// Every buddy pack has at least this many colours, so an agent's colour
+/// number means the same slot whichever pack the person picks.
+const BUDDY_COLOURS: usize = 8;
+/// Colour numbers clients read as a buddy's own.
+const MAX_BUDDY_COLOUR: u64 = 63;
 /// How many of the newest saved chats devices can take up again.
 const RECENT_LIMIT: usize = 30;
 /// Saved chats change with every turn, so many ending at once look once.
@@ -148,11 +153,13 @@ struct Published {
     buddies: Option<Buddies>,
 }
 
-/// The characters the app draws for its agents while buddies are on, so the
-/// notch and phones draw the same ones.
+/// The characters the app draws for its agents, so the notch and phones draw
+/// the same ones.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Buddies {
+    /// Whether the person turned buddies on; a named agent wears its own either way.
+    on: bool,
     pack: String,
     shape: String,
     motion: bool,
@@ -245,6 +252,38 @@ fn patched<T: Serialize + for<'de> Deserialize<'de>>(
     }
     serde_json::from_value(whole)
         .map_err(|error| CoreError::from(format!("the change does not fit: {error}")))
+}
+
+fn buddy_colour(agent: &WorkspaceAgent) -> Option<usize> {
+    let colour = agent.buddy.as_ref()?.get("color")?.as_u64()?;
+    (colour <= MAX_BUDDY_COLOUR).then_some(colour as usize)
+}
+
+/// Gives an agent without a buddy colour the one its neighbours in the same
+/// folder wear least, then the one fewest agents wear, so agents side by side
+/// rarely match on any client.
+fn dress(agent: &mut WorkspaceAgent, others: &[Kept]) {
+    if buddy_colour(agent).is_some() {
+        return;
+    }
+    let mut scores = [0u32; BUDDY_COLOURS];
+    for other in others.iter().map(|kept| &kept.agent) {
+        let Some(score) = buddy_colour(other).and_then(|colour| scores.get_mut(colour)) else {
+            continue;
+        };
+        if other.id != agent.id {
+            *score += if other.cwd == agent.cwd { 1000 } else { 1 };
+        }
+    }
+    let least = (0..BUDDY_COLOURS)
+        .min_by_key(|&slot| scores[slot])
+        .unwrap_or(0);
+    let mut buddy = match agent.buddy.take() {
+        Some(Value::Object(buddy)) => buddy,
+        _ => Map::new(),
+    };
+    buddy.insert("color".into(), least.into());
+    agent.buddy = Some(Value::Object(buddy));
 }
 
 fn check_agent(agent: &WorkspaceAgent, saved: &Saved) -> CoreResult<()> {
@@ -358,10 +397,13 @@ impl Workspaces {
             .unwrap_or(Value::Null);
         let mut saved: Saved = serde_json::from_value(read.clone()).unwrap_or_default();
         let upgraded = saved.version < VERSION;
-        if upgraded {
+        if saved.version < 1 {
             migrate::carry_over(&mut saved, &read, data_dir);
-            saved.version = VERSION;
         }
+        if saved.version < 2 {
+            migrate::dress_agents(&mut saved);
+        }
+        saved.version = VERSION;
         let workspaces = Self {
             published: Mutex::new(Published {
                 saved,
@@ -593,9 +635,15 @@ impl Workspaces {
         if !draft.contains_key("createdAt") {
             draft.insert("createdAt".into(), now_ms().into());
         }
-        let agent: WorkspaceAgent = serde_json::from_value(Value::Object(draft))
+        let mut agent: WorkspaceAgent = serde_json::from_value(Value::Object(draft))
             .map_err(|error| CoreError::from(format!("that is not an agent: {error}")))?;
         let put = self.change(|saved| {
+            if agent.buddy.is_none() {
+                agent.buddy = saved
+                    .kept(&agent.id)
+                    .and_then(|kept| kept.agent.buddy.clone());
+            }
+            dress(&mut agent, &saved.agents);
             check_agent(&agent, saved)?;
             let count = saved.agents.len();
             match saved.kept_mut(&agent.id) {
@@ -623,7 +671,8 @@ impl Workspaces {
             let current = saved
                 .kept(agent_id)
                 .ok_or_else(|| CoreError::from("that agent is not on this host"))?;
-            let agent = patched(&current.agent, patch, &["id", "createdAt"])?;
+            let mut agent = patched(&current.agent, patch, &["id", "createdAt"])?;
+            dress(&mut agent, &saved.agents);
             check_agent(&agent, saved)?;
             if let Some(kept) = saved.kept_mut(agent_id) {
                 kept.agent = agent.clone();

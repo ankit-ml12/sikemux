@@ -339,7 +339,7 @@ export function ChatComposer({
         ),
         ...contexts.flatMap(({ tag, earlier }) =>
             tag && earlier?.named
-                ? [{ text: tag, kind: "agent" as const, agent: { id: earlier.named.agentId, type: earlier.chat.agent, buddy: earlier.named.buddy } }]
+                ? [{ text: tag, kind: "agent" as const, agent: { id: earlier.named.agentId, type: earlier.chat.agent, buddy: earlier.named.buddy, name: earlier.named.name } }]
                 : [],
         ),
         ...fileTags.map((file) => ({ text: file.tag, kind: "file" as const, label: basename(file.path) })),

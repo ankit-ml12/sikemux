@@ -22,7 +22,7 @@ export const remoteApi = {
     allowDevices: (devices: readonly AllowedDevice[]) => invoke<RemoteStatus>("remote_allow_devices", { devices }),
     publishOnScreen: (agentIds: readonly string[], focused: boolean) => invoke<void>("remote_publish_on_screen", { agentIds, focused }),
     publishPalette: (palette: Readonly<Record<string, string>>) => invoke<void>("remote_publish_palette", { palette }),
-    publishBuddies: (buddies: PublishedBuddies | null) => invoke<void>("remote_publish_buddies", { buddies }),
+    publishBuddies: (buddies: PublishedBuddies) => invoke<void>("remote_publish_buddies", { buddies }),
     publishBackdrop: (texture: boolean, image: { readonly id: string; readonly dataUrl: string } | null) =>
         invoke<void>("remote_publish_backdrop", { texture, image }),
     subscribe: (listener: (status: RemoteStatus) => void, signal: AbortSignal) =>

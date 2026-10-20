@@ -23,7 +23,7 @@ pub struct PublishedBackdrop(Mutex<Option<(bool, Option<BackdropImage>)>>);
 #[derive(Default)]
 pub struct PublishedPalette(Mutex<BTreeMap<String, String>>);
 
-/// The buddies the app last published, or none while they are off, sent again like the backdrop.
+/// The buddies the app last published, sent again like the backdrop.
 #[derive(Default)]
 pub struct PublishedBuddies(Mutex<Value>);
 

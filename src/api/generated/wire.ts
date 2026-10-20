@@ -347,7 +347,7 @@ export interface Inbox {
     remoteAgents: RemoteAgent[];
     /** Every open agent here as devices show it, in the order they list them. */
     agents: AgentShown[];
-    /** The characters the app draws for its agents, while buddies are on. */
+    /** The characters the app draws for its agents. */
     buddies?: PublishedBuddies;
 }
 
@@ -447,10 +447,12 @@ export interface AgentShown {
 }
 
 /**
- * The characters the app draws for its agents while buddies are on, so the
- * notch and phones draw the same ones.
+ * The characters the app draws for its agents, so the notch and phones draw
+ * the same ones.
  */
 export interface PublishedBuddies {
+    /** Whether the person turned buddies on; a named agent wears its own either way. */
+    on: boolean;
     pack: string;
     shape: string;
     motion: boolean;

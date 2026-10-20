@@ -413,7 +413,7 @@ export function Message({
             <View key={index}>
               <View style={styles.letterFrom}>
                 <View style={styles.letterRule} />
-                <AgentFace agentId={letter.agentId} provider={letter.cli} size={13} />
+                <AgentFace agentId={letter.agentId} provider={letter.cli} named={!!letter.name} size={13} />
                 <Text style={styles.letterLabel}>
                   Message from <Text style={styles.letterName}>{letter.name}</Text>
                 </Text>

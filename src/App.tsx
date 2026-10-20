@@ -29,7 +29,6 @@ import { ThemePalette } from "./palettes/ThemePalette";
 import { AccountDialogHost } from "./agents/AccountDialog";
 import { DialogHost } from "./shell/DialogHost";
 import { ShareHost } from "./share/ShareControls";
-import { BuddyBridge } from "./buddies/Buddy";
 import { BuddyPickerHost } from "./buddies/BuddyPicker";
 import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
@@ -929,7 +928,6 @@ export default function App() {
             <NotchBridge />
             <RemoteChatBridge />
             <AgentNameBridge />
-            <BuddyBridge />
             <AgentQuestionBridge />
             <AgentBoardBridge />
             <GlobalSkillsBridge />

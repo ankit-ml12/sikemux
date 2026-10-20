@@ -56,7 +56,7 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
         <View style={styles.faces}>
           {chats.slice(0, 3).map((chat, index) => (
             <View key={chat.agentId} style={[styles.face, index > 0 && { marginLeft: -4 }]}>
-              <AgentFace agentId={chat.agentId} provider={chat.provider} group={chat.group} size={16} />
+              <AgentFace agentId={chat.agentId} provider={chat.provider} named={!!chat.name} group={chat.group} size={16} />
             </View>
           ))}
         </View>
@@ -266,7 +266,7 @@ const ChatRow = memo(function ChatRow({ core, chat, shown, place }: { core: stri
   const display = agentDisplay(shown);
   return (
     <Row
-      mark={<AgentFace agentId={chat.agentId} provider={chat.provider} group={display.group} size={20} />}
+      mark={<AgentFace agentId={chat.agentId} provider={chat.provider} named={!!chat.name} group={display.group} size={20} />}
       name={chat.name}
       title={shown.title}
       place={place}
@@ -297,7 +297,7 @@ const TerminalAgentRow = memo(function TerminalAgentRow({
   const { group } = agentDisplay(shown);
   return (
     <Row
-      mark={<AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} group={group} size={20} />}
+      mark={<AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} named={!!session.agentName} group={group} size={20} />}
       name={session.agentName}
       title={shown.title}
       place={place}
