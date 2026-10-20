@@ -604,10 +604,11 @@ function endTurn(state: ChatState, stopReason: string | null, at = Date.now()): 
     };
 }
 
-function sessionUpdate(state: ChatState, sessionId: string, update: Record<string, unknown>): ChatState {
+function sessionUpdate(state: ChatState, sessionId: string, update: Record<string, unknown>, main = false): ChatState {
     if (update.sessionUpdate === "subagent_state_update") return setSubagentState(state, update);
     if (update.sessionUpdate === "subagent_usage") return setSubagentUsage(state, update);
-    const inSubagent = patchSubagent(state, sessionId, (subagent) => {
+    // No subagent shares the chat's own session, so its updates need no search through the subagents.
+    const inSubagent = main ? null : patchSubagent(state, sessionId, (subagent) => {
         const next =
             update.sessionUpdate === "subagent_spawned"
                 ? withSubagent(subagent, update, state.messages)
@@ -839,6 +840,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 state.awaitingReplay ? { ...state, messages: [], nextId: 1, plan: null, awaitingReplay: false } : state,
                 action.sessionId,
                 action.update,
+                action.main,
             );
         case "turn_started":
             return {

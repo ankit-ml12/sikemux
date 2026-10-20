@@ -222,7 +222,7 @@ export type ChatAction =
     | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[]; messageId?: string; at?: number }
     | { type: "rewind"; messageId: string }
     | { type: "earlier"; messages: ChatMessage[] }
-    | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
+    | { type: "session_update"; sessionId: string; update: Record<string, unknown>; main?: boolean }
     | { type: "turn_started"; at?: number }
     | { type: "turn_completed"; stopReason?: string; at?: number }
     | { type: "permission_requested"; request: AcpPermissionRequest }
