@@ -112,6 +112,8 @@ pub(crate) struct HostEntry {
 
 pub(crate) struct Host {
     saved: Saved,
+    /// What this host is linked under now, which the person may change.
+    name: Mutex<String>,
     key: PublicKey,
     pub(crate) streams: Arc<StreamTable>,
     client: watch::Sender<Option<Arc<CoreClient>>>,
@@ -126,14 +128,35 @@ impl Host {
         &self.saved.id
     }
 
+    /// Takes the name the host is linked under, answering whether it changed.
+    fn renamed(&self, name: &str) -> bool {
+        let mut current = self.name.locked();
+        let changed = *current != name;
+        if changed {
+            name.clone_into(&mut current);
+        }
+        changed
+    }
+
     pub(crate) fn page_id(&self, id: SessionId) -> SessionId {
         page_id(self.saved.slot, id)
+    }
+
+    fn name(&self) -> String {
+        self.name.locked().clone()
+    }
+
+    fn saved(&self) -> Saved {
+        Saved {
+            name: self.name(),
+            ..self.saved.clone()
+        }
     }
 
     fn entry(&self) -> HostEntry {
         HostEntry {
             id: self.saved.id.clone(),
-            name: self.saved.name.clone(),
+            name: self.name(),
             platform: self.saved.platform.clone(),
             reach: *self.reach.locked(),
         }
@@ -167,7 +190,7 @@ impl Host {
         reached
             .ok()
             .flatten()
-            .ok_or_else(|| AppError::Pty(format!("{} is out of reach right now", self.saved.name)))
+            .ok_or_else(|| AppError::Pty(format!("{} is out of reach right now", self.name())))
     }
 
     /// Keeps the host's view, with its sessions under the page's ids, and
@@ -281,6 +304,7 @@ impl Hosts {
     fn add(&self, saved: Saved) -> Option<Arc<Host>> {
         let key = saved.id.parse().ok()?;
         let host = Arc::new(Host {
+            name: Mutex::new(saved.name.clone()),
             saved,
             key,
             streams: Arc::default(),
@@ -305,7 +329,7 @@ impl Hosts {
                 .hosts
                 .locked()
                 .iter()
-                .map(|host| host.saved.clone())
+                .map(|host| host.saved())
                 .collect(),
             slots: self.slots.locked().clone(),
         };
@@ -416,7 +440,7 @@ async fn stay_connected(app: AppHandle, host: Arc<Host>) {
                 return;
             }
             Err(error) => {
-                eprintln!("Sikemux could not reach {}: {error}", host.saved.name);
+                eprintln!("Sikemux could not reach {}: {error}", host.name());
                 tokio::time::sleep(wait).await;
                 wait = (wait * 2).min(RETRY_MOST);
             }
@@ -482,7 +506,10 @@ impl Hosts {
         }
         let mut joined = !gone.is_empty();
         for link in links {
-            if self.by_id(&link.id).is_ok() {
+            if let Ok(known) = self.by_id(&link.id) {
+                if known.renamed(&link.name) {
+                    joined = true;
+                }
                 continue;
             }
             match self.join(&core, link).await {

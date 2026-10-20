@@ -49,6 +49,7 @@ import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 import { HostLabel } from "./RemoteRows";
+import { HostRows } from "./HostsGroup";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
 const LINE_ICON_SIZE = 13;
@@ -593,7 +594,7 @@ export const SideRail = memo(function SideRail() {
     const projects = shownProjects(allProjects, projectSpaces, activeSpaceId);
     const activeSpace = spaces.find((space) => space.id === activeSpaceId);
     const sshs = inGroup("ssh");
-    const commands = inGroup("command");
+    const commands = inGroup("command").filter((session) => !session.host);
     const plugins = inGroup("plugins");
     const enabledPlugins = useInstalledPlugins();
     // Every enabled plugin always has a row; its session is only made on the first click.
@@ -817,14 +818,15 @@ export const SideRail = memo(function SideRail() {
                         toolbar={allProjects.length > 0 && <SpaceSwitch spaces={spaces} activeSpaceId={activeSpaceId} />}
                     />
                     <Group
-                        label="SSH"
+                        label="Hosts"
                         list={sshs}
+                        rows={<HostRows sshSessions={sshs} onMenu={openMenu} />}
                         add={() => cmd.openPicker("ssh")}
-                        addTitle={`Connect to SSH host — ${kb("ssh.open")}`}
+                        addTitle={`Find a host — ${kb("ssh.open")}`}
                         addKbd={kb("ssh.open")}
                         action={() => void cmd.openSshConfigEditor()}
                         actionTitle="Edit ~/.ssh/config"
-                        emptyText="no SSH hosts"
+                        emptyText="no hosts"
                     />
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />

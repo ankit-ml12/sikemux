@@ -22,6 +22,20 @@
 .agent-glyph.term {
     color: var(--live);
 }
+.sess-icon.host-sikemux {
+    color: color-mix(in oklab, var(--acc) 80%, var(--ink-dim));
+}
+.sess-icon.host-ssh {
+    color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
+}
+/* What a host is doing, before its dot: its agents, or that it is asleep. */
+.host-row-detail {
+    flex: none;
+    margin-left: auto;
+    padding-inline: var(--space-2) var(--space-1);
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
 .sess-icon.ssh {
     color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
 }
@@ -91,6 +105,12 @@
     font-size: var(--text-2xs);
     font-weight: var(--weight-normal);
     white-space: nowrap;
+}
+/* Which host the new rows start on, above them, only when it is not this one. */
+.agent-actions-host {
+    padding: var(--space-1) var(--space-2) var(--space-0);
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
 }
 /* A rail row's name sits with its counts and state at the row's end, centred on the same line as them. */
 .agent-row-name {

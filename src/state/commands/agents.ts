@@ -23,7 +23,7 @@ import { selectSession } from "./sessions";
 import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
-import { remoteCopiesOf, startRemoteChat } from "../../hosts/hosts";
+import { copyOn, focusedHost, startRemoteChat } from "../../hosts/hosts";
 
 /** Providers list a session under at most this many characters. */
 const SESSION_TITLE_MAX = 72;
@@ -110,11 +110,12 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
     if ((options.model?.trim().length ?? 0) > MAX_AGENT_MODEL_LENGTH) return false;
     if (resumeId && !isResumeId(type, resumeId)) return false;
     const detected = options.detectedExecutablePath ?? detectedExecutablePath(getState(), type);
-    const remote = getState().sessions[options.sessionId ?? getState().activeSessionId];
-    if (remote?.host) {
-        const [copy] = remoteCopiesOf(getState(), remote);
+    const target = getState().sessions[options.sessionId ?? getState().activeSessionId];
+    const host = target?.id === getState().activeSessionId ? focusedHost(getState()) : target?.host;
+    if (target && host) {
+        const copy = copyOn(getState(), target, host);
         if (!copy) return false;
-        void startRemoteChat(remote.id, copy, type).catch(swallow(`start a chat on ${copy.host.name}`));
+        void startRemoteChat(target.id, copy, type).catch(swallow(`start a chat on ${copy.host.name}`));
         return true;
     }
     let attached = false;

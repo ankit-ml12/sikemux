@@ -36,7 +36,7 @@ import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
-import { remoteChatRows, RemoteNewRows, useRemoteCopies } from "./RemoteRows";
+import { NewOnHost, remoteChatRows, useRemoteCopies } from "./RemoteRows";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -365,6 +365,7 @@ export function TabRailBody() {
             )}
             <div className="tab-rail-top">
                 <div className="agent-actions">
+                    <NewOnHost />
                     {selectedType && (
                         <NewRow
                             icon={<IconPlus size={15} />}
@@ -382,7 +383,6 @@ export function TabRailBody() {
                     )}
                     <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
-                    <RemoteNewRows session={session} copies={copies} type={selectedType} />
                 </div>
                 <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>

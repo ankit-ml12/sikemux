@@ -1,22 +1,11 @@
-import { Fragment, useMemo } from "react";
+import { useMemo } from "react";
 import { agentHandle } from "../agents/AgentLabel";
 import { agentLabel, isAgentType } from "../agents/catalog";
 import type { ChatInfo, SessionInfo } from "../api/generated/wire";
-import {
-    chatsIn,
-    hostName,
-    newRemoteTerminal,
-    openRemoteChat,
-    openRemoteTerminal,
-    remoteCopiesOf,
-    startRemoteChat,
-    terminalsIn,
-    type RemoteCopy,
-} from "../hosts/hosts";
+import { chatsIn, focusedHost, hostName, openRemoteChat, openRemoteTerminal, remoteCopiesOf, terminalsIn, type RemoteCopy } from "../hosts/hosts";
 import { useStore } from "../state/store";
-import { swallow } from "../state/toast";
-import type { AgentType, Session } from "../state/types";
-import { AgentIcon, IconAgent, IconPlus, IconTerminal } from "../ui/Icons";
+import type { Session } from "../state/types";
+import { AgentIcon, IconAgent, IconTerminal } from "../ui/Icons";
 
 /** The quiet note on a chat or terminal that runs on another host. */
 export function HostLabel({ host }: { host: string | undefined }) {
@@ -35,32 +24,10 @@ export function useRemoteCopies(session: Session | undefined): RemoteCopy[] {
     );
 }
 
-/** New chats and terminals in the project's copies elsewhere, until a new chat picks its host. */
-export function RemoteNewRows({ session, copies, type }: { session: Session; copies: readonly RemoteCopy[]; type: AgentType | null }) {
-    if (session.host) return null;
-    return copies.map((copy) => (
-        <Fragment key={`${copy.host.id}:${copy.project.id}`}>
-            {type && (
-                <button
-                    type="button"
-                    className="agent-row agent-new"
-                    onClick={() => void startRemoteChat(session.id, copy, type).catch(swallow(`start a chat on ${copy.host.name}`))}>
-                    <span className="agent-glyph">
-                        <IconPlus size={15} />
-                    </span>
-                    <span className="agent-title">New chat</span>
-                    <span className="agent-row-host">on {copy.host.name}</span>
-                </button>
-            )}
-            <button type="button" className="agent-row agent-new" onClick={() => newRemoteTerminal(session.id, copy.host.id, copy.project.path)}>
-                <span className="agent-glyph term">
-                    <IconTerminal size={15} />
-                </span>
-                <span className="agent-title">New terminal</span>
-                <span className="agent-row-host">on {copy.host.name}</span>
-            </button>
-        </Fragment>
-    ));
+/** Which host the new chat and terminal rows start on, said only when it is not this one. */
+export function NewOnHost() {
+    const name = useStore((s) => hostName(s, focusedHost(s)));
+    return name ? <div className="agent-actions-host">on {name}</div> : null;
 }
 
 /** A chat running in a copy elsewhere that this app does not show yet. */

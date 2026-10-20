@@ -17,7 +17,7 @@ import { type CtxItem, FileTree, TreeContextMenu } from "./FileTree";
 import { RailEmpty } from "./RailEmpty";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
-import { HostLabel, remoteTerminalRows, RemoteNewRows, useRemoteCopies } from "./RemoteRows";
+import { HostLabel, NewOnHost, remoteTerminalRows, useRemoteCopies } from "./RemoteRows";
 import { ScopeTabs } from "./ScopeTabs";
 
 const EMPTY_IDS: readonly string[] = [];
@@ -160,8 +160,8 @@ export function TerminalsPage() {
                 <>
                     <div className="tab-rail-top">
                         <div className="agent-actions">
+                            <NewOnHost />
                             <NewRow icon={<IconPlus size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
-                            <RemoteNewRows session={session} copies={copies} type={null} />
                         </div>
                         <ScopeTabs scope={scope} projectName={session.name} onChange={cmd.setTabRailScope} />
                     </div>

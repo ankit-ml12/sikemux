@@ -1835,6 +1835,31 @@ pub(crate) struct DeviceChange {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct LinkName {
+    id: String,
+    name: String,
+}
+
+/// Calls a linked host by another name here, which its agents are addressed by.
+pub(crate) fn rename_link(core: &Core, rename: LinkName) -> CoreResult<Pairing> {
+    let name = super::join::clean(&rename.name, super::join::NAME_LIMIT);
+    if name.is_empty() {
+        return Err("a host needs a name".into());
+    }
+    core.remote.change(|stored| {
+        let link = stored
+            .links
+            .iter_mut()
+            .find(|link| link.id == rename.id)
+            .ok_or_else(|| CoreError::from("that host is not linked with this one"))?;
+        link.name = name;
+        Ok(())
+    })?;
+    announce(core);
+    Ok(pairing(core))
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApprovalSetting {
     require_approval: bool,

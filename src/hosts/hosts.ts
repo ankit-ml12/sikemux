@@ -6,6 +6,7 @@ import { agentLabel, isAgentType } from "../agents/catalog";
 import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
 import { agentWindowId } from "../state/selectors";
+import { collectPanes } from "../state/layout";
 import { getState, mutate, setState, useStore, type StoreState } from "../state/store";
 import { notify, reportError, swallow } from "../state/toast";
 import { accountApi } from "../api/account";
@@ -70,6 +71,44 @@ export function terminalsIn(copy: RemoteCopy): SessionInfo[] {
     return copy.view.sessions.filter(
         (session) => session.kind === "terminal" && session.running && !session.agentId && inFolder(session.project, copy.project.path),
     );
+}
+
+/**
+ * The host the person works on now: where the focused chat or terminal runs, else the host the session belongs to.
+ * None is this one. New chats and terminals start there.
+ */
+export function focusedHost(state: Pick<StoreState, "sessions" | "activeSessionId" | "windows" | "agents">): string | undefined {
+    const session = state.sessions[state.activeSessionId];
+    if (!session) return undefined;
+    const window = state.windows[session.activeWindowId];
+    const pane = window && collectPanes(window.root).find((candidate) => candidate.id === window.activePaneId);
+    return pane?.host ?? (pane && state.agents[pane.id]?.host) ?? session.host;
+}
+
+/** Where a new chat or terminal on `host` starts in `session`: its copy of the project there, if it has one. */
+export function copyOn(state: Pick<StoreState, "hosts" | "hostViews" | "projectIdentities">, session: Session, host: string): RemoteCopy | undefined {
+    return remoteCopiesOf(state, session).find((copy) => copy.host.id === host);
+}
+
+/** Opens a terminal on another host from its row under Hosts, in the session that row keeps for it. */
+export function openHostTerminal(host: string, name: string): void {
+    mutate((d) => {
+        const existing = d.sessionOrder.map((id) => d.sessions[id]).find((session) => session?.kind === "command" && session.host === host);
+        const window = remoteTerminalWindow(host, "");
+        d.windows[window.id] = window;
+        if (existing) {
+            d.windowsBySession[existing.id] = [...(d.windowsBySession[existing.id] ?? []), window.id];
+            existing.activeWindowId = window.id;
+            d.activeSessionId = existing.id;
+        } else {
+            const id = `${REMOTE_SESSION_PREFIX}${host}`;
+            d.sessions[id] = { id, name, kind: "command", cwd: "", pinned: false, activeWindowId: window.id, host };
+            d.sessionOrder.push(id);
+            d.windowsBySession[id] = [window.id];
+            d.activeSessionId = id;
+        }
+        d.zoomedPaneId = null;
+    });
 }
 
 export function hostName(state: Pick<StoreState, "hosts">, id: string | undefined): string | undefined {

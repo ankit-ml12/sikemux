@@ -1,0 +1,214 @@
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { accountApi } from "../api/account";
+import { coreCall } from "../api/core";
+import { sshApi } from "../api/ssh";
+import { copyOn, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
+import * as cmd from "../state/commands";
+import { confirmDialog, promptDialog } from "../state/dialog";
+import { getState, useStore, type StoreState } from "../state/store";
+import { reportError, swallow } from "../state/toast";
+import type { Session } from "../state/types";
+import { useSshTone } from "../terminal/sshLinks";
+import { IconFolder, IconLaptop, IconMore, IconPencil, IconPlus, IconServer, IconTerminal, IconTrash } from "../ui/Icons";
+import { StatusDot } from "../ui/StatusDot";
+import type { CtxItem } from "./FileTree";
+
+type OpenMenu = (event: MouseEvent, items: CtxItem[]) => void;
+
+/** The SSH hosts in ~/.ssh/config, read again whenever the app comes back to the front. */
+function useSshAliases(): readonly string[] {
+    const [aliases, setAliases] = useState<readonly string[]>([]);
+    useEffect(() => {
+        let current = true;
+        const read = () =>
+            void sshApi
+                .hosts()
+                .then((hosts) => current && setAliases(hosts.map((host) => host.alias)))
+                .catch(swallow("read ~/.ssh/config"));
+        read();
+        window.addEventListener("focus", read);
+        return () => {
+            current = false;
+            window.removeEventListener("focus", read);
+        };
+    }, []);
+    return aliases;
+}
+
+/** How many agents work on a host the app reaches, from what it last showed. */
+function remoteAgents(state: Pick<StoreState, "hostViews">, host: string): number {
+    const view = state.hostViews[host];
+    if (!view) return 0;
+    return view.chats.length + view.sessions.filter((session) => session.running && session.agentId).length;
+}
+
+function agentsLabel(count: number): string | null {
+    return count === 0 ? null : `${count} ${count === 1 ? "agent" : "agents"}`;
+}
+
+/** The project sessions holding a copy on `host`, newest first, for a chat started from its row. */
+function sessionsWithCopy(state: StoreState, host: string): { session: Session; copy: NonNullable<ReturnType<typeof copyOn>> }[] {
+    return state.sessionOrder.flatMap((id) => {
+        const session = state.sessions[id];
+        const copy = session?.kind === "project" ? copyOn(state, session, host) : undefined;
+        return session && copy ? [{ session, copy }] : [];
+    });
+}
+
+function HostRow({
+    kind,
+    name,
+    detail,
+    status,
+    active,
+    onOpen,
+    menu,
+    onMenu,
+}: {
+    kind: "this" | "sikemux" | "ssh";
+    name: string;
+    detail?: string | null;
+    status: ReactNode;
+    active: boolean;
+    onOpen: () => void;
+    menu: CtxItem[];
+    onMenu: OpenMenu;
+}) {
+    const icon = kind === "this" ? <IconLaptop size={14} /> : <IconServer size={14} />;
+    return (
+        <div className="session-row-shell host-row" onContextMenu={(event) => onMenu(event, menu)}>
+            <button type="button" className={`sess-row${active ? " active" : ""}`} onClick={onOpen}>
+                <span className={`sess-icon host-${kind}`}>
+                    <span className="sess-icon-glyph">{icon}</span>
+                </span>
+                <span className="sess-name">{name}</span>
+                {detail && <span className="host-row-detail">{detail}</span>}
+            </button>
+            <span className="row-status">{status}</span>
+            <button type="button" className="row-x host-row-more" aria-label={`More for ${name}`} onClick={(event) => onMenu(event, menu)}>
+                <IconMore size={12} />
+            </button>
+        </div>
+    );
+}
+
+function ThisHostRow({ onMenu }: { onMenu: OpenMenu }) {
+    const agents = useStore((s) => Object.values(s.agents).filter((agent) => !agent.host).length);
+    const active = useStore((s) => s.sessions[s.activeSessionId]?.kind === "command" && !s.sessions[s.activeSessionId]?.host);
+    const open = () =>
+        getState().sessionOrder.some((id) => getState().sessions[id]?.kind === "command" && !getState().sessions[id]?.host)
+            ? cmd.focusCommandSession()
+            : cmd.createCommandSession();
+    return (
+        <HostRow
+            kind="this"
+            name="This host"
+            detail={agentsLabel(agents)}
+            status={<StatusDot tone="ok" label="This host" />}
+            active={active}
+            onOpen={open}
+            menu={[{ label: "New terminal here", icon: <IconTerminal size={13} />, run: cmd.createCommandSession }]}
+            onMenu={onMenu}
+        />
+    );
+}
+
+function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu }) {
+    const agents = useStore((s) => remoteAgents(s, host.id));
+    const active = useStore((s) => s.sessions[s.activeSessionId]?.kind === "command" && s.sessions[s.activeSessionId]?.host === host.id);
+    const connected = host.reach === "connected";
+    const chat = () => {
+        const state = getState();
+        const [first] = sessionsWithCopy(state, host.id);
+        if (!first) {
+            reportError(`New chat on ${host.name}`)(new Error(`${host.name} has no project yet`));
+            return;
+        }
+        void startRemoteChat(first.session.id, first.copy, state.lastAgentType ?? "claude").catch(reportError(`New chat on ${host.name}`));
+    };
+    const files = () => {
+        const [first] = sessionsWithCopy(getState(), host.id);
+        if (!first) return;
+        cmd.selectSession(first.session.id);
+        cmd.setTabRailPage("files");
+    };
+    const rename = async () => {
+        const name = await promptDialog({ title: `Rename ${host.name}`, label: "Name", initial: host.name, confirmLabel: "Rename" });
+        if (name?.trim()) await coreCall("renameLink", { id: host.id, name: name.trim() }).catch(reportError(`Rename ${host.name}`));
+    };
+    const remove = async () => {
+        const confirmed = await confirmDialog({
+            title: `Remove ${host.name} from your account?`,
+            body: "Every device and host on your account stops reaching it at once. To add it again, sign it in again.",
+            confirmLabel: "Remove",
+            destructive: true,
+        });
+        if (confirmed) await accountApi.removeDevice(host.id).catch(reportError(`Remove ${host.name}`));
+    };
+    const hasProject = useStore((s) => sessionsWithCopy(s, host.id).length > 0);
+    return (
+        <HostRow
+            kind="sikemux"
+            name={host.name}
+            detail={connected ? agentsLabel(agents) : "asleep"}
+            status={<StatusDot tone={connected ? "ok" : "idle"} label={connected ? "Connected" : "Out of reach"} />}
+            active={active}
+            onOpen={() => openHostTerminal(host.id, host.name)}
+            menu={[
+                { label: "New chat here", icon: <IconPlus size={13} />, run: chat, disabled: !hasProject },
+                { label: "New terminal here", icon: <IconTerminal size={13} />, run: () => openHostTerminal(host.id, host.name) },
+                { label: "Files", icon: <IconFolder size={13} />, run: files, disabled: !hasProject },
+                { sep: true },
+                { label: "Rename", icon: <IconPencil size={13} />, run: () => void rename() },
+                { label: "Remove from account", icon: <IconTrash size={13} />, danger: true, run: () => void remove() },
+            ]}
+            onMenu={onMenu}
+        />
+    );
+}
+
+function SshHostRow({ alias, session, onMenu }: { alias: string; session: Session | undefined; onMenu: OpenMenu }) {
+    const tone = useSshTone(session?.id ?? "");
+    const active = useStore((s) => !!session && s.activeSessionId === session.id);
+    const open = () => cmd.createSshSession(alias);
+    return (
+        <HostRow
+            kind="ssh"
+            name={alias}
+            status={<StatusDot tone={session ? tone : "idle"} label={session ? tone : "Not connected"} />}
+            active={active}
+            onOpen={open}
+            menu={[
+                {
+                    label: "New SSH terminal",
+                    icon: <IconTerminal size={13} />,
+                    run: () => {
+                        open();
+                        cmd.newSshTerminal(alias);
+                    },
+                },
+                { sep: true },
+                { label: "Edit in ~/.ssh/config", icon: <IconPencil size={13} />, run: () => void cmd.openSshConfigEditor() },
+            ]}
+            onMenu={onMenu}
+        />
+    );
+}
+
+/** Every host in one list: this one, every host on the account, and every SSH host (ADR 0018). */
+export function HostRows({ sshSessions, onMenu }: { sshSessions: readonly Session[]; onMenu: OpenMenu }) {
+    const hosts = useStore((s) => s.hosts);
+    const aliases = useSshAliases();
+    const sshNames = [...new Set([...aliases, ...sshSessions.map((session) => session.name)])];
+    return (
+        <>
+            <ThisHostRow onMenu={onMenu} />
+            {hosts.map((host) => (
+                <AccountHostRow key={host.id} host={host} onMenu={onMenu} />
+            ))}
+            {sshNames.map((alias) => (
+                <SshHostRow key={alias} alias={alias} session={sshSessions.find((session) => session.name === alias)} onMenu={onMenu} />
+            ))}
+        </>
+    );
+}
