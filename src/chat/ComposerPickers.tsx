@@ -12,7 +12,7 @@ import type { Agent, ProviderProfile } from "../state/types";
 import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
 import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from "./sessionConfig";
 
-function Picker({
+export function Picker({
     name,
     label,
     value,
@@ -25,6 +25,8 @@ function Picker({
     loading = false,
     onOpen,
     compact = false,
+    field = false,
+    empty,
 }: {
     name: string;
     label: string;
@@ -41,6 +43,10 @@ function Picker({
     onOpen?: () => void;
     /** Descriptions stay searchable but go unrendered, so the rows read as one line. */
     compact?: boolean;
+    /** Drawn as a form field that opens downward, for settings rather than the composer. */
+    field?: boolean;
+    /** What the list says when it has no options. */
+    empty?: string;
 }) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
@@ -64,7 +70,7 @@ function Picker({
 
     return (
         <div
-            className="chat-picker"
+            className={`chat-picker${field ? " field" : ""}`}
             ref={root}
             onBlur={(event) => {
                 // WebKit hands focus to nobody when a button is clicked, so a blur
@@ -99,6 +105,7 @@ function Picker({
                     payers={payers}
                     loading={loading}
                     compact={compact}
+                    empty={empty}
                     query={query}
                     selected={selected}
                     trigger={trigger}
@@ -113,14 +120,14 @@ function Picker({
 }
 
 /** A connected provider this agent can run on, with the models it serves. */
-interface Route {
+export interface Route {
     provider: ModelProvider;
     served: ServedModels;
 }
 
 /** The providers `agent` can run on, read when asked, since local runners are
     probed and keyed providers asked for their models over the network. */
-function useRoutes(agent: Agent): [Route[], () => void] {
+export function useRoutes(type: Agent["type"], modelProvider: string | null | undefined): [Route[], () => void] {
     const [routes, setRoutes] = useState<Route[]>([]);
     const load = useCallback(() => {
         void modelProvidersApi
@@ -128,7 +135,7 @@ function useRoutes(agent: Agent): [Route[], () => void] {
             .then((providers) =>
                 Promise.all(
                     providers
-                        .filter((provider) => provider.connected && provider.agents.includes(agent.type))
+                        .filter((provider) => provider.connected && provider.agents.includes(type))
                         .map(async (provider) => ({
                             provider,
                             served: provider.models
@@ -137,12 +144,12 @@ function useRoutes(agent: Agent): [Route[], () => void] {
                         })),
                 ),
             )
-            .then((loaded) => setRoutes(loaded.filter((route) => route.served.models.length > 0 || route.provider.id === agent.modelProvider)))
+            .then((loaded) => setRoutes(loaded.filter((route) => route.served.models.length > 0 || route.provider.id === modelProvider)))
             .catch(swallow("model providers"));
-    }, [agent.type, agent.modelProvider]);
+    }, [type, modelProvider]);
     useEffect(() => {
-        if (agent.modelProvider) load();
-    }, [agent.modelProvider, load]);
+        if (modelProvider) load();
+    }, [modelProvider, load]);
     return [routes, load];
 }
 
@@ -150,42 +157,44 @@ function payerTitle(provider: ModelProvider): string {
     return provider.kind === "local" ? `Runs on ${provider.label} on this computer` : `Paid with your ${provider.label} key`;
 }
 
-function servedLabel(route: Route, model: string): string {
+export function servedLabel(route: Route, model: string): string {
     return [model, ...modelWords(route.served, route.provider.checks, model)].join(" · ");
 }
 
 /** Who pays for the chat's turns: the agent's own account, or a provider the
     person connected. Picking a provider moves the chat there, on its coding model. */
-function PayerChoices({
-    agent,
+export function PayerChoices({
+    type,
+    modelProvider,
     profile,
     routes,
     onPick,
 }: {
-    agent: Agent;
+    type: Agent["type"];
+    modelProvider: string | null | undefined;
     profile?: ProviderProfile;
     routes: Route[];
     onPick: (route?: Route) => void;
 }) {
-    const account = profile?.name ?? `${agentLabel(agent.type)} account`;
+    const account = profile?.name ?? `${agentLabel(type)} account`;
     return (
         <div className="chat-picker-agents" role="group" aria-label="Paid by">
             <button
                 type="button"
-                aria-pressed={!agent.modelProvider}
+                aria-pressed={!modelProvider}
                 title={`Paid by your ${account}`}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => agent.modelProvider && onPick()}>
+                onClick={() => modelProvider && onPick()}>
                 <span>{account}</span>
             </button>
             {routes.map((route) => (
                 <button
                     type="button"
                     key={route.provider.id}
-                    aria-pressed={route.provider.id === agent.modelProvider}
+                    aria-pressed={route.provider.id === modelProvider}
                     title={payerTitle(route.provider)}
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => route.provider.id !== agent.modelProvider && onPick(route)}>
+                    onClick={() => route.provider.id !== modelProvider && onPick(route)}>
                     <span>{route.provider.label}</span>
                 </button>
             ))}
@@ -284,7 +293,7 @@ export function ComposerPickers({
     const agentIcon = <AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />;
     const rowIcon = <AgentIcon type={agent.type} size={15} className={`agent-glyph ${agent.type}`} />;
     const [switching, setSwitching] = useState<Record<string, unknown>>();
-    const [routes, loadRoutes] = useRoutes(agent);
+    const [routes, loadRoutes] = useRoutes(agent.type, agent.modelProvider);
     const loading = switching !== undefined && (disabled || switching === setup);
     useEffect(() => {
         if (switching && !loading) setSwitching(undefined);
@@ -313,11 +322,16 @@ export function ComposerPickers({
                         options={model ? options.map((option) => ({ ...option, icon: rowIcon })) : options}
                         disabled={disabled || (!options.length && (!model || agentLocked))}
                         icon={model ? agentIcon : undefined}
-                        agents={model && !agentLocked ? { agent, profile, onSwitch: (type, profileId) => relaunch(type, profileId) } : undefined}
+                        agents={
+                            model && !agentLocked
+                                ? { type: agent.type, profile, onSwitch: (type, profileId) => relaunch(type, profileId) }
+                                : undefined
+                        }
                         payers={
                             model && !agentLocked && routes.length > 0 ? (
                                 <PayerChoices
-                                    agent={agent}
+                                    type={agent.type}
+                                    modelProvider={agent.modelProvider}
                                     profile={profile}
                                     routes={routes}
                                     onPick={(next) =>

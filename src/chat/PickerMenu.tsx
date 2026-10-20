@@ -15,9 +15,11 @@ export interface Choice extends ConfigChoice {
 }
 
 export interface AgentChoicesProps {
-    agent: Agent;
+    type: Agent["type"];
     profile?: ProviderProfile;
     onSwitch: (type: ChatAgentType, profileId?: string) => void;
+    /** A choice before the agents that leaves the pick to Sikemux, pressed when nothing is picked. */
+    any?: { label: string; chosen: boolean; onPick: () => void };
 }
 
 /* Claude and Codex install their adapter on first use, so they are offered
@@ -25,13 +27,13 @@ export interface AgentChoicesProps {
 const ALWAYS_OFFERED = new Set<ChatAgentType>(["codex", "claude"]);
 
 /** The agents a chat that has not started yet can move to, over the model list. */
-function AgentChoices({ agent, profile, onSwitch }: AgentChoicesProps) {
+function AgentChoices({ type: current, profile, onSwitch, any }: AgentChoicesProps) {
     const profiles = useStore((state) => state.providerProfiles);
     const profileSelections = useStore((state) => state.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
     const catalog = useResource(agentCatalogR, runtimeProfiles);
     const installed = new Set((catalog.data ?? []).filter((item) => item.available !== false).map((item) => item.type));
-    const harnesses = CHAT_AGENT_TYPES.filter((type) => ALWAYS_OFFERED.has(type) || type === agent.type || installed.has(type));
+    const harnesses = CHAT_AGENT_TYPES.filter((type) => ALWAYS_OFFERED.has(type) || type === current || installed.has(type));
     const agentOptions = harnesses.flatMap((type) => {
         const label = agentLabel(type);
         const icon = <AgentIcon type={type} size={15} className={`agent-glyph ${type}`} />;
@@ -39,10 +41,20 @@ function AgentChoices({ agent, profile, onSwitch }: AgentChoicesProps) {
         if (owned.length === 0) return [{ value: type, label, icon }];
         return owned.map((item) => ({ value: item.id, label: item.name, icon }));
     });
-    const builtin = DEFAULT_PROVIDER_PROFILE_SELECTION[agent.type];
-    const agentValue = profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : agent.type);
+    const builtin = DEFAULT_PROVIDER_PROFILE_SELECTION[current];
+    const agentValue = any?.chosen ? null : (profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : current));
     return (
         <div className="chat-picker-agents" role="group" aria-label="Agent">
+            {any && (
+                <button
+                    type="button"
+                    aria-pressed={any.chosen}
+                    title={any.label}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => !any.chosen && any.onPick()}>
+                    <span>{any.label}</span>
+                </button>
+            )}
             {agentOptions.map((option) => (
                 <button
                     type="button"
@@ -74,6 +86,7 @@ export default function PickerMenu({
     payers,
     loading,
     compact,
+    empty = "No matches",
     query,
     selected,
     trigger,
@@ -89,6 +102,8 @@ export default function PickerMenu({
     payers?: ReactNode;
     loading: boolean;
     compact: boolean;
+    /** What the list says when nothing is in it. */
+    empty?: string;
     query: string;
     selected: number;
     trigger: RefObject<HTMLButtonElement | null>;
@@ -171,7 +186,7 @@ export default function PickerMenu({
                             {option.value === value && <IconCheck size={14} />}
                         </button>
                     ))}
-                {!loading && filtered.length === 0 && <div className="chat-picker-hint">No matches</div>}
+                {!loading && filtered.length === 0 && <div className="chat-picker-hint">{options.length === 0 ? empty : "No matches"}</div>}
             </div>
         </div>
     );

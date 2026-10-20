@@ -267,6 +267,10 @@ pub(crate) async fn call(
         "addTask" => answer(super::tasks::add(&core, parse(params)?).await?),
         "removeTask" => answer(super::tasks::remove(&core, parse(params)?).await?),
         "setCheck" => answer(super::tasks::set_check(&core, parse(params)?).await?),
+        "agentModels" => {
+            let params: AgentModelsParams = parse(params)?;
+            answer(super::chat::offered::models(&params.agent))
+        }
         "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => answer(plugins::window_call(&core, parse(params)?).await),
         "pluginManifests" => answer(plugins::manifests()),
@@ -342,6 +346,11 @@ struct PortsParams {
 struct TrustProjectParams {
     project: String,
     fingerprint: String,
+}
+
+#[derive(Deserialize)]
+struct AgentModelsParams {
+    agent: String,
 }
 
 #[derive(Deserialize)]
