@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import { AGENT_BRANDS, type AgentType } from '@mac/agents/catalog';
+import type { PaletteName } from '@mac/remote/palette';
 import { Platform, type TextStyle } from 'react-native';
 
 /** Aura Noir, the Mac app's default theme, with its neutral ramp mixed the same way (DESIGN.md §3). */
@@ -43,9 +44,9 @@ export const defaultPalette = {
   toolMcp: '#6fd6b9',
   /** The pane grain's dots: the raised surface on a dark theme. */
   shaderDot: '#19191e',
-};
+} satisfies Palette;
 
-export type Palette = Record<keyof typeof defaultPalette, string>;
+export type Palette = Record<PaletteName, string>;
 
 /** The palette a host published, over the default for any colour it left out. */
 export function paletteFrom(published: Readonly<Record<string, string>> | undefined): Palette {
