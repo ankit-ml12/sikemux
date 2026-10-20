@@ -16,8 +16,11 @@ import { ACCESS_OPTIONS, platformName } from "../remote/access";
 import { reportError, swallow } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
-import { IconGlobe, IconLock, IconTrash } from "../ui/Icons";
+import { IconGlobe, IconLock, IconMore, IconPencil, IconTrash } from "../ui/Icons";
 import { QrCode } from "./QrCode";
+import { coreCall } from "../api/core";
+import { confirmDialog } from "../state/dialog";
+import { TreeContextMenu } from "../rail/FileTree";
 import { SettingsPage, SettingsRow, SettingsRows } from "./SettingsLayout";
 import { openUrl } from "../api/system";
 
@@ -362,12 +365,23 @@ function useLinkedHosts(): [readonly LinkedHost[] | null, () => void] {
 
 function HostsSection({ now }: { now: number }) {
     const [links, reread] = useLinkedHosts();
-    const unlink = async (host: LinkedHost) => {
-        try {
-            await remoteApi.revokeDevice(host.id);
-        } catch (error) {
-            reportError("Remove host")(error);
-        }
+    const [renaming, setRenaming] = useState<string | null>(null);
+    const [menu, setMenu] = useState<{ host: LinkedHost; x: number; y: number } | null>(null);
+    const rename = async (host: LinkedHost, name: string) => {
+        setRenaming(null);
+        if (!name.trim() || name.trim() === host.name) return;
+        await coreCall("renameLink", { id: host.id, name: name.trim() }).catch(reportError(`Rename ${host.name}`));
+        reread();
+    };
+    const remove = async (host: LinkedHost) => {
+        const confirmed = await confirmDialog({
+            title: `Remove ${host.name || "this host"} from your account?`,
+            body: "Every device and host on your account stops reaching it at once. To add it again, sign it in again.",
+            confirmLabel: "Remove",
+            destructive: true,
+        });
+        if (!confirmed) return;
+        await accountApi.removeDevice(host.id).catch(reportError(`Remove ${host.name || "host"}`));
         reread();
     };
     if (!links) return null;
@@ -375,32 +389,59 @@ function HostsSection({ now }: { now: number }) {
         <section className="devices-hosts" data-settings-target="Hosts">
             <h2 className="devices-label">Hosts</h2>
             <p className="settings-hint">
-                Every host signed in to your account links with this one, so agents here can start agents there, on that host&apos;s own
-                sign-ins.
+                Every host signed in to your account links with this one, so agents here can start agents there, on that host&apos;s own sign-ins.
             </p>
             {links.length === 0 ? (
                 <p className="settings-hint">No other hosts on your account. Sign in to Sikemux on one to add it.</p>
             ) : (
                 <SettingsRows>
                     {links.map((host) => (
-                        <SettingsRow key={host.id} label={host.name || "Unnamed host"} desc={linkedLine(host, now)}>
+                        <SettingsRow
+                            key={host.id}
+                            label={
+                                renaming === host.id ? (
+                                    <input
+                                        className="settings-input"
+                                        defaultValue={host.name}
+                                        aria-label={`Rename ${host.name}`}
+                                        autoFocus
+                                        onBlur={(event) => void rename(host, event.currentTarget.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter") event.currentTarget.blur();
+                                            if (event.key === "Escape") setRenaming(null);
+                                        }}
+                                    />
+                                ) : (
+                                    <span onDoubleClick={() => setRenaming(host.id)}>{host.name || "Unnamed host"}</span>
+                                )
+                            }
+                            desc={linkedLine(host, now)}>
                             <button
-                                className="settings-btn danger"
+                                className="settings-btn"
                                 type="button"
-                                onClick={() => void unlink(host)}
-                                title="Unlink this host; agents on either side can no longer start agents on the other">
-                                <IconTrash size={12} /> Remove
+                                aria-label={`More for ${host.name}`}
+                                onClick={(event) => setMenu({ host, x: event.clientX, y: event.clientY })}>
+                                <IconMore size={12} />
                             </button>
                         </SettingsRow>
                     ))}
                 </SettingsRows>
+            )}
+            {menu && (
+                <TreeContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    items={[
+                        { label: "Rename", icon: <IconPencil size={13} />, run: () => setRenaming(menu.host.id) },
+                        { label: "Remove from account", icon: <IconTrash size={13} />, danger: true, run: () => void remove(menu.host) },
+                    ]}
+                    onClose={() => setMenu(null)}
+                />
             )}
         </section>
     );
 }
 
 function linkedLine(host: LinkedHost, now: number): string {
-    const seen = host.connected ? "connected now" : seenLabel(host.lastSeen, now);
-    const agents = host.agents > 0 ? ` · ${host.agents} ${host.agents === 1 ? "agent works" : "agents work"} across it` : "";
-    return `${platformName(host.platform)} · linked · ${seen}${agents}`;
+    return `${platformName(host.platform)} · ${host.connected ? "connected now" : seenLabel(host.lastSeen, now)}`;
 }
