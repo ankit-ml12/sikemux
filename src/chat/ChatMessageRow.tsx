@@ -101,8 +101,8 @@ export function warmTranscript(messages: readonly ChatMessage[]): Promise<void> 
             continue;
         }
         for (const part of sentParts(message).parts) {
-            if (part.kind === "text") texts.push({ text: part.text, typed: message.role === "user" });
-            else if (part.kind === "thought") texts.push({ text: part.text, typed: false });
+            if (part.kind === "text" && !part.md) texts.push({ text: part.text, typed: message.role === "user" });
+            else if (part.kind === "thought" && !part.md) texts.push({ text: part.text, typed: false });
         }
     }
     /* Settles once everything asked for so far has been read, by this call or an earlier one. */
@@ -114,7 +114,7 @@ const MessagePart = memo(function MessagePart({ part, live, typed }: { part: Cha
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <FoldedMarkdown id={part.id} text={part.text} live={live} typed={typed} />
+                <FoldedMarkdown id={part.id} text={part.text} live={live} typed={typed} tree={part.md?.blocks} />
             </div>
         );
     }
@@ -122,7 +122,7 @@ const MessagePart = memo(function MessagePart({ part, live, typed }: { part: Cha
         return (
             <div className="chat-thought">
                 <div className="chat-markdown">
-                    <FoldedMarkdown id={part.id} text={part.text} live={live} />
+                    <FoldedMarkdown id={part.id} text={part.text} live={live} tree={part.md?.blocks} />
                 </div>
             </div>
         );

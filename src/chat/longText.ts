@@ -74,5 +74,5 @@ export function useLongTextFold(id: string, text: string, live: boolean) {
         memory.expanded.add(id);
         setExpanded(true);
     };
-    return { cut, expand };
+    return { cut, expand, folds };
 }
