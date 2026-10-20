@@ -10,9 +10,9 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, fits, read_frame, ClientMessage, Event, FrameKind,
-    HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
-    SpawnTarget, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
+    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, HostRegistration,
+    LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget,
+    OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
@@ -854,7 +854,7 @@ async fn run_requests(
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::FocusAgent { agent_id } => {
-                let shown = core.window.tell(Event::FocusAgent { agent_id });
+                let shown = core.window.focus(agent_id);
                 client.respond(
                     request_id,
                     if shown {

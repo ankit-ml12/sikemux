@@ -355,7 +355,7 @@ pub enum Request {
     /// paired devices get it.
     WatchView,
     /// Asks the app's window to show this agent. Refused when no window is
-    /// open.
+    /// open; a window that opens within a minute shows it then.
     FocusAgent {
         agent_id: String,
     },

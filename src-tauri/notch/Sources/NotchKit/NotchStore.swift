@@ -200,23 +200,13 @@ final class NotchStore {
         }
     }
 
-    /// Shows the agent in Sikemux, opening the app first when its window is closed.
+    /// Shows the agent in Sikemux. With its window closed the core keeps the
+    /// agent for the window the app opens.
     func focus(_ agentId: String) {
         guard let link else { return }
         bringAppForward()
         link.request(["op": "focusAgent", "agentId": agentId]) { [weak self] result in
-            guard case .failure = result, let self else { return }
-            self.openApp()
-            self.retryFocus(agentId, attempts: 30)
-        }
-    }
-
-    private func retryFocus(_ agentId: String, attempts: Int) {
-        guard attempts > 0 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.link?.request(["op": "focusAgent", "agentId": agentId]) { result in
-                if case .failure = result { self?.retryFocus(agentId, attempts: attempts - 1) }
-            }
+            if case .failure = result { self?.openApp() }
         }
     }
 

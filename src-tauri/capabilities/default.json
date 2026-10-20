@@ -120,6 +120,7 @@
     "allow-is-directory",
     "allow-wallpaper-image",
     "allow-post-notification",
+    "allow-focus-claim",
     "allow-pick-paths",
     "allow-pick-save-path",
     "allow-project-search",

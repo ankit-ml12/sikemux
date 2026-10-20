@@ -237,6 +237,7 @@ pub fn run() {
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
         .manage(remote::Published::default())
+        .manage(agent_notification::WaitingFocus::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
@@ -347,6 +348,7 @@ pub fn run() {
             settings::is_directory,
             wallpaper::wallpaper_image,
             agent_notification::post_notification,
+            agent_notification::focus_claim,
             dialogs::pick_paths,
             dialogs::pick_save_path,
             search::project_search,

@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use sikemux_process::sync::Locked;
@@ -17,6 +18,9 @@ use super::connection::{ClientConn, ClientId};
 /// Calls the window has not answered yet, beyond which a new one is refused.
 const MAX_PENDING_CALLS: usize = 64;
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
+/// How long an agent asked for while no window was open is still shown once
+/// one opens, which covers the app starting.
+const FOCUS_HELD: Duration = Duration::from_secs(60);
 
 pub(crate) fn not_open(purpose: &str) -> String {
     format!("Sikemux's window is not open — open Sikemux to {purpose}")
@@ -33,6 +37,7 @@ struct Pending {
 struct Inner {
     client: Option<Arc<ClientConn>>,
     calls: HashMap<CallId, Pending>,
+    focus: Option<(String, Instant)>,
 }
 
 pub(crate) struct Window {
@@ -106,25 +111,45 @@ impl Window {
         client.send(frame.into())
     }
 
+    /// Shows `agent_id` in the window, or in the next window to open. False
+    /// when no window is open now.
+    pub(crate) fn focus(&self, agent_id: String) -> bool {
+        let shown = self.tell(Event::FocusAgent {
+            agent_id: agent_id.clone(),
+        });
+        if !shown {
+            self.inner.locked().focus = Some((agent_id, Instant::now()));
+        }
+        shown
+    }
+
     pub(crate) fn register(&self, client: Arc<ClientConn>) {
-        let orphaned = {
+        let (orphaned, focus) = {
             let mut inner = self.inner.locked();
             let previous = inner.client.replace(client.clone());
             if previous.is_some_and(|previous| previous.id == client.id) {
                 return;
             }
+            let focus = inner
+                .focus
+                .take()
+                .filter(|(_, asked)| asked.elapsed() < FOCUS_HELD);
             let stale: Vec<CallId> = inner
                 .calls
                 .iter()
                 .filter(|(_, call)| call.client != client.id)
                 .map(|(id, _)| *id)
                 .collect();
-            stale
+            let orphaned = stale
                 .into_iter()
                 .filter_map(|id| inner.calls.remove(&id))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            (orphaned, focus)
         };
         Self::fail(orphaned);
+        if let Some((agent_id, _)) = focus {
+            self.tell(Event::FocusAgent { agent_id });
+        }
     }
 
     pub(crate) fn unregister(&self, client: ClientId) {

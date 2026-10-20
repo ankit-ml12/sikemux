@@ -103,6 +103,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "is_directory",
     "wallpaper_image",
     "post_notification",
+    "focus_claim",
     "pick_paths",
     "pick_save_path",
     "project_search",

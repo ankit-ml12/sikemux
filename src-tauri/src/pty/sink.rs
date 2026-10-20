@@ -177,8 +177,7 @@ impl EventSink for AppSink {
                 serde_json::json!({ "title": title, "body": body, "agentId": agent_id }),
             ),
             Event::FocusAgent { agent_id } => {
-                crate::harness::bring_to_front(&self.app);
-                self.emit("focus_agent", agent_id);
+                crate::agent_notification::focus_agent(&self.app, agent_id)
             }
             Event::DeviceView { view } => self.view.changed(&self.app, view),
             Event::TerminalTitle { id, title } => self.emit(

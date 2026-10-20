@@ -103,6 +103,7 @@ export const IPC_COMMANDS = [
     "is_directory",
     "wallpaper_image",
     "post_notification",
+    "focus_claim",
     "pick_paths",
     "pick_save_path",
     "project_search",
