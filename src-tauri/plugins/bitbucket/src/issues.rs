@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_plugin_api::store;
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
@@ -544,18 +545,12 @@ fn dismissed_path(data_dir: &Path) -> PathBuf {
     data_dir.join("inbox-done.json")
 }
 
-fn dismissed(data_dir: &Path) -> Dismissed {
-    std::fs::read(dismissed_path(data_dir))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+fn dismissed(data_dir: &Path) -> BitbucketResult<Dismissed> {
+    Ok(store::read_file(&dismissed_path(data_dir))?)
 }
 
 fn save_dismissed(data_dir: &Path, done: &Dismissed) -> BitbucketResult<()> {
-    std::fs::create_dir_all(data_dir)
-        .map_err(|error| BitbucketError::Transport(error.to_string()))?;
-    std::fs::write(dismissed_path(data_dir), serde_json::to_vec(done)?)
-        .map_err(|error| BitbucketError::Transport(error.to_string()))
+    Ok(store::write_file(&dismissed_path(data_dir), done)?)
 }
 
 fn notification(row: WaitingRow, reason: &str, done: &Dismissed) -> Option<Notification> {
@@ -606,7 +601,7 @@ pub async fn inbox(data_dir: &Path, input: InboxQuery) -> BitbucketResult<Vec<No
         &[("state", "OPEN".into()), ("pagelen", "30".into())],
     )
     .await?;
-    let done = dismissed(data_dir);
+    let done = dismissed(data_dir)?;
     let mut found: Vec<Notification> = asks
         .into_iter()
         .filter_map(Result::ok)
@@ -630,7 +625,7 @@ pub struct DoneRef {
 }
 
 pub fn mark_read(data_dir: &Path, input: DoneRef) -> BitbucketResult<()> {
-    let mut done = dismissed(data_dir);
+    let mut done = dismissed(data_dir)?;
     done.insert(input.id, now_iso());
     save_dismissed(data_dir, &done)
 }
@@ -638,7 +633,7 @@ pub fn mark_read(data_dir: &Path, input: DoneRef) -> BitbucketResult<()> {
 /// Marks done everything the inbox shows now.
 pub async fn mark_all_read(data_dir: &Path) -> BitbucketResult<()> {
     let waiting = inbox(data_dir, InboxQuery { all: false }).await?;
-    let mut done = dismissed(data_dir);
+    let mut done = dismissed(data_dir)?;
     let at = now_iso();
     for item in waiting {
         done.insert(item.id, at.clone());

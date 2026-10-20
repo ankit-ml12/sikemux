@@ -62,30 +62,40 @@ fn settings_path(data_dir: &Path) -> PathBuf {
     data_dir.join("config.json")
 }
 
-/// The plugin's settings, or the empty ones before anything was saved. A file
-/// that cannot be read is an error rather than empty settings, so the next
-/// save never writes over what it held.
-pub fn load<T: DeserializeOwned + Default>(data_dir: &Path) -> Result<T, SettingsError> {
-    let path = settings_path(data_dir);
+/// What a plugin saved in `path`, or the empty value before anything was. A
+/// file that cannot be read is an error rather than empty, so the next save
+/// never writes over what it held.
+pub fn read_file<T: DeserializeOwned + Default>(path: &Path) -> Result<T, SettingsError> {
     let unreadable = |error: &dyn fmt::Display| {
         SettingsError(format!("{} cannot be read: {error}", path.display()))
     };
-    match std::fs::read(&path) {
+    match std::fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| unreadable(&error)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
         Err(error) => Err(unreadable(&error)),
     }
 }
 
-pub fn save<T: Serialize>(data_dir: &Path, settings: &T) -> Result<(), SettingsError> {
-    let failed = |error: &dyn fmt::Display| SettingsError(format!("saving settings: {error}"));
-    let path = settings_path(data_dir);
+/// Writes beside the file and moves it into place, so a crash never leaves half of it.
+pub fn write_file<T: Serialize>(path: &Path, value: &T) -> Result<(), SettingsError> {
+    let failed =
+        |error: &dyn fmt::Display| SettingsError(format!("saving {}: {error}", path.display()));
     let staged = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec_pretty(settings).map_err(|error| failed(&error))?;
-    std::fs::create_dir_all(data_dir)
+    let bytes = serde_json::to_vec_pretty(value).map_err(|error| failed(&error))?;
+    path.parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
         .and_then(|()| std::fs::write(&staged, bytes))
-        .and_then(|()| std::fs::rename(&staged, &path))
+        .and_then(|()| std::fs::rename(&staged, path))
         .map_err(|error| failed(&error))
+}
+
+/// The plugin's settings file.
+pub fn load<T: DeserializeOwned + Default>(data_dir: &Path) -> Result<T, SettingsError> {
+    read_file(&settings_path(data_dir))
+}
+
+pub fn save<T: Serialize>(data_dir: &Path, settings: &T) -> Result<(), SettingsError> {
+    write_file(&settings_path(data_dir), settings)
 }
 
 /// Reads the settings, changes them and saves them, all on a blocking thread,
