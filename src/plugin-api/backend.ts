@@ -43,8 +43,6 @@ export function isOfflineFailure(error: unknown): boolean {
     return isPluginFailure(error) && (error.category === "offline" || error.category === "timeout");
 }
 
-export { errorText as failureMessage };
-
 /** A sign-in the service no longer takes. A 403 is not one: the person is signed in, just not allowed. */
 export function isSignedOutFailure(error: unknown, alsoSignedOut: readonly string[] = []): boolean {
     if (!isPluginFailure(error)) return false;

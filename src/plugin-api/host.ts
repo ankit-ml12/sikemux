@@ -4,6 +4,7 @@ import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { getState, setState, useStore, type StoreState } from "../state/store";
 import { copyText } from "../lib/clipboard";
+import { shellQuote } from "../lib/shell";
 import { notify, reportError } from "../state/toast";
 import type { PluginKind } from "../plugins/kinds";
 import type { GitStatus } from "../api/git";
@@ -126,7 +127,7 @@ export function pickFile(title: string, filter?: { name: string; extensions: str
 
 /** Runs a program in a terminal over the window, settling once the person closes it. */
 export function runInTerminal(title: string, argv: string[]): Promise<void> {
-    const command = argv.map(cmd.shellQuote).join(" ");
+    const command = argv.map(shellQuote).join(" ");
     cmd.runCustomCommand({ id: `plugin-terminal:${title}`, title, detail: "", command, contexts: [], placement: "popup" });
     const opened = getState().commandPopup;
     if (!opened) return Promise.resolve();
