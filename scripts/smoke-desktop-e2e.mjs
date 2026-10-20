@@ -30,27 +30,14 @@ const CORE_PROTOCOL_VERSION = Number(
 if (!Number.isInteger(CORE_PROTOCOL_VERSION))
   throw new Error("could not read PROTOCOL_VERSION from sikemux-wire");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
+const e2eTarget = join(root, "src-tauri", "target", "e2e");
 const appExecutable = resolve(
   process.env.SIKEMUX_E2E_APP ??
-    join(
-      root,
-      "src-tauri",
-      "target",
-      "e2e",
-      "debug",
-      `sikemux${executableSuffix}`,
-    ),
+    join(e2eTarget, "debug", `sikemux${executableSuffix}`),
 );
 const cliExecutable = resolve(
   process.env.SIKEMUX_E2E_CLI ??
-    join(
-      root,
-      "src-tauri",
-      "target",
-      "e2e",
-      "debug",
-      `sikemux-host${executableSuffix}`,
-    ),
+    join(e2eTarget, "debug", `sikemux-host${executableSuffix}`),
 );
 
 const exerciseHarnessTasks = process.argv.includes("--tasks");
@@ -968,17 +955,13 @@ function buildFakeAgent() {
       "--bin",
       "sikemux-fake-acp-agent",
     ],
-    process.env,
+    { ...process.env, CARGO_TARGET_DIR: e2eTarget },
     600_000,
   );
   if (built.status !== 0)
     fail(`could not build the stand-in chat agent: ${built.stderr}`);
   report("built the stand-in chat agent");
-  return join(
-    process.env.CARGO_TARGET_DIR ?? join(root, "src-tauri", "target"),
-    "debug",
-    `sikemux-fake-acp-agent${executableSuffix}`,
-  );
+  return join(e2eTarget, "debug", `sikemux-fake-acp-agent${executableSuffix}`);
 }
 
 const CHAT_AGENT_ID = "e2e-chat";
