@@ -2,11 +2,11 @@
 // and saying who the sign-in belongs to.
 
 use std::path::Path;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use sikemux_plugin_api::oauth::Tokens;
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::{SignInStatus, StreamSink};
 
@@ -14,8 +14,6 @@ use crate::client::{self, at, Session};
 use crate::config::{self, LinearConfig, SignIn, Workspace};
 use crate::error::{LinearError, LinearResult};
 use crate::oauth;
-
-const BROWSER_WAIT: Duration = Duration::from_secs(300);
 
 const VIEWER: &str =
     "query Viewer { viewer { id name displayName email organization { id name urlKey } } }";
@@ -111,16 +109,7 @@ pub async fn sign_in(data_dir: &Path, input: KeySignIn) -> LinearResult<String> 
 /// Opens Linear's sign-in in the browser, through the URL sent down the stream, and
 /// signs in to the workspace the person picks there. Stopping the stream stops the wait.
 pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> LinearResult<()> {
-    let callback = oauth::listen().await?;
-    let state = oauth::new_state()?;
-    let verifier = oauth::new_verifier()?;
-    sink.send(json!({ "url": oauth::authorize_url(&state, &verifier) }))
-        .map_err(|_| LinearError::Auth("the sign-in was closed".into()))?;
-    let code = tokio::time::timeout(BROWSER_WAIT, oauth::code(&callback, &state))
-        .await
-        .map_err(|_| LinearError::Auth("nobody finished signing in".into()))??;
-    drop(callback);
-    let tokens = oauth::exchange(&code, &verifier).await?;
+    let tokens: Tokens = oauth::APP.sign_in(&client::HTTP, sink).await?;
     let viewer =
         client::query_with(&oauth::bearer(&tokens.access_token), VIEWER, json!({})).await?;
     let workspace = Workspace {
@@ -135,7 +124,7 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> LinearR
         Ok(())
     })
     .await?;
-    oauth::remember(&id, &tokens).await;
+    oauth::ACCESS.remember(&id, &tokens).await;
     client::forget(&id);
     Ok(())
 }
@@ -168,7 +157,7 @@ pub async fn sign_out(data_dir: &Path, input: WorkspaceRef) -> LinearResult<()> 
     .await?;
     if let Some((workspace, refresh_token)) = removed {
         client::forget(&workspace.id);
-        oauth::forget(&workspace.id).await;
+        oauth::ACCESS.forget(Some(&workspace.id)).await;
         if let Some(refresh_token) = refresh_token {
             oauth::revoke(&refresh_token).await;
         }

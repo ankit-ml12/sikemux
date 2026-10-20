@@ -6051,7 +6051,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-keychain",
- "sikemux-loopback",
  "sikemux-plugin-api",
  "tokio",
  "url",
@@ -6080,7 +6079,6 @@ dependencies = [
 name = "sikemux-plugin-signoz"
 version = "0.1.0"
 dependencies = [
- "futures",
  "reqwest",
  "serde",
  "serde_json",

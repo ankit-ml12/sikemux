@@ -10,7 +10,7 @@ use sikemux_plugin_api::store::{self, Accounts};
 
 use crate::error::LinearResult;
 
-const KEY_SERVICE: &str = keychain_service!("sikemux-linear-key");
+pub const KEY_SERVICE: &str = keychain_service!("sikemux-linear-key");
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]

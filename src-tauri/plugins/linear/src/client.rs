@@ -28,8 +28,8 @@ pub fn forget(workspace: &str) {
 
 pub struct Session {
     pub workspace: Workspace,
-    /// An API key, or a browser sign-in's access token.
-    credential: String,
+    /// The API key, for a workspace not signed in through the browser.
+    key: Option<String>,
 }
 
 impl Session {
@@ -39,33 +39,29 @@ impl Session {
             .account(workspace)
             .cloned()
             .ok_or(LinearError::Unconfigured)?;
-        let credential = match workspace.sign_in {
-            SignIn::Key => key_of(&workspace).await?,
-            SignIn::Browser => oauth::access_token(&workspace).await?,
+        let key = match workspace.sign_in {
+            SignIn::Key => Some(key_of(&workspace).await?),
+            SignIn::Browser => None,
         };
-        Ok(Session {
-            workspace,
-            credential,
-        })
+        Ok(Session { workspace, key })
     }
 
     pub async fn query(&self, document: &str, variables: Value) -> LinearResult<Value> {
-        match self.workspace.sign_in {
-            SignIn::Key => query_with(&self.credential, document, variables).await,
-            SignIn::Browser => {
-                match query_with(
-                    &oauth::bearer(&self.credential),
-                    document,
-                    variables.clone(),
-                )
-                .await
-                {
-                    Err(LinearError::Auth(_)) => {
-                        let renewed = oauth::renew(&self.workspace, &self.credential).await?;
-                        query_with(&oauth::bearer(&renewed), document, variables).await
-                    }
-                    answered => answered,
-                }
+        match &self.key {
+            Some(key) => query_with(key, document, variables).await,
+            None => {
+                oauth::ACCESS
+                    .with_access(
+                        &self.workspace.id,
+                        || oauth::entry(&self.workspace),
+                        |access| {
+                            let variables = variables.clone();
+                            async move {
+                                query_with(&oauth::bearer(&access.token), document, variables).await
+                            }
+                        },
+                    )
+                    .await
             }
         }
     }
