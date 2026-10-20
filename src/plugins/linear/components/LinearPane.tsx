@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
-import { errorText } from "../../../plugin-api/format";
+import { errorText, formatStamp } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, Loaded, Markdown, Pending, SendToAgentMenu, SignedIn, StaleNotice } from "../../../plugin-api/ui";
 import { linearApi, type LinearChange, type LinearIssue, type LinearStatus } from "../api";
@@ -15,12 +15,6 @@ export function LinearPane({ paneId, active }: { paneId: string; active: boolean
             {(status) => <LinearWorkspace paneId={paneId} active={active} status={status} />}
         </SignedIn>
     );
-}
-
-function when(at: string): string {
-    const time = Date.parse(at);
-    if (Number.isNaN(time)) return "";
-    return new Date(time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function StateDot({ color }: { color: string }) {
@@ -215,7 +209,7 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
                     <article key={each.id} className="linear-comment">
                         <header>
                             <b>{each.user?.displayName || each.user?.name || "Someone"}</b>
-                            <span>{when(each.createdAt)}</span>
+                            <span>{formatStamp(each.createdAt)}</span>
                         </header>
                         <Markdown className="prose">{each.body}</Markdown>
                     </article>

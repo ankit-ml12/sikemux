@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { errorText } from "../../../plugin-api/format";
+import { errorText, formatStamp } from "../../../plugin-api/format";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, Loaded, Markdown, SendToAgentMenu, SignedIn, StaleNotice } from "../../../plugin-api/ui";
@@ -15,16 +15,6 @@ export function SlackPane({ paneId, active }: { paneId: string; active: boolean 
             {(status) => <SlackWorkspace paneId={paneId} active={active} status={status} />}
         </SignedIn>
     );
-}
-
-function when(at: string): string {
-    const time = Date.parse(at);
-    if (Number.isNaN(time)) return "";
-    const date = new Date(time);
-    const today = new Date().toDateString() === date.toDateString();
-    return today
-        ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-        : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 const KIND_MARK: Record<SlackChannel["kind"], string> = { channel: "#", private: "🔒", dm: "●", group: "◍" };
@@ -159,14 +149,14 @@ function SlackWorkspace({ paneId, active, status }: { paneId: string; active: bo
 
 function MessageView({ message, onThread, open }: { message: SlackMessage; onThread?: (ts: string) => void; open?: boolean }) {
     return (
-        <article className={`slack-message${open ? " open" : ""}`} aria-label={`${message.name} at ${when(message.at)}`}>
+        <article className={`slack-message${open ? " open" : ""}`} aria-label={`${message.name} at ${formatStamp(message.at)}`}>
             <header className="slack-message-head">
                 <span className="slack-avatar" aria-hidden="true">
                     {message.name.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="slack-author">{message.name}</span>
                 {message.bot && <span className="slack-badge">app</span>}
-                <span className="slack-time">{when(message.at)}</span>
+                <span className="slack-time">{formatStamp(message.at)}</span>
             </header>
             <Markdown className="prose slack-text">{message.text || " "}</Markdown>
             {message.files.length > 0 && <div className="slack-files">📎 {message.files.join(", ")}</div>}
