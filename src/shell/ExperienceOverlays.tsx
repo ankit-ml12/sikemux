@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invokeCommand as invoke } from "../api/invoke";
 import { uiActivity, type UiActivityReport } from "../lib/activity";
 import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
 import { useResourceEnabled } from "../state/resources";
@@ -21,10 +20,7 @@ import { useOccludeNativeViews } from "../state/nativeViews";
 import { copyText } from "../lib/clipboard";
 import { errorText } from "../lib/format";
 import { swallow } from "../state/toast";
-
-interface IntegrationHealth {
-    git: boolean;
-}
+import { integrationHealth } from "../api/system";
 
 /** Real first moves. Picking one closes the welcome and runs the action. */
 const WELCOME_MOVES = [
@@ -111,7 +107,7 @@ export function Onboarding() {
         if (!open) return;
         let disposed = false;
         setGitMissing(false);
-        void invoke<IntegrationHealth>("integration_health")
+        void integrationHealth()
             .then((value) => {
                 if (!disposed) setGitMissing(!value.git);
             })

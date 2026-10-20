@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { portsApi } from "../api/ports";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { planLabel } from "../rail/usageFormat";
 import * as cmd from "../state/commands";
@@ -28,6 +27,7 @@ import {
 } from "./accounts";
 import { selectedProviderProfile } from "./agentProfiles";
 import { agentBrand, agentLabel, type AccountAgentType } from "./catalog";
+import { openUrl } from "../api/system";
 
 export function AccountDialogHost() {
     const request = useAccountDialog();
@@ -268,7 +268,7 @@ function BrowserHelp({ url, account }: { url: string; account: ProviderProfile }
     }
     return (
         <div className="signin-alt">
-            <button type="button" className="signin-link" onClick={() => void portsApi.openExternal(url).catch(reportError("Open sign-in page"))}>
+            <button type="button" className="signin-link" onClick={() => void openUrl(url).catch(reportError("Open sign-in page"))}>
                 Open the page again
             </button>
             <button type="button" className="signin-link" onClick={() => setCode("")}>

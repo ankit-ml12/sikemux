@@ -106,6 +106,7 @@ import "./plugins/builtin";
 import { watchInbox } from "./rail/useInbox";
 import { useInstalledPlugins } from "./plugins/installed";
 import { useRailDock } from "./rail/railMotion";
+import { openUrl } from "./api/system";
 
 const SettingsPanel = lazy(() => import("./settings/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -344,9 +345,7 @@ function ApplicationCommandPalette() {
                 detail: projectConfig.config.preview.url,
                 category: "Project · Preview",
                 execute: runStandalone("project.preview.open", () => {
-                    void invoke("open_url", { url: projectConfig.config.preview!.url!, app: null, shortcut: null }).catch(
-                        reportError("open project preview"),
-                    );
+                    void openUrl(projectConfig.config.preview!.url!).catch(reportError("open project preview"));
                 }),
             });
         }

@@ -33,6 +33,7 @@ import { RendererRestartBackoff } from "./restartBackoff";
 import { copyText, readClipboardText } from "../lib/clipboard";
 import type { NativePtyController } from "./usePty";
 import { swallow } from "../state/toast";
+import { openUrl } from "../api/system";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_SIZE = 13;
@@ -124,7 +125,7 @@ function openTerminalLink(event: MouseEvent, uri: string) {
     event.preventDefault();
     const url = safeWebUrl(uri);
     if (!url) return;
-    void invoke("open_url", { url, app: null, shortcut: null }).catch((error) => console.warn("open terminal link failed", error));
+    void openUrl(url).catch((error) => console.warn("open terminal link failed", error));
 }
 
 export function useXterm(opts: {

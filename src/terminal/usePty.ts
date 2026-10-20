@@ -15,16 +15,13 @@ import { runShownIn, taskRuns, type TaskRun } from "../tasks/coreTasks";
 import { coreSessionsApi } from "../api/coreSessions";
 import { noteSpawnedSession, takeResumableSession } from "./sessionResume";
 import { noteTerminalSize } from "./spareShell";
+import { integrationHealth } from "../api/system";
 
 type NativeChannel = Channel<ArrayBuffer>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
 export type TerminalShellSemantics = "posix" | "powershell";
 
 const DEFAULT_SHELL_SEMANTICS: TerminalShellSemantics = IS_WINDOWS ? "powershell" : "posix";
-
-interface IntegrationHealthShell {
-    readonly shell?: unknown;
-}
 
 interface PtyResourceConfiguration {
     readonly cwd?: string;
@@ -91,7 +88,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
         noteTerminalSize(cols, rows);
         return invoke<void>("pty_resize", { id, cols, rows });
     },
-    kill: (id) => invoke<void>("pty_kill", { id }),
+    kill: coreSessionsApi.kill,
     attach: async (id, channel) => decodeAttachResponse(await invoke<ArrayBuffer>("pty_attach", { id, onEvent: channel })),
     detach: (id, subId) => invoke<void>("pty_unsubscribe", { id, subId }),
     ack: (id, subId, bytes) => invoke<void>("pty_ack", { id, subId, bytes }),
@@ -148,10 +145,8 @@ export function shellSemanticsForExecutable(shell: string): TerminalShellSemanti
 
 async function configuredShellSemantics(): Promise<TerminalShellSemantics> {
     try {
-        const health = await invoke<IntegrationHealthShell>("integration_health");
-        if (health && typeof health.shell === "string") {
-            return shellSemanticsForExecutable(health.shell) ?? DEFAULT_SHELL_SEMANTICS;
-        }
+        const { shell } = await integrationHealth();
+        return shellSemanticsForExecutable(shell) ?? DEFAULT_SHELL_SEMANTICS;
     } catch {
         // invokeCommand already records the failed IPC. Keep drag/drop usable
         // with the same default the native PTY launcher uses on this platform.

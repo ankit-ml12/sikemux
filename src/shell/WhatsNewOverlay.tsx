@@ -1,7 +1,7 @@
 import { createElement, useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { installPendingUpdate, isUpdateBusy, updateStatusLabel, waitingLabel } from "../api/updater";
-import { openInBrowser, releasesApi, type ReleaseContributor, type ReleaseNotes } from "../api/releases";
+import { releasesApi, type ReleaseContributor, type ReleaseNotes } from "../api/releases";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
@@ -11,6 +11,7 @@ import { ExperienceBackdrop } from "./ExperienceOverlays";
 import { UpdateWaiting } from "./UpdateWaiting";
 import { ShaderField } from "../ui/ShaderField";
 import { Markdown, MARKDOWN_PLAIN, type MarkdownComponents } from "../markdown/Markdown";
+import { openUrl } from "../api/system";
 
 const FEATURED = 3;
 const WALL = 13;
@@ -102,7 +103,7 @@ function highlightCount(notes: string | null): number {
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const profile = (login: string) => `https://github.com/${login}`;
-const openLink = (url: string) => void openInBrowser(url).catch(swallow("open a release link"));
+const openLink = (url: string) => void openUrl(url).catch(swallow("open a release link"));
 
 function Avatar({ person, src }: { person: ReleaseContributor; src: string | undefined }) {
     return src ? (

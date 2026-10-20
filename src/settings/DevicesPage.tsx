@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { accountApi, type AccountHost, type AccountStatus } from "../api/account";
-import { portsApi } from "../api/ports";
 import { AccountAvatar } from "../account/AccountAvatar";
 import { loadAccount, signInToAccount, signOutOfAccount, useAccount } from "../account/account";
 import { formatAgo } from "../lib/format";
@@ -20,6 +19,7 @@ import { Switch } from "../ui/Controls";
 import { IconGlobe, IconTrash } from "../ui/Icons";
 import { QrCode } from "./QrCode";
 import { SettingsPage, SettingsRow, SettingsRows } from "./SettingsLayout";
+import { openUrl } from "../api/system";
 
 const DELETE_ACCOUNT_URL = import.meta.env.DEV ? "http://localhost:5173/delete-account" : "https://app.sikemux.com/delete-account";
 export const PHONE_URL = "https://sikemux.com/phone";
@@ -217,7 +217,7 @@ function AccountRow({ account, link }: { account: AccountStatus; link: AccountLi
                     className="settings-btn"
                     type="button"
                     title="Delete your account at app.sikemux.com"
-                    onClick={() => void portsApi.openExternal(DELETE_ACCOUNT_URL).catch(reportError("Open link"))}>
+                    onClick={() => void openUrl(DELETE_ACCOUNT_URL).catch(reportError("Open link"))}>
                     Delete account…
                 </button>
                 <button className="settings-btn" type="button" disabled={leaving} onClick={() => void signOut()}>

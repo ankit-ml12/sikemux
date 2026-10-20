@@ -54,6 +54,7 @@ import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib
 import { localPath } from "../lib/imagePaths";
 import { safeWebUrl } from "../lib/urls";
 import { keybindingLabelForAction } from "../commands/keybindings";
+import { openUrl } from "../api/system";
 
 const FileViewer = lazy(() => import("./viewers/FileViewer"));
 
@@ -139,7 +140,7 @@ function MarkdownPreview({ source, path, onOpenFile }: { source: string; path: s
                         if (!href) return;
                         const webUrl = safeWebUrl(href);
                         if (webUrl) {
-                            void invoke("open_url", { url: webUrl, app: null, shortcut: null }).catch(swallow("open markdown link"));
+                            void openUrl(webUrl).catch(swallow("open markdown link"));
                             return;
                         }
                         const file = markdownLinkFile(href, path);

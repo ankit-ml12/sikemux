@@ -11,7 +11,7 @@ import {
     shortTitle,
 } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
-import { openInBrowser } from "../api/releases";
+import { openUrl } from "../api/system";
 import * as cmd from "../state/commands";
 import { confirmDialog } from "../state/dialog";
 import { reportError } from "../state/toast";
@@ -159,7 +159,7 @@ export function CardPanel({
                                 className="kanban-icon-button"
                                 title="Open in browser"
                                 aria-label="Open the ticket in the browser"
-                                onClick={() => void openInBrowser(card.ticket!.url!)}>
+                                onClick={() => void openUrl(card.ticket!.url!)}>
                                 <IconExternal size={12} />
                             </button>
                         )}
@@ -299,7 +299,7 @@ export function CardPanel({
                                         className="kanban-icon-button"
                                         title="Open in browser"
                                         aria-label="Open the pull request in the browser"
-                                        onClick={() => void openInBrowser(card.auto!.pull!.url)}>
+                                        onClick={() => void openUrl(card.auto!.pull!.url)}>
                                         <IconExternal size={12} />
                                     </button>
                                 )}

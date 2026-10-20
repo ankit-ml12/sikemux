@@ -11,7 +11,6 @@ import {
     type GitRemoteBranch,
     type GitStash,
 } from "../api/git";
-import { portsApi } from "../api/ports";
 import * as cmd from "../state/commands";
 import { openGitCheatsheet, openGitConfirm, openGitMenu, openGitPrompt, toggleGitCmdLog } from "../state/git";
 import { invalidate, useCachedResourceEnabled } from "../state/resources";
@@ -88,6 +87,7 @@ import { AI_MODELS, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPane
 import { agentLabel, type CommitMessageAgentType } from "../agents/catalog";
 import { filterByQuery, isInRange } from "./gitPaneLogic";
 import { basename as basenameOf, dirname, joinPath } from "../lib/paths";
+import { openUrl } from "../api/system";
 
 const CommitReview = lazy(() => import("./CommitReview").then((module) => ({ default: memo(module.CommitReview) })));
 const MergeReview = lazy(() => import("./MergeReview").then((module) => ({ default: memo(module.MergeReview) })));
@@ -863,7 +863,7 @@ function GitWorkbench({
         }
         void run("opening PR…", async () => {
             const url = await git.pullRequestUrl(repo);
-            await portsApi.openExternal(url);
+            await openUrl(url);
             return `Opened the pull request page · ${url}`;
         });
     };

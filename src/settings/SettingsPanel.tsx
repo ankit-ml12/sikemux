@@ -18,7 +18,7 @@ import {
     type KeybindingOverrides,
 } from "../commands/keybindings";
 import { settingsApi } from "../api/settings";
-import { openInBrowser } from "../api/releases";
+import { openUrl } from "../api/system";
 import { isUpdateBusy, RELEASES_URL, updateCheckLabel, UPDATES_IN_APP } from "../api/updater";
 import { prettyPath } from "../lib/paths";
 import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
@@ -843,7 +843,7 @@ function AboutPage() {
                         </>
                     ) : (
                         <SettingsRow label="New versions" desc="Linux builds do not update themselves yet. Download each new release from GitHub.">
-                            <button className="settings-btn" onClick={() => void openInBrowser(RELEASES_URL).catch(reportError("open releases"))}>
+                            <button className="settings-btn" onClick={() => void openUrl(RELEASES_URL).catch(reportError("open releases"))}>
                                 Open releases
                             </button>
                         </SettingsRow>
