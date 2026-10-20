@@ -1,7 +1,10 @@
 //! The session's permission modes, models and effort levels, and the chat's
 //! own tool servers, in the shapes Muse's session protocol takes them.
 
+use agent_client_protocol::schema::v1::McpServer;
 use serde_json::{json, Map, Value};
+
+use super::super::servers;
 
 /// The app's two permission modes. Muse's sandbox is fixed for the life of
 /// the `muse serve` process, so the mode also decides how it is started.
@@ -185,46 +188,41 @@ fn capitalized(word: &str) -> String {
     }
 }
 
-/// The names in an ACP name and value list, as a map.
-fn pairs(list: &Value) -> Map<String, Value> {
-    list.as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|pair| Some((pair["name"].as_str()?.to_owned(), pair["value"].clone())))
-        .collect()
-}
-
 /// The chat's own tool servers as Muse's per-session ones. A server that
 /// fails to start is left out with a warning rather than failing the chat.
-pub(super) fn tool_servers(servers: &[Value]) -> Map<String, Value> {
-    let mut tools = Map::new();
-    for server in servers {
-        let Some(name) = server["name"].as_str() else {
-            continue;
-        };
-        let name = name.replace(char::is_whitespace, "_");
-        let entry = match server["type"].as_str() {
-            Some("http") => json!({
-                "transport": "streamableHttp",
-                "url": server["url"],
-                "headers": pairs(&server["headers"]),
-                "mode": "optional",
-            }),
-            Some(kind @ ("sse" | "acp")) => {
+pub(super) fn tool_servers(tools: &[McpServer]) -> Map<String, Value> {
+    let mut entries = Map::new();
+    for server in tools {
+        let (name, entry) = match server {
+            McpServer::Http(http) => (
+                &http.name,
+                json!({
+                    "transport": "streamableHttp",
+                    "url": http.url,
+                    "headers": servers::headers(&http.headers),
+                    "mode": "optional",
+                }),
+            ),
+            McpServer::Stdio(stdio) => (
+                &stdio.name,
+                json!({
+                    "transport": "stdio",
+                    "command": stdio.command,
+                    "args": stdio.args,
+                    "env": servers::variables(&stdio.env),
+                    "mode": "optional",
+                }),
+            ),
+            McpServer::Sse(sse) => {
                 eprintln!(
-                    "sikemux core: Muse skips tool server {name}: it does not take {kind} servers"
+                    "sikemux core: Muse skips tool server {}: it does not take SSE servers",
+                    sse.name
                 );
                 continue;
             }
-            _ => json!({
-                "transport": "stdio",
-                "command": server["command"],
-                "args": server["args"],
-                "env": pairs(&server["env"]),
-                "mode": "optional",
-            }),
+            _ => continue,
         };
-        tools.insert(name, entry);
+        entries.insert(servers::config_key(name), entry);
     }
-    tools
+    entries
 }

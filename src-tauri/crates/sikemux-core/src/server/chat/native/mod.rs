@@ -8,9 +8,11 @@ mod claude;
 mod codex;
 mod json;
 mod muse;
+mod parts;
 mod patch;
 mod process;
 mod rpc;
+mod servers;
 mod session;
 
 use std::sync::Arc;

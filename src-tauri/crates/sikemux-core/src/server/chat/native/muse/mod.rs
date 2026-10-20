@@ -16,17 +16,17 @@ use std::time::Duration;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use url::Url;
 use uuid::Uuid;
 
-use crate::acp::prompt_blocks;
 use crate::protocol::ChatLaunch;
 
 use super::super::Respond;
 use super::file_link;
 use super::json::text;
+use super::parts::{context_text, parts, picture, Part};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
+use super::servers;
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
 use approvals::Question;
 use commands::Command;
@@ -40,14 +40,6 @@ const MAX_SUBAGENT_SESSIONS: usize = 64;
 /// The largest picture handed to Muse, which takes at most ten megabytes in
 /// one message once it is base64.
 const MAX_IMAGE_BYTES: u64 = 7 * 1024 * 1024;
-
-const IMAGE_TYPES: [(&str, &str); 5] = [
-    ("png", "image/png"),
-    ("jpg", "image/jpeg"),
-    ("jpeg", "image/jpeg"),
-    ("gif", "image/gif"),
-    ("webp", "image/webp"),
-];
 
 /// A command's id. Muse wants every command to carry a fresh UUIDv7, and names
 /// a fresh turn by the id of the command that started it.
@@ -374,7 +366,7 @@ impl Host {
 
     /// The per-session settings Muse takes when it opens or loads a session.
     fn session_config(&self, launch: &ChatLaunch) -> Value {
-        let servers = config::tool_servers(&launch.mcp_servers);
+        let servers = config::tool_servers(&servers::tool_servers(launch));
         if self.session_tools && !servers.is_empty() {
             json!({ "mcpServers": servers })
         } else {
@@ -431,43 +423,34 @@ async fn subagent_histories(rpc: &Rpc, items: &[Value]) -> HashMap<String, Vec<V
 
 /// A file the person attached, as Muse's input for it: the picture itself
 /// when it is one Muse can look at, otherwise a link to it.
-fn attachment(name: Option<&str>, uri: &str) -> Value {
-    let path = Url::parse(uri).ok().and_then(|url| url.to_file_path().ok());
-    let picture = path.as_deref().and_then(|path| {
-        let extension = path.extension()?.to_str()?.to_lowercase();
-        let (_, media_type) = IMAGE_TYPES.iter().find(|(known, _)| *known == extension)?;
-        let size = std::fs::metadata(path).ok()?.len();
-        if size > MAX_IMAGE_BYTES {
+fn attachment(name: &str, uri: &str) -> Value {
+    let image = picture(uri).and_then(|(path, media_type)| {
+        if std::fs::metadata(&path).ok()?.len() > MAX_IMAGE_BYTES {
             return None;
         }
-        let bytes = std::fs::read(path).ok()?;
+        let bytes = std::fs::read(&path).ok()?;
         Some(json!({
             "type": "image",
             "mediaType": media_type,
             "base64Data": base64::engine::general_purpose::STANDARD.encode(bytes),
         }))
     });
-    picture.unwrap_or_else(|| json!({ "type": "text", "text": file_link(name, uri) }))
+    image.unwrap_or_else(|| json!({ "type": "text", "text": file_link(Some(name), uri) }))
 }
 
-/// Muse's input for the prompt's blocks.
-fn input(blocks: &[Value]) -> Vec<Value> {
+/// Muse's input for the prompt.
+fn input(parts: Vec<Part>) -> Vec<Value> {
     let said = |text: String| json!({ "type": "text", "text": text });
-    blocks
-        .iter()
-        .filter_map(|block| match block["type"].as_str()? {
-            "text" => Some(said(block["text"].as_str()?.to_owned())),
-            "resource_link" => Some(attachment(block["name"].as_str(), block["uri"].as_str()?)),
-            "resource" => {
-                let resource = &block["resource"];
-                let uri = resource["uri"].as_str()?;
-                let body = resource["text"].as_str()?;
-                Some(said(format!(
-                    "{}\n<context ref=\"{uri}\">\n{body}\n</context>",
-                    file_link(None, uri)
-                )))
-            }
-            _ => None,
+    parts
+        .into_iter()
+        .map(|part| match part {
+            Part::Text(text) => said(text),
+            Part::File { name, uri } => attachment(&name, &uri),
+            Part::Context { uri, text } => said(format!(
+                "{}\n{}",
+                file_link(None, &uri),
+                context_text(&uri, &text)
+            )),
         })
         .collect()
 }
@@ -508,14 +491,7 @@ impl Muse {
     }
 
     fn prompt_input(&self, prompt: &Prompt) -> Result<Vec<Value>, String> {
-        let blocks = prompt_blocks(
-            prompt.text.clone(),
-            prompt.paths.clone(),
-            prompt.context.clone(),
-            true,
-        )?;
-        let blocks = serde_json::to_value(blocks).map_err(|error| error.to_string())?;
-        Ok(input(blocks.as_array().map_or(&[], Vec::as_slice)))
+        Ok(input(parts(prompt)?))
     }
 
     fn say(&self, said: &str) {

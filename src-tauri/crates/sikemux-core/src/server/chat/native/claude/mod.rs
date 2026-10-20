@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use agent_client_protocol::schema::v1::McpServer;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -23,7 +24,10 @@ use crate::protocol::ChatLaunch;
 use crate::sessions::{self, roots::account_root};
 
 use super::super::Respond;
+use super::file_link;
+use super::parts::{context_text, parts, Part};
 use super::process::{Lines, Process, Reading, Released, Writer};
+use super::servers;
 use super::session::{Backend, Opened, Prompt, Sink};
 use control::Control;
 use reader::{Asking, Reader, ReaderState, Shared, Turn};
@@ -78,79 +82,51 @@ fn transcript(launch: &ChatLaunch, session_id: &str) -> Option<PathBuf> {
     sessions::transcript::find(AgentKind::Claude, &root, Some(&cwd), session_id)
 }
 
-/// The ACP tool server list as Claude Code's `--mcp-config` file.
-fn mcp_config(servers: &[Value]) -> Option<String> {
-    let pairs = |list: Option<&Value>| -> serde_json::Map<String, Value> {
-        list.and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|pair| {
-                Some((
-                    pair.get("name")?.as_str()?.to_owned(),
-                    pair.get("value")?.clone(),
-                ))
-            })
-            .collect()
-    };
-    let servers: serde_json::Map<String, Value> = servers
+/// The chat's tool servers as Claude Code's `--mcp-config` file.
+fn mcp_config(tools: &[McpServer]) -> Option<String> {
+    let tools: serde_json::Map<String, Value> = tools
         .iter()
         .filter_map(|server| {
-            let name = server.get("name")?.as_str()?.to_owned();
-            let config = match server.get("type").and_then(Value::as_str) {
-                Some(kind @ ("http" | "sse")) => json!({
-                    "type": kind,
-                    "url": server.get("url")?,
-                    "headers": pairs(server.get("headers")),
-                }),
-                _ => json!({
-                    "type": "stdio",
-                    "command": server.get("command")?,
-                    "args": server.get("args").cloned().unwrap_or_else(|| json!([])),
-                    "env": pairs(server.get("env")),
-                }),
+            let (name, config) = match server {
+                McpServer::Http(http) => (
+                    &http.name,
+                    json!({ "type": "http", "url": http.url, "headers": servers::headers(&http.headers) }),
+                ),
+                McpServer::Sse(sse) => (
+                    &sse.name,
+                    json!({ "type": "sse", "url": sse.url, "headers": servers::headers(&sse.headers) }),
+                ),
+                McpServer::Stdio(stdio) => (
+                    &stdio.name,
+                    json!({
+                        "type": "stdio",
+                        "command": stdio.command,
+                        "args": stdio.args,
+                        "env": servers::variables(&stdio.env),
+                    }),
+                ),
+                _ => return None,
             };
-            Some((name, config))
+            Some((name.clone(), config))
         })
         .collect();
-    (!servers.is_empty()).then(|| json!({ "mcpServers": servers }).to_string())
+    (!tools.is_empty()).then(|| json!({ "mcpServers": tools }).to_string())
 }
 
 /// What the person wrote, as the content of a Claude user message. Files go
 /// as links Claude reads itself, and handed-over text follows the message.
 fn content(prompt: &Prompt) -> Result<Vec<Value>, String> {
-    let blocks = crate::acp::prompt_blocks(
-        prompt.text.clone(),
-        prompt.paths.clone(),
-        prompt.context.clone(),
-        true,
-    )?;
-    let link = |uri: &str| super::file_link(None, uri);
+    let text = |text: String| json!({ "type": "text", "text": text });
     let mut content = Vec::new();
     let mut handed = Vec::new();
-    for block in blocks {
-        let block = serde_json::to_value(block).map_err(|error| error.to_string())?;
-        match block.get("type").and_then(Value::as_str) {
-            Some("text") => content.push(json!({ "type": "text", "text": block["text"] })),
-            Some("resource_link") => {
-                let uri = block["uri"].as_str().unwrap_or_default();
-                content.push(json!({ "type": "text", "text": link(uri) }));
+    for part in parts(prompt)? {
+        match part {
+            Part::Text(said) => content.push(text(said)),
+            Part::File { name, uri } => content.push(text(file_link(Some(&name), &uri))),
+            Part::Context { uri, text: body } => {
+                content.push(text(file_link(None, &uri)));
+                handed.push(text(format!("\n{}", context_text(&uri, &body))));
             }
-            Some("resource") => {
-                let uri = block.pointer("/resource/uri").and_then(Value::as_str).unwrap_or_default();
-                let text = block.pointer("/resource/text").and_then(Value::as_str);
-                content.push(json!({ "type": "text", "text": link(uri) }));
-                if let Some(text) = text {
-                    handed.push(json!({
-                        "type": "text",
-                        "text": format!("\n<context ref=\"{uri}\">\n{text}\n</context>"),
-                    }));
-                }
-            }
-            Some("image") => content.push(json!({
-                "type": "image",
-                "source": { "type": "base64", "data": block["data"], "media_type": block["mimeType"] },
-            })),
-            _ => {}
         }
     }
     content.extend(handed);
@@ -204,7 +180,7 @@ impl Claude {
         if let Some(model) = model.filter(|model| *model != config::DEFAULT) {
             args.extend(["--model".to_owned(), model.to_owned()]);
         }
-        if let Some(config) = mcp_config(&launch.mcp_servers) {
+        if let Some(config) = mcp_config(&servers::tool_servers(launch)) {
             args.extend(["--mcp-config".to_owned(), config]);
         }
         match start {
@@ -739,8 +715,8 @@ mod tests {
     #[test]
     fn tool_servers_become_claudes_mcp_config() {
         let config = mcp_config(&[
-            json!({ "name": "sikemux-tools", "command": "/bin/tools", "args": ["--x"], "env": [{ "name": "K", "value": "v" }] }),
-            json!({ "type": "http", "name": "web", "url": "https://x", "headers": [] }),
+            serde_json::from_value(json!({ "name": "sikemux-tools", "command": "/bin/tools", "args": ["--x"], "env": [{ "name": "K", "value": "v" }] })).unwrap(),
+            serde_json::from_value(json!({ "type": "http", "name": "web", "url": "https://x", "headers": [] })).unwrap(),
         ])
         .unwrap();
         let config: Value = serde_json::from_str(&config).unwrap();

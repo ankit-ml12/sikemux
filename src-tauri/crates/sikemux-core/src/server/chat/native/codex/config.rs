@@ -1,7 +1,10 @@
 //! The session's permission modes, models and effort levels: what the app
 //! picks from, and what Codex is told on every turn.
 
-use serde_json::{json, Value};
+use agent_client_protocol::schema::v1::McpServer;
+use serde_json::{json, Map, Value};
+
+use super::super::servers;
 
 /// The app's two permission modes, as the presets Codex's ACP adapter names
 /// them by. "read-only" still writes inside the workspace; it asks first for
@@ -204,54 +207,41 @@ fn capitalized(word: &str) -> String {
 /// Codex's config overrides for a session: the folder is trusted, and the
 /// chat's own tool servers are added unless Codex's config already has one
 /// by that name.
-pub(super) fn session_config(cwd: &str, servers: &[Value], configured: &[String]) -> Value {
+pub(super) fn session_config(cwd: &str, tools: &[McpServer], configured: &[String]) -> Value {
     let mut config = json!({ "projects": { cwd: { "trust_level": "trusted" } } });
-    let mut tools = serde_json::Map::new();
-    for server in servers {
-        let Some(name) = server["name"].as_str() else {
-            continue;
-        };
-        let name = name.replace(char::is_whitespace, "_");
-        if configured.contains(&name) {
-            continue;
-        }
-        match tool_server(server) {
-            Ok(entry) => {
-                tools.insert(name, entry);
+    let mut entries = Map::new();
+    for server in tools {
+        let (name, entry) = match server {
+            McpServer::Http(http) => (
+                &http.name,
+                json!({ "url": http.url, "http_headers": servers::headers(&http.headers) }),
+            ),
+            McpServer::Stdio(stdio) => (
+                &stdio.name,
+                json!({
+                    "command": stdio.command,
+                    "args": stdio.args,
+                    "env": servers::variables(&stdio.env),
+                }),
+            ),
+            McpServer::Sse(sse) => {
+                eprintln!(
+                    "sikemux core: Codex skips tool server {}: it does not take SSE servers",
+                    sse.name
+                );
+                continue;
             }
-            Err(error) => eprintln!("sikemux core: Codex skips tool server {name}: {error}"),
+            _ => continue,
+        };
+        let name = servers::config_key(name);
+        if !configured.contains(&name) {
+            entries.insert(name, entry);
         }
     }
-    if !tools.is_empty() {
-        config["mcp_servers"] = Value::Object(tools);
+    if !entries.is_empty() {
+        config["mcp_servers"] = Value::Object(entries);
     }
     config
-}
-
-/// The names in an ACP name and value list, as a map.
-fn pairs(list: &Value) -> Value {
-    Value::Object(
-        list.as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|pair| Some((pair["name"].as_str()?.to_owned(), pair["value"].clone())))
-            .collect(),
-    )
-}
-
-fn tool_server(server: &Value) -> Result<Value, String> {
-    match server["type"].as_str() {
-        Some("http") => Ok(json!({
-            "url": server["url"],
-            "http_headers": pairs(&server["headers"]),
-        })),
-        Some(kind @ ("sse" | "acp")) => Err(format!("Codex does not support {kind} tool servers")),
-        _ => Ok(json!({
-            "command": server["command"],
-            "args": server["args"],
-            "env": pairs(&server["env"]),
-        })),
-    }
 }
 
 /// The tool server names Codex's own config already has, in any layer.
@@ -370,6 +360,10 @@ mod tests {
             }),
             json!({ "type": "http", "name": "mine", "url": "https://y", "headers": [] }),
         ];
+        let servers: Vec<McpServer> = servers
+            .into_iter()
+            .map(|server| serde_json::from_value(server).unwrap())
+            .collect();
         let config = session_config("/work", &servers, &["mine".to_owned()]);
         assert_eq!(config["projects"]["/work"]["trust_level"], "trusted");
         assert_eq!(

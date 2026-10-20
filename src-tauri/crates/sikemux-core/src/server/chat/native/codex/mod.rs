@@ -16,16 +16,16 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use url::Url;
 
-use crate::acp::prompt_blocks;
 use crate::launch::providers::ROUTED_ENV;
 use crate::protocol::ChatLaunch;
 
 use super::super::Respond;
 use super::file_link;
+use super::parts::{context_text, parts, picture, Part};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
+use super::servers;
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
 use approvals::Question;
 use commands::Command;
@@ -37,8 +37,6 @@ const SUBAGENT_WAIT: Duration = Duration::from_secs(10 * 60);
 
 /// How many subagent threads a resumed history reads.
 const MAX_SUBAGENT_THREADS: usize = 64;
-
-const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
 /// What the reader and the chat's loop share.
 #[derive(Clone)]
@@ -280,41 +278,23 @@ async fn subagent_histories(rpc: &Rpc, turns: &[Value]) -> HashMap<String, Vec<V
     histories
 }
 
-/// Codex's input for the prompt's blocks, the way Codex's adapter writes them,
-/// with attached images handed over as images when the model reads them.
-fn input(blocks: &[Value], images: bool) -> Vec<Value> {
+/// Codex's input for the prompt, the way Codex's adapter writes it, with
+/// attached pictures handed over as pictures when the model reads them.
+fn input(parts: Vec<Part>, images: bool) -> Vec<Value> {
     let text = |text: String| json!({ "type": "text", "text": text, "text_elements": [] });
-    blocks
-        .iter()
-        .filter_map(|block| match block["type"].as_str()? {
-            "text" => Some(text(block["text"].as_str()?.to_owned())),
-            "resource_link" => {
-                let uri = block["uri"].as_str()?;
-                let path = Url::parse(uri).ok().and_then(|url| url.to_file_path().ok());
-                let image = path.as_deref().filter(|path| {
-                    images
-                        && path
-                            .extension()
-                            .and_then(|extension| extension.to_str())
-                            .is_some_and(|extension| {
-                                IMAGE_EXTENSIONS.contains(&extension.to_lowercase().as_str())
-                            })
-                });
-                match image {
-                    Some(path) => Some(json!({ "type": "localImage", "path": path })),
-                    None => Some(text(file_link(block["name"].as_str(), uri))),
-                }
-            }
-            "resource" => {
-                let resource = &block["resource"];
-                let uri = resource["uri"].as_str()?;
-                let body = resource["text"].as_str()?;
-                Some(text(format!(
-                    "{}\n<context ref=\"{uri}\">\n{body}\n</context>",
-                    file_link(None, uri)
-                )))
-            }
-            _ => None,
+    parts
+        .into_iter()
+        .map(|part| match part {
+            Part::Text(said) => text(said),
+            Part::File { name, uri } => match picture(&uri).filter(|_| images) {
+                Some((path, _)) => json!({ "type": "localImage", "path": path }),
+                None => text(file_link(Some(&name), &uri)),
+            },
+            Part::Context { uri, text: body } => text(format!(
+                "{}\n{}",
+                file_link(None, &uri),
+                context_text(&uri, &body)
+            )),
         })
         .collect()
 }
@@ -339,15 +319,7 @@ impl Codex {
     }
 
     fn prompt_input(&self, prompt: &Prompt) -> Result<Vec<Value>, String> {
-        let blocks = prompt_blocks(
-            prompt.text.clone(),
-            prompt.paths.clone(),
-            prompt.context.clone(),
-            true,
-        )?;
-        let blocks = serde_json::to_value(blocks).map_err(|error| error.to_string())?;
-        let blocks = blocks.as_array().cloned().unwrap_or_default();
-        Ok(input(&blocks, self.models.takes_images(&self.model)))
+        Ok(input(parts(prompt)?, self.models.takes_images(&self.model)))
     }
 
     fn say(&self, text: &str) {
@@ -555,7 +527,8 @@ impl Backend for Codex {
             .await
             .map(|read| config::configured_servers(&read))
             .unwrap_or_default();
-        let session_config = config::session_config(&cwd, &launch.mcp_servers, &configured);
+        let session_config =
+            config::session_config(&cwd, &servers::tool_servers(launch), &configured);
         let servers: Vec<String> = session_config["mcp_servers"]
             .as_object()
             .map(|servers| servers.keys().cloned().collect())
@@ -828,16 +801,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prompt_blocks_become_codex_input() {
-        let blocks = [
-            json!({ "type": "text", "text": "look" }),
-            json!({ "type": "resource", "resource": {
-                "uri": "https://github.com/o/r/issues/1", "mimeType": "text/markdown", "text": "Issue",
-            } }),
-            json!({ "type": "resource_link", "name": "a.txt", "uri": "file:///w/a.txt" }),
-            json!({ "type": "resource_link", "name": "shot.PNG", "uri": "file:///w/shot.PNG" }),
-        ];
-        let said = input(&blocks, true);
+    fn prompt_parts_become_codex_input() {
+        let parts = || {
+            vec![
+                Part::Text("look".into()),
+                Part::Context {
+                    uri: "https://github.com/o/r/issues/1".into(),
+                    text: "Issue".into(),
+                },
+                Part::File {
+                    name: "a.txt".into(),
+                    uri: "file:///w/a.txt".into(),
+                },
+                Part::File {
+                    name: "shot.PNG".into(),
+                    uri: "file:///w/shot.PNG".into(),
+                },
+            ]
+        };
+        let said = input(parts(), true);
         assert_eq!(
             said[0],
             json!({ "type": "text", "text": "look", "text_elements": [] })
@@ -852,7 +834,7 @@ mod tests {
             json!({ "type": "localImage", "path": "/w/shot.PNG" })
         );
         assert_eq!(
-            input(&blocks, false)[3]["text"],
+            input(parts(), false)[3]["text"],
             "[@shot.PNG](file:///w/shot.PNG)"
         );
     }

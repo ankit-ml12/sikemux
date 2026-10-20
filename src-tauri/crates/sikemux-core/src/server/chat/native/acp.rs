@@ -23,6 +23,7 @@ use crate::protocol::ChatLaunch;
 use super::super::Respond;
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
+use super::servers;
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
 
 /// The error code an agent turns a prompt down with when it needs a sign-in.
@@ -203,24 +204,6 @@ struct AcpState {
     model_outside_config: bool,
 }
 
-/// The tool servers the chat hands its agent, skipping any it cannot read.
-fn tool_servers(launch: &ChatLaunch) -> Vec<McpServer> {
-    launch
-        .mcp_servers
-        .iter()
-        .filter_map(|server| match serde_json::from_value(server.clone()) {
-            Ok(server) => Some(server),
-            Err(error) => {
-                eprintln!(
-                    "sikemux core: chat {} skips a tool server it cannot read: {error}",
-                    launch.agent_id
-                );
-                None
-            }
-        })
-        .collect()
-}
-
 pub(crate) struct Acp {
     process: Process,
     driver: Driver,
@@ -266,7 +249,7 @@ impl Acp {
         launch: &ChatLaunch,
         can_load: bool,
     ) -> Result<(String, Value), String> {
-        let servers = tool_servers(launch);
+        let servers = servers::tool_servers(launch);
         let Some(existing) = launch.resume_id.clone() else {
             return Self::open_new(driver, launch, servers).await;
         };
