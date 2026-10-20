@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppState, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import type { ConnectionLike } from '@sikemux/native';
 
@@ -130,6 +130,54 @@ function linkDetail(link: LinkedHost, now: number): string {
   return [platformName(link.platform), reach, link.agents ? agentCount(link.agents) : null].filter(Boolean).join(' · ');
 }
 
+/** The host's lock (ADR 0018): whether each new device and host on the account waits for the person here. */
+function ApprovalRow({ connection }: { connection: ConnectionLike | undefined }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const type = useType();
+  const [on, setOn] = useState<boolean>();
+  const [problem, setProblem] = useState<string>();
+  useEffect(() => {
+    if (!connection) return;
+    let current = true;
+    connection.call('requireApproval', 'null').then(
+      (text) => current && setOn((JSON.parse(text) as { requireApproval: boolean }).requireApproval),
+      (error: unknown) => current && setProblem(problemOf(error)),
+    );
+    return () => {
+      current = false;
+    };
+  }, [connection]);
+  const flip = async (next: boolean) => {
+    if (!connection) return;
+    setOn(next);
+    try {
+      await connection.call('setRequireApproval', JSON.stringify({ requireApproval: next }));
+      setProblem(undefined);
+    } catch (error) {
+      setOn(!next);
+      setProblem(problemOf(error));
+    }
+  };
+  return (
+    <View style={styles.lock}>
+      <Icon name="IconLock" size={18} color={colors.secondary} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.lockTitle}>Require approval for new devices</Text>
+        <Text style={type.meta}>{problem ?? 'Ask here before a device or host on your account connects'}</Text>
+      </View>
+      <Switch
+        value={on ?? false}
+        disabled={on === undefined}
+        onValueChange={(next) => void flip(next)}
+        trackColor={{ false: colors.active, true: colors.live }}
+        thumbColor={colors.ink}
+        accessibilityLabel="Require approval for new devices"
+      />
+    </View>
+  );
+}
+
 /** Who may connect to a host: the devices asking now, answered here, and those already paired, changed or removed here. */
 export default function HostPairing() {
   const styles = useStyles(makeStyles);
@@ -157,6 +205,7 @@ export default function HostPairing() {
       <ScrollView
         contentContainerStyle={[styles.body, { paddingBottom: bottom + 24 }]}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reread} />}>
+        <ApprovalRow connection={connection} />
         {pending.length ? (
           <>
             <SectionLabel>Asking to connect</SectionLabel>
@@ -263,5 +312,19 @@ const makeStyles = (colors: Palette) => {
     sheet: { paddingHorizontal: 4, gap: 12 },
     sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     remove: { marginTop: 8 },
+    lock: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      minHeight: 52,
+      marginTop: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 9,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    lockTitle: { ...type.row, fontSize: 15, color: colors.ink },
   });
 };

@@ -1707,6 +1707,9 @@
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span><span style="flex:1;text-align:center;font-weight:600;color:var(--text-primary)">Paired devices</span><span style="width:60px"></span></div>
         <div class="pad grow">
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconLock:18}}</span><div class="body"><div class="t">Require approval for new devices</div><div class="s">Ask here before a device or host on your account connects</div></div><span class="toggle off"></span></div>
+          </div>
           <div class="glabel">Paired</div>
           <div class="rows">
             <div class="row"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t">Kishore's iPhone</div><div class="s">Full control · this phone</div></div></div>
@@ -1724,7 +1727,7 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Linked hosts</b><div class="note">Hosts on the same account can link, so an agent on one starts workers on the other. Below the paired devices, another host asking to link leads, with its name, its system and that it came from your account, and Decline and Allow as chips. A link is asked for once, from the other host, and raises the same notification as a phone asking to connect. Then every linked host: its system, connected or when it was last seen, and how many agents work across the link. Only a phone that may answer pairing requests may answer a link.</div></figcaption>
+      <figcaption><b>Linked hosts</b><div class="note">Hosts on the same account can link, so an agent on one starts workers on the other. Below the paired devices, another host asking to link leads, with its name, its system and that it came from your account, and Decline and Allow as chips. A link is asked for once, from the other host, and raises the same notification as a phone asking to connect. Then every linked host: its system, connected or when it was last seen, and how many agents work across the link. Only a phone that may answer pairing requests may answer a link. At the top, the host's lock: off, every device and host signed in to your account comes straight in; on, each new one waits here, and on every device acting as you, for ten minutes. Only a device acting as you can change it.</div></figcaption>
     </figure>
 
 

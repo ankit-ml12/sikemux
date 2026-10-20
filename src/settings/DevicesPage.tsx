@@ -19,7 +19,8 @@ import { Switch } from "../ui/Controls";
 import { IconGlobe, IconLock, IconMore, IconPencil, IconTrash } from "../ui/Icons";
 import { QrCode } from "./QrCode";
 import { confirmDialog } from "../state/dialog";
-import { TreeContextMenu } from "../rail/FileTree";
+import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
+import { approvalItem } from "../hosts/hosts";
 import { SettingsPage, SettingsRow, SettingsRows } from "./SettingsLayout";
 import { openUrl } from "../api/system";
 
@@ -365,7 +366,7 @@ function useLinkedHosts(): [readonly LinkedHost[] | null, () => void] {
 function HostsSection({ now }: { now: number }) {
     const [links, reread] = useLinkedHosts();
     const [renaming, setRenaming] = useState<string | null>(null);
-    const [menu, setMenu] = useState<{ host: LinkedHost; x: number; y: number } | null>(null);
+    const [menu, setMenu] = useState<{ host: LinkedHost; x: number; y: number; lock: CtxItem } | null>(null);
     const rename = async (host: LinkedHost, name: string) => {
         setRenaming(null);
         if (!name.trim() || name.trim() === host.name) return;
@@ -419,7 +420,12 @@ function HostsSection({ now }: { now: number }) {
                                 className="settings-btn"
                                 type="button"
                                 aria-label={`More for ${host.name}`}
-                                onClick={(event) => setMenu({ host, x: event.clientX, y: event.clientY })}>
+                                onClick={(event) => {
+                                    const { clientX: x, clientY: y } = event;
+                                    void approvalItem(host.id).then((lock) =>
+                                        setMenu({ host, x, y, lock: { ...lock, icon: <IconLock size={13} /> } }),
+                                    );
+                                }}>
                                 <IconMore size={12} />
                             </button>
                         </SettingsRow>
@@ -431,6 +437,8 @@ function HostsSection({ now }: { now: number }) {
                     x={menu.x}
                     y={menu.y}
                     items={[
+                        menu.lock,
+                        { sep: true },
                         { label: "Rename", icon: <IconPencil size={13} />, run: () => setRenaming(menu.host.id) },
                         { label: "Remove from account", icon: <IconTrash size={13} />, danger: true, run: () => void remove(menu.host) },
                     ]}

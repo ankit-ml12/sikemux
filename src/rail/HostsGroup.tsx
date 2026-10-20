@@ -2,14 +2,14 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { accountApi } from "../api/account";
 import { coreCall } from "../api/core";
 import { sshApi } from "../api/ssh";
-import { copyOn, hostsApi, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
+import { approvalItem, copyOn, hostsApi, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
 import { getState, useStore, type StoreState } from "../state/store";
 import { reportError, swallow } from "../state/toast";
 import type { Session } from "../state/types";
 import { useSshTone } from "../terminal/sshLinks";
-import { IconDownload, IconFolder, IconLaptop, IconMore, IconPencil, IconPlus, IconServer, IconTerminal, IconTrash } from "../ui/Icons";
+import { IconDownload, IconFolder, IconLock, IconLaptop, IconMore, IconPencil, IconPlus, IconServer, IconTerminal, IconTrash } from "../ui/Icons";
 import { StatusDot } from "../ui/StatusDot";
 import type { CtxItem } from "./FileTree";
 
@@ -99,12 +99,16 @@ function HostRow({
     status: ReactNode;
     active: boolean;
     onOpen: () => void;
-    menu: CtxItem[];
+    menu: () => Promise<CtxItem[]>;
     onMenu: OpenMenu;
 }) {
+    const show = (event: MouseEvent) => {
+        event.preventDefault();
+        void menu().then((items) => onMenu(event, items));
+    };
     const icon = kind === "this" ? <IconLaptop size={14} /> : <IconServer size={14} />;
     return (
-        <div className="session-row-shell host-row" onContextMenu={(event) => onMenu(event, menu)}>
+        <div className="session-row-shell host-row" onContextMenu={show}>
             <button type="button" className={`sess-row${active ? " active" : ""}`} onClick={onOpen}>
                 <span className={`sess-icon host-${kind}`}>
                     <span className="sess-icon-glyph">{icon}</span>
@@ -114,7 +118,7 @@ function HostRow({
                 {detail && <span className="host-row-detail">{detail}</span>}
             </button>
             <span className="row-status">{status}</span>
-            <button type="button" className="row-x host-row-more" aria-label={`More for ${name}`} onClick={(event) => onMenu(event, menu)}>
+            <button type="button" className="row-x host-row-more" aria-label={`More for ${name}`} onClick={show}>
                 <IconMore size={12} />
             </button>
         </div>
@@ -136,7 +140,11 @@ function ThisHostRow({ onMenu }: { onMenu: OpenMenu }) {
             status={<StatusDot tone="ok" label="This host" />}
             active={active}
             onOpen={open}
-            menu={[{ label: "New terminal here", icon: <IconTerminal size={13} />, run: cmd.createCommandSession }]}
+            menu={async () => [
+                { label: "New terminal here", icon: <IconTerminal size={13} />, run: cmd.createCommandSession },
+                { sep: true },
+                { ...(await approvalItem()), icon: <IconLock size={13} /> },
+            ]}
             onMenu={onMenu}
         />
     );
@@ -185,11 +193,12 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
             status={<StatusDot tone={connected ? "ok" : "idle"} label={connected ? "Connected" : "Out of reach"} />}
             active={active}
             onOpen={() => openHostTerminal(host.id, host.name)}
-            menu={[
+            menu={async () => [
                 { label: "New chat here", icon: <IconPlus size={13} />, run: chat, disabled: !hasProject },
                 { label: "New terminal here", icon: <IconTerminal size={13} />, run: () => openHostTerminal(host.id, host.name) },
                 { label: "Files", icon: <IconFolder size={13} />, run: files, disabled: !hasProject },
                 { sep: true },
+                { ...(await approvalItem(host.id)), icon: <IconLock size={13} /> },
                 { label: "Rename", icon: <IconPencil size={13} />, run: () => void rename() },
                 { label: "Remove from account", icon: <IconTrash size={13} />, danger: true, run: () => void remove() },
             ]}
@@ -223,7 +232,7 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
             }
             active={active}
             onOpen={open}
-            menu={[
+            menu={async () => [
                 {
                     label: "New SSH terminal",
                     icon: <IconTerminal size={13} />,

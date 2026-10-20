@@ -1,4 +1,4 @@
-import { coreRequest } from "../api/core";
+import { coreCall, coreRequest } from "../api/core";
 import type { ChatInfo, DeviceView, ProjectInfo, SessionInfo } from "../api/generated/wire";
 import { invokeCommand as invoke } from "../api/invoke";
 import { getIpcTransport } from "../api/transport";
@@ -113,6 +113,22 @@ export function openHostTerminal(host: string, name: string): void {
         }
         d.zoomedPaneId = null;
     });
+}
+
+/**
+ * The lock of ADR 0018 on a host, this one when there is none, as a menu item that flips it. Read when the menu opens,
+ * since only that host knows it.
+ */
+export async function approvalItem(host?: string): Promise<{ label: string; selected: boolean; disabled: boolean; run: () => void }> {
+    const label = "Require approval for new devices";
+    const read = await coreCall<{ requireApproval: boolean }>("requireApproval", null, host).catch(() => null);
+    if (!read) return { label, selected: false, disabled: true, run: () => {} };
+    return {
+        label,
+        selected: read.requireApproval,
+        disabled: false,
+        run: () => void coreCall("setRequireApproval", { requireApproval: !read.requireApproval }, host).catch(reportError(label)),
+    };
 }
 
 export function hostName(state: Pick<StoreState, "hosts">, id: string | undefined): string | undefined {
