@@ -16,6 +16,7 @@ use serde_json::Value;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
+use super::kept::Kept;
 use words::WORDS;
 
 const FILE: &str = "agent-names.json";
@@ -185,18 +186,17 @@ pub(crate) struct Adopted<'a> {
 
 pub(crate) struct Names {
     book: Mutex<Book>,
-    path: Option<PathBuf>,
+    file: Kept,
     /// Agents running on linked hosts, which keep their names while they do.
     pinned: Mutex<HashSet<String>>,
 }
 
 impl Names {
     pub(crate) fn new(data_dir: Option<&Path>) -> Self {
-        let path = data_dir.map(|dir| dir.join(FILE));
-        let book = path.as_deref().map(load).unwrap_or_default();
+        let file = Kept::new(data_dir, FILE);
         Self {
-            book: Mutex::new(book),
-            path,
+            book: Mutex::new(file.load()),
+            file,
             pinned: Mutex::new(HashSet::new()),
         }
     }
@@ -687,15 +687,7 @@ impl Names {
     }
 
     fn save(&self, book: &Book) {
-        let Some(path) = &self.path else {
-            return;
-        };
-        let written = serde_json::to_vec(book)
-            .map_err(std::io::Error::from)
-            .and_then(|bytes| sikemux_process::files::write_atomic(path, &bytes, true));
-        if let Err(error) = written {
-            eprintln!("sikemux core: agents' names were not saved: {error}");
-        }
+        self.file.save(book);
     }
 }
 
@@ -991,26 +983,6 @@ fn valid_name(name: &str) -> Result<String, String> {
         Err(format!(
             "a name is one word of up to {MAX_NAME_CHARS} letters and digits, starting with a letter"
         ))
-    }
-}
-
-fn load(path: &Path) -> Book {
-    match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|error| {
-            eprintln!(
-                "sikemux core: {} could not be read, so agents are named afresh: {error}",
-                path.display()
-            );
-            Book::default()
-        }),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Book::default(),
-        Err(error) => {
-            eprintln!(
-                "sikemux core: {} could not be read, so agents are named afresh: {error}",
-                path.display()
-            );
-            Book::default()
-        }
     }
 }
 

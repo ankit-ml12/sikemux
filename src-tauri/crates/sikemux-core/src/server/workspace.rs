@@ -31,6 +31,7 @@ use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRef, Re
 
 use super::chat;
 use super::connection::blocking;
+use super::kept;
 use super::model_providers::checks::Checks;
 use super::names::project_of;
 use super::wake::Wake;
@@ -340,7 +341,7 @@ fn check_project(project: &ProjectInfo, saved: &Saved) -> CoreResult<()> {
 pub(crate) struct Workspaces {
     published: Mutex<Published>,
     /// Where [`Saved`] is kept; nowhere for a core without a data folder.
-    path: Option<PathBuf>,
+    file: kept::Kept,
     providers: Option<Providers>,
     /// Whether models on each provider call tools the way agents need.
     pub(crate) model_checks: Checks,
@@ -385,13 +386,16 @@ fn running_now(chat: &Recent, open: &[ChatInfo]) -> bool {
 
 impl Workspaces {
     pub(crate) fn new(data_dir: Option<&Path>) -> Self {
-        let path = data_dir.map(|dir| dir.join("workspace.json"));
-        let read: Value = path
-            .as_deref()
-            .and_then(|path| std::fs::read(path).ok())
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or(Value::Null);
-        let mut saved: Saved = serde_json::from_value(read.clone()).unwrap_or_default();
+        let file = kept::Kept::new(data_dir, "workspace.json");
+        let read: Value = file.load();
+        let mut saved = if read.is_null() {
+            Saved::default()
+        } else {
+            Saved::deserialize(&read).unwrap_or_else(|error| {
+                file.set_aside(&error.to_string());
+                Saved::default()
+            })
+        };
         let upgraded = saved.version < VERSION;
         if saved.version < 1 {
             migrate::carry_over(&mut saved, &read, data_dir);
@@ -405,7 +409,7 @@ impl Workspaces {
                 saved,
                 ..Published::default()
             }),
-            path,
+            file,
             providers: data_dir.map(Providers::new),
             model_checks: Checks::new(data_dir),
             data_dir: data_dir.map(Path::to_path_buf),
@@ -430,15 +434,7 @@ impl Workspaces {
     }
 
     fn save(&self, saved: &Saved) {
-        let Some(path) = &self.path else {
-            return;
-        };
-        let written = serde_json::to_vec(saved)
-            .map_err(std::io::Error::from)
-            .and_then(|bytes| sikemux_process::files::write_atomic(path, &bytes, true));
-        if let Err(error) = written {
-            eprintln!("sikemux core: the workspace was not saved: {error}");
-        }
+        self.file.save(saved);
     }
 
     /// Changes what is saved, keeps it, and tells the core.

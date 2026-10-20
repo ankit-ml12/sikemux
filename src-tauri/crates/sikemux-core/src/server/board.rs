@@ -21,6 +21,7 @@ use super::connection::blocking;
 use super::inbox::Recording;
 use super::messages;
 use super::names::project_of;
+use super::kept::Kept;
 use super::wake::{sooner, Wake};
 use super::Core;
 
@@ -339,19 +340,10 @@ impl Boards {
                 if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                     continue;
                 }
-                match std::fs::read(&path)
-                    .map_err(|error| error.to_string())
-                    .and_then(|bytes| {
-                        serde_json::from_slice::<Board>(&bytes).map_err(|error| error.to_string())
-                    }) {
-                    Ok(board) => {
-                        state.dirty.insert(board.project.clone());
-                        state.boards.insert(board.project.clone(), board);
-                    }
-                    Err(error) => eprintln!(
-                        "sikemux core: the board in {} could not be read: {error}",
-                        path.display()
-                    ),
+                let kept = Kept::new(path.parent(), &entry.file_name().to_string_lossy());
+                if let Some(board) = kept.load::<Option<Board>>() {
+                    state.dirty.insert(board.project.clone());
+                    state.boards.insert(board.project.clone(), board);
                 }
             }
         }
@@ -368,14 +360,11 @@ impl Boards {
         let (Some(folder), Some(board)) = (&self.folder, state.boards.get(project)) else {
             return;
         };
-        let written = std::fs::create_dir_all(folder)
-            .and_then(|()| serde_json::to_vec(board).map_err(std::io::Error::from))
-            .and_then(|bytes| {
-                sikemux_process::files::write_atomic(&folder.join(file_name(project)), &bytes, true)
-            });
-        if let Err(error) = written {
+        if let Err(error) = std::fs::create_dir_all(folder) {
             eprintln!("sikemux core: the board was not saved: {error}");
+            return;
         }
+        Kept::new(Some(folder), &file_name(project)).save(board);
     }
 
     /// A step Auto took on the card is over.
