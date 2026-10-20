@@ -439,38 +439,6 @@ fn migrate(mut state: Value) -> Result<Value, String> {
             .and_then(Value::as_u64)
             .ok_or("it names no format")?;
         match format {
-            1 => {
-                // Format 1 cores held no chats.
-                state["chats"] = Value::Array(Vec::new());
-                state["format"] = Value::from(2);
-            }
-            2 => {
-                // Format 2 cores were reached only by the app on this host.
-                for list in ["sessions", "chats"] {
-                    let entries = state.get_mut(list).and_then(Value::as_array_mut);
-                    for entry in entries.into_iter().flatten() {
-                        let holder = if list == "sessions" {
-                            entry.get_mut("owner")
-                        } else {
-                            Some(entry)
-                        };
-                        if let Some(holder) = holder.and_then(Value::as_object_mut) {
-                            holder.insert("startedBy".into(), Value::Null);
-                        }
-                    }
-                }
-                state["format"] = Value::from(3);
-            }
-            3 => {
-                // Format 3 chats were started without a launcher.
-                let chats = state.get_mut("chats").and_then(Value::as_array_mut);
-                for chat in chats.into_iter().flatten() {
-                    if let Some(chat) = chat.as_object_mut() {
-                        chat.insert("launcher".into(), Value::Null);
-                    }
-                }
-                state["format"] = Value::from(4);
-            }
             4 => {
                 // Format 4 cores stopped every chat, and said nothing of why.
                 let chats = state.get_mut("chats").and_then(Value::as_array_mut);
@@ -1062,34 +1030,6 @@ mod tests {
     use super::migrate;
 
     #[test]
-    fn format_one_state_gains_an_empty_chat_list() {
-        let migrated = migrate(json!({ "format": 1, "sessions": [] })).expect("migrate");
-        assert_eq!(migrated["format"], 6);
-        assert_eq!(migrated["chats"], json!([]));
-        assert_eq!(migrated["liveChats"], json!([]));
-        assert_eq!(migrated["sessions"], json!([]));
-    }
-
-    #[test]
-    fn format_two_sessions_and_chats_were_started_by_the_app() {
-        let migrated = migrate(json!({
-            "format": 2,
-            "sessions": [{ "id": 1, "owner": { "project": "/p" } }],
-            "chats": [{ "launch": {} }],
-        }))
-        .expect("migrate");
-        assert_eq!(migrated["format"], 6);
-        assert_eq!(
-            migrated["sessions"][0]["owner"],
-            json!({ "project": "/p", "startedBy": null })
-        );
-        assert_eq!(
-            migrated["chats"][0],
-            json!({ "launch": {}, "startedBy": null, "launcher": null, "notice": null })
-        );
-    }
-
-    #[test]
     fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
         let current = json!({
             "format": 6,
@@ -1098,6 +1038,7 @@ mod tests {
             "harness": { "mailbox": { "waiting": {} }, "questions": { "open": [] } },
         });
         assert_eq!(migrate(current.clone()).expect("migrate"), current);
+        assert!(migrate(json!({ "format": 3 })).is_err());
         assert!(migrate(json!({ "format": 9 })).is_err());
         assert!(migrate(json!({})).is_err());
     }
