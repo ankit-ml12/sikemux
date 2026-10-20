@@ -45,12 +45,17 @@ for whoever is signed in to the GitHub account.
 - **Hosts are one group in the rail.** The rail's SSH group becomes Hosts: this host, every host
   on the account, and each SSH host while the person has it open, one row each, with its state,
   and the account's host matched to its SSH entry when one installed the other. Any host in
-  `~/.ssh/config` is opened from the group's picker, as before. A row opens a terminal
-  there, through the core on a Sikemux host and over SSH on any other, and its menu starts a chat,
-  opens its files, renames or removes it. An SSH host's menu offers **Install Sikemux here**, which
-  runs the installer over that SSH connection and signs the host in to the account by itself. The
-  new-item menu keeps three rows, which start on the host of the focused chat or terminal and name
-  it when it is not this one.
+  `~/.ssh/config` is opened from the group's picker, as before.
+- **A host is chosen as a project is.** Choosing a host's row shows, in the tab rail, every chat
+  and terminal running on it, from every project; choosing a project shows the project's from
+  every host. One row in the side rail is chosen at a time. Work starts on a host the person can
+  see: the chosen host, else the host of the focused chat or terminal, else this host. That host's
+  row says "here", so with a project chosen the person still sees where ⌘N and ⌘T will start, and
+  the new-item menu, which keeps three rows, names it when it is not this host. A row's menu
+  starts a chat or terminal there, through the core on a Sikemux host and over SSH on any other,
+  opens its files, renames or removes it. An SSH host's menu offers **Install Sikemux here**,
+  which runs the installer over that SSH connection and signs the host in to the account by
+  itself.
 - **An agent uses the sign-ins of the host it runs on, whoever started or messaged it.** ADR 0013
   refused plugin calls and the browser to any agent that an agent on another host had started or
   messaged, and to every lead above it, until the person allowed that host. That rule goes: the
