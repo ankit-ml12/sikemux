@@ -19,7 +19,7 @@ curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL=nightly sh
 
 ## On a server
 
-A Linux machine with no screen, such as a VPS or a spare box, can run just the core, which keeps agents working with nobody watching. If you already reach it over SSH, open the **⋯** beside it under **Hosts** in Sikemux's side rail and choose **Install Sikemux here**: the installer runs over your SSH and the server signs in to your account by itself. It needs a key you already use for that host and `sudo` without a password there. Otherwise, run the same line there and pick the core, or skip the question:
+A Linux machine with no screen, such as a VPS or a spare box, can run just the core, which keeps agents working with nobody watching. If you already reach it over SSH, open the **⋯** beside it under **Hosts** in Sikemux's side rail and choose **Install Sikemux here**: the installer runs over your SSH in a new terminal tab, where you type `sudo`'s password if the server asks for one, and the server signs in to your account by itself. Otherwise, run the same line there and pick the core, or skip the question:
 
 ```bash
 curl -fsSL https://sikemux.com/install | sh -s -- --host

@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { accountApi } from "../api/account";
 import { coreCall } from "../api/core";
 import { sshApi } from "../api/ssh";
-import { approvalItem, copyOn, hostsApi, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
+import { approvalItem, copyOn, installHere, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
 import { getState, useStore, type StoreState } from "../state/store";
@@ -214,8 +214,7 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
     const open = () => cmd.createSshSession(alias);
     const install = () => {
         setInstalling(true);
-        hostsApi
-            .install(alias)
+        installHere(alias)
             .catch(reportError(`Install Sikemux on ${alias}`))
             .finally(() => setInstalling(false));
     };

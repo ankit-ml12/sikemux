@@ -5,6 +5,8 @@ import { getIpcTransport } from "../api/transport";
 import { agentLabel, isAgentType } from "../agents/catalog";
 import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
+import { createSshSession } from "../state/commands/sessions";
+import { offerResumableSessions } from "../terminal/sessionResume";
 import { agentWindowId } from "../state/selectors";
 import { collectPanes } from "../state/layout";
 import { getState, mutate, setState, useStore, type StoreState } from "../state/store";
@@ -25,9 +27,47 @@ export interface HostEntry {
 
 export const hostsApi = {
     list: () => invoke<HostEntry[]>("hosts_list"),
-    /** Installs Sikemux on the SSH host `alias` over the person's own SSH and signs it in to the account. */
-    install: (alias: string) => invoke<void>("host_install", { alias }),
 };
+
+/**
+ * Installs Sikemux on the SSH host `alias` over the person's own SSH, in a terminal tab of its SSH session where a
+ * password sudo asks for is typed, and resolves once the host is on the account.
+ */
+export async function installHere(alias: string): Promise<void> {
+    const controller = new AbortController();
+    const done = new Promise<void>((resolve, reject) => {
+        void getIpcTransport()
+            .subscribe<{ alias: string; problem: string | null }>(
+                "host_installed",
+                ({ payload }) => {
+                    if (payload.alias !== alias) return;
+                    controller.abort();
+                    if (payload.problem) reject(new Error(payload.problem));
+                    else resolve();
+                },
+                { signal: controller.signal },
+            )
+            .catch(reject);
+    });
+    try {
+        const id = await invoke<number>("host_install", { alias, cols: 100, rows: 30 });
+        offerResumableSessions([id]);
+        createSshSession(alias);
+        mutate((d) => {
+            const session = d.sessions[d.activeSessionId];
+            if (!session) return;
+            const window = makeWindow("", "Install Sikemux", { role: "named" });
+            window.root = { ...(window.root as PaneNode), ptyId: id };
+            d.windows[window.id] = window;
+            d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
+            session.activeWindowId = window.id;
+        });
+    } catch (error) {
+        controller.abort();
+        throw error;
+    }
+    await done;
+}
 
 /** One project's folder on another host. */
 export interface RemoteCopy {

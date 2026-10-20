@@ -96,6 +96,7 @@ pub(crate) fn report_all_exited(streams: &StreamTable) {
 
 impl EventSink for AppSink {
     fn output(&self, id: SessionId, bytes: &[u8]) {
+        crate::hosts::install::watch_output(id, bytes);
         let observer = global_observability();
         // Every observability call allocates a name and takes one global lock,
         // and this runs for every frame of every terminal. Instrument a
@@ -132,6 +133,7 @@ impl EventSink for AppSink {
                 signal,
                 killed,
             } => {
+                crate::hosts::install::ended(id);
                 self.emit(
                     PTY_EXITED_EVENT,
                     PtyExited {
