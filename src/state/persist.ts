@@ -14,9 +14,10 @@ import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../c
 import { registerCustomThemes } from "../themes/bus";
 import { ACCOUNT_AGENT_TYPES, AGENT_TYPES, hasAccounts, isAgentType, type AccountAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
-import { clampPaneStrength, mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
+import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
+import { clampPaneStrength } from "./commands/settings";
 import { agentFromCore, sharedFromCore } from "./coreWorkspace";
-import { agentInWindow, agentPaneId } from "./selectors";
+import { agentInWindow, agentPaneId, chatKey } from "./selectors";
 import { collectPanes, newId, removePane } from "./layout";
 import { BROWSER_ACTIVE, deskEditorId, deskView, fileKey, simulatorKey } from "./desks";
 import { agentExecutablePath } from "./commands/agentLaunchCommand";
@@ -909,7 +910,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
             const saved = agentFromCore(record);
             if (!saved || agents[saved.id] || sessions[record.project]?.kind !== "project") continue;
             if (saved.resumeId) {
-                const claim = `${saved.type}\0${saved.resumeId}`;
+                const claim = chatKey(saved.type, saved.resumeId);
                 if (claimedResumeIds.has(claim)) continue;
                 claimedResumeIds.add(claim);
             }
