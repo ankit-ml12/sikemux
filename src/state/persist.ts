@@ -29,16 +29,9 @@ import { isSessionKind, validatePersistedLayout } from "./persistValidation";
 import { isRecord } from "../lib/guards";
 import { isWindowRole } from "./windowRoles";
 import { isPluginId } from "../plugins/kinds";
-import {
-    createWorkbenchItemRef,
-    workbenchItemRegistry,
-    workbenchItemRefFromPane,
-    type BuiltinWorkbenchItemState,
-    type PersistedWorkbenchItemEnvelope,
-} from "../workbench/registry";
+import { decodeItemState, encodeItemState, type PersistedWorkbenchItemEnvelope } from "../workbench/itemStates";
 import type {
     Agent,
-    CorePaneKind,
     Desk,
     DeskView,
     EditorPaneView,
@@ -407,20 +400,6 @@ function withoutTaskBinding(node: LayoutNode): LayoutNode {
     return pane;
 }
 
-/** One malformed item must not cost every other item, or the layout, its save. */
-function encodeItemState<Kind extends CorePaneKind>(
-    itemStates: NonNullable<PersistedSnapshot["itemStates"]>,
-    itemId: string,
-    kind: Kind,
-    state: BuiltinWorkbenchItemState[Kind],
-): void {
-    try {
-        itemStates[itemId] = workbenchItemRegistry.encodePersisted(createWorkbenchItemRef(itemId, kind), state);
-    } catch {
-        return;
-    }
-}
-
 function snapshot(): string {
     const s = getState();
     const sessions = s.sessionOrder
@@ -447,10 +426,10 @@ function snapshot(): string {
                     continue;
                 }
                 if (node.kind === "editor")
-                    encodeItemState(itemStates, node.id, "editor", s.editorViews[node.id] ?? { openTabs: [], activePath: null });
+                    itemStates[node.id] = encodeItemState(node.id, "editor", s.editorViews[node.id] ?? { openTabs: [], activePath: null });
                 if (node.kind === "desk") {
                     const view = deskView(node.id);
-                    if (view) encodeItemState(itemStates, node.id, "desk", view);
+                    if (view) itemStates[node.id] = encodeItemState(node.id, "desk", view);
                 }
             }
         }
@@ -554,7 +533,7 @@ function moveEditorViewsIntoItemStates(decoded: Record<string, unknown>): void {
     const editorViews = isRecord(decoded.editorViews) ? decoded.editorViews : {};
     const itemStates: Record<string, unknown> = {};
     for (const [itemId, state] of Object.entries(editorViews)) {
-        itemStates[itemId] = { itemId, kind: "editor", version: workbenchItemRegistry.get("editor").persisted.version, state };
+        itemStates[itemId] = encodeItemState(itemId, "editor", state as EditorPaneView);
     }
     decoded.itemStates = itemStates;
     delete decoded.editorViews;
@@ -940,28 +919,22 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
         sessions[sid] = { ...session, activeWindowId: windowIds.includes(session.activeWindowId) ? session.activeWindowId : (windowIds[0] ?? "") };
     }
 
-    const panesById = new Map<string, ReturnType<typeof workbenchItemRefFromPane>>();
-    for (const w of Object.values(windows)) {
-        const walk = (n: Window["root"]): void => {
-            if (n.type === "pane") panesById.set(n.id, workbenchItemRefFromPane(n));
-            else n.children.forEach(walk);
-        };
-        walk(w.root);
-    }
     const editorViews: Record<string, EditorPaneView> = {};
     const deskPanes: Record<string, string> = {};
     const deskRestores: Record<string, DeskView> = {};
     const desks: Record<string, Desk> = {};
     const rawItemStates = isRecord(decoded.itemStates) ? decoded.itemStates : {};
-    for (const [itemId, ref] of panesById) {
-        const result = workbenchItemRegistry.decodePersisted(ref, rawItemStates[itemId]);
-        if (!result.ok) continue;
-        if (result.ref.kind === "editor") editorViews[itemId] = result.state as EditorPaneView;
-        if (result.ref.kind === "desk") {
-            const view = result.state as DeskView;
+    for (const pane of Object.values(windows).flatMap((window) => collectPanes(window.root))) {
+        const itemId = pane.id;
+        if (pane.kind === "editor") {
+            const view = decodeItemState({ id: itemId, kind: "editor" }, rawItemStates[itemId]);
+            if (view) editorViews[itemId] = view;
+        }
+        if (pane.kind === "desk") {
+            const view = decodeItemState({ id: itemId, kind: "desk" }, rawItemStates[itemId]);
             // Without its agent the pane has nothing to be, and the pane
             // itself takes the empty leaf back out of the layout.
-            if (!agents[view.agentId]) continue;
+            if (!view || !agents[view.agentId]) continue;
             deskPanes[itemId] = view.agentId;
             deskRestores[itemId] = view;
             editorViews[deskEditorId(view.agentId)] = { openTabs: view.files, activePath: view.files[0] ?? null };

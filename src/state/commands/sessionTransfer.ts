@@ -7,7 +7,7 @@ import { copyText, readClipboardText } from "../../lib/clipboard";
 import { collectPanes, cloneLayout, newId } from "../layout";
 import type { Agent, Session, Window } from "../types";
 import { attachSession } from "./shared";
-import { defaultWorkbenchItemTitle } from "../../workbench/registry";
+import { defaultWorkbenchItemTitle } from "../../workbench/itemStates";
 
 function stripImportedStartup(node: Window["root"]): Window["root"] {
     if (node.type === "pane")
