@@ -238,8 +238,8 @@ enum CoreStarter {
         var environment = ProcessInfo.processInfo.environment
         environment["SIKEMUX_CORE_SOCKET"] = options.socket
         DispatchQueue.global(qos: .userInitiated).async {
-            let argv = [binary, "start"].map { strdup($0) } + [nil]
-            let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+            let argv: [UnsafeMutablePointer<CChar>?] = [strdup(binary), strdup("start"), nil]
+            let envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
             defer { (argv + envp).forEach { free($0) } }
             var attributes: posix_spawnattr_t?
             posix_spawnattr_init(&attributes)
