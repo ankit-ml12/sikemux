@@ -368,6 +368,11 @@ body {
   --page-gap: 56px;
 }
 
+#nd-page > * {
+  width: 100%;
+  margin-inline: auto;
+}
+
 #nd-page h1 {
   font-size: 32px;
   font-weight: 600;
