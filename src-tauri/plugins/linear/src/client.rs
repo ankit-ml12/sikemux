@@ -173,7 +173,7 @@ mod tests {
     async fn a_request_without_a_key_is_refused_as_a_sign_in() {
         let _ = rustls::crypto::ring::default_provider().install_default();
         match query_with("not-a-key", "query { viewer { id } }", json!({})).await {
-            Err(LinearError::Auth(_)) | Err(LinearError::Unreachable { kind: _, .. }) => {}
+            Err(LinearError::Auth(_)) | Err(LinearError::Unreachable { .. }) => {}
             other => panic!("{other:?}"),
         }
     }

@@ -247,7 +247,7 @@ pub enum ConfigLoad {
     },
     Valid {
         path: String,
-        config: ProjectConfig,
+        config: Box<ProjectConfig>,
         fingerprint: String,
         trust: TrustSummary,
     },
@@ -316,7 +316,7 @@ pub fn load(project: &Path) -> ConfigLoad {
             let trust = trust_summary(&config);
             ConfigLoad::Valid {
                 path,
-                config,
+                config: Box::new(config),
                 fingerprint,
                 trust,
             }
