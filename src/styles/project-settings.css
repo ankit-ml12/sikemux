@@ -1,0 +1,114 @@
+.project-settings-pane {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.project-settings-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+.project-settings-glyph {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    color: var(--text-secondary);
+}
+.project-settings-title {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-0);
+    min-width: 0;
+}
+.project-settings-title h1 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+}
+.project-settings-path {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-task-group {
+    padding: var(--space-1h) var(--space-3);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+}
+.project-task-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 40px;
+    padding: var(--space-1) var(--space-3);
+    transition: background var(--dur-1);
+}
+.project-task-row + .project-task-row {
+    border-top: 1px solid var(--border);
+}
+.project-task-row:hover {
+    background: var(--surface-hover);
+}
+.project-task-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0);
+    min-width: 0;
+}
+.project-task-label {
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+}
+.project-task-command,
+.project-task-cwd {
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.project-task-command {
+    color: var(--text-secondary);
+}
+.project-task-meta {
+    display: flex;
+    gap: var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
+.project-task-actions {
+    display: flex;
+    gap: var(--space-0);
+}
+
+.project-config-errors {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    list-style: none;
+}
+.project-config-errors code {
+    color: var(--danger);
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+}

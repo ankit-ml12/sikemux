@@ -1,19 +1,19 @@
 import { useId, useState } from "react";
 import { notify, reportError } from "../state/toast";
 import { Segmented } from "../ui/Controls";
-import { IconPlus } from "../ui/Icons";
+import { IconPencil, IconPlus } from "../ui/Icons";
 import { Modal } from "../ui/Modal";
-import { tasksApi } from "./coreTasks";
+import { tasksApi, type ProjectTask } from "./coreTasks";
 
 type Scope = "team" | "personal";
 
-/** A person's own start command, saved for the team in sikemux.json or for themselves only. */
-export function AddTaskDialog({ project, onDone }: { project: string; onDone: (taskId: string | null) => void }) {
+/** A person's own start command, saved for the team in sikemux.json or for themselves only; given `editing`, changes that one. */
+export function AddTaskDialog({ project, editing, onDone }: { project: string; editing?: ProjectTask; onDone: (taskId: string | null) => void }) {
     const formId = useId();
-    const [label, setLabel] = useState("");
-    const [command, setCommand] = useState("");
-    const [cwd, setCwd] = useState("");
-    const [scope, setScope] = useState<Scope>("team");
+    const [label, setLabel] = useState(editing?.label ?? "");
+    const [command, setCommand] = useState(editing?.command ?? "");
+    const [cwd, setCwd] = useState(editing && editing.cwd !== "." ? editing.cwd : "");
+    const [scope, setScope] = useState<Scope>(editing?.source === "personal" ? "personal" : "team");
     const [saving, setSaving] = useState(false);
     const ready = label.trim() !== "" && command.trim() !== "" && !saving;
 
@@ -22,9 +22,10 @@ export function AddTaskDialog({ project, onDone }: { project: string; onDone: (t
         setSaving(true);
         const team = scope === "team";
         void tasksApi
-            .add(project, { label, command, cwd, team })
+            .add(project, { label, command, cwd, team, replaces: editing?.id })
             .then(({ taskId }) => {
-                notify("success", team ? `Added ${label.trim()} to sikemux.json; commit it to share it` : `Added ${label.trim()} for you only`);
+                const done = editing ? "Saved" : "Added";
+                notify("success", team ? `${done} ${label.trim()} in sikemux.json; commit it to share it` : `${done} ${label.trim()} for you only`);
                 onDone(taskId);
             })
             .catch(reportError("add task"))
@@ -33,8 +34,8 @@ export function AddTaskDialog({ project, onDone }: { project: string; onDone: (t
 
     return (
         <Modal
-            title="Add a task"
-            glyph={<IconPlus size={15} />}
+            title={editing ? "Edit task" : "Add a task"}
+            glyph={editing ? <IconPencil size={15} /> : <IconPlus size={15} />}
             onClose={() => onDone(null)}
             foot={
                 <>
@@ -42,7 +43,7 @@ export function AddTaskDialog({ project, onDone }: { project: string; onDone: (t
                         Cancel
                     </button>
                     <button type="submit" form={formId} className="dlg-btn primary" disabled={!ready}>
-                        {saving ? "Adding…" : "Add task"}
+                        {saving ? "Saving…" : editing ? "Save" : "Add task"}
                     </button>
                 </>
             }>

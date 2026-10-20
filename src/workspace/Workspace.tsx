@@ -59,6 +59,7 @@ const CORE_PANE_ROLE: Record<CorePaneKind, WindowRole> = {
     desk: "named",
     shared: "shared",
     board: "board",
+    "project-settings": "project-settings",
 };
 
 const paneRole = (kind: PaneKind): WindowRole => (isPluginKind(kind) ? kind : CORE_PANE_ROLE[kind]);
@@ -203,6 +204,7 @@ const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
     agent: "Agent",
     shared: "Shared chat",
     board: PROJECT_SURFACES.board.label,
+    "project-settings": "Project settings",
 };
 
 const roleLabel = (role: WindowRole): string => (isPluginKind(role) ? (pluginSurface(role)?.title ?? role) : CORE_ROLE_LABEL[role]);

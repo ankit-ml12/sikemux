@@ -111,8 +111,10 @@ export const tasksApi = {
     rerunFailed: (executionId: string) => coreCall<{ taskId: string; executionId: string }>("taskRerunFailed", { executionId }),
     trustAsks: () => coreCall<PendingTrust[]>("trustAsks"),
     answerTrust: (id: string, trust: boolean) => coreCall<void>("answerTrust", { id, trust }),
-    add: (project: string, task: { label: string; command: string; cwd: string; team: boolean }) =>
+    /** `replaces` names the task this saves an edit of. */
+    add: (project: string, task: { label: string; command: string; cwd: string; team: boolean; replaces?: string }) =>
         coreCall<{ taskId: string }>("addTask", { project, ...task }),
+    remove: (project: string, taskId: string) => coreCall<void>("removeTask", { project, taskId }),
 };
 
 let runs: readonly TaskRun[] = [];

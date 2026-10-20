@@ -227,7 +227,7 @@ function packPrefs(s: StoreState): PersistedPrefs {
     };
 }
 
-const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "ssh-config", "named", "agent", "shared", "board"]);
+const WINDOW_ROLES = new Set<WindowRole>(["term", "files", "git", "diff", "search", "ssh-config", "named", "agent", "shared", "board", "project-settings"]);
 
 function normaliseSpaces(value: unknown): ProjectSpace[] {
     if (!Array.isArray(value)) return [];

@@ -17,6 +17,7 @@ import {
     attachSession,
     closeAgentDesk,
     dirtyPathsForSession,
+    ensureRoleWindow,
     disposePaneState,
     guardDiscardDirty,
     guardStopAgents,
@@ -128,6 +129,12 @@ export function selectSession(id: string): void {
         d.pickerOpen = false;
         d.settingsOpen = false;
     });
+}
+
+/** Opens `sessionId`'s project with its settings tab in front, or the active project's. */
+export function openProjectSettings(sessionId?: string): void {
+    if (sessionId) selectSession(sessionId);
+    ensureRoleWindow("project-settings", "project-settings", "Project settings");
 }
 
 /** Makes a space and returns its id, or null when the name is blank. */

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ProjectPage } from "./ProjectPage";
 import { sendTestNotification } from "../agents/agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
@@ -39,7 +38,6 @@ import {
     IconContrast,
     IconEditor,
     IconFolder,
-    IconGit,
     IconGlobe,
     IconPlug,
     IconPhone,
@@ -84,7 +82,6 @@ import "../styles/settings.css";
 
 const PAGE_ICONS: Record<SettingsPageId, ReactNode> = {
     general: <IconFolder size={13} />,
-    project: <IconGit size={13} />,
     appearance: <IconContrast size={13} />,
     keybindings: <IconCommand size={13} />,
     activity: <IconActivity size={13} />,
@@ -311,7 +308,6 @@ export function SettingsPanel() {
                             <>
                                 {page === "general" && <GeneralPage projectRoots={projectRoots} home={home} pretty={pretty} />}
 
-                                {page === "project" && <ProjectPage />}
                                 {page === "appearance" && <AppearancePage themeId={themeId} windowOpacity={windowOpacity} windowBlur={windowBlur} />}
 
                                 {page === "keybindings" && (

@@ -49,6 +49,8 @@ export interface BuiltinWorkbenchItemState {
     shared: null;
     /* The project it shows the board of is the pane's folder. */
     board: null;
+    /* The project it sets up is the pane's folder. */
+    "project-settings": null;
 }
 
 /**
@@ -307,6 +309,7 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     desk: builtinDefinition("desk", "Desk", DESK_CODEC),
     shared: builtinDefinition("shared", "Shared chat", NULL_CODEC),
     board: builtinDefinition("board", "Agent board", NULL_CODEC),
+    "project-settings": builtinDefinition("project-settings", "Project settings", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {

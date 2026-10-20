@@ -506,6 +506,13 @@ function ApplicationCommandPalette() {
     const standaloneCommands: StandaloneCommand[] = [
         ...(activeKind === "project" && activeProjectCwd
             ? [
+                  {
+                      id: "project.settings",
+                      title: "Project settings",
+                      detail: "Tasks, the default git repository, worktrees and language servers",
+                      category: "Project",
+                      execute: runStandalone("project.settings", () => cmd.openProjectSettings()),
+                  } satisfies StandaloneCommand,
                   languageServersAllowedHere
                       ? ({
                             id: "project.language-servers.stop",
