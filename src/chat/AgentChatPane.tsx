@@ -281,7 +281,7 @@ export function AgentChatPane({
             dispatch({ type: "config", options: response.configOptions });
             const options = sessionConfigs({ configOptions: response.configOptions });
             const model = options.find((option) => option.id === "model")?.currentValue ?? agent.model;
-            const effort = effortConfig(options, agent.type)?.currentValue ?? agent.effort;
+            const effort = effortConfig(options)?.currentValue ?? agent.effort;
             cmd.setAgentModelPreferences(agent.id, model, knownEffort(effort));
         } catch (error) {
             if (sessionIdRef.current === sessionId) setComposerError(errorText(error));

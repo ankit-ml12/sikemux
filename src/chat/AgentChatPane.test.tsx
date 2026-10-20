@@ -323,7 +323,14 @@ describe("AgentChatPane", () => {
                     { value: "sol", name: "GPT-5.6 Sol" },
                 ],
             },
-            { id: "reasoning_effort", name: "Effort", type: "select", currentValue: "high", options: [{ value: "high", name: "High" }] },
+            {
+                id: "reasoning_effort",
+                name: "Effort",
+                category: "thought_level",
+                type: "select",
+                currentValue: "high",
+                options: [{ value: "high", name: "High" }],
+            },
         ];
         mocks.start.mockResolvedValueOnce({ sessionId: "session-1", capabilities: {}, setup: { configOptions: configs("astra") } });
         mocks.setConfig.mockResolvedValueOnce({ configOptions: configs("sol") });

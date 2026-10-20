@@ -80,6 +80,11 @@ export function agentSupportsChat(type: string): type is ChatAgentType {
 
 export const CHAT_AGENT_TYPES = AGENT_TYPES.filter(agentSupportsChat);
 
+/** Which of the core's chat drivers runs the agent; null when it has no chat. */
+export function chatDriver(type: AgentType): Entry["chat"] {
+    return BY_TYPE.get(type)?.chat ?? null;
+}
+
 /** The agents offered first, before anything else is installed. */
 export const FEATURED_AGENT_TYPES: readonly AgentType[] = AGENT_CATALOG.filter((agent) => agent.featured).map((agent) => agent.type);
 
