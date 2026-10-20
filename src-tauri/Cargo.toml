@@ -1,7 +1,7 @@
 [package]
 name = "sikemux"
 version.workspace = true
-description = "A GUI terminal multiplexer"
+description = "The IDE for you and your coding agents"
 authors = ["nodelike"]
 edition = "2021"
 default-run = "sikemux"
