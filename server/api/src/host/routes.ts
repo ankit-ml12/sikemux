@@ -19,7 +19,8 @@ import {
 import type { Database } from "../db.ts";
 import { issueChallenge } from "../devices/challenge.ts";
 import { registerDevice, toDevice } from "../devices/register.ts";
-import { ApiFailure, readBody } from "../http.ts";
+import type { ApiFailure } from "../http.ts";
+import { badRequest, notFound, readBody } from "../http.ts";
 import type { Places } from "../places.ts";
 import {
   callerAddress,
@@ -54,11 +55,7 @@ function userCodeOf(text: string): string {
 }
 
 function gone(): ApiFailure {
-  return new ApiFailure(
-    404,
-    "not_found",
-    "That code is unknown, was refused, or has expired.",
-  );
+  return notFound("That code is unknown, was refused, or has expired.");
 }
 
 /**
@@ -188,8 +185,7 @@ export function hostSignInRoutes(
     .post("/", perAddress("host-sign-in-start", 10), async (c) => {
       const start = await readBody(c, "HostSignInStart");
       const name = start.name.trim();
-      if (!name)
-        throw new ApiFailure(400, "bad_request", "The host needs a name.");
+      if (!name) throw badRequest("The host needs a name.");
       await db
         .deleteFrom("host_sign_ins")
         .where("expires_at", "<", sql<Date>`now()`)

@@ -4,7 +4,7 @@ import { audit } from "../audit.ts";
 import { allow, isSession, type AuthEnv } from "../auth.ts";
 import type { Database } from "../db.ts";
 import { ownedDevice } from "../devices/owned.ts";
-import { ApiFailure, readBody } from "../http.ts";
+import { forbidden, notFound, readBody } from "../http.ts";
 import { limit, type RateLimiter } from "../limits.ts";
 import { signTicket, type JoinSigner } from "./signer.ts";
 
@@ -35,18 +35,9 @@ export function joinRoutes(
       const joiner = c.req.param("key");
       const { host } = await readBody(c, "JoinRequest");
       const role = isSession(identity) ? "client" : "host";
-      if (joiner === host)
-        throw new ApiFailure(
-          404,
-          "not_found",
-          "None of your hosts has that key.",
-        );
+      if (joiner === host) throw notFound("None of your hosts has that key.");
       if (identity.via === "host" && joiner !== identity.deviceKey)
-        throw new ApiFailure(
-          403,
-          "forbidden",
-          "A host may ask only for itself to link with another.",
-        );
+        throw forbidden("A host may ask only for itself to link with another.");
       await ownedDevice(db, userId, joiner, { role });
       await ownedDevice(db, userId, host, { role: "host" });
 

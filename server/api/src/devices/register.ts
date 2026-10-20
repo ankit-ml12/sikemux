@@ -8,11 +8,12 @@ import type {
 import { sql, type Kysely, type Selectable } from "kysely";
 
 import { audit } from "../audit.ts";
+import { accountDeleted } from "../auth.ts";
 import type { Tables } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
-import { ApiFailure } from "../http.ts";
-import { consumeChallenge } from "./challenge.ts";
-import { registrationMessage, signedBy } from "./signature.ts";
+import { ApiFailure, badRequest, forbidden } from "../http.ts";
+import { proveKey } from "./challenge.ts";
+import { registrationMessage } from "./signature.ts";
 
 export function toDevice(row: Selectable<Tables["devices"]>): Device {
   const device: Device = {
@@ -44,29 +45,17 @@ export async function registerDevice(
   registration: DeviceRegistration,
 ): Promise<{ row: Selectable<Tables["devices"]>; added: boolean }> {
   if ((registration.role === "host") !== (registration.channel !== undefined)) {
-    throw new ApiFailure(
-      400,
-      "bad_request",
-      "Hosts say which channel they run; clients do not.",
-    );
+    throw badRequest("Hosts say which channel they run; clients do not.");
   }
   const name = registration.name.trim();
-  if (!name)
-    throw new ApiFailure(400, "bad_request", "The device needs a name.");
+  if (!name) throw badRequest("The device needs a name.");
 
-  await consumeChallenge(db, userId, registration.nonce);
-  const message = registrationMessage(
-    registration.nonce,
-    userId,
-    registration.key,
-  );
-  if (!signedBy(registration.key, message, registration.signature)) {
-    throw new ApiFailure(
-      403,
-      "forbidden",
-      "The signature does not prove this device holds the key.",
-    );
-  }
+  await proveKey(db, userId, {
+    nonce: registration.nonce,
+    key: registration.key,
+    message: registrationMessage(registration.nonce, userId, registration.key),
+    signature: registration.signature,
+  });
 
   return db.transaction().execute(async (trx) => {
     await trx
@@ -80,12 +69,7 @@ export async function registerDevice(
       .where("id", "=", userId)
       .forShare()
       .executeTakeFirstOrThrow();
-    if (user.deleted_at)
-      throw new ApiFailure(
-        401,
-        "unauthorized",
-        "This account was deleted. Sign in to the phone app or app.sikemux.com to restore it.",
-      );
+    if (user.deleted_at) throw accountDeleted();
     const existing = await trx
       .selectFrom("devices")
       .selectAll()
@@ -115,9 +99,7 @@ export async function registerDevice(
         .where("role", "=", "host")
         .executeTakeFirst();
       if (removed?.reason === "removed")
-        throw new ApiFailure(
-          403,
-          "forbidden",
+        throw forbidden(
           "This host was removed from your account, so it cannot add itself back. Run `sikemux login` on it and enter the code it shows at app.sikemux.com/host or in Sikemux on your phone.",
         );
     }

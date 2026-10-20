@@ -14,7 +14,7 @@ import {
   type Verifier,
 } from "../auth.ts";
 import type { Database } from "../db.ts";
-import { ApiFailure, readBody } from "../http.ts";
+import { badRequest, readBody } from "../http.ts";
 import { joinRoutes } from "../join/routes.ts";
 import type { JoinSigner } from "../join/signer.ts";
 import { limit, type RateLimiter } from "../limits.ts";
@@ -102,11 +102,7 @@ export function deviceRoutes(
         role !== undefined &&
         !deviceRoleValues.includes(role as DeviceRole)
       ) {
-        throw new ApiFailure(
-          400,
-          "bad_request",
-          `role is one of ${deviceRoleValues.join(", ")}.`,
-        );
+        throw badRequest(`role is one of ${deviceRoleValues.join(", ")}.`);
       }
       let query = db
         .selectFrom("devices")
