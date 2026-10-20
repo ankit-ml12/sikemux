@@ -19,6 +19,7 @@ use crate::protocol::{
 use super::super::access::Peer;
 use super::super::connection::{ClientConn, ClientId};
 use super::history::{History, HistoryState, Page, Recovered, MAX_HISTORY_BYTES};
+use super::markdown::{annotate_replay, Answers};
 use super::queue::{batch_len, Queued, MAX_QUEUED};
 use super::states::{Subagent, Task};
 
@@ -1133,6 +1134,8 @@ struct Inner {
     holding: Option<u64>,
     /// What the person sent while the agent was at work, oldest first.
     queued: Vec<Queued>,
+    /// The answers being written, as their clients' trees of them stand.
+    answers: Answers,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1187,6 +1190,7 @@ impl Feed {
                 closed: false,
                 holding: None,
                 queued: Vec::new(),
+                answers: Answers::default(),
             }),
         })
     }
@@ -1223,15 +1227,20 @@ impl Feed {
             .iter()
             .rev()
             .find_map(|(_, _, event)| session_title(&event.payload));
+        let answers =
+            Answers::read_back(replay.events_from(replay.turn_start().unwrap_or_default()));
         let mut inner = self.inner.locked();
         inner.replay = replay;
         inner.title = title;
+        inner.answers = answers;
     }
 
     /// Takes up a feed an earlier core let go of.
     pub(crate) fn restored(agent_id: String, state: FeedState) -> Arc<Self> {
         let mut replay = state.replay;
         replay.history = state.history.map(History::reopen);
+        let answers =
+            Answers::read_back(replay.events_from(replay.turn_start().unwrap_or_default()));
         Arc::new(Self {
             agent_id,
             id: state.id,
@@ -1251,6 +1260,7 @@ impl Feed {
                 closed: false,
                 holding: None,
                 queued: Vec::new(),
+                answers,
             }),
         })
     }
@@ -1308,6 +1318,15 @@ impl Feed {
         payload: Value,
         except: Option<ClientId>,
     ) {
+        if matches!(
+            kind,
+            ChatEventKind::Prompt
+                | ChatEventKind::TurnStarted
+                | ChatEventKind::TurnCompleted
+                | ChatEventKind::Error
+        ) {
+            inner.answers.close_all();
+        }
         inner.seq += 1;
         let seq = inner.seq;
         let event = ChatEvent { kind, payload };
@@ -1346,8 +1365,9 @@ impl Feed {
         if inner.pending.is_empty() {
             return;
         }
-        let updates = std::mem::take(&mut inner.pending);
+        let mut updates = std::mem::take(&mut inner.pending);
         inner.pending_bytes = 0;
+        inner.answers.annotate(&mut updates);
         self.broadcast(
             inner,
             ChatEventKind::SessionUpdate,
@@ -1575,6 +1595,7 @@ impl Feed {
                         payload: queue_update(inner),
                     });
                 }
+                annotate_replay(&mut replay);
                 if lost {
                     replay.insert(
                         0,
@@ -1746,7 +1767,9 @@ impl Feed {
             return Err("the chat started again; open it again to see its history".into());
         }
         let inner = self.inner.locked();
-        inner.replay.page(before, turns)
+        let mut page = inner.replay.page(before, turns)?;
+        annotate_replay(&mut page.events);
+        Ok(page)
     }
 }
 

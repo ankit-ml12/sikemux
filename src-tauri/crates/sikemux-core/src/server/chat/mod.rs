@@ -5,6 +5,7 @@
 pub(crate) mod feed;
 mod history;
 mod kept;
+mod markdown;
 mod native;
 pub(crate) mod offered;
 pub(crate) mod queue;

@@ -5787,6 +5787,7 @@ dependencies = [
  "sha2 0.11.0",
  "sikemux-client",
  "sikemux-keychain",
+ "sikemux-markdown",
  "sikemux-process",
  "sikemux-pty",
  "sikemux-wire",
