@@ -29,6 +29,12 @@ import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 
 const IDLE = composerPlaceholder({ connection: 'ready', running: false }, { resuming: false, disconnected: false });
 
+/** The account a launcher runs on, as the core names it after the agent: "Claude · Work" is Work. */
+const accountName = (launcher: LauncherInfo) => {
+  const prefix = `${agentLabel(launcher.provider)} · `;
+  return launcher.label.startsWith(prefix) ? launcher.label.slice(prefix.length) : launcher.label;
+};
+
 function AgentSheet({
   visible,
   onClose,
@@ -44,23 +50,69 @@ function AgentSheet({
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
+  const agents = launchers.filter((launcher, index) => launchers.findIndex((first) => first.provider === launcher.provider) === index);
   return (
     <Sheet visible={visible} onClose={onClose}>
       <SheetLabel>Agent</SheetLabel>
       <View style={styles.agents}>
-        {launchers.map((launcher) => {
-          const on = launcher.id === chosen?.id;
+        {agents.map((launcher) => {
+          const on = launcher.provider === chosen?.provider;
           return (
             <Pressable
-              key={launcher.id}
-              onPress={() => onChoose(launcher)}
+              key={launcher.provider}
+              onPress={() => onChoose(on && chosen ? chosen : launcher)}
               style={[styles.agent, on && styles.agentOn]}
               accessibilityRole="button"
               accessibilityState={{ selected: on }}>
               <AgentIcon provider={launcher.provider} size={22} />
               <Text style={[styles.agentText, on && { color: colors.ink }]} numberOfLines={1}>
-                {launcher.label}
+                {agentLabel(launcher.provider)}
               </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </Sheet>
+  );
+}
+
+function SettingsSheet({
+  visible,
+  onClose,
+  accounts,
+  chosen,
+  onChoose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  accounts: LauncherInfo[];
+  chosen: LauncherInfo;
+  onChoose: (launcher: LauncherInfo) => void;
+}) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.sheetHead}>
+        <AgentIcon provider={chosen.provider} size={20} />
+        <Text style={styles.sheetTitle}>{agentLabel(chosen.provider)}</Text>
+      </View>
+      <SheetLabel>Account</SheetLabel>
+      <View style={styles.group}>
+        {accounts.map((launcher, index) => {
+          const on = launcher.id === chosen.id;
+          return (
+            <Pressable
+              key={launcher.id}
+              onPress={() => onChoose(launcher)}
+              style={[styles.option, on && { backgroundColor: colors.active }, index > 0 && styles.optionDivided]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}>
+              <AgentIcon provider={launcher.provider} size={18} />
+              <Text style={[styles.optionText, on && { color: colors.ink }]} numberOfLines={1}>
+                {accountName(launcher)}
+              </Text>
+              {on ? <Icon name="IconCheck" size={17} color={colors.ink} /> : null}
             </Pressable>
           );
         })}
@@ -82,7 +134,7 @@ export default function NewChat() {
   const [chosenMode, setChosenMode] = useState<string>();
   const [projectId, setProjectId] = useState<string | undefined>(linkedProject);
   const [draft, setDraft] = useState('');
-  const [sheet, setSheet] = useState<'agent' | 'project' | 'attach'>();
+  const [sheet, setSheet] = useState<'agent' | 'project' | 'attach' | 'settings'>();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string>();
@@ -91,6 +143,10 @@ export default function NewChat() {
   const launcher = useMemo(
     () => workspace?.launchers.find((known) => known.id === launcherId) ?? workspace?.launchers[0],
     [workspace, launcherId],
+  );
+  const accounts = useMemo(
+    () => workspace?.launchers.filter((known) => known.provider === launcher?.provider) ?? [],
+    [workspace, launcher],
   );
   const project = useMemo(
     () => workspace?.projects.find((known) => known.id === projectId) ?? workspace?.projects[0],
@@ -157,7 +213,21 @@ export default function NewChat() {
 
   return (
     <Screen>
-      <Nav title={launcher ? <ChatTitle provider={launcher.provider} title={`New ${agentLabel(launcher.provider)} chat`} /> : undefined} />
+      <Nav
+        title={launcher ? <ChatTitle provider={launcher.provider} title={`New ${agentLabel(launcher.provider)} chat`} /> : undefined}
+        end={
+          accounts.length > 1 && !started ? (
+            <Pressable
+              onPress={() => setSheet('settings')}
+              hitSlop={6}
+              style={({ pressed }) => [styles.more, pressed && { backgroundColor: colors.active }]}
+              accessibilityRole="button"
+              accessibilityLabel="Chat settings">
+              <Icon name="IconMoreVertical" size={16} color={colors.tertiary} />
+            </Pressable>
+          ) : undefined
+        }
+      />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={styles.welcome}>
           {absent ? (
@@ -224,7 +294,7 @@ export default function NewChat() {
                   accessibilityRole="button"
                   accessibilityLabel="Agent">
                   <AgentIcon provider={launcher.provider} size={16} />
-                  <Text style={styles.pickerText}>{launcher.label}</Text>
+                  <Text style={styles.pickerText}>{agentLabel(launcher.provider)}</Text>
                   <View style={{ transform: [{ rotate: '90deg' }], opacity: 0.6 }}>
                     <Icon name="IconChevron" size={10} color={colors.accent} />
                   </View>
@@ -258,6 +328,18 @@ export default function NewChat() {
           setSheet(undefined);
         }}
       />
+      {launcher ? (
+        <SettingsSheet
+          visible={sheet === 'settings'}
+          onClose={() => setSheet(undefined)}
+          accounts={accounts}
+          chosen={launcher}
+          onChoose={(next) => {
+            setLauncherId(next.id);
+            setSheet(undefined);
+          }}
+        />
+      ) : null}
       <ProjectSheet
         visible={sheet === 'project'}
         onClose={() => setSheet(undefined)}
@@ -305,6 +387,7 @@ const makeStyles = (colors: Palette) => {
     add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
     picker: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 7 },
     pickerText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.accent },
+    more: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     send: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
 
     agents: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -321,5 +404,12 @@ const makeStyles = (colors: Palette) => {
     },
     agentOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
     agentText: { fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },
+
+    sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
+    sheetTitle: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
+    group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
+    option: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 14 },
+    optionDivided: { borderTopWidth: 1, borderTopColor: colors.border },
+    optionText: { flex: 1, fontFamily: fonts.uiMedium, fontSize: 15.5, color: colors.secondary },
   });
 };
