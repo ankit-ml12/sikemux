@@ -15,6 +15,7 @@ import { notify, reportError, swallow } from "../state/toast";
 import { accountApi } from "../api/account";
 import type { Agent, PaneNode, Session } from "../state/types";
 import type { Draft } from "immer";
+import { isRecord } from "../lib/guards";
 
 /** Another host on the account the app joined, as the app reaches it. */
 export interface HostEntry {
@@ -149,6 +150,25 @@ export type ChosenHost = HostChoice & { readonly over: string };
 /** The host chosen in the side rail, while the session it was chosen over is still in front. */
 export function chosenHostOf(state: Pick<StoreState, "chosenHost" | "activeSessionId">): HostChoice | undefined {
     return state.chosenHost?.over === state.activeSessionId ? state.chosenHost : undefined;
+}
+
+/** The chosen host as a restart keeps it, beside the session it was chosen over. */
+export function savedHostChoice(state: Pick<StoreState, "chosenHost" | "activeSessionId">): HostChoice | undefined {
+    const chosen = chosenHostOf(state);
+    if (!chosen) return undefined;
+    return chosen.kind === "ssh" ? { kind: "ssh", alias: chosen.alias } : chosen.host ? { kind: "core", host: chosen.host } : { kind: "core" };
+}
+
+/** A saved host choice, chosen again over `over` when it still names this host, an account host or an open SSH host. */
+export function restoredHostChoice(saved: unknown, sessions: Readonly<Record<string, Session>>, over: string): ChosenHost | null {
+    if (!isRecord(saved)) return null;
+    if (saved.kind === "core" && (saved.host === undefined || typeof saved.host === "string"))
+        return saved.host ? { kind: "core", host: saved.host, over } : { kind: "core", over };
+    if (saved.kind === "ssh" && typeof saved.alias === "string") {
+        const alias = saved.alias;
+        return Object.values(sessions).some((session) => session.kind === "ssh" && session.name === alias) ? { kind: "ssh", alias, over } : null;
+    }
+    return null;
 }
 
 export function sameHost(a: HostChoice | undefined, b: HostChoice): boolean {
@@ -445,12 +465,23 @@ export function startHosts(): () => void {
     const controller = new AbortController();
     const transport = getIpcTransport();
     noticeNewDevices(controller.signal);
+    // A host chosen before the restart gives way to the project once the app finds it gone or out of reach.
+    let restored = getState().chosenHost;
+    const settleRestored = (hosts: readonly HostEntry[]) => {
+        const choice = restored;
+        if (choice?.kind !== "core" || !choice.host) return;
+        const host = hosts.find((candidate) => candidate.id === choice.host);
+        if (host?.reach === "connecting") return;
+        restored = null;
+        if ((!host || host.reach === "away") && getState().chosenHost === choice) setState({ chosenHost: null });
+    };
     const setHosts = (hosts: HostEntry[]) => {
         const ids = new Set(hosts.map((host) => host.id));
         setState({
             hosts,
             hostViews: Object.fromEntries(Object.entries(getState().hostViews).filter(([id]) => ids.has(id))),
         });
+        settleRestored(hosts);
         placeRemoteProjects();
     };
     void transport
