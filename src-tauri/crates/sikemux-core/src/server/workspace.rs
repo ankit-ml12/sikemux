@@ -1730,14 +1730,13 @@ fn agents_closed(core: &Core, before: HashSet<String>) {
     for agent_id in before.difference(&kept) {
         core.chats.stop(agent_id);
     }
-    core.names.set_in_app(kept, core.running_agents());
+    core.names.settle(core.open_agents());
 }
 
 /// Runs whenever the workspace changes: agents in it keep their names while
 /// nothing of them runs.
 pub(crate) fn settle(core: &Arc<Core>) {
-    core.names
-        .set_in_app(core.workspaces.agent_ids(), core.running_agents());
+    core.names.settle(core.open_agents());
     super::session_watch::follow(core);
     core.agents_changed();
 }

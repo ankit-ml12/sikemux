@@ -516,6 +516,14 @@ impl Core {
         running
     }
 
+    /// The agents that keep their names: those running here and those the
+    /// workspace holds, asleep or not.
+    pub(crate) fn open_agents(&self) -> HashSet<String> {
+        let mut open = self.running_agents();
+        open.extend(self.workspaces.agent_ids());
+        open
+    }
+
     /// The agent's name, given now when it has none. Reads and writes the
     /// disk, so it belongs on a blocking thread.
     pub(crate) fn name_agent(
@@ -533,7 +541,7 @@ impl Core {
                 provider,
                 resume_id,
             },
-            self.running_agents(),
+            self.open_agents(),
         );
         if changed {
             self.publish_device_view();

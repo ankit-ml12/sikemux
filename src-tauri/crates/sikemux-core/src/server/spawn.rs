@@ -67,10 +67,11 @@ impl Spawning {
 }
 
 /// The agents running here and those the window is opening.
-fn running(core: &Core) -> HashSet<String> {
-    let mut running = core.running_agents();
-    running.extend(core.harness.spawning.opening().iter().cloned());
-    running
+/// The agents that keep their names, with those being opened now.
+fn open(core: &Core) -> HashSet<String> {
+    let mut open = core.open_agents();
+    open.extend(core.harness.spawning.opening().iter().cloned());
+    open
 }
 
 fn text_param<'a>(params: &'a Value, key: &str, max: usize) -> Result<Option<&'a str>, String> {
@@ -167,7 +168,7 @@ pub(crate) fn lead_of(
 /// Names a worker for its lead, one spawn at a time.
 pub(crate) fn hire(core: &Core, worker: Worker<'_>) -> Result<AgentName, String> {
     let _one_at_a_time = core.harness.spawning.one_at_a_time();
-    core.names.hire(worker, running(core))
+    core.names.hire(worker, open(core))
 }
 
 /// A worker here for a lead on a linked host, as that host named it.
@@ -225,7 +226,7 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
             depth: 0,
             from_host: Some(&plan.host),
         },
-        running(core),
+        open(core),
     );
     launch.agent_id = plan.agent_id.clone();
     let model = launch.model.clone();
@@ -331,7 +332,7 @@ fn start(
                     depth: 0,
                     from_host: None,
                 },
-                running(core),
+                open(core),
             );
             (hired.agent_id.clone(), named)
         }
@@ -346,7 +347,7 @@ fn start(
                     session: resume.map(|saved| saved.session_id.as_str()),
                     reports,
                 },
-                running(core),
+                open(core),
             )?;
             (agent_id, named)
         }
@@ -620,7 +621,7 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
             session: None,
             reports,
         },
-        running(core),
+        open(core),
     )?;
     core.harness.spawning.opening().insert(agent_id.clone());
     let lead_name = core.names.name(&lead_id).unwrap_or_else(|| lead_id.clone());

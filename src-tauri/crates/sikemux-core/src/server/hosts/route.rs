@@ -580,7 +580,7 @@ pub(super) fn hire_here(core: &Core, host: &str, params: Value) -> CoreResult<Va
             session: None,
             reports: params.reports,
         },
-        core.running_agents(),
+        core.open_agents(),
     )?;
     core.hosts.team.add(Foreign {
         agent_id: params.agent_id,

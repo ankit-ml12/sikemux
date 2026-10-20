@@ -495,7 +495,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
                     provider: Some(&launch.provider),
                     resume_id: None,
                 },
-                core.running_agents(),
+                core.open_agents(),
             );
             launch.agent_id = agent.clone();
             Ok((tree, launch, launcher, named.name))

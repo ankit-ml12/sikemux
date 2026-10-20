@@ -533,7 +533,7 @@ async fn name_agent(core: &Arc<Core>, params: NameAgentParams) -> CoreResult<Nam
             provider: params.provider.as_deref(),
             resume_id: params.resume_id.as_deref(),
         };
-        let kept = core.names.reopen(&starting, core.running_agents());
+        let kept = core.names.reopen(&starting, core.open_agents());
         let named = core.name_agent(
             &params.agent_id,
             &params.cwd,
@@ -568,7 +568,7 @@ async fn closed_agents(
     let core = core.clone();
     blocking(move || {
         let project = project_of(&params.cwd, &core.workspaces.project_paths());
-        Ok(core.names.closed(&project, core.running_agents()))
+        Ok(core.names.closed(&project, core.open_agents()))
     })
     .await
 }
@@ -585,7 +585,7 @@ async fn rename_agent(core: &Arc<Core>, params: RenameAgentParams) -> CoreResult
     blocking(move || {
         let named = core
             .names
-            .rename(&params.agent_id, &params.name, core.running_agents())?;
+            .rename(&params.agent_id, &params.name, core.open_agents())?;
         core.publish_device_view();
         Ok(named)
     })

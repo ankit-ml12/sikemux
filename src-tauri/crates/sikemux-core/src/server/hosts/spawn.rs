@@ -303,7 +303,7 @@ pub(super) async fn start_here(
                 depth: lead.depth,
                 from_host: Some(host),
             },
-            core.running_agents(),
+            core.open_agents(),
         );
     }
     pin(core);

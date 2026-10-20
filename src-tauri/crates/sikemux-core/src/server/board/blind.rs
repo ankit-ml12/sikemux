@@ -254,7 +254,7 @@ async fn start(core: &Arc<Core>, step: &Step, agent: &str, head: &str) -> Result
                     provider: Some(&launch.provider),
                     resume_id: None,
                 },
-                core.running_agents(),
+                core.open_agents(),
             );
             core.names.make_blind(&agent);
             launch.agent_id = agent.clone();
