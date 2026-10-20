@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use sikemux_core::protocol::SessionId;
+use sikemux_process::sync::Locked;
 use tauri::ipc::{Channel, Response};
 
 use crate::error::{AppError, AppResult};
@@ -81,39 +82,34 @@ pub(super) struct StreamTable {
 }
 
 impl StreamTable {
-    pub(super) fn lock(&self) -> AppResult<StreamGuard<'_>> {
-        Ok(StreamGuard {
-            sessions: self
-                .sessions
-                .lock()
-                .map_err(|_| AppError::Pty("stream table lock poisoned".into()))?,
+    pub(super) fn lock(&self) -> StreamGuard<'_> {
+        StreamGuard {
+            sessions: self.sessions.locked(),
             next_sub_id: &self.next_sub_id,
-        })
+        }
     }
 
-    fn with<T>(&self, work: impl FnOnce(&mut StreamGuard<'_>) -> T) -> Option<T> {
-        self.lock().ok().map(|mut guard| work(&mut guard))
+    fn with<T>(&self, work: impl FnOnce(&mut StreamGuard<'_>) -> T) -> T {
+        work(&mut self.lock())
     }
 
     /// Hands one chunk of output to every channel of the session, charging it
     /// against each one's credit.
     pub(super) fn output(&self, id: SessionId, bytes: &[u8]) -> Delivery {
-        let channels = self
-            .with(|guard| {
-                let Some(streams) = guard.sessions.get_mut(&id) else {
-                    return Vec::new();
-                };
-                streams.core_unacked += bytes.len();
-                streams
-                    .subscribers
-                    .iter_mut()
-                    .map(|(sub_id, subscriber)| {
-                        subscriber.unacked += bytes.len();
-                        (*sub_id, subscriber.channel.clone())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let channels = self.with(|guard| {
+            let Some(streams) = guard.sessions.get_mut(&id) else {
+                return Vec::new();
+            };
+            streams.core_unacked += bytes.len();
+            streams
+                .subscribers
+                .iter_mut()
+                .map(|(sub_id, subscriber)| {
+                    subscriber.unacked += bytes.len();
+                    (*sub_id, subscriber.channel.clone())
+                })
+                .collect()
+        });
         Delivery { channels }
     }
 
@@ -136,7 +132,6 @@ impl StreamTable {
             subscriber.unacked = subscriber.unacked.saturating_sub(bytes);
             guard.settle(id)
         })
-        .flatten()
     }
 
     /// Takes the channels to tell the session is gone, then forgets it if
@@ -153,27 +148,24 @@ impl StreamTable {
                 guard.forget_if_unused(id);
                 Some(channels)
             })
-            .flatten()
             .unwrap_or_default();
         Delivery { channels }
     }
 
     pub(super) fn channels(&self, id: SessionId) -> Delivery {
-        let channels = self
-            .with(|guard| {
-                guard
-                    .sessions
-                    .get(&id)
-                    .map(|streams| {
-                        streams
-                            .subscribers
-                            .iter()
-                            .map(|(sub_id, subscriber)| (*sub_id, subscriber.channel.clone()))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
+        let channels = self.with(|guard| {
+            guard
+                .sessions
+                .get(&id)
+                .map(|streams| {
+                    streams
+                        .subscribers
+                        .iter()
+                        .map(|(sub_id, subscriber)| (*sub_id, subscriber.channel.clone()))
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
         Delivery { channels }
     }
 
@@ -193,7 +185,6 @@ impl StreamTable {
                 })
                 .collect()
         })
-        .unwrap_or_default()
     }
 
     /// Forgets every session without telling anyone it ended, returning the
@@ -206,7 +197,6 @@ impl StreamTable {
                 .map(|(id, _)| id)
                 .collect()
         })
-        .unwrap_or_default()
     }
 
     /// Sessions the core was streaming to the app.
@@ -219,7 +209,6 @@ impl StreamTable {
                 .map(|(id, _)| *id)
                 .collect()
         })
-        .unwrap_or_default()
     }
 
     /// A new connection streams the session afresh and owes nothing yet.
@@ -239,7 +228,6 @@ impl StreamTable {
                 .map(|streams| streams.subscribers.len())
                 .sum()
         })
-        .unwrap_or(0)
     }
 }
 
@@ -371,7 +359,7 @@ mod tests {
 
     fn attached(table: &StreamTable, id: u64) -> (u32, Received) {
         let (channel, received) = channel();
-        let mut guard = table.lock().expect("lock");
+        let mut guard = table.lock();
         guard.begin_attach(id).expect("begin");
         let sub_id = guard.finish_attach(id, channel).expect("finish");
         (sub_id, received)
@@ -401,7 +389,7 @@ mod tests {
         let table = StreamTable::default();
         let (first, _) = attached(&table, 1);
         let (second, _) = attached(&table, 1);
-        let mut guard = table.lock().expect("lock");
+        let mut guard = table.lock();
         assert_eq!(guard.unsubscribe(1, first), Release::Nothing);
         guard.begin_attach(1).expect("begin");
         assert_eq!(guard.unsubscribe(1, second), Release::Nothing);
@@ -423,10 +411,7 @@ mod tests {
         let (slow, _) = attached(&table, 3);
         table.output(3, &[0; 10]);
         assert_eq!(table.ack(3, fast, 10), None);
-        assert_eq!(
-            table.lock().expect("lock").unsubscribe(3, slow),
-            Release::Ack(10)
-        );
+        assert_eq!(table.lock().unsubscribe(3, slow), Release::Ack(10));
     }
 
     #[test]
@@ -458,7 +443,7 @@ mod tests {
     #[test]
     fn channel_capacity_counts_attaches_in_flight() {
         let table = StreamTable::default();
-        let mut guard = table.lock().expect("lock");
+        let mut guard = table.lock();
         for _ in 0..MAX_CHANNELS_PER_SESSION {
             guard.begin_attach(5).expect("below the cap");
         }
@@ -473,7 +458,7 @@ mod tests {
         table
             .next_sub_id
             .store(u32::MAX, std::sync::atomic::Ordering::Relaxed);
-        let mut guard = table.lock().expect("lock");
+        let mut guard = table.lock();
         let (first, _) = channel();
         let (second, _) = channel();
         assert_eq!(guard.add_channel(2, first).expect("first"), u32::MAX);

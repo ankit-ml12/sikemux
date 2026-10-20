@@ -19,6 +19,7 @@ use sikemux_core::client::{
 };
 use sikemux_core::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
 use sikemux_core::protocol::{BuildIdentity, Request, SessionInfo, SessionKind};
+use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -152,8 +153,7 @@ impl PtyManager {
 
     fn current(&self) -> Option<Arc<CoreClient>> {
         self.client
-            .lock()
-            .ok()?
+            .locked()
             .clone()
             .filter(|client| client.is_connected())
     }
@@ -224,9 +224,7 @@ impl PtyManager {
         crate::inbox::connected(&client).await;
         let _ = settings.app.emit_to("main", "core_connected", ());
         self.core_pid.store(client.core_pid(), Ordering::Release);
-        if let Ok(mut current) = self.client.lock() {
-            *current = Some(client.clone());
-        }
+        *self.client.locked() = Some(client.clone());
         Ok(client)
     }
 
@@ -587,7 +585,7 @@ mod tests {
         let manager = PtyManager::default();
         let (channel, messages) = recorded();
         {
-            let mut guard = manager.streams.lock().expect("lock");
+            let mut guard = manager.streams.lock();
             guard.begin_attach(3).expect("begin");
             guard.finish_attach(3, channel).expect("attach");
         }

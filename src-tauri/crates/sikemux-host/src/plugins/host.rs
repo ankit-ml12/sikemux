@@ -8,6 +8,7 @@ use serde_json::Value;
 use sikemux_plugin_api::{
     AgentTool, Manifest, Plugin, PluginContext, PluginError, PluginResult, StreamSink,
 };
+use sikemux_process::sync::Locked;
 use tokio::runtime::{Handle, Runtime};
 use tokio::task::JoinHandle;
 
@@ -239,10 +240,7 @@ impl PluginHost {
                     None
                 }
             };
-            let mut before = self
-                .offered_before
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut before = self.offered_before.locked();
             let offers = match answer {
                 Some(offers) => {
                     before.insert(key, offers);
