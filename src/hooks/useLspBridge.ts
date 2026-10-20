@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { languageFromPath, loadServedLanguages, lsp, type LspTextChange } from "../api/lsp";
 import { documentLanguageOf } from "../languages";
 import { languageServersAllowed } from "../editor/languageServerTrust";
-import { dismissToast, notify, swallow } from "../state/toast";
-import { errorCategory, errorText } from "../lib/format";
-import { projectDiagnosticsRuntime, type ProjectDiagnosticsLease } from "../workbench/projectDiagnostics";
+import { dismissToast, errCategory, errMessage, notify, swallow } from "../state/toast";
+import { acquireProjectProblems, noteServerStarted, type ProjectProblems } from "../editor/projectProblems";
 
 const CHANGE_DEBOUNCE_MS = 120;
 const MAX_INCREMENTAL_BATCH = 80;
@@ -21,7 +20,7 @@ function openKey(lang: string, path: string) {
 function isInstallableMissingServer(lang: string, err: unknown, msg: string): boolean {
     const spec = INSTALLABLE_LSP[lang];
     if (!spec) return false;
-    if (errorCategory(err) === "lsp-server-missing") return msg.includes(`\`${spec.bin}\``);
+    if (errCategory(err) === "lsp-server-missing") return msg.includes(`\`${spec.bin}\``);
     return new RegExp(`spawn\\s+${spec.bin}\\b.*(?:no such file|not found)`, "i").test(msg);
 }
 
@@ -34,7 +33,7 @@ export function useLspBridge(cwd: string) {
     const chains = useRef<Map<string, Promise<void>>>(new Map());
     const reportedErrors = useRef<Set<string>>(new Set());
     const installing = useRef<Set<string>>(new Set());
-    const [diagnosticsLease, setDiagnosticsLease] = useState<ProjectDiagnosticsLease | null>(null);
+    const [problems, setProblems] = useState<ProjectProblems | null>(null);
     const startedServers = useRef<{ project: string; epoch: number; languages: Set<string> }>({ project: cwd, epoch: 1, languages: new Set() });
     if (startedServers.current.project !== cwd) {
         startedServers.current = { project: cwd, epoch: startedServers.current.epoch + 1, languages: new Set() };
@@ -42,18 +41,11 @@ export function useLspBridge(cwd: string) {
 
     useEffect(() => {
         if (!cwd) return;
-        let lease: ProjectDiagnosticsLease;
-        try {
-            lease = projectDiagnosticsRuntime.acquire(cwd);
-        } catch (error) {
-            swallow("LSP diagnostics acquire")(error);
-            return;
-        }
+        const lease = acquireProjectProblems(cwd);
         const epoch = startedServers.current.epoch;
-        setDiagnosticsLease(lease);
-        void lease.ready.catch(swallow("LSP diagnostics listener"));
+        setProblems(lease.problems);
         for (const language of startedServers.current.project === cwd ? startedServers.current.languages : []) {
-            projectDiagnosticsRuntime.noteServerStarted(cwd, language);
+            noteServerStarted(cwd, language);
         }
         return () => {
             lease.release();
@@ -68,7 +60,7 @@ export function useLspBridge(cwd: string) {
             await lsp.start(cwd, lang);
             if (startedServers.current.project !== cwd || startedServers.current.epoch !== epoch) return false;
             startedServers.current.languages.add(lang);
-            projectDiagnosticsRuntime.noteServerStarted(cwd, lang);
+            noteServerStarted(cwd, lang);
             return true;
         },
         [cwd],
@@ -100,10 +92,10 @@ export function useLspBridge(cwd: string) {
                     await retry();
                     notify("success", `${spec.label} ready`);
                 } catch (e) {
-                    notify("error", `LSP ${lang} retry failed: ${errorText(e)}`);
+                    notify("error", `LSP ${lang} retry failed: ${errMessage(e)}`);
                 }
             })
-            .catch((e) => notify("error", `${spec.bin} install failed: ${errorText(e)}`))
+            .catch((e) => notify("error", `${spec.bin} install failed: ${errMessage(e)}`))
             .finally(() => {
                 installing.current.delete(lang);
             });
@@ -111,7 +103,7 @@ export function useLspBridge(cwd: string) {
 
     const reportLspError = useCallback(
         (lang: string, action: string, err: unknown, retry?: () => Promise<void>) => {
-            const msg = errorText(err);
+            const msg = errMessage(err);
             const key = `${lang}:${action}:${msg}`;
             if (reportedErrors.current.has(key)) return;
             reportedErrors.current.add(key);
@@ -312,6 +304,5 @@ export function useLspBridge(cwd: string) {
         };
     }, [cwd]);
 
-    const activeDiagnosticsLease = diagnosticsLease?.project === cwd && !diagnosticsLease.released ? diagnosticsLease : null;
-    return { openDoc, scheduleChange, saveDoc, closeDoc, diagnostics: activeDiagnosticsLease?.controller ?? null };
+    return { openDoc, scheduleChange, saveDoc, closeDoc, diagnostics: problems?.project === cwd ? problems : null };
 }
