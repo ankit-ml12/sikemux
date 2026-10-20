@@ -12,11 +12,11 @@ two hosts work for each other only once the owner allows the link
 host decides. That way a stolen account or a broken-into accounts server can ask to be let in but
 cannot get in.
 
-In use, that rule costs every person, every time, on every host. Adding a Linux server and
-opening it from the desktop app took four steps: sign the server in, link the laptop to it from
-the server's terminal, turn on a switch to show it in the app, then allow the same laptop a second
-time from a phone, three taps deep, before the request expired. The person had already proved who they were
-by signing both in to the same account.
+In use, that rule costs every person, every time, on every host. Adding a Linux server and opening
+it from the desktop app took four steps: sign the server in, link the laptop to it from the
+server's terminal, turn on a switch to show it in the app, then allow the same laptop a second
+time from a phone, three taps deep, before the request expired. The person had already proved who
+they were by signing both in to the same account.
 
 Products people trust with remote shells mostly make the other choice. Tailscale puts a machine
 on the network once it signs in to the account, and offers Tailnet Lock, where trusted devices
@@ -50,9 +50,13 @@ for whoever is signed in to the GitHub account.
   runs the installer over that SSH connection and signs the host in to the account by itself. The
   new-item menu keeps three rows, which start on the host of the focused chat or terminal and name
   it when it is not this one.
+- **An agent uses the sign-ins of the host it runs on, whoever started or messaged it.** ADR 0013
+  refused plugin calls and the browser to any agent that an agent on another host had started or
+  messaged, and to every lead above it, until the person allowed that host. That rule goes: the
+  person's hosts are one place to them, and a lead that hears from its worker on a server keeps
+  its tools.
 - **What stays separate.** A device signed in to another account still asks the owner, and can be
-  limited to watching. A linked host's agents still use none of this host's sign-ins until the
-  person allows it (ADR 0013), the vault stays sealed from the server
+  limited to watching. The vault stays sealed from the server
   ([ADR 0016](./0016-the-account-vault.md)), and agent CLIs still sign in on each host.
 
 ## Consequences
@@ -66,7 +70,12 @@ for whoever is signed in to the GitHub account.
 - `sikemux pair`, the link prompt, the app's link step, "Show … in this app" and the new-item
   menu's rows for each host go away. A headless host is set up by `sikemux login` alone.
 - Hosts link to every other host on the account automatically, so an agent on any host can start
-  workers on all of them. The per-link switch for sign-ins stays off until the person turns it on.
+  workers on all of them, and a worker on a host uses that host's sign-ins.
+- An agent steered by what it read, a poisoned issue or web page, can act as the person with the
+  sign-ins of the host it runs on, wherever the text came from. ADR 0013's rule never caught that:
+  an agent on this host reading the same page kept every sign-in. Guarding against it is the
+  sandboxes' job ([ADR 0014](./0014-agents-run-on-hosts-and-every-client-is-a-way-in.md)), not the
+  host an agent's message came from.
 - Settings, Devices lists the account's hosts and devices with what they are doing, and removing
   one from there revokes it everywhere.
 
@@ -77,5 +86,8 @@ for whoever is signed in to the GitHub account.
   person to prove twice what signing in already proved. It remains as the lock.
 - **Trust the device that entered the host's sign-in code, and ask for every other.** Rejected:
   the person's next device and every new host still meet the old prompts.
+- **Keep refusing sign-ins to agents reached from another host.** Rejected: it stripped a lead of
+  its browser and plugins the first time its own worker on a server reported back, and guarded
+  only against text that crossed a host, not the same text read here.
 - **The lock as an account setting.** Rejected: the server that the lock guards against could
   turn it off.
