@@ -1073,6 +1073,9 @@ pub(crate) struct AddParams {
     cwd: Option<String>,
     /// For the team in `sikemux.json`, or for this person only.
     team: bool,
+    /// The task this one is an edit of, which goes when its id or place changes.
+    #[serde(default)]
+    replaces: Option<String>,
 }
 
 /// Saves a task the person wrote; answers its id.
@@ -1107,8 +1110,29 @@ pub(crate) async fn add(core: &Arc<Core>, params: AddParams) -> CoreResult<Value
             }));
             task_id
         };
+        if let Some(old) = params.replaces.filter(|old| *old != task_id) {
+            detect::remove_saved(&project, &old)?;
+        }
         core.changes.changed("tasks", Some(&params.project), None);
         Ok(json!({ "taskId": task_id }))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoveParams {
+    project: String,
+    task_id: String,
+}
+
+/// Takes a task the person added off the project.
+pub(crate) async fn remove(core: &Arc<Core>, params: RemoveParams) -> CoreResult<Value> {
+    let core = core.clone();
+    blocking(move || {
+        detect::remove_saved(Path::new(&params.project), &params.task_id)?;
+        core.changes.changed("tasks", Some(&params.project), None);
+        Ok(Value::Null)
     })
     .await
 }

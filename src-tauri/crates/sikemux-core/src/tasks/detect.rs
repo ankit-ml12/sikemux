@@ -775,3 +775,27 @@ pub fn save_team(project: &Path, task: &AddedTask) -> Result<String, String> {
     write_json(&path, config)?;
     Ok(id)
 }
+
+/// Takes a task the person added out of `sikemux.json` or `.sikemux/tasks.json`,
+/// leaving everything else in the file as it was.
+pub fn remove_saved(project: &Path, task_id: &str) -> Result<(), String> {
+    if task_id.starts_with(DETECTED_PREFIX) {
+        return Err("a task found in the build files cannot be removed".into());
+    }
+    let (path, id) = match task_id.strip_prefix(PERSONAL_PREFIX) {
+        Some(id) => (project.join(PERSONAL_TASKS), id),
+        None => (project.join(PROJECT_CONFIG), task_id),
+    };
+    let Some(mut stored) = read_object(&path)? else {
+        return Err(format!("{} has no tasks", path.display()));
+    };
+    let Some(Value::Array(tasks)) = stored.get_mut("tasks") else {
+        return Err(format!("{} has no tasks", path.display()));
+    };
+    let before = tasks.len();
+    tasks.retain(|task| task.get("id").and_then(Value::as_str) != Some(id));
+    if tasks.len() == before {
+        return Err(format!("{} has no task {id}", path.display()));
+    }
+    write_json(&path, stored)
+}

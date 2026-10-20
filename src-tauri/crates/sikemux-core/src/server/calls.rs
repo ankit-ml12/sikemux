@@ -265,6 +265,7 @@ pub(crate) async fn call(
             answer(super::tasks::answer_trust(&core, &params.id, params.trust)?)
         }
         "addTask" => answer(super::tasks::add(&core, parse(params)?).await?),
+        "removeTask" => answer(super::tasks::remove(&core, parse(params)?).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => answer(plugins::window_call(&core, parse(params)?).await),
         "pluginManifests" => answer(plugins::manifests()),
