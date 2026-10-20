@@ -120,56 +120,59 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                 Starts agents on your open cards, each on its own branch; another agent reviews the work before it lands.
             </p>
             {auto?.autoNote && <p className="board-auto-note">{auto.autoNote}</p>}
-            <div className="board-facts">
-                <span className="board-fact">
-                    <span className="board-fact-name">At once</span>
-                    <Dropdown
-                        value={String(settings?.slots ?? 2)}
-                        options={SLOT_OPTIONS}
-                        disabled={busy}
-                        onChange={(slots) => void save({ slots: Number(slots) })}
-                    />
-                </span>
-                <span className="board-fact">
-                    <span className="board-fact-name">Agent</span>
-                    <Dropdown
-                        value={settings?.launcher ?? FIRST_THAT_WORKS}
-                        options={launchers}
-                        disabled={busy}
-                        onChange={(launcher) => void save({ launcher: launcher || null })}
-                    />
-                </span>
-                {(payers.length > 0 || settings?.provider) && (
+            <section className="board-section">
+                <span className="board-section-name">Agents</span>
+                <div className="board-facts">
                     <span className="board-fact">
-                        <span className="board-fact-name">Paid by</span>
+                        <span className="board-fact-name">At once</span>
                         <Dropdown
-                            value={settings?.provider ?? ""}
-                            options={[{ value: "", label: "Its own account" }, ...payers]}
+                            value={String(settings?.slots ?? 2)}
+                            options={SLOT_OPTIONS}
                             disabled={busy}
-                            onChange={(provider) => void save({ provider: provider || null })}
+                            onChange={(slots) => void save({ slots: Number(slots) })}
                         />
                     </span>
-                )}
-                <span className="board-fact">
-                    <span className="board-fact-name">Model</span>
-                    <TextSetting
-                        value={settings?.model ?? ""}
-                        placeholder="The agent's own"
-                        label="Model"
-                        onSave={(model) => void save({ model: model || null })}
-                    />
-                </span>
-                <span className="board-fact">
-                    <span className="board-fact-name">Then</span>
-                    <Dropdown
-                        value={settings?.finish ?? "merge"}
-                        options={FINISH_OPTIONS}
-                        disabled={busy}
-                        onChange={(finish) => void save({ finish: finish as "merge" | "pr" })}
-                    />
-                </span>
-            </div>
-            <section className="board-result">
+                    <span className="board-fact">
+                        <span className="board-fact-name">Agent</span>
+                        <Dropdown
+                            value={settings?.launcher ?? FIRST_THAT_WORKS}
+                            options={launchers}
+                            disabled={busy}
+                            onChange={(launcher) => void save({ launcher: launcher || null })}
+                        />
+                    </span>
+                    {(payers.length > 0 || settings?.provider) && (
+                        <span className="board-fact">
+                            <span className="board-fact-name">Provider</span>
+                            <Dropdown
+                                value={settings?.provider ?? ""}
+                                options={[{ value: "", label: "Its own sign-in" }, ...payers]}
+                                disabled={busy}
+                                onChange={(provider) => void save({ provider: provider || null })}
+                            />
+                        </span>
+                    )}
+                    <span className="board-fact">
+                        <span className="board-fact-name">Model</span>
+                        <TextSetting
+                            value={settings?.model ?? ""}
+                            placeholder="The agent's own"
+                            label="Model"
+                            onSave={(model) => void save({ model: model || null })}
+                        />
+                    </span>
+                    <span className="board-fact">
+                        <span className="board-fact-name">Then</span>
+                        <Dropdown
+                            value={settings?.finish ?? "merge"}
+                            options={FINISH_OPTIONS}
+                            disabled={busy}
+                            onChange={(finish) => void save({ finish: finish as "merge" | "pr" })}
+                        />
+                    </span>
+                </div>
+            </section>
+            <section className="board-section">
                 <span className="board-section-name">Reviewer</span>
                 <div className="board-facts">
                     <span className="board-fact">
@@ -183,10 +186,10 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                     </span>
                     {reviewer && (payers.length > 0 || reviewer.provider) && (
                         <span className="board-fact">
-                            <span className="board-fact-name">Paid by</span>
+                            <span className="board-fact-name">Provider</span>
                             <Dropdown
                                 value={reviewer.provider ?? ""}
-                                options={[{ value: "", label: "Its own account" }, ...payers]}
+                                options={[{ value: "", label: "Its own sign-in" }, ...payers]}
                                 disabled={busy}
                                 onChange={(provider) => saveReviewer({ provider: provider || null })}
                             />
@@ -206,8 +209,8 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                 </div>
                 <span className="board-auto-hint">The agent that checks each change against its card before it merges.</span>
             </section>
-            <section className="board-result">
-                <span className="board-section-name">Check command</span>
+            <section className="board-section">
+                <span className="board-section-name">Check</span>
                 <TextSetting
                     value={settings?.check ?? ""}
                     placeholder="pnpm check"
@@ -217,7 +220,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                 />
                 <span className="board-auto-hint">Agents run it when the pull request has no CI.</span>
             </section>
-            <section className="board-result">
+            <section className="board-section">
                 <span className="board-section-name">Jira</span>
                 <div className="board-facts">
                     <span className="board-fact">
