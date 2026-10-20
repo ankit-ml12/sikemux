@@ -191,7 +191,7 @@ function TableView({ table, style, styles }: { table: Table; style: StyleProp<Te
       key={column}
       style={[
         styles.cell,
-        { width: widths[column] },
+        column === widths.length - 1 ? { minWidth: widths[column], flexGrow: 1 } : { width: widths[column] },
         column === widths.length - 1 && styles.lastCell,
         head && column === widths.length - 1 && { paddingRight: 10 + COPY_ROOM },
       ]}>
@@ -209,8 +209,8 @@ function TableView({ table, style, styles }: { table: Table; style: StyleProp<Te
   );
   return (
     <View style={styles.table}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View onStartShouldSetResponder={keepTouch}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tableFill}>
+        <View onStartShouldSetResponder={keepTouch} style={styles.tableFill}>
           {table.head ? (
             <View style={[styles.row, styles.headRow]}>{table.head.map((nodes, column) => cell(nodes, column, true))}</View>
           ) : null}
@@ -498,6 +498,7 @@ const makeStyles = (colors: Palette) =>
     row: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border },
     headRow: { backgroundColor: colors.active, borderBottomColor: colors.borderStrong },
     lastRow: { borderBottomWidth: 0 },
+    tableFill: { flexGrow: 1 },
     cell: { paddingHorizontal: 10, paddingVertical: 6, borderRightWidth: 1, borderRightColor: colors.border },
     lastCell: { borderRightWidth: 0 },
     cellText: { fontSize: 13.5, lineHeight: 19 },
