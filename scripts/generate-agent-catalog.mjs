@@ -38,7 +38,6 @@ const PROVIDERS = ["routed", "reads"];
 /** Everything the app paints in an agent's colour, as a selector with `%` for the agent and the property it sets. */
 const BRANDED = [
   [".agent-glyph.%", "color"],
-  [".agent-dormant-notch.%", "background"],
   [".agent-usage.%", "--usage-fill"],
   [".desk.%", "--desk-agent"],
   [".proj-pip-%", "color"],

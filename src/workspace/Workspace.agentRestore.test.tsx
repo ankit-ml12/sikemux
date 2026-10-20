@@ -95,7 +95,7 @@ describe("restored agent lifecycle", () => {
         expect(screen.queryByTestId("terminal-agent-hidden")).not.toBeInTheDocument();
     });
 
-    it("resumes a sleeping agent into GUI and starts TUI only after switching", async () => {
+    it("wakes a sleeping agent into GUI once it is shown, and starts TUI only after switching", async () => {
         arrangeRestoredAgents("hidden-session");
         setState((state) => ({
             agents: {
@@ -105,8 +105,6 @@ describe("restored agent lifecycle", () => {
         }));
         render(<Workspace />);
 
-        expect(screen.queryByTestId("terminal-agent-visible")).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Resume codex" }));
         expect(screen.queryByTestId("terminal-agent-visible")).not.toBeInTheDocument();
         fireEvent.click((await screen.findAllByRole("button", { name: "TUI" }))[0]);
         await waitFor(() => expect(screen.getByTestId("terminal-agent-visible")).toHaveAttribute("data-spawn-when", "true"));
