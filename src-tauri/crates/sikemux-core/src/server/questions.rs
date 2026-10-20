@@ -1430,6 +1430,9 @@ fn tell_window(core: &Arc<Core>) {
         if !state.dirty && state.told_window == window {
             return;
         }
+        if state.dirty {
+            core.view_changed();
+        }
         state.dirty = false;
         state.told_window = window;
         if window.is_none() {

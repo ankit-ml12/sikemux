@@ -347,7 +347,7 @@ async fn settle(core: &Arc<Core>, group: &Group, rows: Vec<AgentSession>) {
         } else {
             super::workspace::retitle(core, &agent.id, usable_title(row), false);
         }
-        core.publish_device_view();
+        core.view_changed();
     }
     for (session_id, name) in names {
         name_session(core, group, session_id, name).await;

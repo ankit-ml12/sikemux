@@ -176,7 +176,7 @@ pub(crate) fn set_disabled(core: &Core, disabled: Disabled) {
     if let Some(plugins) = PLUGINS.get() {
         plugins.set_disabled(disabled.ids);
         core.harness.plugins_changed();
-        core.publish_device_view();
+        core.view_changed();
     }
 }
 

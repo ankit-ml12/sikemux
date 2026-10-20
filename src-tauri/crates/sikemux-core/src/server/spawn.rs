@@ -235,7 +235,7 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
         error.to_string()
     })?;
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
-    core.publish_device_view();
+    core.view_changed();
     let answer = json!({
         "agentId": plan.agent_id,
         "name": named.name,
@@ -370,7 +370,7 @@ fn start(
         }
     }
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
-    core.publish_device_view();
+    core.view_changed();
     let lead_name = core.names.name(&lead_id).unwrap_or_else(|| lead_id.clone());
     Ok(Opened::New(Started {
         agent_id,

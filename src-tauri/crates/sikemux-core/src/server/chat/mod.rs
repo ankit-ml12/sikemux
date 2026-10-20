@@ -340,7 +340,7 @@ impl Chat {
         let patch =
             serde_json::Map::from_iter([("resumeId".to_owned(), Value::from(start.session_id))]);
         if core.workspaces.update_agent(self.agent_id(), patch).is_ok() {
-            core.publish_device_view();
+            core.view_changed();
         }
     }
 
@@ -358,7 +358,7 @@ impl Chat {
             let patch =
                 serde_json::Map::from_iter([("profileId".to_owned(), Value::from(account))]);
             if core.workspaces.update_agent(self.agent_id(), patch).is_ok() {
-                core.publish_device_view();
+                core.view_changed();
             }
         }
         let title = feed::session_title(payload);
@@ -660,6 +660,9 @@ impl Chat {
         self.approving
             .store(mode == PermissionMode::Bypass, Ordering::Release);
         self.feed.set_permission_mode(mode.as_str());
+        if let Some(core) = self.core.upgrade() {
+            core.view_changed();
+        }
     }
 
     pub(crate) fn mark_ready(&self, start: ChatStart) {
@@ -1992,7 +1995,7 @@ pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) 
     }
     let patch = serde_json::Map::from_iter([("profileId".to_owned(), Value::from(account.id))]);
     core.workspaces.update_agent(agent_id, patch)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(())
 }
 

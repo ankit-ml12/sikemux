@@ -1145,8 +1145,7 @@ pub(crate) fn settle(core: &Arc<Core>) {
         });
     }
     if publish {
-        let core = core.clone();
-        tokio::task::spawn_blocking(move || core.publish_device_view());
+        core.view_changed();
     }
 }
 

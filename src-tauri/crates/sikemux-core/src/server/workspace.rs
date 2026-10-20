@@ -1576,7 +1576,7 @@ pub(crate) async fn add_project(
     .await?;
     let project = core.workspaces.add_project(path, params.name, params.id)?;
     super::git::follow_projects(core);
-    core.publish_device_view();
+    core.view_changed();
     Ok(project)
 }
 
@@ -1591,7 +1591,7 @@ pub(crate) fn remove_project(core: &Core, params: RemoveProjectParams) -> CoreRe
     core.workspaces.remove_project(&params.path)?;
     agents_closed(core, before);
     super::git::follow_projects(core);
-    core.publish_device_view();
+    core.view_changed();
     Ok(())
 }
 
@@ -1604,7 +1604,7 @@ pub(crate) struct UpdateProjectParams {
 /// Renames, pins or moves a project to a space.
 pub(crate) fn update_project(core: &Core, params: UpdateProjectParams) -> CoreResult<ProjectInfo> {
     let project = core.workspaces.update_project(&params.id, params.patch)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(project)
 }
 
@@ -1616,7 +1616,7 @@ pub(crate) struct MoveProjectParams {
 
 pub(crate) fn move_project(core: &Core, params: MoveProjectParams) -> CoreResult<()> {
     core.workspaces.move_project(&params.id, params.index)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(())
 }
 
@@ -1627,7 +1627,7 @@ pub(crate) struct SpacesParams {
 
 pub(crate) fn set_spaces(core: &Core, params: SpacesParams) -> CoreResult<()> {
     core.workspaces.set_spaces(params.spaces)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(())
 }
 
@@ -1638,7 +1638,7 @@ pub(crate) struct PinnedParams {
 
 pub(crate) fn set_pinned_chats(core: &Core, params: PinnedParams) -> CoreResult<()> {
     core.workspaces.set_pinned(params.chats)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(())
 }
 
@@ -1656,7 +1656,7 @@ pub(crate) async fn set_defaults(core: &Arc<Core>, params: DefaultsParams) -> Co
     {
         refresh_launchers(core.clone()).await;
     }
-    core.publish_device_view();
+    core.view_changed();
     Ok(())
 }
 
@@ -1668,7 +1668,7 @@ pub(crate) struct CreateAgentParams {
 /// Adds an agent to the workspace, or replaces the one with its id.
 pub(crate) fn create_agent(core: &Core, params: CreateAgentParams) -> CoreResult<WorkspaceAgent> {
     let agent = core.workspaces.put_agent(params.agent)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(agent)
 }
 
@@ -1684,7 +1684,7 @@ pub(crate) fn update_agent(core: &Core, params: UpdateAgentParams) -> CoreResult
     let agent = core
         .workspaces
         .update_agent(&params.agent_id, params.patch)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(agent)
 }
 
@@ -1699,7 +1699,7 @@ pub(crate) fn close_agents(core: &Core, params: CloseAgentsParams) -> CoreResult
     let before = core.workspaces.agent_ids();
     core.workspaces.close_agents(&params.agent_ids)?;
     agents_closed(core, before);
-    core.publish_device_view();
+    core.view_changed();
     Ok(())
 }
 
@@ -1710,7 +1710,7 @@ pub(crate) fn retitle(core: &Core, agent_id: &str, title: Option<String>, stand_
         return;
     };
     if core.workspaces.note_title(agent_id, &title, stand_in) {
-        core.publish_device_view();
+        core.view_changed();
     }
 }
 
@@ -1719,7 +1719,7 @@ pub(crate) fn close_gone(core: &Core, agent_ids: &[String]) {
     let before = core.workspaces.agent_ids();
     if core.workspaces.close_agents(agent_ids).is_ok() {
         agents_closed(core, before);
-        core.publish_device_view();
+        core.view_changed();
     }
 }
 
@@ -1750,7 +1750,7 @@ pub(crate) async fn recents(core: Arc<Core>) {
         let found = blocking(move || Ok(newest(requests))).await;
         if let Ok(found) = found {
             if core.workspaces.set_recent(found) {
-                core.publish_device_view();
+                core.view_changed();
             }
         }
         core.workspaces.recent_stale.notified().await;
@@ -1810,7 +1810,7 @@ async fn refresh(core: Arc<Core>, asked: u64) {
     }
     if core.workspaces.asked.load(Ordering::SeqCst) == asked {
         core.workspaces.set_launchers(found);
-        core.publish_device_view();
+        core.view_changed();
     }
 }
 

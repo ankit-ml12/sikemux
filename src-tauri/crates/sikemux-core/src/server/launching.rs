@@ -146,7 +146,7 @@ pub(crate) async fn start_terminal(
     pending.start(core);
     let patch = serde_json::Map::from_iter([("ptyId".to_owned(), serde_json::Value::from(id))]);
     core.workspaces.update_agent(agent_id, patch)?;
-    core.publish_device_view();
+    core.view_changed();
     Ok(id)
 }
 

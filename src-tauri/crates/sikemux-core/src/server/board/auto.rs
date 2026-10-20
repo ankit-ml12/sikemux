@@ -572,7 +572,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
     let worktree = serde_json::Map::from_iter([("worktree".to_owned(), worktree)]);
     let _ = core.workspaces.update_agent(agent, worktree);
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
-    core.publish_device_view();
+    core.view_changed();
     chat::until_started(core, chat)
         .await
         .map_err(|error| error.to_string())?;

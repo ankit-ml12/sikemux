@@ -100,6 +100,8 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 const DEVICE_VIEW_INTERVAL: Duration = Duration::from_millis(400);
 /// A burst of changes to the view goes out as one.
 const DEVICE_VIEW_GATHER: Duration = Duration::from_millis(50);
+/// However much changes, the view is built at most this often.
+const DEVICE_VIEW_SPACING: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -542,7 +544,7 @@ impl Core {
             self.open_agents(),
         );
         if changed {
-            self.publish_device_view();
+            self.view_changed();
         }
         named
     }
@@ -629,10 +631,11 @@ impl Core {
                 session::detach(&session, client.id);
             }
         }
+        self.view_changed();
     }
 
     /// Paired devices hear only of terminals ending and changing; the rest
-    /// reaches them through [`Core::publish_device_view`].
+    /// reaches them in the device view.
     pub(crate) fn broadcast_event(&self, event: &Event) {
         match event {
             Event::Attention { attention } => {
@@ -749,7 +752,7 @@ impl Core {
     }
 
     /// Whether anything in the view moves by itself.
-    pub(crate) fn publish_device_view(&self) -> bool {
+    fn publish_device_view(&self) -> bool {
         let devices = self.view_watchers();
         if devices.is_empty() {
             return false;
@@ -973,6 +976,7 @@ async fn device_views(core: Arc<Core>) {
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut window = None;
     let mut moving = true;
+    let mut built = tokio::time::Instant::now();
     loop {
         if core.view_watchers().is_empty() {
             core.view_watched.notified().await;
@@ -988,7 +992,9 @@ async fn device_views(core: Arc<Core>) {
             true
         };
         if changed {
-            tokio::time::sleep(DEVICE_VIEW_GATHER).await;
+            let now = tokio::time::Instant::now();
+            tokio::time::sleep_until((now + DEVICE_VIEW_GATHER).max(built + DEVICE_VIEW_SPACING))
+                .await;
         }
         core.show_phones();
         let now = core.window.client_id();
@@ -997,6 +1003,7 @@ async fn device_views(core: Arc<Core>) {
             core.agents_changed();
         }
         moving = core.publish_device_view();
+        built = tokio::time::Instant::now();
     }
 }
 

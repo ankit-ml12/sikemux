@@ -193,7 +193,7 @@ pub(super) async fn availability(core: &Arc<Core>, account: Account) -> CoreResu
         None => status::unfound(&failures),
     };
     core.workspaces.note_status(provider, config_path, &status);
-    core.publish_device_view();
+    core.view_changed();
     Ok(Availability {
         program,
         failures,
@@ -235,7 +235,7 @@ pub(super) fn mark_signed_out(core: &Core, account: Account) {
     core.workspaces
         .note_status(provider, config_path, &signed_out);
     status::remember(provider, config_path, signed_out);
-    core.publish_device_view();
+    core.view_changed();
 }
 
 pub(super) fn cancel_resume(core: &Arc<Core>, resuming: Resuming) {

@@ -582,8 +582,9 @@ async fn run_requests(
                     }
                     Err(error) => Err(error),
                 };
-                if let Err(error) = result {
-                    client.respond(request_id, Err(error));
+                match result {
+                    Ok(()) => core.view_changed(),
+                    Err(error) => client.respond(request_id, Err(error)),
                 }
             }
             Request::Subscribe { id } => {
@@ -594,8 +595,9 @@ async fn run_requests(
                     }
                     Err(error) => Err(error),
                 };
-                if let Err(error) = result {
-                    client.respond(request_id, Err(error));
+                match result {
+                    Ok(()) => core.view_changed(),
+                    Err(error) => client.respond(request_id, Err(error)),
                 }
             }
             Request::ResetModes { id } => {
@@ -625,6 +627,7 @@ async fn run_requests(
                     .await;
                 }
                 client.note_subscription(id, false);
+                core.view_changed();
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::Resize { id, cols, rows } => {
@@ -635,6 +638,9 @@ async fn run_requests(
                     },
                     Err(error) => Err(error.into()),
                 };
+                if result.is_ok() {
+                    core.view_changed();
+                }
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::List => {
@@ -848,6 +854,7 @@ async fn run_requests(
             }
             Request::PublishOnScreen { agent_ids, focused } => {
                 let shown = core.seen.show(client.id, agent_ids, focused);
+                core.view_changed();
                 super::lifecycle::wake_shown(&core, shown);
                 client.respond(request_id, Ok(Response::Done));
             }

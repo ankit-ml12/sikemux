@@ -487,9 +487,7 @@ pub(crate) fn halt(core: &Core) {
 /// changed.
 fn changed(core: &Core) {
     remote::announce(core);
-    if let (Ok(runtime), Some(core)) = (tokio::runtime::Handle::try_current(), core.arc()) {
-        runtime.spawn_blocking(move || core.publish_device_view());
-    }
+    core.view_changed();
 }
 
 /// Tries hosts out of reach again while something waits for them or agents

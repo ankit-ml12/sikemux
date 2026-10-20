@@ -605,18 +605,8 @@ fn log<'a>(core: &Core, to: &str, queued: impl IntoIterator<Item = &'a Queued>, 
         logged = true;
     }
     if logged {
-        devices_hear_of_it(core);
+        core.view_changed();
     }
-}
-
-/// Sends the device view, which carries when each project last logged a
-/// message. Building it reads every terminal, so it runs on a task of its own
-/// rather than under whatever locks the caller holds.
-fn devices_hear_of_it(core: &Core) {
-    let (Ok(runtime), Some(core)) = (tokio::runtime::Handle::try_current(), core.arc()) else {
-        return;
-    };
-    runtime.spawn_blocking(move || core.publish_device_view());
 }
 
 /// How an agent can be reached.

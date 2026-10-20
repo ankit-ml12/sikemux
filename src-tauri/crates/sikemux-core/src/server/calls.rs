@@ -589,7 +589,7 @@ async fn rename_agent(core: &Arc<Core>, params: RenameAgentParams) -> CoreResult
         let named = core
             .names
             .rename(&params.agent_id, &params.name, core.open_agents())?;
-        core.publish_device_view();
+        core.view_changed();
         Ok(named)
     })
     .await

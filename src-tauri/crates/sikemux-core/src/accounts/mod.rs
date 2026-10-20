@@ -4,9 +4,9 @@
 pub mod host;
 #[cfg(unix)]
 pub mod live;
+pub mod share;
 #[cfg(unix)]
 pub(crate) mod socket;
-pub mod share;
 
 #[cfg(unix)]
 pub use sikemux_client::accounts::{
