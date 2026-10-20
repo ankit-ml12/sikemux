@@ -56,13 +56,11 @@ function Reverify({ ask }: { ask: Ask }) {
   useEffect(() => {
     if (!session || started.current === ask) return;
     started.current = ask;
-    let live = true;
     void (async () => {
       try {
         const verification = await session.startVerification({
           level: ask.level ?? "first_factor",
         });
-        if (!live) return;
         if (verification.status === "complete") return ask.complete();
         if (verification.status === "needs_second_factor")
           return setStep(secondStep(verification.supportedSecondFactors));
@@ -72,17 +70,14 @@ function Reverify({ ask }: { ask: Ask }) {
             strategy: "email_code",
             emailAddressId: factor.emailAddressId,
           });
-          if (live) setStep({ kind: "email", email: factor.to });
+          setStep({ kind: "email", email: factor.to });
         } else {
           setStep(factor ? { kind: "password" } : { kind: "unsupported" });
         }
       } catch (error) {
-        if (live) setProblem(problemText(error));
+        setProblem(problemText(error));
       }
     })();
-    return () => {
-      live = false;
-    };
   }, [session, ask]);
 
   const attempt = async (
