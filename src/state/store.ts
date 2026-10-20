@@ -219,7 +219,7 @@ export interface ViewState {
     /** How each project's open agents show together, by project id, as the core last said. Never persisted. */
     projectStatus: Record<string, import("../api/generated/wire").AgentRollup>;
     /** Questions agents asked that wait on an answer, as the core last sent them. */
-    agentQuestions: import("../agents/agentQuestions").AgentQuestion[];
+    agentQuestions: import("../api/agentQuestions").AgentQuestion[];
     /** Each project's board cards, by the project folder the core names, as the core last sent them. */
     agentBoards: Record<string, import("../agents/agentBoard").BoardCard[]>;
     /** Each project's Auto settings and how many of its agents run, by the same project folder. */

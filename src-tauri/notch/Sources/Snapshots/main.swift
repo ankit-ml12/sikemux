@@ -145,7 +145,7 @@ func view(keeping ids: Set<String>?) -> DeviceView {
 let questions = [AgentQuestion(
     id: "q1",
     text: "Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.",
-    choices: [QuestionChoice(label: "Cents"), QuestionChoice(label: "Decimals")], via: "Otter", passed: true
+    choices: [QuestionChoice(label: "Cents"), QuestionChoice(label: "Decimals")], viaNote: "Otter didn't know"
 )]
 
 let notch = NotchGeometry(notchWidth: 221, height: 38, centerX: 0)

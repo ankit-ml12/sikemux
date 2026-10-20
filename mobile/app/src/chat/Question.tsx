@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { SECRET_ANSWERED, secretNote, viaNote, type AgentQuestion } from '@mac/agents/agentQuestions';
+import { SECRET_ANSWERED } from '@mac/chat/agentLetters';
+import type { AgentQuestion } from '@/core/protocol';
 import { Chip, Field } from '@/ui/controls';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
@@ -91,7 +92,7 @@ function SecretAnswer({ question, busy, onSend }: { question: AgentQuestion; bus
       </View>
       <View style={styles.private}>
         <Icon name="IconLock" size={12} color={colors.inkFaint} />
-        <Text style={styles.privateText}>{secretNote(question.name)}</Text>
+        <Text style={styles.privateText}>{question.secretNote}</Text>
       </View>
     </View>
   );
@@ -121,7 +122,7 @@ export function OpenQuestion({
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const via = viaNote(question);
+  const via = question.viaNote;
   const row = (key: string | number, number: number, label: string, detail: string | undefined, other: boolean, onPress: () => void) => (
     <Pressable
       key={key}

@@ -774,6 +774,57 @@ export interface LinkedHost {
 /** What happened to this host's network. */
 export type NetworkChange = "online" | "offline" | "changed" | "woke";
 
+/** A question as the app, the notch and phones show it. */
+export interface AgentQuestion {
+    id: string;
+    agentId: string;
+    /** The asker's name, such as Maple. */
+    name: string;
+    cli: string;
+    project: string;
+    /** The asker's own words. */
+    asked: string;
+    /**
+     * What the person is asked, which a lead that passed it on may have
+     * reworded.
+     */
+    text: string;
+    /** Two or three words naming the question, such as Photo access. */
+    header: string | null;
+    choices: QuestionChoice[];
+    /** The person may pick more than one of `choices`. */
+    multi: boolean;
+    /** The asker waits for the answer; otherwise it goes on with `assumption`. */
+    blocked: boolean;
+    assumption: string | null;
+    /**
+     * The answer is a secret, such as a password: typed into a masked field,
+     * never the composer, and never shown again.
+     */
+    secret: boolean;
+    at: number;
+    state: QuestionState;
+    /**
+     * Why it reached the person rather than the lead it went to first, such
+     * as "Maple didn't know".
+     */
+    viaNote: string | null;
+    /** What the field a secret is typed into says beside it. */
+    secretNote: string | null;
+    /** The person's answer, while its state is answered; none for a secret. */
+    answer: string | null;
+    /** The ticket of the board card the asker is working, such as PROJ-12. */
+    ticket: string | null;
+}
+
+export interface QuestionChoice {
+    label: string;
+    detail?: string;
+}
+
+/** Where a question stands for the person. */
+export type QuestionState = "lead" | "open" | "assumed" | "answered";
+
 export interface GitOverview {
     status: GitStatus;
     branches: GitBranch[];

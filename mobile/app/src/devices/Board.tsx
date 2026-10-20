@@ -15,9 +15,8 @@ import {
   type ProjectBoard,
 } from '@mac/agents/agentBoard';
 import { kindLabel, messageRows, messageTone, outcomeLabel, type AgentMessageLog } from '@mac/agents/agentMessages';
-import type { AgentQuestion } from '@mac/agents/agentQuestions';
 import { formatAge } from '@mac/lib/format';
-import type { ProjectInfo, Snapshot } from '@/core/protocol';
+import type { AgentQuestion, ProjectInfo, Snapshot } from '@/core/protocol';
 import { useHostCall } from '@/core/hostCalls';
 import { projectAt, projectName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';

@@ -3,7 +3,7 @@ import { acpApi } from "../../api/acp";
 import { acpAccount } from "../../agents/accounts";
 import { coreCall } from "../../api/core";
 import { agentNamesApi } from "../../api/agentNames";
-import type { AgentQuestion } from "../../agents/agentQuestions";
+import type { AgentQuestion } from "../../api/agentQuestions";
 import { agentSupportsChat, canBypassPermissions, hasRelocatableSessions, type ChatAgentType } from "../../agents/catalog";
 import { effectiveMode, isResumeId, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";

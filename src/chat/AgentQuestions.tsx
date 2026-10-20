@@ -1,9 +1,8 @@
 import { useContext, type ReactNode } from "react";
 import { AgentMark } from "../agents/AgentMark";
-import { SECRET_ANSWERED } from "../agents/agentQuestions";
 import { useStore } from "../state/store";
 import { IconLock } from "../ui/Icons";
-import type { AnswerLetter } from "./agentLetters";
+import { SECRET_ANSWERED, type AnswerLetter } from "./agentLetters";
 import { ChatAgentContext } from "./chatAgent";
 
 /** Who is asking, above the question itself. */

@@ -205,7 +205,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const liveShown = hasLiveWork(fresh) && chat.attached === 'live';
   const recalls = !watchOnly && (chat.queued.length > 0 || state.messages.some((message) => message.role === 'user'));
   const strip = liveShown ? <LiveStrip work={work} provider={provider} onOpen={openLive} /> : null;
-  const questions = useQuestions(connection, agentId, `${info?.activeAt}|${info?.unread}|${state.running}`, state.messages, session.report);
+  const questions = useQuestions(connection, agentId, `${info?.activeAt}|${info?.unread}|${state.running}`, session.report);
   const input = useRef<TextInput>(null);
   const composing = watchOnly ? null : questions.composing;
   const unreachable = chat.attached !== 'live' && live.status === 'closed';
@@ -313,13 +313,13 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                             {chat.queued.length ? <Queued held={chat.queued} sentFiles={chat.sentFiles} /> : null}
                             {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
                             {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
-                            {questions.answered.map(({ question, answer }) => (
+                            {questions.answered.map((question) => (
                               <AnsweredQuestion
                                 key={question.id}
                                 asker={question.name}
                                 cli={question.cli}
                                 question={question.asked}
-                                answer={answer}
+                                answer={question.answer ?? ''}
                                 secret={question.secret}
                               />
                             ))}
@@ -330,12 +330,12 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                 canAnswer={!watchOnly}
                                 busy={questions.busy === question.id}
                                 writing={questions.writing && composing?.id === question.id}
-                                onChoose={(choice) => void questions.answer(question, { choice }, question.choices[choice]?.label ?? '')}
+                                onChoose={(choice) => void questions.answer(question, { choice })}
                                 onWrite={() => {
                                   questions.write(question);
                                   input.current?.focus();
                                 }}
-                                onSecret={(text) => questions.answer(question, { answer: text }, '')}
+                                onSecret={(text) => questions.answer(question, { answer: text })}
                               />
                             ))}
                             {questions.assumed.map((question) => (
@@ -344,7 +344,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                 question={question}
                                 canAnswer={!watchOnly}
                                 busy={questions.busy === question.id}
-                                onFine={() => void questions.answer(question, { fine: true }, null)}
+                                onFine={() => void questions.answer(question, { fine: true })}
                                 onChange={() => {
                                   questions.write(question);
                                   input.current?.focus();
@@ -414,7 +414,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                   cli: composing.cli,
                   text: composing.text,
                   onRemove: questions.stopComposing,
-                  onAnswer: (text) => questions.answer(composing, { answer: text }, text),
+                  onAnswer: (text) => questions.answer(composing, { answer: text }),
                 }
               }
             />

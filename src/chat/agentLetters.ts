@@ -23,6 +23,9 @@ export interface AnswerLetter {
 
 export type AgentLetter = AgentMessageLetter | AnswerLetter;
 
+/** What a secret's answer shows in place of its text. */
+export const SECRET_ANSWERED = "Answered, kept private";
+
 const LETTER = /<(agent-message|question-answer) ([^>]*)>\n([\s\S]*?)\n<\/\1>/g;
 const ATTRIBUTE = /([a-z-]+)="([^"]*)"/g;
 

@@ -30,7 +30,7 @@ import { useChatWorktree } from "./useChatWorktree";
 import { useStickToBottom } from "./useStickToBottom";
 import { mentionContext, useMates } from "./agentMentions";
 import { deliverToAgent } from "../agents/agentInbox";
-import type { AgentQuestion } from "../agents/agentQuestions";
+import type { AgentQuestion } from "../api/agentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
 import { answerText } from "./answerText";
 import { useChatQuestions } from "./useChatQuestions";
@@ -213,7 +213,7 @@ export function AgentChatPane({
         [agentRef, dispatch, mates],
     );
 
-    const questions = useChatQuestions(agent.id, state.messages, setComposerError);
+    const questions = useChatQuestions(agent.id, setComposerError);
     const focusComposer = () => paneRef.current?.querySelector<HTMLElement>(".chat-composer .chat-draft")?.focus();
     const writeAnswer = (question: AgentQuestion) => {
         questions.write(question);
@@ -228,7 +228,7 @@ export function AgentChatPane({
             questions.pick(question, { answer: { answer: text }, shown: text });
             return true;
         }
-        void questions.answer(question, { answer: text }, text).then((answered) => {
+        void questions.answer(question, { answer: text }).then((answered) => {
             if (!answered) deliverToAgent(agent.id, message);
         });
         return true;

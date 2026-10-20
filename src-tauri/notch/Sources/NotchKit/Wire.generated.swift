@@ -258,3 +258,19 @@ enum DeviceAccess: String, Codable, Hashable {
         self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
     }
 }
+
+/// A question as the app, the notch and phones show it.
+struct AgentQuestion: Codable, Hashable {
+    let id: String
+    /// What the person is asked, which a lead that passed it on may have
+    /// reworded.
+    let text: String
+    let choices: [QuestionChoice]
+    /// Why it reached the person rather than the lead it went to first, such
+    /// as "Maple didn't know".
+    let viaNote: String?
+}
+
+struct QuestionChoice: Codable, Hashable {
+    let label: String
+}

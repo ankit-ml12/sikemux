@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ConnectionLike } from '@sikemux/native';
 
-import { unreadAnswers, waitingQuestions, type AgentQuestion, type QuestionAnswer, type SentAnswer } from '@mac/agents/agentQuestions';
-import type { ChatMessage } from '@mac/chat/types';
+import type { QuestionAnswer } from '@mac/api/agentQuestions';
+import type { AgentQuestion } from '@/core/protocol';
 
 import { useHostCall } from '@/core/hostCalls';
 import { problem } from '@/core/problem';
 
 const NONE: AgentQuestion[] = [];
+const NO_IDS: ReadonlySet<string> = new Set();
 
 export type ChatQuestions = {
   /** What the agent asked the person and waits on, oldest first. */
   open: AgentQuestion[];
   /** Questions the agent went on without, on an assumption. */
   assumed: AgentQuestion[];
-  /** Answered from this phone, until the transcript holds the answer. */
-  answered: { question: AgentQuestion; answer: string }[];
+  /** Answered, until the agent has read the answer. */
+  answered: AgentQuestion[];
   busy: string | null;
   /**
    * The question whatever the composer sends answers, while one is open and the person has not taken the chip off; never
@@ -24,8 +25,7 @@ export type ChatQuestions = {
   composing: AgentQuestion | null;
   /** The person chose to write the answer. */
   writing: boolean;
-  /** `shown` is what the transcript shows as the answer until the agent has it; none for an assumption let stand. */
-  answer: (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => Promise<boolean>;
+  answer: (question: AgentQuestion, given: QuestionAnswer) => Promise<boolean>;
   write: (question: AgentQuestion) => void;
   stopComposing: () => void;
 };
@@ -38,11 +38,11 @@ export function useQuestions(
   connection: ConnectionLike | undefined,
   agentId: string,
   seen: string,
-  messages: readonly ChatMessage[],
   onError: (problem: string) => void,
 ): ChatQuestions {
   const [busy, setBusy] = useState<string | null>(null);
-  const [sent, setSent] = useState<SentAnswer[]>([]);
+  // Answered from here, kept out of sight until the host's next list moves them on.
+  const [sent, setSent] = useState(NO_IDS);
   const [writingId, setWritingId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -53,19 +53,23 @@ export function useQuestions(
     if (read.problem) onError(`could not read this agent's questions: ${read.problem}`);
   }, [read.problem, onError]);
 
-  const { open, assumed } = useMemo(() => waitingQuestions(all, agentId, sent), [all, agentId, sent]);
-  const answered = useMemo(() => unreadAnswers(sent, messages), [sent, messages]);
+  const { open, assumed, answered } = useMemo(() => {
+    const own = all.filter((question) => question.agentId === agentId);
+    const waiting = (state: AgentQuestion['state']) => own.filter((question) => question.state === state && !sent.has(question.id));
+    return { open: waiting('open'), assumed: waiting('assumed'), answered: own.filter((question) => question.state === 'answered') };
+  }, [all, agentId, sent]);
   const writing = [...open, ...assumed].find((question) => question.id === writingId && !question.secret) ?? null;
   const composing = writing ?? open.find((question) => !question.secret && !dismissed.has(question.id)) ?? null;
 
   const answer = useCallback(
-    async (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => {
+    async (question: AgentQuestion, given: QuestionAnswer) => {
       if (!connection) return false;
       setBusy(question.id);
       try {
         await connection.call('answerQuestion', JSON.stringify({ id: question.id, ...given }));
-        setSent((current) => [...current, { question, answer: shown }]);
+        setSent((current) => new Set(current).add(question.id));
         setWritingId((current) => (current === question.id ? null : current));
+        setReads((count) => count + 1);
         return true;
       } catch (error) {
         onError(problem(error));

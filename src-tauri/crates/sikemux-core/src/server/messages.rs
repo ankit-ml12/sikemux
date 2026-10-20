@@ -582,6 +582,16 @@ pub(crate) fn logged(core: &Core, project: &str, limit: Option<usize>) -> Vec<En
 /// Notes in the log of the project of agent `to` what became of messages
 /// for it.
 fn log<'a>(core: &Core, to: &str, queued: impl IntoIterator<Item = &'a Queued>, outcome: Outcome) {
+    let queued: Vec<&Queued> = queued.into_iter().collect();
+    let answers = queued.iter().any(|queued| {
+        queued
+            .origin
+            .as_ref()
+            .is_some_and(|origin| origin.kind == Kind::Answer)
+    });
+    if answers && !matches!(outcome, Outcome::Waiting | Outcome::Returned) {
+        core.harness.questions.delivered(to);
+    }
     let Some(project) = core.names.get(to).map(|named| named.project) else {
         return;
     };

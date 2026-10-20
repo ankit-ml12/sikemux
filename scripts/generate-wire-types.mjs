@@ -20,6 +20,7 @@ const SOURCES = [
   `${WIRE}/pty/task.rs`,
   `${WIRE}/accounts/protocol.rs`,
   `${CORE}/server/inbox.rs`,
+  `${CORE}/server/questions.rs`,
   `${CORE}/server/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
@@ -54,6 +55,10 @@ const RENAMES = {
     CardLink: "InboxCard",
     Shown: "AgentShown",
     Rollup: "AgentRollup",
+  },
+  [`${CORE}/server/questions.rs`]: {
+    View: "AgentQuestion",
+    Choice: "QuestionChoice",
   },
   [`${CORE}/server/workspace.rs`]: { Buddies: "PublishedBuddies" },
   [`${CORE}/server/changed.rs`]: { Topic: "CoreChangeTopic" },
@@ -94,6 +99,7 @@ const TS_ROOTS = [
   "RemotePairing",
   "NetworkChange",
   "Inbox",
+  "AgentQuestion",
   "GitOverview",
   "DiscoveredRepo",
   "GitCompare",
@@ -157,8 +163,15 @@ const SWIFT_FIELDS = {
   BuddyLook: "pack shape color",
   RemoteStatus: "pending",
   PendingDevice: "id name platform expiresAt",
+  AgentQuestion: "id text choices viaNote",
+  QuestionChoice: "label",
 };
-const SWIFT_ROOTS = ["DeviceView", "RemoteStatus", "DeviceAccess"];
+const SWIFT_ROOTS = [
+  "DeviceView",
+  "RemoteStatus",
+  "DeviceAccess",
+  "AgentQuestion",
+];
 
 /** Limits the clients check before they send, read from where the core enforces them. */
 const LIMITS = [

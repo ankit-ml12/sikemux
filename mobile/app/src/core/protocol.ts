@@ -7,6 +7,7 @@ import type { DeviceView, HostInfo, Inbox, RecentInfo, RemotePairing } from './w
 
 export type {
   AgentGroup,
+  AgentQuestion,
   AgentStatus,
   ChatInfo,
   ChatState,
