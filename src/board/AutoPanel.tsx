@@ -116,11 +116,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                 <Switch checked={settings?.auto ?? false} disabled={busy} onChange={(on) => void save({ auto: on })} label="Auto" />
                 <span>Start agents on cards by itself</span>
             </label>
-            <p className="board-auto-about">
-                For each card you added that nobody has and nothing holds up, Auto starts an agent in a worktree and branch of its own. It plans first
-                and asks its questions up front; a card it waits on you for goes to Needs you. When the agent's turn ends, Auto commits, opens a pull
-                request, has an agent on another CLI review it and lands it. It keeps going while Sikemux is closed.
-            </p>
+            <p className="board-auto-about">Works your open cards on its own branches, then gets each reviewed and lands it.</p>
             {auto?.autoNote && <p className="board-auto-note">{auto.autoNote}</p>}
             <div className="board-facts">
                 <span className="board-fact">
@@ -206,10 +202,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                         </span>
                     )}
                 </div>
-                <span className="board-auto-hint">
-                    Before a card merges, an agent on another CLI than the one that did it reviews the change blind, against the card and its
-                    acceptance criteria. With none signed in, the pull request waits for you.
-                </span>
+                <span className="board-auto-hint">Checks each change against its card before it merges.</span>
             </section>
             <section className="board-result">
                 <span className="board-section-name">Check command</span>
@@ -220,9 +213,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                     mono
                     onSave={(check) => void save({ check: check || null })}
                 />
-                <span className="board-auto-hint">
-                    Runs in the card's worktree when no CI runs on its pull request. With neither, it stops at the pull request.
-                </span>
+                <span className="board-auto-hint">Used when the pull request has no CI.</span>
             </section>
             <section className="board-result">
                 <span className="board-section-name">Jira</span>
@@ -246,10 +237,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                         />
                     </span>
                 </div>
-                <span className="board-auto-hint">
-                    Through your Jira sign-in, a ticket on the board moves with its card, gets a comment naming the pull request that landed it, and
-                    closes its card when it is closed in Jira.
-                </span>
+                <span className="board-auto-hint">Tickets move with their cards.</span>
             </section>
         </aside>
     );
