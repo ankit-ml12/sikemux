@@ -5,7 +5,7 @@ import { openInBrowser, releasesApi, type ReleaseContributor, type ReleaseNotes 
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
-import { errorText } from "../lib/format";
+import { errorText, splitVersion } from "../lib/format";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { ExperienceBackdrop } from "./ExperienceOverlays";
 import { UpdateWaiting } from "./UpdateWaiting";
@@ -96,12 +96,6 @@ function releaseDate(date: string | null): string | null {
     return parsed.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** `0.4.0-nightly.10` is too long to set large, so the build rides under the release. */
-function splitVersion(version: string): [string, string] {
-    const dash = version.indexOf("-");
-    return dash < 0 ? [version, ""] : [version.slice(0, dash), version.slice(dash + 1)];
-}
-
 function highlightCount(notes: string | null): number {
     return notes?.match(/^[-*] /gm)?.length ?? 0;
 }
@@ -187,7 +181,7 @@ export function WhatsNewOverlay() {
     const waitingOn = useStore((s) => s.updateBlockers.length);
     const { release, version, error, avatars } = useShownRelease(open);
     if (!open) return null;
-    const [core, build] = splitVersion(version);
+    const { release: core, channel: build } = splitVersion(version);
     const date = releaseDate(release?.date ?? null);
     const highlights = highlightCount(release?.notes ?? null);
     const people = release?.contributors ?? [];

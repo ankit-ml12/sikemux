@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { errorText } from "../lib/format";
+import { errorText, formatTimeLeft } from "../lib/format";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { shareApi, type ShareView } from "../api/share";
 import { copyText } from "../lib/clipboard";
@@ -25,14 +25,6 @@ function watching(share: ShareView): string {
     if (share.state === "connecting") return "Connecting…";
     if (share.viewers === 0) return "No one watching yet";
     return share.viewers === 1 ? "1 person watching" : `${share.viewers} people watching`;
-}
-
-function endsIn(expiresAt: number, now: number): string {
-    const minutes = Math.max(1, Math.round((expiresAt - now) / 60_000));
-    if (minutes < 60) return `${minutes} min`;
-    const hours = Math.round(minutes / 60);
-    if (hours < 48) return hours === 1 ? "1 hour" : `${hours} hours`;
-    return `${Math.round(hours / 24)} days`;
 }
 
 /** Beside the chat's name: a share button, or once shared, a green eye and how many watch. */
@@ -168,7 +160,7 @@ function ShareDialog({ agentId }: { agentId: string }) {
                             </button>
                         </div>
                         <span className="share-status" role="status">
-                            {watching(share)} · ends in {endsIn(share.expiresAt, now)}
+                            {watching(share)} · ends in {formatTimeLeft(share.expiresAt, now)}
                         </span>
                     </div>
                 ) : (

@@ -17,6 +17,7 @@ import { AgentIcon, IconArrowDown, IconEye, IconPlug } from "../ui/Icons";
 import { sharedChatTitle, type ShareSession, type ShareSnapshot } from "./session";
 import "../styles/chat.css";
 import "../styles/share.css";
+import { formatTimeLeft } from "../lib/format";
 
 const PROBLEMS: Partial<Record<ShareSnapshot["status"], string>> = {
     missing: "This chat is not running on its host right now.",
@@ -27,14 +28,6 @@ const PROBLEMS: Partial<Record<ShareSnapshot["status"], string>> = {
 
 function endedText(snapshot: ShareSnapshot): string {
     return snapshot.endedBecause === "expired" ? "This share has expired." : "Sharing this chat has stopped.";
-}
-
-function endsIn(expiresAt: number, now: number): string {
-    const minutes = Math.max(1, Math.round((expiresAt - now) / 60_000));
-    if (minutes < 60) return `${minutes} min`;
-    const hours = Math.round(minutes / 60);
-    if (hours < 48) return hours === 1 ? "1 hour" : `${hours} hours`;
-    return `${Math.round(hours / 24)} days`;
 }
 
 /**
@@ -179,7 +172,7 @@ function SharedChatFoot({ snapshot }: { snapshot: ShareSnapshot }) {
     return (
         <div className="shared-chat-foot" role="status">
             <span className={`shared-chat-state${snapshot.hostOnline && live ? " live" : ""}`}>{state ?? "Read-only"}</span>
-            {live && snapshot.expiresAt !== null && <span>Link ends in {endsIn(snapshot.expiresAt, now)}</span>}
+            {live && snapshot.expiresAt !== null && <span>Link ends in {formatTimeLeft(snapshot.expiresAt, now)}</span>}
         </div>
     );
 }
