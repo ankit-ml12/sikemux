@@ -18,8 +18,6 @@ import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
 import { IconGlobe, IconLock, IconTrash } from "../ui/Icons";
 import { QrCode } from "./QrCode";
-import { hostsApi } from "../hosts/hosts";
-import { useStore } from "../state/store";
 import { SettingsPage, SettingsRow, SettingsRows } from "./SettingsLayout";
 import { openUrl } from "../api/system";
 
@@ -395,43 +393,9 @@ function HostsSection({ now }: { now: number }) {
                             </button>
                         </SettingsRow>
                     ))}
-                    {links.map((host) => (
-                        <ShowInAppRow key={`show:${host.id}`} id={host.id} name={host.name} platform={host.platform} />
-                    ))}
                 </SettingsRows>
             )}
         </section>
-    );
-}
-
-/** Whether another host's projects, chats and terminals show in this app, which joins it as a device of its own. */
-function ShowInAppRow({ id, name, platform }: { id: string; name: string; platform: string }) {
-    const joined = useStore((s) => s.hosts.find((host) => host.id === id));
-    const [joining, setJoining] = useState(false);
-    const label = name || "this host";
-    const shown = !!joined && joined.reach !== "unpaired";
-    const desc = joining
-        ? `Waiting for ${label} to allow this app…`
-        : !joined
-          ? `Someone at ${label} allows this app once`
-          : joined.reach === "unpaired"
-            ? `${label} no longer lets this app in; turn this on to ask again`
-            : `Its projects, chats and terminals appear here · ${joined.reach === "connected" ? "connected" : "reconnecting…"}`;
-    const change = async (on: boolean) => {
-        setJoining(on);
-        try {
-            if (on) await hostsApi.join(id, label, platform);
-            else await hostsApi.leave(id);
-        } catch (error) {
-            reportError(on ? `Show ${label} in this app` : `Stop showing ${label}`)(error);
-        } finally {
-            setJoining(false);
-        }
-    };
-    return (
-        <SettingsRow label={`Show ${label} in this app`} desc={desc} asLabel>
-            <Switch checked={shown || joining} disabled={joining} onChange={(on) => void change(on)} />
-        </SettingsRow>
     );
 }
 

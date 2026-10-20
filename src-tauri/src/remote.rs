@@ -79,6 +79,7 @@ pub(crate) async fn connected(
     if let Ok(status) = client.remote_status().await {
         login_item::sync(&app.config().identifier, launch, status.enabled);
     }
+    crate::hosts::follow_links(app);
 }
 
 /// Keeps the login item in step with remote access, which the switch turns

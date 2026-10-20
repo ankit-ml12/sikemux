@@ -30,8 +30,6 @@
     "allow-pty-kill",
     "allow-pty-sessions",
     "allow-hosts-list",
-    "allow-host-join",
-    "allow-host-leave",
     "allow-account-status",
     "allow-account-refresh-profile",
     "allow-account-sign-in",

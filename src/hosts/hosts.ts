@@ -16,14 +16,11 @@ export interface HostEntry {
     readonly id: string;
     readonly name: string;
     readonly platform: string;
-    readonly reach: "connecting" | "connected" | "unpaired";
+    readonly reach: "connecting" | "connected";
 }
 
 export const hostsApi = {
     list: () => invoke<HostEntry[]>("hosts_list"),
-    /** Waits while someone at the host allows this app. */
-    join: (id: string, name: string, platform: string) => invoke<HostEntry>("host_join", { id, name, platform }),
-    leave: (id: string) => invoke<void>("host_leave", { id }),
 };
 
 /** One project's folder on another host. */
