@@ -218,32 +218,12 @@ const ERROR_DETAIL_LIMIT: usize = 240;
 
 /// What a CLI printed when it failed, on one line and cut short.
 pub fn error_detail(output: &[u8]) -> Option<String> {
-    let normalized = String::from_utf8_lossy(output)
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if normalized.is_empty() {
-        return None;
-    }
-    let mut characters = normalized.chars();
-    let detail = characters
-        .by_ref()
-        .take(ERROR_DETAIL_LIMIT)
-        .collect::<String>();
-    Some(if characters.next().is_some() {
-        format!("{detail}…")
-    } else {
-        detail
-    })
+    let said = String::from_utf8_lossy(output);
+    let words: Vec<&str> = said
+        .split(|character: char| character.is_whitespace() || character.is_control())
+        .filter(|word| !word.is_empty())
+        .collect();
+    (!words.is_empty()).then(|| crate::text::clipped(&words.join(" "), ERROR_DETAIL_LIMIT))
 }
 
 #[cfg(test)]
