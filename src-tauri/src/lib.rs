@@ -22,6 +22,7 @@ mod frame_rate;
 mod fs;
 mod grammars;
 mod harness;
+mod http_client;
 mod inbox;
 mod lsp;
 mod markdown;
