@@ -214,6 +214,31 @@ fn pull_thread(repo: RepoRef, number: u64) -> Thread {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub sha: String,
+}
+
+/// The merge requests that hold the commit `sha`, the merged one first.
+pub async fn of_commit(data_dir: &Path, input: CommitRef) -> GitlabResult<Vec<Pull>> {
+    if input.sha.len() < 7 || !input.sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(GitlabError::BadArg(format!(
+            "`{}` is not a commit hash",
+            input.sha
+        )));
+    }
+    let path = input
+        .repo
+        .path(&format!("/repository/commits/{}/merge_requests", input.sha))?;
+    let rows: Vec<MergeRequestRow> = client::get_all(data_dir, &path, &[], 1).await?;
+    let mut pulls: Vec<Pull> = rows.into_iter().map(pull_of).collect();
+    pulls.sort_by_key(|pull| pull.state != "merged");
+    Ok(pulls)
+}
+
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRef {
@@ -223,7 +248,7 @@ pub struct PullRef {
 }
 
 impl PullRef {
-    fn path(&self, rest: &str) -> GitlabResult<String> {
+    pub fn path(&self, rest: &str) -> GitlabResult<String> {
         pull_thread(self.repo.clone(), self.number).path(rest)
     }
 }

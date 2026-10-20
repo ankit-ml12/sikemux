@@ -7,6 +7,7 @@
 //   auth      — signing in and out, and who the app is talking to GitLab as
 //   repo      — a git remote turned into group and project
 //   pulls     — merge requests, their changes, commits and approvals, and merging one
+//   review    — what reviewers asked of a merge request, and answering it
 //   notes     — the comments and events on a merge request or issue
 //   issues    — issues, releases, and the To-Do list as the inbox
 //   images    — avatars, handed to the window as data: addresses
@@ -23,6 +24,7 @@ mod notes;
 mod pipelines;
 mod pulls;
 mod repo;
+mod review;
 mod watch;
 
 use std::sync::Arc;
@@ -198,6 +200,9 @@ async fn dispatch(ctx: &PluginContext, method: &str, input: Value) -> Result<Val
 
         "pulls" => answer(pulls::list(data_dir, params(input)?)).await,
         "pull" => answer(pulls::get(data_dir, params(input)?)).await,
+        "commitPulls" => answer(pulls::of_commit(data_dir, params(input)?)).await,
+        "reviewFeedback" => answer(review::feedback(data_dir, params(input)?)).await,
+        "answerReview" => answer(review::answer(data_dir, params(input)?)).await,
         "pullFiles" => answer(pulls::files(data_dir, params(input)?)).await,
         "pullCommits" => answer(pulls::commits(data_dir, params(input)?)).await,
         "pullReviews" => answer(pulls::reviews(data_dir, params(input)?)).await,
