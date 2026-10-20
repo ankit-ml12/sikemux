@@ -9,6 +9,16 @@ import { Tooltip } from "../ui/Tooltip";
 import { AccountAvatar } from "./AccountAvatar";
 import { loadAccount, signInToAccount, signOutOfAccount, useAccount, watchAccount } from "./account";
 
+function SettingsButton({ shortcut }: { shortcut: string }) {
+    return (
+        <Tooltip label={withShortcut("Settings", shortcut)}>
+            <button type="button" className="rail-account-settings" aria-label="Settings" onClick={cmd.toggleSettings}>
+                <IconSettings size={14} />
+            </button>
+        </Tooltip>
+    );
+}
+
 /** The foot of the side rail: who is signed in, with their menu and settings, or a card asking them to sign in. */
 export function RailAccount() {
     const account = useAccount((s) => s.account);
@@ -24,22 +34,31 @@ export function RailAccount() {
         return () => controller.abort();
     }, []);
 
-    if (!account) return null;
+    if (!account) {
+        return (
+            <div className="rail-account rail-account-loading">
+                <SettingsButton shortcut={settingsShortcut} />
+            </div>
+        );
+    }
 
     if (!account.signedIn) {
         return (
             <section className="rail-sign-in">
                 <p>{signingIn ? "Finish signing in in your browser." : "Sign in to reach this host from your phone and other devices."}</p>
-                {signingIn ? (
-                    <button type="button" className="rail-sign-in-btn" onClick={() => void accountApi.cancelSignIn()}>
-                        Cancel
-                    </button>
-                ) : (
-                    <button type="button" className="rail-sign-in-btn primary" onClick={() => void signInToAccount()}>
-                        <IconLogIn size={13} />
-                        Sign in
-                    </button>
-                )}
+                <div className="rail-sign-in-actions">
+                    {signingIn ? (
+                        <button type="button" className="rail-sign-in-btn" onClick={() => void accountApi.cancelSignIn()}>
+                            Cancel
+                        </button>
+                    ) : (
+                        <button type="button" className="rail-sign-in-btn primary" onClick={() => void signInToAccount()}>
+                            <IconLogIn size={13} />
+                            Sign in
+                        </button>
+                    )}
+                    <SettingsButton shortcut={settingsShortcut} />
+                </div>
             </section>
         );
     }
@@ -72,11 +91,7 @@ export function RailAccount() {
                     {account.name && <span>{email}</span>}
                 </span>
             </button>
-            <Tooltip label={withShortcut("Settings", settingsShortcut)}>
-                <button type="button" className="rail-account-settings" aria-label="Settings" onClick={cmd.toggleSettings}>
-                    <IconSettings size={14} />
-                </button>
-            </Tooltip>
+            <SettingsButton shortcut={settingsShortcut} />
             {menu && <TreeContextMenu x={menu.x} y={menu.y} above width={row.current?.offsetWidth} items={items} onClose={() => setMenu(null)} />}
         </div>
     );
