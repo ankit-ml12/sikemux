@@ -9,6 +9,23 @@
     grid-template-columns: minmax(0, 1fr) minmax(320px, 0.42fr);
 }
 
+/* The board's toolbar and the open card's head form one band across the pane, on the ground the commit header uses. */
+.board-pane .kanban-head,
+.board-panel-head {
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
+    border-bottom: 1px solid var(--border);
+}
+
+.board-pane .kanban-head {
+    justify-content: center;
+    min-height: 45px;
+    padding: 0 12px;
+}
+
+.board-pane .kanban-lanes {
+    padding-top: 10px;
+}
+
 .board-pane .kanban > .empty-state {
     margin: auto;
     padding: var(--space-6);
@@ -152,7 +169,7 @@ button.board-lane-title:hover,
     display: flex;
     align-items: center;
     gap: 6px;
-    min-height: 40px;
+    min-height: 45px;
     margin: 0 -12px;
     padding: 0 8px 0 12px;
     border-bottom: 1px solid var(--border);
