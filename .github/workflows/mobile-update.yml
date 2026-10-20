@@ -52,6 +52,8 @@ on:
       - "src/lib/platform.ts"
       - "src/lib/urls.ts"
       - "src/markdown/patch.ts"
+      - "src/markdown/tableSource.ts"
+      - "src/markdown/visible.ts"
       - "src/remote/access.ts"
       - "src/share/cipher.ts"
       - "src/share/link.ts"
