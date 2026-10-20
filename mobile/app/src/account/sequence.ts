@@ -1,4 +1,4 @@
-import { AccountDeleting, AccountProblem } from './api';
+import { AccountDeleting, ApiProblem } from './api';
 import { reconnectDelay } from './live';
 
 /** How far signing this phone in to the account has got, so a screen can say why it stopped. */
@@ -23,11 +23,11 @@ const TOO_MANY = 429;
 
 /** Out of reach, failing on its side or busy: worth trying again by itself. Anything else waits for the person. */
 function retryable(error: unknown): boolean {
-  return !(error instanceof AccountProblem) || error.unreachable || error.status === TOO_MANY;
+  return !(error instanceof ApiProblem) || error.unreachable || error.status === TOO_MANY;
 }
 
 function problemOf(error: unknown): string {
-  if (error instanceof AccountProblem) return error.message;
+  if (error instanceof ApiProblem) return error.message;
   return error instanceof Error ? error.message : String(error);
 }
 

@@ -45,7 +45,7 @@ export function DeleteAccount({
     const token = await signedInToken(getToken, "delete your account", {
       fresh: true,
     });
-    return orReverify(() => api.deleteAccount(token));
+    return orReverify(() => api(token).deleteAccount());
   });
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {

@@ -46,7 +46,7 @@ export function HostApproval() {
     const token = await signedInToken(getToken, "add this host", {
       fresh: true,
     });
-    return orReverify(() => api.approveHost(token, code));
+    return orReverify(() => api(token).approveHostSignIn(code));
   });
 
   const run = async (
@@ -126,7 +126,7 @@ export function HostApproval() {
             onClick={() =>
               void run("refuse", async () => {
                 const token = await signedInToken(getToken, "refuse this host");
-                await api.refuseHost(token, code);
+                await api(token).refuseHostSignIn(code);
                 setStep({ kind: "done", name: host.name, approved: false });
               })
             }
@@ -161,7 +161,7 @@ export function HostApproval() {
       setStep({
         kind: "check",
         code,
-        host: await api.pendingHost(token, code),
+        host: await api(token).getPendingHost(code),
       });
     });
   };

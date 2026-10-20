@@ -7,8 +7,8 @@ const config = getDefaultConfig(__dirname);
 // The chat transcript comes from the Mac app's own reducer (src/chat), so the
 // phone reads an agent's updates exactly as the Mac does.
 config.watchFolders = [...config.watchFolders, path.resolve(__dirname, '../../src')];
-// The account connection's close codes come from the server's protocol (@protocol).
-config.watchFolders.push(path.resolve(__dirname, '../../server/protocol/generated'));
+// The accounts API's types, client and close codes come from the server's protocol (@protocol).
+config.watchFolders.push(path.resolve(__dirname, '../../server/protocol/generated'), path.resolve(__dirname, '../../server/protocol/src'));
 
 // `pnpm showcase` runs this app in a browser against a pretend Mac, for screenshots.
 if (process.env.SIKEMUX_SHOWCASE) {

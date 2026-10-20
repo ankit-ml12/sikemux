@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { JoinAnswer, MobileError } from '@sikemux/native';
 
 import { inBackgroundTime } from '../../modules/background-time';
-import { AccountProblem, joinTicket, type TokenSource } from '@/account/api';
+import { ApiProblem, joinTicket, type TokenSource } from '@/account/api';
 import { whileJoining } from '@/device/identity';
 import { phoneName } from '@/device/name';
 import { rejoined, reloadDevices } from './hub';
@@ -58,7 +58,7 @@ function refusal(host: string, reason: string): JoinFailure {
 }
 
 function ticketFailure(host: string, error: unknown): JoinFailure {
-  if (error instanceof AccountProblem) {
+  if (error instanceof ApiProblem) {
     if (error.status === 404)
       return { title: `${host} is no longer on your account`, detail: 'Sign it in to this account, then try again.' };
     if (error.status === 429) return { title: 'Too many tries', detail: 'Wait a minute, then try again.' };

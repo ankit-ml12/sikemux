@@ -5,6 +5,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./api": "./src/api.ts",
     "./openapi.json": "./generated/openapi.json"
   },
   "scripts": {

@@ -33,7 +33,7 @@ export function useDevices(ready: boolean) {
     const attempt = ++reading.current;
     try {
       const token = await signedInToken(getToken, "see your devices");
-      const list = await api.devices(token);
+      const list = await api(token).listDevices();
       if (attempt === reading.current)
         setLoad({ state: "loaded", devices: list.devices });
     } catch (error) {
@@ -80,7 +80,7 @@ export function useDevices(ready: boolean) {
 
   const remove = async (key: string) => {
     const token = await signedInToken(getToken, "remove a device");
-    await api.removeDevice(token, key);
+    await api(token).removeDevice(key);
     drop(key);
   };
 

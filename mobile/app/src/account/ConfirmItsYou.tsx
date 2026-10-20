@@ -2,7 +2,7 @@ import { useReducer, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useReverification, useSession } from '@clerk/expo';
 
-import { ReverifyNeeded } from '@/account/api';
+import { ApiProblem } from '@/account/api';
 import { errorCode, explain } from '@/account/clerkErrors';
 import { chooseFactor, REVERIFY_HINT, type Verify, verifying } from '@/account/reverify';
 import { CodeEntry } from '@/ui/CodeEntry';
@@ -55,7 +55,7 @@ export function useRecentSignIn(elsewhere: string) {
       try {
         return await request.current?.();
       } catch (error) {
-        if (error instanceof ReverifyNeeded) return REVERIFY_HINT;
+        if (error instanceof ApiProblem && error.reverify) return REVERIFY_HINT;
         throw error;
       }
     },
