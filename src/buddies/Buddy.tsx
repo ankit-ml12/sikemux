@@ -1,10 +1,10 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, type CSSProperties } from "react";
 import { useStore } from "../state/store";
 import { AgentIcon } from "../ui/Icons";
 import type { Agent } from "../state/types";
 import { buddyStateOfGroup, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyState } from "./catalogue";
 import { wearsBuddy } from "./published";
-import { buddyMarkup } from "./render";
+import { bodyMotion, buddyBox, buddyMarkup } from "./render";
 import "./buddies.css";
 
 let nextUid = 0;
@@ -26,11 +26,14 @@ export const BuddyArt = memo(function BuddyArt({
 }) {
     const [uid] = useState(() => `bd${++nextUid}`);
     const still = !useStore((s) => s.buddyMotion);
-    const html = useMemo(() => buddyMarkup(pack, shape, color, state, uid), [pack, shape, color, state, uid]);
+    const box = useMemo(() => buddyBox(pack, shape), [pack, shape]);
+    const html = useMemo(() => buddyMarkup(pack, shape, color, state, uid, box), [pack, shape, color, state, uid, box]);
+    const motion = bodyMotion(state);
     return (
         <span
             className={`buddy${still ? " still" : ""}${className ? ` ${className}` : ""}`}
-            style={{ width: size, height: size }}
+            data-motion={motion || undefined}
+            style={{ width: size, height: size, "--bd-side": box.split(" ")[2] } as CSSProperties}
             dangerouslySetInnerHTML={{ __html: html }}
         />
     );
