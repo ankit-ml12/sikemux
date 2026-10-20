@@ -25,7 +25,7 @@ import { Dropdown } from "../ui/Dropdown";
 import { IconCamera, IconHome, IconLock, IconPhone, IconPower, IconRotate, IconTablet } from "../ui/Icons";
 import { EmptyState } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
-import { useDocumentVisible } from "./documentVisible";
+import { usePageVisible } from "../hooks/usePageVisible";
 import { turnDegrees, TURNS } from "./orientation";
 import { playScreen, type ScreenPlayer } from "./screenStream";
 import { loadSimStatus, prepareSim, simUsable, useSimStatus } from "./simStatus";
@@ -230,8 +230,8 @@ export function SimulatorPane({
     const latest = useRef(simulator);
     latest.current = simulator;
 
-    const documentVisible = useDocumentVisible();
-    const shown = visible && documentVisible;
+    const pageVisible = usePageVisible();
+    const shown = visible && pageVisible;
     const usable = simUsable(status);
     const installed = !!status?.installed;
     const device = devices?.find((candidate) => candidate.udid === simulator.udid) ?? null;
