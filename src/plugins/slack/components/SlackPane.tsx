@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
@@ -53,7 +53,7 @@ function SlackWorkspace({ paneId, active, status }: { paneId: string; active: bo
             updateSlackView(paneId, { workspace: thread.workspace, channel: thread.channel, thread: { channel: thread.channel, ts: thread.ts } });
             setLink("");
         } catch (error) {
-            notify("error", `Open the link: ${failureMessage(error)}`);
+            notify("error", `Open the link: ${errorText(error)}`);
         } finally {
             setOpening(false);
         }
@@ -251,7 +251,7 @@ function ThreadView({
             setDraft("");
             slack.refresh(slackThreadR, slackHistoryR);
         } catch (error) {
-            notify("error", `Reply: ${failureMessage(error)}`);
+            notify("error", `Reply: ${errorText(error)}`);
         } finally {
             setSending(false);
         }

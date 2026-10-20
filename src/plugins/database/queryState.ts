@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { failureMessage } from "../../plugin-api/backend";
+import { errorText } from "../../plugin-api/format";
 import { databaseApi, type QueryOutcome } from "./api";
 import { database, databaseConnectedR, databaseHistoryR } from "./resources";
 
@@ -41,7 +41,7 @@ export async function runQuery(id: string, profile: string, sql: string): Promis
         const outcome = await databaseApi.query(profile, text, readQuery(id).limit, run);
         updateQuery(id, { outcome, error: null });
     } catch (failure) {
-        updateQuery(id, { outcome: null, error: failureMessage(failure) });
+        updateQuery(id, { outcome: null, error: errorText(failure) });
     } finally {
         updateQuery(id, { running: false, run: null });
         database.refresh(databaseHistoryR, databaseConnectedR);

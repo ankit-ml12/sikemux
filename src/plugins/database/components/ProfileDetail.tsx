@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { databaseApi, type Connected, type DatabaseProfile } from "../api";
 import { database } from "../resources";
 import { defaultPort, engineLabel, isServer } from "../profileForm";
@@ -17,7 +17,7 @@ export function ProfileDetail({ profile, connected, onEdit }: { profile: Databas
             else await databaseApi.connect(profile.id);
             database.refresh();
         } catch (failure) {
-            setError(failureMessage(failure));
+            setError(errorText(failure));
         } finally {
             setBusy(false);
         }

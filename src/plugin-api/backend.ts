@@ -1,4 +1,5 @@
 import { pluginsApi, type PluginFailure } from "../api/plugins";
+import { errorText } from "../lib/format";
 import { invalidate } from "../state/resources";
 import { resourceKind } from "./identity";
 
@@ -42,12 +43,7 @@ export function isOfflineFailure(error: unknown): boolean {
     return isPluginFailure(error) && (error.category === "offline" || error.category === "timeout");
 }
 
-/** What went wrong, in words: a plugin's failure, a thrown Error or a plain string. */
-export function failureMessage(error: unknown): string {
-    if (typeof error === "string") return error;
-    const message = (error as { message?: unknown } | null | undefined)?.message;
-    return typeof message === "string" ? message : String(error);
-}
+export { errorText as failureMessage };
 
 /** A sign-in the service no longer takes. A 403 is not one: the person is signed in, just not allowed. */
 export function isSignedOutFailure(error: unknown, alsoSignedOut: readonly string[] = []): boolean {
@@ -97,7 +93,7 @@ export function createPluginBackend(pluginId: string, options: PluginBackendOpti
                         if (finished) void pluginsApi.streamStop(id);
                     },
                     (error: unknown) => {
-                        if (!finished) fail(isPluginFailure(error) ? error : { category: "ipc", message: failureMessage(error) });
+                        if (!finished) fail(isPluginFailure(error) ? error : { category: "ipc", message: errorText(error) });
                     },
                 );
             return {

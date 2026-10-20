@@ -1,8 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
-import { formatAgo } from "../../../plugin-api/format";
+import { errorText, formatAgo } from "../../../plugin-api/format";
 import type { ContextMenuItem } from "../../../plugin-api/ui";
-import { failureMessage } from "../../../plugin-api/backend";
 import { vercelApi, type VercelDeployment } from "../api";
 import { vercel, vercelDeploymentsR, vercelLogR, vercelProjectsR } from "../resources";
 
@@ -181,7 +180,7 @@ export function useDeploymentActions(team: string) {
             notify("success", done);
             changed();
         } catch (error) {
-            notify("error", `${confirm.confirmLabel}: ${failureMessage(error)}`);
+            notify("error", `${confirm.confirmLabel}: ${errorText(error)}`);
         } finally {
             setBusy(false);
         }

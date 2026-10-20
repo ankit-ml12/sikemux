@@ -1,6 +1,6 @@
 import { useState, type MouseEvent, type PointerEvent } from "react";
 import { notify } from "../../../plugin-api/host";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import {
     ContextMenu,
@@ -99,7 +99,7 @@ export function JiraBoard({
             await found.refresh();
             jira.refresh(jiraSearchR, jiraIssueR);
         } catch (error) {
-            notify("error", `Move ${issue.key}: ${failureMessage(error)}`);
+            notify("error", `Move ${issue.key}: ${errorText(error)}`);
         } finally {
             setMoves((now) => {
                 const next = { ...now };

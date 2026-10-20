@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { confirmDialog, pickFile, swallow } from "../../../plugin-api/host";
 import { Checkbox, Dropdown } from "../../../plugin-api/ui";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { databaseApi, type DatabaseProfile, type ProfileDraft, type Tested, type TlsMode } from "../api";
 import { ENGINES, TLS_MODES, defaultPort, isServer, missingField, parsePort, withEngine } from "../profileForm";
 
@@ -47,7 +47,7 @@ export function ProfileForm({
             if (kind === "test") setOutcome({ kind: "tested", tested: await databaseApi.test(draft, passwordToSend()) });
             else onSaved(await databaseApi.save(draft, passwordToSend()));
         } catch (failure) {
-            setOutcome({ kind: "failed", message: failureMessage(failure) });
+            setOutcome({ kind: "failed", message: errorText(failure) });
         } finally {
             working.current = false;
             setBusy(null);

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { copyWithNotice, notify, openUrl, reportError, swallow } from "../../../plugin-api/host";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, Markdown, SendToAgentMenu, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { linearApi, type LinearChange, type LinearIssue, type LinearStatus } from "../api";
@@ -131,7 +131,7 @@ function IssueView({ active, workspace, id, onClose }: { active: boolean; worksp
                 notify("success", done);
                 changed();
             })
-            .catch((error: unknown) => notify("error", `Change ${id}: ${failureMessage(error)}`))
+            .catch((error: unknown) => notify("error", `Change ${id}: ${errorText(error)}`))
             .finally(() => setBusy(false));
     };
     const comment = () => {

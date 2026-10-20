@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { notify, openSignInUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SignedIn, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
@@ -50,14 +50,14 @@ function Dashboard({ paneId, active, status }: { paneId: string; active: boolean
             void vercelApi
                 .signInWithBrowser((url) => void openSignInUrl(url).catch(swallow("open Vercel")))
                 .done.then(() => vercel.refresh())
-                .catch((error: unknown) => notify("error", `Add a team: ${failureMessage(error)}`));
+                .catch((error: unknown) => notify("error", `Add a team: ${errorText(error)}`));
             return;
         }
         updateVercelView(paneId, { project: null, deployment: null, section: "overview" });
         void vercelApi
             .setTeam(next)
             .then(() => vercel.refresh())
-            .catch((error: unknown) => notify("error", `Switch team: ${failureMessage(error)}`));
+            .catch((error: unknown) => notify("error", `Switch team: ${errorText(error)}`));
     };
     const open = (patch: Parameters<typeof updateVercelView>[1]) => updateVercelView(paneId, { deployment: null, ...patch });
 

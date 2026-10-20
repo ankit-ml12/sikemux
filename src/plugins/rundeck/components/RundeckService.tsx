@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import { currentBranch, git, openUrl, swallow } from "../../../plugin-api/host";
 import { useEvery, useNow } from "../../../plugin-api/hooks";
-import { formatAgo, formatDuration } from "../../../plugin-api/format";
+import { errorText, formatAgo, formatDuration } from "../../../plugin-api/format";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconExternal, IconFetch, IconGit, IconRun, IconWarning, SkeletonRows, Tooltip } from "../../../plugin-api/ui";
-import { failureMessage } from "../../../plugin-api/backend";
 import { type RundeckExecution } from "../api";
 import { rndExecutionsR, rndJobDetailR, rndJobsR, useBranchOptions, useProdEnvs } from "../resources";
 import * as cmd from "../state";
@@ -66,7 +65,7 @@ export function RundeckService({ paneId, active, level }: Props) {
         try {
             openForm(currentBranch(await git.status(job.repoPath)) ?? "");
         } catch (e) {
-            setActionError(failureMessage(e));
+            setActionError(errorText(e));
         }
     };
     const openRun = (ex: RundeckExecution) => cmd.rundeckPush(paneId, { kind: "execution", ...job, executionId: ex.id });

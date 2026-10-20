@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Checkbox, IconChevron } from "../../../plugin-api/ui";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { rundeckApi, type RundeckStatus } from "../api";
 import * as cmd from "../state";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, splitList } from "../shape";
@@ -66,7 +66,7 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
             rundeck.refresh();
             onSignedOut();
         } catch (e) {
-            setError(failureMessage(e));
+            setError(errorText(e));
         } finally {
             setSigningOut(false);
         }
@@ -84,7 +84,7 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
                     void rundeckApi
                         .setLists({ prodEnvs: list })
                         .then(() => rundeck.refresh(rndListsR))
-                        .catch((e: unknown) => setError(failureMessage(e)))
+                        .catch((e: unknown) => setError(errorText(e)))
                 }
             />
             <ListField
@@ -96,7 +96,7 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
                     void rundeckApi
                         .setLists({ branchOptions: list })
                         .then(() => rundeck.refresh(rndListsR, rndMatrixR, rndJobCellsR, rndPlanR))
-                        .catch((e: unknown) => setError(failureMessage(e)))
+                        .catch((e: unknown) => setError(errorText(e)))
                 }
             />
             <div className="rnd-field">

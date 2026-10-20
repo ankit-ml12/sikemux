@@ -10,7 +10,7 @@ const fake = vi.hoisted(() => ({
 vi.mock("../../api/plugins", async () => (await import("../../plugin-api/fakeTransport")).fakeTransport(fake));
 vi.mock("../../state/resources", async (importOriginal) => ({ ...(await importOriginal<object>()), invalidate: fake.invalidate }));
 
-import { failureMessage } from "../../plugin-api/backend";
+import { errorText } from "../../plugin-api/format";
 import { actionsApi, avatarForEmail, avatarForLogin, githubHostApi, type RunTick } from "./api";
 
 const repo = { provider: "sikemux.github", owner: "nodelike", name: "sikemux" };
@@ -121,9 +121,9 @@ describe("failures", () => {
     });
 
     it("reads the message of a plugin failure and of anything else", () => {
-        expect(failureMessage(refused)).toBe("github: sign-in failed: Bad credentials");
-        expect(failureMessage(new Error("boom"))).toBe("boom");
-        expect(failureMessage("plain")).toBe("plain");
+        expect(errorText(refused)).toBe("github: sign-in failed: Bad credentials");
+        expect(errorText(new Error("boom"))).toBe("boom");
+        expect(errorText("plain")).toBe("plain");
     });
 
     it("leaves the views alone when signing in fails", async () => {

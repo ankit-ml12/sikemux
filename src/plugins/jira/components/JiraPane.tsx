@@ -29,7 +29,7 @@ import {
     StaleNotice,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { jiraApi, type JiraBoard as JiraBoardInfo, type JiraIssue, type JiraIssueSummary, type JiraPerson, type JiraProject } from "../api";
 import { jira, jiraBoardsR, jiraFiltersR, jiraIssueR, jiraProjectsR, jiraSearchR } from "../resources";
 import { copyIssue, issueMenu, openIssue } from "../issueLinks";
@@ -525,7 +525,7 @@ function IssueBody({
                 await jiraApi.setTask(issue.key, index, text, done, site || undefined);
                 refresh();
             } catch (error) {
-                notify("error", `Update the task: ${failureMessage(error)}`);
+                notify("error", `Update the task: ${errorText(error)}`);
                 throw error;
             }
         },
@@ -538,7 +538,7 @@ function IssueBody({
             changed();
             return true;
         } catch (error) {
-            notify("error", `${label}: ${failureMessage(error)}`);
+            notify("error", `${label}: ${errorText(error)}`);
             return false;
         } finally {
             setBusy(false);

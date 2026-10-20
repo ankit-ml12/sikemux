@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { copyText, reportError } from "../../../plugin-api/host";
 import { useVisibleStream } from "../../../plugin-api/hooks";
 import { ContextMenu, EmptyState, IconCopy, IconDiscard, IconMessage, SendToAgentMenu, VirtualLogList } from "../../../plugin-api/ui";
-import { failureMessage } from "../../../plugin-api/backend";
+import { errorText } from "../../../plugin-api/format";
 import { signozApi, type LogLine, type LogSearch } from "../api";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { signozVolumeR } from "../resources";
@@ -49,7 +49,7 @@ function useLines(paneId: string, active: boolean, search: LogSearch, live: bool
                 setLines([...page.lines].reverse());
                 setOlderAt(page.nextOffset);
             })
-            .catch((failure: unknown) => alive && setError(failureMessage(failure)));
+            .catch((failure: unknown) => alive && setError(errorText(failure)));
         return () => {
             alive = false;
         };
@@ -66,7 +66,7 @@ function useLines(paneId: string, active: boolean, search: LogSearch, live: bool
                               setError(tick.error);
                               if (tick.lines.length > 0) setLines((current) => current.concat(tick.lines).slice(-KEPT_LINES));
                           },
-                          onError: (failure) => setError(failureMessage(failure)),
+                          onError: (failure) => setError(errorText(failure)),
                       },
                   )
             : null,
@@ -83,7 +83,7 @@ function useLines(paneId: string, active: boolean, search: LogSearch, live: bool
                 setLines((current) => [...page.lines].reverse().concat(current));
                 setOlderAt(page.nextOffset);
             })
-            .catch((failure: unknown) => setError(failureMessage(failure)))
+            .catch((failure: unknown) => setError(errorText(failure)))
             .finally(() => setLoadingOlder(false));
     };
 

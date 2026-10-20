@@ -10,7 +10,7 @@ const fake = vi.hoisted(() => ({
 vi.mock("../../api/plugins", async () => (await import("../../plugin-api/fakeTransport")).fakeTransport(fake));
 vi.mock("../../state/resources", async (importOriginal) => ({ ...(await importOriginal<object>()), invalidate: fake.invalidate }));
 
-import { failureMessage } from "../../plugin-api/backend";
+import { errorText } from "../../plugin-api/format";
 import { bitbucketApi, bitbucketHostApi, type BitbucketStatus } from "./api";
 import type { RunTick } from "../../plugin-api/codehost";
 
@@ -73,8 +73,8 @@ describe("failures", () => {
     });
 
     it("reads the message of a plugin failure and of anything else", () => {
-        expect(failureMessage(refused)).toBe("bitbucket: sign-in expired");
-        expect(failureMessage(new Error("boom"))).toBe("boom");
+        expect(errorText(refused)).toBe("bitbucket: sign-in expired");
+        expect(errorText(new Error("boom"))).toBe("boom");
     });
 });
 
