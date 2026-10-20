@@ -13,8 +13,8 @@ use crate::launch::terminal::{self, TerminalRun};
 use crate::launch::tools::Tools;
 use crate::launch::{AgentSpec, PermissionMode};
 use crate::protocol::{
-    ChatAccount, ChatLaunch, Continuation, Event, LaunchIdentity, RequestId, Response, SessionId,
-    SpawnTarget, TerminalSpawn, WAKE_WAIT,
+    ChatAccount, ChatLaunch, Continuation, Event, RequestId, Response, SessionId, SpawnTarget,
+    TerminalSpawn, WAKE_WAIT,
 };
 use sikemux_process::vars;
 use sikemux_pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
@@ -134,14 +134,9 @@ pub(crate) async fn start_terminal(
         env: Default::default(),
         continues,
     };
-    let config = core.listening.get().map(|listening| &listening.config);
-    let launch = LaunchIdentity {
-        version: core.build.version.clone(),
-        cli_executable: std::env::current_exe().ok(),
-        cli_endpoint: config.and_then(|config| config.cli_endpoint.clone()),
-    };
     let target = Box::new(SpawnTarget::Terminal(spawn));
-    let pending = super::connection::spawn(core.clone(), launch, target, None).await?;
+    let pending =
+        super::connection::spawn(core.clone(), core.launch_identity(), target, None).await?;
     let id = pending.id();
     pending.start(core);
     let patch = serde_json::Map::from_iter([("ptyId".to_owned(), serde_json::Value::from(id))]);

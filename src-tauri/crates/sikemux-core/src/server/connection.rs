@@ -459,6 +459,10 @@ async fn run_requests(
             Request::Spawn { launch, target } => {
                 tokio::spawn(async move {
                     let started_by = client.peer.device_id();
+                    let launch = match started_by {
+                        Some(_) => core.launch_identity(),
+                        None => launch,
+                    };
                     match spawn(core.clone(), launch, target, started_by).await {
                         Ok(pending) => {
                             let id = pending.id();

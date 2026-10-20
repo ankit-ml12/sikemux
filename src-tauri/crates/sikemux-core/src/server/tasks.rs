@@ -797,23 +797,10 @@ pub(crate) fn answer_trust(core: &Core, id: &str, trust: bool) -> CoreResult<()>
     Ok(())
 }
 
-/// The core's own identity for a session it spawns itself, as the app gives
-/// it for the ones it asks for.
-fn launch_identity(core: &Core) -> crate::protocol::LaunchIdentity {
-    crate::protocol::LaunchIdentity {
-        version: core.build.version.clone(),
-        cli_executable: std::env::current_exe().ok(),
-        cli_endpoint: core
-            .listening
-            .get()
-            .and_then(|listening| listening.config.cli_endpoint.clone()),
-    }
-}
-
 async fn spawn(core: &Arc<Core>, request: TaskSpawnRequest) -> Result<SessionId, String> {
     let task = super::connection::spawn(
         core.clone(),
-        launch_identity(core),
+        core.launch_identity(),
         Box::new(SpawnTarget::Task { request }),
         None,
     )

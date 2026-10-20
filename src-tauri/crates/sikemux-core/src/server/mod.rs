@@ -360,6 +360,19 @@ fn first_session_id() -> SessionId {
 }
 
 impl Core {
+    /// The core's own identity for a session it spawns itself, or for a
+    /// device on another machine, whose paths mean nothing here.
+    pub(crate) fn launch_identity(&self) -> crate::protocol::LaunchIdentity {
+        crate::protocol::LaunchIdentity {
+            version: self.build.version.clone(),
+            cli_executable: std::env::current_exe().ok(),
+            cli_endpoint: self
+                .listening
+                .get()
+                .and_then(|listening| listening.config.cli_endpoint.clone()),
+        }
+    }
+
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;
