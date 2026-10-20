@@ -3,7 +3,7 @@
 //! standard input and output. Their session updates already have the shape
 //! the chat reads, so they pass through as they come.
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
@@ -15,6 +15,7 @@ use agent_client_protocol::schema::v1::{
 use agent_client_protocol::schema::ProtocolVersion;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
 use crate::acp::account::{self, Failure};
 use crate::acp::{air, native, permission_mode_id, prompt_blocks};
@@ -59,10 +60,6 @@ struct Driver {
 }
 
 impl Driver {
-    fn lock(&self) -> MutexGuard<'_, Turns> {
-        self.turns.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     /// Sends a request and waits on its answer, for at most `wait`.
     async fn call(
         &self,
@@ -90,12 +87,12 @@ impl Driver {
             },
             // Hermes can crash out of a stopped turn and leave its session
             // refusing every prompt after.
-            Err(_) if self.lock().cancelled == turn => TurnEnd::Broken(
+            Err(_) if self.turns.locked().cancelled == turn => TurnEnd::Broken(
                 "The agent failed while stopping, so its session was restarted".into(),
             ),
             // The agent is gone, and the chat says why once its process has
             // exited.
-            Err(_) if self.lock().gone => return,
+            Err(_) if self.turns.locked().gone => return,
             Err(error) if error["code"] == AUTH_REQUIRED => TurnEnd::Failed {
                 failure: Failure::sign_in(error_text(&error)),
                 response: None,
@@ -178,7 +175,7 @@ impl Reads for Driver {
     }
 
     fn closed(&mut self) {
-        self.lock().gone = true;
+        self.turns.locked().gone = true;
         self.rpc.close();
     }
 }
@@ -450,7 +447,7 @@ impl Backend for Acp {
             self.embedded_context,
         )?;
         let request = PromptRequest::new(self.session_id.clone(), blocks);
-        self.driver.lock().prompted = turn;
+        self.driver.turns.locked().prompted = turn;
         self.driver.rpc.send_for(
             AGENT_METHOD_NAMES.session_prompt,
             params(request)?,
@@ -475,7 +472,7 @@ impl Backend for Acp {
             params(CancelNotification::new(self.session_id.clone()))?,
         );
         if self.driver.sink.running() {
-            let mut turns = self.driver.lock();
+            let mut turns = self.driver.turns.locked();
             turns.cancelled = turns.prompted;
         }
         sent
@@ -553,7 +550,7 @@ impl Backend for Acp {
         } = self;
         let (driver_back, lines) = reading.stop().await.ok_or("The agent stopped")?;
         drop(driver_back);
-        let turns = std::mem::take(&mut *driver.lock());
+        let turns = std::mem::take(&mut *driver.turns.locked());
         let state = AcpState {
             rpc: driver.rpc.state(),
             turns,

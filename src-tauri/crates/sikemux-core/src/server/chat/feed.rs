@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
 use crate::protocol::{
     encode_control, fits, ChatAttachment, ChatEvent, ChatEventKind, ChatMark, ChatStart, Event,
@@ -1222,10 +1223,9 @@ impl Feed {
             .iter()
             .rev()
             .find_map(|(_, _, event)| session_title(&event.payload));
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.replay = replay;
-            inner.title = title;
-        }
+        let mut inner = self.inner.locked();
+        inner.replay = replay;
+        inner.title = title;
     }
 
     /// Takes up a feed an earlier core let go of.
@@ -1259,7 +1259,7 @@ impl Feed {
     /// waiting to go out has gone, with the clients that were hearing it.
     /// Nothing said here after that is kept.
     pub(crate) fn release(&self) -> Option<(FeedState, Vec<Arc<ClientConn>>)> {
-        let mut inner = self.inner.lock().ok()?;
+        let mut inner = self.inner.locked();
         self.flush_locked(&mut inner);
         inner.closed = true;
         let subscribers = inner
@@ -1365,27 +1365,23 @@ impl Feed {
         let feed = self.clone();
         self.runtime.spawn(async move {
             tokio::time::sleep(SETTLE).await;
-            if let Ok(mut inner) = feed.inner.lock() {
-                inner.settle_scheduled = false;
-                inner.replay.settle();
-            }
+            let mut inner = feed.inner.locked();
+            inner.settle_scheduled = false;
+            inner.replay.settle();
         });
     }
 
     fn flush(&self) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.flush_scheduled = false;
-            self.flush_locked(&mut inner);
-        }
+        let mut inner = self.inner.locked();
+        inner.flush_scheduled = false;
+        self.flush_locked(&mut inner);
     }
 
     /// Anything that is not a streamed update reads as a reply to what came
     /// before it, so the batch behind it goes out first and the order the
     /// agent sent them in survives.
     pub(crate) fn emit(self: &Arc<Self>, kind: ChatEventKind, mut payload: Value) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.locked();
         if is_turn_edge(kind) {
             stamp(&mut payload);
         }
@@ -1429,9 +1425,7 @@ impl Feed {
         text: &str,
         paths: &[String],
     ) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.locked();
         let mut payload = json!({ "text": text, "paths": paths });
         if let Some(message_id) = message_id {
             payload["messageId"] = json!(message_id);
@@ -1447,9 +1441,7 @@ impl Feed {
     /// It goes from the replay, and every client but the one that asked is
     /// told to drop it and everything after it.
     pub(crate) fn rewound(&self, from: ClientId, session_id: &str, message_id: &str) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.locked();
         self.flush_locked(&mut inner);
         inner.replay.rewind(message_id);
         self.broadcast_except(
@@ -1465,9 +1457,7 @@ impl Feed {
 
     /// Keeps `message` until the running turn ends, unless as many already wait.
     pub(crate) fn enqueue(&self, message: Queued) -> bool {
-        let Ok(mut inner) = self.inner.lock() else {
-            return false;
-        };
+        let mut inner = self.inner.locked();
         if inner.queued.len() >= MAX_QUEUED {
             return false;
         }
@@ -1478,9 +1468,7 @@ impl Feed {
 
     /// Takes the waiting messages `ids`, or with none the next that go out together.
     pub(crate) fn take_queued(&self, ids: Option<&[String]>) -> Vec<Queued> {
-        let Ok(mut inner) = self.inner.lock() else {
-            return Vec::new();
-        };
+        let mut inner = self.inner.locked();
         let taken: Vec<Queued> = match ids {
             None => {
                 let count = batch_len(&inner.queued);
@@ -1501,9 +1489,7 @@ impl Feed {
     }
 
     pub(crate) fn clear_queue(&self) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.locked();
         if !inner.queued.is_empty() {
             inner.queued.clear();
             self.queue_changed(&mut inner);
@@ -1517,21 +1503,17 @@ impl Feed {
     }
 
     pub(crate) fn subscribe(&self, client: &Arc<ClientConn>) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.subscribers.insert(client.id, client.clone());
-        }
+        let mut inner = self.inner.locked();
+        inner.subscribers.insert(client.id, client.clone());
     }
 
     pub(crate) fn has_subscriber(&self, client: ClientId) -> bool {
-        self.inner
-            .lock()
-            .is_ok_and(|inner| inner.subscribers.contains_key(&client))
+        self.inner.locked().subscribers.contains_key(&client)
     }
 
     pub(crate) fn unsubscribe(&self, client: ClientId) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.subscribers.remove(&client);
-        }
+        let mut inner = self.inner.locked();
+        inner.subscribers.remove(&client);
     }
 
     /// Answers the client with everything said so far, or everything since
@@ -1544,10 +1526,7 @@ impl Feed {
         standing: Standing,
         since: Option<ChatMark>,
     ) {
-        let Ok(mut inner) = self.inner.lock() else {
-            client.respond(request_id, Err("chat feed lock poisoned".into()));
-            return;
-        };
+        let mut inner = self.inner.locked();
         self.flush_locked(&mut inner);
         let attachment = self.attachment(&inner, &client.peer, standing, since);
         let live = matches!(
@@ -1623,28 +1602,24 @@ impl Feed {
     }
 
     pub(crate) fn close(&self) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.closed = true;
-        }
+        let mut inner = self.inner.locked();
+        inner.closed = true;
     }
 
     /// Keeps what the agent says from the clients until [`Feed::let_out`]. A
     /// resumed session replays its whole saved history while it starts, more
     /// than a client could be sent at once.
     pub(crate) fn hold(&self) {
-        if let Ok(mut inner) = self.inner.lock() {
-            self.flush_locked(&mut inner);
-            inner.holding = Some(inner.replay.next_index);
-        }
+        let mut inner = self.inner.locked();
+        self.flush_locked(&mut inner);
+        inner.holding = Some(inner.replay.next_index);
     }
 
     /// Sends the clients the last turns of what was held back, then where
     /// the turns before them can be paged from. Without a history on disk to
     /// page through, they are sent all the replay still holds.
     pub(crate) fn let_out(&self) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.locked();
         let Some(floor) = inner.holding.take() else {
             return;
         };
@@ -1679,44 +1654,34 @@ impl Feed {
     }
 
     pub(crate) fn set_start(&self, start: ChatStart) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.start = Some(start);
-        }
+        let mut inner = self.inner.locked();
+        inner.start = Some(start);
     }
 
     pub(crate) fn set_setup(&self, setup: &Value) {
-        if let Ok(mut inner) = self.inner.lock() {
-            if let Some(start) = inner.start.as_mut() {
-                start.setup = setup.clone();
-            }
+        let mut inner = self.inner.locked();
+        if let Some(start) = inner.start.as_mut() {
+            start.setup = setup.clone();
         }
     }
 
     pub(crate) fn set_permission_mode(&self, mode: &str) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.permission_mode = mode.to_owned();
-        }
+        let mut inner = self.inner.locked();
+        inner.permission_mode = mode.to_owned();
     }
 
     pub(crate) fn permission_mode(&self) -> String {
-        self.inner
-            .lock()
-            .map(|inner| inner.permission_mode.clone())
-            .unwrap_or_default()
+        self.inner.locked().permission_mode.clone()
     }
 
     /// What the agent last called this session, as the host's rail shows it.
     pub(crate) fn title(&self) -> Option<String> {
-        self.inner.lock().ok()?.title.clone()
+        self.inner.locked().title.clone()
     }
 
     /// What the chat said from index `from` on, or over its last `turns`.
     pub(crate) fn excerpt(&self, from: Option<u64>, turns: usize, max_bytes: usize) -> Excerpt {
-        let (said, skipped, next) = self
-            .inner
-            .lock()
-            .map(|inner| inner.replay.excerpt(from, turns, max_bytes))
-            .unwrap_or_default();
+        let (said, skipped, next) = self.inner.locked().replay.excerpt(from, turns, max_bytes);
         Excerpt {
             feed: self.id.clone(),
             said,
@@ -1727,43 +1692,35 @@ impl Feed {
 
     /// Where the turn in progress, or the last one, starts in the history.
     pub(crate) fn turn_start(&self) -> Option<u64> {
-        self.inner.lock().ok()?.replay.turn_start()
+        self.inner.locked().replay.turn_start()
     }
 
     /// What the agent wrote last in its latest turn.
     pub(crate) fn last_answer(&self) -> Option<String> {
-        self.inner.lock().ok()?.replay.last_answer()
+        self.inner.locked().replay.last_answer()
     }
 
     /// Whether the last turn it holds has not ended.
     pub(crate) fn in_turn(&self) -> bool {
-        self.inner.lock().is_ok_and(|inner| inner.replay.in_turn)
+        self.inner.locked().replay.in_turn
     }
 
     pub(crate) fn reconnecting(&self) -> Option<u32> {
-        self.inner.lock().ok()?.replay.reconnecting
+        self.inner.locked().replay.reconnecting
     }
 
     pub(crate) fn running_subagents(&self) -> u32 {
-        self.inner
-            .lock()
-            .map(|inner| inner.replay.work.running_subagents() as u32)
-            .unwrap_or_default()
+        self.inner.locked().replay.work.running_subagents() as u32
     }
 
     pub(crate) fn running_tasks(&self) -> u32 {
-        self.inner
-            .lock()
-            .map(|inner| inner.replay.work.running_tasks() as u32)
-            .unwrap_or_default()
+        self.inner.locked().replay.work.running_tasks() as u32
     }
 
     /// The agent's process went away, and every subagent and background task
     /// it had going went with it. The chat is told each one ended.
     pub(crate) fn agent_gone(&self) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.inner.locked();
         for payload in inner.replay.work.endings() {
             let bytes = inner.replay.push(ChatEventKind::SessionUpdate, &payload);
             inner.pending.push(payload);
@@ -1773,14 +1730,13 @@ impl Feed {
     }
 
     pub(crate) fn start(&self) -> Option<ChatStart> {
-        self.inner.lock().ok()?.start.clone()
+        self.inner.locked().start.clone()
     }
 
     pub(crate) fn forget_permission(&self, request_id: &str) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.replay.forget_permission(request_id);
-            inner.recent.forget_permission(request_id);
-        }
+        let mut inner = self.inner.locked();
+        inner.replay.forget_permission(request_id);
+        inner.recent.forget_permission(request_id);
     }
 
     /// The turns before `before` in this run of the chat, which a client
@@ -1789,7 +1745,7 @@ impl Feed {
         if feed != self.id {
             return Err("the chat started again; open it again to see its history".into());
         }
-        let inner = self.inner.lock().map_err(|_| "chat feed lock poisoned")?;
+        let inner = self.inner.locked();
         inner.replay.page(before, turns)
     }
 }

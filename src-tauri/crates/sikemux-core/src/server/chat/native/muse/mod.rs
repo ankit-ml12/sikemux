@@ -10,12 +10,13 @@ mod items;
 mod state;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use uuid::Uuid;
 
 use crate::launch::PermissionMode;
@@ -55,10 +56,6 @@ struct Driver {
 }
 
 impl Driver {
-    fn lock(&self) -> MutexGuard<'_, Session> {
-        self.session.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     fn apply(&self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
@@ -113,17 +110,17 @@ impl Driver {
                     .and_then(|read| read["history"]["items"].as_array().cloned())
                     .unwrap_or_default();
                 let effects = if said.iter().any(|item| item["kind"] != "userMessage") {
-                    self.lock().told_subagent(&child, &said)
+                    self.session.locked().told_subagent(&child, &said)
                 } else {
                     result
-                        .map(|result| self.lock().subagent_said(&child, &result))
+                        .map(|result| self.session.locked().subagent_said(&child, &result))
                         .unwrap_or_default()
                 };
                 self.apply(effects);
             }
             (Purpose::Patch { session, call }, Ok(read)) => self.show_patch(&session, &call, &read),
             (Purpose::Interrupt(turn_id), Ok(_)) => {
-                let effects = self.lock().interrupted(&turn_id);
+                let effects = self.session.locked().interrupted(&turn_id);
                 self.apply(effects);
             }
             (Purpose::Steer { text, paths }, Ok(_)) => self.sink.prompted(&text, &paths),
@@ -146,7 +143,7 @@ impl Driver {
         let Some(content) = content else {
             return;
         };
-        let cwd = self.lock().cwd.clone();
+        let cwd = self.session.locked().cwd.clone();
         let blocks =
             items::patch_blocks(&content, &cwd, &|path| std::fs::read_to_string(path).ok());
         if !blocks.is_empty() {
@@ -159,7 +156,7 @@ impl Driver {
 
     /// Asks Muse to stop the turn with this id.
     fn interrupt(&self, turn_id: String) {
-        let session_id = self.lock().session_id.clone();
+        let session_id = self.session.locked().session_id.clone();
         let _ = self.rpc.send_for(
             "turn/interrupt",
             json!({ "sessionId": session_id, "commandId": command_id(), "turnId": turn_id }),
@@ -169,11 +166,11 @@ impl Driver {
 
     /// Puts one stage of an approval to the person, once.
     fn ask(&self, params: &Value) {
-        let session = self.lock().session_for(params);
+        let session = self.session.locked().session_for(params);
         let Some(question) = approvals::question(&session, params) else {
             return;
         };
-        if !self.lock().ask(question.key()) {
+        if !self.session.locked().ask(question.key()) {
             return;
         }
         let wire_session = params["sessionId"].as_str().unwrap_or_default().to_owned();
@@ -216,7 +213,7 @@ impl Driver {
             self.ask(params);
             return;
         }
-        let effects = self.lock().handle(method, params);
+        let effects = self.session.locked().handle(method, params);
         self.apply(effects);
     }
 
@@ -429,13 +426,13 @@ impl Muse {
     }
 
     fn session_id(&self) -> String {
-        self.driver().lock().session_id.clone()
+        self.driver().session.locked().session_id.clone()
     }
 
     /// Writes a steer to Muse now, so a stop sent after it reaches Muse after
     /// it too. None when no turn is running.
     fn send_steer(&self, prompt: &Prompt) -> Result<Option<Sent>, String> {
-        let Some(turn_id) = self.driver().lock().active_turn() else {
+        let Some(turn_id) = self.driver().session.locked().active_turn() else {
             return Ok(None);
         };
         let input = self.prompt_input(prompt)?;
@@ -477,7 +474,7 @@ impl Muse {
     /// Sends `input` as turn `turn`.
     async fn send_turn(&self, turn: u64, prompt: &Prompt, input: Vec<Value>) -> Result<(), String> {
         let id = command_id();
-        self.driver().lock().begin(
+        self.driver().session.locked().begin(
             turn,
             &id,
             prompt.message_id.clone(),
@@ -496,13 +493,13 @@ impl Muse {
         match self.rpc().request("turn/start", params).await {
             Ok(started) => {
                 let turn_id = text(&started, "turnId").unwrap_or(&id).to_owned();
-                if self.driver().lock().started(turn, &turn_id) {
+                if self.driver().session.locked().started(turn, &turn_id) {
                     self.driver().interrupt(turn_id);
                 }
                 Ok(())
             }
             Err(error) => {
-                self.driver().lock().abandon(turn);
+                self.driver().session.locked().abandon(turn);
                 Err(error)
             }
         }
@@ -539,7 +536,7 @@ impl Muse {
             }
             Command::Status => {
                 let (totals, context) = {
-                    let session = self.driver().lock();
+                    let session = self.driver().session.locked();
                     (session.totals.clone(), session.context.clone())
                 };
                 self.say(&commands::status_text(&commands::Status {
@@ -631,7 +628,7 @@ impl Muse {
                 &session_id,
                 json!({ "sessionUpdate": "session_info_update", "title": title }),
             );
-            driver.lock().titled = true;
+            driver.session.locked().titled = true;
         }
         let children = subagent_histories(&driver.rpc, items).await;
         let mut out = Vec::new();
@@ -639,7 +636,7 @@ impl Muse {
         for (session, update) in out {
             driver.sink.update(&session, update);
         }
-        driver.lock().turns = history::turns(items);
+        driver.session.locked().turns = history::turns(items);
         driver
             .sink
             .update(&session_id, json!({ "sessionUpdate": "history_loaded" }));
@@ -734,7 +731,7 @@ impl Backend for Muse {
             .as_str()
             .ok_or("Muse opened a session without an id")?
             .to_owned();
-        *host.driver.lock() = Session::new(session_id.clone(), cwd.clone());
+        *host.driver.session.locked() = Session::new(session_id.clone(), cwd.clone());
 
         let model = launch
             .model
@@ -820,7 +817,7 @@ impl Backend for Muse {
     }
 
     async fn cancel(&mut self) -> Result<(), String> {
-        let turn = self.driver().lock().cancel();
+        let turn = self.driver().session.locked().cancel();
         if let Some(turn_id) = turn {
             self.driver().interrupt(turn_id);
         }
@@ -891,7 +888,7 @@ impl Backend for Muse {
     /// a new session.
     async fn rewind(&mut self, message_id: &str) -> Result<Option<String>, String> {
         let (session_id, turn_id, before) = {
-            let session = self.driver().lock();
+            let session = self.driver().session.locked();
             let turn_id = session
                 .message_turns
                 .get(message_id)
@@ -952,7 +949,10 @@ impl Backend for Muse {
                 )
                 .await?;
         }
-        self.driver().lock().moved(moved.clone(), &turn_id);
+        self.driver()
+            .session
+            .locked()
+            .moved(moved.clone(), &turn_id);
         Ok(Some(moved))
     }
 
@@ -983,7 +983,7 @@ impl Backend for Muse {
         } = host;
         let (_, lines) = reading.stop().await.ok_or("Muse stopped")?;
         let session = std::mem::replace(
-            &mut *driver.lock(),
+            &mut *driver.session.locked(),
             Session::new(String::new(), String::new()),
         );
         let state = MuseState {

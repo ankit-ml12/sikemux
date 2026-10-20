@@ -3,9 +3,10 @@
 //! them.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex, PoisonError};
+use std::sync::{LazyLock, Mutex};
 
 use serde_json::Value;
+use sikemux_process::sync::Locked;
 
 static OFFERED: LazyLock<Mutex<HashMap<String, Value>>> = LazyLock::new(Mutex::default);
 
@@ -17,18 +18,11 @@ pub(crate) fn remember(agent: &str, setup: &Value) {
     else {
         return;
     };
-    OFFERED
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(agent.to_owned(), model.clone());
+    OFFERED.locked().insert(agent.to_owned(), model.clone());
 }
 
 /// The model choice `agent` last offered, if a chat of it has started since
 /// the core did.
 pub(crate) fn models(agent: &str) -> Option<Value> {
-    OFFERED
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get(agent)
-        .cloned()
+    OFFERED.locked().get(agent).cloned()
 }

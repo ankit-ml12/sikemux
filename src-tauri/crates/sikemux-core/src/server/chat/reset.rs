@@ -5,11 +5,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
 use crate::agent_accounts::usage;
 use crate::protocol::{ChatEventKind, ChatLaunch};
@@ -72,12 +73,6 @@ impl Resets {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, HashMap<String, Slot>> {
-        self.slots
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     fn save(&self, slots: &HashMap<String, Slot>) {
         let Some(path) = &self.path else {
             return;
@@ -99,7 +94,7 @@ impl Resets {
 
     /// Starts the timers of the chats an earlier core left waiting.
     pub(crate) fn arm_saved(&self, core: &Arc<Core>) {
-        for slot in self.lock().values_mut() {
+        for slot in self.slots.locked().values_mut() {
             if let Slot::Waiting { waiting, timer } = slot {
                 *timer = Some(arm(core, waiting));
             }
@@ -108,7 +103,7 @@ impl Resets {
 
     /// Stops the chat waiting, saying whether it was.
     pub(crate) fn cancel(&self, agent_id: &str) -> bool {
-        let mut slots = self.lock();
+        let mut slots = self.slots.locked();
         let Some(slot) = slots.remove(agent_id) else {
             return false;
         };
@@ -124,7 +119,7 @@ impl Resets {
 
     /// The chat's stopped prompt, once its limit has reset.
     fn take_due(&self, agent_id: &str) -> Option<Replay> {
-        let mut slots = self.lock();
+        let mut slots = self.slots.locked();
         let due = matches!(
             slots.get(agent_id),
             Some(Slot::Waiting { waiting, .. }) if waiting.at <= unix_ms()
@@ -154,7 +149,7 @@ pub(super) fn schedule(
     let resets = &core.chats.resets;
     let ticket = resets.tickets.fetch_add(1, Ordering::Relaxed);
     {
-        let mut slots = resets.lock();
+        let mut slots = resets.slots.locked();
         if slots.len() >= MAX_WAITING && !slots.contains_key(chat.agent_id()) {
             return;
         }
@@ -172,7 +167,7 @@ pub(super) fn schedule(
             known => known,
         };
         let resets = &core.chats.resets;
-        let mut slots = resets.lock();
+        let mut slots = resets.slots.locked();
         let current = slots.get(chat.agent_id());
         if !matches!(current, Some(Slot::Looking { ticket: own }) if *own == ticket) {
             return;

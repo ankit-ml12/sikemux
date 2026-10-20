@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sikemux_process::sync::Locked;
 
 use crate::acp::account::{Failure, FailureKind};
 
@@ -483,10 +484,7 @@ impl Reader {
     }
 
     fn turn_running(&self) -> bool {
-        self.shared
-            .lock()
-            .map(|shared| shared.turn.is_some())
-            .unwrap_or(false)
+        self.shared.locked().turn.is_some()
     }
 
     /// Sends `update` to the session `parent` names: the chat's own, or the
@@ -544,10 +542,8 @@ impl Reader {
                     return;
                 }
                 let mut unread = None;
-                if let (Some(uuid), Ok(mut shared)) =
-                    (text(&message, "command_uuid"), self.shared.lock())
-                {
-                    if let Some(turn) = shared.turn.as_mut() {
+                if let Some(uuid) = text(&message, "command_uuid") {
+                    if let Some(turn) = self.shared.locked().turn.as_mut() {
                         turn.waiting.remove(uuid);
                         let letter = turn.letters.remove(uuid);
                         if matches!(state, Some("cancelled" | "dropped")) {
@@ -616,11 +612,7 @@ impl Reader {
                 tools::tool_call(&tool_id, &name, &input, &self.data.cwd),
             );
         }
-        let mode = self
-            .shared
-            .lock()
-            .map(|shared| shared.mode.clone())
-            .unwrap_or_default();
+        let mode = self.shared.locked().mode.clone();
         let asked = permission::request(
             &session,
             &tool_id,
@@ -787,11 +779,10 @@ impl Reader {
         let parent = text(message, "parent_tool_use_id").map(str::to_owned);
         if parent.is_none() {
             if let Some(failure) = failure_of(message) {
-                if let Ok(mut shared) = self.shared.lock() {
-                    if let Some(turn) = shared.turn.as_mut() {
-                        turn.failure = Some(failure);
-                        return;
-                    }
+                let mut shared = self.shared.locked();
+                if let Some(turn) = shared.turn.as_mut() {
+                    turn.failure = Some(failure);
+                    return;
                 }
             }
         }
@@ -863,12 +854,7 @@ impl Reader {
 
     fn user(&mut self, message: &Value) {
         if let Some(uuid) = text(message, "uuid") {
-            if self
-                .shared
-                .lock()
-                .map(|shared| shared.sent.contains(uuid))
-                .unwrap_or(false)
-            {
+            if self.shared.locked().sent.contains(uuid) {
                 return;
             }
         }
@@ -981,9 +967,7 @@ impl Reader {
         // A turn that background work started, rather than a message, carries its origin.
         let woken = result.get("origin").is_some();
         let ended = {
-            let Ok(mut shared) = self.shared.lock() else {
-                return;
-            };
+            let mut shared = self.shared.locked();
             let ends = shared.turn.as_ref().is_some_and(|turn| match answers {
                 Some(uuid) => turn.messages.contains(uuid) && turn.waiting.is_empty(),
                 None => !woken,
@@ -1243,11 +1227,7 @@ impl Reader {
 
     /// Claude Code went idle: anything the turn still waited on is over.
     fn idle(&mut self) {
-        let turn = self
-            .shared
-            .lock()
-            .ok()
-            .and_then(|mut shared| shared.turn.take());
+        let turn = self.shared.locked().turn.take();
         match turn {
             Some(turn) => {
                 let end = match turn.failure {
@@ -1660,12 +1640,10 @@ impl Asking {
         let Some(id) = reply["requestId"].as_str().map(str::to_owned) else {
             return Box::new(|_| {});
         };
-        if let Ok(mut open) = self.open.lock() {
-            open.insert(id.clone());
-        }
+        self.open.locked().insert(id.clone());
         let asking = self.clone();
         Box::new(move |chosen| {
-            let still_open = asking.open.lock().is_ok_and(|mut open| open.remove(&id));
+            let still_open = asking.open.locked().remove(&id);
             if !still_open {
                 return;
             }
@@ -1680,15 +1658,13 @@ impl Asking {
     }
 
     fn take_back(&self, id: &str) {
-        if let Ok(mut open) = self.open.lock() {
-            open.remove(id);
-        }
+        let mut open = self.open.locked();
+        open.remove(id);
     }
 
     fn close(&self) {
-        if let Ok(mut open) = self.open.lock() {
-            open.clear();
-        }
+        let mut open = self.open.locked();
+        open.clear();
     }
 }
 

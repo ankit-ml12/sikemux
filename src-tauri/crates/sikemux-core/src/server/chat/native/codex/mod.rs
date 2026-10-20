@@ -11,11 +11,12 @@ mod state;
 mod subagents;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
 use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
@@ -46,10 +47,6 @@ struct Driver {
 }
 
 impl Driver {
-    fn lock(&self) -> MutexGuard<'_, Session> {
-        self.session.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     fn apply(&self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
@@ -68,7 +65,7 @@ impl Driver {
         let driver = self.clone();
         tokio::spawn(async move {
             tokio::time::sleep(SUBAGENT_WAIT).await;
-            let effects = driver.lock().subagents_waited(turn);
+            let effects = driver.session.locked().subagents_waited(turn);
             driver.apply(effects);
         });
     }
@@ -76,7 +73,7 @@ impl Driver {
     /// Asks Codex to stop the turn with this id. Codex never answers an
     /// interrupt for a turn that is not running.
     fn interrupt(&self, turn_id: String) {
-        let thread_id = self.lock().thread_id.clone();
+        let thread_id = self.session.locked().thread_id.clone();
         let _ = self.rpc.send_for(
             "turn/interrupt",
             json!({ "threadId": thread_id, "turnId": turn_id }),
@@ -91,7 +88,7 @@ impl Driver {
         }
         match purpose {
             Purpose::Interrupt(turn_id) => {
-                let effects = self.lock().interrupted(&turn_id);
+                let effects = self.session.locked().interrupted(&turn_id);
                 self.apply(effects);
             }
             Purpose::Steer { text, paths } => self.sink.prompted(&text, &paths),
@@ -127,12 +124,12 @@ impl Driver {
     }
 
     fn notification(&self, method: &str, params: &Value) {
-        let effects = self.lock().handle(method, params);
+        let effects = self.session.locked().handle(method, params);
         self.apply(effects);
     }
 
     fn request(&self, id: Value, method: &str, params: &Value) {
-        let reply = self.lock().question(method, params);
+        let reply = self.session.locked().question(method, params);
         match reply {
             Reply::Answer(answer) => self.rpc.respond(id, answer),
             Reply::PutQuestion => {
@@ -164,7 +161,7 @@ impl Reads for Driver {
     }
 
     fn closed(&mut self) {
-        self.lock().gone = true;
+        self.session.locked().gone = true;
         self.rpc.close();
     }
 }
@@ -275,7 +272,7 @@ impl Codex {
     /// Writes a steer to Codex now, so a stop sent after it reaches Codex
     /// after it too. None when no turn is running.
     fn send_steer(&self, prompt: &Prompt) -> Result<Option<Sent>, String> {
-        let Some(turn_id) = self.driver.lock().active_turn() else {
+        let Some(turn_id) = self.driver.session.locked().active_turn() else {
             return Ok(None);
         };
         let input = self.prompt_input(prompt)?;
@@ -318,7 +315,7 @@ impl Codex {
         method: &str,
         params: Value,
     ) -> Result<(), String> {
-        self.driver.lock().begin(
+        self.driver.session.locked().begin(
             turn,
             prompt.message_id.clone(),
             history::title(&prompt.text),
@@ -326,13 +323,13 @@ impl Codex {
         match self.driver.rpc.request(method, params).await {
             Ok(result) => {
                 if let Some(id) = result["turn"]["id"].as_str() {
-                    let effects = self.driver.lock().started(turn, id);
+                    let effects = self.driver.session.locked().started(turn, id);
                     self.driver.apply(effects);
                 }
                 Ok(())
             }
             Err(error) => {
-                self.driver.lock().abandon(turn);
+                self.driver.session.locked().abandon(turn);
                 Err(error)
             }
         }
@@ -377,7 +374,7 @@ impl Codex {
                 self.say(&commands::servers_text(&statuses, &self.servers));
             }
             Command::Status => {
-                let token_usage = self.driver.lock().token_usage.clone();
+                let token_usage = self.driver.session.locked().token_usage.clone();
                 self.say(&commands::status_text(&commands::Status {
                     model: &self.model,
                     cwd: &self.cwd,
@@ -404,7 +401,7 @@ impl Codex {
                 &self.thread_id,
                 json!({ "sessionUpdate": "session_info_update", "title": title }),
             );
-            self.driver.lock().titled = true;
+            self.driver.session.locked().titled = true;
         }
         let mut out = Vec::new();
         history::replay(
@@ -418,7 +415,8 @@ impl Codex {
             sink.update(&session, update);
         }
         self.driver
-            .lock()
+            .session
+            .locked()
             .message_turns
             .extend(history::message_turns(&turns));
         Ok(())
@@ -528,7 +526,7 @@ impl Backend for Codex {
             .ok_or("Codex opened a thread without an id")?
             .to_owned();
         {
-            let mut session = driver.lock();
+            let mut session = driver.session.locked();
             *session = Session::new(thread_id.clone());
             session.titled = thread["name"].as_str().and_then(history::title).is_some();
             session.starting_servers = servers.iter().cloned().collect();
@@ -640,7 +638,7 @@ impl Backend for Codex {
     }
 
     async fn cancel(&mut self) -> Result<(), String> {
-        let effects = self.driver.lock().cancel();
+        let effects = self.driver.session.locked().cancel();
         self.driver.apply(effects);
         Ok(())
     }
@@ -677,7 +675,8 @@ impl Backend for Codex {
     async fn rewind(&mut self, message_id: &str) -> Result<Option<String>, String> {
         let turn_id = self
             .driver
-            .lock()
+            .session
+            .locked()
             .message_turns
             .get(message_id)
             .cloned()
@@ -689,7 +688,7 @@ impl Backend for Codex {
                 json!({ "threadId": self.thread_id, "beforeTurnId": turn_id }),
             )
             .await?;
-        self.driver.lock().rewound(&turn_id);
+        self.driver.session.locked().rewound(&turn_id);
         Ok(None)
     }
 
@@ -716,7 +715,7 @@ impl Backend for Codex {
             servers,
         } = self;
         let (_, lines) = reading.stop().await.ok_or("Codex stopped")?;
-        let session = std::mem::replace(&mut *driver.lock(), Session::new(String::new()));
+        let session = std::mem::replace(&mut *driver.session.locked(), Session::new(String::new()));
         let state = CodexState {
             rpc: driver.rpc.state(),
             session,

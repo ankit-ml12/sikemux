@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sikemux_process::sync::Locked;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::acp::{bounded_text, current_choice, native as acp_native, permission, SessionEnd};
@@ -247,16 +248,12 @@ impl Chat {
     /// The launch the agent runs with now, which moves to another account or
     /// session when the agent is started again under the chat.
     pub(crate) fn current_launch(&self) -> ChatLaunch {
-        self.current
-            .lock()
-            .map(|launch| launch.clone())
-            .unwrap_or_else(|_| self.launch.clone())
+        self.current.locked().clone()
     }
 
     fn set_current(&self, launch: ChatLaunch) {
-        if let Ok(mut current) = self.current.lock() {
-            *current = launch;
-        }
+        let mut current = self.current.locked();
+        *current = launch;
     }
 
     pub(crate) fn emit(&self, kind: ChatEventKind, payload: Value) {
@@ -368,7 +365,7 @@ impl Chat {
 
     /// What the chat is doing, in the words every app shows an agent by.
     pub(crate) fn state_now(&self) -> &'static str {
-        if self.permissions.lock().is_ok_and(|held| !held.is_empty()) {
+        if !self.permissions.locked().is_empty() {
             "blocked"
         } else if self.turn_running()
             || self.held.load(Ordering::Acquire)
@@ -389,9 +386,7 @@ impl Chat {
     }
 
     fn publish(&self, state: &'static str) {
-        let Ok(mut published) = self.published.lock() else {
-            return;
-        };
+        let mut published = self.published.locked();
         if *published == state {
             return;
         }
@@ -466,13 +461,12 @@ impl Chat {
     }
 
     fn set_failure(&self, failure: Option<String>) {
-        if let Ok(mut slot) = self.failure.lock() {
-            *slot = failure;
-        }
+        let mut slot = self.failure.locked();
+        *slot = failure;
     }
 
     fn take_failure(&self) -> Option<String> {
-        self.failure.lock().ok().and_then(|mut slot| slot.take())
+        self.failure.locked().take()
     }
 
     /// Tells the agent's lead how its turn ended, once per turn.
@@ -501,16 +495,15 @@ impl Chat {
     /// The agent began work nobody here asked for, such as answering a
     /// background task that finished.
     pub(crate) fn note_cli_version(&self, version: &str) {
-        if let Ok(mut known) = self.cli_version.lock() {
-            *known = Some(version.to_owned()).filter(|version| !version.is_empty());
-        }
+        let mut known = self.cli_version.locked();
+        *known = Some(version.to_owned()).filter(|version| !version.is_empty());
     }
 
     /// How long to wait before starting the agent again after it stopped by
     /// itself, or none once it has stopped too often lately.
     pub(crate) fn restart_after(&self) -> Option<Duration> {
         let now = std::time::Instant::now();
-        let mut restarts = self.restarts.lock().ok()?;
+        let mut restarts = self.restarts.locked();
         restarts.retain(|at| now.duration_since(*at) < RESTART_WINDOW);
         if restarts.len() >= MAX_RESTARTS {
             return None;
@@ -532,9 +525,8 @@ impl Chat {
     }
 
     pub(crate) fn note_agent(&self, pid: u32) {
-        if let Ok(mut agent) = self.agent.lock() {
-            *agent = KeptAgent::of(pid);
-        }
+        let mut agent = self.agent.locked();
+        *agent = KeptAgent::of(pid);
     }
 
     /// Writes down where the chat stands, with how its loop says its turns go.
@@ -546,7 +538,7 @@ impl Chat {
             keys: Vec::new(),
             origin: self.origin.clone(),
             feed: self.feed.id().to_owned(),
-            agent: self.agent.lock().ok().and_then(|agent| *agent),
+            agent: *self.agent.locked(),
             working: self.turn_running() || self.held.load(Ordering::Acquire),
             prompt: progress.prompt.filter(|_| running).cloned(),
             offline: progress
@@ -558,7 +550,7 @@ impl Chat {
     }
 
     pub(crate) fn cli_version(&self) -> Option<String> {
-        self.cli_version.lock().ok().and_then(|known| known.clone())
+        self.cli_version.locked().clone()
     }
 
     pub(crate) fn work_started(&self) {
@@ -703,10 +695,7 @@ impl Chat {
         request: Value,
         reply: Value,
     ) -> bool {
-        let Ok(mut permissions) = self.permissions.lock() else {
-            answer(None);
-            return false;
-        };
+        let mut permissions = self.permissions.locked();
         let pending = PendingPermission {
             option_ids,
             answer,
@@ -728,25 +717,22 @@ impl Chat {
     /// Keeps asking a question an earlier core put to the person, who has
     /// been shown it already.
     pub(crate) fn hold_again(&self, asked: Asked, answer: Respond) {
-        if let Ok(mut permissions) = self.permissions.lock() {
-            permissions.insert(
-                asked.request_id,
-                PendingPermission {
-                    option_ids: asked.option_ids,
-                    answer,
-                    request: asked.request,
-                    at: asked.at,
-                    reply: asked.reply,
-                },
-            );
-        }
+        let mut permissions = self.permissions.locked();
+        permissions.insert(
+            asked.request_id,
+            PendingPermission {
+                option_ids: asked.option_ids,
+                answer,
+                request: asked.request,
+                at: asked.at,
+                reply: asked.reply,
+            },
+        );
     }
 
     /// The questions still put to the person, as plain data.
     fn asked(&self) -> Vec<Asked> {
-        let Ok(permissions) = self.permissions.lock() else {
-            return Vec::new();
-        };
+        let permissions = self.permissions.locked();
         let mut asked: Vec<Asked> = permissions
             .iter()
             .map(|(request_id, pending)| Asked {
@@ -776,14 +762,10 @@ impl Chat {
 
     fn attentions(&self) -> Vec<Attention> {
         self.permissions
-            .lock()
-            .map(|permissions| {
-                permissions
-                    .iter()
-                    .map(|(request_id, pending)| self.attention(request_id, pending))
-                    .collect()
-            })
-            .unwrap_or_default()
+            .locked()
+            .iter()
+            .map(|(request_id, pending)| self.attention(request_id, pending))
+            .collect()
     }
 
     fn announce(&self, event: &Event) {
@@ -801,10 +783,7 @@ impl Chat {
     }
 
     pub(crate) fn cancel_permissions(&self) {
-        let pending: Vec<_> = match self.permissions.lock() {
-            Ok(mut permissions) => permissions.drain().collect(),
-            Err(_) => return,
-        };
+        let pending: Vec<_> = self.permissions.locked().drain().collect();
         for (request_id, request) in pending {
             self.feed.forget_permission(&request_id);
             self.cleared(&request_id);
@@ -813,11 +792,7 @@ impl Chat {
     }
 
     fn pending_permissions(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self
-            .permissions
-            .lock()
-            .map(|permissions| permissions.keys().cloned().collect())
-            .unwrap_or_default();
+        let mut ids: Vec<String> = self.permissions.locked().keys().cloned().collect();
         ids.sort();
         ids
     }
@@ -825,10 +800,7 @@ impl Chat {
     fn reply_permission(&self, request_id: &str, option_id: Option<String>) -> CoreResult<()> {
         // Answered with the list held, so the answer is written to the agent
         // before the chat can let go of it.
-        let mut permissions = self
-            .permissions
-            .lock()
-            .map_err(|_| "ACP permission state is unavailable")?;
+        let mut permissions = self.permissions.locked();
         if self.releasing.load(Ordering::Acquire) {
             return Err(super::upgrade::UPDATING.into());
         }
@@ -1007,7 +979,8 @@ impl Chat {
     }
 
     async fn release(&self) -> Result<HandedChat, String> {
-        if let Ok(_permissions) = self.permissions.lock() {
+        {
+            let _permissions = self.permissions.locked();
             self.releasing.store(true, Ordering::Release);
         }
         let (reply, answer) = oneshot::channel();
@@ -1018,7 +991,7 @@ impl Chat {
             Ok(Err(_)) => return Err("it had stopped".into()),
             Err(_) => return Err("it did not let go of its agent in time".into()),
         };
-        let task = self.task.lock().ok().and_then(|mut task| task.take());
+        let task = self.task.locked().take();
         if let Some(task) = task {
             let _ = tokio::time::timeout(STOP_SETTLE, task).await;
         }
@@ -1187,7 +1160,7 @@ impl Chats {
     }
 
     pub(crate) fn get(&self, agent_id: &str) -> Option<Arc<Chat>> {
-        self.chats.lock().ok()?.get(agent_id).cloned()
+        self.chats.locked().get(agent_id).cloned()
     }
 
     /// The chats a client has taken up and hears the events of.
@@ -1200,17 +1173,11 @@ impl Chats {
     }
 
     pub(crate) fn ids(&self) -> Vec<String> {
-        self.chats
-            .lock()
-            .map(|chats| chats.keys().cloned().collect())
-            .unwrap_or_default()
+        self.chats.locked().keys().cloned().collect()
     }
 
     fn all(&self) -> Vec<Arc<Chat>> {
-        self.chats
-            .lock()
-            .map(|chats| chats.values().cloned().collect())
-            .unwrap_or_default()
+        self.chats.locked().values().cloned().collect()
     }
 
     pub(crate) fn running(&self, agent_id: &str) -> CoreResult<Arc<Chat>> {
@@ -1218,7 +1185,7 @@ impl Chats {
     }
 
     pub(crate) fn count(&self) -> usize {
-        self.chats.lock().map(|chats| chats.len()).unwrap_or(0)
+        self.chats.locked().len()
     }
 
     /// Whether every chat can let go of its agent now.
@@ -1272,9 +1239,7 @@ impl Chats {
 
     /// Whether `chat` was the agent's current one, which this removes.
     fn remove_if_current(&self, chat: &Chat) -> bool {
-        let Ok(mut chats) = self.chats.lock() else {
-            return false;
-        };
+        let mut chats = self.chats.locked();
         let current = chats
             .get(chat.agent_id())
             .is_some_and(|current| current.generation == chat.generation);
@@ -1285,14 +1250,11 @@ impl Chats {
     }
 
     fn take(&self, agent_id: &str) -> Option<Arc<Chat>> {
-        self.chats.lock().ok()?.remove(agent_id)
+        self.chats.locked().remove(agent_id)
     }
 
     fn take_all(&self) -> Vec<Arc<Chat>> {
-        self.chats
-            .lock()
-            .map(|mut chats| chats.drain().map(|(_, chat)| chat).collect())
-            .unwrap_or_default()
+        self.chats.locked().drain().map(|(_, chat)| chat).collect()
     }
 
     /// Ends the chat at once, killing the agent and everything it started.
@@ -1302,7 +1264,7 @@ impl Chats {
         chat.feed.close();
         chat.cancel_permissions();
         chat.end(None);
-        let task = chat.task.lock().ok()?.take()?;
+        let task = chat.task.locked().take()?;
         task.abort();
         Some(task)
     }
@@ -1354,7 +1316,7 @@ impl Chats {
         origin: Origin,
         kept: Option<(Arc<Feed>, Flags)>,
     ) -> CoreResult<(Arc<Chat>, mpsc::UnboundedReceiver<ChatCommand>)> {
-        let mut chats = self.chats.lock().map_err(CoreError::poisoned)?;
+        let mut chats = self.chats.locked();
         if chats.contains_key(&launch.agent_id) {
             return Err("ACP session is already running".into());
         }
@@ -1532,9 +1494,8 @@ fn launch(
         ending.cancel_permissions();
         ending.publish("stopped");
     });
-    if let Ok(mut slot) = chat.task.lock() {
-        *slot = Some(task);
-    }
+    let mut slot = chat.task.locked();
+    *slot = Some(task);
 }
 
 /// Starts a chat agent, with `subscriber` hearing it from its first event.

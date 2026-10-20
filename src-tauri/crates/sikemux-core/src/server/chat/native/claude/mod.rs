@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use agent_client_protocol::schema::v1::McpServer;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -275,12 +276,8 @@ impl Claude {
         let Some(message_id) = message_id else {
             return Uuid::new_v4().to_string();
         };
-        let used = self.aliases.contains_key(message_id)
-            || self
-                .shared
-                .lock()
-                .map(|shared| shared.sent.contains(message_id))
-                .unwrap_or(true);
+        let used =
+            self.aliases.contains_key(message_id) || self.shared.locked().sent.contains(message_id);
         let uuid = if used || Uuid::parse_str(message_id).is_err() {
             Uuid::new_v4().to_string()
         } else {
@@ -295,9 +292,7 @@ impl Claude {
 
         let uuid = Uuid::new_v4().to_string();
         {
-            let Ok(mut shared) = self.shared.lock() else {
-                return Err("The chat's state is unavailable".into());
-            };
+            let mut shared = self.shared.locked();
             if shared.turn.is_none() {
                 return Ok("promptRequired".into());
             }
@@ -348,9 +343,10 @@ impl Backend for Claude {
                 let records = replay::with_subagents(&path, replay::read_history(&path)?);
                 // Claude Code drops a message under an id its transcript already
                 // has, so a prompt sent again after a restart needs a new one.
-                if let Ok(mut shared) = shared.lock() {
-                    shared.sent.extend(replay::user_message_ids(&records));
-                }
+                shared
+                    .locked()
+                    .sent
+                    .extend(replay::user_message_ids(&records));
                 for (session, update) in replay::replay(&records, &id, &cwd) {
                     sink.update(&session, update);
                 }
@@ -475,9 +471,8 @@ impl Backend for Claude {
     async fn prompt(&mut self, turn: u64, prompt: Prompt) -> Result<(), String> {
         let content = content(&prompt)?;
         let uuid = self.uuid_for(prompt.message_id.as_deref());
-        let mut first = false;
-        if let Ok(mut shared) = self.shared.lock() {
-            first = shared.untitled.take().is_some();
+        let first = {
+            let mut shared = self.shared.locked();
             shared.sent.insert(uuid.clone());
             shared.turn = Some(Turn {
                 number: turn,
@@ -487,12 +482,11 @@ impl Backend for Claude {
                 cancelled: false,
                 failure: None,
             });
-        }
+            shared.untitled.take().is_some()
+        };
         let sent = self.writer().send(&user_message(&uuid, content, None));
         if sent.is_err() {
-            if let Ok(mut shared) = self.shared.lock() {
-                shared.turn = None;
-            }
+            self.shared.locked().turn = None;
         } else if first {
             self.name_chat(&prompt.text);
         }
@@ -507,15 +501,12 @@ impl Backend for Claude {
     }
 
     async fn cancel(&mut self) -> Result<(), String> {
-        let running = match self.shared.lock() {
-            Ok(mut shared) => match shared.turn.as_mut() {
-                Some(turn) => {
-                    turn.cancelled = true;
-                    true
-                }
-                None => false,
-            },
-            Err(_) => false,
+        let running = match self.shared.locked().turn.as_mut() {
+            Some(turn) => {
+                turn.cancelled = true;
+                true
+            }
+            None => false,
         };
         if !running {
             return Ok(());
@@ -533,9 +524,7 @@ impl Backend for Claude {
             .control
             .request(json!({ "subtype": "set_permission_mode", "mode": mode }))
             .await?;
-        if let Ok(mut shared) = self.shared.lock() {
-            shared.mode = mode.to_owned();
-        }
+        self.shared.locked().mode = mode.to_owned();
         Ok(())
     }
 
@@ -652,8 +641,7 @@ impl Backend for Claude {
         } = running;
         let (reader, lines) = reading.stop().await.ok_or("Claude stopped")?;
         let (reader, shared) = reader.into_state();
-        let shared =
-            std::mem::take(&mut *shared.lock().map_err(|_| "Claude's state is unavailable")?);
+        let shared = std::mem::take(&mut *shared.locked());
         let state = ClaudeState {
             control: control.state(),
             shared,
