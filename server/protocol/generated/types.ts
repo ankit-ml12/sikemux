@@ -132,6 +132,11 @@ export interface DeviceRegistration {
   signature: string;
 }
 
+/** What a device or host is called on the account, everywhere it is shown. */
+export interface DeviceRename {
+  name: string;
+}
+
 /** A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone. */
 export type DeviceRole = "host" | "client";
 export const deviceRoleValues: readonly DeviceRole[] = ["host", "client"];
@@ -787,6 +792,7 @@ export interface Definitions {
   DeviceKey: DeviceKey;
   DeviceList: DeviceList;
   DeviceRegistration: DeviceRegistration;
+  DeviceRename: DeviceRename;
   DeviceRole: DeviceRole;
   ErrorCode: ErrorCode;
   ErrorDetail: ErrorDetail;

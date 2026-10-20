@@ -1,6 +1,6 @@
 //! Every host on an account links with every other (ADR 0018). This host asks
-//! the account which hosts it has, and links with each it is not linked with,
-//! with a ticket it asks for itself.
+//! the account which hosts it has, links with each it is not linked with,
+//! with a ticket it asks for itself, and calls each what the account calls it.
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock};
@@ -131,6 +131,14 @@ async fn link_all(core: &Arc<Core>) -> CoreResult<()> {
         .core_id()
         .ok_or_else(|| CoreError::from("this host's key has not loaded"))?;
     let hosts: DeviceList = as_host(core, Method::GET, "/v1/devices?role=host", None).await?;
+    let names: Vec<(String, String)> = hosts
+        .devices
+        .iter()
+        .map(|host| (host.key.clone(), host.name.clone()))
+        .collect();
+    if core.remote.name_links(&names)? {
+        super::super::remote::announce(core);
+    }
     let linked: Vec<String> = core
         .remote
         .links()

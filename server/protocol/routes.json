@@ -94,6 +94,24 @@
       }
     },
     {
+      "method": "post",
+      "path": "/v1/devices/{key}/name",
+      "operationId": "renameDevice",
+      "summary": "Rename one of your devices or hosts, from the phone, the web app or the app on one of your hosts",
+      "auth": "sessionOrHost",
+      "request": "DeviceRename",
+      "responses": {
+        "200": {
+          "description": "The device under its new name. Every device hears device.changed.",
+          "body": "Device"
+        },
+        "404": {
+          "description": "None of your devices has that key.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
       "method": "put",
       "path": "/v1/devices/{key}/push",
       "operationId": "setPushToken",

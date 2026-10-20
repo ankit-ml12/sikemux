@@ -715,6 +715,23 @@ impl Remote {
             .cloned()
     }
 
+    /// Calls the linked hosts what the account calls them, answering whether
+    /// any name changed.
+    pub(crate) fn name_links(&self, names: &[(String, String)]) -> CoreResult<bool> {
+        self.change(|stored| {
+            let mut changed = false;
+            for link in &mut stored.links {
+                if let Some((_, name)) = names.iter().find(|(id, _)| *id == link.id) {
+                    if !name.is_empty() && link.name != *name {
+                        link.name.clone_from(name);
+                        changed = true;
+                    }
+                }
+            }
+            Ok(changed)
+        })
+    }
+
     /// Keeps a host this one is now linked with, replacing what it knew of it.
     pub(crate) fn add_link(&self, link: LinkedHost) -> CoreResult<()> {
         self.change(|stored| {
@@ -1674,6 +1691,9 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
             AccountEventType::AccountDeleted => {
                 released = Some(Some(RevokeReason::AccountDeleted));
             }
+            AccountEventType::DeviceChanged if event.role == Some(DeviceRole::Host) => {
+                core.hosts.relink.now();
+            }
             AccountEventType::DeviceAdded => {
                 if event.role == Some(DeviceRole::Host) {
                     core.hosts.relink.now();
@@ -1832,31 +1852,6 @@ pub(crate) struct DeviceChange {
     id: String,
     /// None unpairs the device.
     access: Option<DeviceAccess>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct LinkName {
-    id: String,
-    name: String,
-}
-
-/// Calls a linked host by another name here, which its agents are addressed by.
-pub(crate) fn rename_link(core: &Core, rename: LinkName) -> CoreResult<Pairing> {
-    let name = super::join::clean(&rename.name, super::join::NAME_LIMIT);
-    if name.is_empty() {
-        return Err("a host needs a name".into());
-    }
-    core.remote.change(|stored| {
-        let link = stored
-            .links
-            .iter_mut()
-            .find(|link| link.id == rename.id)
-            .ok_or_else(|| CoreError::from("that host is not linked with this one"))?;
-        link.name = name;
-        Ok(())
-    })?;
-    announce(core);
-    Ok(pairing(core))
 }
 
 #[derive(Deserialize)]

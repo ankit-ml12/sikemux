@@ -225,7 +225,6 @@ calls! { core, client, params;
     "answerPairing": Person => answer(remote::answer_pairing(&core, parse(params)?)?),
     "changeDevice": Person => answer(remote::change_device(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
-    "renameLink": Person => answer(remote::rename_link(&core, parse(params)?)?),
     "setRequireApproval": Person => answer(remote::set_require_approval(&core, parse(params)?)?),
     "questions": Watch, any_program => answer(questions::views(&core)),
     "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),

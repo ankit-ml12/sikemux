@@ -361,6 +361,25 @@ pub(crate) async fn approve_host_code(
     .await
 }
 
+/// Renames a device or host on the account, which every device and host
+/// shows from then on.
+#[tauri::command]
+pub async fn account_rename_device(
+    manager: State<'_, PtyManager>,
+    key: String,
+    name: String,
+) -> AppResult<()> {
+    let core = manager.client().await?;
+    host_request(
+        &core,
+        Method::POST,
+        &format!("/v1/devices/{key}/name"),
+        Some(&serde_json::json!({ "name": name })),
+    )
+    .await?;
+    Ok(())
+}
+
 /// Takes a device or host off the account, which revokes it on every host at
 /// once.
 #[tauri::command]

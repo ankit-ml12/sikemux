@@ -263,6 +263,7 @@ pub fn run() {
             hosts::hosts_list,
             hosts::install::host_install,
             account::account_remove_device,
+            account::account_rename_device,
             account::account_status,
             account::account_refresh_profile,
             account::account_sign_in,

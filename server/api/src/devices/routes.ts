@@ -4,6 +4,7 @@ import {
   type DeviceRole,
 } from "@sikemux/protocol";
 import { Hono } from "hono";
+import { sql } from "kysely";
 
 import type { ClerkBackend } from "../account/clerk.ts";
 import { revokeRemovedSession } from "../account/deletion.ts";
@@ -13,7 +14,9 @@ import {
   type AuthEnv,
   type Verifier,
 } from "../auth.ts";
+import { audit } from "../audit.ts";
 import type { Database } from "../db.ts";
+import { appendEvent } from "../events/log.ts";
 import { badRequest, readBody } from "../http.ts";
 import { joinRoutes } from "../join/routes.ts";
 import type { JoinSigner } from "../join/signer.ts";
@@ -113,6 +116,41 @@ export function deviceRoutes(
                   .warn({ err: error }, "could not revoke the session"),
             );
           return c.body(null, 204);
+        },
+      )
+      // Hosts sign this only for the person in their own app, as for removing a device.
+      .post(
+        "/:key/name",
+        allow("session", "host"),
+        perUser("rename", 30),
+        async (c) => {
+          const { userId, via } = c.get("identity");
+          const key = c.req.param("key");
+          const name = (await readBody(c, "DeviceRename")).name.trim();
+          if (!name) throw badRequest("The device needs a name.");
+          const row = await db.transaction().execute(async (trx) => {
+            const device = await ownedDevice(trx, userId, key, { lock: true });
+            await appendEvent(trx, {
+              userId,
+              type: "device.changed",
+              subject: key,
+              subjectRole: device.role as DeviceRole,
+            });
+            await audit(trx, {
+              userId,
+              actor: `user:${userId}`,
+              action: "device.renamed",
+              subject: key,
+              detail: { from: device.name, to: name, via },
+            });
+            return trx
+              .updateTable("devices")
+              .set({ name, updated_at: sql<Date>`now()` })
+              .where("key", "=", key)
+              .returningAll()
+              .executeTakeFirstOrThrow();
+          });
+          return c.json(toDevice(row));
         },
       )
       .get(

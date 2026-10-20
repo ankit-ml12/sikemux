@@ -218,4 +218,6 @@ pub(super) async fn answer(core: Arc<Core>, connection: Connection) {
     reply["result"] = "allowed".into();
     incoming.reply(Ok(reply)).await;
     adopt(&core, &host, connection);
+    // The account's name for the new host replaces the one it gave itself.
+    core.hosts.relink.now();
 }

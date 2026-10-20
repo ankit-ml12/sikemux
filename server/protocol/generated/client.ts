@@ -10,6 +10,7 @@ import type {
   Device,
   DeviceList,
   DeviceRegistration,
+  DeviceRename,
   DeviceRole,
   Health,
   HostSignIn,
@@ -59,6 +60,9 @@ export function apiClient(send: Send) {
     /** Take one of your devices off your account, from the phone, the web app or the app on one of your hosts. */
     removeDevice: (key: string) =>
       send<void>("DELETE", `/v1/devices/${encodeURIComponent(key)}`),
+    /** Rename one of your devices or hosts, from the phone, the web app or the app on one of your hosts. */
+    renameDevice: (key: string, body: DeviceRename) =>
+      send<Device>("POST", `/v1/devices/${encodeURIComponent(key)}/name`, body),
     /** Deliver this phone's notifications to a push token. */
     setPushToken: (key: string, body: PushTokenRegistration) =>
       send<PushTokenState>(

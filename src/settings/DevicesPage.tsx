@@ -18,7 +18,6 @@ import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
 import { IconGlobe, IconLock, IconMore, IconPencil, IconTrash } from "../ui/Icons";
 import { QrCode } from "./QrCode";
-import { coreCall } from "../api/core";
 import { confirmDialog } from "../state/dialog";
 import { TreeContextMenu } from "../rail/FileTree";
 import { SettingsPage, SettingsRow, SettingsRows } from "./SettingsLayout";
@@ -370,7 +369,7 @@ function HostsSection({ now }: { now: number }) {
     const rename = async (host: LinkedHost, name: string) => {
         setRenaming(null);
         if (!name.trim() || name.trim() === host.name) return;
-        await coreCall("renameLink", { id: host.id, name: name.trim() }).catch(reportError(`Rename ${host.name}`));
+        await accountApi.renameDevice(host.id, name.trim()).catch(reportError(`Rename ${host.name}`));
         reread();
     };
     const remove = async (host: LinkedHost) => {

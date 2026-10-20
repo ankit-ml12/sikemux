@@ -164,7 +164,7 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
     };
     const rename = async () => {
         const name = await promptDialog({ title: `Rename ${host.name}`, label: "Name", initial: host.name, confirmLabel: "Rename" });
-        if (name?.trim()) await coreCall("renameLink", { id: host.id, name: name.trim() }).catch(reportError(`Rename ${host.name}`));
+        if (name?.trim()) await accountApi.renameDevice(host.id, name.trim()).catch(reportError(`Rename ${host.name}`));
     };
     const remove = async () => {
         const confirmed = await confirmDialog({

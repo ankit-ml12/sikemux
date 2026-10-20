@@ -188,6 +188,13 @@ pub struct DeviceRegistration {
     pub signature: String,
 }
 
+/// What a device or host is called on the account, everywhere it is shown.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceRename {
+    pub name: String,
+}
+
 /// A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DeviceRole {
@@ -715,6 +722,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "DeviceKey" => through::<DeviceKey>(json),
         "DeviceList" => through::<DeviceList>(json),
         "DeviceRegistration" => through::<DeviceRegistration>(json),
+        "DeviceRename" => through::<DeviceRename>(json),
         "DeviceRole" => through::<DeviceRole>(json),
         "ErrorCode" => through::<ErrorCode>(json),
         "ErrorDetail" => through::<ErrorDetail>(json),

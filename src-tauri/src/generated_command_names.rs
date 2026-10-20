@@ -15,6 +15,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "hosts_list",
     "host_install",
     "account_remove_device",
+    "account_rename_device",
     "account_status",
     "account_refresh_profile",
     "account_sign_in",

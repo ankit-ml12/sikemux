@@ -216,6 +216,14 @@ export const schema = {
       required: ["key", "role", "name", "platform", "nonce", "signature"],
       additionalProperties: false,
     },
+    DeviceRename: {
+      description:
+        "What a device or host is called on the account, everywhere it is shown.",
+      type: "object",
+      properties: { name: { type: "string", minLength: 1, maxLength: 64 } },
+      required: ["name"],
+      additionalProperties: false,
+    },
     DeviceRole: {
       description:
         "A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone.",
