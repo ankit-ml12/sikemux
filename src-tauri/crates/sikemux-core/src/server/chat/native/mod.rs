@@ -10,6 +10,7 @@ mod json;
 mod muse;
 mod parts;
 mod patch;
+mod pending;
 mod process;
 mod rpc;
 mod servers;

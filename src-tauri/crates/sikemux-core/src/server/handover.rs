@@ -469,7 +469,27 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 }
                 state["format"] = Value::from(6);
             }
-            6 => return Ok(state),
+            6 => {
+                // Format 6 cores knew whether a chat's agent names the
+                // JSON-RPC version in every message without keeping it, and
+                // wrote a Claude chat's request for a title as `{ "title": true }`.
+                let chats = state.get_mut("liveChats").and_then(Value::as_array_mut);
+                for chat in chats.into_iter().flatten() {
+                    let versioned = chat["launch"]["provider"] != "codex";
+                    let rpc = chat.pointer_mut("/backend/rpc");
+                    if let Some(rpc) = rpc.and_then(Value::as_object_mut) {
+                        rpc.insert("versioned".into(), json!(versioned));
+                    }
+                    let control = chat.pointer_mut("/backend/control");
+                    for entry in control.and_then(Value::as_array_mut).into_iter().flatten() {
+                        if entry[1] == json!({ "title": true }) {
+                            entry[1] = json!("title");
+                        }
+                    }
+                }
+                state["format"] = Value::from(7);
+            }
+            7 => return Ok(state),
             other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
         }
     }
@@ -1032,7 +1052,7 @@ mod tests {
     #[test]
     fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
         let current = json!({
-            "format": 6,
+            "format": 7,
             "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude", "notice": null }],
             "liveChats": [],
             "harness": { "mailbox": { "waiting": {} }, "questions": { "open": [] } },

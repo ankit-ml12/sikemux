@@ -15,6 +15,7 @@ use super::super::super::reset::{month_day, WallClock, Zone};
 use super::super::super::states::{self, Held, Subagent, Task as TaskState};
 use super::super::super::Respond;
 use super::super::json::{self, text};
+use super::super::pending::{Answered, Purpose};
 use super::super::process::Reads;
 use super::super::session::{Sink, TurnEnd};
 use super::control::Control;
@@ -645,8 +646,8 @@ impl Reader {
     }
 
     /// The answer to a control request sent with `purpose`.
-    fn purpose_answered(&self, purpose: &Value, result: Result<Value, String>) {
-        if purpose.get("title").is_some() {
+    fn purpose_answered(&self, purpose: &Purpose, result: Answered) {
+        if *purpose == Purpose::Title {
             let title = result
                 .ok()
                 .and_then(|named| feed::title(text(&named, "title")?));

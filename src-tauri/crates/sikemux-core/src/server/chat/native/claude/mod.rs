@@ -26,6 +26,7 @@ use crate::sessions::{self, roots::account_root};
 use super::super::Respond;
 use super::file_link;
 use super::parts::{context_text, parts, Part};
+use super::pending::Purpose;
 use super::process::{Lines, Process, Reading, Released, Writer};
 use super::servers;
 use super::session::{Backend, Opened, Prompt, Sink};
@@ -51,7 +52,7 @@ struct Running {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeState {
-    control: Vec<(String, Value)>,
+    control: Vec<(String, Purpose)>,
     shared: Shared,
     reader: ReaderState,
     launch: ChatLaunch,
@@ -224,14 +225,10 @@ impl Claude {
         };
         match initialized {
             Ok(response) => Ok((running, response)),
-            Err(error) => {
-                let said = running.process.stderr();
-                Err(if said.is_empty() {
-                    format!("Claude did not start: {error}")
-                } else {
-                    format!("Claude did not start: {said}")
-                })
-            }
+            Err(error) => Err(format!(
+                "Claude did not start: {}",
+                running.process.start_error(error)
+            )),
         }
     }
 
@@ -248,7 +245,7 @@ impl Claude {
         }
         let _ = self.running.control.send_for(
             json!({ "subtype": "generate_session_title", "description": description, "persist": true }),
-            json!({ "title": true }),
+            Purpose::Title,
         );
     }
 

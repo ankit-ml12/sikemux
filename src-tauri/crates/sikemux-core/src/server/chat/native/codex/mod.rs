@@ -23,10 +23,11 @@ use crate::protocol::ChatLaunch;
 use super::super::Respond;
 use super::file_link;
 use super::parts::{context_text, parts, picture, Part};
+use super::pending::{Answered, Purpose};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::servers;
-use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
+use super::session::{self, Backend, Opened, Prompt, Sink, TurnEnd};
 use approvals::Question;
 use commands::Command;
 use config::{Mode, Models};
@@ -34,9 +35,6 @@ use state::{user_input_told, Effect, Reply, Session};
 
 /// How long a finished turn waits for the subagents it started.
 const SUBAGENT_WAIT: Duration = Duration::from_secs(10 * 60);
-
-/// How many subagent threads a resumed history reads.
-const MAX_SUBAGENT_THREADS: usize = 64;
 
 /// What the reader and the chat's loop share.
 #[derive(Clone)]
@@ -81,24 +79,22 @@ impl Driver {
         let _ = self.rpc.send_for(
             "turn/interrupt",
             json!({ "threadId": thread_id, "turnId": turn_id }),
-            json!({ "interrupt": turn_id }),
+            Purpose::Interrupt(turn_id),
         );
     }
 
     /// The answer to a request sent with `purpose`.
-    fn purpose_answered(&self, purpose: Value, result: Result<Value, Value>) {
-        if let Some(turn_id) = purpose["interrupt"].as_str() {
-            if result.is_ok() {
-                let effects = self.lock().interrupted(turn_id);
+    fn purpose_answered(&self, purpose: Purpose, result: Answered) {
+        if result.is_err() {
+            return;
+        }
+        match purpose {
+            Purpose::Interrupt(turn_id) => {
+                let effects = self.lock().interrupted(&turn_id);
                 self.apply(effects);
             }
-        } else if let Some(steer) = purpose.get("steer") {
-            if result.is_ok() {
-                let paths: Vec<String> =
-                    serde_json::from_value(steer["paths"].clone()).unwrap_or_default();
-                self.sink
-                    .prompted(steer["text"].as_str().unwrap_or_default(), &paths);
-            }
+            Purpose::Steer { text, paths } => self.sink.prompted(&text, &paths),
+            _ => {}
         }
     }
 
@@ -146,15 +142,9 @@ impl Driver {
                 .rpc
                 .refuse(id, &format!("Sikemux does not handle {method}")),
             Reply::Ask(question) => {
-                let request = question.request.clone();
-                let reply = match serde_json::to_value(&question) {
-                    Ok(question) => json!({ "id": id, "question": question }),
-                    Err(_) => {
-                        self.rpc.respond(id, question.answer(None));
-                        return;
-                    }
-                };
-                self.sink.ask(request, reply.clone(), self.responder(reply));
+                let reply = json!({ "id": id, "question": question });
+                self.sink
+                    .ask(question.request, reply.clone(), self.responder(reply));
             }
         }
     }
@@ -208,74 +198,55 @@ pub(crate) struct Codex {
     servers: Vec<String>,
 }
 
-/// Why starting failed, with the last thing Codex printed when it stopped.
-fn start_error(process: &Process, error: String) -> String {
-    let stderr = process.stderr();
-    match stderr.lines().rev().find(|line| !line.trim().is_empty()) {
-        Some(line) => format!("{error}: {}", line.trim()),
-        None => error,
-    }
-}
-
 async fn list_models(rpc: &Rpc) -> Result<Models, String> {
-    let mut models = Vec::new();
-    let mut cursor = Value::Null;
-    loop {
-        let page = rpc
-            .request(
-                "model/list",
-                json!({ "cursor": cursor, "limit": null, "includeHidden": false }),
-            )
-            .await?;
-        models.extend(page["data"].as_array().cloned().unwrap_or_default());
-        match page["nextCursor"].as_str() {
-            Some(next) if cursor != next => cursor = Value::from(next),
-            _ => break,
-        }
-    }
-    Ok(Models(models))
+    let pages = rpc
+        .pages(
+            "model/list",
+            |cursor| json!({ "cursor": cursor, "limit": null, "includeHidden": false }),
+        )
+        .await?;
+    Ok(Models(data(pages)))
 }
 
 async fn list_turns(rpc: &Rpc, thread_id: &str) -> Result<Vec<Value>, String> {
-    let mut turns = Vec::new();
-    let mut cursor = Value::Null;
-    loop {
-        let page = rpc
-            .request(
-                "thread/turns/list",
-                json!({
-                    "threadId": thread_id,
-                    "cursor": cursor,
-                    "itemsView": "full",
-                    "sortDirection": "asc",
-                }),
-            )
-            .await?;
-        turns.extend(page["data"].as_array().cloned().unwrap_or_default());
-        match page["nextCursor"].as_str() {
-            Some(next) if cursor != next => cursor = Value::from(next),
-            _ => break,
-        }
-    }
-    Ok(turns)
+    let pages = rpc
+        .pages("thread/turns/list", |cursor| {
+            json!({
+                "threadId": thread_id,
+                "cursor": cursor,
+                "itemsView": "full",
+                "sortDirection": "asc",
+            })
+        })
+        .await?;
+    Ok(data(pages))
+}
+
+/// What each page listed, in order.
+fn data(pages: Vec<Value>) -> Vec<Value> {
+    pages
+        .into_iter()
+        .flat_map(|mut page| match page["data"].take() {
+            Value::Array(listed) => listed,
+            _ => Vec::new(),
+        })
+        .collect()
 }
 
 /// The turns of every subagent thread a history started, and theirs.
 async fn subagent_histories(rpc: &Rpc, turns: &[Value]) -> HashMap<String, Vec<Value>> {
-    let mut histories = HashMap::new();
-    let mut queue = history::subagent_threads(turns);
-    while let Some(thread) = queue.pop() {
-        if histories.contains_key(&thread) || histories.len() >= MAX_SUBAGENT_THREADS {
-            continue;
-        }
-        let turns = list_turns(rpc, &thread).await.unwrap_or_else(|error| {
+    let read = |thread: String| async move {
+        list_turns(rpc, &thread).await.unwrap_or_else(|error| {
             eprintln!("sikemux core: Codex subagent history {thread} could not be read: {error}");
             Vec::new()
-        });
-        queue.extend(history::subagent_threads(&turns));
-        histories.insert(thread, turns);
-    }
-    histories
+        })
+    };
+    session::subagent_histories(
+        history::subagent_threads(turns),
+        read,
+        history::subagent_threads,
+    )
+    .await
 }
 
 /// Codex's input for the prompt, the way Codex's adapter writes it, with
@@ -312,7 +283,10 @@ impl Codex {
             .start_for(
                 "turn/steer",
                 json!({ "threadId": self.thread_id, "expectedTurnId": turn_id, "input": input }),
-                Some(json!({ "steer": { "text": prompt.text, "paths": prompt.paths } })),
+                Some(Purpose::Steer {
+                    text: prompt.text.clone(),
+                    paths: prompt.paths.clone(),
+                }),
             )
             .map(Some)
             .map_err(|error| error_text(&error))
@@ -474,14 +448,14 @@ impl Backend for Codex {
             ["app-server".to_owned()],
             Vec::<(String, String)>::new(),
         )?;
-        let rpc = Rpc::new(writer);
+        let rpc = Rpc::new(writer, false);
         let driver = Driver {
             rpc: rpc.clone(),
             sink,
             session: Arc::new(Mutex::new(Session::new(String::new()))),
         };
         let (reading, _) = Reading::start(driver.clone(), lines);
-        let failed = |error: String| start_error(&process, error);
+        let failed = |error: String| process.start_error(error);
 
         let initialized = rpc
             .request(
@@ -768,7 +742,7 @@ impl Backend for Codex {
         let state: CodexState = serde_json::from_value(state).map_err(|error| error.to_string())?;
         let waiting = state.session.waiting_turn();
         let driver = Driver {
-            rpc: Rpc::restored(writer, false, state.rpc),
+            rpc: Rpc::restored(writer, state.rpc),
             sink,
             session: Arc::new(Mutex::new(state.session)),
         };

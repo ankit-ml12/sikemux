@@ -21,6 +21,7 @@ use crate::acp::{air, native, permission_mode_id, prompt_blocks};
 use crate::protocol::ChatLaunch;
 
 use super::super::Respond;
+use super::pending::{Answered, Purpose};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::servers;
@@ -37,15 +38,6 @@ fn describe(error: &Value) -> String {
 
 fn params(message: impl Serialize) -> Result<Value, String> {
     serde_json::to_value(message).map_err(|error| error.to_string())
-}
-
-/// Why starting failed, with the last thing the agent printed when it stopped.
-fn start_error(process: &Process, error: String) -> String {
-    let stderr = process.stderr();
-    match stderr.lines().rev().find(|line| !line.trim().is_empty()) {
-        Some(line) => format!("{error}: {}", line.trim()),
-        None => error,
-    }
 }
 
 /// The turn last prompted, the last one asked to stop while it ran, and
@@ -131,26 +123,27 @@ impl Driver {
             }
             None => RequestPermissionOutcome::Cancelled,
         };
-        let response = serde_json::to_value(RequestPermissionResponse::new(outcome))
-            .unwrap_or_else(|_| json!({}));
-        self.rpc.respond(reply["id"].clone(), response);
+        self.rpc.respond(
+            reply["id"].clone(),
+            json!(RequestPermissionResponse::new(outcome)),
+        );
     }
 
     /// The answer to a request sent with `purpose`.
-    fn purpose_answered(&self, purpose: Value, result: Result<Value, Value>) {
-        if let Some(turn) = purpose["prompt"].as_u64() {
-            self.answered(turn, result);
-        } else if let Some(steer) = purpose.get("steer") {
-            if result.is_ok_and(|answer| answer["outcome"] == "injected") {
-                let paths: Vec<String> =
-                    serde_json::from_value(steer["paths"].clone()).unwrap_or_default();
-                self.sink
-                    .prompted(steer["text"].as_str().unwrap_or_default(), &paths);
+    fn purpose_answered(&self, purpose: Purpose, result: Answered) {
+        match purpose {
+            Purpose::Prompt(turn) => self.answered(turn, result),
+            Purpose::Steer { text, paths } => {
+                if result.is_ok_and(|answer| answer["outcome"] == "injected") {
+                    self.sink.prompted(&text, &paths);
+                }
             }
-        } else if purpose.get("stopTask").is_some() {
-            if let Err(error) = result {
-                self.sink.error(describe(&error));
+            Purpose::StopTask(_) => {
+                if let Err(error) = result {
+                    self.sink.error(describe(&error));
+                }
             }
+            _ => {}
         }
     }
 }
@@ -344,7 +337,10 @@ impl Acp {
         if !self.steering {
             return Err("this agent cannot take a message mid-turn".to_owned());
         }
-        let purpose = json!({ "steer": { "text": prompt.text, "paths": prompt.paths } });
+        let purpose = Purpose::Steer {
+            text: prompt.text.clone(),
+            paths: prompt.paths.clone(),
+        };
         let blocks = prompt_blocks(
             prompt.text,
             prompt.paths,
@@ -375,12 +371,12 @@ impl Backend for Acp {
         let (process, writer, lines) =
             Process::spawn(launch, Vec::<String>::new(), Vec::<(String, String)>::new())?;
         let driver = Driver {
-            rpc: Rpc::versioned(writer),
+            rpc: Rpc::new(writer, true),
             sink,
             turns: Arc::default(),
         };
         let (reading, _) = Reading::start(driver.clone(), lines);
-        let failed = |error: String| start_error(&process, error);
+        let failed = |error: String| process.start_error(error);
 
         let initialize = InitializeRequest::new(ProtocolVersion::V1)
             .client_capabilities(air::client_capabilities())
@@ -455,7 +451,7 @@ impl Backend for Acp {
         self.driver.rpc.send_for(
             AGENT_METHOD_NAMES.session_prompt,
             params(request)?,
-            json!({ "prompt": turn }),
+            Purpose::Prompt(turn),
         )
     }
 
@@ -519,7 +515,7 @@ impl Backend for Acp {
         self.driver.rpc.send_for(
             air::StopAsyncTask::METHOD,
             params(stop)?,
-            json!({ "stopTask": task_id }),
+            Purpose::StopTask(task_id.to_owned()),
         )
     }
 
@@ -579,7 +575,7 @@ impl Backend for Acp {
     ) -> Result<Self, String> {
         let state: AcpState = serde_json::from_value(state).map_err(|error| error.to_string())?;
         let driver = Driver {
-            rpc: Rpc::restored(writer, true, state.rpc),
+            rpc: Rpc::restored(writer, state.rpc),
             sink,
             turns: Arc::new(Mutex::new(state.turns)),
         };

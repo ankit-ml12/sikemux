@@ -2,6 +2,7 @@
 //! its own protocol: turns, permission requests, accounts and starting the
 //! agent again under the chat.
 
+use std::collections::HashMap;
 use std::os::fd::OwnedFd;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -290,6 +291,32 @@ fn after_turn(chat: Arc<Chat>, command: ChatCommand) {
 }
 
 /// The session an agent opened, as the chat reads it.
+/// How many subagents' histories a resumed chat reads.
+const MAX_SUBAGENT_HISTORIES: usize = 64;
+
+/// The histories of the subagents `first` names and of theirs, each read by
+/// `read`, whose subagents `children` names.
+pub(crate) async fn subagent_histories<F>(
+    first: Vec<String>,
+    read: impl Fn(String) -> F,
+    children: impl Fn(&[Value]) -> Vec<String>,
+) -> HashMap<String, Vec<Value>>
+where
+    F: std::future::Future<Output = Vec<Value>>,
+{
+    let mut histories = HashMap::new();
+    let mut queue = first;
+    while let Some(child) = queue.pop() {
+        if histories.contains_key(&child) || histories.len() >= MAX_SUBAGENT_HISTORIES {
+            continue;
+        }
+        let said = read(child.clone()).await;
+        queue.extend(children(&said));
+        histories.insert(child, said);
+    }
+    histories
+}
+
 pub(crate) struct Opened {
     pub session_id: String,
     pub capabilities: Value,
@@ -504,10 +531,7 @@ pub(crate) async fn run<B: Backend>(
             let start = state.start();
             crate::server::chat::offered::remember(&provider, &start.setup);
             chat.mark_ready(start.clone());
-            chat.emit(
-                ChatEventKind::Ready,
-                serde_json::to_value(&start).unwrap_or_else(|_| json!({})),
-            );
+            chat.emit(ChatEventKind::Ready, json!(start));
             for update in carried.into_iter().chain(notice) {
                 sink.update(&state.session_id, update);
             }
@@ -853,10 +877,7 @@ pub(crate) async fn run<B: Backend>(
                     state.session_id = moved;
                     let start = state.start();
                     chat.mark_ready(start.clone());
-                    chat.emit(
-                        ChatEventKind::Ready,
-                        serde_json::to_value(&start).unwrap_or_else(|_| json!({})),
-                    );
+                    chat.emit(ChatEventKind::Ready, json!(start));
                 }
                 let _ = reply.send(Ok(()));
                 state.fresh_turn(&chat);

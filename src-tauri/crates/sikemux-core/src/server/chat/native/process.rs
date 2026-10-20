@@ -254,15 +254,23 @@ impl Process {
             .unwrap_or_default()
     }
 
+    /// `error`, with the last thing the agent wrote to its error stream.
+    pub fn start_error(&self, error: String) -> String {
+        let stderr = self.stderr();
+        match stderr
+            .lines()
+            .rev()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+        {
+            Some(line) => format!("{error}: {line}"),
+            None => error,
+        }
+    }
+
     /// Why the agent stopped, in words for the chat.
     pub async fn ended(&self) -> String {
-        let status = self.exited().await;
-        let stderr = self.stderr();
-        let last = stderr.lines().rev().find(|line| !line.trim().is_empty());
-        match last {
-            Some(line) => format!("{status}: {}", line.trim()),
-            None => status,
-        }
+        self.start_error(self.exited().await)
     }
 
     /// Lets go of the agent without stopping it: everything already sent to

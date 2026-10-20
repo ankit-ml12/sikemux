@@ -24,18 +24,16 @@ use super::super::Respond;
 use super::file_link;
 use super::json::text;
 use super::parts::{context_text, parts, picture, Part};
+use super::pending::{Answered, Purpose};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::servers;
-use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
+use super::session::{self, Backend, Opened, Prompt, Sink, TurnEnd};
 use approvals::Question;
 use commands::Command;
 use config::{Mode, Models};
 use items::Follow;
 use state::{Effect, Session};
-
-/// How many subagent conversations a resumed history reads.
-const MAX_SUBAGENT_SESSIONS: usize = 64;
 
 /// The largest picture handed to Muse, which takes at most ten megabytes in
 /// one message once it is base64.
@@ -79,12 +77,12 @@ impl Driver {
             Follow::Subagent(child) => (
                 "view/subscribe",
                 json!({ "sessionId": child }),
-                json!({ "subscribe": child }),
+                Purpose::Subscribe(child),
             ),
             Follow::ReadSubagent { child, result } => (
                 "session/read",
                 json!({ "sessionId": child, "excludeItems": false }),
-                json!({ "readSubagent": { "child": child, "result": result } }),
+                Purpose::ReadSubagent { child, result },
             ),
             Follow::Patch {
                 session,
@@ -93,7 +91,7 @@ impl Driver {
             } => (
                 "item/readOutput",
                 json!({ "sessionId": session, "itemId": call, "outputRef": output_ref }),
-                json!({ "patch": { "session": session, "call": call } }),
+                Purpose::Patch { session, call },
             ),
         };
         if let Err(error) = self.rpc.send_for(method, params, purpose) {
@@ -102,47 +100,33 @@ impl Driver {
     }
 
     /// The answer to a request sent with `purpose`.
-    fn purpose_answered(&self, purpose: Value, result: Result<Value, Value>) {
-        if let Some(child) = purpose["subscribe"].as_str() {
-            if let Err(error) = result {
-                eprintln!(
-                    "sikemux core: Muse subagent {child} could not be followed: {}",
-                    error_text(&error)
-                );
-            }
-        } else if let Some(read) = purpose.get("readSubagent") {
-            let child = read["child"].as_str().unwrap_or_default();
-            let said: Vec<Value> = result
-                .ok()
-                .and_then(|read| read["history"]["items"].as_array().cloned())
-                .unwrap_or_default();
-            let effects = if said.iter().any(|item| item["kind"] != "userMessage") {
-                self.lock().told_subagent(child, &said)
-            } else {
-                read["result"]
-                    .as_str()
-                    .map(|result| self.lock().subagent_said(child, result))
-                    .unwrap_or_default()
-            };
-            self.apply(effects);
-        } else if let Some(patch) = purpose.get("patch") {
-            if let Ok(read) = result {
-                let session = patch["session"].as_str().unwrap_or_default();
-                let call = patch["call"].as_str().unwrap_or_default();
-                self.show_patch(session, call, &read);
-            }
-        } else if let Some(turn_id) = purpose["interrupt"].as_str() {
-            if result.is_ok() {
-                let effects = self.lock().interrupted(turn_id);
+    fn purpose_answered(&self, purpose: Purpose, result: Answered) {
+        match (purpose, result) {
+            (Purpose::Subscribe(child), Err(error)) => eprintln!(
+                "sikemux core: Muse subagent {child} could not be followed: {}",
+                error_text(&error)
+            ),
+            (Purpose::ReadSubagent { child, result }, read) => {
+                let said: Vec<Value> = read
+                    .ok()
+                    .and_then(|read| read["history"]["items"].as_array().cloned())
+                    .unwrap_or_default();
+                let effects = if said.iter().any(|item| item["kind"] != "userMessage") {
+                    self.lock().told_subagent(&child, &said)
+                } else {
+                    result
+                        .map(|result| self.lock().subagent_said(&child, &result))
+                        .unwrap_or_default()
+                };
                 self.apply(effects);
             }
-        } else if let Some(steer) = purpose.get("steer") {
-            if result.is_ok() {
-                let paths: Vec<String> =
-                    serde_json::from_value(steer["paths"].clone()).unwrap_or_default();
-                self.sink
-                    .prompted(steer["text"].as_str().unwrap_or_default(), &paths);
+            (Purpose::Patch { session, call }, Ok(read)) => self.show_patch(&session, &call, &read),
+            (Purpose::Interrupt(turn_id), Ok(_)) => {
+                let effects = self.lock().interrupted(&turn_id);
+                self.apply(effects);
             }
+            (Purpose::Steer { text, paths }, Ok(_)) => self.sink.prompted(&text, &paths),
+            _ => {}
         }
     }
 
@@ -178,7 +162,7 @@ impl Driver {
         let _ = self.rpc.send_for(
             "turn/interrupt",
             json!({ "sessionId": session_id, "commandId": command_id(), "turnId": turn_id }),
-            json!({ "interrupt": turn_id }),
+            Purpose::Interrupt(turn_id),
         );
     }
 
@@ -192,12 +176,9 @@ impl Driver {
             return;
         }
         let wire_session = params["sessionId"].as_str().unwrap_or_default().to_owned();
-        let request = question.request.clone();
-        let Ok(question) = serde_json::to_value(&question) else {
-            return;
-        };
         let reply = json!({ "session": wire_session, "question": question });
-        self.sink.ask(request, reply.clone(), self.responder(reply));
+        self.sink
+            .ask(question.request, reply.clone(), self.responder(reply));
     }
 
     fn responder(&self, reply: Value) -> Respond {
@@ -302,15 +283,6 @@ struct MuseState {
     skills: Value,
 }
 
-/// Why starting failed, with the last thing Muse printed when it stopped.
-fn start_error(process: &Process, error: String) -> String {
-    let stderr = process.stderr();
-    match stderr.lines().rev().find(|line| !line.trim().is_empty()) {
-        Some(line) => format!("{error}: {}", line.trim()),
-        None => error,
-    }
-}
-
 /// A running `muse serve` and the connection to it.
 struct Host {
     process: Process,
@@ -332,7 +304,7 @@ impl Host {
         let mut args = mode.serve_args();
         args.splice(1..1, std::mem::take(&mut bare.args));
         let (process, writer, lines) = Process::spawn(&bare, args, Vec::<(String, String)>::new())?;
-        let rpc = Rpc::versioned(writer);
+        let rpc = Rpc::new(writer, true);
         let driver = Driver { rpc, sink, session };
         let (reading, _) = Reading::start(driver.clone(), lines);
         let initialized = driver
@@ -348,11 +320,11 @@ impl Host {
                 }),
             )
             .await
-            .map_err(|error| start_error(&process, error))?;
+            .map_err(|error| process.start_error(error))?;
         driver
             .rpc
             .notify("initialized", Value::Null)
-            .map_err(|error| start_error(&process, error))?;
+            .map_err(|error| process.start_error(error))?;
         let session_tools = initialized["grantedCapabilities"]
             .as_array()
             .is_some_and(|granted| granted.iter().any(|name| name == "sessionMcp"));
@@ -399,26 +371,17 @@ async fn list_models(rpc: &Rpc) -> Models {
 
 /// The conversations of every subagent `items` started, and theirs.
 async fn subagent_histories(rpc: &Rpc, items: &[Value]) -> HashMap<String, Vec<Value>> {
-    let mut histories = HashMap::new();
-    let mut queue = history::subagents(items);
-    while let Some(child) = queue.pop() {
-        if histories.contains_key(&child) || histories.len() >= MAX_SUBAGENT_SESSIONS {
-            continue;
-        }
-        let read = rpc
-            .request(
-                "session/read",
-                json!({ "sessionId": child, "excludeItems": false }),
-            )
-            .await;
-        let said: Vec<Value> = read
-            .ok()
-            .and_then(|read| read["history"]["items"].as_array().cloned())
-            .unwrap_or_default();
-        queue.extend(history::subagents(&said));
-        histories.insert(child, said);
-    }
-    histories
+    let read = |child: String| async move {
+        rpc.request(
+            "session/read",
+            json!({ "sessionId": child, "excludeItems": false }),
+        )
+        .await
+        .ok()
+        .and_then(|read| read["history"]["items"].as_array().cloned())
+        .unwrap_or_default()
+    };
+    session::subagent_histories(history::subagents(items), read, history::subagents).await
 }
 
 /// A file the person attached, as Muse's input for it: the picture itself
@@ -484,7 +447,10 @@ impl Muse {
                     "expectedTurnId": turn_id,
                     "input": input,
                 }),
-                Some(json!({ "steer": { "text": prompt.text, "paths": prompt.paths } })),
+                Some(Purpose::Steer {
+                    text: prompt.text.clone(),
+                    paths: prompt.paths.clone(),
+                }),
             )
             .map(Some)
             .map_err(|error| error_text(&error))
@@ -610,7 +576,7 @@ impl Muse {
     ) -> Result<(Value, Vec<Value>), String> {
         let config = host.session_config(launch);
         let rpc = &host.driver.rpc;
-        let failed = |error: String| start_error(&host.process, error);
+        let failed = |error: String| host.process.start_error(error);
         let Some(resume_id) = &launch.resume_id else {
             let opened = rpc
                 .request(
@@ -720,17 +686,19 @@ impl Muse {
 /// Every item of a session's view, paged in when Muse would not hand its
 /// history over whole.
 async fn page_history(rpc: &Rpc, session_id: &str) -> Vec<Value> {
+    let pages = rpc
+        .pages("view/page", |cursor| {
+            let mut params = json!({ "sessionId": session_id, "limit": 1000 });
+            if !cursor.is_null() {
+                params["cursor"] = cursor.clone();
+            }
+            params
+        })
+        .await
+        .unwrap_or_default();
     let mut order: Vec<String> = Vec::new();
     let mut latest: HashMap<String, Value> = HashMap::new();
-    let mut cursor = Value::Null;
-    loop {
-        let mut params = json!({ "sessionId": session_id, "limit": 1000 });
-        if !cursor.is_null() {
-            params["cursor"] = cursor.clone();
-        }
-        let Ok(page) = rpc.request("view/page", params).await else {
-            break;
-        };
+    for page in &pages {
         for event in page["events"].as_array().into_iter().flatten() {
             let item = &event["params"]["item"];
             let Some(id) = item["itemId"].as_str() else {
@@ -740,10 +708,6 @@ async fn page_history(rpc: &Rpc, session_id: &str) -> Vec<Value> {
                 order.push(id.to_owned());
             }
             latest.insert(id.to_owned(), item.clone());
-        }
-        match page["nextCursor"].as_str() {
-            Some(next) if cursor != next => cursor = Value::from(next),
-            _ => break,
         }
     }
     order
@@ -786,7 +750,7 @@ impl Backend for Muse {
                     json!({ "sessionId": session_id, "commandId": command_id(), "model": { "modelId": model } }),
                 )
                 .await
-                .map_err(|error| start_error(&host.process, error))?;
+                .map_err(|error| host.process.start_error(error))?;
         }
         let effort = models.effort_for(&model, launch.effort.as_deref());
 
@@ -1050,7 +1014,7 @@ impl Backend for Muse {
     ) -> Result<Self, String> {
         let state: MuseState = serde_json::from_value(state).map_err(|error| error.to_string())?;
         let driver = Driver {
-            rpc: Rpc::restored(writer, true, state.rpc),
+            rpc: Rpc::restored(writer, state.rpc),
             sink,
             session: Arc::new(Mutex::new(state.session)),
         };
