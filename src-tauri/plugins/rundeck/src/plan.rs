@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use git2::{BranchType, ErrorCode, Repository};
 use serde::Serialize;
+use sikemux_process::sync::Locked;
 
 use crate::error::{RundeckError, RundeckResult};
 
@@ -127,8 +128,7 @@ fn claim_fetch(root: PathBuf) -> bool {
     static LAST_FETCH: OnceLock<Mutex<HashMap<PathBuf, Instant>>> = OnceLock::new();
     let mut last = LAST_FETCH
         .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .locked();
     let now = Instant::now();
     if last
         .get(&root)

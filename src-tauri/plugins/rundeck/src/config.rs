@@ -3,24 +3,16 @@
 // the branch, and which folders are production.
 
 use std::net::IpAddr;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::path::Path;
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use sikemux_plugin_api::{keychain_service, store};
+use sikemux_process::sync::Locked;
 
 use crate::error::{RundeckError, RundeckResult};
 
-/// A development build keeps an entry of its own, so it never spends or replaces
-/// the installed app's sign-in.
-#[cfg(not(test))]
-const TOKEN_SERVICE: &str = if cfg!(debug_assertions) {
-    "sikemux-rundeck-token-dev"
-} else {
-    "sikemux-rundeck-token"
-};
-/// Tests keep to an entry of their own, so they never replace or delete a real token.
-#[cfg(test)]
-const TOKEN_SERVICE: &str = "sikemux-rundeck-token-test";
+const TOKEN_SERVICE: &str = keychain_service!("sikemux-rundeck-token");
 const TOKEN_ACCOUNT: &str = "api-token";
 
 const DEFAULT_BRANCH_OPTIONS: [&str; 4] = ["BRANCH", "GIT_BRANCH", "GIT_REF", "REF"];
@@ -75,77 +67,22 @@ impl Saved {
     }
 }
 
-fn settings_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("config.json")
-}
-
-fn read_settings(data_dir: &Path) -> RundeckResult<Settings> {
-    match std::fs::read(settings_path(data_dir)) {
-        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn write_settings(data_dir: &Path, settings: &Settings) -> RundeckResult<()> {
-    std::fs::create_dir_all(data_dir)?;
-    let path = settings_path(data_dir);
-    let staged = path.with_extension("json.tmp");
-    std::fs::write(&staged, serde_json::to_vec_pretty(settings)?)?;
-    std::fs::rename(&staged, &path)?;
-    Ok(())
-}
-
-fn keychain_error(error: sikemux_keychain::KeychainError) -> RundeckError {
-    match error {
-        sikemux_keychain::KeychainError::Invalid(message) => RundeckError::Api(message),
-        sikemux_keychain::KeychainError::Failed(message) => {
-            RundeckError::Api(format!("the Keychain would not answer: {message}"))
-        }
-    }
-}
-
-/// Runs file and Keychain work on a thread meant for blocking, away from the few threads every plugin shares.
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> RundeckResult<T> + Send + 'static,
-) -> RundeckResult<T> {
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|error| RundeckError::Api(error.to_string()))?
-}
-
 /// Reading the Keychain starts a process, so the sign-in is kept in memory once read.
-fn cache() -> &'static Mutex<Option<(PathBuf, Saved)>> {
-    static CACHE: OnceLock<Mutex<Option<(PathBuf, Saved)>>> = OnceLock::new();
-    CACHE.get_or_init(Mutex::default)
-}
-
-fn remember(data_dir: &Path, saved: &Saved) {
-    *cache()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) =
-        Some((data_dir.to_path_buf(), saved.clone()));
-}
+static SAVED: Mutex<Option<Saved>> = Mutex::new(None);
 
 pub async fn load(data_dir: &Path) -> RundeckResult<Saved> {
-    let cached = cache()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-        .filter(|(dir, _)| dir == data_dir)
-        .map(|(_, saved)| saved.clone());
-    if let Some(saved) = cached {
+    if let Some(saved) = SAVED.locked().clone() {
         return Ok(saved);
     }
     let dir = data_dir.to_path_buf();
-    let saved = blocking(move || {
+    let saved = store::blocking(move || {
         Ok(Saved {
-            settings: read_settings(&dir)?,
-            token: sikemux_keychain::read(TOKEN_SERVICE, TOKEN_ACCOUNT).map_err(keychain_error)?,
+            settings: store::load(&dir)?,
+            token: sikemux_keychain::read(TOKEN_SERVICE, TOKEN_ACCOUNT)?,
         })
     })
     .await?;
-    remember(data_dir, &saved);
+    *SAVED.locked() = Some(saved.clone());
     Ok(saved)
 }
 
@@ -153,16 +90,15 @@ pub async fn load(data_dir: &Path) -> RundeckResult<Saved> {
 pub async fn save(data_dir: &Path, saved: Saved) -> RundeckResult<()> {
     let dir = data_dir.to_path_buf();
     let kept = saved.clone();
-    blocking(move || {
+    store::blocking(move || {
         match &kept.token {
             Some(token) => sikemux_keychain::write(TOKEN_SERVICE, TOKEN_ACCOUNT, token),
             None => sikemux_keychain::delete(TOKEN_SERVICE, TOKEN_ACCOUNT),
-        }
-        .map_err(keychain_error)?;
-        write_settings(&dir, &kept.settings)
+        }?;
+        Ok(store::save(&dir, &kept.settings)?)
     })
     .await?;
-    remember(data_dir, &saved);
+    *SAVED.locked() = Some(saved);
     Ok(())
 }
 
@@ -171,9 +107,9 @@ pub async fn save_settings(data_dir: &Path, settings: Settings) -> RundeckResult
     let mut saved = load(data_dir).await?;
     let dir = data_dir.to_path_buf();
     let written = settings.clone();
-    blocking(move || write_settings(&dir, &written)).await?;
+    store::blocking(move || Ok(store::save(&dir, &written)?)).await?;
     saved.settings = settings;
-    remember(data_dir, &saved);
+    *SAVED.locked() = Some(saved);
     Ok(())
 }
 

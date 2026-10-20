@@ -3,13 +3,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
-use crate::client::{get_json, limited, seg, Session};
+use crate::client::{get_json, seg, Session, HTTP};
 use crate::error::{RundeckError, RundeckResult};
 use crate::executions::{self, branch_from_options, Execution, ExecutionList, RunRequest};
 use crate::jobs::{self, JobDetail, JobOption};
@@ -106,7 +106,7 @@ async fn definitions(session: &Session, project: Option<&str>) -> RundeckResult<
     let fetched = join_all(
         projects
             .iter()
-            .map(|project| limited(jobs::definitions(session, &project.name))),
+            .map(|project| HTTP.limited(jobs::definitions(session, &project.name))),
     )
     .await;
     let mut found = Vec::new();
@@ -316,13 +316,6 @@ pub struct Outcome {
     note: Option<String>,
 }
 
-fn now_secs() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs() as i64)
-        .unwrap_or_default()
-}
-
 fn status_of(execution: &Execution) -> String {
     execution
         .custom_status
@@ -344,7 +337,7 @@ fn duration_secs(execution: &Execution) -> Option<i64> {
     let started = execution.date_started.as_ref()?.unixtime? / 1000;
     let ended = match execution.date_ended.as_ref().and_then(|date| date.unixtime) {
         Some(ended) => ended / 1000,
-        None => now_secs(),
+        None => sikemux_process::clock::epoch_secs() as i64,
     };
     Some((ended - started).max(0))
 }

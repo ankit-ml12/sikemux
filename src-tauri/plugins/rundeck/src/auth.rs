@@ -7,38 +7,23 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::StreamExt;
 use reqwest::{Client, Method, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sikemux_plugin_api::http::{self, Deadline, Redirects};
 
-use crate::error::{RundeckError, RundeckResult};
+use crate::error::{Rundeck, RundeckError, RundeckResult};
 
 use crate::client::{get_json, request_as, seg, Session, API_VERSION};
 use crate::config::{self, Saved, Settings};
 
 const MAX_AUTH_RESPONSE_BYTES: usize = 1024 * 1024;
+const LOGIN_DEADLINE: Duration = Duration::from_secs(20);
 
 async fn response_text_limited(resp: Response) -> RundeckResult<String> {
-    if resp
-        .content_length()
-        .is_some_and(|size| size > MAX_AUTH_RESPONSE_BYTES as u64)
-    {
-        return Err(RundeckError::Auth(
-            "authentication response exceeds 1 MiB limit".into(),
-        ));
-    }
-    let mut stream = resp.bytes_stream();
-    let mut bytes = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| RundeckError::Auth(e.to_string()))?;
-        if bytes.len() + chunk.len() > MAX_AUTH_RESPONSE_BYTES {
-            return Err(RundeckError::Auth(
-                "authentication response exceeds 1 MiB limit".into(),
-            ));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    let bytes = http::read_body(resp, MAX_AUTH_RESPONSE_BYTES)
+        .await
+        .map_err(|error| RundeckError::Auth(error.to_string()))?;
     String::from_utf8(bytes)
         .map_err(|_| RundeckError::Auth("authentication response is not UTF-8".into()))
 }
@@ -74,11 +59,12 @@ fn short_hostname() -> String {
 
 fn fresh_session_client(transport: &config::ValidatedTransport) -> RundeckResult<Client> {
     Ok(transport
-        .pin_dns(Client::builder())
+        .pin_dns(http::builder::<Rundeck>(
+            Redirects::Refuse,
+            Deadline::WholeAnswer,
+        ))
         .cookie_provider(Arc::new(reqwest::cookie::Jar::default()))
-        .timeout(Duration::from_secs(20))
-        .user_agent("sikemux-rundeck-auth/0.1")
-        .redirect(reqwest::redirect::Policy::none())
+        .timeout(LOGIN_DEADLINE)
         .build()?)
 }
 
@@ -387,10 +373,18 @@ pub async fn logout(data_dir: &Path) -> RundeckResult<()> {
     config::save(data_dir, saved).await
 }
 
-/// The lists people edit in the plugin's settings. An empty list goes back to the defaults.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// The lists people edit in the plugin's settings.
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Lists {
+    pub branch_options: Vec<String>,
+    pub prod_envs: Vec<String>,
+}
+
+/// The lists to change; one left out stays as it is, and an empty one goes back to the defaults.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListChanges {
     pub branch_options: Option<Vec<String>>,
     pub prod_envs: Option<Vec<String>>,
 }
@@ -398,12 +392,12 @@ pub struct Lists {
 pub async fn lists(data_dir: &Path) -> RundeckResult<Lists> {
     let settings = config::load(data_dir).await?.settings;
     Ok(Lists {
-        branch_options: Some(settings.branch_options),
-        prod_envs: Some(settings.prod_envs),
+        branch_options: settings.branch_options,
+        prod_envs: settings.prod_envs,
     })
 }
 
-pub async fn set_lists(data_dir: &Path, lists: Lists) -> RundeckResult<()> {
+pub async fn set_lists(data_dir: &Path, lists: ListChanges) -> RundeckResult<()> {
     fn tidy(names: Vec<String>, fallback: fn() -> Vec<String>) -> Vec<String> {
         let names: Vec<String> = names
             .into_iter()
