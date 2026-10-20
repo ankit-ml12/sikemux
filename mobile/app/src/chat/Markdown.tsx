@@ -162,6 +162,8 @@ const HEADING_SIZES = [20, 18, 16.5];
 /* A table cell is sized from its text up front, so a wide table lays out in one pass
    and scrolls sideways in its own box instead of measuring every cell. */
 const CELL_CHAR = 7.4;
+/** A heading cell is set in spaced capitals, wider than the rows' text. */
+const HEAD_CHAR = 9;
 const CELL_PAD = 20;
 const CELL_MIN = 56;
 const CELL_MAX = 240;
@@ -174,10 +176,10 @@ const keepTouch = () => true;
 
 function columnWidths(table: Table): number[] {
   return table.align.map((_, column) => {
-    let chars = visibleText(table.head?.[column] ?? []).length;
-    for (const row of table.rows) chars = Math.max(chars, visibleText(row[column] ?? []).length);
+    let text = visibleText(table.head?.[column] ?? []).length * HEAD_CHAR;
+    for (const row of table.rows) text = Math.max(text, visibleText(row[column] ?? []).length * CELL_CHAR);
     const room = column === table.align.length - 1 ? COPY_ROOM : 0;
-    return Math.min(CELL_MAX, Math.max(CELL_MIN, Math.ceil(chars * CELL_CHAR) + CELL_PAD)) + room;
+    return Math.min(CELL_MAX, Math.max(CELL_MIN, Math.ceil(text) + CELL_PAD)) + room;
   });
 }
 

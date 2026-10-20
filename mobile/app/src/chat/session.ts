@@ -639,7 +639,8 @@ export class ChatSession {
       capabilities: recordOf(JSON.parse(live.capabilitiesJson)) ?? {},
       setup: recordOf(JSON.parse(live.setupJson)) ?? {},
     });
-    if (live.running) agent = chatReducer(agent, { type: 'turn_started' });
+    // A turn the replay already opened goes on: starting it again would cut the answer streaming into it in two.
+    if (live.running && !rebuilt.running) agent = chatReducer(agent, { type: 'turn_started' });
     if (live.running && !wasRunning) this.turnSince = this.now();
 
     // The replay has what the host took; what it did not take is put back after it.
