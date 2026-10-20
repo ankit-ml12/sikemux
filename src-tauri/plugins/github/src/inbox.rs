@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sikemux_plugin_api::account::chosen;
 
 use crate::client;
 use crate::common::MAX_PER_PAGE;
@@ -114,7 +115,7 @@ pub struct Query {
 }
 
 pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Notification>> {
-    let host = crate::config::load(data_dir).host_of(client::chosen().as_deref());
+    let host = crate::config::load(data_dir)?.host_of(chosen().as_deref());
     let rows: Vec<NotificationRow> = client::get(
         data_dir,
         "/notifications",
