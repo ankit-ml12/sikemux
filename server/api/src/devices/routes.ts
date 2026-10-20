@@ -95,22 +95,27 @@ export function deviceRoutes(
         );
       return c.body(null, 204);
     })
-    .get("/", allow("session", "host"), perUser("list", 120), async (c) => {
-      const { userId } = c.get("identity");
-      const role = c.req.query("role");
-      if (
-        role !== undefined &&
-        !deviceRoleValues.includes(role as DeviceRole)
-      ) {
-        throw badRequest(`role is one of ${deviceRoleValues.join(", ")}.`);
-      }
-      let query = db
-        .selectFrom("devices")
-        .selectAll()
-        .where("user_id", "=", userId);
-      if (role) query = query.where("role", "=", role);
-      const rows = await query.orderBy("created_at", "desc").execute();
-      const body: DeviceList = { devices: rows.map(toDevice) };
-      return c.json(body);
-    });
+    .get(
+      "/",
+      allow("session", "host", "mac"),
+      perUser("list", 120),
+      async (c) => {
+        const { userId } = c.get("identity");
+        const role = c.req.query("role");
+        if (
+          role !== undefined &&
+          !deviceRoleValues.includes(role as DeviceRole)
+        ) {
+          throw badRequest(`role is one of ${deviceRoleValues.join(", ")}.`);
+        }
+        let query = db
+          .selectFrom("devices")
+          .selectAll()
+          .where("user_id", "=", userId);
+        if (role) query = query.where("role", "=", role);
+        const rows = await query.orderBy("created_at", "desc").execute();
+        const body: DeviceList = { devices: rows.map(toDevice) };
+        return c.json(body);
+      },
+    );
 }

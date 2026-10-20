@@ -28,7 +28,7 @@ export function joinRoutes(
 
   return new Hono<AuthEnv>().post(
     "/:key/join",
-    allow("session", "host"),
+    allow("session", "host", "mac"),
     perJoiner,
     async (c) => {
       const identity = c.get("identity");
@@ -36,7 +36,8 @@ export function joinRoutes(
       const joiner = c.req.param("key");
       const { host } = await readBody(c, "JoinRequest");
       const role =
-        isSession(identity) || joiner !== identity.deviceKey
+        isSession(identity) ||
+        (identity.via === "host" && joiner !== identity.deviceKey)
           ? "client"
           : "host";
       if (joiner === host) throw notFound("None of your hosts has that key.");

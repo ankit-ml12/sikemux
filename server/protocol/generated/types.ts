@@ -657,12 +657,12 @@ export interface ShareHost {
 /** A shared chat's id: 16 random bytes the host picks, in unpadded base64url. */
 export type ShareId = string;
 
-/** Host only: start a share. The server answers opened or refused. */
+/** Host only: start a share. The server answers opened or refused. Hosts on 0.5.3 and earlier send no viewers check, and their shares are open to anyone signed in who has the link. */
 export interface ShareOpen {
   type: "open";
   share: ShareId;
   expiresAt: string;
-  viewers: ShareViewerCheck;
+  viewers?: ShareViewerCheck;
 }
 
 /** To the host: the share is open and viewers may join. */

@@ -93,7 +93,7 @@ fn open_message(id: &str, expires_at: u64, viewers: &str) -> ShareClientMessage 
     ShareClientMessage::Open(ShareOpen {
         share: id.to_owned(),
         expires_at: rfc3339(expires_at),
-        viewers: viewers.to_owned(),
+        viewers: Some(viewers.to_owned()),
     })
 }
 

@@ -146,9 +146,10 @@ export type AuthEnv = Env & { Variables: { identity: Identity } };
 /**
  * The ways in a route takes. The Mac app's OAuth token is only for adding its host, right after
  * the person signs in in the browser; from then on the host signs its own requests, so removing
- * it from the account cuts it off.
+ * it from the account cuts it off. "mac" takes that token at any age, for the routes Macs on
+ * 0.5.3 and earlier call with it.
  */
-export type SignIn = "session" | "host" | "macRegistration";
+export type SignIn = "session" | "host" | "macRegistration" | "mac";
 
 /** How long after its sign-in the Mac app's OAuth token may add its host. */
 const MAC_REGISTRATION_MINUTES = 10;
@@ -209,15 +210,13 @@ async function hostIdentity(
   };
 }
 
-const SIGN_IN_OF: Record<Identity["via"], SignIn> = {
-  session: "session",
-  host: "host",
-  mac: "macRegistration",
-};
-
 /** Refuses a sign-in that is none of the ways in `accept`. */
 function admit(identity: Identity, accept: readonly SignIn[]) {
-  if (!accept.includes(SIGN_IN_OF[identity.via]))
+  const admitted =
+    identity.via === "mac"
+      ? accept.includes("macRegistration") || accept.includes("mac")
+      : accept.includes(identity.via);
+  if (!admitted)
     throw forbidden(
       identity.via === "mac"
         ? "The Mac app's sign-in only adds its host to your account."
@@ -273,6 +272,7 @@ export function allow(...accept: SignIn[]): MiddlewareHandler<AuthEnv> {
     admit(identity, accept);
     if (
       identity.via === "mac" &&
+      !accept.includes("mac") &&
       Date.now() - (identity.issuedAt?.getTime() ?? 0) >
         MAC_REGISTRATION_MINUTES * 60_000
     )

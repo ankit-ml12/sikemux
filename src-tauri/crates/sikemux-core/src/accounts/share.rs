@@ -231,13 +231,14 @@ pub struct ShareHost {
 /// A shared chat's id: 16 random bytes the host picks, in unpadded base64url.
 pub type ShareId = String;
 
-/// Host only: start a share. The server answers opened or refused.
+/// Host only: start a share. The server answers opened or refused. Hosts on 0.5.3 and earlier send no viewers check, and their shares are open to anyone signed in who has the link.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShareOpen {
     pub share: ShareId,
     pub expires_at: String,
-    pub viewers: ShareViewerCheck,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewers: Option<ShareViewerCheck>,
 }
 
 /// To the host: the share is open and viewers may join.

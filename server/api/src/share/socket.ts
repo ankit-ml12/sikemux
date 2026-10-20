@@ -10,7 +10,7 @@ import { ShareCloseCode } from "@sikemux/protocol";
 import { sql, type Kysely } from "kysely";
 import type { WebSocket } from "ws";
 
-import { checkStanding, isSession, type Identity } from "../auth.ts";
+import { checkStanding, type Identity } from "../auth.ts";
 import type { Tables } from "../db.ts";
 import {
   shareMessage,
@@ -123,9 +123,13 @@ export async function recheckShares(
     if (standing.get(host.key) !== host.userId) host.removed();
 }
 
-/** Whether `proof` is what the share's link holds, by the check its host gave. */
+/**
+ * Whether `proof` is what the share's link holds, by the check its host gave. Hosts on 0.5.3 and
+ * earlier give none, and their shares are open to anyone signed in who has the link.
+ */
 function provesLink(proof: string | undefined, check: string | null): boolean {
-  if (!proof || !check) return false;
+  if (!check) return true;
+  if (!proof) return false;
   const given = createHash("sha256")
     .update(Buffer.from(proof, "base64url"))
     .digest();
@@ -259,11 +263,7 @@ export class ShareSocket
           });
           return;
         case "auth":
-          this.reauthenticate(
-            message.token,
-            this.userId,
-            (identity) => !this.key && isSession(identity),
-          );
+          this.reauthenticate(message.token, this.userId, () => !this.key);
           return;
       }
     }
@@ -355,8 +355,6 @@ export class ShareSocket
     const { db, verifier } = this.context;
     if (hello.token) {
       const identity = await verifier.verify(hello.token);
-      if (!isSession(identity))
-        throw new HelloRefused("a viewer signs in with a session token");
       await checkStanding(db, identity);
       return { userId: identity.userId, key: "", identity };
     }
@@ -447,7 +445,7 @@ export class ShareSocket
       if (
         existing.host_key !== this.key ||
         existing.ended_at ||
-        existing.viewer_check !== message.viewers
+        existing.viewer_check !== (message.viewers ?? null)
       ) {
         this.send({ type: "refused", share: message.share, reason: "exists" });
         return;
@@ -471,7 +469,7 @@ export class ShareSocket
           user_id: this.userId,
           host_key: this.key,
           expires_at: expiresAt,
-          viewer_check: message.viewers,
+          viewer_check: message.viewers ?? null,
         })
         .onConflict((conflict) => conflict.column("id").doNothing())
         .returning("id")

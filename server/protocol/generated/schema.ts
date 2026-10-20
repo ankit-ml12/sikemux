@@ -1176,7 +1176,7 @@ export const schema = {
     },
     ShareOpen: {
       description:
-        "Host only: start a share. The server answers opened or refused.",
+        "Host only: start a share. The server answers opened or refused. Hosts on 0.5.3 and earlier send no viewers check, and their shares are open to anyone signed in who has the link.",
       type: "object",
       properties: {
         type: { const: "open" },
@@ -1184,7 +1184,7 @@ export const schema = {
         expiresAt: { type: "string", format: "date-time" },
         viewers: { $ref: "#/$defs/ShareViewerCheck" },
       },
-      required: ["type", "share", "expiresAt", "viewers"],
+      required: ["type", "share", "expiresAt"],
       additionalProperties: false,
     },
     ShareOpened: {
