@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { agentLabel } from "../agents/catalog";
 import type { PromptContext } from "../api/acp";
 import { MENTION_URI } from "./promptContext";
-import { agentDisplay, type AgentDisplay } from "../state/agentStatus";
+import type { AgentShown } from "../api/generated/wire";
 import { agentIdsOf, agentWindowId, ownerSessionId } from "../state/selectors";
 import { useStore } from "../state/store";
 import type { Agent, AgentType } from "../state/types";
@@ -17,7 +17,7 @@ export interface Mate {
     title: string;
     buddy: Agent["buddy"];
     /** How it is shown beside its name; none while it sleeps. */
-    display: AgentDisplay | null;
+    display: AgentShown | null;
 }
 
 /** The other named agents: this project's first, then every other project's, each in strip order. */
@@ -37,7 +37,7 @@ export function useMates(agentId: string): Mate[] {
             return agentIdsOf({ windows, windowsBySession }, sid).flatMap((id) => {
                 const agent = agents[id];
                 if (!agent?.name || id === agentId) return [];
-                const display = agent.launchState === "dormant" ? null : agentDisplay(status[id]);
+                const display = agent.launchState === "dormant" ? null : (status[id] ?? null);
                 return [{ id, name: agent.name, project, type: agent.type, title: agent.title, buddy: agent.buddy, display }];
             });
         });

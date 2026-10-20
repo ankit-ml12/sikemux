@@ -1,6 +1,5 @@
 import { pluginDocuments } from "../plugins/documents";
 import type { Agent, PaneNode, Session, TabRef, Window, WindowRole } from "./types";
-import { agentDisplay, type AgentDisplay } from "./agentStatus";
 import type { StoreState } from "./store";
 import { collectPanes, openSides } from "./layout";
 import { relativePath } from "../lib/paths";
@@ -48,11 +47,6 @@ export function* openAgents(state: OpenAgentsState): Generator<OpenAgent> {
             if (agent) yield { agentId, agent, session };
         }
     }
-}
-
-/** How one agent is shown: its turn state plus the subagents and shells it still has going. */
-export function agentDisplayOf(state: Pick<StoreState, "agentStatus">, agentId: string): AgentDisplay {
-    return agentDisplay(state.agentStatus[agentId]);
 }
 
 /**

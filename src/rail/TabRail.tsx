@@ -9,7 +9,7 @@ import { useResource, useResourceEnabled, type ResourceHandle } from "../state/r
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import type { AgentUsage } from "../api/agents";
 import { useStore } from "../state/store";
-import { activeAgentId, agentDisplayOf, agentIdsOf, chatKey, hasChat } from "../state/selectors";
+import { activeAgentId, agentIdsOf, chatKey, hasChat } from "../state/selectors";
 import { type Agent, type AgentType, type PinnedChat } from "../state/types";
 import { AgentIcon, IconAgent, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -276,7 +276,7 @@ export function TabRailBody() {
         <OpenAgentRow
             key={a.id}
             agent={a}
-            display={agentDisplayOf({ agentStatus }, a.id)}
+            display={agentStatus[a.id]}
             link={link}
             active={activeAgentId({ windows: windowsById }, session) === a.id}
             sessionCwd={session.cwd}

@@ -5,7 +5,6 @@ import { sendToAgent } from "../agents/sendToAgent";
 import { joinPath } from "../lib/paths";
 import * as cmd from "../state/commands";
 import { requestOpenFile } from "../state/commands/editor";
-import { agentDisplayOf } from "../state/selectors";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
 import type { AgentWorktree } from "../state/types";
@@ -65,7 +64,7 @@ export function AgentReview({
     onClose: () => void;
 }) {
     const title = useStore((state) => state.agents[agentId]?.title || "Agent");
-    const display = useStore((state) => agentDisplayOf(state, agentId));
+    const display = useStore((state) => state.agentStatus[agentId]);
     const handoff = useInbox().inbox.items.find((item) => item.agentId === agentId)?.handoff ?? null;
     const [evidence, setEvidence] = useState<Evidence | null>(null);
 
@@ -100,7 +99,7 @@ export function AgentReview({
                 }}>
                 <div className="agent-review-head">
                     <span className="agent-review-title">{title}</span>
-                    <span className={`agent-review-state ${display.group}`}>{display.label}</span>
+                    {display && <span className={`agent-review-state ${display.group}`}>{display.label}</span>}
                     <button className="agent-review-close" onClick={onClose} aria-label="Close">
                         <IconClose size={11} />
                     </button>

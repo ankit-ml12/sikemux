@@ -6,8 +6,8 @@ import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agent
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { inTeams, type TeamLink } from "../agents/teams";
-import type { AgentDisplay } from "../state/agentStatus";
-import { activeAgentId, agentDisplayOf, hasChat, openAgents } from "../state/selectors";
+import type { AgentShown } from "../api/generated/wire";
+import { activeAgentId, hasChat, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
 import { IconAgent, IconClose, IconPin } from "../ui/Icons";
@@ -24,7 +24,7 @@ interface OpenAgentRow {
     id: string;
     lead?: string;
     agent: Agent;
-    display: AgentDisplay;
+    display: AgentShown | undefined;
     sessionName: string;
     sessionId: string;
     sessionCwd: string;
@@ -50,7 +50,7 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                 id: agentId,
                 lead: agent.lead,
                 agent,
-                display: agentDisplayOf({ agentStatus }, agentId),
+                display: agentStatus[agentId],
                 sessionName: session.name,
                 sessionId: session.id,
                 sessionCwd: session.cwd,
@@ -136,7 +136,7 @@ export function OpenAgentRow({
     onContextMenu,
 }: {
     agent: Agent;
-    display: AgentDisplay;
+    display: AgentShown | undefined;
     link?: TeamLink;
     active: boolean;
     project?: { name: string; sessionId: string };

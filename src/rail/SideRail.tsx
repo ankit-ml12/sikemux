@@ -17,7 +17,7 @@ import { keybindingLabelForAction, type KeybindingActionId } from "../commands/k
 import type { Agent, Session, SessionKind, Window } from "../state/types";
 import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
-import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
+import type { AgentRollup } from "../api/generated/wire";
 import { getState, useStore } from "../state/store";
 import { AgentFace } from "../buddies/Buddy";
 import { IconAgent, IconClose, IconFolder, IconMove, IconPencil, IconPlus, IconServer, IconSettings, IconTerminal, WindowIcon } from "../ui/Icons";
@@ -33,7 +33,7 @@ import { RailMasthead } from "./RailMasthead";
 import { RailAccount } from "../account/RailAccount";
 import { UpdateChip } from "./UpdateChip";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
-import { agentDisplayOf, agentIdsOf } from "../state/selectors";
+import { agentIdsOf } from "../state/selectors";
 import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES, type ProjectSurfaceRole } from "../workbench/surfaces";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
 import type { PluginSignIn } from "../plugin-api/signInState";
@@ -131,7 +131,7 @@ interface RailContextValue {
     windowsById: Record<string, Window>;
     windowsBySession: Record<string, string[]>;
     agentsById: Record<string, Agent>;
-    displayOf: (agentId: string) => AgentDisplay;
+    projectStatus: Record<string, AgentRollup>;
     draggingProjectId: string | null;
     projectDragClass: (id: string) => string;
     onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
@@ -230,7 +230,7 @@ function useProjectUnfold(tree: RefObject<HTMLDivElement | null>, active: boolea
 
 function ProjectBlock({ s }: { s: Session }) {
     const rail = useRail();
-    const { activeSessionId, agentsById, displayOf, windowsById, windowsBySession, draggingProjectId, kb } = rail;
+    const { activeSessionId, agentsById, projectStatus, windowsById, windowsBySession, draggingProjectId, kb } = rail;
     const active = s.id === activeSessionId;
     // Active or not, a project is one tree root holding its row, so the row survives the switch and its tint cross-fades.
     const treeRef = useRef<HTMLDivElement>(null);
@@ -250,7 +250,7 @@ function ProjectBlock({ s }: { s: Session }) {
     const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
         .map((id) => agentsById[id])
         .filter(Boolean);
-    const rollup = rollupAgentDisplays(agents.map((agent) => displayOf(agent.id)));
+    const rollup = projectStatus[s.id];
 
     const visibleAgents = agents.slice(0, MAX_BADGE_ICONS);
     const agentOverflow = agents.length - visibleAgents.length;
@@ -271,7 +271,7 @@ function ProjectBlock({ s }: { s: Session }) {
                     {agentOverflow > 0 && <span className="proj-child-icons-more">+{agentOverflow}</span>}
                 </span>
             )}
-            {rollup && showsAgentState(rollup) && (
+            {showsAgentState(rollup) && (
                 <span className="proj-row-status">
                     <AgentStateIndicator display={rollup} />
                 </span>
@@ -560,7 +560,7 @@ export const SideRail = memo(function SideRail() {
     const windowsById = useStore((s) => s.windows);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agentsById = useStore((s) => s.agents);
-    const agentStatus = useStore((s) => s.agentStatus);
+    const projectStatus = useStore((s) => s.projectStatus);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
@@ -792,7 +792,7 @@ export const SideRail = memo(function SideRail() {
         windowsById,
         windowsBySession,
         agentsById,
-        displayOf: (agentId) => agentDisplayOf({ agentStatus }, agentId),
+        projectStatus,
         draggingProjectId,
         projectDragClass,
         onProjectPointerDown,

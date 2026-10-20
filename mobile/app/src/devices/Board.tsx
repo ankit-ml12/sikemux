@@ -19,7 +19,6 @@ import type { AgentQuestion } from '@mac/agents/agentQuestions';
 import { formatAge } from '@mac/lib/format';
 import type { ProjectInfo, Snapshot } from '@/core/protocol';
 import { useHostCall } from '@/core/hostCalls';
-import { agentDisplay } from '@mac/state/agentStatus';
 import { projectAt, projectName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Row, Rows, SectionLabel } from '@/ui/list';
@@ -182,7 +181,7 @@ function CardRow({
   const terminal = card.owner ? snapshot.sessions.find((session) => session.agentId === card.owner && session.running) : undefined;
   const owner = chat?.name ?? terminal?.agentName ?? card.ownerName;
   const cli = chat?.provider ?? terminal?.agentType ?? card.ownerCli;
-  const { group } = agentDisplay(chat ?? terminal);
+  const group = snapshot.inbox.agents.find((agent) => agent.agentId === card.owner)?.group;
   const question = column === 'needs' ? cardQuestion(card, questions) : undefined;
   const handedBack = card.auto && RUN_WAITS_ON_PERSON.has(card.auto.stage) && card.status !== 'done' ? card.auto.note : null;
   const reviewing = card.auto?.stage === 'reviewing' ? card.auto.note : null;

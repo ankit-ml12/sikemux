@@ -8,7 +8,6 @@ import { agentSupportsChat, canBypassPermissions, hasRelocatableSessions, type C
 import { effectiveMode, isResumeId, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
-import { agentHasBackgroundWork, isAgentBusy, type AgentShown } from "../agentStatus";
 import { confirmDialog } from "../dialog";
 import { invalidate, peekResource } from "../resources";
 import { agentCatalogR } from "../resources.defs";
@@ -24,6 +23,7 @@ import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
 import { remoteCopiesOf, startRemoteChat } from "../../hosts/hosts";
+import type { Inbox } from "../../api/generated/wire";
 
 /** Providers list a session under at most this many characters. */
 const SESSION_TITLE_MAX = 72;
@@ -42,7 +42,7 @@ export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?:
         void acpApi.switchAccount(id, type, acpAccount(account)).catch(reportError("Switch account"));
     mutate((d) => {
         const agent = d.agents[id];
-        if (!agent || isAgentBusy(d.agentStatus[id])) return;
+        if (!agent || d.agentStatus[id]?.busy) return;
         const profile = profileId ? profileOf(d, { profileId, type }) : undefined;
         if (profileId && !profile) return;
         const mode = normalizePermissionMode(type, agent.permissionMode ?? d.defaultAgentPermissionMode);
@@ -236,7 +236,7 @@ export function canMoveAgentToProject(state: StoreState, agent: Agent): boolean 
     if (!hasRelocatableSessions(agent.type)) return false;
     if (agent.launchState === "dormant") return true;
     const shown = state.agentStatus[agent.id];
-    return !isAgentBusy(shown) && !agentHasBackgroundWork(shown);
+    return !shown?.busy && !shown?.background;
 }
 
 /**
@@ -480,22 +480,23 @@ export async function sleepIdleAgents(): Promise<number> {
 }
 
 /** Takes how the core shows each open agent, from its device view. */
-export function setAgentStatus(agents: readonly AgentShown[]): void {
-    const before = getState().agentStatus;
-    const same = (a: AgentShown, b: AgentShown) =>
-        a.status === b.status &&
-        a.group === b.group &&
-        a.unread === b.unread &&
-        a.subagents === b.subagents &&
-        a.tasks === b.tasks &&
-        a.activeAt === b.activeAt;
-    const next = Object.fromEntries(
-        agents.map((shown) => [shown.agentId, before[shown.agentId] && same(before[shown.agentId], shown) ? before[shown.agentId] : shown]),
-    );
+/** Each value of `after` that equals the one before it by every field stays the object it was, so rows showing it do not redraw. */
+function keepUnchanged<T extends object>(before: Record<string, T>, after: Record<string, T>): Record<string, T> {
+    const same = (a: T | undefined, b: T) => !!a && (Object.keys(b) as (keyof T)[]).every((key) => a[key] === b[key]);
+    const next = Object.fromEntries(Object.entries(after).map(([id, value]) => [id, same(before[id], value) ? before[id] : value]));
     const ids = Object.keys(next);
-    if (ids.length === Object.keys(before).length && ids.every((id) => next[id] === before[id])) return;
+    return ids.length === Object.keys(before).length && ids.every((id) => next[id] === before[id]) ? before : next;
+}
+
+/** Takes how the core shows every open agent, and each project's agents together. */
+export function setAgentStatus(inbox: Pick<Inbox, "agents" | "projects">): void {
+    const state = getState();
+    const agentStatus = keepUnchanged(state.agentStatus, Object.fromEntries(inbox.agents.map((shown) => [shown.agentId, shown])));
+    const projectStatus = keepUnchanged(state.projectStatus, inbox.projects);
+    if (agentStatus === state.agentStatus && projectStatus === state.projectStatus) return;
     mutate((d) => {
-        d.agentStatus = next;
+        d.agentStatus = agentStatus;
+        d.projectStatus = projectStatus;
     });
 }
 

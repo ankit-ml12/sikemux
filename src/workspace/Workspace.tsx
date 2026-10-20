@@ -10,7 +10,6 @@ import * as cmd from "../state/commands";
 import { getState, useStore } from "../state/store";
 import {
     activeTabRef,
-    agentDisplayOf,
     agentInWindow,
     documentsOf,
     editorPaneOf,
@@ -370,7 +369,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             if (win.role === "agent") {
                 const agent = agentInWindow(agentsById, win);
                 if (!agent) return [];
-                const display = agentDisplayOf({ agentStatus }, agent.id);
+                const display = agentStatus[agent.id];
                 return [
                     {
                         id: key,
@@ -387,7 +386,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                                 buddyClass="agent-glyph buddy-mark"
                             />
                         ),
-                        badge: display.subagents + display.tasks > 0 ? <BackgroundCounts display={display} /> : undefined,
+                        badge: display?.background ? <BackgroundCounts display={display} /> : undefined,
                         accessory: showsAgentState(display) ? <AgentStateIndicator display={display} /> : undefined,
                     },
                 ];

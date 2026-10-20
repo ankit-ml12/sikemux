@@ -356,6 +356,10 @@ export interface Inbox {
     remoteAgents: RemoteAgent[];
     /** Every open agent here as devices show it, in the order they list them. */
     agents: AgentShown[];
+    /** How each project's open agents show together, by project id. */
+    projects: Record<string, AgentRollup>;
+    /** How every open agent here shows together; none while none is open. */
+    rollup: AgentRollup | null;
     /** The characters the app draws for its agents. */
     buddies?: PublishedBuddies;
 }
@@ -432,6 +436,9 @@ export interface RemoteAgent {
     hostId: string;
     cli: string;
     status: AgentStatus;
+    group: AgentGroup;
+    /** The word shown for its status, such as "Sleeping". */
+    label: string;
     /** The agent here that started it, for a worker. */
     lead: string | null;
     project: string;
@@ -442,6 +449,8 @@ export interface RemoteAgent {
 /** How devices show an open agent here. */
 export interface AgentShown {
     agentId: string;
+    /** The CLI it runs, such as `claude`. */
+    cli: string;
     /**
      * What its row is titled: the chat's or terminal's own title, else what
      * it is, such as "New Claude chat".
@@ -449,10 +458,27 @@ export interface AgentShown {
     title: string;
     status: AgentStatus;
     group: AgentGroup;
+    /** The word shown for its group, such as "Needs input". */
+    label: string;
     unread: boolean;
     subagents: number;
     tasks: number;
+    /** Mid-turn or waiting on an answer, so stopping it now loses work. */
+    busy: boolean;
+    /** It still has subagents or shells running. */
+    background: boolean;
     activeAt: number | null;
+}
+
+/**
+ * Several agents shown as one: the group of the one that wants the person
+ * most, with every subagent and shell they still have running.
+ */
+export interface AgentRollup {
+    group: AgentGroup;
+    label: string;
+    subagents: number;
+    tasks: number;
 }
 
 /**

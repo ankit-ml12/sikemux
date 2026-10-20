@@ -988,6 +988,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
         sessionOrder,
         windowsBySession,
         agentStatus: {},
+        projectStatus: {},
         activeSessionId,
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
         editorViews,

@@ -96,6 +96,8 @@ struct Inbox: Codable, Hashable {
     let working: Int
     /// Every open agent here as devices show it, in the order they list them.
     let agents: [AgentShown]
+    /// How every open agent here shows together; none while none is open.
+    let rollup: AgentRollup?
     /// The characters the app draws for its agents.
     let buddies: PublishedBuddies?
 }
@@ -196,6 +198,13 @@ enum AgentGroup: String, Codable, Hashable {
     init(from decoder: Decoder) throws {
         self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
     }
+}
+
+/// Several agents shown as one: the group of the one that wants the person
+/// most, with every subagent and shell they still have running.
+struct AgentRollup: Codable, Hashable {
+    let subagents: Int
+    let tasks: Int
 }
 
 /// The characters the app draws for its agents, so the notch and phones draw

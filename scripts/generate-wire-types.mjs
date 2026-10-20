@@ -53,6 +53,7 @@ const RENAMES = {
     Handoff: "InboxHandoff",
     CardLink: "InboxCard",
     Shown: "AgentShown",
+    Rollup: "AgentRollup",
   },
   [`${CORE}/server/workspace.rs`]: { Buddies: "PublishedBuddies" },
   [`${CORE}/server/changed.rs`]: { Topic: "CoreChangeTopic" },
@@ -146,8 +147,9 @@ const SWIFT_FIELDS = {
   SessionInfo: "id project agentId agentName agentType",
   Attention: "id agentId choices",
   PermissionChoices: "allowOnce allowAlways reject command title",
-  Inbox: "items working agents buddies",
+  Inbox: "items working agents rollup buddies",
   AgentShown: "agentId title group subagents tasks",
+  AgentRollup: "subagents tasks",
   InboxItem:
     "id tier kind agentId name cli project title what detail at session card requestId questionId url",
   InboxCard: "title",

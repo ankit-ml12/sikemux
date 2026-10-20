@@ -57,7 +57,7 @@ let fixture = #"""
     {"id": "p1", "agentId": "a1",
      "choices": {"allowOnce": "o1", "allowAlways": "o2", "reject": "o3", "command": "pnpm test --filter core -- --runInBand", "title": "Run tests"}}
   ],
-  "inbox": {"working": 2, "agents": [
+  "inbox": {"working": 2, "rollup": {"subagents": 3, "tasks": 2}, "agents": [
     {"agentId": "a1", "title": "Fix the login flake", "group": "blocked", "subagents": 0, "tasks": 0},
     {"agentId": "a9", "title": "Move the ledger import", "group": "blocked", "subagents": 0, "tasks": 0},
     {"agentId": "a4", "title": "Bump Astro to 6", "group": "done", "subagents": 0, "tasks": 0},
@@ -118,12 +118,16 @@ let buddies = arguments.contains("--buddies")
     : decoded.inbox.buddies
 let full = DeviceView(
     workspace: decoded.workspace, sessions: decoded.sessions, chats: decoded.chats, attentions: decoded.attentions,
-    inbox: Inbox(items: decoded.inbox.items, working: decoded.inbox.working, agents: decoded.inbox.agents, buddies: buddies)
+    inbox: Inbox(
+        items: decoded.inbox.items, working: decoded.inbox.working, agents: decoded.inbox.agents, rollup: decoded.inbox.rollup,
+        buddies: buddies
+    )
 )
 
 func view(keeping ids: Set<String>?) -> DeviceView {
     guard let ids else { return full }
     let items = full.inbox.items.filter { $0.agentId.map(ids.contains) ?? false }
+    let agents = full.inbox.agents.filter { ids.contains($0.agentId) }
     return DeviceView(
         workspace: full.workspace,
         sessions: full.sessions.filter { $0.agentId.map(ids.contains) ?? false },
@@ -131,7 +135,9 @@ func view(keeping ids: Set<String>?) -> DeviceView {
         attentions: full.attentions.filter { ids.contains($0.agentId) },
         inbox: Inbox(
             items: items, working: items.filter { $0.kind == .working }.count,
-            agents: full.inbox.agents.filter { ids.contains($0.agentId) }, buddies: full.inbox.buddies
+            agents: agents,
+            rollup: AgentRollup(subagents: agents.reduce(0) { $0 + $1.subagents }, tasks: agents.reduce(0) { $0 + $1.tasks }),
+            buddies: full.inbox.buddies
         )
     )
 }

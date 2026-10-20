@@ -215,7 +215,9 @@ export interface ViewState {
     globalSearchBySession: Record<string, GlobalSearchView>;
 
     /** How the core shows each open agent, by id, as its device view last said. Never persisted. */
-    agentStatus: Record<string, import("./agentStatus").AgentShown>;
+    agentStatus: Record<string, import("../api/generated/wire").AgentShown>;
+    /** How each project's open agents show together, by project id, as the core last said. Never persisted. */
+    projectStatus: Record<string, import("../api/generated/wire").AgentRollup>;
     /** Questions agents asked that wait on an answer, as the core last sent them. */
     agentQuestions: import("../agents/agentQuestions").AgentQuestion[];
     /** Each project's board cards, by the project folder the core names, as the core last sent them. */
@@ -370,6 +372,7 @@ export const useStore = create<StoreState>(() => {
         gitCmdLogOpen: false,
         globalSearchBySession: {},
         agentStatus: {},
+        projectStatus: {},
         agentQuestions: [],
         agentBoards: {},
         agentBoardAuto: {},

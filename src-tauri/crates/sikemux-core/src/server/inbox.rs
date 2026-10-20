@@ -17,6 +17,7 @@ use crate::protocol::{
 use crate::text::{clipped, clipped_line};
 
 use super::board::{self, Summary, Waits};
+use super::display;
 use super::notify::provider_name;
 use super::Core;
 
@@ -165,6 +166,10 @@ pub(crate) struct View {
     pub remote_agents: Vec<RemoteAgent>,
     /// Every open agent here as devices show it, in the order they list them.
     pub agents: Vec<Shown>,
+    /// How each project's open agents show together, by project id.
+    pub projects: BTreeMap<String, Rollup>,
+    /// How every open agent here shows together; none while none is open.
+    pub rollup: Option<Rollup>,
     /// The characters the app draws for its agents.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buddies: Option<super::workspace::Buddies>,
@@ -175,15 +180,82 @@ pub(crate) struct View {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Shown {
     pub agent_id: String,
+    /// The CLI it runs, such as `claude`.
+    pub cli: String,
     /// What its row is titled: the chat's or terminal's own title, else what
     /// it is, such as "New Claude chat".
     pub title: String,
     pub status: AgentStatus,
     pub group: AgentGroup,
+    /// The word shown for its group, such as "Needs input".
+    pub label: &'static str,
     pub unread: bool,
     pub subagents: u32,
     pub tasks: u32,
+    /// Mid-turn or waiting on an answer, so stopping it now loses work.
+    pub busy: bool,
+    /// It still has subagents or shells running.
+    pub background: bool,
     pub active_at: Option<u64>,
+}
+
+impl Shown {
+    fn new(
+        agent_id: String,
+        cli: String,
+        title: String,
+        status: AgentStatus,
+        group: AgentGroup,
+    ) -> Self {
+        Self {
+            agent_id,
+            cli,
+            title,
+            status,
+            group,
+            label: display::group_label(group),
+            unread: false,
+            subagents: 0,
+            tasks: 0,
+            busy: matches!(group, AgentGroup::Blocked | AgentGroup::Working),
+            background: false,
+            active_at: None,
+        }
+    }
+
+    fn running(mut self, subagents: u32, tasks: u32) -> Self {
+        self.subagents = subagents;
+        self.tasks = tasks;
+        self.background = subagents + tasks > 0;
+        self
+    }
+}
+
+/// Several agents shown as one: the group of the one that wants the person
+/// most, with every subagent and shell they still have running.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Rollup {
+    pub group: AgentGroup,
+    pub label: &'static str,
+    pub subagents: u32,
+    pub tasks: u32,
+}
+
+fn rollup<'a>(agents: impl IntoIterator<Item = &'a Shown>) -> Option<Rollup> {
+    agents
+        .into_iter()
+        .fold(None, |rolled: Option<Rollup>, agent| {
+            let group = rolled
+                .as_ref()
+                .map_or(agent.group, |rolled| rolled.group.min(agent.group));
+            Some(Rollup {
+                group,
+                label: display::group_label(group),
+                subagents: rolled.as_ref().map_or(0, |rolled| rolled.subagents) + agent.subagents,
+                tasks: rolled.as_ref().map_or(0, |rolled| rolled.tasks) + agent.tasks,
+            })
+        })
 }
 
 /// An agent on a linked host that works with agents here.
@@ -197,6 +269,9 @@ pub(crate) struct RemoteAgent {
     pub host_id: String,
     pub cli: String,
     pub status: AgentStatus,
+    pub group: AgentGroup,
+    /// The word shown for its status, such as "Sleeping".
+    pub label: &'static str,
     /// The agent here that started it, for a worker.
     pub lead: Option<String>,
     pub project: String,
@@ -219,6 +294,8 @@ fn remote_agents(core: &Core) -> Vec<RemoteAgent> {
             name: foreign.name,
             cli: foreign.cli,
             status: foreign.status,
+            group: display::group_of_status(foreign.status),
+            label: display::status_label(foreign.status),
             lead: foreign.parent,
             project: foreign.project,
         })
@@ -725,8 +802,22 @@ fn ranked(mut items: Vec<Item>) -> Vec<Item> {
 
 /// The inbox, from the chats and terminals the device view lists.
 pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> View {
+    let listed = shown(core, chats, sessions);
+    let mut by_project: BTreeMap<String, Vec<&Shown>> = BTreeMap::new();
+    let mut project_of = core.workspaces.agent_projects();
+    for agent in &listed {
+        if let Some(project) = project_of.remove(&agent.agent_id) {
+            by_project.entry(project).or_default().push(agent);
+        }
+    }
+    let projects = by_project
+        .into_iter()
+        .filter_map(|(project, agents)| Some((project, rollup(agents)?)))
+        .collect();
     View {
-        agents: shown(core, chats, sessions),
+        rollup: rollup(&listed),
+        projects,
+        agents: listed,
         ..view_of(core, &agents(core, chats, sessions), sessions)
     }
 }
@@ -735,25 +826,22 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
     let mut ranked: Vec<(u32, Shown)> = chats
         .iter()
         .map(|chat| {
-            (
-                chat.attention_rank,
-                Shown {
-                    agent_id: chat.agent_id.clone(),
-                    title: chat
-                        .title
-                        .clone()
-                        .filter(|title| !title.is_empty())
-                        .unwrap_or_else(|| {
-                            format!("New {} chat", provider_name(core, &chat.provider))
-                        }),
-                    status: chat.status,
-                    group: chat.group,
-                    unread: chat.unread,
-                    subagents: chat.subagents,
-                    tasks: chat.tasks,
-                    active_at: chat.active_at,
-                },
+            let title = chat
+                .title
+                .clone()
+                .filter(|title| !title.is_empty())
+                .unwrap_or_else(|| format!("New {} chat", provider_name(core, &chat.provider)));
+            let mut shown = Shown::new(
+                chat.agent_id.clone(),
+                chat.provider.clone(),
+                title,
+                chat.status,
+                chat.group,
             )
+            .running(chat.subagents, chat.tasks);
+            shown.unread = chat.unread;
+            shown.active_at = chat.active_at;
+            (chat.attention_rank, shown)
         })
         .collect();
     ranked.extend(sessions.iter().filter_map(|session| {
@@ -761,25 +849,22 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
         if chats.iter().any(|chat| &chat.agent_id == agent_id) {
             return None;
         }
-        Some((
-            session.attention_rank.unwrap_or(u32::MAX),
-            Shown {
-                agent_id: agent_id.clone(),
-                title: session
-                    .title
-                    .clone()
-                    .filter(|title| !title.is_empty())
-                    .unwrap_or_else(|| {
-                        provider_name(core, session.agent_type.as_deref().unwrap_or("agent"))
-                    }),
-                status: session.status?,
-                group: session.group?,
-                unread: session.unread,
-                subagents: 0,
-                tasks: 0,
-                active_at: session.active_at,
-            },
-        ))
+        let cli = session.agent_type.clone().unwrap_or_else(|| "agent".into());
+        let title = session
+            .title
+            .clone()
+            .filter(|title| !title.is_empty())
+            .unwrap_or_else(|| provider_name(core, &cli));
+        let mut shown = Shown::new(
+            agent_id.clone(),
+            cli,
+            title,
+            session.status?,
+            session.group?,
+        );
+        shown.unread = session.unread;
+        shown.active_at = session.active_at;
+        Some((session.attention_rank.unwrap_or(u32::MAX), shown))
     }));
     ranked.sort_by(|a, b| (a.0, &a.1.agent_id).cmp(&(b.0, &b.1.agent_id)));
     ranked.into_iter().map(|(_, shown)| shown).collect()
@@ -812,6 +897,8 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         agent_messages: core.harness.mailbox.log.latest(),
         remote_agents: remote_agents(core),
         agents: Vec::new(),
+        projects: BTreeMap::new(),
+        rollup: None,
         buddies: core.workspaces.buddies(),
     }
 }

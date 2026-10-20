@@ -5,7 +5,7 @@
 //! on each of the person's accounts and finds its program itself; a launch
 //! builds its environment afresh, keys and all.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -774,6 +774,17 @@ impl Workspaces {
             .agents
             .iter()
             .map(|kept| kept.agent.id.clone())
+            .collect()
+    }
+
+    /// The project of every agent in the workspace, by agent id.
+    pub(crate) fn agent_projects(&self) -> HashMap<String, String> {
+        self.published
+            .locked()
+            .saved
+            .agents
+            .iter()
+            .map(|kept| (kept.agent.id.clone(), kept.agent.project.clone()))
             .collect()
     }
 
