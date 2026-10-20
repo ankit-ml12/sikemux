@@ -90,7 +90,7 @@ describe("LSP diagnostics subscription", () => {
         expect(transport.eventListenerCount).toBe(1);
 
         const published = diagnosticsPayload();
-        expect(transport.emit(LSP_DIAGNOSTICS_EVENT, published)).toEqual({ delivered: 1, listenerErrors: 0 });
+        expect(transport.emit(LSP_DIAGNOSTICS_EVENT, published)).toBe(1);
         transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload({ version: 6 }));
         transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload({ version: null, diagnostics: [] }));
 
@@ -106,7 +106,7 @@ describe("LSP diagnostics subscription", () => {
         unsubscribe();
         unsubscribe();
         expect(transport.eventListenerCount).toBe(0);
-        expect(transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload())).toEqual({ delivered: 0, listenerErrors: 0 });
+        expect(transport.emit(LSP_DIAGNOSTICS_EVENT, diagnosticsPayload())).toBe(0);
         expect(listener).toHaveBeenCalledTimes(3);
     });
 

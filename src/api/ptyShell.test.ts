@@ -66,7 +66,7 @@ describe("PTY shell metadata adapter", () => {
         const unsubscribeSecond = await subscribePtyShellMetadata(7, second);
 
         expect(transport.eventListenerCount).toBe(1);
-        expect(transport.emit(PTY_SHELL_METADATA_EVENT, event())).toEqual({ delivered: 1, listenerErrors: 0 });
+        expect(transport.emit(PTY_SHELL_METADATA_EVENT, event())).toBe(1);
         expect(first).toHaveBeenCalledOnce();
         expect(second).not.toHaveBeenCalled();
 
