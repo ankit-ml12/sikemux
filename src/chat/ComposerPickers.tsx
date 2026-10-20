@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconChevron } from "../ui/Icons";
-import type { ChatAgentType } from "../agents/agentLaunch";
-import { agentLabel, hasAccounts } from "../agents/catalog";
+import { agentLabel, hasAccounts, type ChatAgentType } from "../agents/catalog";
 import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
 import { accountsOf, moveChat } from "../agents/accounts";
 import { fetchResource, peekResource } from "../state/resources";

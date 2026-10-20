@@ -1,5 +1,5 @@
 import type { AgentInfo } from "../api/agents";
-import { agentSupportsChat } from "../agents/agentLaunch";
+import { agentSupportsChat } from "../agents/catalog";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { sendToAgent } from "../agents/sendToAgent";
 import { fetchResource, peekResource } from "../state/resources";

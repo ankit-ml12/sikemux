@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ChatAgentType } from "../agents/agentLaunch";
-import { agentLabel } from "../agents/catalog";
+import { agentLabel, type ChatAgentType } from "../agents/catalog";
 import { coreCall } from "../api/core";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";

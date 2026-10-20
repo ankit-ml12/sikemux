@@ -1,7 +1,6 @@
 import { useEffect, useId, useMemo, useRef, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
-import { agentSupportsChat, CHAT_AGENT_TYPES, type ChatAgentType } from "../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
-import { agentLabel } from "../agents/catalog";
+import { agentLabel, agentSupportsChat, CHAT_AGENT_TYPES, FEATURED_AGENT_TYPES, type ChatAgentType } from "../agents/catalog";
 import { leavingMenu } from "../lib/motion";
 import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
@@ -22,10 +21,8 @@ export interface AgentChoicesProps {
     any?: { label: string; chosen: boolean; onPick: () => void };
 }
 
-/* Claude and Codex install their adapter on first use, so they are offered
+/* The featured agents install their adapter on first use, so they are offered
    whether or not their CLI is found yet. The rest need their own CLI. */
-const ALWAYS_OFFERED = new Set<ChatAgentType>(["codex", "claude"]);
-
 /** The agents a chat that has not started yet can move to, over the model list. */
 function AgentChoices({ type: current, profile, onSwitch, any }: AgentChoicesProps) {
     const profiles = useStore((state) => state.providerProfiles);
@@ -33,7 +30,7 @@ function AgentChoices({ type: current, profile, onSwitch, any }: AgentChoicesPro
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
     const catalog = useResource(agentCatalogR, runtimeProfiles);
     const installed = new Set((catalog.data ?? []).filter((item) => item.available !== false).map((item) => item.type));
-    const harnesses = CHAT_AGENT_TYPES.filter((type) => ALWAYS_OFFERED.has(type) || type === current || installed.has(type));
+    const harnesses = CHAT_AGENT_TYPES.filter((type) => FEATURED_AGENT_TYPES.includes(type) || type === current || installed.has(type));
     const agentOptions = harnesses.flatMap((type) => {
         const label = agentLabel(type);
         const icon = <AgentIcon type={type} size={15} className={`agent-glyph ${type}`} />;

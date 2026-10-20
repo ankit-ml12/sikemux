@@ -1,5 +1,5 @@
 import { recordOf } from "../lib/guards";
-import { agentSupportsChat, type ChatAgentType } from "../agents/agentLaunch";
+import { agentSupportsChat, type ChatAgentType } from "../agents/catalog";
 import type { Agent } from "../state/types";
 
 /** One value a session option can take. */

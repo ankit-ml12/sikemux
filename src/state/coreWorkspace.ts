@@ -1,8 +1,8 @@
 import { coreCall } from "../api/core";
 import type { PinnedChat as CorePinnedChat, ProjectInfo, SpaceInfo, Workspace, WorkspaceAgent } from "../api/generated/wire";
 import { getIpcTransport } from "../api/transport";
-import { AGENT_PERMISSION_MODES, agentSupportsChat, effectiveMode, normalizePermissionMode } from "../agents/agentLaunch";
-import { isAgentType } from "../agents/catalog";
+import { AGENT_PERMISSION_MODES, effectiveMode, normalizePermissionMode } from "../agents/agentLaunch";
+import { isAgentType, agentSupportsChat } from "../agents/catalog";
 import { toAgentBuddy } from "../buddies/agentBuddy";
 import { isRecord } from "../lib/guards";
 import { isPluginId } from "../plugins/kinds";

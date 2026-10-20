@@ -141,7 +141,7 @@ describe("composer pickers", () => {
         );
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
         const agents = screen.getByRole("group", { name: "Agent" }).querySelectorAll("button");
-        expect(Array.from(agents, (button) => button.textContent)).toEqual(["Codex", "Claude"]);
+        expect(Array.from(agents, (button) => button.textContent)).toEqual(["Claude", "Codex"]);
         expect(screen.getByRole("button", { name: /Codex/ })).toHaveAttribute("aria-pressed", "true");
     });
 

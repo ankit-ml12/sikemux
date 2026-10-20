@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { BoardAuto, SettingsChanges } from "../agents/agentBoard";
-import type { ChatAgentType } from "../agents/agentLaunch";
+import { type ChatAgentType } from "../agents/catalog";
 import { agentBoardApi } from "../api/agentBoard";
 import { LaunchPicker, type LaunchChoice } from "../chat/LaunchPicker";
 import { launcherId } from "../remote/workspace";

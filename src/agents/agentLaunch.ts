@@ -1,31 +1,20 @@
 import type { AgentPermissionMode, AgentType } from "../state/types";
-import { canBypassPermissions, isAgentType } from "./catalog";
+import { canBypassPermissions, isAgentType, resumesByPath } from "./catalog";
 
 export const MAX_AGENT_MODEL_LENGTH = 256;
 
 const SESSION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
-/** Whether `id` has the shape the agent's own sessions take, so it can never pass for a flag. Pi and OMP also name a session by its transcript's path. */
+/** Whether `id` has the shape the agent's own sessions take, so it can never pass for a flag. Some agents also name a session by its transcript's path. */
 export function isResumeId(type: AgentType, id: string): boolean {
     if (SESSION_TOKEN.test(id)) return true;
-    return (
-        (type === "pi" || type === "omp") && id.startsWith("/") && id.endsWith(".jsonl") && id.length <= 4_096 && ![...id].some((char) => char < " ")
-    );
+    return resumesByPath(type) && id.startsWith("/") && id.endsWith(".jsonl") && id.length <= 4_096 && ![...id].some((char) => char < " ");
 }
 
 export const AGENT_PERMISSION_MODES: readonly AgentPermissionMode[] = ["workspace-write", "bypass"];
 
 export function supportedPermissionModes(type: AgentType): readonly AgentPermissionMode[] {
     return canBypassPermissions(type) ? AGENT_PERMISSION_MODES : ["workspace-write"];
-}
-
-/** Agents the built-in chat can drive over ACP. Pi has no ACP mode of its own. */
-export type ChatAgentType = Exclude<AgentType, "pi">;
-
-export const CHAT_AGENT_TYPES: readonly ChatAgentType[] = ["codex", "claude", "opencode", "omp", "grok", "hermes", "muse"];
-
-export function agentSupportsChat(type: AgentType): type is ChatAgentType {
-    return (CHAT_AGENT_TYPES as readonly AgentType[]).includes(type);
 }
 
 export function normalizePermissionMode(type: AgentType, mode: AgentPermissionMode): AgentPermissionMode {

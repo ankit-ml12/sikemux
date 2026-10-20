@@ -4,15 +4,8 @@ import { acpAccount } from "../../agents/accounts";
 import { coreCall } from "../../api/core";
 import { agentNamesApi } from "../../api/agentNames";
 import type { AgentQuestion } from "../../agents/agentQuestions";
-import { canBypassPermissions } from "../../agents/catalog";
-import {
-    agentSupportsChat,
-    effectiveMode,
-    isResumeId,
-    MAX_AGENT_MODEL_LENGTH,
-    normalizePermissionMode,
-    type ChatAgentType,
-} from "../../agents/agentLaunch";
+import { agentSupportsChat, canBypassPermissions, hasRelocatableSessions, type ChatAgentType } from "../../agents/catalog";
+import { effectiveMode, isResumeId, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
 import { agentHasBackgroundWork, isAgentBusy, type AgentShown } from "../agentStatus";
@@ -228,14 +221,11 @@ export function setAgentWorktree(id: string, cwd: string, worktree: AgentWorktre
     });
 }
 
-/** Providers whose saved chat can be filed under another project once it has started. */
-const RELOCATABLE_SESSIONS: ReadonlySet<AgentType> = new Set(["claude", "codex"]);
-
-/** Whether the agent can move to another project now: before its first message, or while a Claude or Codex chat sits idle. */
+/** Whether the agent can move to another project now: before its first message, or while a chat whose sessions can move sits idle. */
 export function canMoveAgentToProject(state: StoreState, agent: Agent): boolean {
     if (agent.worktree) return false;
     if (!agent.resumeId) return true;
-    if (!RELOCATABLE_SESSIONS.has(agent.type)) return false;
+    if (!hasRelocatableSessions(agent.type)) return false;
     if (agent.launchState === "dormant") return true;
     const shown = state.agentStatus[agent.id];
     return !isAgentBusy(shown) && !agentHasBackgroundWork(shown);

@@ -2,11 +2,12 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "rea
 import type { AgentInfo } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
-import { hasUsage, type UsageAgentType } from "../agents/catalog";
+import { hasUsage, USAGE_AGENT_TYPES, type UsageAgentType } from "../agents/catalog";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
-import { useResource, useResourceEnabled } from "../state/resources";
+import { useResource, useResourceEnabled, type ResourceHandle } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
+import type { AgentUsage } from "../api/agents";
 import { useStore } from "../state/store";
 import { activeAgentId, agentDisplayOf, agentIdsOf, chatKey, hasChat } from "../state/selectors";
 import { type Agent, type AgentType, type PinnedChat } from "../state/types";
@@ -109,15 +110,10 @@ export function TabRailBody() {
     if (catalog.data && catalog.data !== lastCatalog) setLastCatalog(catalog.data);
     const catalogAgents = catalog.data ?? lastCatalog;
     const availableAgents = useMemo(() => catalogAgents.filter((agent) => agent.available !== false), [catalogAgents]);
-    const availableTypes = useMemo(() => new Set(availableAgents.map((a) => a.type)), [availableAgents]);
-    const claudeDetected = availableTypes.has("claude");
-    const codexDetected = availableTypes.has("codex");
-    const claudeProvider = availableAgents.find((agent) => agent.type === "claude");
-    const codexProvider = availableAgents.find((agent) => agent.type === "codex");
-    const claudeUsage = useResourceEnabled(claudeDetected, agentUsageR, "claude", claudeProvider?.configPath ?? undefined);
-    const codexUsage = useResourceEnabled(codexDetected, agentUsageR, "codex", codexProvider?.configPath ?? undefined);
-    const usageRefreshRef = useRef({ claude: claudeUsage.refresh, codex: codexUsage.refresh });
-    usageRefreshRef.current = { claude: claudeUsage.refresh, codex: codexUsage.refresh };
+    const usages = useAgentUsages(availableAgents);
+    const usageRefreshRef = useRef(usages);
+    usageRefreshRef.current = usages;
+    const usageDetected = USAGE_AGENT_TYPES.some((usageType) => usages[usageType].detected);
 
     const [type, setType] = useState<AgentType | null>(null);
     const allAgents = useStore((s) => s.tabRailAllAgents);
@@ -151,24 +147,19 @@ export function TabRailBody() {
      * it only runs while someone can see the answer.
      */
     useEffect(() => {
-        if (!pageVisible) return;
-        if (!claudeDetected && !codexDetected) return;
+        if (!pageVisible || !usageDetected) return;
         const timer = window.setInterval(() => {
-            if (claudeDetected) void usageRefreshRef.current.claude();
-            if (codexDetected) void usageRefreshRef.current.codex();
+            for (const usage of Object.values(usageRefreshRef.current)) if (usage.detected) void usage.handle.refresh();
         }, USAGE_REFRESH_MS);
         return () => window.clearInterval(timer);
-    }, [claudeDetected, codexDetected, pageVisible]);
+    }, [usageDetected, pageVisible]);
 
     const isProject = session?.kind === "project";
     const cwd = session?.cwd ?? "";
 
     const selectedProvider = availableAgents.find((agent) => agent.type === selectedType);
-    const selectedUsage = selectedType === "claude" ? claudeUsage : selectedType === "codex" ? codexUsage : null;
-    const usagePeaks = {
-        claude: usagePeak(claudeUsage.data),
-        codex: usagePeak(codexUsage.data),
-    };
+    const selectedUsage = hasUsage(selectedType) ? usages[selectedType].handle : null;
+    const usagePeaks = Object.fromEntries(USAGE_AGENT_TYPES.map((usageType) => [usageType, usagePeak(usages[usageType].handle.data)]));
 
     const projectCwds = useMemo(
         () =>
@@ -477,6 +468,19 @@ export function TabRailBody() {
             {accounts}
         </>
     );
+}
+
+/** How much of each plan is used, for the agents found on this machine. */
+function useAgentUsages(available: readonly AgentInfo[]): Record<UsageAgentType, { detected: boolean; handle: ResourceHandle<AgentUsage> }> {
+    return Object.fromEntries(
+        USAGE_AGENT_TYPES.map((type) => {
+            const provider = available.find((agent) => agent.type === type);
+            // USAGE_AGENT_TYPES is a module constant, so these hooks run in the same order every render.
+            // eslint-disable-next-line react-hooks/rules-of-hooks
+            const handle = useResourceEnabled(!!provider, agentUsageR, type, provider?.configPath ?? undefined);
+            return [type, { detected: !!provider, handle }];
+        }),
+    ) as Record<UsageAgentType, { detected: boolean; handle: ResourceHandle<AgentUsage> }>;
 }
 
 function AgentHeader({
