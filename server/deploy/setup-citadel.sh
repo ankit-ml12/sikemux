@@ -257,5 +257,21 @@ else
     "the DNS record pointing here, or run /usr/local/lib/sikemux/relay-certificate" >&2
 fi
 
+step "watch: checks every minute, posting problems to Discord's #alerts"
+id sikemux-watch >/dev/null 2>&1 ||
+  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sikemux-watch
+command -v vnstat >/dev/null ||
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends vnstat >/dev/null
+systemctl enable --now vnstat >/dev/null
+install -m 755 -o root -g root "$here/watch" /usr/local/lib/sikemux/watch
+install -m 644 "$here/sikemux-watch.service" /etc/systemd/system/sikemux-watch.service
+install -m 644 "$here/sikemux-watch.timer" /etc/systemd/system/sikemux-watch.timer
+systemctl daemon-reload
+if [ -f /etc/sikemux/watch.env ]; then
+  systemctl enable --now sikemux-watch.timer >/dev/null
+else
+  echo "the watch waits for /etc/sikemux/watch.env holding DISCORD_WEBHOOK_URL, the #alerts webhook" >&2
+fi
+
 step "done"
 echo "citadel is ready for the first deploy"
