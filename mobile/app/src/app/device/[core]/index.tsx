@@ -17,7 +17,7 @@ import { ProjectSheet } from '@/devices/ProjectSheet';
 import { WorkerRow, workersOf } from '@/devices/RemoteWorker';
 import { summary } from '@/devices/status';
 import { agentDisplay } from '@mac/state/agentStatus';
-import { inProject, itemIn, projectName } from '@/devices/words';
+import { agentIn, itemIn, projectName, projectOf } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
 import { AgentFace } from '@/ui/Buddy';
@@ -41,9 +41,9 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const type = useType();
-  const chats = snapshot.chats.filter((chat) => inProject(project, chat.cwd));
+  const chats = snapshot.chats.filter((chat) => agentIn(snapshot, project, chat.agentId, chat.cwd));
   const terminals = snapshot.sessions.filter((session) => session.project === project.id && session.running).length;
-  const waiting = snapshot.inbox.items.some((item) => item.tier === 'needs' && itemIn(item, project));
+  const waiting = snapshot.inbox.items.some((item) => item.tier === 'needs' && itemIn(snapshot, item, project));
   if (!chats.length && !terminals) return null;
   return (
     <View style={styles.tail}>
@@ -166,7 +166,7 @@ function openAgents(snapshot: Snapshot, scope: ProjectInfo | undefined, provider
   return snapshot.inbox.agents.flatMap((shown): OpenAgent[] => {
     const chat = snapshot.chats.find((candidate) => candidate.agentId === shown.agentId);
     if (chat) {
-      const listed = (!scope || inProject(scope, chat.cwd)) && (provider === 'all' || chat.provider === provider);
+      const listed = (!scope || agentIn(snapshot, scope, chat.agentId, chat.cwd)) && (provider === 'all' || chat.provider === provider);
       return listed ? [{ kind: 'chat', chat, shown }] : [];
     }
     const session = snapshot.sessions.find((candidate) => candidate.agentId === shown.agentId);
@@ -209,7 +209,12 @@ function Agents({
           {open.map((agent) =>
             agent.kind === 'chat' ? (
               <Fragment key={agent.chat.agentId}>
-                <ChatRow core={core} chat={agent.chat} shown={agent.shown} place={placeOf(agent.chat.cwd)} />
+                <ChatRow
+                  core={core}
+                  chat={agent.chat}
+                  shown={agent.shown}
+                  place={placeOf(projectOf(snapshot, agent.chat.agentId) ?? agent.chat.cwd)}
+                />
                 {workersOf(workers, agent.chat.agentId).map((worker) => (
                   <WorkerRow key={worker.agentId} worker={worker} nested />
                 ))}
@@ -497,11 +502,11 @@ export default function Device() {
   const starts = device?.access === 'full' && status.online && tab === 'agents';
   const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
-  const asking = snapshot?.inbox.items.filter((item) => item.tier === 'needs' && (!scope || itemIn(item, scope))).length ?? 0;
+  const asking = snapshot?.inbox.items.filter((item) => item.tier === 'needs' && (!scope || itemIn(snapshot, item, scope))).length ?? 0;
   const [filter, setFilter] = useState('all');
   const providers = [
     ...new Set([
-      ...(snapshot?.chats.filter((chat) => !scope || inProject(scope, chat.cwd)).map((chat) => chat.provider) ?? []),
+      ...(snapshot?.chats.filter((chat) => !scope || agentIn(snapshot, scope, chat.agentId, chat.cwd)).map((chat) => chat.provider) ?? []),
       ...(snapshot?.recent.filter((chat) => !scope || chat.project === scope.id).map((chat) => chat.provider) ?? []),
     ]),
   ];

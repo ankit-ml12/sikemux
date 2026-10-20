@@ -23,8 +23,19 @@ export function inProject(project: ProjectInfo, path: string): boolean {
   return path === project.path || path.startsWith(`${project.path}/`);
 }
 
+/** The id of the project the host keeps the agent in, which its worktree's folder does not show. */
+export function projectOf(snapshot: Snapshot, agentId: string): string | undefined {
+  return snapshot.workspace.agents?.find((agent) => agent.id === agentId)?.project;
+}
+
+export function agentIn(snapshot: Snapshot, project: ProjectInfo, agentId: string, cwd: string): boolean {
+  const kept = projectOf(snapshot, agentId);
+  return kept ? kept === project.id : inProject(project, cwd);
+}
+
 /** The item's card is on `project`'s board, or its agent works there. */
-export function itemIn(item: InboxItem, project: ProjectInfo): boolean {
+export function itemIn(snapshot: Snapshot, item: InboxItem, project: ProjectInfo): boolean {
+  if (!item.card && item.agentId && item.project !== undefined) return agentIn(snapshot, project, item.agentId, item.project);
   const where = item.card?.project ?? item.project;
   return where !== undefined && (where === project.id || inProject(project, where));
 }
