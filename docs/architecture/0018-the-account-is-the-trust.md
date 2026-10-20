@@ -43,8 +43,9 @@ for whoever is signed in to the GitHub account.
   device acting as them, and waits ten minutes for an answer. The setting lives on the host, not
   the account, and only the person changes it, so a broken-into server cannot turn it off.
 - **Hosts are one group in the rail.** The rail's SSH group becomes Hosts: this host, every host
-  on the account and every SSH host in `~/.ssh/config`, one row each, with its state, and the
-  account's host matched to its SSH entry when one installed the other. A row opens a terminal
+  on the account, and each SSH host while the person has it open, one row each, with its state,
+  and the account's host matched to its SSH entry when one installed the other. Any host in
+  `~/.ssh/config` is opened from the group's picker, as before. A row opens a terminal
   there, through the core on a Sikemux host and over SSH on any other, and its menu starts a chat,
   opens its files, renames or removes it. An SSH host's menu offers **Install Sikemux here**, which
   runs the installer over that SSH connection and signs the host in to the account by itself. The
