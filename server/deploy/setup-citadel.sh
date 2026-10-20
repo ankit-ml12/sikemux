@@ -16,6 +16,10 @@ PG_ADMIN=nodelike
 
 step() { printf '\n== %s\n' "$*"; }
 
+step "kernel"
+install -m 644 "$here/sysctl.conf" /etc/sysctl.d/60-sikemux.conf
+sysctl --quiet --load /etc/sysctl.d/60-sikemux.conf
+
 step "users"
 id sikemux >/dev/null 2>&1 ||
   useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sikemux
@@ -87,6 +91,11 @@ if ! grep -q '^sikemux ' "$PG_CONF/pg_ident.conf"; then
   printf 'sikemux         sikemux                 sikemux\nsikemux         sikemux-deploy          sikemux\n' >>"$PG_CONF/pg_ident.conf"
 fi
 systemctl reload "postgresql@$PG_VERSION-main"
+if ! cmp -s "$here/postgresql.conf" "$PG_CONF/conf.d/sikemux.conf"; then
+  install -m 644 "$here/postgresql.conf" "$PG_CONF/conf.d/sikemux.conf"
+  # shared_buffers is read only at start.
+  systemctl restart "postgresql@$PG_VERSION-main"
+fi
 sudo -u sikemux-deploy psql "$SIKEMUX_DATABASE_URL" -Atc 'select current_user' |
   grep -qx sikemux
 if psql -U "$PG_ADMIN" -d sikemux -c 'select 1' >/dev/null 2>&1; then
