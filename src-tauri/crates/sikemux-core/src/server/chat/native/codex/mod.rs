@@ -166,12 +166,11 @@ impl Reads for Driver {
     }
 }
 
-/// What a Codex chat hands a core that takes it over.
+/// What a Codex chat knows of its session, as it hands it to a core that
+/// takes it over.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CodexState {
-    rpc: RpcState,
-    session: Session,
+struct Kept {
     thread_id: String,
     cwd: String,
     models: Models,
@@ -182,18 +181,20 @@ struct CodexState {
     servers: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexState {
+    rpc: RpcState,
+    session: Session,
+    #[serde(flatten)]
+    kept: Kept,
+}
+
 pub(crate) struct Codex {
     process: Process,
     driver: Driver,
     reading: Reading<Driver>,
-    thread_id: String,
-    cwd: String,
-    models: Models,
-    model: String,
-    effort: Option<String>,
-    mode: Mode,
-    account: Value,
-    servers: Vec<String>,
+    kept: Kept,
 }
 
 async fn list_models(rpc: &Rpc) -> Result<Models, String> {
@@ -280,7 +281,7 @@ impl Codex {
             .rpc
             .start_for(
                 "turn/steer",
-                json!({ "threadId": self.thread_id, "expectedTurnId": turn_id, "input": input }),
+                json!({ "threadId": self.kept.thread_id, "expectedTurnId": turn_id, "input": input }),
                 Some(Purpose::Steer {
                     text: prompt.text.clone(),
                     paths: prompt.paths.clone(),
@@ -291,13 +292,16 @@ impl Codex {
     }
 
     fn prompt_input(&self, prompt: &Prompt) -> Result<Vec<Value>, String> {
-        Ok(input(parts(prompt)?, self.models.takes_images(&self.model)))
+        Ok(input(
+            parts(prompt)?,
+            self.kept.models.takes_images(&self.kept.model),
+        ))
     }
 
     fn say(&self, text: &str) {
         self.driver
             .sink
-            .update(&self.thread_id, items::agent_text(text, None, None));
+            .update(&self.kept.thread_id, items::agent_text(text, None, None));
     }
 
     fn answered(&self, turn: u64) {
@@ -337,7 +341,7 @@ impl Codex {
 
     async fn command(&self, turn: u64, prompt: &Prompt, command: Command) -> Result<(), String> {
         let rpc = &self.driver.rpc;
-        let thread = json!(self.thread_id);
+        let thread = json!(self.kept.thread_id);
         match command {
             Command::Compact => {
                 return self
@@ -362,7 +366,7 @@ impl Codex {
             }
             Command::Skills => {
                 let skills = rpc
-                    .request("skills/list", json!({ "cwds": [self.cwd] }))
+                    .request("skills/list", json!({ "cwds": [self.kept.cwd] }))
                     .await?;
                 self.say(&commands::skills_text(&skills));
             }
@@ -371,17 +375,17 @@ impl Codex {
                     .request("mcpServerStatus/list", json!({ "threadId": thread }))
                     .await?;
                 let statuses = statuses["data"].as_array().cloned().unwrap_or_default();
-                self.say(&commands::servers_text(&statuses, &self.servers));
+                self.say(&commands::servers_text(&statuses, &self.kept.servers));
             }
             Command::Status => {
                 let token_usage = self.driver.session.locked().token_usage.clone();
                 self.say(&commands::status_text(&commands::Status {
-                    model: &self.model,
-                    cwd: &self.cwd,
-                    approval: self.mode.approval_policy(),
-                    sandbox: self.mode.sandbox_name(),
-                    account: &self.account,
-                    session: &self.thread_id,
+                    model: &self.kept.model,
+                    cwd: &self.kept.cwd,
+                    approval: self.kept.mode.approval_policy(),
+                    sandbox: self.kept.mode.sandbox_name(),
+                    account: &self.kept.account,
+                    session: &self.kept.thread_id,
                     token_usage: token_usage.as_ref(),
                 }));
             }
@@ -394,18 +398,18 @@ impl Codex {
     async fn replay_history(&self, thread: &Value) -> Result<(), String> {
         let rpc = &self.driver.rpc;
         let sink = &self.driver.sink;
-        let turns = list_turns(rpc, &self.thread_id).await?;
+        let turns = list_turns(rpc, &self.kept.thread_id).await?;
         let children = subagent_histories(rpc, &turns).await;
         if let Some(title) = history::thread_title(thread, &turns) {
             sink.update(
-                &self.thread_id,
+                &self.kept.thread_id,
                 json!({ "sessionUpdate": "session_info_update", "title": title }),
             );
             self.driver.session.locked().titled = true;
         }
         let mut out = Vec::new();
         history::replay(
-            &self.thread_id,
+            &self.kept.thread_id,
             &turns,
             &children,
             &items::read_file,
@@ -426,11 +430,11 @@ impl Codex {
         let skills = self
             .driver
             .rpc
-            .request("skills/list", json!({ "cwds": [self.cwd] }))
+            .request("skills/list", json!({ "cwds": [self.kept.cwd] }))
             .await
             .unwrap_or(Value::Null);
         self.driver.sink.update(
-            &self.thread_id,
+            &self.kept.thread_id,
             json!({
                 "sessionUpdate": "available_commands_update",
                 "availableCommands": commands::available(&skills),
@@ -557,14 +561,16 @@ impl Backend for Codex {
             process,
             driver,
             reading,
-            thread_id: thread_id.clone(),
-            cwd,
-            models,
-            model,
-            effort,
-            mode,
-            account,
-            servers,
+            kept: Kept {
+                thread_id: thread_id.clone(),
+                cwd,
+                models,
+                model,
+                effort,
+                mode,
+                account,
+                servers,
+            },
         };
         if launch.resume_id.is_some() {
             codex.replay_history(thread).await?;
@@ -580,7 +586,7 @@ impl Backend for Codex {
             }),
             setup: json!({
                 "modes": config::modes(mode),
-                "configOptions": codex.models.options(&codex.model, codex.effort.as_deref()),
+                "configOptions": codex.kept.models.options(&codex.kept.model, codex.kept.effort.as_deref()),
             }),
         };
         Ok((codex, opened))
@@ -591,19 +597,21 @@ impl Backend for Codex {
         if let Some(command) = commands::parse(&prompt.text) {
             return self.command(turn, &prompt, command).await;
         }
-        let summary = if self.account["type"] == "apiKey" || !self.models.reasons(&self.model) {
+        let summary = if self.kept.account["type"] == "apiKey"
+            || !self.kept.models.reasons(&self.kept.model)
+        {
             "none"
         } else {
             "auto"
         };
         let params = json!({
-            "threadId": self.thread_id,
+            "threadId": self.kept.thread_id,
             "input": input,
-            "approvalPolicy": self.mode.approval_policy(),
+            "approvalPolicy": self.kept.mode.approval_policy(),
             "approvalsReviewer": "user",
-            "sandboxPolicy": self.mode.sandbox_policy(),
-            "model": self.model,
-            "effort": self.effort,
+            "sandboxPolicy": self.kept.mode.sandbox_policy(),
+            "model": self.kept.model,
+            "effort": self.kept.effort,
             "summary": summary,
             "serviceTier": null,
             "clientUserMessageId": prompt.message_id,
@@ -644,28 +652,37 @@ impl Backend for Codex {
     }
 
     async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
-        self.mode = Mode::from_app(mode);
+        self.kept.mode = Mode::from_app(mode);
         Ok(())
     }
 
     async fn set_config(&mut self, config_id: &str, value: &str) -> Result<Value, String> {
         match config_id {
             "model" => {
-                if !self.models.offers(value) {
+                if !self.kept.models.offers(value) {
                     return Err(format!("Codex does not offer the model {value}"));
                 }
-                self.model = value.to_owned();
-                self.effort = self.models.effort_for(value, self.effort.as_deref());
+                self.kept.model = value.to_owned();
+                self.kept.effort = self
+                    .kept
+                    .models
+                    .effort_for(value, self.kept.effort.as_deref());
             }
             "reasoning_effort" => {
-                if !self.models.supports_effort(&self.model, value) {
-                    return Err(format!("{} does not offer the effort {value}", self.model));
+                if !self.kept.models.supports_effort(&self.kept.model, value) {
+                    return Err(format!(
+                        "{} does not offer the effort {value}",
+                        self.kept.model
+                    ));
                 }
-                self.effort = Some(value.to_owned());
+                self.kept.effort = Some(value.to_owned());
             }
             _ => return Err(format!("Codex has no option {config_id}")),
         }
-        Ok(self.models.options(&self.model, self.effort.as_deref()))
+        Ok(self
+            .kept
+            .models
+            .options(&self.kept.model, self.kept.effort.as_deref()))
     }
 
     async fn stop_task(&mut self, _task_id: &str) -> Result<(), String> {
@@ -685,7 +702,7 @@ impl Backend for Codex {
             .rpc
             .request(
                 "thread/revert",
-                json!({ "threadId": self.thread_id, "beforeTurnId": turn_id }),
+                json!({ "threadId": self.kept.thread_id, "beforeTurnId": turn_id }),
             )
             .await?;
         self.driver.session.locked().rewound(&turn_id);
@@ -705,28 +722,14 @@ impl Backend for Codex {
             process,
             driver,
             reading,
-            thread_id,
-            cwd,
-            models,
-            model,
-            effort,
-            mode,
-            account,
-            servers,
+            kept,
         } = self;
         let (_, lines) = reading.stop().await.ok_or("Codex stopped")?;
         let session = std::mem::replace(&mut *driver.session.locked(), Session::new(String::new()));
         let state = CodexState {
             rpc: driver.rpc.state(),
             session,
-            thread_id,
-            cwd,
-            models,
-            model,
-            effort,
-            mode,
-            account,
-            servers,
+            kept,
         };
         let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
         let released = process.release(lines).await?;
@@ -754,14 +757,7 @@ impl Backend for Codex {
             process,
             driver,
             reading,
-            thread_id: state.thread_id,
-            cwd: state.cwd,
-            models: state.models,
-            model: state.model,
-            effort: state.effort,
-            mode: state.mode,
-            account: state.account,
-            servers: state.servers,
+            kept: state.kept,
         })
     }
 

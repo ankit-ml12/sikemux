@@ -180,26 +180,11 @@ impl Reads for Driver {
     }
 }
 
-/// What an ACP chat hands a core that takes it over.
+/// What an ACP chat knows of its session, as it hands it to a core that
+/// takes it over.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AcpState {
-    rpc: RpcState,
-    turns: Turns,
-    provider: String,
-    session_id: String,
-    setup: Value,
-    steering: bool,
-    embedded_context: bool,
-    can_load: bool,
-    model_outside_config: bool,
-}
-
-pub(crate) struct Acp {
-    process: Process,
-    driver: Driver,
-    reading: Reading<Driver>,
-    provider: String,
+struct Kept {
     session_id: String,
     setup: Value,
     steering: bool,
@@ -208,6 +193,23 @@ pub(crate) struct Acp {
     /// Whether the session's models are picked through `session/set_model`
     /// rather than as a config option.
     model_outside_config: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AcpState {
+    rpc: RpcState,
+    turns: Turns,
+    #[serde(flatten)]
+    kept: Kept,
+}
+
+pub(crate) struct Acp {
+    process: Process,
+    driver: Driver,
+    reading: Reading<Driver>,
+    provider: String,
+    kept: Kept,
 }
 
 impl Acp {
@@ -272,13 +274,13 @@ impl Acp {
             .call(
                 native::SetSessionModel::METHOD,
                 native::SetSessionModel {
-                    session_id: self.session_id.clone(),
+                    session_id: self.kept.session_id.clone(),
                     model_id: model.to_owned(),
                 },
                 Some(ANSWER_WAIT),
             )
             .await?;
-        native::select_model(&mut self.setup, model);
+        native::select_model(&mut self.kept.setup, model);
         Ok(())
     }
 
@@ -288,7 +290,7 @@ impl Acp {
             .call(
                 AGENT_METHOD_NAMES.session_set_config_option,
                 SetSessionConfigOptionRequest::new(
-                    self.session_id.clone(),
+                    self.kept.session_id.clone(),
                     config_id.to_owned(),
                     value,
                 ),
@@ -296,7 +298,7 @@ impl Acp {
             )
             .await?;
         if let Some(options) = answer.get("configOptions") {
-            self.setup["configOptions"] = options.clone();
+            self.kept.setup["configOptions"] = options.clone();
         }
         Ok(())
     }
@@ -305,8 +307,9 @@ impl Acp {
     /// the agent no longer offers is skipped, since model lists change between
     /// launches and a stale one should not stop the chat from starting.
     async fn apply_saved_choices(&mut self, model: Option<&str>, effort: Option<&str>) {
-        if let Some(model) = model.filter(|model| native::offers(&self.setup, "model", model)) {
-            let applied = if self.model_outside_config {
+        if let Some(model) = model.filter(|model| native::offers(&self.kept.setup, "model", model))
+        {
+            let applied = if self.kept.model_outside_config {
                 self.set_model(model).await
             } else {
                 self.set_option("model", model).await
@@ -318,8 +321,8 @@ impl Acp {
         let Some(effort) = effort else {
             return;
         };
-        let Some(config_id) = native::effort_config_id(&self.setup)
-            .filter(|id| native::offers(&self.setup, id, effort))
+        let Some(config_id) = native::effort_config_id(&self.kept.setup)
+            .filter(|id| native::offers(&self.kept.setup, id, effort))
             .map(str::to_owned)
         else {
             return;
@@ -332,7 +335,7 @@ impl Acp {
     /// Writes a steer to the agent now, so a stop sent after it reaches the
     /// agent after it too.
     fn send_steer(&self, prompt: Prompt) -> Result<Sent, String> {
-        if !self.steering {
+        if !self.kept.steering {
             return Err("this agent cannot take a message mid-turn".to_owned());
         }
         let purpose = Purpose::Steer {
@@ -343,9 +346,9 @@ impl Acp {
             prompt.text,
             prompt.paths,
             prompt.context,
-            self.embedded_context,
+            self.kept.embedded_context,
         )?;
-        let steer = air::Steer::new(self.session_id.clone(), blocks);
+        let steer = air::Steer::new(self.kept.session_id.clone(), blocks);
         self.driver
             .rpc
             .start_for(air::Steer::METHOD, params(steer)?, Some(purpose))
@@ -356,7 +359,7 @@ impl Acp {
         self.driver
             .call(
                 AGENT_METHOD_NAMES.session_set_mode,
-                SetSessionModeRequest::new(self.session_id.clone(), mode_id.to_owned()),
+                SetSessionModeRequest::new(self.kept.session_id.clone(), mode_id.to_owned()),
                 Some(ANSWER_WAIT),
             )
             .await
@@ -407,24 +410,31 @@ impl Backend for Acp {
             driver,
             reading,
             provider: launch.provider.clone(),
-            session_id,
-            model_outside_config: native::models_outside_config(&setup),
-            setup: native::with_model_config(setup),
-            steering,
-            embedded_context: initialized
-                .agent_capabilities
-                .prompt_capabilities
-                .embedded_context,
-            can_load,
+            kept: Kept {
+                session_id,
+                model_outside_config: native::models_outside_config(&setup),
+                setup: native::with_model_config(setup),
+                steering,
+                embedded_context: initialized
+                    .agent_capabilities
+                    .prompt_capabilities
+                    .embedded_context,
+                can_load,
+            },
         };
 
         if let Some(mode_id) = permission_mode_id(
             &acp.provider,
             PermissionMode::parse(&launch.permission_mode)?,
-            &acp.setup,
+            &acp.kept.setup,
         )? {
             acp.set_mode(mode_id).await?;
-            if let Some(modes) = acp.setup.get_mut("modes").and_then(Value::as_object_mut) {
+            if let Some(modes) = acp
+                .kept
+                .setup
+                .get_mut("modes")
+                .and_then(Value::as_object_mut)
+            {
                 modes.insert("currentModeId".into(), json!(mode_id));
             }
         }
@@ -432,9 +442,9 @@ impl Backend for Acp {
             .await;
 
         let opened = Opened {
-            session_id: acp.session_id.clone(),
+            session_id: acp.kept.session_id.clone(),
             capabilities,
-            setup: acp.setup.clone(),
+            setup: acp.kept.setup.clone(),
         };
         Ok((acp, opened))
     }
@@ -444,9 +454,9 @@ impl Backend for Acp {
             prompt.text,
             prompt.paths,
             prompt.context,
-            self.embedded_context,
+            self.kept.embedded_context,
         )?;
-        let request = PromptRequest::new(self.session_id.clone(), blocks);
+        let request = PromptRequest::new(self.kept.session_id.clone(), blocks);
         self.driver.turns.locked().prompted = turn;
         self.driver.rpc.send_for(
             AGENT_METHOD_NAMES.session_prompt,
@@ -469,7 +479,7 @@ impl Backend for Acp {
     async fn cancel(&mut self) -> Result<(), String> {
         let sent = self.driver.rpc.notify(
             AGENT_METHOD_NAMES.session_cancel,
-            params(CancelNotification::new(self.session_id.clone()))?,
+            params(CancelNotification::new(self.kept.session_id.clone()))?,
         );
         if self.driver.sink.running() {
             let mut turns = self.driver.turns.locked();
@@ -479,19 +489,19 @@ impl Backend for Acp {
     }
 
     async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
-        match permission_mode_id(&self.provider, mode, &self.setup)? {
+        match permission_mode_id(&self.provider, mode, &self.kept.setup)? {
             Some(mode_id) => self.set_mode(mode_id).await,
             None => Ok(()),
         }
     }
 
     async fn set_config(&mut self, config_id: &str, value: &str) -> Result<Value, String> {
-        if config_id == "model" && self.model_outside_config {
+        if config_id == "model" && self.kept.model_outside_config {
             self.set_model(value).await?;
         } else {
             self.set_option(config_id, value).await?;
         }
-        Ok(self.setup["configOptions"].clone())
+        Ok(self.kept.setup["configOptions"].clone())
     }
 
     /// A background task outlives the turn that started it, so stopping one
@@ -509,7 +519,7 @@ impl Backend for Acp {
 
     async fn stop_task(&mut self, task_id: &str) -> Result<(), String> {
         let stop = air::StopAsyncTask {
-            session_id: self.session_id.clone(),
+            session_id: self.kept.session_id.clone(),
             async_task_id: task_id.to_owned(),
         };
         self.driver.rpc.send_for(
@@ -532,7 +542,7 @@ impl Backend for Acp {
     }
 
     fn reloadable(&self) -> bool {
-        self.can_load
+        self.kept.can_load
     }
 
     async fn release(self) -> Result<(Value, Released), String> {
@@ -540,13 +550,8 @@ impl Backend for Acp {
             process,
             driver,
             reading,
-            provider,
-            session_id,
-            setup,
-            steering,
-            embedded_context,
-            can_load,
-            model_outside_config,
+            provider: _,
+            kept,
         } = self;
         let (driver_back, lines) = reading.stop().await.ok_or("The agent stopped")?;
         drop(driver_back);
@@ -554,13 +559,7 @@ impl Backend for Acp {
         let state = AcpState {
             rpc: driver.rpc.state(),
             turns,
-            provider,
-            session_id,
-            setup,
-            steering,
-            embedded_context,
-            can_load,
-            model_outside_config,
+            kept,
         };
         let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
         let released = process.release(lines).await?;
@@ -568,7 +567,7 @@ impl Backend for Acp {
     }
 
     fn adopt(
-        _launch: &ChatLaunch,
+        launch: &ChatLaunch,
         sink: Sink,
         state: Value,
         (process, writer, lines): (Process, Writer, Lines),
@@ -584,13 +583,8 @@ impl Backend for Acp {
             process,
             driver,
             reading,
-            provider: state.provider,
-            session_id: state.session_id,
-            setup: state.setup,
-            steering: state.steering,
-            embedded_context: state.embedded_context,
-            can_load: state.can_load,
-            model_outside_config: state.model_outside_config,
+            provider: launch.provider.clone(),
+            kept: state.kept,
         })
     }
 

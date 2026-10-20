@@ -271,12 +271,21 @@ struct MuseState {
     rpc: RpcState,
     session: Session,
     session_tools: bool,
-    launch: ChatLaunch,
+    #[serde(flatten)]
+    kept: Kept,
+}
+
+/// What a Muse chat knows of its session, as it hands it to a core that
+/// takes it over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Kept {
     cwd: String,
     models: Models,
     model: String,
     effort: Option<String>,
     mode: Mode,
+    /// What `skill/list` answered, for the commands the chat offers.
     skills: Value,
 }
 
@@ -347,13 +356,7 @@ impl Host {
 pub(crate) struct Muse {
     host: Host,
     launch: ChatLaunch,
-    cwd: String,
-    models: Models,
-    model: String,
-    effort: Option<String>,
-    mode: Mode,
-    /// What `skill/list` answered, for the commands the chat offers.
-    skills: Value,
+    kept: Kept,
 }
 
 async fn list_models(rpc: &Rpc) -> Models {
@@ -486,7 +489,7 @@ impl Muse {
             "displayText": prompt.text,
             "ifBusy": "queue",
         });
-        if let Some(effort) = &self.effort {
+        if let Some(effort) = &self.kept.effort {
             params["reasoningEffort"] = json!(effort);
         }
         match self.rpc().request("turn/start", params).await {
@@ -539,11 +542,11 @@ impl Muse {
                     (session.totals.clone(), session.context.clone())
                 };
                 self.say(&commands::status_text(&commands::Status {
-                    model: &self.model,
-                    effort: self.effort.as_deref(),
-                    cwd: &self.cwd,
-                    approval: self.mode.approval_mode(),
-                    sandbox: self.mode.sandbox_name(),
+                    model: &self.kept.model,
+                    effort: self.kept.effort.as_deref(),
+                    cwd: &self.kept.cwd,
+                    approval: self.kept.mode.approval_mode(),
+                    sandbox: self.kept.mode.sandbox_name(),
                     session: &session_id,
                     totals: totals.as_ref(),
                     context: context.as_ref(),
@@ -631,7 +634,7 @@ impl Muse {
         }
         let children = subagent_histories(&driver.rpc, items).await;
         let mut out = Vec::new();
-        history::replay(&session_id, items, &children, &self.cwd, &mut out);
+        history::replay(&session_id, items, &children, &self.kept.cwd, &mut out);
         for (session, update) in out {
             driver.sink.update(&session, update);
         }
@@ -642,7 +645,7 @@ impl Muse {
     }
 
     async fn offer_commands(&mut self) {
-        self.skills = self
+        self.kept.skills = self
             .rpc()
             .request("skill/list", json!({ "sessionId": self.session_id() }))
             .await
@@ -651,7 +654,7 @@ impl Muse {
             &self.session_id(),
             json!({
                 "sessionUpdate": "available_commands_update",
-                "availableCommands": commands::available(&self.skills),
+                "availableCommands": commands::available(&self.kept.skills),
             }),
         );
     }
@@ -745,12 +748,14 @@ impl Backend for Muse {
         let mut muse = Self {
             host,
             launch: launch.clone(),
-            cwd,
-            models,
-            model,
-            effort,
-            mode,
-            skills: Value::Null,
+            kept: Kept {
+                cwd,
+                models,
+                model,
+                effort,
+                mode,
+                skills: Value::Null,
+            },
         };
         if launch.resume_id.is_some() {
             muse.replay(&opened, &items).await;
@@ -765,14 +770,14 @@ impl Backend for Muse {
                 "promptCapabilities": { "image": true, "embeddedContext": true },
             }),
             setup: json!({
-                "configOptions": muse.models.options(&muse.model, muse.effort.as_deref()),
+                "configOptions": muse.kept.models.options(&muse.kept.model, muse.kept.effort.as_deref()),
             }),
         };
         Ok((muse, opened))
     }
 
     async fn prompt(&mut self, turn: u64, prompt: Prompt) -> Result<(), String> {
-        if let Some(command) = commands::parse(&prompt.text, &self.skills) {
+        if let Some(command) = commands::parse(&prompt.text, &self.kept.skills) {
             return self.command(turn, &prompt, command).await;
         }
         let input = self.prompt_input(&prompt)?;
@@ -816,7 +821,7 @@ impl Backend for Muse {
 
     async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
         let mode = Mode::from_app(mode);
-        if mode.serve_args() != self.mode.serve_args() {
+        if mode.serve_args() != self.kept.mode.serve_args() {
             self.restart(mode).await?;
         } else {
             self.rpc()
@@ -826,7 +831,7 @@ impl Backend for Muse {
                 )
                 .await?;
         }
-        self.mode = mode;
+        self.kept.mode = mode;
         Ok(())
     }
 
@@ -834,7 +839,7 @@ impl Backend for Muse {
         let session_id = self.session_id();
         match config_id {
             "model" => {
-                if !self.models.offers(value) {
+                if !self.kept.models.offers(value) {
                     return Err(format!("Muse does not offer the model {value}"));
                 }
                 self.rpc()
@@ -843,12 +848,18 @@ impl Backend for Muse {
                         json!({ "sessionId": session_id, "commandId": command_id(), "model": { "modelId": value } }),
                     )
                     .await?;
-                self.model = value.to_owned();
-                self.effort = self.models.effort_for(value, self.effort.as_deref());
+                self.kept.model = value.to_owned();
+                self.kept.effort = self
+                    .kept
+                    .models
+                    .effort_for(value, self.kept.effort.as_deref());
             }
             "reasoning_effort" => {
-                if !self.models.supports_effort(&self.model, value) {
-                    return Err(format!("{} does not offer the effort {value}", self.model));
+                if !self.kept.models.supports_effort(&self.kept.model, value) {
+                    return Err(format!(
+                        "{} does not offer the effort {value}",
+                        self.kept.model
+                    ));
                 }
                 self.rpc()
                     .request(
@@ -856,11 +867,14 @@ impl Backend for Muse {
                         json!({ "sessionId": session_id, "commandId": command_id(), "reasoningEffort": value }),
                     )
                     .await?;
-                self.effort = Some(value.to_owned());
+                self.kept.effort = Some(value.to_owned());
             }
             _ => return Err(format!("Muse has no option {config_id}")),
         }
-        Ok(self.models.options(&self.model, self.effort.as_deref()))
+        Ok(self
+            .kept
+            .models
+            .options(&self.kept.model, self.kept.effort.as_deref()))
     }
 
     async fn stop_task(&mut self, task_id: &str) -> Result<(), String> {
@@ -914,7 +928,7 @@ impl Backend for Muse {
                         json!({
                             "commandId": command_id(),
                             "workspaceRoot": self.launch.cwd,
-                            "approvalMode": self.mode.approval_mode(),
+                            "approvalMode": self.kept.mode.approval_mode(),
                             "config": config,
                         }),
                     )
@@ -928,14 +942,14 @@ impl Backend for Muse {
         self.rpc()
             .request(
                 "session/setApprovalMode",
-                json!({ "sessionId": moved, "commandId": command_id(), "mode": self.mode.approval_mode() }),
+                json!({ "sessionId": moved, "commandId": command_id(), "mode": self.kept.mode.approval_mode() }),
             )
             .await?;
-        if !self.model.is_empty() {
+        if !self.kept.model.is_empty() {
             self.rpc()
                 .request(
                     "session/setModel",
-                    json!({ "sessionId": moved, "commandId": command_id(), "model": { "modelId": self.model } }),
+                    json!({ "sessionId": moved, "commandId": command_id(), "model": { "modelId": self.kept.model } }),
                 )
                 .await?;
         }
@@ -957,13 +971,8 @@ impl Backend for Muse {
     async fn release(self) -> Result<(Value, Released), String> {
         let Self {
             host,
-            launch,
-            cwd,
-            models,
-            model,
-            effort,
-            mode,
-            skills,
+            launch: _,
+            kept,
         } = self;
         let Host {
             process,
@@ -980,13 +989,7 @@ impl Backend for Muse {
             rpc: driver.rpc.state(),
             session,
             session_tools,
-            launch,
-            cwd,
-            models,
-            model,
-            effort,
-            mode,
-            skills,
+            kept,
         };
         let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
         let released = process.release(lines).await?;
@@ -994,7 +997,7 @@ impl Backend for Muse {
     }
 
     fn adopt(
-        _launch: &ChatLaunch,
+        launch: &ChatLaunch,
         sink: Sink,
         state: Value,
         (process, writer, lines): (Process, Writer, Lines),
@@ -1013,13 +1016,8 @@ impl Backend for Muse {
                 reading,
                 session_tools: state.session_tools,
             },
-            launch: state.launch,
-            cwd: state.cwd,
-            models: state.models,
-            model: state.model,
-            effort: state.effort,
-            mode: state.mode,
-            skills: state.skills,
+            launch: launch.clone(),
+            kept: state.kept,
         })
     }
 

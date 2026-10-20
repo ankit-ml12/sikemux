@@ -58,18 +58,15 @@ struct ClaudeState {
     control: Vec<(String, Purpose)>,
     shared: Shared,
     reader: ReaderState,
-    launch: ChatLaunch,
-    session_id: String,
-    models: Vec<Value>,
-    model: String,
-    effort: String,
-    aliases: HashMap<String, String>,
+    #[serde(flatten)]
+    kept: Kept,
 }
 
-pub(crate) struct Claude {
-    launch: ChatLaunch,
-    running: Running,
-    shared: Arc<Mutex<Shared>>,
+/// What a Claude chat knows of its session, as it hands it to a core that
+/// takes it over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Kept {
     session_id: String,
     models: Vec<Value>,
     model: String,
@@ -77,6 +74,13 @@ pub(crate) struct Claude {
     /// What the person calls each message they sent, against the id Claude
     /// Code knows it by. An edited message is sent again under a new id.
     aliases: HashMap<String, String>,
+}
+
+pub(crate) struct Claude {
+    launch: ChatLaunch,
+    running: Running,
+    shared: Arc<Mutex<Shared>>,
+    kept: Kept,
 }
 
 /// The transcript Claude keeps of `session_id` for the account `launch` runs on.
@@ -253,14 +257,14 @@ impl Claude {
     }
 
     fn options(&self) -> Value {
-        config::options(&self.models, &self.model, &self.effort)
+        config::options(&self.kept.models, &self.kept.model, &self.kept.effort)
     }
 
     async fn apply_effort(&self) -> Result<(), String> {
-        let level = if self.effort == config::DEFAULT {
+        let level = if self.kept.effort == config::DEFAULT {
             Value::Null
         } else {
-            json!(self.effort)
+            json!(self.kept.effort)
         };
         self.running
             .control
@@ -277,14 +281,16 @@ impl Claude {
         let Some(message_id) = message_id else {
             return Uuid::new_v4().to_string();
         };
-        let used =
-            self.aliases.contains_key(message_id) || self.shared.locked().sent.contains(message_id);
+        let used = self.kept.aliases.contains_key(message_id)
+            || self.shared.locked().sent.contains(message_id);
         let uuid = if used || Uuid::parse_str(message_id).is_err() {
             Uuid::new_v4().to_string()
         } else {
             message_id.to_owned()
         };
-        self.aliases.insert(message_id.to_owned(), uuid.clone());
+        self.kept
+            .aliases
+            .insert(message_id.to_owned(), uuid.clone());
         uuid
     }
 
@@ -430,11 +436,13 @@ impl Backend for Claude {
             launch: launch.clone(),
             running,
             shared,
-            session_id: session_id.clone(),
-            models,
-            model,
-            effort,
-            aliases: HashMap::new(),
+            kept: Kept {
+                session_id: session_id.clone(),
+                models,
+                model,
+                effort,
+                aliases: HashMap::new(),
+            },
         };
         if let Some(model) = switch_to {
             claude
@@ -533,28 +541,28 @@ impl Backend for Claude {
         match config_id {
             "model" => {
                 if self.launch.env.contains_key(ROUTED_ENV) {
-                    config::provider_model(&mut self.models, value);
+                    config::provider_model(&mut self.kept.models, value);
                 }
-                if !config::offers_model(&self.models, value) {
+                if !config::offers_model(&self.kept.models, value) {
                     return Err(format!("Invalid value for config option model: {value}"));
                 }
                 self.running
                     .control
                     .request(json!({ "subtype": "set_model", "model": value }))
                     .await?;
-                self.model = value.to_owned();
-                let levels = config::effort_levels(&self.models, value);
-                if self.effort != config::DEFAULT && !levels.contains(&self.effort) {
-                    self.effort = config::DEFAULT.to_owned();
+                self.kept.model = value.to_owned();
+                let levels = config::effort_levels(&self.kept.models, value);
+                if self.kept.effort != config::DEFAULT && !levels.contains(&self.kept.effort) {
+                    self.kept.effort = config::DEFAULT.to_owned();
                     self.apply_effort().await?;
                 }
             }
             "effort" => {
-                let levels = config::effort_levels(&self.models, &self.model);
+                let levels = config::effort_levels(&self.kept.models, &self.kept.model);
                 if value != config::DEFAULT && !levels.iter().any(|level| level == value) {
                     return Err(format!("Invalid value for config option effort: {value}"));
                 }
-                self.effort = value.to_owned();
+                self.kept.effort = value.to_owned();
                 self.apply_effort().await?;
             }
             _ => return Err(format!("Unknown config option: {config_id}")),
@@ -573,11 +581,12 @@ impl Backend for Claude {
 
     async fn rewind(&mut self, message_id: &str) -> Result<Option<String>, String> {
         let uuid = self
+            .kept
             .aliases
             .get(message_id)
             .cloned()
             .unwrap_or_else(|| message_id.to_owned());
-        let path = transcript(&self.launch, &self.session_id)
+        let path = transcript(&self.launch, &self.kept.session_id)
             .ok_or("Claude has not saved this chat yet")?;
         // Claude Code refuses to drop turns it thinks the person has not seen.
         let newest = replay::read_chain(&path)?
@@ -624,14 +633,10 @@ impl Backend for Claude {
 
     async fn release(self) -> Result<(Value, Released), String> {
         let Self {
-            launch,
+            launch: _,
             running,
             shared: _,
-            session_id,
-            models,
-            model,
-            effort,
-            aliases,
+            kept,
         } = self;
         let Running {
             process,
@@ -647,12 +652,7 @@ impl Backend for Claude {
             control: control.state(),
             shared,
             reader,
-            launch,
-            session_id,
-            models,
-            model,
-            effort,
-            aliases,
+            kept,
         };
         let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
         let released = process.release(lines).await?;
@@ -660,7 +660,7 @@ impl Backend for Claude {
     }
 
     fn adopt(
-        _launch: &ChatLaunch,
+        launch: &ChatLaunch,
         sink: Sink,
         state: Value,
         (process, writer, lines): (Process, Writer, Lines),
@@ -673,7 +673,7 @@ impl Backend for Claude {
         let asking = reader.asking();
         let (reading, task_stops) = Reading::start(reader, lines);
         Ok(Self {
-            launch: state.launch,
+            launch: launch.clone(),
             running: Running {
                 process,
                 control,
@@ -682,11 +682,7 @@ impl Backend for Claude {
                 task_stops,
             },
             shared,
-            session_id: state.session_id,
-            models: state.models,
-            model: state.model,
-            effort: state.effort,
-            aliases: state.aliases,
+            kept: state.kept,
         })
     }
 
