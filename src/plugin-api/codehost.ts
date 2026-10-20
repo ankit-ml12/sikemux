@@ -1,6 +1,6 @@
 import { createCodeHostClient, type CodeHostClient } from "../codehost/client";
 import { hostStatusR } from "../codehost/resources";
-import type { CodeHostApi, HostCapabilities } from "../codehost/registry";
+import type { CodeHostApi } from "../codehost/registry";
 import type {
     ChangedFile,
     Comment,
@@ -48,9 +48,10 @@ export type CodeHostBackend = ReturnType<typeof createCodeHostBackend>;
 
 /**
  * The Git pane's calls for a host whose plugin names every id as text and takes every argument by name, as GitLab's
- * and Bitbucket's do. What the host has no counterpart for reads as empty, or is refused if it is a change.
+ * and Bitbucket's do. What the host has no counterpart for reads as empty, or is refused if it is a change; a host
+ * whose capabilities say it can re-run a job or delete runs or their logs adds that call itself.
  */
-export function namedArgsHostApi(name: string, ci: HostCapabilities["ci"], host: CodeHostBackend): Omit<CodeHostApi, "status" | "accounts"> {
+export function namedArgsHostApi(name: string, host: CodeHostBackend): Omit<CodeHostApi, "status" | "accounts"> {
     const { backend, call, image, watch } = host;
     const cannot = (what: string) => (): Promise<never> => Promise.reject(new Error(`${name} cannot ${what}`));
     return {
@@ -76,10 +77,10 @@ export function namedArgsHostApi(name: string, ci: HostCapabilities["ci"], host:
         pendingApprovals: () => Promise.resolve([]),
         dispatch: (repo, workflowId, gitRef, inputs) => call<void>("dispatch", { ...repo, workflowId, gitRef, inputs }),
         rerun: (repo, runId, failedOnly) => call<void>("rerun", { ...repo, runId, failedOnly }),
-        rerunJob: ci.rerunJob ? (repo, jobId) => call<void>("rerunJob", { ...repo, jobId }) : cannot("re-run a single job"),
+        rerunJob: cannot("re-run a single job"),
         cancel: (repo, runId) => call<void>("cancel", { ...repo, runId }),
-        deleteRunLogs: ci.deleteLogs ? (repo, runId) => call<void>("deleteRunLogs", { ...repo, runId }) : cannot("delete a run's logs alone"),
-        deleteRun: ci.deleteRuns ? (repo, runId) => call<void>("deleteRun", { ...repo, runId }) : cannot("delete a run"),
+        deleteRunLogs: cannot("delete a run's logs alone"),
+        deleteRun: cannot("delete a run"),
         reviewDeployment: cannot("approve a deployment"),
         downloadArtifact: cannot("download artifacts"),
         watch: (repo, runId, handlers) => watch<RunTick>({ ...repo, runId }, handlers),

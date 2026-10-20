@@ -91,7 +91,7 @@ export const bitbucketCapabilities: HostCapabilities = {
 
 /** Bitbucket as the Git pane reads any code host. */
 export const bitbucketHostApi: CodeHostApi = {
-    ...namedArgsHostApi(BITBUCKET_PLUGIN.name, bitbucketCapabilities.ci, client),
+    ...namedArgsHostApi(BITBUCKET_PLUGIN.name, client),
     status: (account) => bitbucketApi.status(account).then(accountOf),
     accounts: () => backend.call<ListedAccount[]>("accounts").then((listed) => listed.map(entryOf)),
     commitAuthors: (repo, gitRef) => client.call<CommitAuthor[]>("commitAuthors", { ...repo, gitRef }),

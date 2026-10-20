@@ -91,7 +91,9 @@ export const gitlabCapabilities: HostCapabilities = {
 
 /** GitLab as the Git pane reads any code host. */
 export const gitlabHostApi: CodeHostApi = {
-    ...namedArgsHostApi(GITLAB_PLUGIN.name, gitlabCapabilities.ci, client),
+    ...namedArgsHostApi(GITLAB_PLUGIN.name, client),
+    rerunJob: (repo, jobId) => client.call<void>("rerunJob", { ...repo, jobId }),
+    deleteRun: (repo, runId) => client.call<void>("deleteRun", { ...repo, runId }),
     status: (account) => gitlabApi.status(account).then(accountOf),
     accounts: () => backend.call<ListedAccount[]>("accounts").then((listed) => listed.map(entryOf)),
 };
