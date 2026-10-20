@@ -19,7 +19,7 @@ import { errorText } from "../../lib/format";
 import { stepStarts } from "../jobGraph";
 import { jobLogR } from "../resources";
 import { elapsedMs, outcomeOf } from "../runStatus";
-import { useEvery } from "../../plugin-api/hooks";
+import { useRefreshEvery } from "../../plugin-api/hooks";
 import { formatDuration } from "../../lib/format";
 import { StatusMark } from "./ActionsIcon";
 import { ansiCss, parseAnsi, stripAnsi, type AnsiRun } from "../../lib/ansi";
@@ -245,7 +245,7 @@ export function JobLogView({ repo, job, now, active }: Props) {
     const stream = useRef<CardStreamHandle>(null);
     const following = useRef(true);
 
-    useEvery(active && running, LIVE_REFRESH_MS, () => void log.refresh());
+    useRefreshEvery(log, active && running ? LIVE_REFRESH_MS : null);
 
     // The last lines a job writes, usually the error, land after the last
     // read made while it was running, so a finished job is read once more.
