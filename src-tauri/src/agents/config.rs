@@ -7,14 +7,14 @@ pub(crate) use sikemux_core::sessions::roots::{
     agent_config_root, environment_path, omp_agent_root,
 };
 use sikemux_process::paths::home;
-use sikemux_pty::user_shell::user_variable;
+use sikemux_process::user_environment::shell_var;
 
 const MAX_MODEL_LENGTH: usize = 256;
 
 pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) -> Option<String> {
     let home = home()?;
     match kind {
-        "claude" => user_variable("ANTHROPIC_MODEL")
+        "claude" => shell_var("ANTHROPIC_MODEL")
             .and_then(|value| clean_model(&value))
             .or_else(|| {
                 json_model(
@@ -34,7 +34,7 @@ pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) ->
                 .ok()
                 .and_then(|text| toml_model(&text))
         }
-        "hermes" => user_variable("HERMES_INFERENCE_MODEL")
+        "hermes" => shell_var("HERMES_INFERENCE_MODEL")
             .and_then(|value| clean_model(&value))
             .or_else(|| {
                 let text =
@@ -68,7 +68,7 @@ pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) ->
             .and_then(|text| toml_section_string(&text, "models", "default"))
             .and_then(|value| clean_model(&value))
             .or_else(|| Some("grok-build".to_string())),
-        "muse" => user_variable("MUSE_MODEL")
+        "muse" => shell_var("MUSE_MODEL")
             .and_then(|value| clean_model(&value))
             .or_else(|| json_model(&AgentKind::Muse.home_root()?.join("settings.json"), "model")),
         _ => None,

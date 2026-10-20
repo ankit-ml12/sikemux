@@ -14,8 +14,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sikemux_process::user_environment::shell_var;
 use sikemux_pty::launch::account_dir;
-use sikemux_pty::user_shell::user_variable;
 
 /// How freely the person lets an agent work: asking before it acts outside
 /// its folder (Normal), or never asking (YOLO).
@@ -142,7 +142,7 @@ pub fn account_environment(provider: &str, config_path: Option<&str>) -> Option<
     let variable = account_variable(provider)?;
     let directory = match config_path.map(str::trim).filter(|path| !path.is_empty()) {
         Some(path) => account_dir(path).to_string_lossy().into_owned(),
-        None => user_variable(variable)?,
+        None => shell_var(variable)?,
     };
     Some((variable.to_owned(), directory))
 }
@@ -153,7 +153,7 @@ fn forwarded_environment(environment_keys: &[String]) -> BTreeMap<String, String
         .iter()
         .take(64)
         .filter(|key| seen.insert(*key) && valid_environment_key(key))
-        .filter_map(|key| Some((key.clone(), user_variable(key)?)))
+        .filter_map(|key| Some((key.clone(), shell_var(key)?)))
         .collect()
 }
 

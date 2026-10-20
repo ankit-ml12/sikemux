@@ -5,12 +5,12 @@ use std::path::PathBuf;
 
 use sikemux_process::paths::home;
 use sikemux_pty::launch::account_dir;
-use sikemux_pty::user_shell::user_variable;
+use sikemux_process::user_environment::shell_var;
 
 use crate::agent_catalog::AgentKind;
 
 pub fn environment_path(key: &str) -> Option<PathBuf> {
-    user_variable(key).map(PathBuf::from)
+    shell_var(key).map(PathBuf::from)
 }
 
 impl AgentKind {
@@ -49,7 +49,7 @@ pub fn account_root(
 }
 
 fn omp_profile_name() -> Option<String> {
-    let raw = user_variable("OMP_PROFILE").or_else(|| user_variable("PI_PROFILE"))?;
+    let raw = shell_var("OMP_PROFILE").or_else(|| shell_var("PI_PROFILE"))?;
     let name = raw.trim();
     (!name.is_empty()
         && name != "default"
@@ -62,7 +62,7 @@ fn omp_profile_name() -> Option<String> {
 
 fn omp_config_root() -> Option<PathBuf> {
     let home = home()?;
-    let config = user_variable("PI_CONFIG_DIR").unwrap_or_else(|| ".omp".to_string());
+    let config = shell_var("PI_CONFIG_DIR").unwrap_or_else(|| ".omp".to_string());
     Some(home.join(config.trim_start_matches(['/', '\\'])))
 }
 

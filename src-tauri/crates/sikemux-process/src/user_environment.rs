@@ -131,14 +131,17 @@ pub fn var(name: &str) -> Option<String> {
 }
 
 /// A variable as the person's own login shell sets it, else as this process
-/// has it, whether or not children are given it.
+/// has it, whether or not children are given it. The shell wins because an app
+/// opened from the Dock has none of `.zshrc`'s exports. An empty value counts
+/// as unset.
 pub fn shell_var(name: &str) -> Option<String> {
+    let set = |value: &String| !value.is_empty();
     environment()
         .shell
         .get(name)
+        .filter(|value| set(value))
         .cloned()
-        .or_else(|| std::env::var(name).ok())
-        .filter(|value| !value.is_empty())
+        .or_else(|| std::env::var(name).ok().filter(set))
 }
 
 /// Like `var`, but for values that may not be valid UTF-8, such as paths.

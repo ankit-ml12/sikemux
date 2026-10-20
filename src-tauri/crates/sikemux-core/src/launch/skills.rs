@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
-use sikemux_pty::user_shell::user_variable;
+use sikemux_process::user_environment::shell_var;
 
 use crate::agent_catalog::AgentKind;
 use crate::skills::{library, ready_library, LIBRARY_ENV};
@@ -68,7 +68,7 @@ pub fn skill_args(
 
 /// The `skills.paths` in the person's global OpenCode config.
 pub fn opencode_user_paths() -> Vec<String> {
-    let config_home = user_variable("XDG_CONFIG_HOME")
+    let config_home = shell_var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             sikemux_process::paths::home()
@@ -79,7 +79,7 @@ pub fn opencode_user_paths() -> Vec<String> {
 }
 
 pub fn inherited_opencode_config() -> Option<String> {
-    user_variable("OPENCODE_CONFIG_CONTENT")
+    shell_var("OPENCODE_CONFIG_CONTENT")
 }
 
 /// An OpenCode chat's inline config with the skills library added. A config
