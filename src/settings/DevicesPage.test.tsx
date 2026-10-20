@@ -22,6 +22,7 @@ function status(overrides: Partial<RemoteStatus> = {}): RemoteStatus {
         account: null,
         updateRequired: null,
         notifications: [],
+        requireApproval: false,
         ...overrides,
     };
 }

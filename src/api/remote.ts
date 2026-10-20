@@ -26,6 +26,8 @@ export const remoteApi = {
     setEnabled: (enabled: boolean) => remote({ op: "setRemoteAccess", enabled }),
     setDeviceAccess: (id: string, access: DeviceAccess) => remote({ op: "setDeviceAccess", id, access }),
     revokeDevice: (id: string) => remote({ op: "revokeDevice", id }),
+    /** Whether each new device and host waits for the person here, rather than coming in on its account's word. */
+    setRequireApproval: (requireApproval: boolean) => coreCall<RemoteStatus>("setRequireApproval", { requireApproval }),
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => remote({ op: "answerPairing", id, allow, access }),
     allowDevices: (devices: readonly AllowedDevice[]) => remote({ op: "allowDevices", devices }),
     publishOnScreen: (agentIds: readonly string[], focused: boolean) => publish({ op: "publishOnScreen", agentIds, focused }),

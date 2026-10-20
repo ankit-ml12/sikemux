@@ -90,6 +90,10 @@ struct Stored {
     /// and reach agents here and the other way round.
     #[serde(default)]
     links: Vec<LinkedHost>,
+    /// The person asks to allow each new device and host, rather than let
+    /// in whatever their account signed in.
+    #[serde(default)]
+    require_approval: bool,
 }
 
 fn readable_or_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -169,6 +173,7 @@ impl Stored {
             links: Vec<LinkedHost>,
             shares: &'a [StoredShare],
             revoked: &'a BTreeMap<String, u64>,
+            require_approval: bool,
         }
         let trusted = Trusted {
             owner: &self.owner,
@@ -192,6 +197,7 @@ impl Stored {
                 .collect(),
             shares: &self.shares,
             revoked: &self.revoked,
+            require_approval: self.require_approval,
         };
         let digest = <sha2::Sha256 as sha2::Digest>::digest(serde_json::to_vec(&trusted)?);
         Ok(hex::encode(digest))
@@ -380,7 +386,29 @@ impl Remote {
             account: account_link(&inner),
             update_required: inner.update_required.clone(),
             notifications: notifications(&inner),
+            require_approval: inner.stored.require_approval,
         }
+    }
+
+    /// Whether a device or host with a good ticket waits for the person.
+    pub(crate) fn requires_approval(&self) -> bool {
+        self.inner.locked().stored.require_approval
+    }
+
+    /// Lets a device in at full access as the person, with no question: its
+    /// ticket shows it is signed in to this host's own account.
+    pub(super) fn admit(&self, device: &PendingDevice, account: String) -> CoreResult<()> {
+        self.add_device(
+            DeviceInfo {
+                id: device.device_id.clone(),
+                name: device.name.clone(),
+                platform: device.platform.clone(),
+                access: DeviceAccess::Full,
+                paired_at: epoch_ms(),
+                last_seen: None,
+            },
+            Some(account),
+        )
     }
 
     /// Keeps a paired phone's notification key and preferences, replacing
@@ -1792,6 +1820,25 @@ pub(crate) struct DeviceChange {
     access: Option<DeviceAccess>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApprovalSetting {
+    require_approval: bool,
+}
+
+/// Turns the lock of ADR 0018 on or off: whether each new device and host
+/// waits for the person rather than being let in on its account's word.
+pub(crate) fn set_require_approval(
+    core: &Core,
+    setting: ApprovalSetting,
+) -> CoreResult<RemoteStatus> {
+    core.remote.change(|stored| {
+        stored.require_approval = setting.require_approval;
+        Ok(())
+    })?;
+    Ok(announce(core))
+}
+
 pub(crate) fn change_device(core: &Core, change: DeviceChange) -> CoreResult<Pairing> {
     match change.access {
         Some(access) => set_access(core, &change.id, access)?,
@@ -1886,6 +1933,7 @@ mod tests {
             shares: Vec::new(),
             joined_through: BTreeMap::new(),
             links: Vec::new(),
+            require_approval: false,
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),

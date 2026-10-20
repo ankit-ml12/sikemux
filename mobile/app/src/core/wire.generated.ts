@@ -646,6 +646,11 @@ export interface RemoteStatus {
   updateRequired?: UpdateRequired;
   /** The phones that asked this host for notifications. */
   notifications?: PhoneNotifications[];
+  /**
+   * The person asked to allow each new device and host here, rather than
+   * let in whatever their account signed in (ADR 0018).
+   */
+  requireApproval?: boolean;
 }
 
 /** A device approved to reach this core from another machine. */

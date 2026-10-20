@@ -121,8 +121,9 @@ async fn finish(incoming: link::Incoming, connection: &Connection, answer: Value
     let _ = tokio::time::timeout(LINGER, connection.closed()).await;
 }
 
-/// A host not linked with this one asks to be. Only a `join` with a good
-/// ticket gets as far as the person here, who allows it or not.
+/// A host not linked with this one asks to be. A `join` with a good ticket
+/// from this host's own account links them, or waits for the person while
+/// they asked to approve each new host.
 pub(super) async fn answer(core: Arc<Core>, connection: Connection) {
     let Ok(_slot) = IN_PROGRESS.try_acquire() else {
         connection.close(0u32.into(), b"busy");
@@ -155,34 +156,56 @@ pub(super) async fn answer(core: Arc<Core>, connection: Connection) {
         finish(incoming, &connection, refused).await;
         return;
     }
-    core.remote.forget_device_requests(&host);
-    let request = PendingDevice {
-        id: uuid::Uuid::new_v4().to_string(),
-        device_id: host.clone(),
-        name: clean(&hello.name, NAME_LIMIT),
-        platform: clean(&hello.platform, PLATFORM_LIMIT),
-        from_account: true,
-        expires_at: epoch_ms() + APPROVAL_TIMEOUT.as_millis() as u64,
-    };
-    let answered = core.remote.ask(
-        request.clone(),
-        hello.ticket.account.clone(),
-        Some(addresses_of(&hello.addresses)),
-    );
-    remote::announce(&core);
-    core.notify.send(Signal::Pairing(request.clone()));
-    let allowed = tokio::select! {
-        answer = tokio::time::timeout(APPROVAL_TIMEOUT, answered) => {
-            answer.ok().and_then(Result::ok).flatten().is_some()
+    let name = clean(&hello.name, NAME_LIMIT);
+    let platform = clean(&hello.platform, PLATFORM_LIMIT);
+    let addresses = addresses_of(&hello.addresses);
+    if core.remote.requires_approval() {
+        core.remote.forget_device_requests(&host);
+        let request = PendingDevice {
+            id: uuid::Uuid::new_v4().to_string(),
+            device_id: host.clone(),
+            name,
+            platform,
+            from_account: true,
+            expires_at: epoch_ms() + APPROVAL_TIMEOUT.as_millis() as u64,
+        };
+        let answered = core.remote.ask(
+            request.clone(),
+            hello.ticket.account.clone(),
+            Some(addresses),
+        );
+        remote::announce(&core);
+        core.notify.send(Signal::Pairing(request.clone()));
+        // The person may answer after the other host gave up waiting; the
+        // link is kept, and either host uses it the next time.
+        let allowed = tokio::time::timeout(APPROVAL_TIMEOUT, answered)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .flatten()
+            .is_some();
+        core.remote.forget_pending(&request.id);
+        remote::announce(&core);
+        core.notify.send(Signal::PairingSettled { id: request.id });
+        if !allowed {
+            finish(incoming, &connection, json!({ "result": "denied" })).await;
+            return;
         }
-        _ = connection.closed() => false,
-    };
-    core.remote.forget_pending(&request.id);
-    remote::announce(&core);
-    core.notify.send(Signal::PairingSettled { id: request.id });
-    if !allowed {
-        finish(incoming, &connection, json!({ "result": "denied" })).await;
-        return;
+    } else {
+        let linked = core.remote.add_link(LinkedHost {
+            id: host.clone(),
+            name: if name.is_empty() { "Host".into() } else { name },
+            platform,
+            linked_at: epoch_ms(),
+            last_seen: Some(epoch_ms()),
+            addresses,
+        });
+        if let Err(error) = linked {
+            let refused = json!({ "result": "refused", "reason": error.to_string() });
+            finish(incoming, &connection, refused).await;
+            return;
+        }
+        remote::announce(&core);
     }
     let mut reply = introduction(&core);
     reply["result"] = "allowed".into();

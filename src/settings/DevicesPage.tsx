@@ -16,7 +16,7 @@ import { ACCESS_OPTIONS, platformName } from "../remote/access";
 import { reportError, swallow } from "../state/toast";
 import { Dropdown } from "../ui/Dropdown";
 import { Switch } from "../ui/Controls";
-import { IconGlobe, IconTrash } from "../ui/Icons";
+import { IconGlobe, IconLock, IconTrash } from "../ui/Icons";
 import { QrCode } from "./QrCode";
 import { hostsApi } from "../hosts/hosts";
 import { useStore } from "../state/store";
@@ -125,7 +125,7 @@ export function DevicesPage() {
                     target="Remote access"
                     mark={<IconGlobe size={18} />}
                     title="Remote access"
-                    desc={signedIn ? "Phones on your account can ask to connect. You allow each one." : "Sign in to use Sikemux on your phone"}
+                    desc={signedIn ? "Your devices and hosts on your account connect here" : "Sign in to use Sikemux on your phone"}
                     asLabel>
                     <Switch
                         checked={status?.enabled ?? false}
@@ -134,6 +134,21 @@ export function DevicesPage() {
                         label="Remote access"
                     />
                 </DevicesRow>
+                {signedIn && (
+                    <DevicesRow
+                        target="Require approval"
+                        mark={<IconLock size={18} />}
+                        title="Require approval for new devices"
+                        desc="Ask before a device or host on your account connects here for the first time"
+                        asLabel>
+                        <Switch
+                            checked={status?.requireApproval ?? false}
+                            disabled={!status}
+                            onChange={(on) => void apply(remoteApi.setRequireApproval(on), "Require approval")}
+                            label="Require approval for new devices"
+                        />
+                    </DevicesRow>
+                )}
             </div>
 
             {!account ? null : !signedIn ? <SignInCall removed={removalNote(link)} /> : status && devices.length === 0 ? <PhonePanel /> : null}
