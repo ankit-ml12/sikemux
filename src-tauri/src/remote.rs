@@ -46,7 +46,9 @@ pub async fn remote_publish(
     request: Request,
 ) -> AppResult<()> {
     if !is_publication(&request) {
-        return Err(AppError::Other("only a publication can be published".into()));
+        return Err(AppError::Other(
+            "only a publication can be published".into(),
+        ));
     }
     {
         let mut kept = published.0.locked();
@@ -90,4 +92,3 @@ pub(crate) fn follow_remote_access(app: &AppHandle, enabled: bool) {
         login_item::sync(&identifier, launch.as_ref(), enabled);
     });
 }
-

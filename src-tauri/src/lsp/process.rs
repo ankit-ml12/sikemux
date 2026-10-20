@@ -10,13 +10,13 @@ use tauri::AppHandle;
 
 use super::diagnostics::handle_server_notification;
 use super::discovery::{server_command, server_env};
-use sikemux_process::sync::Locked;
 use super::protocol::path_to_uri;
 use super::server::{lsp_tick, shutdown_server, Server, ServerHandle};
 use super::transport::{
     notify, read_message, request_with_timeout, response_for_server_request, send,
 };
 use crate::error::{AppError, AppResult};
+use sikemux_process::sync::Locked;
 
 struct SpawnedProcessGuard(Option<Child>);
 

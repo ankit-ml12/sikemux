@@ -550,9 +550,10 @@ async fn sign_in_with_browser() -> AppResult<Tokens> {
         &state,
         &challenge(&verifier),
     ))?;
-    let code = callback.code(&state).await.map_err(|error| {
-        AppError::Other(format!("sign-in was not finished: {}", error.0))
-    })?;
+    let code = callback
+        .code(&state)
+        .await
+        .map_err(|error| AppError::Other(format!("sign-in was not finished: {}", error.0)))?;
     let response = http()
         .post(format!("{CLERK}/oauth/token"))
         .form(&[
@@ -722,4 +723,5 @@ mod tests {
         let machine = URL_SAFE_NO_PAD.encode(br#"{"sub":"mch_1"}"#);
         assert!(subject(&format!("h.{machine}.s")).is_err());
         assert!(subject("not-a-token").is_err());
-    }}
+    }
+}

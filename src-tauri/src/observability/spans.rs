@@ -1,11 +1,11 @@
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+use super::duration_us;
 use super::model::{
     EventKind, Metadata, ScalarValue, SpanContext, SpanId, SpanOutcome, TraceEvent, TraceId,
 };
 use super::store::Observability;
-use super::duration_us;
 
 impl Observability {
     /// Starts a root span, or a child span when `parent` is supplied.

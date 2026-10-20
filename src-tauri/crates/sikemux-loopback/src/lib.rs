@@ -126,7 +126,13 @@ impl Callback {
             Err(error) if error.kind() == ErrorKind::AddrNotAvailable => None,
             Err(_) => return Err(taken()),
         };
-        Ok(Self::waiting(v4, v6, redirect_uri(path), path, Finish::Page(service)))
+        Ok(Self::waiting(
+            v4,
+            v6,
+            redirect_uri(path),
+            path,
+            Finish::Page(service),
+        ))
     }
 
     /// Listens on a port the system picks, for a service that takes any

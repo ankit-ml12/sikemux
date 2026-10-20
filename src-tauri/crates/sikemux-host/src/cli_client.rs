@@ -441,7 +441,10 @@ fn enclosing_folder(path: &Path, kind: CliTargetKind) -> &Path {
 /// The project a command run here works in: the one Sikemux started this
 /// shell or agent in, else the repository around the current folder.
 pub fn current_project() -> Result<String, String> {
-    if let Some(project) = env::var(vars::PROJECT).ok().filter(|project| !project.is_empty()) {
+    if let Some(project) = env::var(vars::PROJECT)
+        .ok()
+        .filter(|project| !project.is_empty())
+    {
         return Ok(project);
     }
     let cwd = env::current_dir().map_err(|error| error.to_string())?;

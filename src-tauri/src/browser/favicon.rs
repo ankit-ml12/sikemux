@@ -207,13 +207,11 @@ fn same_host(a: &Url, b: &Url) -> bool {
 fn own_host_client() -> AppResult<&'static Client> {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     shared(&CLIENT, || {
-        builder()
-            .no_proxy()
-            .redirect(Policy::custom(|attempt| {
-                let home = attempt.previous().first().and_then(Url::host_str);
-                let stays = home.is_some() && attempt.url().host_str() == home;
-                follow_if(attempt, stays)
-            }))
+        builder().no_proxy().redirect(Policy::custom(|attempt| {
+            let home = attempt.previous().first().and_then(Url::host_str);
+            let stays = home.is_some() && attempt.url().host_str() == home;
+            follow_if(attempt, stays)
+        }))
     })
 }
 
@@ -359,10 +357,7 @@ mod tests {
     async fn a_fetched_icon_comes_back_inline_under_the_name_its_bytes_give_it() {
         let png = b"\x89PNG\r\n\x1a\nbody".to_vec();
         let url = serve("application/octet-stream", png.clone()).await;
-        assert_eq!(
-            fetch(&url, &url).await,
-            Some(data_url("image/png", &png))
-        );
+        assert_eq!(fetch(&url, &url).await, Some(data_url("image/png", &png)));
     }
 
     #[tokio::test]

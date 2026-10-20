@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use sikemux_process::paths::home;
-use sikemux_pty::launch::account_dir;
 use sikemux_process::user_environment::shell_var;
+use sikemux_pty::launch::account_dir;
 
 use crate::agent_catalog::AgentKind;
 

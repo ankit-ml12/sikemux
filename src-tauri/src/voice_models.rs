@@ -3,13 +3,13 @@
 //! was built, the helper from this version's GitHub release, and each is checked
 //! against the hash recorded then before it is moved into place.
 
+use futures::StreamExt;
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
-use futures::StreamExt;
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 use crate::error::{AppError, AppResult};
 use crate::http_client::client;

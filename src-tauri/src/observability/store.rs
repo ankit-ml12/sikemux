@@ -3,11 +3,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use super::duration_us;
 use super::model::{
     EventKind, LatencyBuckets, LatencyHistogramSnapshot, Metadata, ObservabilityConfig,
     ObservabilitySnapshot, ScalarValue, SpanContext, TraceEvent, TraceId,
 };
-use super::duration_us;
 use sikemux_process::sync::Locked;
 
 static GLOBAL_OBSERVABILITY: OnceLock<Observability> = OnceLock::new();

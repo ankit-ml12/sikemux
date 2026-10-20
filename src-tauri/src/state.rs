@@ -1615,4 +1615,5 @@ mod tests {
             .count();
         assert_eq!(quarantines, 0);
         lock.execute_batch("ROLLBACK").unwrap();
-    }}
+    }
+}

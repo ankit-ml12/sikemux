@@ -81,7 +81,8 @@ fn data_url(bytes: &[u8]) -> Option<String> {
     if bytes.len() > MAX_PICTURE_BYTES {
         return None;
     }
-    let mime = sniff(bytes).filter(|mime| mime.starts_with("image/") && *mime != "image/svg+xml")?;
+    let mime =
+        sniff(bytes).filter(|mime| mime.starts_with("image/") && *mime != "image/svg+xml")?;
     Some(http_client::data_url(mime, bytes))
 }
 

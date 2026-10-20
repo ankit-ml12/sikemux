@@ -107,8 +107,9 @@ mod tests {
             receivers.push(receiver);
         }
         let (sender, _receiver) = mpsc::channel();
-        let error = insert_pending_request(&pending, MAX_PENDING_REQUESTS_PER_SERVER as i64, sender)
-            .expect_err("per-server pending cap");
+        let error =
+            insert_pending_request(&pending, MAX_PENDING_REQUESTS_PER_SERVER as i64, sender)
+                .expect_err("per-server pending cap");
         assert_eq!(
             error.to_string(),
             format!(

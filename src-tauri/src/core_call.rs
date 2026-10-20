@@ -21,10 +21,7 @@ pub async fn core_call(
 /// One of the core's requests as is, for the page to reach a request no app
 /// command has its own work for.
 #[tauri::command]
-pub async fn core_request(
-    manager: State<'_, PtyManager>,
-    request: Request,
-) -> AppResult<Response> {
+pub async fn core_request(manager: State<'_, PtyManager>, request: Request) -> AppResult<Response> {
     let client = manager.client().await?;
     client.request(request).await.map_err(core_error)
 }
