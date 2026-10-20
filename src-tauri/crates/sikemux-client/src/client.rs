@@ -49,6 +49,10 @@ pub enum ClientError {
     Encode(#[from] serde_json::Error),
     #[error("the Sikemux core did not start within {0:?}")]
     StartTimeout(Duration),
+    #[error("this host did not answer in time")]
+    TimedOut,
+    #[error("this device went off the network")]
+    Offline,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
