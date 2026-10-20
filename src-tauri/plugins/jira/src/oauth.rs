@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_loopback::{challenge, redirect_uri, Callback, LoopbackError};
+use sikemux_plugin_api::store;
 
 use crate::client;
 use crate::config::{self, Site};
@@ -100,7 +101,9 @@ async fn token_request(mut body: Value) -> JiraResult<Tokens> {
         fields.insert("client_id".into(), CLIENT_ID.into());
         fields.insert("client_secret".into(), secret()?.into());
     }
-    let response = client::http()?.post(TOKEN_URL).json(&body).send().await?;
+    let response = client::HTTP
+        .send(client::HTTP.client()?.post(TOKEN_URL).json(&body))
+        .await?;
     let status = response.status();
     let bytes = client::read_limited(response).await?;
     if status.is_success() {
@@ -142,12 +145,12 @@ pub struct CloudSite {
 /// The Jira sites one browser sign-in reaches. Other Atlassian products, such as
 /// Confluence, come back too, without Jira's scopes.
 pub async fn sites(access_token: &str) -> JiraResult<Vec<CloudSite>> {
-    let response = client::http()?
+    let request = client::HTTP
+        .client()?
         .get(SITES_URL)
         .bearer_auth(access_token)
-        .header("Accept", "application/json")
-        .send()
-        .await?;
+        .header("Accept", "application/json");
+    let response = client::HTTP.send(request).await?;
     let status = response.status();
     let bytes = client::read_limited(response).await?;
     if !status.is_success() {
@@ -201,16 +204,13 @@ pub async fn access_token(site: &Site) -> JiraResult<String> {
         return Ok(access.token.clone());
     }
     let reading = site.clone();
-    let refresh_token = config::blocking(Box::new(move || config::keychain_read(&reading)))
+    let refresh_token = store::blocking(move || config::keychain_read(&reading))
         .await?
         .ok_or(JiraError::Unconfigured)?;
     let tokens = refresh(&refresh_token).await?;
     let writing = site.clone();
     let replacement = tokens.refresh_token.clone();
-    config::blocking(Box::new(move || {
-        config::keychain_write(&writing, &replacement)
-    }))
-    .await?;
+    store::blocking(move || config::keychain_write(&writing, &replacement)).await?;
     let access = access_of(&tokens);
     let token = access.token.clone();
     held.insert(site.account_id.clone(), access);
