@@ -3,6 +3,7 @@
 
 mod config;
 mod control;
+mod failure;
 mod permission;
 mod reader;
 mod replay;

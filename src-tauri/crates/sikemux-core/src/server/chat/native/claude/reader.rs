@@ -20,25 +20,9 @@ use super::super::pending::{Answered, Purpose};
 use super::super::process::Reads;
 use super::super::session::{Sink, TurnEnd};
 use super::control::Control;
+use super::failure;
 use super::permission;
 use super::tools::{self, TaskPlan};
-
-/// Text Claude Code shows instead of an answer when the account is out of
-/// usage, taken from the Agent SDK.
-const USAGE_LIMIT_PREFIXES: [&str; 12] = [
-    "You've hit your",
-    "You've reached your",
-    "You're out of usage credits",
-    "Your org is out of usage · add funds to continue",
-    "Your org is out of usage · contact your admin",
-    "Your seat type doesn't include usage credits",
-    "Your seat type doesn't include usage",
-    "Your usage allocation has been disabled by your admin",
-    "Your group's usage limit is set to $0",
-    "Fable 5 requires usage credits",
-    "You're out of extra usage",
-    "Your seat type doesn't include extra usage",
-];
 
 /// Slash commands that only make sense in Claude Code's own terminal.
 const TERMINAL_COMMANDS: [&str; 8] = [
@@ -213,7 +197,7 @@ pub(crate) fn available_commands(commands: &Value) -> Value {
 fn failure_of(message: &Value) -> Option<Failure> {
     let inner = message.get("message")?;
     let said = json::joined_text(inner.get("content").filter(|content| content.is_array()));
-    let synthetic = text(inner, "model") == Some("<synthetic>");
+    let synthetic = failure::is_synthetic(inner);
     let title = |fallback: &str| {
         if said.trim().is_empty() {
             fallback.to_owned()
@@ -221,14 +205,10 @@ fn failure_of(message: &Value) -> Option<Failure> {
             said.trim().to_owned()
         }
     };
-    if synthetic && said.contains("Please run /login") {
+    if synthetic && failure::asks_sign_in(&said) {
         return Some(Failure::sign_in(title("Sign in to continue using Claude.")));
     }
-    if synthetic
-        && USAGE_LIMIT_PREFIXES
-            .iter()
-            .any(|prefix| said.trim_start().starts_with(prefix))
-    {
+    if synthetic && failure::out_of_usage(&said) {
         return Some(Failure {
             kind: FailureKind::Limit,
             title: title("The Claude account has no available quota."),
@@ -790,7 +770,9 @@ impl Reader {
             return;
         };
         if parent.is_none() {
-            if let Some(model) = text(inner, "model").filter(|model| *model != "<synthetic>") {
+            if let Some(model) =
+                text(inner, "model").filter(|model| *model != failure::SYNTHETIC_MODEL)
+            {
                 self.data.model = Some(model.to_owned());
                 self.note_model(model);
             }
@@ -1015,7 +997,7 @@ impl Reader {
                 })
                 .filter(|said| !said.is_empty())
                 .unwrap_or_else(|| "Claude could not finish this turn".to_owned());
-            let kind = if said.contains("Please run /login") {
+            let kind = if failure::asks_sign_in(&said) {
                 FailureKind::SignIn
             } else {
                 FailureKind::Other
