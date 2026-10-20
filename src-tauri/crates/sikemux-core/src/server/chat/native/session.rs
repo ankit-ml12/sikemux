@@ -611,34 +611,8 @@ pub(crate) async fn run<B: Backend>(
         let command = match woke {
             Woke::Command(Some(command)) => command,
             Woke::Command(None) => break Outcome::Ended(SessionEnd::Requested),
-            Woke::Closed(reason) => {
-                let working = chat.turn_running() || chat.held.load(Ordering::Acquire);
-                let title = if working {
-                    "This agent stopped while it was working, and was started again"
-                } else {
-                    "This agent stopped, and was started again"
-                };
-                if let Some(rebind) = restart(&chat, &launch, &state, working, title, &reason).await
-                {
-                    break Outcome::Rebind(rebind);
-                }
-                if chat.running.load(Ordering::Acquire) {
-                    let failure = error_message(&reason);
-                    chat.turn_failing(&failure);
-                    chat.emit(ChatEventKind::Error, failure);
-                }
-                break Outcome::Ended(SessionEnd::Exited);
-            }
-            Woke::Broken(reason) => {
-                let title = "This agent's session broke, and it was started again";
-                if let Some(rebind) = restart(&chat, &launch, &state, false, title, &reason).await {
-                    break Outcome::Rebind(rebind);
-                }
-                let failure = error_message(reason);
-                chat.turn_failing(&failure);
-                chat.emit(ChatEventKind::Error, failure);
-                break Outcome::Ended(SessionEnd::Exited);
-            }
+            Woke::Closed(reason) => break stopped(&chat, &launch, &state, false, reason).await,
+            Woke::Broken(reason) => break stopped(&chat, &launch, &state, true, reason).await,
             Woke::Failed(failed) => {
                 if failed.turn != state.turn {
                     continue;
@@ -1152,6 +1126,32 @@ fn not_taken_over(chat: &Chat, launch: &ChatLaunch, error: &str) -> Outcome {
             Outcome::Ended(SessionEnd::Exited)
         }
     }
+}
+
+/// The agent stopped by itself, or its session `broke`: starts it again on
+/// the chat's session, or ends the chat saying why.
+async fn stopped(
+    chat: &Arc<Chat>,
+    launch: &ChatLaunch,
+    state: &SessionState,
+    broke: bool,
+    reason: String,
+) -> Outcome {
+    let working = !broke && (chat.turn_running() || chat.held.load(Ordering::Acquire));
+    let title = match (broke, working) {
+        (true, _) => "This agent's session broke, and it was started again",
+        (false, true) => "This agent stopped while it was working, and was started again",
+        (false, false) => "This agent stopped, and was started again",
+    };
+    if let Some(rebind) = restart(chat, launch, state, working, title, &reason).await {
+        return Outcome::Rebind(rebind);
+    }
+    if broke || chat.running.load(Ordering::Acquire) {
+        let failure = error_message(&reason);
+        chat.turn_failing(&failure);
+        chat.emit(ChatEventKind::Error, failure);
+    }
+    Outcome::Ended(SessionEnd::Exited)
 }
 
 /// Starts the agent again on the chat's session after it stopped by itself,
