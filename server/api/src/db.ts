@@ -151,7 +151,7 @@ export interface Database {
 export function openDatabase(url: string, log: Logger): Database {
   const pool = new pg.Pool({
     connectionString: url,
-    max: 10,
+    max: 20,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 3_000,
     application_name: "sikemux-api",
