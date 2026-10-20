@@ -5911,12 +5911,14 @@ dependencies = [
 name = "sikemux-plugin-api"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "reqwest",
  "rustls",
  "semver",
  "serde",
  "serde_json",
  "sikemux-keychain",
+ "sikemux-process",
  "tokio",
  "workspace-hack",
 ]
@@ -6014,7 +6016,6 @@ dependencies = [
 name = "sikemux-plugin-gitlab"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.1",
  "futures",
  "reqwest",
  "rustls",

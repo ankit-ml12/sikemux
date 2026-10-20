@@ -2,10 +2,16 @@
 //! this crate: every exchange with the host is a method name and JSON, so the
 //! same plugin can later run in its own process without changing.
 
+pub mod account;
 mod error;
+pub mod http;
+pub mod images;
 mod manifest;
 pub mod network;
+pub mod ratelimit;
 pub mod service;
+pub mod signin;
+pub mod store;
 pub mod watch;
 
 use std::collections::BTreeMap;
@@ -20,6 +26,7 @@ pub use error::{PluginError, PluginResult};
 pub use manifest::{is_valid_id, AgentTool, Manifest};
 pub use network::{unreachable, Unreachable};
 pub use service::{Service, ServiceError, ServiceResult};
+pub use signin::SignInStatus;
 
 pub type PluginFuture<'a, T> = Pin<Box<dyn Future<Output = PluginResult<T>> + Send + 'a>>;
 
