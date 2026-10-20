@@ -5,6 +5,7 @@
 
 use serde::Deserialize;
 use sikemux_loopback::{redirect_uri, Callback, LoopbackError};
+use sikemux_plugin_api::http;
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
@@ -82,16 +83,14 @@ struct Refused {
 }
 
 async fn token_request(form: &[(&str, &str)]) -> BitbucketResult<Tokens> {
-    let response = client::limited(
-        client::http()?
-            .post(TOKEN_URL)
-            .basic_auth(CLIENT_ID, Some(secret()?))
-            .form(form)
-            .send(),
-    )
-    .await?;
+    let request = client::HTTP
+        .client()?
+        .post(TOKEN_URL)
+        .basic_auth(CLIENT_ID, Some(secret()?))
+        .form(form);
+    let response = client::HTTP.send(request).await?;
     let status = response.status();
-    let (bytes, _) = client::read_body(response, 64 * 1024, false).await?;
+    let bytes = http::read_body(response, 64 * 1024).await?;
     if status.is_success() {
         return Ok(serde_json::from_slice(&bytes)?);
     }

@@ -5943,7 +5943,6 @@ dependencies = [
 name = "sikemux-plugin-bitbucket"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.1",
  "futures",
  "reqwest",
  "rustls",
@@ -6033,8 +6032,6 @@ dependencies = [
 name = "sikemux-plugin-jira"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.1",
- "futures",
  "reqwest",
  "serde",
  "serde_json",
