@@ -235,7 +235,8 @@ export function useXterm(opts: {
             restartTimer = window.setTimeout(() => {
                 restartTimer = null;
                 delete host.dataset.terminalOutput;
-                startNow();
+                // A hidden terminal flooding past its backlog would otherwise boot, flood and restart again off screen; showing it boots it.
+                if (visibleRef.current) startNow();
             }, decision.delayMs);
         };
 
