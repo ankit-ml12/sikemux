@@ -868,14 +868,6 @@ textarea:focus,
     font-size: var(--text-2xs);
 }
 
-.workspace-rail .rail-scroll::-webkit-scrollbar {
-    width: 9px;
-}
-
-.workspace-rail .rail-scroll::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-}
-
 /* The editor's strip sits inside a pane that already is the surface, and a
  * second near-identical tint on top of it drew a seam across the window. */
 .tabbar.v-editor {
@@ -1020,7 +1012,7 @@ textarea:focus,
  * default WebKit bar, which paints a light track on the dark chrome. This is
  * the app-wide default. The terminal and CodeMirror keep their own rules.
  */
-*:not(.xterm-viewport, .cm-scroller) {
+*:not(.xterm-viewport, .cm-scroller, .rail-scroll) {
     &::-webkit-scrollbar {
         width: 10px;
         height: 10px;

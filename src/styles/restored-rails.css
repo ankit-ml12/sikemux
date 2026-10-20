@@ -2,12 +2,38 @@
     flex-direction: column;
     min-width: 240px;
 }
-/* The scrollbar's room is kept even with nothing to scroll, so the rows never
-   change width when a list grows past it. */
 .tab-rail .swipe-page > .rail-scroll {
     flex: 1;
     min-height: 0;
-    overflow-y: scroll;
+    overflow-y: auto;
+}
+.rail-scroll {
+    position: relative;
+    scrollbar-width: none;
+}
+.rail-scroll::-webkit-scrollbar {
+    display: none;
+}
+.rail-scroll-thumb {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 9px;
+    padding: 0 3px;
+    background: color-mix(in srgb, var(--ink-faint) 42%, transparent);
+    background-clip: content-box;
+    border-radius: 999px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease-out;
+}
+.rail-scroll-thumb[data-shown="true"] {
+    opacity: 1;
+    pointer-events: auto;
+    transition: none;
+}
+.rail-scroll-thumb:hover {
+    background-color: color-mix(in srgb, var(--ink-faint) 78%, transparent);
 }
 /*
  * The project navigator is a tree, not a list of pills.

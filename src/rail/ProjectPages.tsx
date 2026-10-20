@@ -19,6 +19,7 @@ import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
 import { HostLabel, remoteTerminalRows, RemoteNewRows, useRemoteCopies } from "./RemoteRows";
 import { ScopeTabs } from "./ScopeTabs";
+import { RailScroll } from "./RailScroll";
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -165,7 +166,7 @@ export function TerminalsPage() {
                         </div>
                         <ScopeTabs scope={scope} projectName={session.name} onChange={cmd.setTabRailScope} />
                     </div>
-                    <div className="rail-scroll">
+                    <RailScroll>
                         {tabs.length === 0 && remoteTerminals.length === 0 ? (
                             <RailEmpty icon={<IconTerminal size={20} />} title="No terminals open" shortcut="terminal.new" doing="start one" />
                         ) : (
@@ -188,7 +189,7 @@ export function TerminalsPage() {
                                 {remoteTerminals}
                             </Panel>
                         )}
-                    </div>
+                    </RailScroll>
                 </>
             )}
             {menu.shown}
