@@ -199,7 +199,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
 
     return (
         <div className={`board-pane${panel ? " with-card" : ""}`}>
-            <section className="kanban" aria-label="Board">
+            <section className="kanban" aria-label="Agent board">
                 <header className="kanban-head">
                     <div className="kanban-title">
                         <span className="kanban-find">

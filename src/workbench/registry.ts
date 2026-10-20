@@ -306,7 +306,7 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     agent: builtinDefinition("agent", "Agent", NULL_CODEC),
     desk: builtinDefinition("desk", "Desk", DESK_CODEC),
     shared: builtinDefinition("shared", "Shared chat", NULL_CODEC),
-    board: builtinDefinition("board", "Board", NULL_CODEC),
+    board: builtinDefinition("board", "Agent board", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {

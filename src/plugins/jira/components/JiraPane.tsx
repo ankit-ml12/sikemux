@@ -590,7 +590,7 @@ function IssueBody({
                                 })
                             }>
                             <IconAgent size={12} />
-                            Send to board
+                            Send to agent board
                         </button>
                         <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
                             <IconClose size={12} />
