@@ -6117,10 +6117,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-keychain",
- "sikemux-loopback",
  "sikemux-plugin-api",
  "tokio",
- "url",
  "workspace-hack",
 ]
 

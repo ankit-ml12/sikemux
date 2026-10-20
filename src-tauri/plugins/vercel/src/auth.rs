@@ -2,11 +2,10 @@
 // with an access token, choosing the team calls are for, and saying who is signed in.
 
 use std::path::Path;
-use std::time::Duration;
 
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use sikemux_plugin_api::store;
 use sikemux_plugin_api::{SignInStatus, StreamSink};
@@ -15,8 +14,6 @@ use crate::client::{self, at, text, Session};
 use crate::config::{self, Account, Install, SignIn, VercelConfig};
 use crate::error::{VercelError, VercelResult};
 use crate::oauth;
-
-const BROWSER_WAIT: Duration = Duration::from_secs(300);
 
 /// Who a token belongs to, as `/v2/user` says.
 pub fn account_of(data: &Value) -> VercelResult<Account> {
@@ -81,7 +78,7 @@ pub async fn status(data_dir: &Path) -> Status {
         Err(error) => {
             let signed = Signed {
                 personal: true,
-                browser_sign_in: oauth::available(),
+                browser_sign_in: oauth::APP.available(),
                 ..Signed::default()
             };
             return Status::checked(false, signed, &Err::<(), _>(error));
@@ -92,7 +89,7 @@ pub async fn status(data_dir: &Path) -> Status {
         teams: Vec::new(),
         team: config.team.clone(),
         personal: true,
-        browser_sign_in: oauth::available(),
+        browser_sign_in: oauth::APP.available(),
     };
     let browser = config
         .account
@@ -191,15 +188,7 @@ pub async fn sign_in(data_dir: &Path, input: TokenSignIn) -> VercelResult<()> {
 /// down the stream. The person picks a team there; signing in again adds another.
 /// Stopping the stream stops the wait.
 pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> VercelResult<()> {
-    let callback = oauth::listen().await?;
-    let state = oauth::new_state()?;
-    sink.send(json!({ "url": oauth::install_url(&state) }))
-        .map_err(|_| VercelError::Auth("the sign-in was closed".into()))?;
-    let code = tokio::time::timeout(BROWSER_WAIT, oauth::code(&callback, &state))
-        .await
-        .map_err(|_| VercelError::Auth("nobody finished signing in".into()))??;
-    drop(callback);
-    let installed = oauth::exchange(&code).await?;
+    let installed: oauth::Installed = oauth::APP.sign_in(&client::HTTP, sink).await?;
     if !is_id(&installed.installation_id) {
         return Err(VercelError::Response(
             "Vercel named the installation strangely".into(),
@@ -341,6 +330,7 @@ pub async fn set_team(data_dir: &Path, input: TeamChoice) -> VercelResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn a_token_belongs_to_its_user_and_sees_their_teams() {
