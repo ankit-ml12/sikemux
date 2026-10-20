@@ -1060,12 +1060,10 @@ pub(crate) struct AddParams {
     project: String,
     label: String,
     command: String,
-    #[serde(default)]
     cwd: Option<String>,
     /// For the team in `sikemux.json`, or for this person only.
     team: bool,
     /// The task this one is an edit of, which goes when its id or place changes.
-    #[serde(default)]
     replaces: Option<String>,
 }
 

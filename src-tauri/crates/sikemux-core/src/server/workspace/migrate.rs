@@ -28,7 +28,6 @@ const APP_DATA_DIR: &str = if cfg!(debug_assertions) {
 struct Earlier {
     #[serde(default)]
     added: Vec<ProjectInfo>,
-    #[serde(default)]
     chats: Option<Vec<EarlierChat>>,
     #[serde(default)]
     asleep: Vec<EarlierAsleep>,

@@ -49,7 +49,7 @@ const WINDOW_ANSWER_WAIT: Duration = Duration::from_secs(10);
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Choice {
     pub label: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
@@ -85,7 +85,7 @@ struct Question {
     asked: String,
     /// What the person is asked, which a lead that passes it on may reword.
     text: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     header: Option<String>,
     choices: Vec<Choice>,
     /// The person may pick more than one of `choices`.
@@ -101,11 +101,11 @@ struct Question {
     stage: Stage,
     /// The linked host it was put to the person on, where its asker's team
     /// is led from.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     relayed: Option<String>,
     /// The linked host its asker runs on, when it is put to the person here
     /// for an agent there.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     from_host: Option<String>,
 }
 
@@ -903,12 +903,10 @@ fn with_tickets(core: &Core, open: Vec<Question>) -> Vec<Value> {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AnswerParams {
     id: String,
-    #[serde(default)]
     answer: Option<String>,
-    #[serde(default)]
     choice: Option<usize>,
     /// The choices picked on a question that takes several.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     choices: Option<Vec<usize>>,
     /// The assumption the agent went on is right.
     #[serde(default)]

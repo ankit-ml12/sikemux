@@ -125,7 +125,7 @@ pub struct ProjectAction {
     pub placement: ActionPlacement,
     /// Empty makes the action available throughout its project.
     pub contexts: Vec<CommandContext>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub keybinding: Option<String>,
 }
 
@@ -144,9 +144,9 @@ pub struct ProjectTask {
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectPreview {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
 }
 
@@ -178,22 +178,22 @@ pub struct GenerateConfig {
 pub struct ProjectConfig {
     pub version: u64,
     /// A hint for editors; never fetched.
-    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
     /// An image path relative to the project.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     pub actions: Vec<ProjectAction>,
     pub tasks: Vec<ProjectTask>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preview: Option<ProjectPreview>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree: Option<WorktreeConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub generate: Option<Box<GenerateConfig>>,
     /// What proves the project sound: run on each commit, and on a card's
     /// change when its pull request has no CI.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub check: Option<String>,
 }
 

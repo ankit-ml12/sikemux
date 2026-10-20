@@ -232,7 +232,6 @@ fn recorded(core: &Core, project: &str, agent: &Agent) -> bool {
 #[derive(Deserialize)]
 struct Pending {
     /// The index git commits from, when not the checkout's own.
-    #[serde(default)]
     index: Option<PathBuf>,
     #[serde(default)]
     amend: bool,

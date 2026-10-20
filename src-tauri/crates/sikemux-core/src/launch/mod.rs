@@ -48,10 +48,10 @@ impl PermissionMode {
 #[serde(rename_all = "camelCase")]
 pub struct AgentSpec {
     pub provider: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub executable_path: Option<String>,
     /// The account folder, or a config file in it; the agent's default when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub config_path: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub environment_keys: Vec<String>,

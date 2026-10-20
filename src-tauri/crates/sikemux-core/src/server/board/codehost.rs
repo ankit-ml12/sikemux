@@ -356,17 +356,13 @@ pub(super) async fn look(pull: &Pull) -> Result<Looked, String> {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Feedback {
     pub id: String,
-    #[serde(default)]
     pub author: Option<String>,
     #[serde(default, skip_serializing)]
     pub bot: bool,
     #[serde(default)]
     pub body: String,
-    #[serde(default)]
     pub path: Option<String>,
-    #[serde(default)]
     pub line: Option<u64>,
-    #[serde(default)]
     pub state: Option<String>,
     #[serde(default, skip_serializing)]
     pub at: String,

@@ -35,7 +35,6 @@ pub(crate) struct Owner {
     pub started_by: Option<String>,
     /// The folder an agent keeps its account and sessions in, when the
     /// launch named one rather than leaving it to the CLI's default.
-    #[serde(default)]
     pub account_home: Option<PathBuf>,
 }
 

@@ -505,7 +505,6 @@ pub(crate) async fn read(
 struct ReadParams {
     caller: String,
     agent_id: String,
-    #[serde(default)]
     cursor: Option<String>,
 }
 

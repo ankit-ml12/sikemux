@@ -89,9 +89,7 @@ pub(crate) struct Recording {
     pub seconds: f64,
     pub at: u64,
     /// The chat run and turn it was made in.
-    #[serde(default)]
     pub feed: Option<String>,
-    #[serde(default)]
     pub turn: Option<u64>,
 }
 

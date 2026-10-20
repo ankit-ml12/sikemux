@@ -115,13 +115,10 @@ pub(crate) struct Carried {
     pub from_name: String,
     pub cli: String,
     pub text: String,
-    #[serde(default)]
     pub note: Option<String>,
     /// The person's answer to a question, copied to the lead it went to first.
-    #[serde(default)]
     pub answered: Option<Answered>,
     /// The id of the question of its own that a lead answers.
-    #[serde(default)]
     pub question: Option<String>,
 }
 
@@ -163,7 +160,7 @@ struct Origin {
 struct Queued {
     text: String,
     /// Unknown for a message that came back unread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     origin: Option<Origin>,
 }
 

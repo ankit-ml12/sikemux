@@ -122,8 +122,7 @@ async fn probe_agent_executable(def: &AgentEntry, executable: &Path) -> Result<S
             return Ok(cached.version);
         }
     }
-    let version =
-        probe_agent_executable_with_timeout(def, executable, AGENT_PROBE_TIMEOUT).await?;
+    let version = probe_agent_executable_with_timeout(def, executable, AGENT_PROBE_TIMEOUT).await?;
     if let Some(modified) = modified {
         let mut cache = cache.locked();
         if cache.len() >= 128 {

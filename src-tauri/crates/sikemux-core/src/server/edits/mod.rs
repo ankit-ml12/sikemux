@@ -54,22 +54,22 @@ pub(crate) struct Edit {
     /// The agents at work when no one of them could have made the change.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shared: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub cli: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// The run of the chat whose history holds the turn.
     pub feed: String,
     /// Where the turn starts in that history.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub turn: Option<u64>,
     pub tool_call_id: String,
     pub path: String,
     /// Empty when the whole file changed or where is not known.
     pub lines: Lines,
     /// How many lines the file had just after, when it could be read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total: Option<u64>,
 }
 
@@ -229,13 +229,9 @@ pub(crate) struct Edits {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Filter {
     pub project: PathBuf,
-    #[serde(default)]
     agent_id: Option<String>,
-    #[serde(default)]
     feed: Option<String>,
-    #[serde(default)]
     turn: Option<u64>,
-    #[serde(default)]
     path: Option<String>,
 }
 

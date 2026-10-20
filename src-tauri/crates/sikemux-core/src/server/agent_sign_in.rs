@@ -27,9 +27,7 @@ const MAX_PATH_CHARS: usize = 4_096;
 #[serde(rename_all = "camelCase")]
 pub(super) struct Account {
     agent: AgentKind,
-    #[serde(default)]
     executable_path: Option<String>,
-    #[serde(default)]
     config_path: Option<String>,
 }
 

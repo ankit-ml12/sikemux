@@ -348,7 +348,6 @@ struct ProjectParams {
 
 #[derive(Deserialize)]
 struct PortsParams {
-    #[serde(default)]
     project: Option<String>,
 }
 
@@ -373,7 +372,6 @@ struct TrustAnswerParams {
 #[serde(rename_all = "camelCase")]
 struct AgentMessagesParams {
     project: String,
-    #[serde(default)]
     limit: Option<usize>,
 }
 
@@ -399,7 +397,6 @@ async fn agent_messages(core: &Arc<Core>, params: AgentMessagesParams) -> CoreRe
 struct ShareChatParams {
     agent_id: String,
     lifetime_ms: u64,
-    #[serde(default)]
     title: Option<String>,
 }
 
@@ -448,14 +445,10 @@ async fn chat_file(core: &Core, peer: &Peer, params: ChatFileParams) -> CoreResu
 struct NameAgentParams {
     agent_id: String,
     cwd: PathBuf,
-    #[serde(default)]
     provider: Option<String>,
-    #[serde(default)]
     resume_id: Option<String>,
     /// How the app draws it, kept for when it is opened again.
-    #[serde(default)]
     buddy: Option<Value>,
-    #[serde(default)]
     title: Option<String>,
 }
 
@@ -505,7 +498,6 @@ struct QueuedParams {
     agent_id: String,
     ids: Vec<String>,
     /// A message sent with them, after them.
-    #[serde(default)]
     message: Option<super::chat::queue::Message>,
 }
 
@@ -680,7 +672,6 @@ async fn inbox(core: &Arc<Core>) -> CoreResult<inbox::View> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DigestParams {
-    #[serde(default)]
     since: Option<u64>,
 }
 

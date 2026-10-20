@@ -40,14 +40,11 @@ pub(crate) struct Foreign {
     pub parent: Option<String>,
     pub role: Role,
     pub status: AgentStatus,
-    #[serde(default)]
     pub active_at: Option<u64>,
     /// The checkout of its lead's project here that its commits come back to.
-    #[serde(default)]
     pub repo: Option<PathBuf>,
     /// The branch its latest commits came back on and how many there are,
     /// until its next report says so.
-    #[serde(default)]
     pub landed: Option<(String, usize)>,
 }
 
@@ -63,7 +60,6 @@ pub(crate) struct Tree {
     /// The lead's commit it started from.
     pub base: String,
     /// The commit its work last went back to the lead at.
-    #[serde(default)]
     pub sent: Option<String>,
 }
 

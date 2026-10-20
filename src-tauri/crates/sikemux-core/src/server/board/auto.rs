@@ -201,7 +201,6 @@ pub(crate) struct Pull {
     pub name: String,
     pub number: u64,
     pub url: String,
-    #[serde(default)]
     pub account: Option<String>,
 }
 
@@ -221,14 +220,10 @@ pub(super) struct Run {
     pub start_sha: String,
     pub stage: Stage,
     /// What is happening, or why the card is back with the person.
-    #[serde(default)]
     pub note: Option<String>,
-    #[serde(default)]
     pub pull: Option<Pull>,
     /// The commit whose checks are awaited, and since when.
-    #[serde(default)]
     pub head: Option<String>,
-    #[serde(default)]
     pub checks_since: Option<u64>,
     /// The branch was put on the latest base once already.
     #[serde(default)]
@@ -239,14 +234,14 @@ pub(super) struct Run {
     #[serde(default)]
     pub review: Review,
     /// The reviewer at work on the change now.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reviewer: Option<blind::Reviewer>,
     /// What the reviewer said, waiting to be acted on.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict: Option<blind::Verdict>,
     /// The commit a reviewer approved. A push of any other leaves the change
     /// unapproved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub approved: Option<String>,
 }
 

@@ -210,7 +210,6 @@ struct LeadParams {
     name: String,
     #[serde(default)]
     cli: String,
-    #[serde(default)]
     mode: Option<String>,
     #[serde(default)]
     depth: usize,
@@ -223,7 +222,6 @@ struct SpawnParams {
     name: String,
     lead: LeadParams,
     cli: String,
-    #[serde(default)]
     model: Option<String>,
     reports: bool,
     prompt: String,

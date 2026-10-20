@@ -15,7 +15,6 @@ use super::CoreResult;
 pub(super) struct Listing {
     agent: AgentKind,
     cwd: String,
-    #[serde(default)]
     config_path: Option<String>,
 }
 
@@ -30,9 +29,7 @@ pub(super) struct Saved {
     agent: AgentKind,
     cwd: String,
     session_id: String,
-    #[serde(default)]
     executable_path: Option<String>,
-    #[serde(default)]
     config_path: Option<String>,
 }
 
@@ -51,7 +48,6 @@ pub(super) struct Moved {
     from_cwd: String,
     to_cwd: String,
     session_id: String,
-    #[serde(default)]
     config_path: Option<String>,
 }
 

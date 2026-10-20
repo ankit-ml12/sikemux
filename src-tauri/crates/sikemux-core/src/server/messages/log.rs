@@ -47,15 +47,15 @@ pub(crate) struct Entry {
     pub at: u64,
     /// The sending agent's id, `person`, `board` or `auto`; unknown for a
     /// message that came back unread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
     /// What the sender was called then, as its name goes once it closes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub from_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<Kind>,
     pub to: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub to_name: Option<String>,
     pub outcome: Outcome,
 }

@@ -31,16 +31,13 @@ pub(crate) struct Code {
     /// What the project is called, for a host that keeps a copy of its own.
     pub project: String,
     /// Its `origin`, which a host that has the project finds it by.
-    #[serde(default)]
     pub remote: Option<String>,
     pub commit: String,
-    #[serde(default)]
     pub branch: Option<String>,
     /// Where the lead works inside the repository.
     #[serde(default)]
     pub inside: String,
     /// What the lead has not committed, as a binary patch on `commit`.
-    #[serde(default)]
     pub patch: Option<String>,
 }
 

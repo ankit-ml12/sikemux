@@ -88,18 +88,18 @@ impl Status {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Ticket {
     pub key: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     /// What the ticket is in its tracker, such as Epic, Story or Bug.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub provider: String,
     /// The status last put on the ticket in its tracker, so each change goes
     /// there once.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub synced: Option<Status>,
     /// Why the last change did not reach the ticket.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sync_note: Option<String>,
 }
 
@@ -122,32 +122,24 @@ struct Card {
     acceptance: String,
     status: Status,
     /// The agent working it, or that did.
-    #[serde(default)]
     owner: Option<String>,
     /// What the owner was called and which CLI it ran when it claimed the
     /// card, for after it has gone.
-    #[serde(default)]
     owner_name: Option<String>,
-    #[serde(default)]
     owner_cli: Option<String>,
-    #[serde(default)]
     parent: Option<u64>,
     #[serde(default)]
     depends_on: Vec<u64>,
     /// The agent that added it, or none when the person did.
-    #[serde(default)]
     created_by: Option<String>,
-    #[serde(default)]
     created_by_name: Option<String>,
     /// The team it was last seen in, for after the team's agents close.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     team: Option<Team>,
-    #[serde(default)]
     result: Option<String>,
-    #[serde(default)]
     ticket: Option<Ticket>,
     /// The run Auto gave the card, in a worktree of its own.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     auto: Option<Run>,
     /// Browser recordings its owner made while on it, oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

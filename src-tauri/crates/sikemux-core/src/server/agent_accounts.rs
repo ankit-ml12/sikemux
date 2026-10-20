@@ -15,16 +15,13 @@ use crate::agent_accounts::{chat_account, folders, status, usage, Book, Profile}
 #[serde(rename_all = "camelCase")]
 pub(super) struct Account {
     provider: String,
-    #[serde(default)]
     config_path: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Forget {
-    #[serde(default)]
     provider: Option<String>,
-    #[serde(default)]
     config_path: Option<String>,
 }
 

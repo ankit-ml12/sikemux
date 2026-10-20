@@ -47,17 +47,17 @@ pub struct Model {
     #[serde(default)]
     pub release_date: String,
     /// `alpha`, `beta` or `deprecated`; none for a model in general use.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(default)]
     pub limit: Limit,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
     #[serde(default, skip_serializing_if = "Experimental::is_empty")]
     experimental: Experimental,
     #[serde(default, skip_serializing)]
     modalities: Modalities,
-    #[serde(default, skip_serializing)]
+    #[serde(skip_serializing)]
     family: Option<String>,
 }
 
@@ -70,13 +70,11 @@ pub struct Limit {
 /// USD per million tokens.
 #[derive(Serialize, Deserialize, Default, Clone, Copy)]
 pub struct Cost {
-    #[serde(default)]
     pub input: Option<f64>,
-    #[serde(default)]
     pub output: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_read: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<f64>,
 }
 
@@ -94,7 +92,6 @@ impl Experimental {
 
 #[derive(Serialize, Deserialize, Default)]
 struct Mode {
-    #[serde(default)]
     cost: Option<Cost>,
 }
 

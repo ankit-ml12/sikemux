@@ -150,7 +150,6 @@ pub(super) struct NewSkill {
 #[derive(Deserialize)]
 pub(super) struct Source {
     source: String,
-    #[serde(default)]
     subfolder: Option<String>,
 }
 

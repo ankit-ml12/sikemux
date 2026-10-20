@@ -959,11 +959,8 @@ pub(crate) async fn stop_run(core: &Arc<Core>, execution_id: &str) -> Result<Run
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RunSelector {
-    #[serde(default)]
     execution_id: Option<String>,
-    #[serde(default)]
     project: Option<String>,
-    #[serde(default)]
     agent_id: Option<String>,
 }
 

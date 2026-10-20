@@ -97,7 +97,6 @@ impl Launcher {
 pub(crate) struct Kept {
     #[serde(flatten)]
     pub agent: WorkspaceAgent,
-    #[serde(default)]
     pub account: Option<ChatAccount>,
     #[serde(default)]
     pub fallbacks: Vec<ChatAccount>,
@@ -1551,9 +1550,7 @@ fn still_there(launcher: &Launcher) -> Result<PathBuf, String> {
 #[derive(Deserialize)]
 pub(crate) struct AddProjectParams {
     path: PathBuf,
-    #[serde(default)]
     name: Option<String>,
-    #[serde(default)]
     id: Option<String>,
 }
 

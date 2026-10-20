@@ -63,10 +63,10 @@ pub struct Provider {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic: Option<AnthropicApi>,
     /// The provider's id on models.dev.
-    #[serde(default, skip_serializing)]
+    #[serde(skip_serializing)]
     pub models_dev: Option<String>,
     /// The coding model the provider's own docs recommend, as its API names it.
-    #[serde(default, skip_serializing)]
+    #[serde(skip_serializing)]
     pub model: Option<String>,
     /// The model an agent's own guide from the provider names, where it differs.
     #[serde(default, skip_serializing)]
@@ -138,9 +138,9 @@ pub struct Wiring {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Helper {
     pub agent: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
 

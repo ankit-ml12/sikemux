@@ -54,7 +54,7 @@ const HOST_REQUEST_SKEW_SECS: u64 = 60;
 struct Stored {
     /// Where the host's key lived before the secret store; read once to take
     /// that host off its account, never written again.
-    #[serde(default, skip_serializing)]
+    #[serde(skip_serializing)]
     secret_key: Option<String>,
     enabled: bool,
     devices: Vec<DeviceInfo>,
@@ -64,10 +64,8 @@ struct Stored {
     account_event_id: i64,
     /// The account this host signed out of before the server heard, which
     /// it tells on its next connection.
-    #[serde(default)]
     pending_leave: Option<String>,
     /// Why the account let this host go, until it signs in again.
-    #[serde(default)]
     removed: Option<Removal>,
     /// The last network the accounts server described, for when it is out of
     /// reach. A copy this build cannot read is dropped and fetched again.
@@ -113,7 +111,6 @@ pub(crate) struct LinkedHost {
     pub name: String,
     pub platform: String,
     pub linked_at: u64,
-    #[serde(default)]
     pub last_seen: Option<u64>,
     /// Where it was last reached directly, beside the relays.
     #[serde(default)]
@@ -133,7 +130,6 @@ pub(crate) struct StoredShare {
     /// Milliseconds since the Unix epoch.
     pub expires_at: u64,
     /// What the app calls the chat, which its viewers see too.
-    #[serde(default)]
     pub title: Option<String>,
 }
 

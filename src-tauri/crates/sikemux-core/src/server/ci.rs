@@ -30,9 +30,7 @@ pub(crate) struct Shown {
     pub provider: String,
     pub owner: String,
     pub name: String,
-    #[serde(default)]
     pub account: Option<String>,
-    #[serde(default)]
     pub host: Option<String>,
 }
 

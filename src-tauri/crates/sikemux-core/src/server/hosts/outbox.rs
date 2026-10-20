@@ -25,10 +25,8 @@ pub(crate) struct Post {
     pub method: String,
     pub params: Value,
     /// A later post with the same key replaces this one.
-    #[serde(default)]
     pub key: Option<String>,
     /// A file that goes with it, removed once it has gone.
-    #[serde(default)]
     pub body: Option<PathBuf>,
     /// Never dropped to make room, such as a worker's report to its lead.
     #[serde(default)]

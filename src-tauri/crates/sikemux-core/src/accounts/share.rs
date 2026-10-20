@@ -207,17 +207,17 @@ pub struct ShareFrames {
 #[serde(rename_all = "camelCase")]
 pub struct ShareHello {
     pub role: ShareRole,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<DeviceKey>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub share: Option<ShareId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proof: Option<ShareViewerProof>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub since: Option<ShareSeq>,
 }
 
@@ -271,13 +271,13 @@ pub struct SharePublish {
 pub struct ShareReady {
     pub heartbeat_ms: i64,
     /// Viewer only: when the share ends.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
     /// Viewer only: whether the sharing host is connected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub host_online: Option<bool>,
     /// Viewer only: send a fresh token in an auth message before this.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_expires_at: Option<String>,
 }
 

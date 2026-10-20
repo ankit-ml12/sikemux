@@ -40,7 +40,6 @@ struct Entry {
     name: String,
     project: String,
     /// The agent that started this one.
-    #[serde(default)]
     parent: Option<String>,
     /// Its turns end without its final answer going to the agent that
     /// started it.
@@ -50,10 +49,8 @@ struct Entry {
     /// none.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     blind: bool,
-    #[serde(default)]
     provider: Option<String>,
     /// The provider's own session.
-    #[serde(default)]
     session_id: Option<String>,
     /// How many leads above it run on other hosts, for an agent whose own
     /// lead runs on another host.
@@ -69,10 +66,10 @@ struct Entry {
     chosen: bool,
     /// The character the app last drew for it, which it wears again when
     /// opened again.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     buddy: Option<Value>,
     /// What it was last working on, as the app titled it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
 }
 
@@ -93,7 +90,6 @@ struct Book {
     agents: Vec<Entry>,
     /// Every agent the app holds, sleeping ones included, as it last said.
     /// Unknown until the app first says.
-    #[serde(default)]
     in_app: Option<HashSet<String>>,
     /// The lead of each closed agent that an agent still named was started
     /// under, so the chain of leads stays whole after a lead in it closes.

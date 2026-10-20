@@ -29,7 +29,7 @@ pub(crate) struct Check {
     pub works: bool,
     /// When it was checked, in Unix milliseconds.
     pub at: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
