@@ -10,7 +10,7 @@ import {
   GoogleMark,
   Logo,
 } from "./icons.tsx";
-import { isSharePath, rememberReturn } from "./navigation.ts";
+import { HOST, isSharePath, rememberReturn } from "./navigation.ts";
 
 /** Why an emailed code is asked for: a browser new to the account, a new account, or a new password. */
 type CodePurpose = "trust" | "verify" | "reset";
@@ -40,7 +40,7 @@ const CODE_DETAIL: Record<CodePurpose, string> = {
 
 /** On a shared chat's page a finished sign-in stays there, where the chat then opens, instead of going to the account pages. */
 function staying() {
-  return isSharePath(location.pathname) || location.pathname === "/host"
+  return isSharePath(location.pathname) || location.pathname === HOST
     ? { navigate: () => undefined }
     : undefined;
 }

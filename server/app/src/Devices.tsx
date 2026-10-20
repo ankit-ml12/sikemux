@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/react";
+import { platformName } from "@mac/remote/access";
 import type { AccountEvent, Device } from "@sikemux/protocol";
 import {
   useCallback,
@@ -15,13 +16,6 @@ export type Load =
   | { state: "loading" }
   | { state: "failed"; message: string }
   | { state: "loaded"; devices: Device[] };
-
-const PLATFORMS: Record<Device["platform"], string> = {
-  macos: "macOS",
-  linux: "Linux",
-  ios: "iOS",
-  android: "Android",
-};
 
 /** The account's devices, read once and then kept current by `apply` and `reload`. */
 export function useDevices(ready: boolean) {
@@ -200,7 +194,7 @@ function DeviceRow({
       </span>
       <span className="name">{device.name}</span>
       <span className="detail">
-        {PLATFORMS[device.platform] ?? device.platform}
+        {platformName(device.platform)}
         {device.channel ? ` · ${device.channel}` : ""}
         {` · added ${formatDay(device.createdAt, "short")}`}
       </span>

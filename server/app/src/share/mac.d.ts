@@ -9,6 +9,10 @@ declare module "@mac/lib/initials" {
   ): string;
 }
 
+declare module "@mac/remote/access" {
+  export function platformName(platform: string): string;
+}
+
 declare module "@mac/share/link" {
   export interface ShareLink {
     readonly id: string;

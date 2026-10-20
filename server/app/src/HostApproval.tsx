@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/react";
+import { platformName } from "@mac/remote/access";
 import type { PendingHost } from "@sikemux/protocol";
 import { errorCode, orReverify } from "@sikemux/protocol/account";
 import { useState, type SubmitEvent } from "react";
@@ -6,10 +7,6 @@ import { useState, type SubmitEvent } from "react";
 import { api, formatDay, problemText, signedInToken } from "./api.ts";
 import { Panel } from "./Consent.tsx";
 import { useReverified } from "./Reverify.tsx";
-
-export const HOST = "/host";
-
-const PLATFORMS: Record<string, string> = { macos: "macOS", linux: "Linux" };
 
 type Step =
   | { kind: "enter" }
@@ -83,7 +80,7 @@ export function HostApproval() {
         <h1>Add {host.name} to your account?</h1>
         <ul className="consent-scopes">
           <li>
-            {PLATFORMS[host.platform] ?? host.platform} · {host.channel}
+            {platformName(host.platform)} · {host.channel}
           </li>
           <li>Asked {ago(host.requestedAt)}</li>
           <li>From {where || "an address the server could not see"}</li>
