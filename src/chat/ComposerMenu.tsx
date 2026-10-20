@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useMemo, type ReactNode, type RefObject } from "react";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
-import { AgentFace } from "../buddies/Buddy";
+import { AgentBuddy } from "../buddies/Buddy";
 import type { TrackedItem } from "../codehost/tracked";
 import type { RepoRef } from "../codehost/types";
 import { formatAge } from "../lib/format";
@@ -181,13 +181,9 @@ export default function ComposerMenu({
                             content: (
                                 <>
                                     <span className="chat-menu-mark">
-                                        <AgentFace
-                                            agent={mate}
-                                            size={13}
-                                            logoSize={13}
-                                            logoClass={`agent-glyph ${mate.type}`}
-                                            buddyClass="agent-glyph buddy-mark"
-                                        />
+                                        <span className="agent-glyph buddy-mark">
+                                            <AgentBuddy agent={mate} size={13} />
+                                        </span>
                                     </span>
                                     <code>@{mate.name}</code>
                                     <span className="chat-menu-mate">
@@ -204,17 +200,9 @@ export default function ComposerMenu({
                             content: (
                                 <>
                                     <span className="chat-menu-mark">
-                                        <AgentFace
-                                            agent={{
-                                                id: earlier.named?.agentId ?? earlier.chat.id,
-                                                type: earlier.chat.agent,
-                                                buddy: earlier.named?.buddy,
-                                            }}
-                                            size={13}
-                                            logoSize={13}
-                                            logoClass={`agent-glyph ${earlier.chat.agent}`}
-                                            buddyClass="agent-glyph buddy-mark"
-                                        />
+                                        <span className="agent-glyph buddy-mark">
+                                            <AgentBuddy agent={{ id: earlier.named?.agentId ?? earlier.chat.id, buddy: earlier.named?.buddy }} size={13} />
+                                        </span>
                                     </span>
                                     <code>@{earlier.named?.name}</code>
                                     <span className="chat-menu-mate">

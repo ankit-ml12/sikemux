@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type Ref } from "react";
 import { createPortal } from "react-dom";
-import { AgentFace } from "../buddies/Buddy";
+import { AgentBuddy } from "../buddies/Buddy";
 import type { Agent } from "../state/types";
 import { FileIcon } from "../ui/FileIcon";
 import { tagStarts } from "./composerInput";
@@ -170,13 +170,9 @@ function ChipBody({ chip }: { chip: DraftChip }) {
             <span className="chat-chip-mark" data-kind={chip.kind}>
                 {chip.kind === "agent" ? (
                     chip.agent && (
-                        <AgentFace
-                            agent={chip.agent}
-                            size={12}
-                            logoSize={12}
-                            logoClass={`agent-glyph ${chip.agent.type}`}
-                            buddyClass="agent-glyph buddy-mark"
-                        />
+                        <span className="agent-glyph buddy-mark">
+                            <AgentBuddy agent={chip.agent} size={12} />
+                        </span>
                     )
                 ) : chip.kind === "file" ? (
                     <FileIcon name={chip.label ?? chip.text} size={12} />
