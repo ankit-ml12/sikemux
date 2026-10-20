@@ -133,7 +133,7 @@ describe("AgentChatPane in a worktree", () => {
         await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Fix the flaky PTY test", [], [], expect.any(String)));
         expect(mocks.start).toHaveBeenCalledTimes(2);
         expect(mocks.prompt).toHaveBeenCalledTimes(1);
-        expect(await screen.findByRole("note")).toHaveTextContent("Working in worktree sikemux/fix-the-flaky-pty-test");
+        expect(await screen.findByRole("note")).toHaveTextContent("Working in a worktree on sikemux/fix-the-flaky-pty-test");
         expect(await screen.findByRole("button", { name: "sikemux/fix-the-flaky-pty-test" })).toBeDisabled();
     });
 
