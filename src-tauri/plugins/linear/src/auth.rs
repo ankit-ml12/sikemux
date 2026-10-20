@@ -7,10 +7,11 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use sikemux_plugin_api::StreamSink;
+use sikemux_plugin_api::store::{self, Accounts};
+use sikemux_plugin_api::{SignInStatus, StreamSink};
 
 use crate::client::{self, at, Session};
-use crate::config::{self, SignIn, Workspace};
+use crate::config::{self, LinearConfig, SignIn, Workspace};
 use crate::error::{LinearError, LinearResult};
 use crate::oauth;
 
@@ -38,15 +39,12 @@ pub fn workspace_of(data: &Value) -> LinearResult<Workspace> {
     })
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Status {
-    pub configured: bool,
-    pub ok: bool,
-    pub auth_failed: bool,
-    pub message: Option<String>,
+#[derive(Serialize, Default)]
+pub struct Signed {
     pub workspaces: Vec<Listed>,
 }
+
+pub type Status = SignInStatus<Signed>;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,7 +58,10 @@ pub struct Listed {
 
 /// Every workspace signed in, and whether the default one's key still works.
 pub async fn status(data_dir: &Path) -> Status {
-    let config = config::load(data_dir);
+    let config = match config::load(data_dir) {
+        Ok(config) => config,
+        Err(error) => return Status::checked(false, Signed::default(), &Err::<(), _>(error)),
+    };
     let workspaces = config
         .workspaces
         .iter()
@@ -72,28 +73,11 @@ pub async fn status(data_dir: &Path) -> Status {
             is_default: config.default.as_deref() == Some(workspace.id.as_str()),
         })
         .collect();
-    let base = |ok: bool, auth_failed: bool, message: Option<String>| Status {
-        configured: !config.workspaces.is_empty(),
-        ok,
-        auth_failed,
-        message,
-        workspaces,
+    let check = match Session::of(data_dir, None).await {
+        Ok(session) => session.query(VIEWER, json!({})).await,
+        Err(error) => Err(error),
     };
-    let session = match Session::of(data_dir, None).await {
-        Ok(session) => session,
-        Err(LinearError::Unconfigured) => return base(false, false, None),
-        Err(error) => return base(false, false, Some(error.to_string())),
-    };
-    match session.query(VIEWER, json!({})).await {
-        Ok(_) => base(true, false, None),
-        Err(error @ LinearError::Auth(_)) => base(false, true, Some(error.to_string())),
-        Err(
-            error @ LinearError::RateLimited {
-                resets_in_secs: None,
-            },
-        ) => base(true, false, Some(error.to_string())),
-        Err(error) => base(false, false, Some(error.to_string())),
-    }
+    Status::checked(!config.workspaces.is_empty(), Signed { workspaces }, &check)
 }
 
 #[derive(Deserialize)]
@@ -114,13 +98,11 @@ pub async fn sign_in(data_dir: &Path, input: KeySignIn) -> LinearResult<String> 
     }
     let workspace = workspace_of(&client::query_with(&key, VIEWER, json!({})).await?)?;
     let id = workspace.id.clone();
-    let data_dir = data_dir.to_path_buf();
-    config::blocking(Box::new(move || {
+    store::update(data_dir, move |config: &mut LinearConfig| {
         config::keychain_write(&workspace, &key)?;
-        let mut config = config::load(&data_dir);
         config.upsert(workspace);
-        config::save(&data_dir, &config)
-    }))
+        Ok(())
+    })
     .await?;
     client::forget(&id);
     Ok(id)
@@ -147,13 +129,11 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> LinearR
     };
     let id = workspace.id.clone();
     let refresh_token = tokens.refresh_token.clone();
-    let data_dir = data_dir.to_path_buf();
-    config::blocking(Box::new(move || {
+    store::update(data_dir, move |config: &mut LinearConfig| {
         config::keychain_write(&workspace, &refresh_token)?;
-        let mut config = config::load(&data_dir);
         config.upsert(workspace);
-        config::save(&data_dir, &config)
-    }))
+        Ok(())
+    })
     .await?;
     oauth::remember(&id, &tokens).await;
     client::forget(&id);
@@ -168,11 +148,9 @@ pub struct WorkspaceRef {
 
 /// Signs out the workspace named, or the default one.
 pub async fn sign_out(data_dir: &Path, input: WorkspaceRef) -> LinearResult<()> {
-    let data_dir = data_dir.to_path_buf();
-    let removed = config::blocking(Box::new(move || {
-        let mut config = config::load(&data_dir);
+    let removed = store::update(data_dir, move |config: &mut LinearConfig| {
         let Some(id) = config
-            .workspace(input.workspace.as_deref())
+            .account(input.workspace.as_deref())
             .map(|workspace| workspace.id.clone())
         else {
             return Ok(None);
@@ -185,9 +163,8 @@ pub async fn sign_out(data_dir: &Path, input: WorkspaceRef) -> LinearResult<()> 
             SignIn::Key => None,
         };
         config::keychain_delete(&workspace)?;
-        config::save(&data_dir, &config)?;
         Ok(Some((workspace, refresh_token)))
-    }))
+    })
     .await?;
     if let Some((workspace, refresh_token)) = removed {
         client::forget(&workspace.id);
@@ -201,16 +178,13 @@ pub async fn sign_out(data_dir: &Path, input: WorkspaceRef) -> LinearResult<()> 
 
 /// Makes the workspace named the one calls use when they name none.
 pub async fn set_default(data_dir: &Path, input: WorkspaceRef) -> LinearResult<()> {
-    let data_dir = data_dir.to_path_buf();
-    config::blocking(Box::new(move || {
-        let mut config = config::load(&data_dir);
+    store::update(data_dir, move |config: &mut LinearConfig| {
         let id = config
-            .workspace(input.workspace.as_deref())
+            .account(input.workspace.as_deref())
             .map(|workspace| workspace.id.clone())
             .ok_or_else(|| LinearError::NotFound("no such Linear workspace is signed in".into()))?;
-        config.default = Some(id);
-        config::save(&data_dir, &config)
-    }))
+        config.set_default(&id)
+    })
     .await
 }
 

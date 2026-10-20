@@ -5998,9 +5998,7 @@ dependencies = [
 name = "sikemux-plugin-github"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.1",
  "futures",
- "http",
  "reqwest",
  "rustls",
  "serde",
@@ -6106,6 +6104,7 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-process",
  "time",
  "tokio",
  "workspace-hack",

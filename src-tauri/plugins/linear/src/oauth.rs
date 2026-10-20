@@ -9,8 +9,10 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use serde_json::Value;
 use sikemux_loopback::{challenge, redirect_uri, Callback, LoopbackError};
+use sikemux_plugin_api::http;
+use sikemux_plugin_api::store;
 
-use crate::client;
+use crate::client::{self, HTTP};
 use crate::config::{self, Workspace};
 use crate::error::{LinearError, LinearResult};
 
@@ -78,14 +80,19 @@ async fn post_form(url: &str, fields: &[(&str, &str)]) -> LinearResult<(u16, Vec
     let body = url::form_urlencoded::Serializer::new(String::new())
         .extend_pairs(fields)
         .finish();
-    let response = client::http()?
-        .post(url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
+    let response = HTTP
+        .send(
+            HTTP.client()?
+                .post(url)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(body),
+        )
         .await?;
     let status = response.status().as_u16();
-    Ok((status, client::read_body(response).await?))
+    Ok((
+        status,
+        http::read_body(response, client::MAX_RESPONSE_BYTES).await?,
+    ))
 }
 
 async fn token_request(fields: &[(&str, &str)]) -> LinearResult<Tokens> {
@@ -175,16 +182,13 @@ pub async fn access_token(workspace: &Workspace) -> LinearResult<String> {
         return Ok(access.token.clone());
     }
     let reading = workspace.clone();
-    let refresh_token = config::blocking(Box::new(move || config::keychain_read(&reading)))
+    let refresh_token = store::blocking(move || config::keychain_read(&reading))
         .await?
         .ok_or(LinearError::Unconfigured)?;
     let tokens = refresh(&refresh_token).await?;
     let writing = workspace.clone();
     let replacement = tokens.refresh_token.clone();
-    config::blocking(Box::new(move || {
-        config::keychain_write(&writing, &replacement)
-    }))
-    .await?;
+    store::blocking(move || config::keychain_write(&writing, &replacement)).await?;
     let access = access_of(&tokens);
     let token = access.token.clone();
     held.insert(workspace.id.clone(), access);

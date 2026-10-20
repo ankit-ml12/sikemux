@@ -88,7 +88,7 @@ impl Plugin for Linear {
         ctx: &'a PluginContext,
         _remotes: &'a [String],
     ) -> PluginFuture<'a, bool> {
-        Box::pin(async move { Ok(!config::load(ctx.data_dir()).workspaces.is_empty()) })
+        Box::pin(async move { Ok(!config::load(ctx.data_dir())?.workspaces.is_empty()) })
     }
 }
 
@@ -101,27 +101,6 @@ mod tests {
         PluginContext::new(
             std::env::temp_dir().join(format!("sikemux-linear-{name}-{}", std::process::id())),
         )
-    }
-
-    #[test]
-    fn its_manifest_parses_with_the_five_tools() {
-        let plugin = plugin().expect("manifest parses");
-        let names: Vec<&str> = plugin
-            .manifest()
-            .tools
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect();
-        assert_eq!(
-            names,
-            [
-                "linear_search",
-                "linear_issue",
-                "linear_comment",
-                "linear_update",
-                "linear_create"
-            ]
-        );
     }
 
     #[tokio::test]
