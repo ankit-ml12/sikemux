@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
+use tokio::sync::Notify;
 
 use crate::protocol::{Continuation, SessionId};
 
@@ -34,6 +35,8 @@ const SIGNAL_EXIT_BASE: u32 = 128;
 pub(crate) struct Lifecycle {
     /// Agents whose chat is starting, so two clients waking one start it once.
     starting: Mutex<HashSet<String>>,
+    /// An agent's chat stopped starting, whether it started or failed.
+    started: Notify,
     /// When each terminal agent was last started again after a crash.
     resumed: Mutex<HashMap<String, Instant>>,
 }
@@ -47,6 +50,7 @@ struct Starting<'a> {
 impl Drop for Starting<'_> {
     fn drop(&mut self) {
         self.lifecycle.starting.locked().remove(&self.agent_id);
+        self.lifecycle.started.notify_waiters();
     }
 }
 
@@ -67,13 +71,14 @@ pub(crate) async fn ensure_running(core: &Arc<Core>, agent_id: &str) -> CoreResu
         if core.chats.get(agent_id).is_some() {
             return Ok(());
         }
+        let started = core.lifecycle.started.notified();
         if let Some(_starting) = core.lifecycle.claim(agent_id) {
             if core.chats.get(agent_id).is_none() {
                 launching::start_agent(core, None, agent_id).await?;
             }
             return Ok(());
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        started.await;
     }
 }
 
