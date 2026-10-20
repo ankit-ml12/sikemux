@@ -5,6 +5,7 @@ use agent_client_protocol::schema::v1::McpServer;
 use serde_json::{json, Map, Value};
 
 use super::super::servers;
+use crate::acp::pickers;
 use crate::launch::PermissionMode;
 
 /// The app's two permission modes, as the presets Codex's ACP adapter names
@@ -143,64 +144,39 @@ impl Models {
     /// The session's `configOptions`: the model picker, and the effort picker
     /// when the model reasons.
     pub fn options(&self, model: &str, effort: Option<&str>) -> Value {
-        let mut models: Vec<Value> = self
+        let models = self
             .0
             .iter()
-            .map(|entry| {
-                json!({
-                    "value": entry["id"],
-                    "name": entry["displayName"],
-                    "description": entry["description"],
-                })
+            .filter_map(|entry| {
+                let id = entry["id"].as_str()?;
+                let name = entry["displayName"].as_str().unwrap_or(id);
+                Some(pickers::choice(id, name, entry["description"].as_str()))
             })
             .collect();
-        if self.find(model).is_none() {
-            models.insert(
-                0,
-                json!({ "value": model, "name": model, "description": null }),
-            );
-        }
-        let mut options = vec![json!({
-            "id": "model",
-            "name": "Model",
-            "description": "Model Codex uses for the session",
-            "category": "model",
-            "type": "select",
-            "currentValue": model,
-            "options": models,
-        })];
+        let mut options = vec![pickers::model_select(
+            Some("Model Codex uses for the session"),
+            model,
+            models,
+        )];
         if let Some(effort) = effort.filter(|_| self.reasons(model)) {
-            let efforts: Vec<Value> = self
+            let efforts = self
                 .efforts(model)
                 .iter()
-                .map(|option| {
-                    let value = option["reasoningEffort"].as_str().unwrap_or_default();
-                    json!({
-                        "value": value,
-                        "name": capitalized(value),
-                        "description": option["description"],
-                    })
+                .filter_map(|option| {
+                    let value = option["reasoningEffort"].as_str()?;
+                    let about = option["description"].as_str();
+                    Some(pickers::choice(value, &pickers::level_name(value), about))
                 })
                 .collect();
-            options.push(json!({
-                "id": "reasoning_effort",
-                "name": "Reasoning effort",
-                "description": "How much reasoning effort the model should use",
-                "category": "thought_level",
-                "type": "select",
-                "currentValue": effort,
-                "options": efforts,
-            }));
+            options.push(pickers::effort_select(
+                "reasoning_effort",
+                "Reasoning effort",
+                "How much reasoning effort the model should use",
+                effort,
+                efforts,
+            ));
         }
         Value::Array(options)
-    }
-}
-
-fn capitalized(word: &str) -> String {
-    let mut characters = word.chars();
-    match characters.next() {
-        Some(first) => first.to_uppercase().chain(characters).collect(),
-        None => String::new(),
     }
 }
 
@@ -331,7 +307,7 @@ mod tests {
         let options = models().options("gpt-old", None);
         assert_eq!(
             options[0]["options"][0],
-            json!({ "value": "gpt-old", "name": "gpt-old", "description": null })
+            json!({ "value": "gpt-old", "name": "gpt-old" })
         );
     }
 

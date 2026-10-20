@@ -5,6 +5,7 @@ use agent_client_protocol::schema::v1::McpServer;
 use serde_json::{json, Map, Value};
 
 use super::super::servers;
+use crate::acp::pickers;
 use crate::launch::PermissionMode;
 
 /// The app's two permission modes. Muse's sandbox is fixed for the life of
@@ -83,22 +84,16 @@ impl Models {
         let Some(entry) = self.find(model) else {
             return Vec::new();
         };
-        if let Some(described) = entry["reasoningEffortVariants"].as_array() {
-            return described
-                .iter()
-                .filter_map(|tier| {
-                    Some((
-                        tier["tier"].as_str()?.to_owned(),
-                        tier["description"].clone(),
-                    ))
-                })
-                .collect();
-        }
-        entry["variants"]
+        entry["reasoningEffortVariants"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|tier| Some((tier.as_str()?.to_owned(), Value::Null)))
+            .filter_map(|tier| {
+                Some((
+                    tier["tier"].as_str()?.to_owned(),
+                    tier["description"].clone(),
+                ))
+            })
             .collect()
     }
 
@@ -132,59 +127,37 @@ impl Models {
     /// The session's `configOptions`: the model picker, and the effort picker
     /// when the model has tiers.
     pub fn options(&self, model: &str, effort: Option<&str>) -> Value {
-        let mut models: Vec<Value> = self
+        let models = self
             .0
             .iter()
-            .map(|entry| {
-                json!({
-                    "value": entry["modelId"],
-                    "name": entry["displayLabel"],
-                    "description": entry["description"],
-                })
+            .filter_map(|entry| {
+                let id = entry["modelId"].as_str()?;
+                let name = entry["displayLabel"].as_str().unwrap_or(id);
+                Some(pickers::choice(id, name, entry["description"].as_str()))
             })
             .collect();
-        if !self.offers(model) && !model.is_empty() {
-            models.insert(
-                0,
-                json!({ "value": model, "name": model, "description": null }),
-            );
-        }
-        let mut options = vec![json!({
-            "id": "model",
-            "name": "Model",
-            "description": "Model Muse uses for the session",
-            "category": "model",
-            "type": "select",
-            "currentValue": model,
-            "options": models,
-        })];
+        let mut options = vec![pickers::model_select(
+            Some("Model Muse uses for the session"),
+            model,
+            models,
+        )];
         if let Some(effort) = effort {
-            let efforts: Vec<Value> = self
+            let efforts = self
                 .efforts(model)
                 .into_iter()
-                .map(|(tier, description)| {
-                    json!({ "value": tier, "name": capitalized(&tier), "description": description })
+                .map(|(tier, about)| {
+                    pickers::choice(&tier, &pickers::level_name(&tier), about.as_str())
                 })
                 .collect();
-            options.push(json!({
-                "id": "reasoning_effort",
-                "name": "Reasoning effort",
-                "description": "How much reasoning effort the model should use",
-                "category": "thought_level",
-                "type": "select",
-                "currentValue": effort,
-                "options": efforts,
-            }));
+            options.push(pickers::effort_select(
+                "reasoning_effort",
+                "Reasoning effort",
+                "How much reasoning effort the model should use",
+                effort,
+                efforts,
+            ));
         }
         Value::Array(options)
-    }
-}
-
-fn capitalized(word: &str) -> String {
-    let mut characters = word.chars();
-    match characters.next() {
-        Some(first) => first.to_uppercase().chain(characters).collect(),
-        None => String::new(),
     }
 }
 

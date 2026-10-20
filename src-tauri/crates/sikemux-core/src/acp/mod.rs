@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use url::Url;
 
 pub use agent_client_protocol::schema;
+pub use pickers::current_choice;
 
 use crate::agent_catalog::{self, ChatDriver};
 use crate::launch::PermissionMode;
@@ -93,18 +94,6 @@ pub fn permission_mode_id(
 /// such mode at all, so under YOLO the host says yes for the person.
 pub fn approves_for_user(mode: &str) -> bool {
     PermissionMode::parse(mode) == Ok(PermissionMode::Bypass)
-}
-
-/// The value a select option currently holds.
-pub fn current_choice(setup: &Value, config_id: &str) -> Option<String> {
-    setup
-        .get("configOptions")?
-        .as_array()?
-        .iter()
-        .find(|option| option["id"] == config_id)?
-        .get("currentValue")?
-        .as_str()
-        .map(str::to_owned)
 }
 
 fn resource_link(path: &str) -> Result<ContentBlock, String> {
