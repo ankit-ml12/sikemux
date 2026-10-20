@@ -11,7 +11,7 @@ use crate::cli::protocol::TOOLS_OFFER_ENV;
 use crate::launch::homes;
 use crate::launch::terminal::{self, TerminalRun};
 use crate::launch::tools::Tools;
-use crate::launch::AgentSpec;
+use crate::launch::{AgentSpec, PermissionMode};
 use crate::protocol::{
     ChatAccount, ChatLaunch, Continuation, Event, LaunchIdentity, RequestId, Response, SessionId,
     SpawnTarget, TerminalSpawn, WAKE_WAIT,
@@ -99,7 +99,7 @@ pub(crate) async fn start_terminal(
     let profile = agent.profile_id.as_deref().and_then(|id| book.profile(id));
     let run = TerminalRun {
         resume_id: agent.resume_id.as_deref(),
-        permission_mode: &agent.permission_mode,
+        permission_mode: PermissionMode::parse(&agent.permission_mode)?,
         model: agent.model.as_deref(),
         effort: agent.effort.as_deref(),
     };

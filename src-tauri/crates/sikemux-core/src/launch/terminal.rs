@@ -2,12 +2,13 @@
 //! permission mode and the session it resumes, in each CLI's own flags.
 
 use crate::agent_catalog::{self, AgentEntry, Resume};
+use crate::launch::PermissionMode;
 
 /// How the person runs a terminal agent.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TerminalRun<'a> {
     pub resume_id: Option<&'a str>,
-    pub permission_mode: &'a str,
+    pub permission_mode: PermissionMode,
     pub model: Option<&'a str>,
     pub effort: Option<&'a str>,
 }
@@ -22,13 +23,13 @@ fn effort(agent: &AgentEntry, chosen: &str) -> Option<&'static str> {
         .or_else(|| supported.into_iter().find(|effort| *effort == near))
 }
 
-/// The CLI's flags for Sikemux's Normal and YOLO modes. Every other mode, and
-/// YOLO on an agent that has none, runs as Normal.
-pub fn permission_args(agent: &AgentEntry, mode: &str) -> Vec<String> {
+/// The CLI's flags for Sikemux's Normal and YOLO modes. YOLO on an agent
+/// that has none runs as Normal.
+pub fn permission_args(agent: &AgentEntry, mode: PermissionMode) -> Vec<String> {
     let flags = &agent.terminal;
     let args = flags
         .bypass
-        .filter(|_| mode == "bypass")
+        .filter(|_| mode == PermissionMode::Bypass)
         .unwrap_or(flags.normal);
     args.iter().map(|arg| (*arg).to_owned()).collect()
 }
@@ -95,13 +96,13 @@ mod tests {
 
     fn run<'a>(
         resume_id: Option<&'a str>,
-        mode: &'a str,
+        mode: &str,
         model: Option<&'a str>,
         effort: Option<&'a str>,
     ) -> TerminalRun<'a> {
         TerminalRun {
             resume_id,
-            permission_mode: mode,
+            permission_mode: PermissionMode::parse(mode).unwrap(),
             model,
             effort,
         }
@@ -110,30 +111,22 @@ mod tests {
     #[test]
     fn codex_and_claude_have_only_normal_and_yolo() {
         assert_eq!(
-            permission_args(codex(), "workspace-write"),
+            permission_args(codex(), PermissionMode::WorkspaceWrite),
             ["--sandbox", "workspace-write"]
         );
         assert_eq!(
-            permission_args(codex(), "bypass"),
+            permission_args(codex(), PermissionMode::Bypass),
             ["--dangerously-bypass-approvals-and-sandbox"]
         );
         assert_eq!(
-            permission_args(codex(), "full-access"),
-            ["--sandbox", "workspace-write"]
-        );
-        assert_eq!(
-            permission_args(claude(), "workspace-write"),
+            permission_args(claude(), PermissionMode::WorkspaceWrite),
             ["--permission-mode", "acceptEdits"]
         );
         assert_eq!(
-            permission_args(claude(), "bypass"),
+            permission_args(claude(), PermissionMode::Bypass),
             ["--dangerously-skip-permissions"]
         );
-        assert_eq!(
-            permission_args(claude(), "read-only"),
-            ["--permission-mode", "acceptEdits"]
-        );
-        assert!(permission_args(agent("pi"), "bypass").is_empty());
+        assert!(permission_args(agent("pi"), PermissionMode::Bypass).is_empty());
     }
 
     #[test]

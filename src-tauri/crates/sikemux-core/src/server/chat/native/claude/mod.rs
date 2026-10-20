@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::agent_catalog::AgentKind;
 use crate::launch::providers::ROUTED_ENV;
+use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
 use crate::sessions::{self, roots::account_root};
 
@@ -318,7 +319,7 @@ impl Claude {
 
 impl Backend for Claude {
     async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
-        let mode = config::permission_mode(&launch.permission_mode)?;
+        let mode = config::permission_mode(PermissionMode::parse(&launch.permission_mode)?);
         let shared = Arc::new(Mutex::new(Shared {
             mode: mode.to_owned(),
             untitled: launch.resume_id.is_none().then(String::new),
@@ -526,8 +527,8 @@ impl Backend for Claude {
             .map(drop)
     }
 
-    async fn set_permission_mode(&mut self, mode: &str) -> Result<(), String> {
-        let mode = config::permission_mode(mode)?;
+    async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
+        let mode = config::permission_mode(mode);
         self.running
             .control
             .request(json!({ "subtype": "set_permission_mode", "mode": mode }))

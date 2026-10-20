@@ -5,6 +5,7 @@ use agent_client_protocol::schema::v1::McpServer;
 use serde_json::{json, Map, Value};
 
 use super::super::servers;
+use crate::launch::PermissionMode;
 
 /// The app's two permission modes, as the presets Codex's ACP adapter names
 /// them by. "read-only" still writes inside the workspace; it asks first for
@@ -16,11 +17,10 @@ pub(super) enum Mode {
 }
 
 impl Mode {
-    pub fn from_app(mode: &str) -> Result<Self, String> {
+    pub fn from_app(mode: PermissionMode) -> Self {
         match mode {
-            "workspace-write" => Ok(Self::Ask),
-            "bypass" => Ok(Self::FullAccess),
-            _ => Err(format!("Unsupported permission mode: {mode}")),
+            PermissionMode::WorkspaceWrite => Self::Ask,
+            PermissionMode::Bypass => Self::FullAccess,
         }
     }
 
@@ -278,9 +278,14 @@ mod tests {
 
     #[test]
     fn the_app_modes_map_to_the_adapter_presets() {
-        assert_eq!(Mode::from_app("bypass").unwrap().id(), "agent-full-access");
-        assert_eq!(Mode::from_app("workspace-write").unwrap().id(), "read-only");
-        assert!(Mode::from_app("plan").is_err());
+        assert_eq!(
+            Mode::from_app(PermissionMode::Bypass).id(),
+            "agent-full-access"
+        );
+        assert_eq!(
+            Mode::from_app(PermissionMode::WorkspaceWrite).id(),
+            "read-only"
+        );
         assert_eq!(Mode::FullAccess.approval_policy(), "never");
         assert_eq!(
             Mode::FullAccess.sandbox_policy()["type"],

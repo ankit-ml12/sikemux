@@ -21,6 +21,7 @@ use url::Url;
 pub use agent_client_protocol::schema;
 
 use crate::agent_catalog::{self, ChatDriver};
+use crate::launch::PermissionMode;
 use crate::protocol::ChatContext;
 
 const MAX_PROMPT_BYTES: usize = 2 * 1024 * 1024;
@@ -59,20 +60,20 @@ pub fn ended_status(result: &Result<SessionEnd, String>, started: bool) -> Value
 /// about permissions get none, and Sikemux answers their requests itself.
 pub fn permission_mode_id(
     provider: &str,
-    mode: &str,
+    mode: PermissionMode,
     setup: &Value,
 ) -> Result<Option<&'static str>, String> {
-    let unsupported = || format!("Unsupported permission mode: {mode}");
     let Some(ChatDriver::Acp { modes, .. }) =
         agent_catalog::agent(provider).and_then(|agent| agent.chat.as_ref())
     else {
-        return Err(unsupported());
+        return Err(format!("{provider} does not chat over ACP"));
     };
-    let expected = match (modes, mode) {
-        (Some(modes), "bypass") => modes.bypass,
-        (Some(modes), "workspace-write") => modes.normal,
-        (None, "bypass" | "workspace-write") => return Ok(None),
-        _ => return Err(unsupported()),
+    let Some(modes) = modes else {
+        return Ok(None);
+    };
+    let expected = match mode {
+        PermissionMode::Bypass => modes.bypass,
+        PermissionMode::WorkspaceWrite => modes.normal,
     };
     setup
         .pointer("/modes/availableModes")
@@ -91,7 +92,7 @@ pub fn permission_mode_id(
 /// Claude Code for an `rm -rf` of a computed path, and some agents have no
 /// such mode at all, so under YOLO the host says yes for the person.
 pub fn approves_for_user(mode: &str) -> bool {
-    mode == "bypass"
+    PermissionMode::parse(mode) == Ok(PermissionMode::Bypass)
 }
 
 /// The value a select option currently holds.
@@ -207,26 +208,25 @@ mod tests {
     fn permissions_use_advertised_provider_modes() {
         let setup = json!({ "modes": { "availableModes": [{ "id": "accept_edits" }, { "id": "dont_ask" }] } });
         assert_eq!(
-            permission_mode_id("hermes", "workspace-write", &setup).unwrap(),
+            permission_mode_id("hermes", PermissionMode::WorkspaceWrite, &setup).unwrap(),
             Some("accept_edits")
         );
         assert_eq!(
-            permission_mode_id("hermes", "bypass", &setup).unwrap(),
+            permission_mode_id("hermes", PermissionMode::Bypass, &setup).unwrap(),
             Some("dont_ask")
         );
-        assert!(permission_mode_id("hermes", "invalid", &setup).is_err());
-        assert!(permission_mode_id("hermes", "bypass", &json!({})).is_err());
+        assert!(permission_mode_id("hermes", PermissionMode::Bypass, &json!({})).is_err());
     }
 
     #[test]
     fn agents_without_permission_modes_are_answered_by_the_host() {
         for provider in ["opencode", "omp", "grok"] {
             assert_eq!(
-                permission_mode_id(provider, "bypass", &json!({})).unwrap(),
+                permission_mode_id(provider, PermissionMode::Bypass, &json!({})).unwrap(),
                 None
             );
             assert_eq!(
-                permission_mode_id(provider, "workspace-write", &json!({})).unwrap(),
+                permission_mode_id(provider, PermissionMode::WorkspaceWrite, &json!({})).unwrap(),
                 None
             );
         }

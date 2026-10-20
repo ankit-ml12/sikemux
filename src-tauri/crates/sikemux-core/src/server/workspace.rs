@@ -22,7 +22,7 @@ use crate::agent_accounts::Book;
 use crate::agent_catalog::{AgentKind, AGENTS};
 use crate::cli::protocol::is_tool_agent_id;
 use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
-use crate::launch::{skills, AgentSpec};
+use crate::launch::{skills, AgentSpec, PermissionMode};
 use crate::protocol::{
     Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, LauncherInfo,
     PinnedChat, ProjectInfo, RecentInfo, SpaceInfo, Workspace, WorkspaceAgent,
@@ -887,10 +887,11 @@ impl Workspaces {
         let mut offered = Vec::new();
         for def in AGENTS.iter().filter(|def| def.chat.is_some()) {
             let permission_mode = match saved.permission_mode.as_deref() {
-                Some(mode) if def.bypass => mode.to_owned(),
-                None if def.bypass => "bypass".to_owned(),
-                _ => "workspace-write".to_owned(),
-            };
+                Some(mode) if def.bypass => mode,
+                None if def.bypass => PermissionMode::Bypass.as_str(),
+                _ => PermissionMode::WorkspaceWrite.as_str(),
+            }
+            .to_owned();
             let launcher = |id: String, label: String, agent: AgentSpec| Launcher {
                 id,
                 label,
@@ -1305,7 +1306,7 @@ impl Workspaces {
             permission_mode: saved
                 .permission_mode
                 .clone()
-                .unwrap_or_else(|| "bypass".into()),
+                .unwrap_or_else(|| PermissionMode::Bypass.as_str().into()),
             disabled_plugins: super::plugins::disabled(),
             launchers: published
                 .launchers
@@ -1351,16 +1352,14 @@ pub(crate) struct Lead {
 }
 
 impl Lead {
-    /// The permission mode a worker of the lead running `provider` takes, never
-    /// wider than the lead's, given `default` when the lead's is unknown.
-    pub(crate) fn worker_mode(&self, provider: &str, default: &str) -> String {
-        match self.permission_mode.as_deref() {
-            Some(mode) if self.provider == provider => mode.to_owned(),
-            Some("bypass") => "bypass".to_owned(),
-            Some(_) => "workspace-write".to_owned(),
-            None if matches!(default, "bypass" | "full-access") => "workspace-write".to_owned(),
-            None => default.to_owned(),
-        }
+    /// The permission mode a worker of the lead takes: the lead's own, or
+    /// Normal when the lead's is unknown.
+    pub(crate) fn worker_mode(&self) -> String {
+        let mode = self.permission_mode.as_deref().map(PermissionMode::parse);
+        mode.and_then(Result::ok)
+            .unwrap_or(PermissionMode::WorkspaceWrite)
+            .as_str()
+            .to_owned()
     }
 }
 
@@ -1385,7 +1384,6 @@ impl Workspaces {
         paid: Paid,
     ) -> Result<(ChatLaunch, Option<String>), String> {
         let same = lead.provider == provider;
-        let mode = |default: &str| lead.worker_mode(provider, default);
         let lead_own = lead.launch.as_ref().filter(|_| same);
         let lead_route = lead_own.and_then(|own| own.env.get(ROUTED_ENV).cloned());
         let route = match paid {
@@ -1401,7 +1399,7 @@ impl Workspaces {
             let mut launch = own.clone();
             launch.cwd = cwd.to_path_buf();
             launch.resume_id = None;
-            launch.permission_mode = mode(&own.permission_mode);
+            launch.permission_mode = lead.worker_mode();
             launch.model = model.or(launch.model);
             return Ok((launch, lead.launcher.clone()));
         }
@@ -1449,7 +1447,7 @@ impl Workspaces {
             route.as_deref(),
             model,
         )?;
-        launch.permission_mode = mode(&launcher.permission_mode);
+        launch.permission_mode = lead.worker_mode();
         if let Some(own) = lead_own {
             launch.account = own.account.clone();
             launch.fallbacks = own.fallbacks.clone();

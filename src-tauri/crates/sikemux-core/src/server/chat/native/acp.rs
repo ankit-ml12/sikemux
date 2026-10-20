@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 
 use crate::acp::account::{self, Failure};
 use crate::acp::{air, native, permission_mode_id, prompt_blocks};
+use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
 
 use super::super::Respond;
@@ -420,9 +421,11 @@ impl Backend for Acp {
             can_load,
         };
 
-        if let Some(mode_id) =
-            permission_mode_id(&acp.provider, &launch.permission_mode, &acp.setup)?
-        {
+        if let Some(mode_id) = permission_mode_id(
+            &acp.provider,
+            PermissionMode::parse(&launch.permission_mode)?,
+            &acp.setup,
+        )? {
             acp.set_mode(mode_id).await?;
             if let Some(modes) = acp.setup.get_mut("modes").and_then(Value::as_object_mut) {
                 modes.insert("currentModeId".into(), json!(mode_id));
@@ -478,7 +481,7 @@ impl Backend for Acp {
         sent
     }
 
-    async fn set_permission_mode(&mut self, mode: &str) -> Result<(), String> {
+    async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
         match permission_mode_id(&self.provider, mode, &self.setup)? {
             Some(mode_id) => self.set_mode(mode_id).await,
             None => Ok(()),

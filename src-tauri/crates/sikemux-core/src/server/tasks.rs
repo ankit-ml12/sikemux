@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use tokio::time::Instant;
 
+use crate::launch::PermissionMode;
 use crate::protocol::{SessionId, SpawnTarget};
 use crate::tasks::check::{self, Check, CheckItem, Checked, Listening};
 use crate::tasks::config::{self, ConfigLoad, TrustCommand};
@@ -671,7 +672,7 @@ fn resolve(
 fn bypasses(core: &Core, agent_id: Option<&str>) -> bool {
     agent_id
         .and_then(|agent_id| core.workspaces.run_of(agent_id))
-        .is_some_and(|run| run.permission_mode == "bypass")
+        .is_some_and(|run| run.permission_mode == PermissionMode::Bypass.as_str())
 }
 
 fn trust_for(

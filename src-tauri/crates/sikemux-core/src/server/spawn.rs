@@ -603,7 +603,7 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
     let _one_at_a_time = core.harness.spawning.one_at_a_time();
     let (lead, _) = lead_of(core, &lead_id, &request.project)?;
     let same = lead.provider == provider;
-    let permission_mode = lead.worker_mode(&provider, "workspace-write");
+    let permission_mode = lead.worker_mode();
     let model = model.or_else(|| {
         lead.launch
             .as_ref()

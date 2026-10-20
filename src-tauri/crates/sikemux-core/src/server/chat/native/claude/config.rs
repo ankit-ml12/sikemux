@@ -4,15 +4,15 @@
 use serde_json::{json, Value};
 
 use super::super::json::text;
+use crate::launch::PermissionMode;
 
 pub(crate) const DEFAULT: &str = "default";
 
 /// The permission mode Claude Code runs in for each of the app's modes.
-pub(crate) fn permission_mode(mode: &str) -> Result<&'static str, String> {
+pub(crate) fn permission_mode(mode: PermissionMode) -> &'static str {
     match mode {
-        "bypass" => Ok("bypassPermissions"),
-        "workspace-write" => Ok("acceptEdits"),
-        _ => Err(format!("Unsupported permission mode: {mode}")),
+        PermissionMode::Bypass => "bypassPermissions",
+        PermissionMode::WorkspaceWrite => "acceptEdits",
     }
 }
 

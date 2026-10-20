@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
 
 use super::super::Respond;
@@ -718,7 +719,7 @@ async fn page_history(rpc: &Rpc, session_id: &str) -> Vec<Value> {
 
 impl Backend for Muse {
     async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
-        let mode = Mode::from_app(&launch.permission_mode)?;
+        let mode = Mode::from_app(PermissionMode::parse(&launch.permission_mode)?);
         let cwd = launch.cwd.to_string_lossy().into_owned();
         // Muse asks again about approvals left waiting as soon as a session
         // loads, so the session is known by its id before then.
@@ -826,8 +827,8 @@ impl Backend for Muse {
         Ok(())
     }
 
-    async fn set_permission_mode(&mut self, mode: &str) -> Result<(), String> {
-        let mode = Mode::from_app(mode)?;
+    async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
+        let mode = Mode::from_app(mode);
         if mode.serve_args() != self.mode.serve_args() {
             self.restart(mode).await?;
         } else {
@@ -839,10 +840,6 @@ impl Backend for Muse {
                 .await?;
         }
         self.mode = mode;
-        self.launch.permission_mode = match mode {
-            Mode::Ask => "workspace-write".to_owned(),
-            Mode::FullAccess => "bypass".to_owned(),
-        };
         Ok(())
     }
 

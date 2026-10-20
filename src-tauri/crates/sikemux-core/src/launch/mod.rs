@@ -17,6 +17,31 @@ use serde::{Deserialize, Serialize};
 use sikemux_pty::launch::account_dir;
 use sikemux_pty::user_shell::user_variable;
 
+/// How freely the person lets an agent work: asking before it acts outside
+/// its folder (Normal), or never asking (YOLO).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PermissionMode {
+    WorkspaceWrite,
+    Bypass,
+}
+
+impl PermissionMode {
+    pub fn parse(mode: &str) -> Result<Self, String> {
+        match mode {
+            "workspace-write" => Ok(Self::WorkspaceWrite),
+            "bypass" => Ok(Self::Bypass),
+            _ => Err(format!("Unsupported permission mode: {mode}")),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::WorkspaceWrite => "workspace-write",
+            Self::Bypass => "bypass",
+        }
+    }
+}
+
 /// One agent, as the person set it up: which program, which account and which
 /// of their shell's variables it gets.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -5,6 +5,7 @@ use agent_client_protocol::schema::v1::McpServer;
 use serde_json::{json, Map, Value};
 
 use super::super::servers;
+use crate::launch::PermissionMode;
 
 /// The app's two permission modes. Muse's sandbox is fixed for the life of
 /// the `muse serve` process, so the mode also decides how it is started.
@@ -17,11 +18,10 @@ pub(super) enum Mode {
 }
 
 impl Mode {
-    pub fn from_app(mode: &str) -> Result<Self, String> {
+    pub fn from_app(mode: PermissionMode) -> Self {
         match mode {
-            "workspace-write" => Ok(Self::Ask),
-            "bypass" => Ok(Self::FullAccess),
-            _ => Err(format!("Unsupported permission mode: {mode}")),
+            PermissionMode::WorkspaceWrite => Self::Ask,
+            PermissionMode::Bypass => Self::FullAccess,
         }
     }
 

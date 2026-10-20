@@ -12,6 +12,8 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use crate::launch::PermissionMode;
+
 use crate::acp::account::{self, Failure, FailureKind, SignIn};
 use crate::acp::{permission, SessionEnd};
 use crate::protocol::{ChatAccount, ChatContext, ChatEventKind, ChatLaunch, ChatStart};
@@ -355,7 +357,7 @@ pub(crate) trait Backend: Sized + Send {
     /// Applies one of the app's permission modes.
     fn set_permission_mode(
         &mut self,
-        mode: &str,
+        mode: PermissionMode,
     ) -> impl std::future::Future<Output = Result<(), String>> + Send;
 
     /// Changes a session option, answering with the options as they now are.
@@ -937,10 +939,10 @@ pub(crate) async fn run<B: Backend>(
                 let result = if chat.running.load(Ordering::Acquire) {
                     Err("Stop the current turn before changing permissions".into())
                 } else {
-                    backend.set_permission_mode(&mode).await
+                    backend.set_permission_mode(mode).await
                 };
                 if result.is_ok() {
-                    chat.set_permission_mode(&mode);
+                    chat.set_permission_mode(mode);
                 }
                 let _ = reply.send(result);
             }

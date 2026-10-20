@@ -25,6 +25,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::acp::{bounded_text, current_choice, native as acp_native, permission, SessionEnd};
 use crate::launch::providers::ROUTED_ENV;
+use crate::launch::PermissionMode;
 use crate::protocol::{
     Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatEventKind, ChatInfo,
     ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId, Response,
@@ -75,7 +76,7 @@ pub(crate) enum ChatCommand {
         context: Vec<ChatContext>,
     },
     SetPermissionMode {
-        mode: String,
+        mode: PermissionMode,
         reply: oneshot::Sender<Result<(), String>>,
     },
     SetConfig {
@@ -643,10 +644,10 @@ impl Chat {
         self.approving.load(Ordering::Acquire)
     }
 
-    pub(crate) fn set_permission_mode(&self, mode: &str) {
+    pub(crate) fn set_permission_mode(&self, mode: PermissionMode) {
         self.approving
-            .store(crate::acp::approves_for_user(mode), Ordering::Release);
-        self.feed.set_permission_mode(mode);
+            .store(mode == PermissionMode::Bypass, Ordering::Release);
+        self.feed.set_permission_mode(mode.as_str());
     }
 
     pub(crate) fn mark_ready(&self, start: ChatStart) {
@@ -1421,7 +1422,7 @@ pub(crate) fn idle(core: &Arc<Core>, agent_id: &str, provider: &str, cwd: &str) 
         env: Default::default(),
         mcp_servers: Vec::new(),
         resume_id: None,
-        permission_mode: "default".into(),
+        permission_mode: PermissionMode::WorkspaceWrite.as_str().into(),
         model: None,
         effort: None,
         account: None,
@@ -1450,6 +1451,7 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
     bounded_text("agent id", &launch.agent_id, MAX_AGENT_ID)?;
     bounded_text("provider", &launch.provider, 64)?;
     bounded_text("working directory", &launch.cwd.to_string_lossy(), 4_096)?;
+    PermissionMode::parse(&launch.permission_mode)?;
     if !launch.cwd.is_absolute() {
         return Err("ACP working directory must be absolute".into());
     }
@@ -2045,6 +2047,7 @@ pub(crate) async fn set_permission_mode(
     agent_id: &str,
     mode: String,
 ) -> CoreResult<()> {
+    let mode = PermissionMode::parse(&mode)?;
     let (reply, answer) = oneshot::channel();
     core.chats
         .running(agent_id)?
