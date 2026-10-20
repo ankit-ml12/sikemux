@@ -28,9 +28,10 @@ mod watch;
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sikemux_plugin_api::account::{as_account, chosen};
+use sikemux_plugin_api::codehost::Resolved;
 use sikemux_plugin_api::store::Accounts;
 use sikemux_plugin_api::{
     answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
@@ -53,19 +54,11 @@ struct RemoteQuery {
     url: String,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Resolved {
-    repo: Option<repo::Repo>,
-    slug: Option<String>,
-    same_host: bool,
-}
-
 fn resolve(query: RemoteQuery) -> Resolved {
     let found = repo::from_remote(&query.url);
     Resolved {
         same_host: found.as_ref().is_some_and(|repo| repo.host == repo::HOST),
-        slug: found.as_ref().map(repo::Repo::slug),
+        slug: found.as_ref().map(repo::slug),
         repo: found,
     }
 }

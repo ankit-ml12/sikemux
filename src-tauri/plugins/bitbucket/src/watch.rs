@@ -2,11 +2,12 @@ use std::path::Path;
 use std::time::Duration;
 
 use sikemux_plugin_api::account::chosen;
+use sikemux_plugin_api::codehost::{Job, Run};
 use sikemux_plugin_api::store::Accounts;
 use sikemux_plugin_api::watch::{self, Failure, Follow, Reading};
 use sikemux_plugin_api::{PluginResult, StreamSink};
 
-use crate::pipelines::{self, Job, Run, RunRef};
+use crate::pipelines::{self, RunRef};
 use crate::{client, config};
 
 struct Bitbucket<'a> {
