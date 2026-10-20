@@ -348,6 +348,10 @@ function CheckSection({
                     />
                 </SettingsRow>
             </SettingsRows>
+        </SettingsSection>
+    );
+}
+
 function GitSection({ project, visible }: { project: string; visible: boolean }) {
     const { repo, repos } = useProjectRepo(project, visible);
     const chosen = useStore((s) => s.defaultGitRepos[project]);
