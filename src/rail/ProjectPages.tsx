@@ -16,6 +16,7 @@ import { type CtxItem, FileTree, TreeContextMenu } from "./FileTree";
 import { RailEmpty } from "./RailEmpty";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
+import { HostLabel, remoteTerminalRows, RemoteNewRows, useRemoteCopies } from "./RemoteRows";
 import { ScopeTabs } from "./ScopeTabs";
 
 const EMPTY_IDS: readonly string[] = [];
@@ -48,6 +49,7 @@ function TabRow({
     glyph,
     label,
     detail,
+    host,
     title,
     project,
     active,
@@ -59,6 +61,8 @@ function TabRow({
     glyph?: string;
     label: string;
     detail?: string | null;
+    /** Another host the tab's terminal runs on. */
+    host?: string;
     title?: string;
     /** The project the tab lives in, shown under its label when the list spans projects. */
     project?: { name: string; sessionId: string };
@@ -88,6 +92,7 @@ function TabRow({
                 ) : (
                     <span className="agent-title">{label}</span>
                 )}
+                <HostLabel host={host} />
                 {detail && <span className="rail-file-folder">{detail}</span>}
             </button>
             <Tooltip label={`Close ${label}`}>
@@ -121,15 +126,20 @@ export function TerminalsPage() {
     const titles = useStore((s) => s.terminalTitles);
     const closeShortcut = useShortcutLabel("pane.close");
     const menu = useTabMenu();
+    const copies = useRemoteCopies(session);
 
     const shown = scope === "all" ? sessionOrder.map((id) => sessions[id]).filter((s) => s?.kind === "project") : session ? [session] : [];
     const tabs = shown.flatMap((owner) =>
         (windowsBySession[owner.id] ?? EMPTY_IDS).flatMap((id) => {
             const win = windows[id];
             const home = win?.role === "term" ? collectPanes(win.root).find((pane) => pane.kind === "terminal") : undefined;
-            return win && home ? [{ win, owner, label: terminalLabel(win, home, titles) }] : [];
+            return win && home ? [{ win, owner, home, label: terminalLabel(win, home, titles) }] : [];
         }),
     );
+    const remoteTerminals =
+        scope === "project" && session
+            ? remoteTerminalRows({ sessionId: session.id, copies, open: new Set(tabs.flatMap(({ home }) => home.ptyId ?? [])) })
+            : [];
 
     return (
         <>
@@ -141,21 +151,23 @@ export function TerminalsPage() {
                     <div className="tab-rail-top">
                         <div className="agent-actions">
                             <NewRow icon={<IconPlus size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
+                            <RemoteNewRows session={session} copies={copies} type={null} />
                         </div>
                         <ScopeTabs scope={scope} projectName={session.name} onChange={cmd.setTabRailScope} />
                     </div>
                     <div className="rail-scroll">
-                        {tabs.length === 0 ? (
+                        {tabs.length === 0 && remoteTerminals.length === 0 ? (
                             <RailEmpty icon={<IconTerminal size={20} />} title="No terminals open" shortcut="terminal.new" doing="start one" />
                         ) : (
                             <Panel variant="group" className="agent-group">
-                                {tabs.map(({ win, owner, label }) => (
+                                {tabs.map(({ win, owner, home, label }) => (
                                     <TabRow
                                         key={win.id}
                                         tab={{ id: win.id }}
                                         icon={<IconTerminal size={15} />}
                                         glyph="term"
                                         label={label}
+                                        host={home.host}
                                         project={scope === "all" ? { name: owner.name, sessionId: owner.id } : undefined}
                                         active={owner.id === session.id && session.activeWindowId === win.id}
                                         onMenu={(event) =>
@@ -163,6 +175,7 @@ export function TerminalsPage() {
                                         }
                                     />
                                 ))}
+                                {remoteTerminals}
                             </Panel>
                         )}
                     </div>

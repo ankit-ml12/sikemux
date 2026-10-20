@@ -212,6 +212,8 @@ export interface PersistedSnapshot {
     prefs: Partial<PersistedPrefs>;
     /** Versioned item-owned state. Live processes, buffers, and credentials are excluded. */
     itemStates: Record<string, PersistedWorkbenchItemEnvelope>;
+    /** The chats open here that run on other hosts, which this host's core does not keep. */
+    hostAgents?: Agent[];
 }
 
 const COMMAND_PLACEMENTS = new Set<CustomCommandPlacement>(["background", "terminal", "split", "popup", "replace"]);
@@ -286,7 +288,25 @@ function toSession(value: unknown): Session | null {
         pinned: value.pinned,
         activeWindowId: value.activeWindowId,
     };
+    if (typeof value.host === "string") session.host = value.host;
     return session;
+}
+
+/** A chat on another host as this window kept it, which takes it up there again when shown. */
+function hostAgent(value: unknown): Agent | null {
+    if (!isRecord(value) || typeof value.id !== "string" || typeof value.host !== "string" || !isAgentType(value.type)) return null;
+    if (typeof value.title !== "string" || typeof value.cwd !== "string") return null;
+    return {
+        id: value.id,
+        type: value.type,
+        title: value.title,
+        name: typeof value.name === "string" ? value.name : undefined,
+        cwd: value.cwd,
+        host: value.host,
+        createdAt: typeof value.createdAt === "number" ? value.createdAt : Date.now(),
+        permissionMode: value.permissionMode === "bypass" ? "bypass" : "workspace-write",
+        launchState: "live",
+    };
 }
 
 function isRecent(value: unknown): value is RecentEntry {
@@ -359,7 +379,7 @@ function boundedOptionalString(value: unknown, max: number): string | undefined 
 
 /** A project's name and folder are the core's; this window keeps only which of its tabs is in front. */
 function persistedSession(sess: Session): PersistedSession {
-    return sess.kind === "project" ? { id: sess.id, kind: sess.kind, activeWindowId: sess.activeWindowId } : sess;
+    return sess.kind === "project" && !sess.host ? { id: sess.id, kind: sess.kind, activeWindowId: sess.activeWindowId } : sess;
 }
 
 /**
@@ -443,6 +463,7 @@ function snapshot(): string {
         recent: s.recent,
         prefs: packPrefs(s),
         itemStates,
+        hostAgents: Object.values(s.agents).filter((agent) => agent.host),
     };
     return JSON.stringify(snap);
 }
@@ -847,7 +868,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
     const projects = new Map((workspace?.projects ?? []).map((project) => [project.id, project]));
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {
-        if (isRecord(row) && row.kind === "project") {
+        if (isRecord(row) && row.kind === "project" && typeof row.host !== "string") {
             const project = typeof row.id === "string" ? projects.get(row.id) : undefined;
             if (project) sessions[project.id] ??= projectSession(project, typeof row.activeWindowId === "string" ? row.activeWindowId : "");
             continue;
@@ -904,6 +925,10 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
                 windowsBySession[record.project].push(win.id);
             }
         }
+    }
+    for (const row of Array.isArray(decoded.hostAgents) ? decoded.hostAgents : []) {
+        const agent = hostAgent(row);
+        if (agent && !agents[agent.id]) agents[agent.id] = agent;
     }
     // An agent window whose record did not come back has nothing to show.
     for (const sid of Object.keys(sessions)) {

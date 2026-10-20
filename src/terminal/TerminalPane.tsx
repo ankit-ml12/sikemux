@@ -45,6 +45,7 @@ export function TerminalPane({
     resumePtyId,
     onPtySession,
     onExit,
+    host,
 }: {
     cwd?: string;
     startup?: string;
@@ -68,6 +69,8 @@ export function TerminalPane({
     retainPtyOnUnmount?: boolean;
     /** The terminal this pane showed before the app last closed, taken back if it still runs. */
     resumePtyId?: number;
+    /** Another host the app joined, which runs the terminal. */
+    host?: string;
     /** Hears which terminal this pane shows, so it can be found again after a restart. */
     onPtySession?: (id: number) => void;
     /** Fires when the shell process ends. Remount with a fresh key to respawn. */
@@ -109,6 +112,7 @@ export function TerminalPane({
         durableItemId: retainPtyOnUnmount ? context?.paneId : undefined,
         resumePtyId,
         onPtySession,
+        host,
     });
 
     useEffect(() => {

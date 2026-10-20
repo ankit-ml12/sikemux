@@ -69,6 +69,20 @@ function decodeAttachResponse(body: ArrayBuffer): PtyAttachResult {
     return { subId: subId as number, alternateScreen: alternateScreen as boolean, shell, snapshot: new Uint8Array(body, headerEnd) };
 }
 
+/** The same terminal commands, for a terminal on `host`, another host the app joined; the core there names it. */
+function remotePtyApi(host: string): PtyApi<NativeChannel, PtyContext> {
+    return {
+        ...nativePtyApi,
+        spawn: async (request) => {
+            const id = await invoke<number>("pty_spawn", { ...request, host });
+            noteSpawnedSession(id);
+            return id;
+        },
+        resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
+        resume: async (id) => takeResumableSession(id) && (await coreSessionsApi.list(host)).some((session) => session.id === id),
+    };
+}
+
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
     /* A terminal agent's command line is the core's, built from the agent it keeps. */
     spawn: async (request) => {
@@ -214,6 +228,8 @@ export function usePty(opts: {
     /** The process this terminal showed before the page loaded; read once, when the controller is made. */
     resumePtyId?: number;
     onPtySession?: (id: number) => void;
+    /** Another host the app joined, which runs the terminal. */
+    host?: string;
 }): RefObject<NativePtyController | null> {
     const { hostRef, spawnWhen = true, taskTerminalKey } = opts;
     const externallyOwned = taskTerminalKey !== undefined;
@@ -254,7 +270,7 @@ export function usePty(opts: {
         const initial = currentOptionsRef.current;
         const createController = () =>
             new PtyLifecycleController<NativeChannel, PtyContext>({
-                api: nativePtyApi,
+                api: initial.host ? remotePtyApi(initial.host) : nativePtyApi,
                 channels: nativeChannels,
                 existingPtyId: externallyOwned ? taskBinding!.ptyId : undefined,
                 resumePtyId: externallyOwned ? undefined : initial.resumePtyId,

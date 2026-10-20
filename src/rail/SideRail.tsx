@@ -48,6 +48,7 @@ import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
+import { HostLabel } from "./RemoteRows";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
 const LINE_ICON_SIZE = 13;
@@ -293,6 +294,7 @@ function ProjectBlock({ s }: { s: Session }) {
                                 <IconFolder size={LINE_ICON_SIZE} />
                             </span>
                             <span className="proj-name">{s.name}</span>
+                            <HostLabel host={s.host} />
                             {agentBadge}
                         </button>
                     </Tooltip>
@@ -378,6 +380,7 @@ function ProjectBlock({ s }: { s: Session }) {
                             <IconFolder size={LINE_ICON_SIZE} />
                         </span>
                         <span className="proj-name">{s.name}</span>
+                        <HostLabel host={s.host} />
                         {agentBadge}
                     </button>
                 </Tooltip>

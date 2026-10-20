@@ -20,4 +20,3 @@ export type CoreRequest = { readonly op: string } & Readonly<Record<string, unkn
 export function coreRequest<Reply = void>(request: CoreRequest, host?: HostId | null): Promise<Reply> {
     return invoke<Reply>("core_request", onHost({ request }, host));
 }
-

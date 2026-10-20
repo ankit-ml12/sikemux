@@ -95,11 +95,12 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
             reconnect={session.kind === "ssh" ? pane.startup : undefined}
             active={active}
             visible={visible}
-            context={terminalContext(session, win.id, pane.id)}
+            context={pane.host ? { ...terminalContext(session, win.id, pane.id), project: pane.cwd } : terminalContext(session, win.id, pane.id)}
             taskTerminalKey={pane.externalPty ? pane.taskTerminalKey : undefined}
             retainPtyOnUnmount
             resumePtyId={pane.ptyId}
             onPtySession={(id) => cmd.setPanePty(pane.id, id)}
+            host={pane.host}
         />
     ),
 };

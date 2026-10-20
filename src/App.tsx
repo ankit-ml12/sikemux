@@ -68,6 +68,7 @@ import { startSpareShells } from "./terminal/spareShell";
 import { coreSessionsApi } from "./api/coreSessions";
 import type { Workspace as SharedWorkspace } from "./api/generated/wire";
 import { fetchCoreWorkspace, startCoreWorkspace } from "./state/coreWorkspace";
+import { startHosts } from "./hosts/hosts";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
     dispatchFolder,
@@ -615,6 +616,7 @@ export default function App() {
         let disposed = false;
         let unsub = () => {};
         let stopSpareShells = () => {};
+        let stopHosts = () => {};
         let stopPaneResources = () => {};
         let stopAccountSync = () => {};
         let stopWorkspaceSync = () => {};
@@ -682,6 +684,7 @@ export default function App() {
                     introduceNotifications();
                     void restoreCoreSessions();
                     stopSpareShells = startSpareShells();
+                    stopHosts = startHosts();
                 }
                 finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
             });
@@ -692,6 +695,7 @@ export default function App() {
             stopWorkspaceSync();
             stopAccountSync();
             stopSpareShells();
+            stopHosts();
             stopPaneResources();
         };
     }, []);

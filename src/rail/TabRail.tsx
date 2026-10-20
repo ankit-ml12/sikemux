@@ -36,6 +36,7 @@ import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
+import { remoteChatRows, RemoteNewRows, useRemoteCopies } from "./RemoteRows";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -100,6 +101,7 @@ export function TabRailBody() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
+    const copies = useRemoteCopies(session?.kind === "project" ? session : undefined);
     const pinnedChats = useStore((s) => s.pinnedChats);
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
@@ -337,8 +339,9 @@ export function TabRailBody() {
         );
     }
 
+    const remoteChats = remoteChatRows({ sessionId: session.id, copies, open: new Set(Object.keys(agentsById)) });
     const noRecents = recent.chats.length === 0 && recent.status !== "loading";
-    const noContent = pins.length === 0 && opens.length === 0 && noRecents;
+    const noContent = pins.length === 0 && opens.length === 0 && remoteChats.length === 0 && noRecents;
 
     return (
         <>
@@ -379,6 +382,7 @@ export function TabRailBody() {
                     )}
                     <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
+                    <RemoteNewRows session={session} copies={copies} type={selectedType} />
                 </div>
                 <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>
@@ -400,11 +404,12 @@ export function TabRailBody() {
                     />
                 )}
 
-                {scope === "project" && opens.length > 0 && (
+                {scope === "project" && (opens.length > 0 || remoteChats.length > 0) && (
                     <Panel variant="group" className="agent-group">
                         {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
                             isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link),
                         )}
+                        {remoteChats}
                     </Panel>
                 )}
 

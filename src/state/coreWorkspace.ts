@@ -155,11 +155,12 @@ function localSpace(space: SpaceInfo): ProjectSpace {
 /** What the store holds of the workspace's projects, spaces, pins and defaults, as the core sent them. */
 export function sharedFromCore(
     workspace: Workspace,
-): Pick<StoreState, "spaces" | "projectSpaces" | "codeHosts" | "pinnedChats" | "defaultAgentPermissionMode"> {
+): Pick<StoreState, "spaces" | "projectSpaces" | "codeHosts" | "projectIdentities" | "pinnedChats" | "defaultAgentPermissionMode"> {
     return {
         spaces: workspace.spaces.map(localSpace),
         projectSpaces: Object.fromEntries(workspace.projects.flatMap((project) => (project.space ? [[project.path, project.space]] : []))),
         codeHosts: Object.fromEntries(workspace.projects.map((project) => [project.path, project.codeHosts ?? {}])),
+        projectIdentities: Object.fromEntries(workspace.projects.flatMap((project) => (project.identity ? [[project.path, project.identity]] : []))),
         pinnedChats: workspace.pinned.flatMap((chat) => localPinned(chat) ?? []),
         defaultAgentPermissionMode: workspace.permissionMode === "bypass" ? "bypass" : "workspace-write",
     };
@@ -167,7 +168,9 @@ export function sharedFromCore(
 
 /** What this window's store holds of the workspace every client shares. */
 export function localWorkspace(state: StoreState): Shared {
-    const projectSessions = state.sessionOrder.map((id) => state.sessions[id]).filter((session) => session?.kind === "project" && session.cwd);
+    const projectSessions = state.sessionOrder
+        .map((id) => state.sessions[id])
+        .filter((session) => session?.kind === "project" && session.cwd && !session.host);
     const knownAgents = new Map(known?.agents.map((agent) => [agent.id, agent]));
     return {
         projects: projectSessions.map((session) => {
@@ -178,7 +181,7 @@ export function localWorkspace(state: StoreState): Shared {
         agents: projectSessions.flatMap((session) =>
             agentIdsOf(state, session.id).flatMap((id) => {
                 const agent = state.agents[id];
-                return agent ? [coreAgentOf(agent, session, knownAgents.get(id))] : [];
+                return agent && !agent.host ? [coreAgentOf(agent, session, knownAgents.get(id))] : [];
             }),
         ),
         pinned: state.pinnedChats.map(corePinned),

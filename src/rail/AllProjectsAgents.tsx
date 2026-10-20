@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type Ref } from "react";
 import { agentHandle } from "../agents/AgentLabel";
+import { HostLabel } from "./RemoteRows";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
@@ -164,6 +165,7 @@ export function OpenAgentRow({
                         <span className="agent-title">{agent.title}</span>
                         {project && <AgentRowProject name={project.name} />}
                     </span>
+                    <HostLabel host={agent.host} />
                     {agent.name && <span className="agent-row-name">{agentHandle(agent.name)}</span>}
                     <BackgroundCounts display={display} />
                 </button>

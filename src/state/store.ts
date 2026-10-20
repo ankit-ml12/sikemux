@@ -234,6 +234,12 @@ export interface ViewState {
     /** What the program in each core terminal last called it, by session id. */
     terminalTitles: Record<string, string>;
     lastSessionId: string | null;
+    /** The account's other hosts this app joined, and how each is reached. */
+    hosts: readonly import("../hosts/hosts").HostEntry[];
+    /** What each of those hosts last showed this app, by its id. */
+    hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
+    /** What each of this host's projects is known by on every host, by project folder, as its core works it out. */
+    projectIdentities: Readonly<Record<string, string>>;
 
     pendingUpdate: PendingUpdate | null;
     /** The chats a waiting update waits on before it installs. */
@@ -376,6 +382,9 @@ export const useStore = create<StoreState>(() => {
         commandPopup: null,
         terminalTitles: {},
         lastSessionId: null,
+        hosts: [],
+        hostViews: {},
+        projectIdentities: {},
         pendingUpdate: null,
         updateBlockers: [],
         lastUpdateCheck: null,
