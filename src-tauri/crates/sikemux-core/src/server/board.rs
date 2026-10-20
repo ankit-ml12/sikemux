@@ -35,6 +35,7 @@ pub(crate) mod git;
 mod review;
 mod tickets;
 
+use auto::RunView;
 pub(crate) use auto::Settings;
 use auto::{Run, Stage};
 pub(crate) use finish::{ci_moved, waiting_on_ci};
@@ -725,42 +726,95 @@ fn remember_team(core: &Core, board: &mut Board, id: u64) {
 }
 
 /// The card as the app draws it.
-fn app_view(core: &Core, board: &Board, card: &Card) -> Value {
-    let team = team_of(core, board, card);
-    json!({
-        "id": card.id,
-        "title": card.title,
-        "details": card.details,
-        "acceptance": card.acceptance,
-        "status": card.status,
-        "owner": card.owner,
-        "ownerName": card.owner_name(core),
-        "ownerCli": card.owner.as_deref().and_then(|owner| cli_of(core, owner)).or_else(|| card.owner_cli.clone()),
-        "paidBy": card.owner.as_deref().and_then(|owner| paid_by(core, owner)),
-        "team": team.as_ref().map(|team| &team.lead),
-        "teamName": team.as_ref().map(|team| &team.name),
-        "parent": card.parent,
-        "dependsOn": card.depends_on,
-        "waitsOn": board.waits_on(card),
-        "createdBy": card.created_by,
-        "createdByName": card.creator_name(core),
-        "result": card.result,
-        "ticket": card.ticket,
-        "auto": card.auto.as_ref().map(Run::view),
-        "recordings": card.recordings,
-        "at": card.at,
-        "updatedAt": card.updated_at,
-    })
+/// A card as the app and devices read it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CardView {
+    id: u64,
+    title: String,
+    details: String,
+    acceptance: String,
+    status: Status,
+    owner: Option<String>,
+    owner_name: Option<String>,
+    owner_cli: Option<String>,
+    /// The model provider paying for the owner's turns, when not its own account.
+    paid_by: Option<&'static str>,
+    team: Option<String>,
+    team_name: Option<String>,
+    parent: Option<u64>,
+    depends_on: Vec<u64>,
+    waits_on: Vec<u64>,
+    created_by: Option<String>,
+    created_by_name: String,
+    result: Option<String>,
+    ticket: Option<Ticket>,
+    auto: Option<RunView>,
+    recordings: Vec<Recording>,
+    at: u64,
+    updated_at: u64,
 }
 
-fn board_view(core: &Core, board: &Board) -> Value {
-    json!({
-        "project": board.project,
-        "cards": board.cards.iter().map(|card| app_view(core, board, card)).collect::<Vec<_>>(),
-        "settings": board.settings,
-        "running": auto::running(core, board),
-        "autoNote": board.auto_note,
-    })
+/// A board as the app and devices read it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BoardView {
+    project: String,
+    cards: Vec<CardView>,
+    settings: Settings,
+    /// How many of its cards have an agent of Auto's at work.
+    running: usize,
+    auto_note: Option<String>,
+    /// What could not be done of what the person asked, a line each.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    problems: Vec<String>,
+}
+
+fn card_view(core: &Core, board: &Board, card: &Card) -> CardView {
+    let team = team_of(core, board, card);
+    CardView {
+        id: card.id,
+        title: card.title.clone(),
+        details: card.details.clone(),
+        acceptance: card.acceptance.clone(),
+        status: card.status,
+        owner: card.owner.clone(),
+        owner_name: card.owner_name(core),
+        owner_cli: card
+            .owner
+            .as_deref()
+            .and_then(|owner| cli_of(core, owner))
+            .or_else(|| card.owner_cli.clone()),
+        paid_by: card.owner.as_deref().and_then(|owner| paid_by(core, owner)),
+        team: team.as_ref().map(|team| team.lead.clone()),
+        team_name: team.map(|team| team.name),
+        parent: card.parent,
+        depends_on: card.depends_on.clone(),
+        waits_on: board.waits_on(card),
+        created_by: card.created_by.clone(),
+        created_by_name: card.creator_name(core),
+        result: card.result.clone(),
+        ticket: card.ticket.clone(),
+        auto: card.auto.as_ref().map(Run::view),
+        recordings: card.recordings.clone(),
+        at: card.at,
+        updated_at: card.updated_at,
+    }
+}
+
+fn board_view(core: &Core, board: &Board) -> BoardView {
+    BoardView {
+        project: board.project.clone(),
+        cards: board
+            .cards
+            .iter()
+            .map(|card| card_view(core, board, card))
+            .collect(),
+        settings: board.settings.clone(),
+        running: auto::running(core, board),
+        auto_note: board.auto_note.clone(),
+        problems: Vec::new(),
+    }
 }
 
 /// The card as `board_list` tells an agent of it.
@@ -1521,7 +1575,7 @@ pub(crate) fn attach_recording(core: &Core, agent_id: &str, recording: Recording
 }
 
 /// Every project's board, as the app draws them.
-pub(crate) fn boards(core: &Core) -> Vec<Value> {
+pub(crate) fn boards(core: &Core) -> Vec<BoardView> {
     let state = core.boards.state.locked();
     state
         .boards
@@ -1530,7 +1584,7 @@ pub(crate) fn boards(core: &Core) -> Vec<Value> {
         .collect()
 }
 
-fn project_view(core: &Core, project: &str) -> Value {
+fn project_view(core: &Core, project: &str) -> BoardView {
     let state = core.boards.state.locked();
     match state.boards.get(project) {
         Some(board) => board_view(core, board),
@@ -1548,7 +1602,7 @@ fn project_param(core: &Core, params: &Value) -> Result<String, String> {
 }
 
 /// One project's board, empty when it has no cards yet.
-pub(crate) async fn board(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+pub(crate) async fn board(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {
     let core = core.clone();
     blocking(move || {
         let project = project_param(&core, &params)?;
@@ -1559,7 +1613,7 @@ pub(crate) async fn board(core: &Arc<Core>, params: Value) -> Result<Value, Stri
 }
 
 /// The person adds a card, which may carry a ticket. Answers with the board.
-pub(crate) async fn person_add(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+pub(crate) async fn person_add(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {
     let core = core.clone();
     blocking(move || {
         let project = project_param(&core, &params)?;
@@ -1612,7 +1666,10 @@ fn card_of_ticket(core: &Core, project: &str, key: &str) -> Option<(u64, Option<
 /// on the tickets that block it and the ones it blocks wait on it, when those
 /// are on the board too. Answers with the board, and what could not be done
 /// besides adding the ticket.
-pub(crate) async fn person_add_ticket(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+pub(crate) async fn person_add_ticket(
+    core: &Arc<Core>,
+    params: Value,
+) -> Result<BoardView, String> {
     let (view, notices) = {
         let core = core.clone();
         blocking(move || {
@@ -1693,9 +1750,7 @@ pub(crate) async fn person_add_ticket(core: &Arc<Core>, params: Value) -> Result
                 }
             }
             let mut view = project_view(&core, &project);
-            if let (Some(object), false) = (view.as_object_mut(), problems.is_empty()) {
-                object.insert("problems".into(), problems.into());
-            }
+            view.problems = problems;
             Ok((view, notices))
         })
         .await
@@ -1706,7 +1761,7 @@ pub(crate) async fn person_add_ticket(core: &Arc<Core>, params: Value) -> Result
 }
 
 /// The person changes or moves a card. Answers with the board.
-pub(crate) async fn person_update(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+pub(crate) async fn person_update(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {
     let (view, notices) = {
         let core = core.clone();
         blocking(move || {
@@ -1725,7 +1780,7 @@ pub(crate) async fn person_update(core: &Arc<Core>, params: Value) -> Result<Val
 
 /// The person changes how the project's board runs on its own. Answers
 /// with the board.
-pub(crate) async fn person_settings(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+pub(crate) async fn person_settings(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {
     let core = core.clone();
     blocking(move || {
         let project = project_param(&core, &params)?;
@@ -1780,7 +1835,7 @@ pub(crate) fn run_check(dir: &Path, command: &str) -> Result<(bool, String), Str
 
 /// The person has Auto try a card it gave back to them again. Answers with
 /// the board.
-pub(crate) async fn person_retry(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+pub(crate) async fn person_retry(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {
     let (project, id) = {
         let core = core.clone();
         blocking(move || {
@@ -1796,7 +1851,7 @@ pub(crate) async fn person_retry(core: &Arc<Core>, params: Value) -> Result<Valu
 }
 
 /// The person takes a card off the board. Answers with the board.
-pub(crate) async fn person_remove(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+pub(crate) async fn person_remove(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {
     let (view, notices) = {
         let core = core.clone();
         blocking(move || {

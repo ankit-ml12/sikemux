@@ -150,7 +150,7 @@ impl Settings {
 /// Where a card's run is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) enum Stage {
+pub(crate) enum Stage {
     /// Its worktree and agent are being made.
     Starting,
     Working,
@@ -268,19 +268,46 @@ impl Run {
         }
     }
 
-    pub(super) fn view(&self) -> Value {
-        json!({
-            "agent": self.agent,
-            "repo": self.repo,
-            "worktree": self.worktree,
-            "branch": self.branch,
-            "base": self.base,
-            "startSha": self.start_sha,
-            "stage": self.stage,
-            "note": self.note,
-            "pull": self.pull.as_ref().map(|pull| json!({ "number": pull.number, "url": pull.url, "host": pull.host })),
-        })
+    pub(super) fn view(&self) -> RunView {
+        RunView {
+            agent: self.agent.clone(),
+            repo: self.repo.clone(),
+            worktree: self.worktree.clone(),
+            branch: self.branch.clone(),
+            base: self.base.clone(),
+            start_sha: self.start_sha.clone(),
+            stage: self.stage,
+            note: self.note.clone(),
+            pull: self.pull.as_ref().map(|pull| PullView {
+                number: pull.number,
+                url: pull.url.clone(),
+                host: pull.host.clone(),
+            }),
+        }
     }
+}
+
+/// A card's run as the app and devices read it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RunView {
+    agent: String,
+    repo: String,
+    worktree: String,
+    branch: String,
+    base: String,
+    start_sha: String,
+    stage: Stage,
+    note: Option<String>,
+    pull: Option<PullView>,
+}
+
+/// A run's pull request as the app and devices read it.
+#[derive(Serialize)]
+pub(crate) struct PullView {
+    number: u64,
+    url: String,
+    host: String,
 }
 
 /// How many of the board's cards have an agent of Auto's at work that is
