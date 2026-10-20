@@ -5,6 +5,7 @@ import {
     useContext,
     useEffect,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
     type MouseEvent as ReactMouseEvent,
@@ -17,8 +18,9 @@ import { keybindingLabelForAction, type KeybindingActionId } from "../commands/k
 import type { Agent, Session, SessionKind, Window } from "../state/types";
 import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
-import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
+import { agentDisplay, rollupAgentDisplays } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
+import { useShallow } from "zustand/react/shallow";
 import { AgentFace } from "../buddies/Buddy";
 import { IconAgent, IconClose, IconFolder, IconMove, IconPencil, IconPlus, IconServer, IconSettings, IconTerminal, WindowIcon } from "../ui/Icons";
 import { useHostRepo } from "../codehost/project";
@@ -33,7 +35,7 @@ import { RailMasthead } from "./RailMasthead";
 import { RailAccount } from "../account/RailAccount";
 import { UpdateChip } from "./UpdateChip";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
-import { agentDisplayOf, agentIdsOf } from "../state/selectors";
+import { agentIdsOf } from "../state/selectors";
 import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES, type ProjectSurfaceRole } from "../workbench/surfaces";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
 import type { PluginSignIn } from "../plugin-api/signInState";
@@ -129,10 +131,6 @@ function projectRects(): Map<string, DOMRect> {
  */
 interface RailContextValue {
     activeSessionId: string;
-    windowsById: Record<string, Window>;
-    windowsBySession: Record<string, string[]>;
-    agentsById: Record<string, Agent>;
-    displayOf: (agentId: string) => AgentDisplay;
     draggingProjectId: string | null;
     projectDragClass: (id: string) => string;
     onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
@@ -229,9 +227,10 @@ function useProjectUnfold(tree: RefObject<HTMLDivElement | null>, active: boolea
     }, [active, tree]);
 }
 
-function ProjectBlock({ s }: { s: Session }) {
+/* Each project reads only its own windows, agents and their states, so one agent changing state re-renders its own project and not the rail. */
+const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
     const rail = useRail();
-    const { activeSessionId, agentsById, displayOf, windowsById, windowsBySession, draggingProjectId, kb } = rail;
+    const { activeSessionId, draggingProjectId, kb } = rail;
     const active = s.id === activeSessionId;
     // Active or not, a project is one tree root holding its row, so the row survives the switch and its tint cross-fades.
     const treeRef = useRef<HTMLDivElement>(null);
@@ -246,12 +245,10 @@ function ProjectBlock({ s }: { s: Session }) {
         }
         return null;
     });
-    const winIds = windowsBySession[s.id] ?? [];
-    const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
-    const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
-        .map((id) => agentsById[id])
-        .filter(Boolean);
-    const rollup = rollupAgentDisplays(agents.map((agent) => displayOf(agent.id)));
+    const sessionWindows = useStore(useShallow((st) => (st.windowsBySession[s.id] ?? []).flatMap((id): Window[] => (st.windows[id] ? [st.windows[id]] : []))));
+    const agents = useStore(useShallow((st) => agentIdsOf(st, s.id).flatMap((id): Agent[] => (st.agents[id] ? [st.agents[id]] : []))));
+    const statuses = useStore(useShallow((st) => agents.map((agent) => st.agentStatus[agent.id])));
+    const rollup = rollupAgentDisplays(statuses.map((status) => agentDisplay(status)));
 
     const visibleAgents = agents.slice(0, MAX_BADGE_ICONS);
     const agentOverflow = agents.length - visibleAgents.length;
@@ -412,7 +409,7 @@ function ProjectBlock({ s }: { s: Session }) {
             </div>
         </div>
     );
-}
+});
 
 interface SubRow {
     key: string;
@@ -558,10 +555,6 @@ function Group({
 export const SideRail = memo(function SideRail() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const windowsById = useStore((s) => s.windows);
-    const windowsBySession = useStore((s) => s.windowsBySession);
-    const agentsById = useStore((s) => s.agents);
-    const agentStatus = useStore((s) => s.agentStatus);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
@@ -764,12 +757,6 @@ export const SideRail = memo(function SideRail() {
         cmd.selectSession(id);
     };
 
-    const projectDragClass = (id: string) => {
-        if (draggingProjectId === id) return " project-drag-source";
-        if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
-        return "";
-    };
-
     useEffect(() => () => endProjectDrag(), [endProjectDrag]);
 
     useLayoutEffect(() => {
@@ -788,20 +775,29 @@ export const SideRail = memo(function SideRail() {
             ? `translate3d(${ghostPoint.x - projectDragVisual.grabX}px, ${ghostPoint.y - projectDragVisual.grabY}px, 0)`
             : "translate3d(-100vw, -100vh, 0)";
 
-    const rail: RailContextValue = {
-        activeSessionId,
-        windowsById,
-        windowsBySession,
-        agentsById,
-        displayOf: (agentId) => agentDisplayOf({ agentStatus }, agentId),
-        draggingProjectId,
-        projectDragClass,
-        onProjectPointerDown,
-        selectProject,
-        openSpaceMenu: (event, session) => openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd])),
-        jumpToWindow,
-        kb,
-    };
+    /* The handlers change on every render; the rows reach them through this, so the context changes only with what the rows show. */
+    const handlers = useRef({ onProjectPointerDown, selectProject, openMenu, spaces, projectSpaces, jumpToWindow });
+    handlers.current = { onProjectPointerDown, selectProject, openMenu, spaces, projectSpaces, jumpToWindow };
+    const rail = useMemo<RailContextValue>(
+        () => ({
+            activeSessionId,
+            draggingProjectId,
+            projectDragClass: (id) => {
+                if (draggingProjectId === id) return " project-drag-source";
+                if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
+                return "";
+            },
+            onProjectPointerDown: (event, sourceId) => handlers.current.onProjectPointerDown(event, sourceId),
+            selectProject: (id) => handlers.current.selectProject(id),
+            openSpaceMenu: (event, session) => {
+                const { openMenu, spaces, projectSpaces } = handlers.current;
+                openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd]));
+            },
+            jumpToWindow: (sessionId, winId) => handlers.current.jumpToWindow(sessionId, winId),
+            kb: (id) => keybindingLabelForAction(keybindingOverrides, id),
+        }),
+        [activeSessionId, draggingProjectId, projectDrop, keybindingOverrides],
+    );
 
     return (
         <RailContext.Provider value={rail}>
