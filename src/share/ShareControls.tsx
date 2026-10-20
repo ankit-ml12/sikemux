@@ -17,7 +17,7 @@ import {
     SHARE_LIFETIMES,
     useChatShare,
     useShares,
-    useSharesPolling,
+    useFollowShares,
 } from "./macShares";
 import "../styles/share.css";
 
@@ -58,9 +58,9 @@ export function ShareButton({ agent }: { agent: Agent }) {
     );
 }
 
-/** The share dialog of whichever chat asked for it, and the polling that keeps shares fresh. Mounted once, at the app's root. */
+/** The share dialog of whichever chat asked for it, and what keeps the shares current. Mounted once, at the app's root. */
 export function ShareHost() {
-    useSharesPolling();
+    useFollowShares();
     const agentId = useShares((state) => state.dialog);
     useOccludeNativeViews(agentId !== null);
     if (!agentId) return null;
