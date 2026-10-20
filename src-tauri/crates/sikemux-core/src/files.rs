@@ -396,10 +396,11 @@ struct Written {
     upload: Option<String>,
 }
 
-/// A save arriving in pieces, written beside its file until the last one.
+/// The earlier pieces of a save that arrives in several, kept in the host's
+/// temporary folder, so a save that never finishes leaves nothing in the project.
 struct Upload {
     path: PathBuf,
-    temp: tempfile::NamedTempFile,
+    staged: tempfile::NamedTempFile,
     hash: Sha256,
     size: u64,
     touched: Instant,
@@ -417,30 +418,42 @@ fn write(params: WriteParams) -> Result<Written> {
             return Err("invalid argument: version must be a SHA-256 hex digest".into());
         }
     }
-    let mut upload = match &params.upload {
-        Some(id) => {
-            let upload = uploads()
-                .locked()
-                .remove(id)
-                .ok_or("invalid argument: that save timed out; save again")?;
-            if upload.path != path {
-                return Err("invalid argument: that save is for another file".into());
-            }
-            upload
-        }
-        None => start_upload(&path)?,
-    };
-    upload.size += params.text.len() as u64;
-    if upload.size > MAX_TEXT_BYTES {
-        return Err(format!("fs: {} exceeds the save limit", path.display()).into());
-    }
-    upload.temp.write_all(params.text.as_bytes())?;
-    upload.hash.update(params.text.as_bytes());
-    if params.more {
-        let id = uuid::Uuid::new_v4().to_string();
-        upload.touched = Instant::now();
+    let earlier = {
         let mut uploads = uploads().locked();
         uploads.retain(|_, upload| upload.touched.elapsed() < UPLOAD_IDLE);
+        match &params.upload {
+            Some(id) => Some(
+                uploads
+                    .remove(id)
+                    .filter(|upload| upload.path == path)
+                    .ok_or("invalid argument: that save timed out; save again")?,
+            ),
+            None => None,
+        }
+    };
+    let text = params.text.as_bytes();
+    let size = earlier.as_ref().map_or(0, |upload| upload.size) + text.len() as u64;
+    if size > MAX_TEXT_BYTES {
+        return Err(format!("fs: {} exceeds the save limit", path.display()).into());
+    }
+    let mut upload = match earlier {
+        Some(upload) => upload,
+        None if params.more => Upload {
+            path: path.clone(),
+            staged: tempfile::NamedTempFile::new()?,
+            hash: Sha256::new(),
+            size: 0,
+            touched: Instant::now(),
+        },
+        None => return save(&path, None, Sha256::new(), text, &params),
+    };
+    if params.more {
+        upload.staged.write_all(text)?;
+        upload.hash.update(text);
+        upload.size = size;
+        upload.touched = Instant::now();
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut uploads = uploads().locked();
         if uploads.len() >= MAX_UPLOADS {
             return Err("fs: too many saves at once; try again".into());
         }
@@ -450,45 +463,52 @@ fn write(params: WriteParams) -> Result<Written> {
             upload: Some(id),
         });
     }
-    let version = hex::encode(upload.hash.clone().finalize());
-    finish(upload, params.version.as_deref(), params.new)?;
-    Ok(Written {
-        version: Some(version),
-        upload: None,
-    })
+    upload.staged.seek(SeekFrom::Start(0))?;
+    save(&path, Some(upload.staged), upload.hash, text, &params)
 }
 
-/// The temporary file sits beside the target, so the save is one rename. A
-/// symlink is kept by replacing what it points at.
-fn start_upload(path: &Path) -> Result<Upload> {
+/// Writes the save beside its file, so it lands as one rename, keeping the
+/// file's permissions. A symlink is kept by replacing what it points at.
+fn save(
+    path: &Path,
+    staged: Option<tempfile::NamedTempFile>,
+    mut hash: Sha256,
+    last: &[u8],
+    params: &WriteParams,
+) -> Result<Written> {
     let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
     let parent = target
         .parent()
         .ok_or_else(|| Error::from("invalid argument: that path has no folder"))?;
     fs::create_dir_all(parent)?;
-    let temp = tempfile::NamedTempFile::new_in(parent)?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     if let Ok(meta) = fs::metadata(&target) {
         temp.as_file().set_permissions(meta.permissions())?;
     }
-    Ok(Upload {
-        path: path.to_owned(),
-        temp,
-        hash: Sha256::new(),
-        size: 0,
-        touched: Instant::now(),
+    if let Some(mut staged) = staged {
+        std::io::copy(&mut staged, &mut temp)?;
+    }
+    temp.write_all(last)?;
+    hash.update(last);
+    finish(temp, path, params.version.as_deref(), params.new)?;
+    Ok(Written {
+        version: Some(hex::encode(hash.finalize())),
+        upload: None,
     })
 }
 
-fn finish(upload: Upload, expected: Option<&str>, new: bool) -> Result<()> {
-    let path = upload.path;
-    let lock = write_lock_for(&path);
+fn finish(
+    temp: tempfile::NamedTempFile,
+    path: &Path,
+    expected: Option<&str>,
+    new: bool,
+) -> Result<()> {
+    let lock = write_lock_for(path);
     let _guard = lock.locked();
-    upload.temp.as_file().flush()?;
-    sync_before_replace(upload.temp.as_file())?;
+    temp.as_file().flush()?;
+    sync_before_replace(temp.as_file())?;
     if new {
-        upload
-            .temp
-            .persist_noclobber(&path)
+        temp.persist_noclobber(path)
             .map_err(|error| match error.error.kind() {
                 std::io::ErrorKind::AlreadyExists => {
                     Error::from(format!("fs: already exists: {}", path.display()))
@@ -497,7 +517,7 @@ fn finish(upload: Upload, expected: Option<&str>, new: bool) -> Result<()> {
             })?;
         return Ok(());
     }
-    let target = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
     if let Some(expected) = expected {
         let gone = || {
             conflict(format!(
@@ -517,9 +537,7 @@ fn finish(upload: Upload, expected: Option<&str>, new: bool) -> Result<()> {
             )));
         }
     }
-    upload
-        .temp
-        .persist(&target)
+    temp.persist(&target)
         .map_err(|error| Error::from(error.error))?;
     Ok(())
 }
