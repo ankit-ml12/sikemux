@@ -4,12 +4,11 @@
 // account adds it beside the first rather than replacing it.
 
 use std::path::Path;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sikemux_plugin_api::account::{as_account, chosen};
 use sikemux_plugin_api::http;
+use sikemux_plugin_api::oauth::Tokens;
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::{SignInStatus, StreamSink};
 
@@ -20,7 +19,6 @@ use crate::oauth;
 use crate::repo::{RepoRef, User};
 
 /// Long enough to sign in to Atlassian from scratch, two-step login included.
-const BROWSER_WAIT: Duration = Duration::from_secs(10 * 60);
 const PIPELINE_WRITE: &str = "pipeline:write";
 
 async fn identify(credential: &Credential) -> BitbucketResult<User> {
@@ -65,7 +63,7 @@ pub async fn status(data_dir: &Path) -> Status {
         Ok(config) => config,
         Err(error) => {
             let signed = Signed {
-                browser_sign_in: oauth::available(),
+                browser_sign_in: oauth::APP.available(),
                 ..Signed::default()
             };
             return Status::checked(false, signed, &Err::<(), _>(error));
@@ -86,7 +84,7 @@ pub async fn status(data_dir: &Path) -> Status {
             .as_ref()
             .and_then(|account| account.avatar_url.clone()),
         can_write_ci: false,
-        browser_sign_in: oauth::available(),
+        browser_sign_in: oauth::APP.available(),
     };
     let check = match Session::current(data_dir).await {
         Ok(session) => {
@@ -145,7 +143,10 @@ fn new_account(
 ) -> BitbucketResult<Account> {
     let id = match user.and_then(|user| user.uuid.as_deref()) {
         Some(uuid) => uuid.trim_matches(['{', '}']).to_string(),
-        None => format!("token-{}", oauth::new_state()?),
+        None => format!(
+            "token-{}",
+            sikemux_loopback::new_state().map_err(|error| BitbucketError::Auth(error.0))?
+        ),
     };
     Ok(Account {
         id,
@@ -223,24 +224,11 @@ async fn save_sign_in(
 /// the stream's first item, then waits for the browser to come back. Closing
 /// the stream stops the wait and frees the port. Says which account signed in.
 pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> BitbucketResult<String> {
-    if !oauth::available() {
-        return Err(BitbucketError::Auth(
-            "this build cannot sign in through the browser; use an API token instead".into(),
-        ));
-    }
-    let callback = oauth::listen().await?;
-    let state = oauth::new_state()?;
-    sink.send(json!({ "url": oauth::authorize_url(&state) }))
-        .map_err(|_| BitbucketError::Auth("the sign-in was closed".into()))?;
-    let code = tokio::time::timeout(BROWSER_WAIT, oauth::code(&callback, &state))
-        .await
-        .map_err(|_| BitbucketError::Auth("nobody finished signing in".into()))??;
-    drop(callback);
-    let tokens = oauth::exchange(&code).await?;
+    let tokens: Tokens = oauth::APP.sign_in(&client::HTTP, sink).await?;
     let user = identify(&Credential::Bearer(tokens.access_token.clone())).await?;
     let account = new_account(Some(&user), Method::Oauth, None)?;
     let id = save_sign_in(data_dir, account, tokens.refresh_token.clone()).await?;
-    client::remember_access(&id, &tokens).await;
+    oauth::ACCESS.remember(&id, &tokens).await;
     Ok(id)
 }
 
@@ -299,6 +287,7 @@ pub async fn account_for(data_dir: &Path, repo: RepoRef) -> BitbucketResult<Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn session(method: Method, scopes: &[&str]) -> Session {
         Session {

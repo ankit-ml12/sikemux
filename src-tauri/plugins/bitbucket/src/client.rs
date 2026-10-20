@@ -2,9 +2,7 @@
 // single answer may be, the credential each request carries, and Bitbucket's
 // error shapes turned into ours.
 
-use std::collections::BTreeMap;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 use reqwest::{Method, RequestBuilder, StatusCode};
 use serde::de::DeserializeOwned;
@@ -21,9 +19,6 @@ use crate::oauth;
 
 pub const API: &str = "https://api.bitbucket.org/2.0";
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
-/// An access token this close to expiring is replaced before it is used.
-const EXPIRY_MARGIN: Duration = Duration::from_secs(60);
-
 /// Logs and file contents are redirected to storage on another host, which
 /// reqwest reaches without the credential.
 pub static HTTP: Http<Bitbucket> = Http::new(Redirects::Follow, Deadline::WholeAnswer, 8);
@@ -51,47 +46,11 @@ impl Credential {
     }
 }
 
-struct Access {
-    token: String,
-    scopes: Vec<String>,
-    expires: Instant,
-}
-
-static ACCESS: tokio::sync::Mutex<BTreeMap<String, Access>> =
-    tokio::sync::Mutex::const_new(BTreeMap::new());
-
 /// Drops the credentials held in memory for one account, or for all of them,
 /// so the next request reads the Keychain again.
 pub async fn forget(account: Option<&str>) {
-    let mut access = ACCESS.lock().await;
-    match account {
-        Some(id) => access.remove(id),
-        None => {
-            access.clear();
-            None
-        }
-    };
+    oauth::ACCESS.forget(account).await;
     API_TOKENS.forget(account);
-}
-
-pub async fn remember_access(account: &str, tokens: &oauth::Tokens) {
-    ACCESS
-        .lock()
-        .await
-        .insert(account.to_string(), access_of(tokens));
-}
-
-fn access_of(tokens: &oauth::Tokens) -> Access {
-    Access {
-        token: tokens.access_token.clone(),
-        scopes: tokens
-            .scopes
-            .split([' ', ','])
-            .filter(|scope| !scope.is_empty())
-            .map(str::to_string)
-            .collect(),
-        expires: Instant::now() + Duration::from_secs(tokens.expires_in),
-    }
 }
 
 pub struct Session {
@@ -126,11 +85,13 @@ impl Session {
                 })
             }
             AuthMethod::Oauth => {
-                let (token, scopes) = access_token(&account).await?;
+                let access = oauth::ACCESS
+                    .access(&account.id, oauth::entry(&account))
+                    .await?;
                 Ok(Session {
                     account,
-                    credential: Credential::Bearer(token),
-                    scopes,
+                    credential: Credential::Bearer(access.token),
+                    scopes: access.scopes,
                 })
             }
         }
@@ -147,33 +108,6 @@ async fn api_token(account: &Account) -> BitbucketResult<String> {
         .ok_or(BitbucketError::Unconfigured)?;
     API_TOKENS.put(&account.id, token.clone());
     Ok(token)
-}
-
-/// One refresh at a time: the lock is held across it, so requests that find
-/// the token stale together wait for the one refresh rather than each spending
-/// the refresh token.
-async fn access_token(account: &Account) -> BitbucketResult<(String, Vec<String>)> {
-    let mut held = ACCESS.lock().await;
-    if let Some(access) = held
-        .get(&account.id)
-        .filter(|access| access.expires > Instant::now() + EXPIRY_MARGIN)
-    {
-        return Ok((access.token.clone(), access.scopes.clone()));
-    }
-    let reading = account.clone();
-    let refresh_token = store::blocking(move || config::keychain_read(&reading))
-        .await?
-        .ok_or(BitbucketError::Unconfigured)?;
-    let tokens = oauth::refresh(&refresh_token).await?;
-    if tokens.refresh_token != refresh_token {
-        let writing = account.clone();
-        let replacement = tokens.refresh_token.clone();
-        store::blocking(move || config::keychain_write(&writing, &replacement)).await?;
-    }
-    let access = access_of(&tokens);
-    let answer = (access.token.clone(), access.scopes.clone());
-    held.insert(account.id.clone(), access);
-    Ok(answer)
 }
 
 #[derive(Deserialize)]

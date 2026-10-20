@@ -11,7 +11,7 @@ use sikemux_plugin_api::store::{self, Accounts};
 
 use crate::error::BitbucketResult;
 
-const TOKEN_SERVICE: &str = keychain_service!("sikemux-bitbucket-token");
+pub const TOKEN_SERVICE: &str = keychain_service!("sikemux-bitbucket-token");
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ pub struct Account {
 }
 
 impl Account {
-    fn keychain_account(&self) -> String {
+    pub fn keychain_account(&self) -> String {
         let kind = match self.method {
             Method::Oauth => "oauth",
             Method::Token => "token",
