@@ -5,7 +5,7 @@ import { shareApi, type ShareView } from "../api/share";
 import { copyText } from "../lib/clipboard";
 import { useStore } from "../state/store";
 import { useOccludeNativeViews } from "../state/nativeViews";
-import { notify, reportError } from "../state/toast";
+import { notify, reportError, swallow } from "../state/toast";
 import type { Agent } from "../state/types";
 import { IconCopy, IconEye, IconShare } from "../ui/Icons";
 import { Kbd } from "../ui/Kbd";
@@ -32,7 +32,7 @@ export function ShareButton({ agent }: { agent: Agent }) {
     const share = useChatShare(agent.id);
     const shared = share !== null;
     useEffect(() => {
-        if (shared) void shareApi.share(agent.id, DEFAULT_SHARE_LIFETIME_MS, agent.title).catch(() => undefined);
+        if (shared) void shareApi.share(agent.id, DEFAULT_SHARE_LIFETIME_MS, agent.title).catch(swallow("share the chat"));
     }, [shared, agent.id, agent.title]);
     if (!share)
         return (

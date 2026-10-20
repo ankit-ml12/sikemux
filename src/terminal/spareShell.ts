@@ -4,6 +4,7 @@ import { newId } from "../state/layout";
 import { getState, useStore } from "../state/store";
 import type { PtyContext, Session } from "../state/types";
 import { noteSpawnedSession, offerResumableSessions } from "./sessionResume";
+import { swallow } from "../state/toast";
 
 /* A new tab takes over a shell started ahead of time with that tab's ids, so it
    never waits on the person's rc files. */
@@ -55,7 +56,7 @@ function spareKey(session: Session): string {
 function discard(): void {
     const ptyId = spare?.ptyId;
     spare = null;
-    if (ptyId !== null && ptyId !== undefined) void coreSessionsApi.kill(ptyId).catch(() => {});
+    if (ptyId !== null && ptyId !== undefined) void coreSessionsApi.kill(ptyId).catch(swallow("kill a spare shell"));
 }
 
 function prepare(): void {
@@ -79,7 +80,7 @@ function prepare(): void {
         .then((ptyId) => {
             noteSpawnedSession(ptyId);
             if (spare === pending) pending.ptyId = ptyId;
-            else void coreSessionsApi.kill(ptyId).catch(() => {});
+            else void coreSessionsApi.kill(ptyId).catch(swallow("kill a spare shell"));
         })
         .catch(() => {
             if (spare === pending) spare = null;

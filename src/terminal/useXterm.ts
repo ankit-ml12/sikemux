@@ -32,6 +32,7 @@ import type { PtyAttachment, PtyOutputChunk, PtyShellMetadataSnapshot } from "./
 import { RendererRestartBackoff } from "./restartBackoff";
 import { copyText, readClipboardText } from "../lib/clipboard";
 import type { NativePtyController } from "./usePty";
+import { swallow } from "../state/toast";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_SIZE = 13;
@@ -756,7 +757,7 @@ export function useXterm(opts: {
                     void Promise.all([
                         document.fonts.load(`italic ${FONT_WEIGHT} ${FONT_SIZE}px "JetBrainsMono NF"`),
                         document.fonts.load(`italic ${FONT_WEIGHT_BOLD} ${FONT_SIZE}px "JetBrainsMono NF"`),
-                    ]).catch(() => {});
+                    ]).catch(swallow("load italic fonts"));
                 }, 0);
             }, boot);
         let stopWaitingToStart: (() => void) | null = null;

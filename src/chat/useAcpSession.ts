@@ -170,7 +170,7 @@ export function useAcpSession({
             .catch(() => {})
             .then(async () => {
                 if (!mounted) return;
-                if (relaunch) await acpApi.stop(agent.id).catch(() => {});
+                if (relaunch) await acpApi.stop(agent.id).catch(swallow("stop the chat agent"));
                 await acpApi.subscribe(handleEvent, controller.signal);
                 if (!mounted) return;
                 const current = agentRef.current;

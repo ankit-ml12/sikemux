@@ -9,7 +9,7 @@ import { sshApi } from "../../api/ssh";
 import { dirname } from "../../lib/paths";
 import { sshStartup } from "../../terminal/sshStartup";
 import { getState, mutate, setState } from "../store";
-import { reportError } from "../toast";
+import { reportError, swallow } from "../toast";
 import { agentIdsOf } from "../selectors";
 import { collectPanes, newId } from "../layout";
 import {
@@ -280,7 +280,7 @@ export function dropSession(id: string): void {
         const stillOpen = Object.values(getState().sessions).some((s) => s.cwd === closingCwd);
         if (!stillOpen) {
             filesApi.evict(closingCwd);
-            void lsp.stop(closingCwd).catch(() => {});
+            void lsp.stop(closingCwd).catch(swallow("stop the language servers"));
         }
     }
 }

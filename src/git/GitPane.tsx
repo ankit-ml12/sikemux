@@ -19,7 +19,7 @@ import { gitDiscoveredReposR, gitOverviewR, gitRemoteBranchesR, gitRemotesR, git
 import { useStore } from "../state/store";
 import { commitGitDraft, generateGitDraft, runRepositoryGit, useGitWorkbench } from "../state/gitWorkbench";
 import { whenStageStill } from "../state/nativeViews";
-import { notify } from "../state/toast";
+import { notify, swallow } from "../state/toast";
 import { errorText } from "../lib/format";
 import { DEFAULT_GIT_VIEW, type GitPanel } from "../state/types";
 import { copyText } from "../lib/clipboard";
@@ -300,16 +300,16 @@ function GitWorkbench({
             errorTimerRef.current = window.setTimeout(() => setBusy(null), 3500);
             return undefined;
         } finally {
-            void overview.refresh().catch(() => {});
-            void stashesRes.refresh().catch(() => {});
+            void overview.refresh().catch(swallow("refresh the git overview"));
+            void stashesRes.refresh().catch(swallow("refresh the stashes"));
         }
     }
 
     const refreshRepoState = () => {
-        void overview.refresh().catch(() => {});
-        void stashesRes.refresh().catch(() => {});
-        void remotesRes.refresh().catch(() => {});
-        if (openRemote) void remoteBranchesRes.refresh().catch(() => {});
+        void overview.refresh().catch(swallow("refresh the git overview"));
+        void stashesRes.refresh().catch(swallow("refresh the stashes"));
+        void remotesRes.refresh().catch(swallow("refresh the remotes"));
+        if (openRemote) void remoteBranchesRes.refresh().catch(swallow("refresh the remote branches"));
     };
 
     // Menus open from their button's nearer edge, so one at the pane's right edge stays over the pane.
@@ -333,7 +333,7 @@ function GitWorkbench({
         const turn = moveQueue.current.then(() => run(label, fn));
         moveQueue.current = turn;
         await turn;
-        await overview.refresh().catch(() => {});
+        await overview.refresh().catch(swallow("refresh the git overview"));
         const settled = paths.filter((path) => latestMove.current.get(path) === move);
         for (const path of settled) latestMove.current.delete(path);
         setPendingSides((sides) => {
@@ -469,7 +469,7 @@ function GitWorkbench({
         ]);
     };
 
-    const doCommit = () => void commitGitDraft(repo).then(() => overview.refresh().catch(() => {}));
+    const doCommit = () => void commitGitDraft(repo).then(() => overview.refresh().catch(swallow("refresh the git overview")));
     const generateCommitMessage = () => void generateGitDraft(repo);
 
     const openAgentMenu = (anchor: HTMLElement) =>

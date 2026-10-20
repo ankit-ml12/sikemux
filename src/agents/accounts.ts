@@ -2,7 +2,7 @@ import { externalValue, useExternalValue } from "../lib/externalValue";
 import { agentApi, type AgentAccountStatus } from "../api/agents";
 import { acpApi, type AcpAccount } from "../api/acp";
 import { invalidate } from "../state/resources";
-import { reportError } from "../state/toast";
+import { reportError, swallow } from "../state/toast";
 import { hasAccounts, type AccountAgentType } from "./catalog";
 import { adoptAgentAccounts } from "../state/persist";
 import { DEFAULT_PROVIDER_PROFILES, type Agent, type ProviderProfile } from "../state/types";
@@ -40,7 +40,7 @@ const sameDirectory = (a: string | null | undefined, b: string | null | undefine
 
 /** Reads an account's sign-in and limits again, after they changed. */
 async function refreshAccount(provider: AccountAgentType, configPath: string | undefined): Promise<void> {
-    await agentApi.forgetAccount(provider, configPath).catch(() => {});
+    await agentApi.forgetAccount(provider, configPath).catch(swallow("forget the account cache"));
     invalidate(
         (kind, args) =>
             (kind === "agents.account" || kind === "agents.usage") &&
@@ -76,7 +76,7 @@ export async function signIn(profile: ProviderProfile, executablePath?: string):
             if (page.agent !== provider || !sameDirectory(page.configPath, profile.configPath)) return;
             if (signIns.get()[profile.id]?.phase === "waiting") setSignIn(profile.id, { phase: "waiting", url: page.url });
         }, listening.signal)
-        .catch(() => {});
+        .catch(swallow("follow sign-in pages"));
     try {
         await agentApi.signIn(provider, executablePath, profile.configPath);
         setSignIn(profile.id, null);
@@ -92,7 +92,7 @@ export async function signIn(profile: ProviderProfile, executablePath?: string):
 }
 
 export function cancelSignIn(profile: ProviderProfile): void {
-    if (hasAccounts(profile.provider)) void agentApi.cancelSignIn(profile.provider, profile.configPath).catch(() => {});
+    if (hasAccounts(profile.provider)) void agentApi.cancelSignIn(profile.provider, profile.configPath).catch(swallow("cancel the sign-in"));
 }
 
 export function dismissSignIn(profileId: string): void {

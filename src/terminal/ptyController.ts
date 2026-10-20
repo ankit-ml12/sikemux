@@ -1,5 +1,6 @@
 import type { PtyDirectCommand } from "../state/types";
 import { errorCategory, errorText } from "../lib/format";
+import { swallow } from "../state/toast";
 
 export type PtyOutputChunk = readonly number[] | Uint8Array;
 export type PtyShellPhase = "unknown" | "prompt" | "input" | "running" | "finished";
@@ -598,7 +599,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             this.initialInputStatus = "cancelled";
             this.cancelInitialInput();
         }
-        for (const attachment of Array.from(this.attachments.values())) void this.detachAttachment(attachment).catch(() => {});
+        for (const attachment of Array.from(this.attachments.values())) void this.detachAttachment(attachment).catch(swallow("detach a terminal"));
         this.status = "idle";
         this.failureOperation = null;
         this.emitState();
@@ -722,7 +723,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
 
         const stale = this.isStaleAttachment(state);
         if (state.detached || this.disposeRequested || stale) {
-            await this.detachAttachment(state).catch(() => {});
+            await this.detachAttachment(state).catch(swallow("detach a terminal"));
             if (state.overflowed) throw new PtySubscriptionOverflowError();
             if (stale && !this.disposeRequested) throw new PtyControllerReplacedError();
             throw new PtyControllerDisposedError();
@@ -820,7 +821,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                 // before this completion callback runs.
                 if (this.pendingResize) this.ensureResizeDrain();
             })
-            .catch(() => {});
+            .catch(swallow("drain terminal resizes"));
     }
 
     private async drainResizeQueue(): Promise<void> {
@@ -983,13 +984,13 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         const chunk = asOutputChunk(received);
         if (!chunk) {
             this.reportError("attach", new TypeError("PTY channel emitted an invalid output chunk"));
-            void this.detachAttachment(state).catch(() => {});
+            void this.detachAttachment(state).catch(swallow("detach a terminal"));
             return;
         }
         if (chunk.length > this.maxPendingBytes) {
             state.overflowed = true;
             this.reportError("attach", new PtySubscriptionOverflowError());
-            void this.detachAttachment(state).catch(() => {});
+            void this.detachAttachment(state).catch(swallow("detach a terminal"));
             return;
         }
         if (chunk.length === 0) this.markExited("exit");
@@ -1003,7 +1004,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             state.queue = [];
             state.queuedBytes = 0;
             this.reportError("attach", new PtySubscriptionOverflowError());
-            void this.detachAttachment(state).catch(() => {});
+            void this.detachAttachment(state).catch(swallow("detach a terminal"));
             return;
         }
         state.queue.push(chunk);
@@ -1027,7 +1028,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         } catch (error) {
             state.listenerErrors += 1;
             this.reportError("output-listener", error);
-            if (state.listenerErrors >= this.maxListenerErrors) void this.detachAttachment(state).catch(() => {});
+            if (state.listenerErrors >= this.maxListenerErrors) void this.detachAttachment(state).catch(swallow("detach a terminal"));
         } finally {
             state.delivering = false;
         }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { coreCall } from "../api/core";
 import { onCoreChanged } from "../api/coreChanged";
+import { swallow } from "../state/toast";
 
 /* The shapes below are the core's JSON for tasks (sikemux-core tasks/ and
    server/tasks.rs); the wire generator does not read tagged enums. */
@@ -129,9 +130,7 @@ function setRuns(next: readonly TaskRun[]): void {
 }
 
 function readRuns(): void {
-    void coreCall<TaskRun[]>("taskRuns")
-        .then(setRuns)
-        .catch(() => {});
+    void coreCall<TaskRun[]>("taskRuns").then(setRuns).catch(swallow("read task runs"));
 }
 
 export function setTaskRunsForTests(next: readonly TaskRun[]): void {
@@ -183,7 +182,7 @@ export function useProjectTasks(project: string | null, refreshKey: unknown = nu
             .then((next) => {
                 if (!cancelled) setFound(next);
             })
-            .catch(() => {});
+            .catch(swallow("list project tasks"));
         return () => {
             cancelled = true;
         };

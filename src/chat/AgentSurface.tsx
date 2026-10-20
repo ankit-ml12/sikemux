@@ -27,6 +27,7 @@ import { YoloToggle } from "./YoloToggle";
 import { ShareButton } from "../share/ShareControls";
 import { agentCwd, agentPtyContext } from "../agents/agentPtyContext";
 import "../styles/chat.css";
+import { swallow } from "../state/toast";
 
 type AgentView = "gui" | "tui";
 
@@ -102,7 +103,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
             setSwitching(true);
             setCarried(next === "tui" ? takeDraft(agent.id) : "");
             if (next === "gui" && tuiLayer.current) putDraft(agent.id, promptDraft(screenWithin(tuiLayer.current)));
-            if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
+            if (view === "gui") await acpApi.stop(agent.id).catch(swallow("stop the chat agent"));
             setView(next);
             window.requestAnimationFrame(() => setSwitching(false));
         },

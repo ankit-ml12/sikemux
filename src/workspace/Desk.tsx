@@ -16,7 +16,7 @@ import { deskAppearing, onDeskMotion } from "../state/deskMotion";
 import { browserApi, BLANK_URL, type BrowserBounds, type BrowserHole, type BrowserSnapshot } from "../api/browser";
 import { onStageFrame, stageMoving, useNativeViewHoles, useNativeViewsOccluded, useStageMoving, type NativeViewHole } from "../state/nativeViews";
 import type { AgentType, PtyContext, Session, Window as WindowT } from "../state/types";
-import { notify, reportError } from "../state/toast";
+import { notify, reportError, swallow } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { fsapi } from "../api/fs";
 import { deskTabMenu } from "./deskTabMenu";
@@ -756,7 +756,7 @@ function BrowserPage({
 
     useEffect(
         () => () => {
-            void browserApi.setBounds(agentId, null).catch(() => {});
+            void browserApi.setBounds(agentId, null).catch(swallow("hide the browser"));
             forgetPageStill(agentId);
         },
         [agentId],

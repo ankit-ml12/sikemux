@@ -20,6 +20,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { copyText } from "../lib/clipboard";
 import { errorText } from "../lib/format";
+import { swallow } from "../state/toast";
 
 interface IntegrationHealth {
     git: boolean;
@@ -114,7 +115,7 @@ export function Onboarding() {
             .then((value) => {
                 if (!disposed) setGitMissing(!value.git);
             })
-            .catch(() => {});
+            .catch(swallow("read integration health"));
         return () => {
             disposed = true;
         };
@@ -176,9 +177,7 @@ export function Onboarding() {
     const dragWindow = (event: React.MouseEvent<HTMLElement>) => {
         if (event.button !== 0 || event.target !== event.currentTarget) return;
         event.preventDefault();
-        void getCurrentWindow()
-            .startDragging()
-            .catch(() => {});
+        void getCurrentWindow().startDragging().catch(swallow("drag the window"));
     };
 
     return (

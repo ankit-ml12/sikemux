@@ -9,6 +9,7 @@ import { runMeasuredAction } from "../lib/instrumentation";
 import { runProjectActionForKey } from "../projects/projectActions";
 import { pluginOverlayOpen } from "../plugins/overlays";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
+import { swallow } from "../state/toast";
 
 const TEXT_SCALE_STEP = 0.1;
 
@@ -419,7 +420,7 @@ export function useKeymap(): void {
                     }),
                 );
             }, pageChords.signal)
-            .catch(() => {});
+            .catch(swallow("follow page shortcuts"));
 
         window.addEventListener("keydown", keydown, { capture: true });
         window.addEventListener("keyup", keyup, { capture: true });

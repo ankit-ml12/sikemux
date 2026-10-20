@@ -713,7 +713,7 @@ export default function App() {
     useEffect(() => watchTerminalTitles(), []);
     useEffect(() => watchFocusForAgentStatus(), []);
     /* Fetched ahead so the first chat opened draws at once; a failure here leaves opening one to fetch it again. */
-    useEffect(() => whenIdle(() => void import("./chat/AgentSurface").catch(() => undefined)), []);
+    useEffect(() => whenIdle(() => void import("./chat/AgentSurface").catch(swallow("preload the chat surface"))), []);
 
     useEffect(() => {
         let disposed = false;

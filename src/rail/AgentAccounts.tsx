@@ -8,7 +8,7 @@ import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { ProviderProfile } from "../state/types";
 import { IconChevron, IconLogOut, IconPlus, IconRefresh, IconUser } from "../ui/Icons";
-import { reportError } from "../state/toast";
+import { reportError, swallow } from "../state/toast";
 import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
@@ -45,7 +45,7 @@ export function AgentAccountsPanel({
             if (account.id === current?.id) continue;
             void fetchResource(agentAccountR, provider, account.configPath)
                 .then((other) => (other.signedIn ? fetchResource(agentUsageR, provider, account.configPath) : undefined))
-                .catch(() => {});
+                .catch(swallow("read another account's usage"));
         }
     };
     useEffect(readOthers, [accounts.length]); // eslint-disable-line react-hooks/exhaustive-deps

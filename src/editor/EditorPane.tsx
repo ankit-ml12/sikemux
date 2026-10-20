@@ -693,7 +693,9 @@ export function EditorPane({
                 cacheState(activePath, st);
                 savedRef.current.set(activePath, content);
                 switchTo(activePath, st);
-            } catch {}
+            } catch (error) {
+                reportError(`open ${basename(activePath)}`)(error);
+            }
         })();
         return () => {
             cancelled = true;

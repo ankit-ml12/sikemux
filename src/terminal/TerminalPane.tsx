@@ -14,6 +14,7 @@ import { basename } from "../lib/paths";
 import { SendToAgentMenu } from "../agents/SendToAgentMenu";
 import { getState } from "../state/store";
 import { terminalName, terminalSelectionDelivery } from "./selectionDelivery";
+import { swallow } from "../state/toast";
 
 export const TERMINAL_RENDERER_RETENTION = Object.freeze({ keepaliveMs: 15_000, maxHidden: 3 });
 const hiddenRendererEvictions = new Map<symbol, () => void>();
@@ -120,7 +121,7 @@ export function TerminalPane({
             .then((atPrompt) => {
                 if (atPrompt && !cancelled) return controller.write(`${reconnect}\r`);
             })
-            .catch(() => {});
+            .catch(swallow("reconnect at the prompt"));
         return () => {
             cancelled = true;
         };

@@ -22,7 +22,7 @@ import { openInBrowser } from "../api/releases";
 import { isUpdateBusy, RELEASES_URL, updateCheckLabel, UPDATES_IN_APP } from "../api/updater";
 import { prettyPath } from "../lib/paths";
 import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
-import { notify, reportError } from "../state/toast";
+import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
@@ -747,9 +747,7 @@ function CliPage() {
             notify("success", next.pathConfigured ? "Sikemux CLI is ready" : "Sikemux CLI installed; add its directory to PATH");
         } catch (error) {
             reportError("CLI install")(error);
-            await invoke<CliInstallStatus>("cli_install_status")
-                .then(setStatus)
-                .catch(() => undefined);
+            await invoke<CliInstallStatus>("cli_install_status").then(setStatus).catch(swallow("read the CLI install status"));
         } finally {
             setBusy(false);
         }

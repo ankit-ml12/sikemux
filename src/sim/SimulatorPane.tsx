@@ -19,7 +19,7 @@ import { confirmDialog } from "../state/dialog";
 import { useSimulatorActing, useSimulatorAttachments } from "../state/simulatorAgents";
 import { getState, useStore } from "../state/store";
 import type { DeskSimulator } from "../state/types";
-import { notify, reportError } from "../state/toast";
+import { notify, reportError, swallow } from "../state/toast";
 import { errorText as message } from "../lib/format";
 import { Dropdown } from "../ui/Dropdown";
 import { IconCamera, IconHome, IconLock, IconPhone, IconPower, IconRotate, IconTablet } from "../ui/Icons";
@@ -283,7 +283,9 @@ export function SimulatorPane({
         if (!usable || installed || !shown) return;
         let alive = true;
         const controller = new AbortController();
-        void simApi.subscribe((event) => alive && setPrepare({ fraction: event.fraction }), controller.signal).catch(() => {});
+        void simApi
+            .subscribe((event) => alive && setPrepare({ fraction: event.fraction }), controller.signal)
+            .catch(swallow("follow simulator setup"));
         setPrepare({ fraction: 0 });
         prepareSim().then(
             () => alive && setPrepare(null),
@@ -313,7 +315,7 @@ export function SimulatorPane({
             .subscribeAttached((attached) => {
                 if (attached.agentId === agentId) void refresh();
             }, controller.signal)
-            .catch(() => {});
+            .catch(swallow("follow simulator attachments"));
         return () => controller.abort();
     }, [ready, agentId, refresh]);
 

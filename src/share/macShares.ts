@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { shareApi, type ShareView } from "../api/share";
+import { swallow } from "../state/toast";
 
 /** How often the shares are read again while one is open or being set up, for their viewer counts. */
 const POLL_MS = 3_000;
@@ -44,7 +45,7 @@ export async function refreshShares(): Promise<void> {
 
 export function openShareDialog(agentId: string) {
     useShares.setState({ dialog: agentId });
-    void refreshShares().catch(() => undefined);
+    void refreshShares().catch(swallow("read the shares"));
 }
 
 export function closeShareDialog() {
@@ -59,11 +60,11 @@ export function useChatShare(agentId: string): ShareView | null {
 export function useSharesPolling() {
     const active = useShares((state) => state.dialog !== null || state.shares.length > 0);
     useEffect(() => {
-        void refreshShares().catch(() => undefined);
+        void refreshShares().catch(swallow("read the shares"));
     }, []);
     useEffect(() => {
         if (!active) return;
-        const timer = window.setInterval(() => void refreshShares().catch(() => undefined), POLL_MS);
+        const timer = window.setInterval(() => void refreshShares().catch(swallow("read the shares")), POLL_MS);
         return () => window.clearInterval(timer);
     }, [active]);
 }

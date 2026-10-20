@@ -20,6 +20,7 @@ import { agentAbout, agentLabel, canBypassPermissions, installCommand, loginArgs
 import { installAgent, signInAgent } from "./AgentInstall";
 import { withMissingAgents } from "./setupList";
 import { leavingOverlay } from "../lib/motion";
+import { swallow } from "../state/toast";
 
 type Row = AgentSession & { type: AgentType };
 /** A new chat, or with `signIn`, the agent's own sign-in for one that reads as signed out. */
@@ -328,7 +329,7 @@ export function AgentPalette() {
                         <div className="picker-empty" role="status">
                             {emptyMessage}
                             {catalog.status === "error" && (
-                                <button type="button" onClick={() => void catalog.refresh().catch(() => {})}>
+                                <button type="button" onClick={() => void catalog.refresh().catch(swallow("refresh the agent catalog"))}>
                                     try again
                                 </button>
                             )}
