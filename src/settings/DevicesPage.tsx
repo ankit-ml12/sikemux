@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { accountApi, type AccountHost, type AccountStatus } from "../api/account";
+import { accountApi, type AccountStatus } from "../api/account";
 import { AccountAvatar } from "../account/AccountAvatar";
 import { loadAccount, signInToAccount, signOutOfAccount, useAccount } from "../account/account";
 import { formatAgo } from "../lib/format";
@@ -364,33 +364,6 @@ function useLinkedHosts(): [readonly LinkedHost[] | null, () => void] {
 
 function HostsSection({ now }: { now: number }) {
     const [links, reread] = useLinkedHosts();
-    const [hosts, setHosts] = useState<readonly AccountHost[]>([]);
-    const [linking, setLinking] = useState<AccountHost | null>(null);
-    const linkedKeys = links?.map((link) => link.id).join(" ");
-    useEffect(() => {
-        if (linkedKeys === undefined) return;
-        let current = true;
-        accountApi
-            .hosts()
-            .then((next) => {
-                if (current) setHosts(next);
-            })
-            .catch(swallow("hosts on the account"));
-        return () => {
-            current = false;
-        };
-    }, [linkedKeys]);
-    const link = async (host: AccountHost) => {
-        setLinking(host);
-        try {
-            await accountApi.linkHost(host);
-        } catch (error) {
-            reportError(`Link ${host.name || "host"}`)(error);
-        } finally {
-            setLinking(null);
-            reread();
-        }
-    };
     const unlink = async (host: LinkedHost) => {
         try {
             await remoteApi.revokeDevice(host.id);
@@ -404,11 +377,11 @@ function HostsSection({ now }: { now: number }) {
         <section className="devices-hosts" data-settings-target="Hosts">
             <h2 className="devices-label">Hosts</h2>
             <p className="settings-hint">
-                Link another host on your account. Someone there allows it once, then agents here can start agents there, on that host&apos;s own
+                Every host signed in to your account links with this one, so agents here can start agents there, on that host&apos;s own
                 sign-ins.
             </p>
-            {links.length === 0 && hosts.length === 0 ? (
-                <p className="settings-hint">No other hosts on your account. Sign in to Sikemux on one to link it.</p>
+            {links.length === 0 ? (
+                <p className="settings-hint">No other hosts on your account. Sign in to Sikemux on one to add it.</p>
             ) : (
                 <SettingsRows>
                     {links.map((host) => (
@@ -422,25 +395,8 @@ function HostsSection({ now }: { now: number }) {
                             </button>
                         </SettingsRow>
                     ))}
-                    {[
-                        ...links.map((host) => ({ id: host.id, name: host.name, platform: host.platform })),
-                        ...hosts.map((host) => ({ id: host.key, name: host.name, platform: host.platform })),
-                    ].map((host) => (
-                        <ShowInAppRow key={`show:${host.id}`} {...host} />
-                    ))}
-                    {hosts.map((host) => (
-                        <SettingsRow
-                            key={host.key}
-                            label={host.name || "Unnamed host"}
-                            desc={
-                                linking?.key === host.key
-                                    ? `Waiting for ${host.name || "it"} to allow…`
-                                    : `${platformName(host.platform)} · on your account, not linked`
-                            }>
-                            <button className="settings-btn" type="button" disabled={linking !== null} onClick={() => void link(host)}>
-                                {linking?.key === host.key ? "Waiting…" : "Link"}
-                            </button>
-                        </SettingsRow>
+                    {links.map((host) => (
+                        <ShowInAppRow key={`show:${host.id}`} id={host.id} name={host.name} platform={host.platform} />
                     ))}
                 </SettingsRows>
             )}

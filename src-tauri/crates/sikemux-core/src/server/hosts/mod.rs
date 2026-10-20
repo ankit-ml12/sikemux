@@ -1,13 +1,14 @@
 //! Hosts on the same account linked with each other, so an agent on one can
-//! start agents on another and work with them as with its own. A host links
-//! with another as a phone joins it: with a ticket from the account, which the
-//! other host's owner allows once. Either may remove the link.
+//! start agents on another and work with them as with its own. Every host on
+//! an account links with every other, as a phone joins one: with a ticket from
+//! the account (ADR 0018). Removing a host from the account unlinks it.
 //!
 //! Linked hosts ask each other things over one iroh connection, which either
 //! may open and both use. What must arrive, such as messages and reports,
 //! waits in an outbox while the other host is out of reach and goes when it is
 //! back.
 
+pub(crate) mod account;
 mod calls;
 mod code;
 mod join;
@@ -20,6 +21,7 @@ pub(crate) mod team;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -79,6 +81,9 @@ pub(crate) struct Hosts {
     pub(crate) team: team::Team,
     /// Tries hosts out of reach again and tells leads when one stays away.
     pub(crate) wake: Wake,
+    /// Links with the account's other hosts, when it may have one not linked.
+    pub(crate) relink: Wake,
+    linking: AtomicBool,
 }
 
 impl Hosts {
@@ -88,6 +93,8 @@ impl Hosts {
             outbox: outbox::Outbox::new(data_dir),
             team: team::Team::new(data_dir),
             wake: Wake::default(),
+            relink: Wake::default(),
+            linking: AtomicBool::new(false),
         }
     }
 

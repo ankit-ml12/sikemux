@@ -268,8 +268,6 @@ pub fn run() {
             account::account_sign_in,
             account::account_cancel_sign_in,
             account::account_phones,
-            account::account_hosts,
-            account::account_link_host,
             account::account_sign_out,
             share::share_access,
             share::share_viewer_hello,

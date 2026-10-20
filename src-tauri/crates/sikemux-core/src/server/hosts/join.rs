@@ -1,8 +1,8 @@
-//! Linking two hosts. The person on one asks the account for a join ticket
-//! naming the other host and this one, as a phone does, and this host hands it
-//! over in a `join` ask. The other host checks the ticket itself and asks its
-//! owner, who allows the link once. From then on both keep the other as
-//! linked.
+//! Linking two hosts. One asks the account for a join ticket naming the other
+//! host and itself, as a phone does, and hands it over in a `join` ask. The
+//! other host checks the ticket itself and links, or asks its person first
+//! while they asked to approve each new host. From then on both keep the other
+//! as linked.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,18 +29,25 @@ const LINGER: Duration = Duration::from_secs(2);
 /// Links asked for at once. Anything past this is turned away.
 static IN_PROGRESS: Semaphore = Semaphore::const_new(4);
 
-/// What the window passes to link this host with another: the ticket the
-/// account gave it, and what the account calls the other host.
+/// What linking with another host takes: the ticket the account gave this
+/// host for it, and what the account calls it.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LinkParams {
-    ticket: JoinTicket,
-    name: String,
+    pub ticket: JoinTicket,
+    pub name: String,
     #[serde(default)]
-    platform: String,
+    pub platform: String,
     /// Where the other host may be reached directly, beside the relays.
     #[serde(default)]
-    addresses: Vec<String>,
+    pub addresses: Vec<String>,
+}
+
+/// Links this host with the one `params` names, and answers with this host's
+/// devices and links.
+pub(crate) async fn link_host(core: &Arc<Core>, params: LinkParams) -> CoreResult<Pairing> {
+    link_with(core, params).await?;
+    Ok(remote::pairing(core))
 }
 
 #[derive(Deserialize)]
@@ -55,9 +62,8 @@ struct Hello {
     addresses: Value,
 }
 
-/// Links this host with the one `params` names, once the person there
-/// allows it, and answers with this host's devices and links.
-pub(crate) async fn link_host(core: &Arc<Core>, params: LinkParams) -> CoreResult<Pairing> {
+/// Links this host with the one `params` names.
+pub(super) async fn link_with(core: &Arc<Core>, params: LinkParams) -> CoreResult<()> {
     let own = core
         .remote
         .core_id()
@@ -113,7 +119,8 @@ pub(crate) async fn link_host(core: &Arc<Core>, params: LinkParams) -> CoreResul
         addresses: known,
     })?;
     adopt(core, &ticket.host, connection);
-    Ok(remote::pairing(core))
+    remote::announce(core);
+    Ok(())
 }
 
 async fn finish(incoming: link::Incoming, connection: &Connection, answer: Value) {

@@ -21,7 +21,8 @@ use tokio::task::JoinHandle;
 use crate::accounts::live::{self, Link, Push, Want};
 use crate::accounts::network;
 use crate::accounts::protocol::{
-    AccountEvent, AccountEventType, JoinTicket, LiveApp, Network, PushResult, Relay, RevokeReason,
+    AccountEvent, AccountEventType, DeviceRole, JoinTicket, LiveApp, Network, PushResult, Relay,
+    RevokeReason,
 };
 use crate::join::{self, Expected, Refusal, TrustedKeys, JOIN_ALPN};
 use crate::protocol::{
@@ -1587,6 +1588,9 @@ impl live::Account for HostAccount {
         if changed {
             announce(&core);
         }
+        if link == Link::Live {
+            core.hosts.relink.now();
+        }
     }
 
     fn removed(&self, reason: Option<RevokeReason>) {
@@ -1669,6 +1673,9 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
             },
             AccountEventType::AccountDeleted => {
                 released = Some(Some(RevokeReason::AccountDeleted));
+            }
+            AccountEventType::DeviceAdded if event.role == Some(DeviceRole::Host) => {
+                core.hosts.relink.now();
             }
             _ => {}
         }

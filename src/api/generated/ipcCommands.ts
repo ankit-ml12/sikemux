@@ -20,8 +20,6 @@ export const IPC_COMMANDS = [
     "account_sign_in",
     "account_cancel_sign_in",
     "account_phones",
-    "account_hosts",
-    "account_link_host",
     "account_sign_out",
     "share_access",
     "share_viewer_hello",

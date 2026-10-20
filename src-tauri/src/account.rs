@@ -423,64 +423,6 @@ pub async fn account_phones(manager: State<'_, PtyManager>) -> AppResult<Vec<Dev
     Ok(unpaired_phones(list.devices, &remote.devices))
 }
 
-/// The other hosts on the account that this one has not linked with, newest
-/// first.
-#[tauri::command]
-pub async fn account_hosts(manager: State<'_, PtyManager>) -> AppResult<Vec<Device>> {
-    let core = manager.client().await?;
-    let Some(remote) = owned(&core).await? else {
-        return Ok(Vec::new());
-    };
-    let list: DeviceList = as_host(&core, Method::GET, "/v1/devices?role=host", None).await?;
-    let own = remote.core_id;
-    let pairing = core
-        .call("pairing", serde_json::Value::Null)
-        .await
-        .map_err(core_error)?;
-    let linked: Vec<&str> = pairing["links"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|link| link["id"].as_str())
-        .collect();
-    Ok(list
-        .devices
-        .into_iter()
-        .filter(|device| device.role == DeviceRole::Host && device.key != own)
-        .filter(|device| !linked.contains(&device.key.as_str()))
-        .collect())
-}
-
-/// Links this host with `key`, another host on the account, with a ticket
-/// from the account, once the person there allows it. Answers with this
-/// host's devices and links.
-#[tauri::command]
-pub async fn account_link_host(
-    manager: State<'_, PtyManager>,
-    key: String,
-    name: String,
-    platform: String,
-) -> AppResult<serde_json::Value> {
-    let core = manager.client().await?;
-    let own = owned(&core)
-        .await?
-        .ok_or_else(|| AppError::Other("sign in to link this host with another".into()))?
-        .core_id;
-    let ticket: JoinTicket = as_host(
-        &core,
-        Method::POST,
-        &format!("/v1/devices/{own}/join"),
-        Some(&serde_json::json!({ "host": key })),
-    )
-    .await?;
-    core.call(
-        "linkHost",
-        serde_json::json!({ "ticket": ticket, "name": name, "platform": platform }),
-    )
-    .await
-    .map_err(core_error)
-}
-
 /// Adds this app to the account as a device of its own, added by this host,
 /// and asks the account for a ticket that lets it join `host`.
 pub(crate) async fn app_join_ticket(

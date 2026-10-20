@@ -213,7 +213,6 @@ calls! { core, client, params;
     },
     "shares": Full, any_program => answer(share::list(&core)),
     "pairing": Person, any_program => answer(remote::pairing(&core)),
-    "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
     "signHostRequest": Local => {
         let request: crate::accounts::HostRequest = parse(params)?;
         answer(signed(core.remote.sign_host_request(&request)?))
@@ -224,6 +223,7 @@ calls! { core, client, params;
     },
     "answerPairing": Person => answer(remote::answer_pairing(&core, parse(params)?)?),
     "changeDevice": Person => answer(remote::change_device(&core, parse(params)?)?),
+    "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
     "setRequireApproval": Person => answer(remote::set_require_approval(&core, parse(params)?)?),
     "questions": Watch, any_program => answer(questions::views(&core)),
     "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),

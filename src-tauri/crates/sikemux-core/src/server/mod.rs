@@ -1130,6 +1130,11 @@ pub(crate) async fn run_core(
         )),
         tokio::spawn(wake::serve(
             core.clone(),
+            |core| &core.hosts.relink,
+            hosts::account::relink,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
             |core| &core.ports.wake,
             ports::settle,
         )),
