@@ -1664,7 +1664,7 @@ mod tests {
 
     #[test]
     fn a_usage_limit_says_when_it_resets() {
-        let now = crate::server::remote::unix_ms() / 1000;
+        let now = sikemux_process::clock::epoch_secs();
         let resets = |text: &str, params: Value| {
             let message = json!({
                 "type": "assistant", "error": "rate_limit", "api_error_params": params,

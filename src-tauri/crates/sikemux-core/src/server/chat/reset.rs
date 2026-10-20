@@ -15,10 +15,10 @@ use sikemux_process::sync::Locked;
 use crate::agent_accounts::usage;
 use crate::protocol::{ChatEventKind, ChatLaunch};
 
-use super::super::remote::unix_ms;
 use super::super::{launching, Core};
 use super::rebind::Replay;
 use super::{Chat, ChatCommand};
+use sikemux_process::clock::epoch_ms;
 
 const FILE: &str = "limit-resumes.json";
 const MAX_WAITING: usize = 256;
@@ -122,7 +122,7 @@ impl Resets {
         let mut slots = self.slots.locked();
         let due = matches!(
             slots.get(agent_id),
-            Some(Slot::Waiting { waiting, .. }) if waiting.at <= unix_ms()
+            Some(Slot::Waiting { waiting, .. }) if waiting.at <= epoch_ms()
         );
         if !due {
             return None;
@@ -172,7 +172,7 @@ pub(super) fn schedule(
         if !matches!(current, Some(Slot::Looking { ticket: own }) if *own == ticket) {
             return;
         }
-        let Some(at) = at.filter(|at| *at > unix_ms()) else {
+        let Some(at) = at.filter(|at| *at > epoch_ms()) else {
             slots.remove(chat.agent_id());
             return;
         };
@@ -220,7 +220,7 @@ pub(crate) fn cancel_by_person(core: &Core, agent_id: &str) {
 }
 
 fn arm(core: &Arc<Core>, waiting: &Waiting) -> tokio::task::AbortHandle {
-    let wait = Duration::from_millis(waiting.at.saturating_sub(unix_ms()));
+    let wait = Duration::from_millis(waiting.at.saturating_sub(epoch_ms()));
     let (core, agent_id) = (Arc::downgrade(core), waiting.agent_id.clone());
     tokio::spawn(async move {
         tokio::time::sleep(wait).await;
@@ -309,7 +309,7 @@ pub(super) fn month_day(text: &str) -> Option<(i32, i32)> {
 /// `at`, in Unix milliseconds, as this host's clock reads it: "at 15:40"
 /// today, else "on 18 Oct at 15:40".
 fn when(at: u64) -> String {
-    let (Some(then), Some(now)) = (calendar(at, Zone::Host), calendar(unix_ms(), Zone::Host))
+    let (Some(then), Some(now)) = (calendar(at, Zone::Host), calendar(epoch_ms(), Zone::Host))
     else {
         return String::new();
     };
@@ -344,7 +344,7 @@ impl WallClock {
     /// In Unix milliseconds: on its day, else the next time the clock reads
     /// it. `None` for a day already past.
     pub(super) fn unix_ms(&self) -> Option<u64> {
-        let now = unix_ms();
+        let now = epoch_ms();
         match self.on_day(now, 0)? {
             at if at > now => Some(at),
             _ if self.date.is_some() => None,

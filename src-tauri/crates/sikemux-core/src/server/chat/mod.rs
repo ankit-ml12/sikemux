@@ -34,12 +34,12 @@ use crate::protocol::{
 
 use super::activity::Activity;
 use super::connection::{ClientConn, ClientId};
-use super::remote::unix_ms;
 use super::spawn::Ending;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
 use kept::{Keeper, KeptAgent, KeptChat};
 use native::Begin;
+use sikemux_process::clock::epoch_ms;
 
 const MAX_AGENT_ID: usize = 200;
 const START_TIMEOUT: Duration = Duration::from_secs(150);
@@ -720,7 +720,7 @@ impl Chat {
             option_ids,
             answer,
             request,
-            at: unix_ms(),
+            at: epoch_ms(),
             reply,
         };
         let attention = self.attention(&request_id, &pending);

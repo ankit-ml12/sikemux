@@ -8,7 +8,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use iroh::endpoint::{presets, Incoming};
 use iroh::{Endpoint, RelayMode, SecretKey};
@@ -298,13 +298,6 @@ pub(crate) fn file_path(socket: &Path) -> PathBuf {
     let mut path = socket.as_os_str().to_owned();
     path.push(".remote.json");
     PathBuf::from(path)
-}
-
-pub(crate) fn unix_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 fn read_stored(path: &Path) -> CoreResult<Stored> {

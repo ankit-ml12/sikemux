@@ -428,7 +428,7 @@ fn stamp(payload: &mut Value) {
     if let Some(fields) = payload.as_object_mut() {
         fields
             .entry("at")
-            .or_insert_with(|| json!(crate::server::remote::unix_ms()));
+            .or_insert_with(|| json!(sikemux_process::clock::epoch_ms()));
     }
 }
 
