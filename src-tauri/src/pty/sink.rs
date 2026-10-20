@@ -66,7 +66,7 @@ impl AppSink {
 
     fn emit<S: serde::Serialize + Clone>(&self, event: &str, payload: S) {
         if self.app.emit_to(MAIN_WEBVIEW, event, payload).is_err() {
-            let _ = global_observability().increment_counter("pty.emit_errors", 1);
+            global_observability().increment_counter("pty.emit_errors", 1);
         }
     }
 }
@@ -78,8 +78,7 @@ pub(super) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
     }
     let dead = delivery.send(bytes);
     if !dead.is_empty() {
-        let _ =
-            global_observability().increment_counter("pty.channel_send_errors", dead.len() as u64);
+        global_observability().increment_counter("pty.channel_send_errors", dead.len() as u64);
         streams.drop_dead(id, &dead);
     }
 }
@@ -247,7 +246,7 @@ mod tests {
         let streams = StreamTable::default();
         let (pane, chunks) = recording();
         {
-            let mut guard = streams.lock().expect("lock");
+            let mut guard = streams.lock();
             guard.begin_attach(4).expect("begin");
             guard.finish_attach(4, pane).expect("attach");
         }
@@ -260,7 +259,7 @@ mod tests {
         let streams = StreamTable::default();
         let (pane, chunks) = recording();
         {
-            let mut guard = streams.lock().expect("lock");
+            let mut guard = streams.lock();
             guard.begin_attach(11).expect("begin");
             guard.finish_attach(11, pane).expect("attach");
         }
