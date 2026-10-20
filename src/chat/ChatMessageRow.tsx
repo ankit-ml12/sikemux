@@ -26,6 +26,7 @@ import { useImagePreview } from "./imagePreview";
 import { ChatFileRef, useFileRef } from "./FileRef";
 import { ChatAgentContext, ChatSubagentsContext } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
+import { imageTag } from "./composerInput";
 import { FoldedMarkdown, warmChatMarkdown } from "./ChatMarkdown";
 import { ChatPage } from "./ChatPage";
 import { ToolGroup } from "./ToolGroup";
@@ -135,9 +136,16 @@ const MessagePart = memo(function MessagePart({ part, live, typed }: { part: Cha
     return <ContentPart part={part} />;
 });
 
-function SentAttachment({ path }: { path: string }) {
+function SentAttachment({ path, number }: { path: string; number: number | null }) {
     const preview = useImagePreview(path);
     const file = useFileRef(path);
+    if (preview && number !== null)
+        return (
+            <div className="chat-attachment-tagged">
+                <ChatImage src={preview} path={path} className="chat-attachment-thumb" />
+                <span className="chat-attachment-number">#{number}</span>
+            </div>
+        );
     if (preview) return <ChatImage src={preview} path={path} className="chat-attachment-thumb" />;
     if (file) return <ChatFileRef refers={file.ref} state={file.state} label={basename(path)} size={34} className="chat-attachment-file" tile />;
     return (
@@ -329,9 +337,9 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     const shown = useMemo(() => shownParts(parts, from), [parts, from]);
     const [editing, setEditing] = useState(false);
     const attachments = message.attachments ?? [];
+    const written = parts.flatMap((part) => (part.kind === "text" ? [part.text] : [])).join("\n\n");
     if (letters) return <AgentLetters id={message.id} letters={letters} at={at} />;
     if (editing && onEdit) {
-        const written = parts.flatMap((part) => (part.kind === "text" ? [part.text] : [])).join("\n\n");
         return (
             <article className={`chat-message ${message.role}`}>
                 <div className="chat-message-content">
@@ -352,8 +360,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             <div className="chat-message-content">
                 {(attachments.length > 0 || context.length > 0) && (
                     <div className="chat-message-attachments">
-                        {attachments.map((path) => (
-                            <SentAttachment key={path} path={path} />
+                        {attachments.map((path, index) => (
+                            <SentAttachment key={path} path={path} number={written.includes(imageTag(index + 1)) ? index + 1 : null} />
                         ))}
                         {context.map((item) => (
                             <span key={item.uri} className="chat-context-chip" title={item.uri}>

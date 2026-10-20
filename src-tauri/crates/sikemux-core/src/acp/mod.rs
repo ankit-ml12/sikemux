@@ -139,8 +139,43 @@ fn context_resource(item: ChatContext) -> ContentBlock {
     ))
 }
 
+/// The message cut after each `[Image #N]` it writes, so attachment N can
+/// follow the words it was put between, and the text after the last of them.
+fn split_at_images(text: &str, attachments: usize) -> (Vec<(&str, usize)>, &str) {
+    const OPEN: &str = "[Image #";
+    let mut pieces = Vec::new();
+    let mut placed = vec![false; attachments];
+    let mut from = 0;
+    let mut search = 0;
+    while let Some(found) = text[search..].find(OPEN) {
+        let digits = search + found + OPEN.len();
+        let close = digits
+            + text[digits..]
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+        search = digits;
+        if !text[close..].starts_with(']') {
+            continue;
+        }
+        let Some(index) = text[digits..close]
+            .parse::<usize>()
+            .ok()
+            .and_then(|number| number.checked_sub(1))
+            .filter(|&index| index < attachments && !placed[index])
+        else {
+            continue;
+        };
+        placed[index] = true;
+        pieces.push((&text[from..=close], index));
+        from = close + 1;
+        search = from;
+    }
+    (pieces, &text[from..])
+}
+
 pub fn prompt_blocks(
-    mut text: String,
+    text: String,
     paths: Vec<String>,
     context: Vec<ChatContext>,
     embedded_context: bool,
@@ -163,26 +198,33 @@ pub fn prompt_blocks(
     if text.len() + context_bytes > MAX_PROMPT_BYTES {
         return Err("prompt is too large".into());
     }
+    let mut links = paths
+        .iter()
+        .map(|path| resource_link(path).map(Some))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (pieces, rest) = split_at_images(&text, links.len());
+    let mut rest = rest.to_owned();
     let mut resources = Vec::new();
     if embedded_context {
         resources.extend(context.into_iter().map(context_resource));
     } else {
         for item in &context {
-            if !text.trim().is_empty() {
-                text.push_str("\n\n");
+            if !rest.trim().is_empty() || !pieces.is_empty() {
+                rest.push_str("\n\n");
             }
-            text.push_str(&context_section(item));
+            rest.push_str(&context_section(item));
         }
     }
-    let mut blocks =
-        Vec::with_capacity(paths.len() + resources.len() + usize::from(!text.trim().is_empty()));
-    if !text.trim().is_empty() {
-        blocks.push(text.into());
+    let mut blocks = Vec::with_capacity(paths.len() + resources.len() + pieces.len() + 1);
+    for (said, index) in pieces {
+        blocks.push(said.to_owned().into());
+        blocks.extend(links[index].take());
+    }
+    if !rest.trim().is_empty() {
+        blocks.push(rest.into());
     }
     blocks.extend(resources);
-    for path in paths {
-        blocks.push(resource_link(&path)?);
-    }
+    blocks.extend(links.into_iter().flatten());
     if blocks.is_empty() {
         return Err("prompt is empty".into());
     }
