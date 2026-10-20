@@ -293,6 +293,10 @@ jobs:
       - name: Prepare Tauri resource placeholder
         run: mkdir -p src-tauri/icons/build && touch src-tauri/icons/build/Assets.car
 
+      - name: Build the simulator tests
+        working-directory: src-tauri
+        run: cargo test --lib --no-run
+
       - name: Wait for the simulator to finish booting
         timeout-minutes: 10
         run: xcrun simctl bootstatus "$SIKEMUX_SIM_DEVICE" -b
