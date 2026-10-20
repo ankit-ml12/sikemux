@@ -6,6 +6,7 @@ import type { ConnectionLike } from '@sikemux/native';
 import {
   cardColumn,
   cardQuestion,
+  COLUMN_LABELS,
   RUN_WAITS_ON_PERSON,
   shortTitle,
   ticketAbove,
@@ -26,12 +27,7 @@ import { EmptyState } from '@/ui/prompt';
 import { Dot, NeedsYou, Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles } from '@/ui/theme';
 
-const COLUMNS: readonly [BoardColumn, string][] = [
-  ['needs', 'Needs you'],
-  ['progress', 'In progress'],
-  ['open', 'Open'],
-  ['done', 'Done'],
-];
+const COLUMNS: readonly BoardColumn[] = ['needs', 'progress', 'open', 'done'];
 
 const NO_QUESTIONS: AgentQuestion[] = [];
 
@@ -98,12 +94,12 @@ function OneBoard({
   return (
     <>
       {cards.length ? null : <EmptyState icon="IconBoard" text={`No cards on ${scope.name}'s board.`} />}
-      {COLUMNS.map(([column, label]) => {
+      {COLUMNS.map((column) => {
         const shown = cards.filter((card) => cardColumn(card, questions) === column);
         if (!shown.length) return null;
         return (
           <View key={column}>
-            <SectionLabel count={shown.length}>{label}</SectionLabel>
+            <SectionLabel count={shown.length}>{COLUMN_LABELS[column]}</SectionLabel>
             <Rows>
               {shown.map((card) => (
                 <CardRow key={card.id} core={core} card={card} cards={cards} byId={byId} snapshot={snapshot} questions={questions} />
@@ -277,9 +273,9 @@ function AllBoards({
       <Rows>
         {boards.map((board) => {
           const project = projectAt(snapshot, board.project);
-          const counts = COLUMNS.map(([column, label]) => {
+          const counts = COLUMNS.map((column) => {
             const count = board.cards.filter((card) => cardColumn(card, questions) === column).length;
-            return count ? `${count} ${label.toLowerCase()}` : null;
+            return count ? `${count} ${COLUMN_LABELS[column].toLowerCase()}` : null;
           }).filter(Boolean);
           const needs = board.cards.some((card) => cardColumn(card, questions) === 'needs');
           return (

@@ -109,6 +109,13 @@ export interface ProjectBoard extends BoardAuto {
 /** Where a board shows a card: "needs" holds the cards waiting on the person. */
 export type BoardColumn = CardStatus | "needs";
 
+export const COLUMN_LABELS: Record<BoardColumn, string> = {
+    open: "Open",
+    progress: "In progress",
+    needs: "Needs you",
+    done: "Done",
+};
+
 /** The question the card's owner waits on the person to answer, while it works the card. */
 export const cardQuestion = (card: BoardCard, questions: readonly AgentQuestion[]): AgentQuestion | undefined =>
     card.owner && card.status === "progress" ? blockingQuestion(questions, card.owner) : undefined;

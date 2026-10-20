@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+    COLUMN_LABELS,
     RUN_WAITS_ON_PERSON,
     type BoardCard,
     type CardChanges,
@@ -18,11 +19,10 @@ import { Dropdown, type DropdownOption } from "../ui/Dropdown";
 import { IconClose, IconExternal } from "../ui/Icons";
 import { Owner } from "./cardParts";
 
-const STATUS_OPTIONS: DropdownOption[] = [
-    { value: "open", label: "Open" },
-    { value: "progress", label: "In progress" },
-    { value: "done", label: "Done" },
-];
+const STATUS_OPTIONS: DropdownOption[] = (["open", "progress", "done"] as const).map((value) => ({
+    value,
+    label: COLUMN_LABELS[value],
+}));
 
 const TOP = "0";
 

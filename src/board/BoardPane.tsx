@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { cardColumn, cardQuestion, RUN_WAITS_ON_PERSON, shortTitle, type BoardCard, type BoardColumn, type CardStatus } from "../agents/agentBoard";
+import {
+    cardColumn,
+    cardQuestion,
+    COLUMN_LABELS,
+    RUN_WAITS_ON_PERSON,
+    shortTitle,
+    type BoardCard,
+    type BoardColumn,
+    type CardStatus,
+} from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
@@ -14,12 +23,7 @@ import { MessagesPanel } from "./MessagesPanel";
 import { Owner } from "./cardParts";
 import "../styles/board.css";
 
-const COLUMNS: readonly [BoardColumn, string][] = [
-    ["open", "Open"],
-    ["progress", "In progress"],
-    ["needs", "Needs you"],
-    ["done", "Done"],
-];
+const COLUMNS: readonly BoardColumn[] = ["open", "progress", "needs", "done"];
 
 const EMPTY: BoardCard[] = [];
 
@@ -150,7 +154,8 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
 
     const columns = (list: BoardCard[]) => (
         <div className="kanban-columns">
-            {COLUMNS.map(([key, name]) => {
+            {COLUMNS.map((key) => {
+                const name = COLUMN_LABELS[key];
                 const inColumn = list.filter((each) => columnOf(each) === key);
                 return (
                     <div
