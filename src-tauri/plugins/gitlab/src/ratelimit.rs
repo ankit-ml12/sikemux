@@ -80,7 +80,7 @@ pub fn check(account: &str) -> GitlabResult<()> {
     };
     match state.budget.resets_at {
         Some(at) if state.budget.limited && at > now => Err(GitlabError::RateLimited {
-            resets_in_secs: at - now,
+            resets_in_secs: Some(at - now),
         }),
         _ => {
             state.budget.limited = false;
@@ -171,7 +171,9 @@ mod tests {
         assert_eq!(budget(account).remaining, Some(150));
         observe(account, StatusCode::TOO_MANY_REQUESTS, &HeaderMap::new());
         match check(account) {
-            Err(GitlabError::RateLimited { resets_in_secs }) => {
+            Err(GitlabError::RateLimited {
+                resets_in_secs: Some(resets_in_secs),
+            }) => {
                 assert!((59..=60).contains(&resets_in_secs))
             }
             Ok(()) => panic!("expected to be held back"),

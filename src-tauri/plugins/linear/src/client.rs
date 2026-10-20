@@ -148,7 +148,9 @@ pub fn checked(status: u16, body: Value) -> LinearResult<Value> {
             .to_string();
         return Err(match code {
             "AUTHENTICATION_ERROR" => LinearError::Auth(message),
-            "RATELIMITED" => LinearError::RateLimited,
+            "RATELIMITED" => LinearError::RateLimited {
+                resets_in_secs: None,
+            },
             _ if message.to_ascii_lowercase().contains("entity not found") => {
                 LinearError::NotFound("linear: no such issue, or this key cannot see it".into())
             }
@@ -201,7 +203,9 @@ mod tests {
         let limited = json!({ "errors": [{ "message": "Rate limit exceeded", "extensions": { "code": "RATELIMITED" } }] });
         assert!(matches!(
             checked(400, limited),
-            Err(LinearError::RateLimited)
+            Err(LinearError::RateLimited {
+                resets_in_secs: None
+            })
         ));
         let missing = json!({ "errors": [{ "message": "Entity not found: Issue", "extensions": { "code": "INVALID_INPUT" } }] });
         assert!(matches!(
@@ -222,7 +226,7 @@ mod tests {
     async fn a_request_without_a_key_is_refused_as_a_sign_in() {
         let _ = rustls::crypto::ring::default_provider().install_default();
         match query_with("not-a-key", "query { viewer { id } }", json!({})).await {
-            Err(LinearError::Auth(_)) | Err(LinearError::Unreachable(_)) => {}
+            Err(LinearError::Auth(_)) | Err(LinearError::Unreachable { kind: _, .. }) => {}
             other => panic!("{other:?}"),
         }
     }

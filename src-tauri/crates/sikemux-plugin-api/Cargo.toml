@@ -9,6 +9,7 @@ reqwest = { version = "0.13", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 semver = { version = "1", features = ["serde"] }
+sikemux-keychain = { path = "../sikemux-keychain" }
 tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]

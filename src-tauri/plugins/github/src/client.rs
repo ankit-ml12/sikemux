@@ -198,7 +198,9 @@ pub fn classify(status: StatusCode, headers: &HeaderMap, bytes: &[u8]) -> Github
     match status.as_u16() {
         401 => GithubError::Auth(message),
         403 | 429 => match ratelimit::wait_for(status, headers, bytes) {
-            Some(resets_in_secs) => GithubError::RateLimited { resets_in_secs },
+            Some(resets_in_secs) => GithubError::RateLimited {
+                resets_in_secs: Some(resets_in_secs),
+            },
             None => GithubError::Forbidden(message),
         },
         404 => GithubError::NotFound(message),

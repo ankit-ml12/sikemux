@@ -260,7 +260,7 @@ pub fn classify(status: StatusCode, bytes: &[u8]) -> GitlabError {
         403 => GitlabError::Forbidden(message),
         404 => GitlabError::NotFound(message),
         429 => GitlabError::RateLimited {
-            resets_in_secs: ratelimit::latest_wait(),
+            resets_in_secs: Some(ratelimit::latest_wait()),
         },
         status => GitlabError::Http { status, message },
     }

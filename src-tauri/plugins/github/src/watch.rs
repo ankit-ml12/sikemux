@@ -33,7 +33,7 @@ fn failure(error: GithubError) -> Failure {
         ),
         signed_out: matches!(error, GithubError::Auth(_) | GithubError::Unconfigured),
         rate_reset_secs: match error {
-            GithubError::RateLimited { resets_in_secs } => Some(resets_in_secs),
+            GithubError::RateLimited { resets_in_secs } => resets_in_secs,
             _ => None,
         },
         message: error.to_string(),

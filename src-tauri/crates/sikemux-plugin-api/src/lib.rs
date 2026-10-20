@@ -5,6 +5,7 @@
 mod error;
 mod manifest;
 pub mod network;
+pub mod service;
 pub mod watch;
 
 use std::collections::BTreeMap;
@@ -18,6 +19,7 @@ use serde_json::Value;
 pub use error::{PluginError, PluginResult};
 pub use manifest::{is_valid_id, AgentTool, Manifest};
 pub use network::{unreachable, Unreachable};
+pub use service::{Service, ServiceError, ServiceResult};
 
 pub type PluginFuture<'a, T> = Pin<Box<dyn Future<Output = PluginResult<T>> + Send + 'a>>;
 
@@ -105,4 +107,11 @@ pub fn params<T: DeserializeOwned>(params: Value) -> PluginResult<T> {
 
 pub fn reply<T: serde::Serialize>(value: T) -> PluginResult<Value> {
     serde_json::to_value(value).map_err(|error| PluginError::new("internal", error.to_string()))
+}
+
+/// Waits for a call's work and hands back what it found as JSON.
+pub async fn answer<T: serde::Serialize, E: Into<PluginError>>(
+    work: impl Future<Output = Result<T, E>>,
+) -> PluginResult<Value> {
+    reply(work.await.map_err(Into::into)?)
 }

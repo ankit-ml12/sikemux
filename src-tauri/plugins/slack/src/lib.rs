@@ -16,13 +16,10 @@ mod text;
 
 use std::sync::Arc;
 
-use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
+    answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
-
-use crate::error::SlackResult;
 
 pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
     Ok(Arc::new(Slack {
@@ -32,12 +29,6 @@ pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
 
 struct Slack {
     manifest: Manifest,
-}
-
-async fn answer<T: Serialize>(
-    result: impl std::future::Future<Output = SlackResult<T>>,
-) -> Result<Value, PluginError> {
-    reply(result.await?)
 }
 
 impl Plugin for Slack {

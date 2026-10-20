@@ -38,7 +38,9 @@ const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
 /// Percent-encodes one value for use as a single URL path segment.
 pub fn seg(value: &str) -> RundeckResult<String> {
     if matches!(value, "" | "." | "..") {
-        return Err(RundeckError::BadArg("empty or dot-only path segment"));
+        return Err(RundeckError::BadArg(
+            "empty or dot-only path segment".into(),
+        ));
     }
     Ok(utf8_percent_encode(value, PATH_SEGMENT).to_string())
 }
@@ -200,7 +202,7 @@ pub async fn post_json<B: Serialize, T: DeserializeOwned>(
     endpoint: &str,
     body: &B,
 ) -> RundeckResult<T> {
-    let val = serde_json::to_value(body).map_err(RundeckError::Json)?;
+    let val = serde_json::to_value(body).map_err(RundeckError::from)?;
     request_as(session, Method::POST, endpoint, Some(&val), &[]).await
 }
 
@@ -229,7 +231,7 @@ async fn decode<T: DeserializeOwned>(resp: Response) -> RundeckResult<T> {
         bytes.extend_from_slice(&chunk);
     }
     let value = classify(status, &bytes)?;
-    serde_json::from_value::<T>(value).map_err(RundeckError::Json)
+    serde_json::from_value::<T>(value).map_err(RundeckError::from)
 }
 
 fn classify(status: StatusCode, bytes: &[u8]) -> RundeckResult<Value> {

@@ -330,7 +330,7 @@ pub async fn login_with_token(
     let url = req.url.trim().trim_end_matches('/').to_string();
     let token = req.token.trim().to_string();
     if token.is_empty() {
-        return Err(RundeckError::BadArg("token is empty"));
+        return Err(RundeckError::BadArg("token is empty".into()));
     }
     let session = Session {
         url: url.clone(),

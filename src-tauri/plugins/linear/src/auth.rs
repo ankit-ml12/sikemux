@@ -87,7 +87,11 @@ pub async fn status(data_dir: &Path) -> Status {
     match session.query(VIEWER, json!({})).await {
         Ok(_) => base(true, false, None),
         Err(error @ LinearError::Auth(_)) => base(false, true, Some(error.to_string())),
-        Err(error @ LinearError::RateLimited) => base(true, false, Some(error.to_string())),
+        Err(
+            error @ LinearError::RateLimited {
+                resets_in_secs: None,
+            },
+        ) => base(true, false, Some(error.to_string())),
         Err(error) => base(false, false, Some(error.to_string())),
     }
 }

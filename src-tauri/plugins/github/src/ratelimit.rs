@@ -74,7 +74,7 @@ pub fn check(account: &str) -> GithubResult<()> {
     };
     match state.resets_at {
         Some(at) if state.limited && at > now => Err(GithubError::RateLimited {
-            resets_in_secs: at - now,
+            resets_in_secs: Some(at - now),
         }),
         _ => {
             state.limited = false;
@@ -176,7 +176,9 @@ mod tests {
             b"",
         );
         match check(account) {
-            Err(GithubError::RateLimited { resets_in_secs }) => {
+            Err(GithubError::RateLimited {
+                resets_in_secs: Some(resets_in_secs),
+            }) => {
                 assert!((89..=90).contains(&resets_in_secs))
             }
             other => panic!("expected to be held back, got {other:?}"),

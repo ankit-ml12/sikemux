@@ -118,16 +118,15 @@ pub fn checked(body: Value) -> SlackResult<Value> {
         "not_authed" | "invalid_auth" | "token_revoked" | "token_expired" | "account_inactive" => {
             SlackError::Auth(code.replace('_', " "))
         }
-        "missing_scope" => SlackError::MissingScope(
+        "missing_scope" => crate::error::missing_scope(
             body.get("needed")
                 .and_then(Value::as_str)
-                .unwrap_or("needed")
-                .to_string(),
+                .unwrap_or("needed"),
         ),
         "ratelimited" => SlackError::RateLimited {
-            retry_after_secs: 30,
+            resets_in_secs: Some(30),
         },
-        _ => SlackError::Api(code),
+        _ => SlackError::Api(crate::error::in_words(&code)),
     })
 }
 
@@ -159,7 +158,7 @@ async fn send(token: &str, method: &str, body: Body<'_>) -> SlackResult<Value> {
                 continue;
             }
             return Err(SlackError::RateLimited {
-                retry_after_secs: wait,
+                resets_in_secs: Some(wait),
             });
         }
         let bytes = read_body(response).await?;
@@ -244,17 +243,11 @@ mod tests {
             checked(json!({ "ok": false, "error": "invalid_auth" })),
             Err(SlackError::Auth(_))
         ));
-        match checked(json!({ "ok": false, "error": "missing_scope", "needed": "search:read" })) {
-            Err(SlackError::MissingScope(scope)) => assert_eq!(scope, "search:read"),
-            other => panic!(
-                "expected a missing scope, got {}",
-                other
-                    .map(|_| "ok".to_string())
-                    .unwrap_or_else(|e| e.to_string())
-            ),
-        }
         assert!(
-            matches!(checked(json!({ "ok": false, "error": "channel_not_found" })), Err(SlackError::Api(code)) if code == "channel_not_found")
+            matches!(checked(json!({ "ok": false, "error": "missing_scope", "needed": "search:read" })), Err(SlackError::Forbidden(message)) if message.contains("search:read"))
+        );
+        assert!(
+            matches!(checked(json!({ "ok": false, "error": "channel_not_found" })), Err(SlackError::Api(message)) if message == "that channel does not exist, or this account cannot see it")
         );
         assert!(matches!(
             checked(json!({ "something": 1 })),

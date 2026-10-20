@@ -28,7 +28,7 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
+    answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
 use crate::config::AuthMode;
@@ -118,12 +118,6 @@ fn has_credentials(config: &config::SignozConfig) -> bool {
 async fn signed_in(data_dir: &Path, outcome: SignozResult<()>) -> Result<Value, PluginError> {
     outcome?;
     reply(status(data_dir).await)
-}
-
-async fn answer<T: Serialize>(
-    result: impl std::future::Future<Output = SignozResult<T>>,
-) -> Result<Value, PluginError> {
-    reply(result.await?)
 }
 
 impl Plugin for Signoz {

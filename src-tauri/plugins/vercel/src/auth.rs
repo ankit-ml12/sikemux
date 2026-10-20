@@ -128,7 +128,9 @@ fn failed(
     match error {
         VercelError::Unconfigured => base(false, false, None, Vec::new(), None),
         VercelError::Auth(_) => base(false, true, Some(error.to_string()), Vec::new(), None),
-        VercelError::RateLimited => base(true, false, Some(error.to_string()), Vec::new(), None),
+        VercelError::RateLimited {
+            resets_in_secs: None,
+        } => base(true, false, Some(error.to_string()), Vec::new(), None),
         error => base(false, false, Some(error.to_string()), Vec::new(), None),
     }
 }

@@ -5916,6 +5916,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sikemux-keychain",
  "tokio",
  "workspace-hack",
 ]

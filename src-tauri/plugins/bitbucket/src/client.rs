@@ -323,7 +323,7 @@ pub fn classify(status: StatusCode, bytes: &[u8]) -> BitbucketError {
         403 => BitbucketError::Forbidden(message),
         404 => BitbucketError::NotFound(message),
         429 => BitbucketError::RateLimited {
-            resets_in_secs: ratelimit::latest_wait(),
+            resets_in_secs: Some(ratelimit::latest_wait()),
         },
         status => BitbucketError::Http { status, message },
     }

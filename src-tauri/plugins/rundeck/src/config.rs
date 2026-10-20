@@ -186,21 +186,26 @@ pub fn validate_base_url_with_policy(
     raw: &str,
     allow_insecure_private_http: bool,
 ) -> RundeckResult<()> {
-    let url = url::Url::parse(raw).map_err(|_| RundeckError::BadArg("invalid Rundeck URL"))?;
+    let url =
+        url::Url::parse(raw).map_err(|_| RundeckError::BadArg("invalid Rundeck URL".into()))?;
     if url.username() != "" || url.password().is_some() {
         return Err(RundeckError::BadArg(
-            "credentials in the Rundeck URL are not allowed",
+            "credentials in the Rundeck URL are not allowed".into(),
         ));
     }
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(RundeckError::BadArg("Rundeck URL must use HTTP or HTTPS"));
+        return Err(RundeckError::BadArg(
+            "Rundeck URL must use HTTP or HTTPS".into(),
+        ));
     }
     if url.host_str().is_none() {
-        return Err(RundeckError::BadArg("Rundeck URL must include a host"));
+        return Err(RundeckError::BadArg(
+            "Rundeck URL must include a host".into(),
+        ));
     }
     if url.scheme() == "http" && !allow_insecure_private_http {
         return Err(RundeckError::BadArg(
-            "plaintext HTTP requires explicit private-network acknowledgement",
+            "plaintext HTTP requires explicit private-network acknowledgement".into(),
         ));
     }
     Ok(())
@@ -258,10 +263,13 @@ pub async fn validate_transport(
     allow_insecure_private_http: bool,
 ) -> RundeckResult<ValidatedTransport> {
     validate_base_url_with_policy(raw, allow_insecure_private_http)?;
-    let url = url::Url::parse(raw).map_err(|_| RundeckError::BadArg("invalid Rundeck URL"))?;
+    let url =
+        url::Url::parse(raw).map_err(|_| RundeckError::BadArg("invalid Rundeck URL".into()))?;
     let host = url
         .host_str()
-        .ok_or(RundeckError::BadArg("Rundeck URL must include a host"))?
+        .ok_or(RundeckError::BadArg(
+            "Rundeck URL must include a host".into(),
+        ))?
         .to_string();
     if url.scheme() == "https" {
         return Ok(ValidatedTransport {
@@ -270,7 +278,7 @@ pub async fn validate_transport(
         });
     }
     let port = url.port_or_known_default().ok_or(RundeckError::BadArg(
-        "Rundeck URL must include a valid port",
+        "Rundeck URL must include a valid port".into(),
     ))?;
     let addresses: Vec<_> = tokio::net::lookup_host((host.as_str(), port))
         .await
@@ -285,9 +293,7 @@ pub async fn validate_transport(
             .iter()
             .any(|address| !is_allowed_private_ip(address.ip()))
     {
-        return Err(RundeckError::BadArg(
-            "plaintext Rundeck HTTP is allowed only when every resolved address is private or loopback",
-        ));
+        return Err(RundeckError::BadArg("plaintext Rundeck HTTP is allowed only when every resolved address is private or loopback".into()));
     }
     Ok(ValidatedTransport {
         host,

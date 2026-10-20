@@ -20,10 +20,9 @@ mod oauth;
 use std::path::Path;
 use std::sync::Arc;
 
-use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
+    answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
 use crate::error::JiraResult;
@@ -41,12 +40,6 @@ struct Jira {
 async fn signed_in(data_dir: &Path, outcome: JiraResult<()>) -> Result<Value, PluginError> {
     outcome?;
     reply(auth::status(data_dir).await)
-}
-
-async fn answer<T: Serialize>(
-    result: impl std::future::Future<Output = JiraResult<T>>,
-) -> Result<Value, PluginError> {
-    reply(result.await?)
 }
 
 impl Plugin for Jira {

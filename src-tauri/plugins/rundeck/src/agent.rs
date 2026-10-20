@@ -236,7 +236,7 @@ pub async fn resolve(
     let wanted = job.trim().trim_matches('/');
     if wanted.is_empty() {
         return Err(RundeckError::BadArg(
-            "name a job by its id or group/name path",
+            "name a job by its id or group/name path".into(),
         ));
     }
     if looks_like_id(wanted) {
@@ -267,7 +267,7 @@ pub async fn resolve(
             let near = closest(&paths, wanted);
             let place =
                 project.map_or_else(|| "any project".to_string(), |p| format!("project {p}"));
-            Err(RundeckError::Unclear(if near.is_empty() {
+            Err(RundeckError::BadArg(if near.is_empty() {
                 format!("no job in {place} is named {wanted}; rundeck_jobs lists them")
             } else {
                 format!(
@@ -276,7 +276,7 @@ pub async fn resolve(
                 )
             }))
         }
-        many => Err(RundeckError::Unclear(format!(
+        many => Err(RundeckError::BadArg(format!(
             "{wanted} names {} jobs: {}; give the full path, or the project",
             many.len(),
             many.iter()
@@ -472,7 +472,7 @@ fn check_options(detail: &JobDetail, given: &HashMap<String, String>) -> Rundeck
         .collect();
     unknown.sort_unstable();
     if !unknown.is_empty() {
-        return Err(RundeckError::Unclear(format!(
+        return Err(RundeckError::BadArg(format!(
             "{} has no option {}; its options are {}",
             path_of(detail),
             unknown.join(", "),
@@ -495,7 +495,7 @@ fn check_options(detail: &JobDetail, given: &HashMap<String, String>) -> Rundeck
         .map(|option| option.name.as_str())
         .collect();
     if !missing.is_empty() {
-        return Err(RundeckError::Unclear(format!(
+        return Err(RundeckError::BadArg(format!(
             "{} needs {}",
             path_of(detail),
             missing.join(", ")
@@ -508,7 +508,7 @@ pub async fn run(session: &Session, ask: RunAsk, prod_envs: &[String]) -> Rundec
     let deadline = Instant::now() + WAIT_LIMIT;
     let detail = resolve(session, &ask.job, ask.project.as_deref()).await?;
     if is_production(&detail, prod_envs) && !ask.production {
-        return Err(RundeckError::Unclear(format!(
+        return Err(RundeckError::BadArg(format!(
             "{} runs in production. Ask the person first, and call again with production: true once they agree.",
             path_of(&detail)
         )));
@@ -665,7 +665,11 @@ pub async fn plan(
                 .await
                 .map_err(|error| RundeckError::Api(error.to_string()))??
         }
-        None => return Err(RundeckError::BadArg("name a branch or a local checkout")),
+        None => {
+            return Err(RundeckError::BadArg(
+                "name a branch or a local checkout".into(),
+            ))
+        }
     };
     let names: Vec<String> = detail
         .options

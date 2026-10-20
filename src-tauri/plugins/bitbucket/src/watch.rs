@@ -29,7 +29,7 @@ fn failure(error: BitbucketError) -> Failure {
             BitbucketError::Auth(_) | BitbucketError::Unconfigured
         ),
         rate_reset_secs: match error {
-            BitbucketError::RateLimited { resets_in_secs } => Some(resets_in_secs),
+            BitbucketError::RateLimited { resets_in_secs } => resets_in_secs,
             _ => None,
         },
         message: error.to_string(),

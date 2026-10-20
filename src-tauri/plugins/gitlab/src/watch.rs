@@ -26,7 +26,7 @@ fn failure(error: GitlabError) -> Failure {
         ),
         signed_out: matches!(error, GitlabError::Auth(_) | GitlabError::Unconfigured),
         rate_reset_secs: match error {
-            GitlabError::RateLimited { resets_in_secs } => Some(resets_in_secs),
+            GitlabError::RateLimited { resets_in_secs } => resets_in_secs,
             _ => None,
         },
         message: error.to_string(),

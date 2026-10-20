@@ -80,7 +80,7 @@ pub fn check(account: &str) -> BitbucketResult<()> {
     };
     match state.budget.resets_at {
         Some(at) if state.budget.limited && at > now => Err(BitbucketError::RateLimited {
-            resets_in_secs: at - now,
+            resets_in_secs: Some(at - now),
         }),
         _ => {
             state.budget.limited = false;
@@ -166,7 +166,9 @@ mod tests {
         assert_eq!(budget(account).limit, Some(1000));
         observe(account, StatusCode::TOO_MANY_REQUESTS, &HeaderMap::new());
         match check(account) {
-            Err(BitbucketError::RateLimited { resets_in_secs }) => {
+            Err(BitbucketError::RateLimited {
+                resets_in_secs: Some(resets_in_secs),
+            }) => {
                 assert!((59..=60).contains(&resets_in_secs))
             }
             other => panic!("expected to be held back, got {other:?}"),

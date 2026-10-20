@@ -185,13 +185,13 @@ fn read_head(repo: &Repository, plan: &mut PlanResult) -> bool {
 /// The branch the checkout at `repo_path` is on.
 pub fn current_branch(repo_path: &std::path::Path) -> RundeckResult<String> {
     let repo = Repository::discover(repo_path).map_err(|_| {
-        RundeckError::Unclear(format!("{} is not in a git checkout", repo_path.display()))
+        RundeckError::BadArg(format!("{} is not in a git checkout", repo_path.display()))
     })?;
     let detached = repo.head_detached().unwrap_or(false);
     let head = repo.head().ok().filter(|_| !detached);
     let branch = head.and_then(|head| head.shorthand().ok().map(String::from));
     branch.ok_or_else(|| {
-        RundeckError::Unclear(format!(
+        RundeckError::BadArg(format!(
             "{} is on no branch; name the branch",
             repo_path.display()
         ))

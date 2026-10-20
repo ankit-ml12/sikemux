@@ -177,7 +177,9 @@ pub fn checked(status: u16, body: Value) -> VercelResult<Value> {
         403 if invalid_token => VercelError::Auth(message),
         403 => VercelError::Api(format!("not allowed: {message}")),
         404 => VercelError::NotFound(message),
-        429 => VercelError::RateLimited,
+        429 => VercelError::RateLimited {
+            resets_in_secs: None,
+        },
         400 | 409 | 422 => VercelError::Api(message),
         _ => VercelError::Http {
             status,
@@ -235,7 +237,9 @@ mod tests {
         );
         assert!(matches!(
             checked(429, json!({})),
-            Err(VercelError::RateLimited)
+            Err(VercelError::RateLimited {
+                resets_in_secs: None
+            })
         ));
         assert!(matches!(
             checked(502, json!({})),
