@@ -4,8 +4,9 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { ContextMenu, Dropdown, EmptyState, Pending, StaleNotice } from "../../../plugin-api/ui";
 import type { VercelDeployment, VercelProject } from "../api";
 import { vercelDeploymentsR } from "../resources";
-import { isUnderway, type EnvironmentFilter, type StatusFilter, type VercelView } from "../state";
-import { Avatar, EnvBadge, IconMore, Source, Status, useDeploymentActions, useUnderwayPoll } from "./parts";
+import { useRefreshEvery } from "../../../plugin-api/hooks";
+import { isUnderway, UNDERWAY_REFRESH_MS, type EnvironmentFilter, type StatusFilter, type VercelView } from "../state";
+import { Avatar, EnvBadge, IconMore, Source, Status, useDeploymentActions } from "./parts";
 
 const ENVIRONMENTS: { value: EnvironmentFilter; label: string }[] = [
     { value: "all", label: "All Environments" },
@@ -44,7 +45,7 @@ export function Deployments({
     const deployments = useResourceEnabled(active, vercelDeploymentsR, team, project.name);
     const actions = useDeploymentActions(team);
     const [menu, setMenu] = useState<{ deployment: VercelDeployment; x: number; y: number } | null>(null);
-    useUnderwayPoll(active, deployments.data?.some((each) => isUnderway(each.state)) ?? false, deployments.refresh);
+    useRefreshEvery(deployments, active && deployments.data?.some((each) => isUnderway(each.state)) ? UNDERWAY_REFRESH_MS : null);
 
     const words = find.trim().toLowerCase();
     const shown = (deployments.data ?? []).filter(

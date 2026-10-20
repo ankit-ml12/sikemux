@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
 import { errorText, formatAgo } from "../../../plugin-api/format";
 import type { ContextMenuItem } from "../../../plugin-api/ui";
@@ -157,15 +157,6 @@ export function Avatar({ name }: { name: string | null }) {
 }
 
 export const Ago = ({ at }: { at: number }) => <span className="vercel-muted">{formatAgo(at)}</span>;
-
-/** Calls `refresh` every few seconds while something is building, so its state and log keep up. */
-export function useUnderwayPoll(active: boolean, underway: boolean, refresh: () => unknown) {
-    useEffect(() => {
-        if (!active || !underway) return;
-        const timer = window.setInterval(() => void refresh(), 4000);
-        return () => window.clearInterval(timer);
-    }, [active, underway, refresh]);
-}
 
 const changed = () => vercel.refresh(vercelProjectsR, vercelDeploymentsR, vercelLogR);
 

@@ -46,6 +46,11 @@ export function useEvery(enabled: boolean, ms: number, work: () => void): void {
     }, [enabled, ms]);
 }
 
+/** Reads `handle` again every `ms`, timed as useEvery times it, and not at all while `ms` is null. A read that fails shows on the handle. */
+export function useRefreshEvery(handle: { refresh(): Promise<void> }, ms: number | null): void {
+    useEvery(ms !== null, ms ?? 0, () => void handle.refresh().catch(() => undefined));
+}
+
 export interface StreamLife {
     /** What the stream follows is over: it is not opened again, even when the app shows again. */
     finish(): void;
