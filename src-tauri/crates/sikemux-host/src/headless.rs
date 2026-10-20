@@ -283,16 +283,15 @@ async fn pair(
     style::note("Waiting for devices. Press Ctrl-C to stop; `sikemux pair` waits again later.");
     let mut asked = HashSet::new();
     loop {
-        asked.retain(|id| status.pending.iter().any(|request| &request.id == id));
-        let fresh: Vec<PendingDevice> = status
-            .pending
-            .iter()
-            .filter(|request| !asked.contains(&request.id))
-            .cloned()
+        let waiting = waiting(core, status).await;
+        asked.retain(|id| waiting.iter().any(|(request, _)| &request.id == id));
+        let fresh: Vec<(PendingDevice, Asking)> = waiting
+            .into_iter()
+            .filter(|(request, _)| !asked.contains(&request.id))
             .collect();
-        for request in fresh {
+        for (request, asking) in fresh {
             asked.insert(request.id.clone());
-            let access = ask(request.clone()).await?;
+            let access = ask(request.clone(), asking).await?;
             if let Err(error) = core
                 .answer_pairing(
                     request.id,
@@ -322,12 +321,39 @@ async fn next_status(events: &mut UnboundedReceiver<ClientEvent>) -> Result<Remo
     }
 }
 
-async fn ask(request: PendingDevice) -> Result<Option<DeviceAccess>, String> {
+#[derive(Clone, Copy)]
+enum Asking {
+    Device,
+    Link,
+}
+
+/// Devices asking to join, then hosts asking to link, which the core lists apart.
+async fn waiting(core: &CoreClient, status: RemoteStatus) -> Vec<(PendingDevice, Asking)> {
+    let links: Vec<PendingDevice> = core
+        .call("pairing", json!({}))
+        .await
+        .ok()
+        .and_then(|pairing| serde_json::from_value(pairing["pendingLinks"].clone()).ok())
+        .unwrap_or_default();
+    let devices = status
+        .pending
+        .into_iter()
+        .map(|request| (request, Asking::Device));
+    devices
+        .chain(links.into_iter().map(|request| (request, Asking::Link)))
+        .collect()
+}
+
+async fn ask(request: PendingDevice, asking: Asking) -> Result<Option<DeviceAccess>, String> {
     tokio::task::spawn_blocking(move || {
         let mut stdout = std::io::stdout();
+        let question = match asking {
+            Asking::Device => "asks to join. Allow [f]ull control, [w]atch only, or [N]o?",
+            Asking::Link => "asks to link with this host, to start and message agents here. Allow [y]es or [N]o?",
+        };
         let _ = write!(
             stdout,
-            "\n  {} {} {} asks to join. Allow [f]ull control, [w]atch only, or [N]o? ",
+            "\n  {} {} {} {question} ",
             style::accent("›"),
             style::bold(&request.name),
             style::dim(&format!("({})", request.platform))
@@ -339,6 +365,7 @@ async fn ask(request: PendingDevice) -> Result<Option<DeviceAccess>, String> {
             .read_line(&mut line)
             .map_err(|error| error.to_string())?;
         Ok(match line.trim().to_ascii_lowercase().as_str() {
+            "f" | "full" | "y" | "yes" if matches!(asking, Asking::Link) => Some(DeviceAccess::Full),
             "f" | "full" => Some(DeviceAccess::Full),
             "w" | "watch" => Some(DeviceAccess::Watch),
             _ => None,
