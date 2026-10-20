@@ -11,6 +11,7 @@ use reqwest::{Client, Method, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_plugin_api::http::{self, Deadline, Redirects};
+use sikemux_plugin_api::SignInStatus;
 
 use crate::error::{Rundeck, RundeckError, RundeckResult};
 
@@ -179,20 +180,17 @@ async fn perform_login(req: &LoginRequest) -> RundeckResult<MintedToken> {
     })
 }
 
-// ---- Tauri commands ------------------------------------------------------
-
 #[derive(Serialize, Clone)]
-pub struct RundeckStatus {
-    pub configured: bool,
+#[serde(rename_all = "camelCase")]
+pub struct Connection {
     pub url: String,
     pub user: String,
     pub token_present: bool,
     pub rundeck_version: Option<String>,
-    pub ok: bool,
-    pub auth_failed: bool,
-    pub message: Option<String>,
     pub allow_insecure_private_http: bool,
 }
+
+pub type RundeckStatus = SignInStatus<Connection>;
 
 fn is_auth_failure(e: &RundeckError) -> bool {
     matches!(
@@ -201,38 +199,37 @@ fn is_auth_failure(e: &RundeckError) -> bool {
     )
 }
 
+/// A token that may not read the system info still signs in.
 pub async fn status(data_dir: &Path) -> RundeckStatus {
     let (saved, problem) = match config::load(data_dir).await {
         Ok(saved) => (saved, None),
         Err(error) => (Saved::default(), Some(error.to_string())),
     };
     let settings = saved.settings.clone();
-    let offline = |message: Option<String>, auth_failed: bool| RundeckStatus {
-        configured: saved.is_signed_in(),
+    let mut connection = Connection {
         url: settings.url.clone(),
         user: settings.user.clone(),
         token_present: saved.token.is_some(),
         rundeck_version: None,
-        ok: false,
-        auth_failed,
-        message,
         allow_insecure_private_http: settings.allow_insecure_private_http,
     };
-    let Ok(session) = Session::of(&saved) else {
-        return offline(problem, false);
+    let (ok, auth_failed, message) = match Session::of(&saved) {
+        Err(_) => (false, false, problem),
+        Ok(session) => match get_json::<Value>(&session, "/system/info", &[]).await {
+            Ok(info) => {
+                connection.rundeck_version = rundeck_version(&info);
+                (true, false, None)
+            }
+            Err(RundeckError::Forbidden(message)) => (true, false, Some(message)),
+            Err(error) => (false, is_auth_failure(&error), Some(error.to_string())),
+        },
     };
-    let info: RundeckResult<Value> = get_json(&session, "/system/info", &[]).await;
-    match info {
-        Ok(info) => RundeckStatus {
-            ok: true,
-            rundeck_version: rundeck_version(&info),
-            ..offline(None, false)
-        },
-        Err(RundeckError::Forbidden(message)) => RundeckStatus {
-            ok: true,
-            ..offline(Some(message), false)
-        },
-        Err(e) => offline(Some(e.to_string()), is_auth_failure(&e)),
+    SignInStatus {
+        configured: saved.is_signed_in(),
+        ok,
+        auth_failed,
+        message,
+        details: connection,
     }
 }
 

@@ -40,10 +40,10 @@ export function RundeckConnection({ status, onSignedOut }: { status: RundeckStat
                     <IconChevron size={11} className="rnd-conn-chev" />
                 </span>
                 <span className="rnd-conn-sub">
-                    {[status.user, status.rundeck_version && `Rundeck ${status.rundeck_version}`].filter(Boolean).join(" · ")}
+                    {[status.user, status.rundeckVersion && `Rundeck ${status.rundeckVersion}`].filter(Boolean).join(" · ")}
                 </span>
                 <span className="rnd-conn-meta">
-                    <span>{status.token_present ? "API token" : "No token"}</span>
+                    <span>{status.tokenPresent ? "API token" : "No token"}</span>
                     <Status status={status.ok ? "succeeded" : "failed"} label={status.ok ? "Connected" : "Offline"} />
                 </span>
             </button>

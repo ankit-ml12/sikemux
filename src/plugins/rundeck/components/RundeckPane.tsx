@@ -31,13 +31,13 @@ export function RundeckPane({ paneId, active }: Props) {
         if (status.status === "loading" && !status.data) {
             return <RundeckLoading />;
         }
-        if (status.data && (!status.data.configured || (!status.data.ok && status.data.auth_failed))) {
+        if (status.data && (!status.data.configured || (!status.data.ok && status.data.authFailed))) {
             return (
                 <RundeckLogin
                     key={status.data.configured ? "expired" : "new"}
                     initialUrl={status.data.url}
                     initialUser={status.data.user}
-                    initialAllowInsecurePrivateHttp={status.data.allow_insecure_private_http}
+                    initialAllowInsecurePrivateHttp={status.data.allowInsecurePrivateHttp}
                     status={{ authFailed: status.data.configured, message: status.data.message ?? "Authentication failed" }}
                     onDone={() => rundeck.refresh()}
                 />

@@ -28,6 +28,6 @@ registerFrontendPlugin({
     TopBarItem: RundeckTopBarItem,
     useSignIn: function useRundeckSignIn() {
         const status = useResource(rndStatusR);
-        return signInOf({ ...status, data: status.data && { configured: status.data.configured, authFailed: status.data.auth_failed } });
+        return signInOf(status);
     },
 });

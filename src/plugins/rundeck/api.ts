@@ -34,12 +34,12 @@ export interface RundeckStatus {
     configured: boolean;
     url: string;
     user: string;
-    token_present: boolean;
-    rundeck_version: string | null;
+    tokenPresent: boolean;
+    rundeckVersion: string | null;
     ok: boolean;
-    auth_failed: boolean;
+    authFailed: boolean;
     message: string | null;
-    allow_insecure_private_http: boolean;
+    allowInsecurePrivateHttp: boolean;
 }
 
 export interface RundeckLoginRequest {
