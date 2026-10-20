@@ -1,5 +1,6 @@
 import { isPluginKind } from "../plugins/kinds";
 import { isValidWorkbenchItemId, isWorkbenchItemKind } from "../workbench/registry";
+import { isRecord } from "../lib/guards";
 import type { LayoutNode, SessionKind, Window } from "./types";
 import { isWindowRole } from "./windowRoles";
 
@@ -30,10 +31,6 @@ export const DEFAULT_LAYOUT_LIMITS: LayoutValidationLimits = {
     maxChildren: 64,
     maxStringLength: 8_192,
 };
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-    return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function boundedString(value: unknown, maxLength: number, allowEmpty = false): value is string {
     return typeof value === "string" && value.length <= maxLength && (allowEmpty || value.length > 0);

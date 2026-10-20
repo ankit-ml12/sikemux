@@ -2,6 +2,7 @@ import { isPluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import type { CorePaneKind, PaneKind, PaneNode } from "../state/types/domain";
 import { CORE_PANE_KINDS, isCorePaneKind } from "../state/windowRoles";
+import { isRecord } from "../lib/guards";
 import type { DeskBrowserTab, DeskSavedSimulator, DeskView, EditorPaneView } from "../state/types/view";
 
 declare const ITEM_ID_BRAND: unique symbol;
@@ -99,10 +100,6 @@ const ITEM_ID_MAX_LENGTH = 256;
 const KIND_PATTERN = /^[a-z][a-z0-9._:-]*$/;
 const ENVELOPE_KEYS = new Set<PropertyKey>(["itemId", "kind", "version", "state"]);
 const UNSAFE_RECORD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function containsControlCharacter(value: string): boolean {
     for (let index = 0; index < value.length; index += 1) {

@@ -63,7 +63,8 @@ export type { AgentType };
 export type AgentPermissionMode = "workspace-write" | "bypass";
 
 /** Provider-neutral reasoning levels; unsupported levels are normalized per CLI. */
-export type AgentEffort = "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export const AGENT_EFFORTS = ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
+export type AgentEffort = (typeof AGENT_EFFORTS)[number];
 
 /**
  * Durable, non-secret configuration for an agent executable.
