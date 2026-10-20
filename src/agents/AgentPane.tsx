@@ -16,7 +16,7 @@ export function AgentPane({ paneId, session, visible }: { paneId: string; sessio
     }, [asleep, visible, paneId]);
     if (!agent || asleep) return null;
     return (
-        <Suspense fallback={<div className="agent-transport-switching">Opening agent session…</div>}>
+        <Suspense fallback={null}>
             <AgentSurface agent={agent} session={session} profile={profile} visible={visible} />
         </Suspense>
     );
