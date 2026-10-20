@@ -1119,6 +1119,8 @@ pub(crate) async fn add(core: &Arc<Core>, params: AddParams) -> CoreResult<Value
     .await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CheckParams {
     project: String,
     command: String,
