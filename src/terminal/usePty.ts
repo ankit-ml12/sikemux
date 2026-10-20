@@ -7,8 +7,7 @@ import { registerPtyDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import { IS_WINDOWS } from "../lib/platform";
 import type { PtyContext, PtyDirectCommand } from "../state/types";
-import { createItemId } from "../workbench/registry";
-import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource } from "../workbench/itemRuntime";
+import { paneResource } from "./paneResources";
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
 import { performanceTelemetry } from "../lib/performance";
 import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/ptyShell";
@@ -21,7 +20,6 @@ type NativeChannel = Channel<ArrayBuffer>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
 export type TerminalShellSemantics = "posix" | "powershell";
 
-const NATIVE_PTY_RESOURCE = "core.terminal.pty";
 const DEFAULT_SHELL_SEMANTICS: TerminalShellSemantics = IS_WINDOWS ? "powershell" : "posix";
 
 interface IntegrationHealthShell {
@@ -244,35 +242,18 @@ export function usePty(opts: {
     const currentOptionsRef = useRef(opts);
     currentOptionsRef.current = opts;
     const resourceFingerprint = ptyResourceFingerprint(opts, externallyOwned ? taskBinding : null);
-    const durableItemId = opts.durableItemId ? createItemId(opts.durableItemId) : null;
+    const durableItemId = opts.durableItemId ?? null;
     // Transient agent/popup terminals intentionally keep mount-time launch
     // options: clearing a delivered initial prompt must not respawn the CLI.
     const durableResourceFingerprint = durableItemId ? resourceFingerprint : null;
     // External transient controllers must also rotate with task executions.
     const controllerLifecycleFingerprint = externallyOwned ? resourceFingerprint : durableResourceFingerprint;
-    const runtimeLease = durableItemId ? captureWorkbenchItemRuntimeLease(durableItemId) : null;
 
     useEffect(() => {
-        const durable = runtimeLease !== null;
-        if (durableItemId && !runtimeLease) {
-            performanceTelemetry.incrementCounter("terminal.durable-owner-missing");
-            controllerRef.current = null;
-            return;
-        }
         if (externallyOwned && !taskBinding) {
             controllerRef.current = null;
-            if (runtimeLease) {
-                try {
-                    getOrCreateWorkbenchItemResource<NativePtyController | null>(
-                        runtimeLease,
-                        NATIVE_PTY_RESOURCE,
-                        durableResourceFingerprint!,
-                        () => ({ value: null, dispose: NOOP }),
-                    );
-                } catch {
-                    performanceTelemetry.incrementCounter("terminal.durable-owner-stale");
-                }
-            }
+            if (durableItemId)
+                paneResource<NativePtyController | null>(durableItemId, durableResourceFingerprint!, () => ({ value: null, dispose: NOOP }));
             return;
         }
         const initial = currentOptionsRef.current;
@@ -295,19 +276,12 @@ export function usePty(opts: {
                 onInitialInputDelivered: () => deliveredRef.current?.(),
                 onError: recordControllerError,
             });
-        let controller: NativePtyController;
-        try {
-            controller = runtimeLease
-                ? getOrCreateWorkbenchItemResource(runtimeLease, NATIVE_PTY_RESOURCE, durableResourceFingerprint!, () => {
-                      const value = createController();
-                      return { value, dispose: () => value.dispose() };
-                  })
-                : createController();
-        } catch {
-            performanceTelemetry.incrementCounter("terminal.durable-owner-stale");
-            controllerRef.current = null;
-            return;
-        }
+        const controller = durableItemId
+            ? paneResource(durableItemId, durableResourceFingerprint!, () => {
+                  const value = createController();
+                  return { value, dispose: () => void value.dispose() };
+              })
+            : createController();
         controllerRef.current = controller;
 
         const host = hostRef.current;
@@ -345,18 +319,9 @@ export function usePty(opts: {
             unregisterDrop();
             unregisterTextInsert();
             if (controllerRef.current === controller) controllerRef.current = null;
-            if (!durable) void controller.dispose();
+            if (!durableItemId) void controller.dispose();
         };
-    }, [
-        hostRef,
-        durableItemId,
-        durableResourceFingerprint,
-        runtimeLease,
-        controllerLifecycleFingerprint,
-        controllerRef,
-        externallyOwned,
-        taskBinding,
-    ]);
+    }, [hostRef, durableItemId, durableResourceFingerprint, controllerLifecycleFingerprint, controllerRef, externallyOwned, taskBinding]);
 
     useEffect(() => {
         if (!spawnWhen) return;
@@ -385,7 +350,7 @@ export function usePty(opts: {
             disposed = true;
             unlisten();
         };
-    }, [spawnWhen, controllerLifecycleFingerprint, controllerRef, runtimeLease, opts.context?.shellIntegration]);
+    }, [spawnWhen, controllerLifecycleFingerprint, controllerRef, opts.context?.shellIntegration]);
 
     return controllerRef;
 }

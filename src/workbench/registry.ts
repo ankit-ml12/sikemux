@@ -12,13 +12,6 @@ export interface WorkbenchItemRef<K extends string = PaneKind> {
     readonly kind: K;
 }
 
-export interface WorkbenchItemController {
-    activate(): void | Promise<void>;
-    deactivate(): void | Promise<void>;
-    canClose(): boolean | Promise<boolean>;
-    dispose(): void | Promise<void>;
-}
-
 export type PersistedCodecResult<State> = { readonly ok: true; readonly value: State } | { readonly ok: false };
 
 export interface VersionedPersistedCodec<State> {
@@ -30,9 +23,7 @@ export interface VersionedPersistedCodec<State> {
 export interface WorkbenchItemDefinition<Kind extends string = string, State = unknown> {
     readonly kind: Kind;
     readonly defaultTitle: string;
-    readonly create: (ref: WorkbenchItemRef<Kind>) => WorkbenchItemController;
     readonly persisted: VersionedPersistedCodec<State>;
-    readonly cleanupDraft?: (state: State) => void | Promise<void>;
 }
 
 export interface BuiltinWorkbenchItemState {
@@ -102,13 +93,6 @@ export class UnknownWorkbenchItemKindError extends Error {
     }
 }
 
-export class DuplicateWorkbenchItemKindError extends Error {
-    constructor(readonly kind: string) {
-        super(`Workbench item kind is already registered: ${kind}`);
-        this.name = "DuplicateWorkbenchItemKindError";
-    }
-}
-
 const CODEC_FAILURE = Object.freeze({ ok: false }) as PersistedCodecResult<never>;
 const ITEM_ID_MAX_LENGTH = 256;
 const KIND_PATTERN = /^[a-z][a-z0-9._:-]*$/;
@@ -156,15 +140,6 @@ export function createWorkbenchItemRef<Kind extends string>(id: string, kind: Ki
 
 export function workbenchItemRefFromPane(pane: Pick<PaneNode, "id" | "kind">): WorkbenchItemRef<PaneKind> {
     return createWorkbenchItemRef(pane.id, pane.kind);
-}
-
-export function createNoopWorkbenchItemController(): WorkbenchItemController {
-    return Object.freeze({
-        activate: () => {},
-        deactivate: () => {},
-        canClose: () => true,
-        dispose: () => {},
-    });
 }
 
 function nullCodec(): VersionedPersistedCodec<null> {
@@ -285,13 +260,7 @@ function builtinDefinition<Kind extends CorePaneKind, State>(
     defaultTitle: string,
     persisted: VersionedPersistedCodec<State>,
 ): WorkbenchItemDefinition<Kind, State> {
-    return Object.freeze({
-        kind,
-        defaultTitle,
-        persisted,
-        create: (_ref: WorkbenchItemRef<Kind>) => createNoopWorkbenchItemController(),
-        cleanupDraft: (_state: State) => {},
-    });
+    return Object.freeze({ kind, defaultTitle, persisted });
 }
 
 type BuiltinDefinitionMap = {
@@ -365,26 +334,17 @@ function readEnvelope(encoded: unknown): PersistedWorkbenchItemEnvelope | null {
 type ErasedDefinition = WorkbenchItemDefinition<string, unknown>;
 
 function eraseDefinition<Kind extends string, State>(definition: WorkbenchItemDefinition<Kind, State>): ErasedDefinition {
-    const create = definition.create;
     const encode = definition.persisted.encode;
     const decode = definition.persisted.decode;
-    const cleanupDraft = definition.cleanupDraft;
     return Object.freeze({
         kind: definition.kind,
-        defaultTitle: definition.defaultTitle.trim(),
-        create: (ref: WorkbenchItemRef<string>) => create(ref as WorkbenchItemRef<Kind>),
+        defaultTitle: definition.defaultTitle,
         persisted: Object.freeze({
             version: definition.persisted.version,
             encode: (state: unknown) => encode(state as State),
             decode: (encoded: unknown): PersistedCodecResult<unknown> => decode(encoded),
         }),
-        cleanupDraft: cleanupDraft ? (state: unknown) => cleanupDraft(state as State) : undefined,
     });
-}
-
-function isController(value: unknown): value is WorkbenchItemController {
-    if (!isRecord(value)) return false;
-    return [value.activate, value.deactivate, value.canClose, value.dispose].every((method) => typeof method === "function");
 }
 
 export class WorkbenchItemRegistry {
@@ -397,19 +357,6 @@ export class WorkbenchItemRegistry {
     }
 
     register<Kind extends string, State>(definition: WorkbenchItemDefinition<Kind, State>): void {
-        if (!isValidKind(definition.kind)) throw new TypeError(`Invalid workbench item kind: ${String(definition.kind)}`);
-        if (this.definitions.has(definition.kind)) throw new DuplicateWorkbenchItemKindError(definition.kind);
-        if (!definition.defaultTitle.trim()) throw new TypeError("Workbench item definitions require a default title");
-        if (typeof definition.create !== "function") throw new TypeError("Workbench item definitions require a controller factory");
-        if (!Number.isSafeInteger(definition.persisted.version) || definition.persisted.version <= 0) {
-            throw new TypeError("Workbench item persisted codec versions must be positive integers");
-        }
-        if (typeof definition.persisted.encode !== "function" || typeof definition.persisted.decode !== "function") {
-            throw new TypeError("Workbench item definitions require a persisted codec");
-        }
-        if (definition.cleanupDraft !== undefined && typeof definition.cleanupDraft !== "function") {
-            throw new TypeError("Workbench item cleanupDraft must be a function");
-        }
         this.definitions.set(definition.kind, eraseDefinition(definition));
     }
 
@@ -434,22 +381,9 @@ export class WorkbenchItemRegistry {
             kind,
             defaultTitle: pluginSurface(kind)?.title ?? kind,
             persisted: NULL_CODEC,
-            create: () => createNoopWorkbenchItemController(),
         });
         this.definitions.set(kind, definition);
         return definition;
-    }
-
-    create<Kind extends string>(ref: WorkbenchItemRef<Kind>): WorkbenchItemController {
-        if (!isValidWorkbenchItemId(ref.id)) throw new TypeError("Invalid workbench item ID");
-        const controller = this.get(ref.kind).create(ref);
-        if (!isController(controller)) throw new TypeError(`Controller factory for ${ref.kind} returned an invalid controller`);
-        return controller;
-    }
-
-    async cleanupDraft<Kind extends string>(ref: WorkbenchItemRef<Kind>, state: unknown): Promise<void> {
-        const cleanup = this.get(ref.kind).cleanupDraft;
-        if (cleanup) await cleanup(state);
     }
 
     encodePersisted<Kind extends CorePaneKind>(

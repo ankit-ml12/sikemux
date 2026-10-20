@@ -3,14 +3,12 @@ import type { CorePaneKind, PaneKind, PaneNode } from "../state/types/domain";
 import {
     DESK_PERSISTENCE_LIMITS,
     BUILTIN_WORKBENCH_ITEM_MANIFEST,
-    DuplicateWorkbenchItemKindError,
     EDITOR_PERSISTENCE_LIMITS,
-    UnknownWorkbenchItemKindError,
     WorkbenchItemRegistry,
     createItemId,
     createWorkbenchItemRef,
     workbenchItemRefFromPane,
-    type PersistedCodecResult,
+
 } from "./registry";
 
 const BUILTIN_KINDS = ["terminal", "editor", "git", "diff", "search", "agent", "desk", "shared", "board", "project-settings"] as const satisfies readonly CorePaneKind[];
@@ -24,7 +22,7 @@ function editorEnvelope(state: unknown): Record<string, unknown> {
 }
 
 describe("built-in workbench item manifest", () => {
-    it("is exhaustive for current CorePaneKind values and creates safe no-op controllers", async () => {
+    it("is exhaustive for current CorePaneKind values", () => {
         expect(Object.keys(BUILTIN_WORKBENCH_ITEM_MANIFEST)).toEqual(BUILTIN_KINDS);
         const registry = new WorkbenchItemRegistry();
 
@@ -34,12 +32,6 @@ describe("built-in workbench item manifest", () => {
             expect(definition.defaultTitle).not.toBe("");
             expect(Number.isInteger(definition.persisted.version)).toBe(true);
             expect(definition.persisted.version).toBeGreaterThan(0);
-
-            const controller = registry.create(createWorkbenchItemRef(`pane-${kind}`, kind));
-            await controller.activate();
-            await controller.deactivate();
-            expect(await controller.canClose()).toBe(true);
-            await controller.dispose();
         }
         expect(registry.kinds()).toEqual(BUILTIN_KINDS);
     });
@@ -55,15 +47,6 @@ describe("built-in workbench item manifest", () => {
         expect(() => createItemId("x".repeat(257))).toThrow(TypeError);
         expect(() => createItemId("__proto__")).toThrow(TypeError);
         expect(() => createItemId("constructor")).toThrow(TypeError);
-    });
-});
-
-describe("WorkbenchItemRegistry lifecycle", () => {
-    it("rejects duplicate and unknown registrations", () => {
-        const registry = new WorkbenchItemRegistry();
-        expect(() => registry.register(BUILTIN_WORKBENCH_ITEM_MANIFEST.editor)).toThrow(DuplicateWorkbenchItemKindError);
-        expect(() => registry.get("missing")).toThrow(UnknownWorkbenchItemKindError);
-        expect(() => registry.create(createWorkbenchItemRef("item-missing", "missing"))).toThrow(UnknownWorkbenchItemKindError);
     });
 });
 
@@ -269,27 +252,5 @@ describe("workbench item persistence", () => {
         };
 
         expect(registry.decodePersisted(ref, malformed)).toEqual({ ok: false, reason: "invalid-state" });
-    });
-
-    it("does not let runtime registration widen persisted built-in kinds", () => {
-        const registry = new WorkbenchItemRegistry();
-        registry.register({
-            kind: "notes",
-            defaultTitle: "Notes",
-            create: () => ({ activate() {}, deactivate() {}, canClose: () => true, dispose() {} }),
-            persisted: {
-                version: 1,
-                encode: (state: string) => state,
-                decode: (encoded: unknown): PersistedCodecResult<string> =>
-                    typeof encoded === "string" ? { ok: true, value: encoded } : { ok: false },
-            },
-        });
-        const runtimeRef = createWorkbenchItemRef("item-notes", "notes");
-        expect(registry.create(runtimeRef).canClose()).toBe(true);
-
-        const forgedBuiltinRef = runtimeRef as unknown as ReturnType<typeof createWorkbenchItemRef<CorePaneKind>>;
-        const encoded = { itemId: "item-notes", kind: "notes", version: 1, state: "private draft" };
-        expect(registry.decodePersisted(forgedBuiltinRef, encoded)).toEqual({ ok: false, reason: "unknown-kind" });
-        expect(() => registry.encodePersisted(forgedBuiltinRef, null)).toThrow(UnknownWorkbenchItemKindError);
     });
 });

@@ -95,7 +95,7 @@ import { trustProjectConfig } from "./projects/projectConfigRuntime";
 import { projectActionCommands } from "./projects/projectActions";
 import { worktreeHasLiveOwners } from "./git/worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
-import { workbenchRuntime } from "./workbench/runtime";
+import { releaseClosedPaneResources } from "./terminal/paneResources";
 import { personRuns, runProjectTask, stopTaskRun } from "./tasks/projectTaskActions";
 import { useProjectTasks, useTaskRuns, type ProjectTask, type TaskRun } from "./tasks/coreTasks";
 import { showTaskTerminals } from "./tasks/taskTerminals";
@@ -616,6 +616,7 @@ export default function App() {
         let disposed = false;
         let unsub = () => {};
         let stopSpareShells = () => {};
+        let stopPaneResources = () => {};
         let stopAccountSync = () => {};
         let stopWorkspaceSync = () => {};
         let bootFinished = false;
@@ -674,14 +675,7 @@ export default function App() {
             .finally(() => {
                 const writable = hydrationResult !== null && hydrationAllowsPersistence(hydrationResult);
                 if (!disposed && writable) {
-                    try {
-                        workbenchRuntime.start();
-                    } catch (error) {
-                        setBootIssue("Sikemux could not open the saved workspace. Nothing has been written; reload to retry.");
-                        finishBoot("error");
-                        swallow("workbench start")(error);
-                        return;
-                    }
+                    stopPaneResources = releaseClosedPaneResources();
                     unsub = subscribePersist();
                     if (workspace) stopWorkspaceSync = startCoreWorkspace(workspace);
                     stopAccountSync = syncAgentAccounts(accounts);
@@ -699,7 +693,7 @@ export default function App() {
             stopWorkspaceSync();
             stopAccountSync();
             stopSpareShells();
-            workbenchRuntime.stop();
+            stopPaneResources();
         };
     }, []);
 
