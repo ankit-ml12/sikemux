@@ -3,6 +3,7 @@ import type { ToolDiff } from "./diff";
 import type { ToolOutput } from "./toolOutput";
 import type { SentContext } from "./promptContext";
 import type { QueuedMessage } from "./queuedMessages";
+import type { MdElement } from "../markdown/types";
 
 export interface AcpContentBlock {
     type: string;
@@ -128,9 +129,13 @@ export interface ChatFailure {
     resumesAt?: number;
 }
 
+/* The core's markdown tree of a part's text and the length it covers, or null
+   once a change from the core did not fit the text here. */
+export type PartTree = { blocks: MdElement[]; n: number } | null;
+
 export type ChatPart =
-    | { id: string; kind: "text"; text: string }
-    | { id: string; kind: "thought"; text: string }
+    | { id: string; kind: "text"; text: string; md?: PartTree }
+    | { id: string; kind: "thought"; text: string; md?: PartTree }
     | { id: string; kind: "content"; content: AcpContentBlock }
     /* A finished call is read once and kept as what the transcript shows: the
        change it made, what it printed, and what it left behind when it failed. */
