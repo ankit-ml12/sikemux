@@ -1,4 +1,4 @@
-import { recordOf } from "./acpEvents";
+import { recordOf } from "../lib/guards";
 import type { QueuedMessage } from "./queuedMessages";
 import { isAgentLetter } from "./agentLetters";
 import { toolDiff, toolFailure } from "./diff";

@@ -1,4 +1,5 @@
 import { invokeCommand as invoke } from "./invoke";
+import { isRecord } from "../lib/guards";
 
 export interface ReleaseContributor {
     login: string;
@@ -31,8 +32,6 @@ export interface HeldRelease {
     date: string | null;
     credits: ReleaseCredits | null;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 function parseContributor(value: unknown): ReleaseContributor | null {
     if (!isRecord(value)) return null;

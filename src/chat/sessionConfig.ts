@@ -1,4 +1,4 @@
-import { recordOf } from "./acpEvents";
+import { recordOf } from "../lib/guards";
 import { agentSupportsChat, type ChatAgentType } from "../agents/agentLaunch";
 import type { Agent } from "../state/types";
 

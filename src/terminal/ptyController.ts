@@ -1,4 +1,5 @@
 import type { PtyDirectCommand } from "../state/types";
+import { errorCategory, errorText } from "../lib/format";
 
 export type PtyOutputChunk = readonly number[] | Uint8Array;
 export type PtyShellPhase = "unknown" | "prompt" | "input" | "running" | "finished";
@@ -334,20 +335,14 @@ function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number)
     return shell;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
-}
-
 /** Only native errors that explicitly identify a gone PTY end process ownership. */
 function isTerminalAttachFailure(error: unknown): boolean {
     if (error instanceof PtyControllerExitedError) return true;
-    if (!isRecord(error) || typeof error.category !== "string") return false;
-    if (error.category === "not-found" || error.category === "pty-not-found" || error.category === "exited" || error.category === "pty-exited") {
-        return true;
-    }
+    const category = errorCategory(error);
+    if (category === "not-found" || category === "pty-not-found" || category === "exited" || category === "pty-exited") return true;
     // Current native `pty_attach` reports its exact lookup miss as AppError::BadArg.
     // Match the complete typed wire pair so unrelated bad arguments stay retryable.
-    return error.category === "bad-arg" && error.message === "invalid argument: pty not found";
+    return category === "bad-arg" && errorText(error) === "invalid argument: pty not found";
 }
 
 /**

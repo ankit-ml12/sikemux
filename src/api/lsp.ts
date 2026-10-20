@@ -2,6 +2,7 @@ import { invokeCommand as invoke } from "./invoke";
 import { fileUriToPath } from "../lib/paths";
 import { languageServerOf } from "../languages";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
+import { isRecord } from "../lib/guards";
 
 export interface LspPos {
     line: number;
@@ -81,10 +82,6 @@ export const LSP_PAYLOAD_LIMITS = Object.freeze({
 const INVALID_PROPERTY = Symbol("invalid LSP property");
 const U32_MAX = 0xffff_ffff;
 const UTF8_ENCODER = new TextEncoder();
-
-function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function ownDataProperty(value: Record<PropertyKey, unknown>, key: string): unknown | typeof INVALID_PROPERTY {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
