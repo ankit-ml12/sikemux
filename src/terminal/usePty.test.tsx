@@ -409,7 +409,6 @@ describe("usePty", () => {
             cwd: "/repo/new",
             startup: "bash",
         });
-
     });
 
     it("does not respawn a transient CLI when delivered initial input is cleared", async () => {
