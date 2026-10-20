@@ -39,6 +39,13 @@ const cliExecutable = resolve(
   process.env.SIKEMUX_E2E_CLI ??
     join(e2eTarget, "debug", `sikemux-host${executableSuffix}`),
 );
+// A stand-in chat agent that speaks just enough ACP, so a chat runs in the
+// core without a provider, an account or the network.
+const fakeAgent = join(
+  e2eTarget,
+  "debug",
+  `sikemux-fake-acp-agent${executableSuffix}`,
+);
 
 const exerciseHarnessTasks = process.argv.includes("--tasks");
 const exerciseBrowser = process.argv.includes("--browser");
@@ -940,30 +947,6 @@ async function exerciseQuitKeepsTerminals() {
   return shell;
 }
 
-// A stand-in chat agent that speaks just enough ACP, so a chat runs in the
-// core without a provider, an account or the network.
-function buildFakeAgent() {
-  report("building the stand-in chat agent");
-  const built = run(
-    "cargo",
-    [
-      "build",
-      "--manifest-path",
-      join(root, "src-tauri", "Cargo.toml"),
-      "-p",
-      "sikemux-core",
-      "--bin",
-      "sikemux-fake-acp-agent",
-    ],
-    { ...process.env, CARGO_TARGET_DIR: e2eTarget },
-    600_000,
-  );
-  if (built.status !== 0)
-    fail(`could not build the stand-in chat agent: ${built.stderr}`);
-  report("built the stand-in chat agent");
-  return join(e2eTarget, "debug", `sikemux-fake-acp-agent${executableSuffix}`);
-}
-
 const CHAT_AGENT_ID = "e2e-chat";
 
 function chatSaid(events) {
@@ -1385,7 +1368,7 @@ async function exerciseQuitAndStopEverything(shell) {
 
 await executableExists(appExecutable, "debug desktop executable");
 await executableExists(cliExecutable, "debug editor CLI");
-const fakeAgent = buildFakeAgent();
+await executableExists(fakeAgent, "stand-in chat agent");
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), "sikemux-desktop-e2e-"));
 const isolatedHome = join(temporaryRoot, "home");
