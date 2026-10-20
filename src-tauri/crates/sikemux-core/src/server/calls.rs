@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 
 use super::access::{Needs, Peer};
 use super::attachments;
+use super::changed::Topic;
 use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
 use super::names::{project_of, AgentName, ClosedAgent, Starting};
@@ -94,7 +95,7 @@ calls! { core, client, params;
     "setActivityPrice": Person => {
         let params: ActivityPriceParams = parse(params)?;
         core.activity_log.set_price(&params.model, params.price)?;
-        core.changes.changed("activity", None, None);
+        core.changes.changed(Topic::Activity, None, None);
         answer(())
     },
     "steerQueued": Full => {

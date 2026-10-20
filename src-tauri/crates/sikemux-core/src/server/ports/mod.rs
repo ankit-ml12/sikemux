@@ -20,6 +20,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use crate::protocol::SessionId;
+use crate::server::changed::Topic;
 use crate::tasks::config::{self, ConfigLoad};
 
 use super::connection::{blocking, ClientId};
@@ -310,7 +311,7 @@ fn look(core: &Core) -> Vec<ListeningPort> {
     if state.found != found {
         state.found = found.clone();
         drop(state);
-        core.changes.changed("ports", None, None);
+        core.changes.changed(Topic::Ports, None, None);
     }
     found
 }

@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use tokio::time::Instant;
 
+use super::changed::Topic;
 use crate::launch::PermissionMode;
 use crate::protocol::{SessionId, SpawnTarget};
 use crate::tasks::check::{self, Check, CheckItem, Checked, Listening};
@@ -422,7 +423,7 @@ pub(crate) async fn trust_project(
         core.tasks
             .grant(Grant::Config(TrustedConfig { path, fingerprint }));
         core.harness.changed();
-        core.changes.changed("tasks", Some(&project), None);
+        core.changes.changed(Topic::Tasks, Some(&project), None);
         Ok(())
     })
     .await
@@ -713,7 +714,7 @@ async fn ask_person(
     if let Some(execution_id) = execution_id {
         core.harness.awaiting_trust(execution_id);
     }
-    core.changes.changed("trust", None, None);
+    core.changes.changed(Topic::Trust, None, None);
     let until = Instant::now() + TRUST_WAIT;
     let answer = loop {
         let mut changed = core.harness.subscribe();
@@ -735,7 +736,7 @@ async fn ask_person(
         }
     };
     core.tasks.state.locked().asking.remove(&id);
-    core.changes.changed("trust", None, None);
+    core.changes.changed(Topic::Trust, None, None);
     answer
 }
 
@@ -785,7 +786,8 @@ pub(crate) fn answer_trust(core: &Core, id: &str, trust: bool) -> CoreResult<()>
         .ok_or("Nothing waits on that answer any more")?;
     if trust {
         core.tasks.grant(asked.ask.grant);
-        core.changes.changed("tasks", Some(&asked.project), None);
+        core.changes
+            .changed(Topic::Tasks, Some(&asked.project), None);
     } else if let Some(execution_id) = &asked.execution_id {
         core.harness
             .launch_failed(execution_id, "Project configuration was not approved");
@@ -1102,7 +1104,8 @@ pub(crate) async fn add(core: &Arc<Core>, params: AddParams) -> CoreResult<Value
         if let Some(old) = params.replaces.filter(|old| *old != task_id) {
             detect::remove_saved(&project, &old)?;
         }
-        core.changes.changed("tasks", Some(&params.project), None);
+        core.changes
+            .changed(Topic::Tasks, Some(&params.project), None);
         Ok(json!({ "taskId": task_id }))
     })
     .await
@@ -1138,7 +1141,8 @@ pub(crate) async fn set_check(core: &Arc<Core>, params: CheckParams) -> CoreResu
                 .grant(Grant::Config(TrustedConfig { path, fingerprint }));
         }
         core.harness.changed();
-        core.changes.changed("tasks", Some(&params.project), None);
+        core.changes
+            .changed(Topic::Tasks, Some(&params.project), None);
         Ok(Value::Null)
     })
     .await
@@ -1156,7 +1160,8 @@ pub(crate) async fn remove(core: &Arc<Core>, params: RemoveParams) -> CoreResult
     let core = core.clone();
     blocking(move || {
         detect::remove_saved(Path::new(&params.project), &params.task_id)?;
-        core.changes.changed("tasks", Some(&params.project), None);
+        core.changes
+            .changed(Topic::Tasks, Some(&params.project), None);
         Ok(Value::Null)
     })
     .await
@@ -1220,7 +1225,7 @@ pub(crate) async fn rerun_failed(core: &Arc<Core>, params: RerunParams) -> CoreR
         let over = reruns.len().saturating_sub(MAX_RERUNS);
         reruns.drain(..over);
     }
-    core.changes.changed("tasks", Some(&run.project), None);
+    core.changes.changed(Topic::Tasks, Some(&run.project), None);
     let execution_id = super::harness::start_for_person(core, &run.project, &task_id)?;
     Ok(json!({ "taskId": task_id, "executionId": execution_id }))
 }
@@ -1284,7 +1289,7 @@ pub(crate) async fn publish_runs(core: Arc<Core>) {
         let now = runs(&core);
         if now != last {
             last = now;
-            core.changes.changed("runs", None, None);
+            core.changes.changed(Topic::Runs, None, None);
         }
     }
 }

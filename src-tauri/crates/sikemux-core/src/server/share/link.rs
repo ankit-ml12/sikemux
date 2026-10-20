@@ -60,6 +60,7 @@ pub(super) async fn run(
                     running.state = ShareState::Connecting;
                 }
             }
+            super::changed(&alive);
             if matches!(ended, Ended::Done)
                 || (inner.running.is_empty() && inner.closing.is_empty())
             {
@@ -355,6 +356,7 @@ async fn session(
                     running.state = ShareState::Open;
                     running.problem = None;
                     drop(inner);
+                    super::changed(core);
                     take_snapshot(core, &opened.share);
                 }
                 true
@@ -364,6 +366,7 @@ async fn session(
                 if let Some(running) = inner.running.get_mut(&refused.share) {
                     running.state = ShareState::Refused;
                     running.problem = Some(refusal_text(refused.reason).to_owned());
+                    super::changed(core);
                     running.client.close();
                     super::chat::detach(core, running.client.id, &running.stored.agent_id);
                 }
@@ -372,6 +375,7 @@ async fn session(
             ShareServerMessage::Viewers(viewers) => {
                 if let Some(running) = core.shares.inner.locked().running.get_mut(&viewers.share) {
                     running.viewers = u32::try_from(viewers.count).unwrap_or(0);
+                    super::changed(core);
                 }
                 true
             }

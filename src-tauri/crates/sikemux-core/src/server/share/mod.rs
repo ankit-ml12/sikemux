@@ -22,6 +22,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::access::Peer;
+use super::changed::Topic;
 use super::connection::ClientConn;
 use super::remote::StoredShare;
 use super::{chat, Core, CoreError, CoreResult};
@@ -139,7 +140,14 @@ fn view_of(running: &Running) -> ShareView {
     }
 }
 
+/// Clients read the shares again: one began, ended, or its state, problem
+/// or viewers moved.
+fn changed(core: &Core) {
+    core.changes.changed(Topic::Shares, None, None);
+}
+
 fn save(core: &Core, inner: &Inner) {
+    changed(core);
     let mut shares: Vec<StoredShare> = inner
         .running
         .values()

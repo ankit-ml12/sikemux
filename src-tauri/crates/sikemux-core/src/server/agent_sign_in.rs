@@ -13,6 +13,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::oneshot;
 
+use super::changed::Topic;
 use crate::agent_accounts::{cli, folders::link_shared};
 use crate::agent_catalog::AgentKind;
 
@@ -103,7 +104,7 @@ pub(super) fn pages() -> Vec<Page> {
 }
 
 fn pages_changed(core: &Core) {
-    core.changes.changed("agentSignIn", None, None);
+    core.changes.changed(Topic::AgentSignIn, None, None);
 }
 
 /// Runs the agent's own sign-in for one account and answers once it ends.

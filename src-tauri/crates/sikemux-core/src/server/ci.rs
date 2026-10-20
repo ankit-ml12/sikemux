@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
+use super::changed::Topic;
 use super::connection::ClientId;
 use super::{plugins, Core};
 
@@ -154,7 +155,8 @@ async fn check(core: &Arc<Core>, repo: Shown) {
         before.is_some_and(|before| before.runs != fingerprint)
     };
     if moved {
-        core.changes.changed("ci", None, Some(vec![repo.key()]));
+        core.changes
+            .changed(Topic::Ci, None, Some(vec![repo.key()]));
         super::board::ci_moved(core, &repo);
     }
 }

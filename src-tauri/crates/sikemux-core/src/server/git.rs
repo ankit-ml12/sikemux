@@ -8,6 +8,7 @@ use git2::Repository;
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::changed::Topic;
 use crate::git::{
     ai, blame, branches, changes, commit, log, remote, revisions, stash, status, watch, worktree,
 };
@@ -176,7 +177,8 @@ pub(crate) fn follow_projects(core: &Core) {
             .as_ref()
             .is_none_or(|paths| paths.iter().any(|path| path == watch::GIT_STATE));
         for project in projects {
-            core.changes.changed("git", Some(project), paths.clone());
+            core.changes
+                .changed(Topic::Git, Some(project), paths.clone());
             if state_moved {
                 core.collisions.head_moved(&core, project);
             }

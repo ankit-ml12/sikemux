@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+use super::changed::Topic;
 use super::connection::blocking;
 use super::workspace::refresh_launchers;
 use super::{Core, CoreResult};
@@ -84,7 +85,7 @@ async fn change(
     edit(&mut book)?;
     core.workspaces.set_accounts(book.clone())?;
     refresh_launchers(core.clone()).await;
-    core.changes.changed("agentAccounts", None, None);
+    core.changes.changed(Topic::AgentAccounts, None, None);
     Ok(book)
 }
 

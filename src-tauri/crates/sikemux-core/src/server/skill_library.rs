@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_process::sync::Locked;
 
+use super::changed::Topic;
 use crate::agent_catalog::AgentKind;
 use crate::sessions::roots::{agent_config_root, environment_path};
 use crate::skills::{self, Skill};
@@ -299,7 +300,7 @@ pub(crate) fn watch_global(core: &Arc<Core>) {
             }
             kept.push(skill);
             drop(kept);
-            core.changes.changed("skills", None, None);
+            core.changes.changed(Topic::Skills, None, None);
         });
     });
 }

@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
+use super::changed::Topic;
 use crate::cli::protocol::HarnessRequest;
 use crate::launch::providers::{self, ROUTED_ENV};
 use crate::text::clipped;
@@ -1941,6 +1942,6 @@ pub(crate) fn settle(core: &Arc<Core>) {
 fn tell_clients(core: &Core) {
     let dirty = std::mem::take(&mut core.boards.state.locked().dirty);
     for project in dirty {
-        core.changes.changed("boards", Some(&project), None);
+        core.changes.changed(Topic::Boards, Some(&project), None);
     }
 }
