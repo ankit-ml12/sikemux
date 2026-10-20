@@ -108,6 +108,7 @@ import { watchInbox } from "./rail/useInbox";
 import { useInstalledPlugins } from "./plugins/installed";
 import { useRailDock } from "./rail/railMotion";
 import { openUrl } from "./api/system";
+import brandMark from "../brand/mark/mark-white.svg";
 
 const SettingsPanel = lazy(() => import("./settings/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -559,6 +560,22 @@ function ShellBackdrop() {
     return useBackdropImage() ? <div className="shell-image" aria-hidden="true" /> : null;
 }
 
+/** A start that finishes within this shows only the window's ground, so it never flashes. */
+const SHOW_BOOT_AFTER_MS = 400;
+/** A start still going after this says what it waits on. */
+const NAME_THE_WAIT_AFTER_MS = 3000;
+
+/** Whether `after` milliseconds have passed while the app is still starting. */
+function useBootDelay(ready: boolean, after: number): boolean {
+    const [passed, setPassed] = useState(false);
+    useEffect(() => {
+        if (ready) return;
+        const timer = setTimeout(() => setPassed(true), after);
+        return () => clearTimeout(timer);
+    }, [ready, after]);
+    return passed;
+}
+
 export default function App() {
     useKeymap();
     usePinchZoom();
@@ -571,6 +588,9 @@ export default function App() {
     useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
+    const [coreAnswered, setCoreAnswered] = useState(false);
+    const bootShown = useBootDelay(bootReady, SHOW_BOOT_AFTER_MS);
+    const bootSlow = useBootDelay(bootReady, NAME_THE_WAIT_AFTER_MS);
     const sideRailVisible = useStore((s) => s.sideRailOpen);
     const tabRailVisible = useStore((s) => s.tabRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
@@ -634,8 +654,13 @@ export default function App() {
         void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
         let accounts: AgentAccountBook | null | undefined;
         let workspace: SharedWorkspace | undefined;
-        Promise.all([invoke<BootInfo>("boot_init"), agentApi.accounts().catch(() => undefined), fetchCoreWorkspace()])
-            .then(([boot, book, shared]) => {
+        const fromCore = Promise.all([agentApi.accounts().catch(() => undefined), fetchCoreWorkspace()]);
+        void fromCore.then(
+            () => !disposed && setCoreAnswered(true),
+            () => {},
+        );
+        Promise.all([invoke<BootInfo>("boot_init"), fromCore])
+            .then(([boot, [book, shared]]) => {
                 if (disposed) return;
                 accounts = book;
                 workspace = shared;
@@ -829,18 +854,25 @@ export default function App() {
     if (!bootReady) {
         return (
             <div className="shell boot-shell">
-                <section className="boot-state" role={bootIssue ? "alert" : "status"} aria-live="polite">
-                    <span className="boot-state-mark" aria-hidden="true">
-                        S
-                    </span>
-                    <h1>{bootIssue ? "Workspace protected" : "Opening workspace"}</h1>
-                    <p>{bootIssue ?? "Hydrating sessions and preparing terminal ownership…"}</p>
-                    {bootIssue && (
+                {bootIssue ? (
+                    <section className="boot-state" role="alert" aria-live="polite">
+                        <img className="boot-state-mark" src={brandMark} alt="" />
+                        <h1>Workspace protected</h1>
+                        <p>{bootIssue}</p>
                         <button type="button" onClick={() => window.location.reload()}>
                             Reload safely
                         </button>
-                    )}
-                </section>
+                    </section>
+                ) : (
+                    bootShown && (
+                        <section className="boot-state" role="status" aria-live="polite" aria-label="Opening Sikemux">
+                            <img className="boot-state-mark" src={brandMark} alt="" />
+                            {bootSlow && (
+                                <p className="boot-state-wait">{coreAnswered ? "Opening your workspace" : "Waiting for Sikemux to start"}</p>
+                            )}
+                        </section>
+                    )
+                )}
                 <Toaster />
             </div>
         );

@@ -22,16 +22,20 @@
 }
 
 .boot-state-mark {
-    display: grid;
-    place-items: center;
-    width: 42px;
-    height: 42px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
-    background: var(--surface-chosen);
-    color: var(--text-primary);
-    font-weight: 800;
-    letter-spacing: 0.04em;
+    width: 34px;
+    height: 34px;
+    opacity: 0.9;
+}
+
+/* Hangs under the mark, so the mark stays where it was when the line appears. */
+.boot-state:has(> .boot-state-wait) {
+    position: relative;
+}
+
+.boot-state-wait {
+    position: absolute;
+    top: calc(100% + 14px);
+    width: max-content;
 }
 
 .boot-state h1 {
