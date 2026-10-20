@@ -8,6 +8,7 @@ pub mod http;
 pub mod images;
 mod manifest;
 pub mod network;
+pub mod oauth;
 pub mod ratelimit;
 pub mod service;
 pub mod signin;

@@ -5918,8 +5918,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-process",
  "tokio",
+ "url",
  "workspace-hack",
 ]
 
@@ -6049,7 +6051,6 @@ dependencies = [
 name = "sikemux-plugin-linear"
 version = "0.1.0"
 dependencies = [
- "futures",
  "reqwest",
  "rustls",
  "serde",
