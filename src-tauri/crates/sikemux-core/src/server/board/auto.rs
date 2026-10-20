@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
 
 use super::review::Review;
 use super::{blind, finish, git, Board, Card, Status, Team};
@@ -15,7 +17,6 @@ use crate::launch::providers;
 use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
-use crate::server::remote::unix_ms;
 use crate::server::spawn::Ending;
 use crate::server::{chat, messages, Core};
 
@@ -317,7 +318,7 @@ fn takes(board: &Board, card: &Card) -> bool {
 /// Whether some board has Auto on with work it could still do, which keeps
 /// the core running with nothing else open.
 pub(crate) fn has_work(core: &Core) -> bool {
-    let state = core.boards.lock();
+    let state = core.boards.state.locked();
     state.boards.values().any(|board| {
         board.settings.auto
             && board.cards.iter().any(|card| {
@@ -332,10 +333,10 @@ pub(crate) fn has_work(core: &Core) -> bool {
 
 /// Starts an agent on each card Auto may take, while it has places free.
 pub(super) fn start_free(core: &Arc<Core>) {
-    let now = unix_ms();
+    let now = epoch_ms();
     let launchers = core.workspaces.has_launchers();
     let starts: Vec<(String, u64, String)> = {
-        let mut state = core.boards.lock();
+        let mut state = core.boards.state.locked();
         let projects: Vec<String> = state
             .boards
             .iter()
@@ -457,7 +458,7 @@ fn task(card: &Card, tree: &git::Tree, settings: &Settings, ticket: Option<Strin
 
 async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<(), String> {
     let (card, settings, ticket) = {
-        let state = core.boards.lock();
+        let state = core.boards.state.locked();
         let board = state.boards.get(project).ok_or("the board is gone")?;
         let card = board.card(id)?.clone();
         let ticket = card.ticket.as_ref().map(|ticket| match &ticket.url {
@@ -561,7 +562,7 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: &Ending) {
         return;
     }
     let found = {
-        let state = core.boards.lock();
+        let state = core.boards.state.locked();
         state.boards.iter().find_map(|(project, board)| {
             board.cards.iter().find_map(|card| {
                 let run = card.auto.as_ref()?;
@@ -634,7 +635,7 @@ fn worker_ended(core: &Arc<Core>, agent_id: &str) {
         return;
     }
     let found = {
-        let state = core.boards.lock();
+        let state = core.boards.state.locked();
         state.boards.iter().find_map(|(project, board)| {
             board.cards.iter().find_map(|card| {
                 let run = card.auto.as_ref()?;

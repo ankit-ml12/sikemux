@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
 use super::{Core, CoreError, CoreResult};
 
@@ -239,9 +240,7 @@ pub(crate) struct Ticket {
 /// Holds a stream for the window to collect over the tool endpoint, which
 /// only it may ask for, though anyone holding the endpoint's token may connect.
 pub(crate) fn stream_ticket(call: WindowCall) -> CoreResult<Ticket> {
-    let mut tickets = TICKETS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut tickets = TICKETS.locked();
     tickets.retain(|(_, made, _)| made.elapsed() < TICKET_LIFETIME);
     if tickets.len() >= MAX_TICKETS {
         return Err(CoreError::from(
@@ -262,9 +261,7 @@ pub(crate) fn stream_ticket(call: WindowCall) -> CoreResult<Ticket> {
 }
 
 pub(crate) fn redeem(ticket: &str) -> Option<Pending> {
-    let mut tickets = TICKETS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut tickets = TICKETS.locked();
     let at = tickets.iter().position(|(held, made, _)| {
         crate::cli::auth::same_secret(held, ticket) && made.elapsed() < TICKET_LIFETIME
     })?;

@@ -417,7 +417,7 @@ fn push(to: &str, card: &str, expires_at: u64) -> Push {
 }
 
 fn later() -> u64 {
-    now_ms() + 60_000
+    epoch_ms() + 60_000
 }
 
 #[test]
@@ -461,7 +461,7 @@ fn a_newer_alert_for_the_same_card_replaces_one_still_waiting() {
         blob: "BBBB".into(),
         ..push("phone", "a", later())
     });
-    outbox.post(push("phone", "c", now_ms() - 1));
+    outbox.post(push("phone", "c", epoch_ms() - 1));
     let waiting = outbox.waiting();
     assert_eq!(waiting.len(), 3);
     assert_eq!(waiting[0].collapse_id, "b".repeat(32));

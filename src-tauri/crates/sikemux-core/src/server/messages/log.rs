@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sikemux_process::sync::Locked;
 
 use super::Kind;
 
@@ -74,16 +75,10 @@ impl MessageLog {
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, u64>> {
-        self.latest
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// When each project last logged a message since the core started, so a
     /// client reads a project's log again when its time changes.
     pub(crate) fn latest(&self) -> BTreeMap<String, u64> {
-        self.lock().clone()
+        self.latest.locked().clone()
     }
 
     fn files(&self, project: &str) -> Option<(PathBuf, PathBuf)> {
@@ -104,7 +99,7 @@ impl MessageLog {
             return;
         };
         line.push(b'\n');
-        let mut latest = self.lock();
+        let mut latest = self.latest.locked();
         latest.insert(project.to_owned(), entry.at);
         let full = std::fs::metadata(&current)
             .is_ok_and(|file| file.len() + line.len() as u64 > MAX_FILE_BYTES);
@@ -131,7 +126,7 @@ impl MessageLog {
         let Some((current, old)) = self.files(project) else {
             return Vec::new();
         };
-        let _writing = self.lock();
+        let _writing = self.latest.locked();
         let mut entries = Vec::new();
         for path in [current, old] {
             let Ok(file) = std::fs::File::open(path) else {

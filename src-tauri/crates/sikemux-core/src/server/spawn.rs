@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use sikemux_pty::agent_detection::AgentKind;
 
 use crate::cli::protocol::HarnessRequest;
@@ -53,21 +54,15 @@ pub(crate) struct Spawning {
 
 impl Spawning {
     fn one_at_a_time(&self) -> std::sync::MutexGuard<'_, ()> {
-        self.one_at_a_time
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.one_at_a_time.locked()
     }
 
     fn opening(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
-        self.opening
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.opening.locked()
     }
 
     fn reported(&self) -> std::sync::MutexGuard<'_, HashMap<String, u64>> {
-        self.reported
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.reported.locked()
     }
 }
 

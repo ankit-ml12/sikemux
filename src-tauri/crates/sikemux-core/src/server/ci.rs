@@ -6,11 +6,12 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
 use super::connection::ClientId;
 use super::{plugins, Core};
@@ -58,14 +59,6 @@ struct State {
 #[derive(Default)]
 pub(crate) struct Ci(Mutex<State>);
 
-impl Ci {
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-}
-
 #[derive(Deserialize)]
 pub(crate) struct ShowParams {
     repos: Vec<Shown>,
@@ -74,7 +67,7 @@ pub(crate) struct ShowParams {
 /// The repositories `client` shows now, in place of those it showed before.
 pub(crate) fn show(core: &Arc<Core>, client: ClientId, params: ShowParams) {
     {
-        let mut state = core.ci.lock();
+        let mut state = core.ci.0.locked();
         if params.repos.is_empty() {
             state.shown.remove(&client);
         } else {
@@ -89,7 +82,7 @@ pub(crate) fn show(core: &Arc<Core>, client: ClientId, params: ShowParams) {
 /// Starts checking, unless it already runs; it stops by itself once nothing
 /// is looked at.
 pub(crate) fn start(core: &Arc<Core>) {
-    if !std::mem::replace(&mut core.ci.lock().checking, true) {
+    if !std::mem::replace(&mut core.ci.0.locked().checking, true) {
         tokio::spawn(serve(core.clone()));
     }
 }
@@ -100,7 +93,7 @@ async fn serve(core: Arc<Core>) {
             let connected: HashSet<ClientId> =
                 core.clients().iter().map(|client| client.id).collect();
             let waiting = super::board::waiting_on_ci(&core);
-            let mut state = core.ci.lock();
+            let mut state = core.ci.0.locked();
             state.shown.retain(|client, _| connected.contains(client));
             let shown: HashSet<Shown> = state
                 .shown
@@ -151,7 +144,7 @@ async fn check(core: &Arc<Core>, repo: Shown) {
             .any(|run| run.get("status").and_then(Value::as_str) != Some("completed"))
     });
     let moved = {
-        let mut state = core.ci.lock();
+        let mut state = core.ci.0.locked();
         let before = state.seen.insert(
             repo.clone(),
             Seen {

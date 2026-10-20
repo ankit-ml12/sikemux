@@ -3,9 +3,10 @@
 //! as one notice.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use sikemux_process::sync::Locked;
 use tokio::sync::Notify;
 
 use crate::protocol::Event;
@@ -26,16 +27,10 @@ pub(crate) struct Changes {
 }
 
 impl Changes {
-    fn lock(&self) -> MutexGuard<'_, Pending> {
-        self.pending
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// `topic` changed for `project`, or for every project when it is none.
     /// `paths` names what moved inside it; none means anything may have.
     pub(crate) fn changed(&self, topic: &str, project: Option<&str>, paths: Option<Vec<String>>) {
-        let mut pending = self.lock();
+        let mut pending = self.pending.locked();
         let key = (topic.to_owned(), project.map(str::to_owned));
         let known = pending.get(&key);
         let merged = match (known, paths) {
@@ -57,7 +52,7 @@ pub(crate) async fn serve(core: Arc<Core>) {
     loop {
         core.changes.notify.notified().await;
         tokio::time::sleep(GATHER).await;
-        let pending = std::mem::take(&mut *core.changes.lock());
+        let pending = std::mem::take(&mut *core.changes.pending.locked());
         for ((topic, project), paths) in pending {
             core.broadcast_event(&Event::Changed {
                 topic,

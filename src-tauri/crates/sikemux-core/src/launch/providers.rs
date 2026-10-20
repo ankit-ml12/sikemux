@@ -10,6 +10,7 @@ use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
+use sikemux_process::sync::Locked;
 
 use super::model_feed::{Feed, Snapshot};
 use crate::agent_catalog::{self, ProviderUse, AGENTS};
@@ -313,10 +314,7 @@ impl Providers {
     }
 
     fn fresh(&self) -> MutexGuard<'_, State> {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = self.state.locked();
         let stamp = std::fs::metadata(&self.path)
             .and_then(|metadata| metadata.modified())
             .ok();

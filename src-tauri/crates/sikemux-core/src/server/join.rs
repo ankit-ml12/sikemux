@@ -96,7 +96,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
         name: clean(&hello.name, NAME_LIMIT),
         platform: clean(&hello.platform, PLATFORM_LIMIT),
         from_account: true,
-        expires_at: remote::unix_ms() + APPROVAL_TIMEOUT.as_millis() as u64,
+        expires_at: sikemux_process::clock::epoch_ms() + APPROVAL_TIMEOUT.as_millis() as u64,
     };
     let answered = core
         .remote
@@ -194,7 +194,7 @@ mod tests {
     }
 
     fn now() -> i64 {
-        (remote::unix_ms() / 1000) as i64
+        sikemux_process::clock::epoch_secs() as i64
     }
 
     fn ticket(vector: &Vector, host: &Host, phone: &SecretKey) -> JoinTicket {
@@ -241,7 +241,9 @@ mod tests {
         assert_eq!(request.name, "Pixel 8");
         assert_eq!(request.platform, "android");
         assert_eq!(request.device_id, key.public().to_string());
-        let waits = request.expires_at.saturating_sub(remote::unix_ms());
+        let waits = request
+            .expires_at
+            .saturating_sub(sikemux_process::clock::epoch_ms());
         assert!(waits > 100_000 && waits <= 120_000, "{waits}");
         host.core
             .remote

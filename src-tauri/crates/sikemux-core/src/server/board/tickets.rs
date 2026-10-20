@@ -6,11 +6,12 @@
 use std::sync::Arc;
 
 use serde_json::{json, Value};
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
 
 use super::{change_card, send_notices, By, Changes, Status, Ticket};
 use crate::server::connection::blocking;
 use crate::server::plugins;
-use crate::server::remote::unix_ms;
 use crate::server::wake::sooner;
 use crate::server::Core;
 
@@ -65,10 +66,10 @@ enum Work {
 /// Starts each ticket update or look that is due, and answers when the next
 /// one will be.
 pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
-    let now = unix_ms();
+    let now = epoch_ms();
     let mut next = None;
     let due: Vec<(String, u64, Ticket, Work)> = {
-        let mut state = core.boards.lock();
+        let mut state = core.boards.state.locked();
         let mut due = Vec::new();
         for (project, board) in &state.boards {
             for card in &board.cards {
@@ -139,7 +140,7 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
             let pushing = matches!(work, Work::Push { .. });
             run(&core, &project, id, &ticket, work).await;
             if pushing {
-                core.boards.lock().syncing.remove(&(project, id));
+                core.boards.state.locked().syncing.remove(&(project, id));
                 core.boards.wake.now();
             }
         });
@@ -255,7 +256,7 @@ fn settle(
     status: Status,
     outcome: Result<(), String>,
 ) {
-    let mut state = core.boards.lock();
+    let mut state = core.boards.state.locked();
     let Some(card) = state
         .boards
         .get_mut(project)
@@ -275,7 +276,7 @@ fn settle(
         }
         Err(error) => {
             ticket.sync_note = Some(format!("{key} was not updated in Jira: {error}"));
-            state.polled.insert(failed, unix_ms());
+            state.polled.insert(failed, epoch_ms());
         }
     }
     core.boards.save(&mut state, project);
@@ -287,7 +288,7 @@ async fn close(core: &Arc<Core>, project: &str, id: u64, key: &str) {
     let (project, key) = (project.to_owned(), key.to_owned());
     let notices = blocking(move || {
         let open = {
-            let mut state = core2.boards.lock();
+            let mut state = core2.boards.state.locked();
             let Some(card) = state
                 .boards
                 .get_mut(&project)

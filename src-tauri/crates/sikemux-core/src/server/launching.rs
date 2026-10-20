@@ -16,6 +16,7 @@ use crate::protocol::{
     ChatAccount, ChatLaunch, Continuation, Event, LaunchIdentity, RequestId, Response, SessionId,
     SpawnTarget, TerminalSpawn, WAKE_WAIT,
 };
+use sikemux_process::vars;
 use sikemux_pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
 
 use super::chat;
@@ -154,7 +155,7 @@ pub(crate) async fn start_terminal(
 pub(crate) fn own_tools(core: &Core, launch: &mut ChatLaunch) {
     launch
         .env
-        .insert("SIKEMUX_AGENT_ID".into(), launch.agent_id.clone());
+        .insert(vars::AGENT_ID.into(), launch.agent_id.clone());
     let Some(tools) = tools(core) else {
         return;
     };

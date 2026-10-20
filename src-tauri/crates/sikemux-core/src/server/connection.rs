@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use sikemux_process::sync::Locked;
 use sikemux_pty::validate_pty_dimensions;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
@@ -112,9 +113,7 @@ impl ClientConn {
     }
 
     pub(crate) fn is_subscribed(&self, id: SessionId) -> bool {
-        self.subscriptions
-            .lock()
-            .is_ok_and(|subscriptions| subscriptions.contains(&id))
+        self.subscriptions.locked().contains(&id)
     }
 
     pub(crate) fn send(&self, frame: Arc<[u8]>) -> bool {
@@ -175,20 +174,16 @@ impl ClientConn {
     }
 
     pub(crate) fn note_subscription(&self, id: SessionId, subscribed: bool) {
-        if let Ok(mut subscriptions) = self.subscriptions.lock() {
-            if subscribed {
-                subscriptions.insert(id);
-            } else {
-                subscriptions.remove(&id);
-            }
+        let mut subscriptions = self.subscriptions.locked();
+        if subscribed {
+            subscriptions.insert(id);
+        } else {
+            subscriptions.remove(&id);
         }
     }
 
     pub(crate) fn take_subscriptions(&self) -> HashSet<SessionId> {
-        self.subscriptions
-            .lock()
-            .map(|mut subscriptions| std::mem::take(&mut *subscriptions))
-            .unwrap_or_default()
+        std::mem::take(&mut *self.subscriptions.locked())
     }
 
     pub(crate) async fn wait_flushed(&self, limit: Duration) {

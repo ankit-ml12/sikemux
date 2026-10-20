@@ -4,10 +4,12 @@
 //! connection drops.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
 use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
 use time::OffsetDateTime;
@@ -105,25 +107,12 @@ struct OutboxState {
     sent: BTreeMap<i64, Push>,
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 impl Outbox {
-    fn lock(&self) -> MutexGuard<'_, OutboxState> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// Queues `push`, replacing an alert for the same card that has not gone
     /// out yet.
     pub fn post(&self, push: Push) {
-        let now = now_ms();
-        let mut state = self.lock();
+        let now = epoch_ms();
+        let mut state = self.state.locked();
         state.waiting.retain(|waiting| {
             waiting.expires_at > now
                 && !(waiting.to == push.to && waiting.collapse_id == push.collapse_id)
@@ -136,7 +125,7 @@ impl Outbox {
     /// Drops the push for this card that has not gone out yet. True when
     /// there was one.
     pub fn withdraw(&self, to: &str, collapse_id: &str) -> bool {
-        let mut state = self.lock();
+        let mut state = self.state.locked();
         let before = state.waiting.len();
         state
             .waiting
@@ -145,12 +134,12 @@ impl Outbox {
     }
 
     pub fn waiting(&self) -> Vec<Push> {
-        self.lock().waiting.iter().cloned().collect()
+        self.state.locked().waiting.iter().cloned().collect()
     }
 
     pub(crate) fn take(&self) -> Vec<LivePush> {
-        let now = now_ms();
-        let mut state = self.lock();
+        let now = epoch_ms();
+        let mut state = self.state.locked();
         let mut taken = Vec::new();
         while let Some(push) = state.waiting.pop_front() {
             if push.expires_at <= now {
@@ -172,13 +161,13 @@ impl Outbox {
     }
 
     fn answered(&self, r#ref: i64) -> Option<Push> {
-        self.lock().sent.remove(&r#ref)
+        self.state.locked().sent.remove(&r#ref)
     }
 
     /// The connection dropped before these were answered, so they go out
     /// again on the next one, ahead of anything newer.
     fn unanswered(&self) {
-        let mut state = self.lock();
+        let mut state = self.state.locked();
         let sent = std::mem::take(&mut state.sent);
         for push in sent.into_values().rev() {
             if !state

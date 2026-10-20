@@ -5,11 +5,12 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use tokio::sync::watch;
 use tokio::time::Instant;
@@ -196,13 +197,13 @@ impl Harness {
 
     /// Runs `change` on the state and wakes every waiter.
     fn change<T>(&self, change: impl FnOnce(&mut State) -> T) -> T {
-        let result = change(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner));
+        let result = change(&mut self.state.locked());
         self.changes.send_modify(|version| *version += 1);
         result
     }
 
     fn read<T>(&self, read: impl FnOnce(&mut State) -> T) -> T {
-        read(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner))
+        read(&mut self.state.locked())
     }
 
     /// A task session just spawned. True when its run was stopped before it
@@ -219,7 +220,7 @@ impl Harness {
             run.label = Some(task.label.clone());
             run.command = Some(task.command.clone());
             run.cwd = Some(task.cwd.clone());
-            run.started_at = Some(super::remote::unix_ms());
+            run.started_at = Some(sikemux_process::clock::epoch_ms());
             if matches!(run.status, RunStatus::Starting | RunStatus::AwaitingTrust) {
                 state.set_status(&task.execution_id, RunStatus::Running);
             }
@@ -1340,7 +1341,7 @@ struct Tally {
 /// surface can be trimmed by what is used. The tally stays on this machine.
 fn record_tool_call(path: &Path, tool: &str, succeeded: bool) {
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-    let _held = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
+    let _held = ONE_AT_A_TIME.locked();
     if let Err(error) = add_tool_call(path, tool, succeeded) {
         eprintln!("sikemux core: could not count a call to {tool}: {error}");
     }

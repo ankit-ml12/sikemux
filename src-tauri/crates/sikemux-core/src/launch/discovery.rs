@@ -7,6 +7,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use sikemux_process::paths::expand_home;
+use sikemux_process::sync::Locked;
 use sikemux_process::user_environment;
 use sikemux_pty::user_shell::login_shell_environment;
 use tokio::process::Command;
@@ -113,11 +114,7 @@ async fn probe_agent_executable(def: &AgentEntry, executable: &Path) -> Result<S
         .as_ref()
         .and_then(|metadata| metadata.modified().ok());
     let size = metadata.as_ref().map_or(0, |metadata| metadata.len());
-    if let Some(cached) = cache
-        .lock()
-        .ok()
-        .and_then(|cache| cache.get(executable).cloned())
-    {
+    if let Some(cached) = cache.locked().get(executable).cloned() {
         if cached.checked_at.elapsed() < Duration::from_secs(60)
             && Some(cached.modified) == modified
             && cached.size == size
@@ -125,8 +122,10 @@ async fn probe_agent_executable(def: &AgentEntry, executable: &Path) -> Result<S
             return Ok(cached.version);
         }
     }
-    let version = probe_agent_executable_with_timeout(def, executable, AGENT_PROBE_TIMEOUT).await?;
-    if let (Some(modified), Ok(mut cache)) = (modified, cache.lock()) {
+    let version =
+        probe_agent_executable_with_timeout(def, executable, AGENT_PROBE_TIMEOUT).await?;
+    if let Some(modified) = modified {
+        let mut cache = cache.locked();
         if cache.len() >= 128 {
             cache.retain(|_, probe| probe.checked_at.elapsed() < Duration::from_secs(60));
         }
@@ -148,17 +147,14 @@ pub async fn first_healthy(
     candidates: Vec<PathBuf>,
 ) -> (Option<PathBuf>, Vec<String>) {
     let mut failures = Vec::new();
-    let cached = healthy_agent_executables()
-        .lock()
-        .ok()
-        .and_then(|cache| cache.get(def.kind).cloned());
+    let cached = healthy_agent_executables().locked().get(def.kind).cloned();
     let mut temporarily_unverified = None;
     for candidate in candidates {
         match probe_agent_executable(def, &candidate).await {
             Ok(_) => {
-                if let Ok(mut cache) = healthy_agent_executables().lock() {
-                    cache.insert(def.kind.to_string(), candidate.clone());
-                }
+                healthy_agent_executables()
+                    .locked()
+                    .insert(def.kind.to_string(), candidate.clone());
                 return (Some(candidate), failures);
             }
             Err(error) if error == "version check timed out" => {
@@ -171,9 +167,9 @@ pub async fn first_healthy(
                 .await
                 {
                     Ok(_) => {
-                        if let Ok(mut cache) = healthy_agent_executables().lock() {
-                            cache.insert(def.kind.to_string(), candidate.clone());
-                        }
+                        healthy_agent_executables()
+                            .locked()
+                            .insert(def.kind.to_string(), candidate.clone());
                         return (Some(candidate), failures);
                     }
                     Err(retry_error) => {

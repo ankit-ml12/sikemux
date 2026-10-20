@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sikemux_process::vars;
 
 use super::board::git::{branch_exists, git, git_in, inside, slug, worktrees_folder, SLOW};
 use super::connection::blocking;
@@ -442,10 +443,7 @@ pub(crate) async fn set_up(
         let ran = custom_command::run(CommandParams {
             command: hook.command,
             cwd: Some(cwd.to_path_buf()),
-            env: HashMap::from([(
-                "SIKEMUX_PROJECT".to_owned(),
-                cwd.to_string_lossy().into_owned(),
-            )]),
+            env: HashMap::from([(vars::PROJECT.to_owned(), cwd.to_string_lossy().into_owned())]),
         })
         .await;
         let failed = match ran {

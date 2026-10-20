@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sikemux_process::sync::Locked;
 
 use super::folders::{link_shared, root, sessions_root};
 use super::usage::codex_app_server;
@@ -75,7 +76,7 @@ fn status_cache() -> &'static Mutex<HashMap<String, (Instant, AgentStatus)>> {
 /// The last minute's answer for one account, if there is one.
 pub(crate) fn cached(provider: &str, config_path: Option<&str>) -> Option<AgentStatus> {
     let key = key(provider, config_path);
-    let mut cache = status_cache().lock().ok()?;
+    let mut cache = status_cache().locked();
     let (stored, status) = cache.get(&key)?;
     if stored.elapsed() < STATUS_TTL {
         return Some(status.clone());
@@ -85,21 +86,19 @@ pub(crate) fn cached(provider: &str, config_path: Option<&str>) -> Option<AgentS
 }
 
 pub(crate) fn remember(provider: &str, config_path: Option<&str>, status: AgentStatus) {
-    if let Ok(mut cache) = status_cache().lock() {
-        cache.retain(|_, (stored, _)| stored.elapsed() < STATUS_TTL);
-        cache.insert(key(provider, config_path), (Instant::now(), status));
-    }
+    let mut cache = status_cache().locked();
+    cache.retain(|_, (stored, _)| stored.elapsed() < STATUS_TTL);
+    cache.insert(key(provider, config_path), (Instant::now(), status));
 }
 
 /// Forgets one account's answer, or every answer when `provider` is absent.
 pub(crate) fn forget(provider: Option<&str>, config_path: Option<&str>) {
-    if let Ok(mut cache) = status_cache().lock() {
-        match provider {
-            Some(provider) => {
-                cache.remove(&key(provider, config_path));
-            }
-            None => cache.clear(),
+    let mut cache = status_cache().locked();
+    match provider {
+        Some(provider) => {
+            cache.remove(&key(provider, config_path));
         }
+        None => cache.clear(),
     }
 }
 

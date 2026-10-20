@@ -5,11 +5,12 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use tokio::time::Instant;
 
 use crate::protocol::{SessionId, SpawnTarget};
@@ -119,14 +120,8 @@ impl Tasks {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     fn trusts(&self, grant: &Grant) -> bool {
-        let state = self.lock();
+        let state = self.state.locked();
         match grant {
             Grant::Config(config) => state.trust.configs.contains(config),
             Grant::Personal(task) => state.trust.personal.contains(task),
@@ -134,7 +129,7 @@ impl Tasks {
     }
 
     fn grant(&self, grant: Grant) {
-        let mut state = self.lock();
+        let mut state = self.state.locked();
         let trust = &mut state.trust;
         match grant {
             Grant::Config(config) => {
@@ -155,12 +150,12 @@ impl Tasks {
 
     /// A run of a test task ended; what it left is read once.
     pub(crate) fn tests_of(&self, execution_id: &str) -> Option<TestResults> {
-        self.lock().tests.get(execution_id).cloned()
+        self.state.locked().tests.get(execution_id).cloned()
     }
 
     /// Forgets what is kept for runs no longer known.
     fn retain(&self, known: impl Fn(&str) -> bool) {
-        let mut state = self.lock();
+        let mut state = self.state.locked();
         state.tests.retain(|id, _| known(id));
     }
 }
@@ -238,7 +233,7 @@ fn offered(core: &Core, project: &Path) -> Offered {
         .any(|task| task.java.is_some())
         .then(java::runtimes);
     let project_key = project.to_string_lossy().into_owned();
-    let state = core.tasks.lock();
+    let state = core.tasks.state.locked();
     let mut found: Vec<Definition> = found
         .into_iter()
         .map(|task| {
@@ -712,7 +707,7 @@ async fn ask_person(
 ) -> bool {
     let id = uuid::Uuid::new_v4().to_string();
     let grant = ask.grant.clone();
-    core.tasks.lock().asking.insert(
+    core.tasks.state.locked().asking.insert(
         id.clone(),
         Asked {
             id: id.clone(),
@@ -731,7 +726,7 @@ async fn ask_person(
         if core.tasks.trusts(&grant) {
             break true;
         }
-        let waiting = core.tasks.lock().asking.contains_key(&id)
+        let waiting = core.tasks.state.locked().asking.contains_key(&id)
             && execution_id.is_none_or(|execution_id| {
                 core.harness
                     .run_of(execution_id)
@@ -745,7 +740,7 @@ async fn ask_person(
             _ = tokio::time::sleep_until(until) => {}
         }
     };
-    core.tasks.lock().asking.remove(&id);
+    core.tasks.state.locked().asking.remove(&id);
     core.changes.changed("trust", None, None);
     answer
 }
@@ -777,7 +772,8 @@ pub(crate) async fn config_trusted(
 /// The trust questions waiting on the person.
 pub(crate) fn asks(core: &Core) -> Vec<Value> {
     core.tasks
-        .lock()
+        .state
+        .locked()
         .asking
         .values()
         .map(|asked| serde_json::to_value(asked).unwrap_or_default())
@@ -788,7 +784,8 @@ pub(crate) fn asks(core: &Core) -> Vec<Value> {
 pub(crate) fn answer_trust(core: &Core, id: &str, trust: bool) -> CoreResult<()> {
     let asked = core
         .tasks
-        .lock()
+        .state
+        .locked()
         .asking
         .remove(id)
         .ok_or("Nothing waits on that answer any more")?;
@@ -992,7 +989,7 @@ fn fix(core: &Core, project: &Path, task: &Definition, found: &[Check]) -> Resul
                 env_var: Some(variable),
                 ..
             } => {
-                core.tasks.lock().moved.insert(
+                core.tasks.state.locked().moved.insert(
                     (project.to_string_lossy().into_owned(), task.id.clone()),
                     (variable.clone(), *port),
                 );
@@ -1224,7 +1221,7 @@ pub(crate) async fn rerun_failed(core: &Arc<Core>, params: RerunParams) -> CoreR
     .await?;
     let task_id = rerun.id.clone();
     {
-        let mut state = core.tasks.lock();
+        let mut state = core.tasks.state.locked();
         let reruns = state.reruns.entry(run.project.clone()).or_default();
         reruns.retain(|known| known.id != task_id);
         reruns.push(rerun);
@@ -1242,7 +1239,7 @@ pub(crate) fn runs(core: &Core) -> Vec<Value> {
     let runs = core.harness.all_runs();
     core.tasks
         .retain(|id| runs.iter().any(|run| run.execution_id == id));
-    let state = core.tasks.lock();
+    let state = core.tasks.state.locked();
     runs.into_iter()
         .map(|run| {
             let mut value = serde_json::to_value(&run).unwrap_or_default();
@@ -1277,7 +1274,11 @@ pub(crate) fn ended(core: &Core, pty_id: SessionId) {
     }
     tokio::task::spawn_blocking(move || {
         if let Some(found) = results::read(Path::new(&cwd)) {
-            core.tasks.lock().tests.insert(run.execution_id, found);
+            core.tasks
+                .state
+                .locked()
+                .tests
+                .insert(run.execution_id, found);
             core.harness.changed();
         }
     });

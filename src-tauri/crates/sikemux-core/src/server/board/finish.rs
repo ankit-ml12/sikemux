@@ -7,12 +7,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
+
 use super::auto::{Finish, Pull, Run, Settings, Stage};
 use super::codehost::{self, Checks, Feedback};
 use super::review::{self, MAX_ROUNDS};
 use super::{blind, change_card, git, send_notices, By, Card, Changes, Status};
 use crate::server::connection::blocking;
-use crate::server::remote::unix_ms;
 use crate::server::wake::sooner;
 use crate::server::{ci, messages, Core};
 
@@ -40,7 +42,7 @@ pub(super) fn change_run(
     agent: &str,
     change: impl FnOnce(&mut Card, &mut Run),
 ) -> bool {
-    let mut state = core.boards.lock();
+    let mut state = core.boards.state.locked();
     let Some(card) = state
         .boards
         .get_mut(project)
@@ -57,7 +59,7 @@ pub(super) fn change_run(
     };
     change(card, &mut run);
     card.auto = Some(run);
-    card.updated_at = unix_ms();
+    card.updated_at = epoch_ms();
     core.boards.save(&mut state, project);
     true
 }
@@ -107,7 +109,7 @@ pub(super) struct Dropped {
 pub(super) fn clear_dropped(core: &Arc<Core>) {
     blind::clear_dismissed(core);
     let ready: Vec<Dropped> = {
-        let mut state = core.boards.lock();
+        let mut state = core.boards.state.locked();
         if state.dropped.is_empty() {
             return;
         }
@@ -215,7 +217,7 @@ where
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
     let step = {
-        let mut state = core.boards.lock();
+        let mut state = core.boards.state.locked();
         let key = (project.clone(), id);
         if state.jobs.contains(&key) {
             if stage == Some(Stage::Shipping) {
@@ -253,7 +255,7 @@ where
     tokio::spawn(async move {
         let key = (step.project.clone(), step.id);
         work(core.clone(), step).await;
-        let again = core.boards.lock().reship.remove(&key);
+        let again = core.boards.state.locked().reship.remove(&key);
         core.boards.end_job(&key);
         if again {
             ship(&core, key.0, key.1);
@@ -265,7 +267,7 @@ where
 /// never got a worktree, else by shipping its work afresh.
 pub(super) fn retry(core: &Arc<Core>, project: &str, id: u64) -> Result<(), String> {
     let ships = {
-        let mut state = core.boards.lock();
+        let mut state = core.boards.state.locked();
         let card = state
             .boards
             .get_mut(project)
@@ -284,7 +286,7 @@ pub(super) fn retry(core: &Arc<Core>, project: &str, id: u64) -> Result<(), Stri
         } else {
             card.auto = None;
         }
-        card.updated_at = unix_ms();
+        card.updated_at = epoch_ms();
         core.boards.save(&mut state, project);
         ships
     };
@@ -345,7 +347,7 @@ fn pull_body(core: &Core, step: &Step) -> String {
 }
 
 fn current_result(core: &Core, step: &Step) -> Option<String> {
-    let state = core.boards.lock();
+    let state = core.boards.state.locked();
     state
         .boards
         .get(&step.project)?
@@ -440,7 +442,7 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
     } else {
         unanswered(core, step)
     };
-    let now = unix_ms();
+    let now = epoch_ms();
     change_run(core, &step.project, step.id, step.agent(), |_, run| {
         run.pull = Some(pull);
         run.head = Some(head);
@@ -467,7 +469,7 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
 /// The pull request of each run waiting on its checks, as the code-host
 /// repository the core's CI check watches for it.
 pub(crate) fn waiting_on_ci(core: &Core) -> Vec<ci::Shown> {
-    let state = core.boards.lock();
+    let state = core.boards.state.locked();
     state
         .boards
         .values()
@@ -492,7 +494,7 @@ pub(crate) fn waiting_on_ci(core: &Core) -> Vec<ci::Shown> {
 /// The runs on `repo` moved, so the runs waiting on their checks there look
 /// again now rather than at their next fallback.
 pub(crate) fn ci_moved(core: &Core, repo: &ci::Shown) {
-    let mut state = core.boards.lock();
+    let mut state = core.boards.state.locked();
     let waiting: Vec<(String, u64)> = state
         .boards
         .iter()
@@ -522,12 +524,12 @@ pub(crate) fn ci_moved(core: &Core, repo: &ci::Shown) {
 /// the person, and takes up steps a restart cut short. Answers when a run is
 /// next due a look.
 pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
-    let now = unix_ms();
+    let now = epoch_ms();
     let running = core.running_agents();
     let mut next = None;
     let mut checking_any = false;
     let due: Vec<(String, u64, Stage)> = {
-        let mut state = core.boards.lock();
+        let mut state = core.boards.state.locked();
         let mut due = Vec::new();
         let mut present = Vec::new();
         let mut missing = Vec::new();
@@ -665,9 +667,9 @@ async fn checking(core: &Arc<Core>, step: Step) {
     let checks = match codehost::checks(&pull, &step.run.branch, &head).await {
         Ok(checks) => checks,
         Err(error) => {
-            core.boards.lock().polled.insert(
+            core.boards.state.locked().polled.insert(
                 (step.project.clone(), step.id, CHECKS_FAILED_READ),
-                unix_ms(),
+                epoch_ms(),
             );
             step.note(
                 core,
@@ -677,7 +679,7 @@ async fn checking(core: &Arc<Core>, step: Step) {
             return;
         }
     };
-    let waited = unix_ms().saturating_sub(step.run.checks_since.unwrap_or(0));
+    let waited = epoch_ms().saturating_sub(step.run.checks_since.unwrap_or(0));
     match checks {
         Checks::Running => step.note(core, Stage::Checking, "Its checks are running"),
         Checks::Passed => passed(core, &step, &pull, &head).await,
@@ -823,7 +825,7 @@ pub(super) async fn merge(core: &Arc<Core>, step: &Step, pull: &Pull, head: &str
     .await;
     match rebased {
         Ok(Some(head)) => {
-            let now = unix_ms();
+            let now = epoch_ms();
             change_run(core, &step.project, step.id, step.agent(), |_, run| {
                 run.rebased = true;
                 run.head = Some(head);
@@ -957,7 +959,7 @@ async fn reviewing(core: &Arc<Core>, step: Step) {
 
 /// Counts the looks in a row at the card's pull request that found nothing new.
 fn quiet(core: &Core, step: &Step, nothing_new: bool) {
-    let mut state = core.boards.lock();
+    let mut state = core.boards.state.locked();
     let key = (step.project.clone(), step.id, QUIET);
     if nothing_new {
         *state.polled.entry(key).or_insert(0) += 1;

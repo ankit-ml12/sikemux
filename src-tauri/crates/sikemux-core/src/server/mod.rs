@@ -69,8 +69,9 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, Weak};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
+use sikemux_process::sync::Locked;
 use sikemux_pty::agent_detection::{ManifestRegistry, ManifestReloadReport};
 
 use sikemux_pty::error::PtyError;
@@ -200,10 +201,10 @@ impl From<serde_json::Error> for CoreError {
 
 pub(crate) type CoreResult<T> = Result<T, CoreError>;
 
-static EPOCH: OnceLock<Instant> = OnceLock::new();
+static STARTED: OnceLock<Instant> = OnceLock::new();
 
-fn epoch() -> Instant {
-    *EPOCH.get_or_init(Instant::now)
+fn started() -> Instant {
+    *STARTED.get_or_init(Instant::now)
 }
 
 /// A core that replaced an earlier one keeps its clock, so the times the
@@ -212,11 +213,11 @@ pub(crate) fn continue_clock(uptime_ms: u64) {
     let start = Instant::now()
         .checked_sub(Duration::from_millis(uptime_ms))
         .unwrap_or_else(Instant::now);
-    let _ = EPOCH.set(start);
+    let _ = STARTED.set(start);
 }
 
-pub(crate) fn now_ms() -> u64 {
-    epoch().elapsed().as_millis() as u64
+pub(crate) fn uptime_ms() -> u64 {
+    started().elapsed().as_millis() as u64
 }
 
 /// Counts launching, live and retained sessions, so the PTY budget holds even
@@ -352,11 +353,7 @@ pub(crate) struct Core {
 /// Session and window call ids start from the clock, so an id a client still
 /// holds from a core that has since restarted never names a new one.
 fn first_session_id() -> SessionId {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or(0)
-        .max(1)
+    sikemux_process::clock::epoch_ms().max(1)
 }
 
 impl Core {
@@ -431,14 +428,11 @@ impl Core {
     }
 
     pub(crate) fn manifest_dir(&self) -> Option<PathBuf> {
-        self.manifest_dir.lock().ok().and_then(|dir| dir.clone())
+        self.manifest_dir.locked().clone()
     }
 
     fn clients(&self) -> Vec<Arc<ClientConn>> {
-        self.clients
-            .lock()
-            .map(|clients| clients.values().cloned().collect())
-            .unwrap_or_default()
+        self.clients.locked().values().cloned().collect()
     }
 
     pub(crate) fn manifest_report(&self) -> CoreResult<ManifestReloadReport> {
@@ -454,16 +448,12 @@ impl Core {
         &self,
         directory: Option<PathBuf>,
     ) -> CoreResult<ManifestReloadReport> {
-        *self.manifest_dir.lock().map_err(CoreError::poisoned)? = directory;
+        *self.manifest_dir.locked() = directory;
         self.reload_manifests()
     }
 
     pub(crate) fn reload_manifests(&self) -> CoreResult<ManifestReloadReport> {
-        let directory = self
-            .manifest_dir
-            .lock()
-            .map_err(CoreError::poisoned)?
-            .clone();
+        let directory = self.manifest_dir.locked().clone();
         let manifests = |error: sikemux_pty::agent_detection::ManifestError| {
             CoreError::from(format!("agent detection manifests: {error}"))
         };
@@ -561,34 +551,28 @@ impl Core {
     }
 
     pub(crate) fn session(&self, id: SessionId) -> Option<Arc<Session>> {
-        self.sessions.lock().ok()?.get(&id).cloned()
+        self.sessions.locked().get(&id).cloned()
     }
 
     fn all_sessions(&self) -> Vec<Arc<Session>> {
-        self.sessions
-            .lock()
-            .map(|sessions| sessions.values().cloned().collect())
-            .unwrap_or_default()
+        self.sessions.locked().values().cloned().collect()
     }
 
     fn insert_session(&self, session: Arc<Session>) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            sessions.insert(session.id, session);
-        }
+        self.sessions.locked().insert(session.id, session);
     }
 
     pub(crate) fn remove_session(&self, session: &Arc<Session>) -> bool {
-        let removed = self.sessions.lock().is_ok_and(|mut sessions| {
-            if sessions
+        let removed = {
+            let mut sessions = self.sessions.locked();
+            let current = sessions
                 .get(&session.id)
-                .is_some_and(|current| Arc::ptr_eq(current, session))
-            {
+                .is_some_and(|current| Arc::ptr_eq(current, session));
+            if current {
                 sessions.remove(&session.id);
-                true
-            } else {
-                false
             }
-        });
+            current
+        };
         if removed {
             session::detach_all(session);
         }
@@ -596,7 +580,7 @@ impl Core {
     }
 
     fn take_session_for_kill(&self, id: SessionId) -> Option<Arc<Session>> {
-        let mut sessions = self.sessions.lock().ok()?;
+        let mut sessions = self.sessions.locked();
         let session = sessions.get(&id)?.clone();
         // A killed task keeps its snapshot and output log for later reads.
         if !session.is_task() {
@@ -609,23 +593,22 @@ impl Core {
 
     fn running_sessions(&self) -> usize {
         self.sessions
-            .lock()
-            .map(|sessions| sessions.values().filter(|s| s.is_running()).count())
-            .unwrap_or(0)
+            .locked()
+            .values()
+            .filter(|s| s.is_running())
+            .count()
     }
 
     fn is_idle(&self) -> bool {
         !self.remote.is_enabled()
-            && self.clients.lock().is_ok_and(|clients| clients.is_empty())
+            && self.clients.locked().is_empty()
             && self.running_sessions() == 0
             && self.chats.count() == 0
             && !board::auto_has_work(self)
     }
 
     fn register_client(&self, client: Arc<ClientConn>) {
-        if let Ok(mut clients) = self.clients.lock() {
-            clients.insert(client.id, client);
-        }
+        self.clients.locked().insert(client.id, client);
         self.view_watched.notify_one();
     }
 
@@ -634,9 +617,7 @@ impl Core {
         self.window.unregister(client.id);
         self.chats.forget_client(client.id);
         self.seen.client_gone(client.id);
-        if let Ok(mut clients) = self.clients.lock() {
-            clients.remove(&client.id);
-        }
+        self.clients.locked().remove(&client.id);
         for id in client.take_subscriptions() {
             if let Some(session) = self.session(id) {
                 session::detach(&session, client.id);
@@ -756,9 +737,7 @@ impl Core {
         if devices.is_empty() {
             return;
         }
-        let Ok(mut last) = self.device_view.lock() else {
-            return;
-        };
+        let mut last = self.device_view.locked();
         let Some(frame) = self.device_view_frame() else {
             return;
         };
@@ -774,9 +753,7 @@ impl Core {
 
     /// A device that just connected starts from the whole view.
     pub(crate) fn send_device_view(&self, client: &ClientConn) {
-        let Ok(_last) = self.device_view.lock() else {
-            return;
-        };
+        let _last = self.device_view.locked();
         if let Some(frame) = self.device_view_frame() {
             client.send(frame.into());
         }
@@ -840,21 +817,17 @@ impl Core {
         let candidates = sessions
             .iter()
             .enumerate()
-            .filter_map(|(index, session)| {
-                Some(TaskRetentionCandidate {
-                    id: index as u32,
-                    exited_at_ms: session.exited_at_ms.load(Ordering::Acquire),
-                    has_subscribers: session.has_subscribers()?,
-                })
+            .map(|(index, session)| TaskRetentionCandidate {
+                id: index as u32,
+                exited_at_ms: session.exited_at_ms.load(Ordering::Acquire),
+                has_subscribers: session.has_subscribers(),
             })
             .collect();
         for index in task_reclamation_plan(candidates, now, MAX_RETAINED_EXITED_TASK_PTYS) {
             let Some(session) = sessions.get(index as usize) else {
                 continue;
             };
-            if session.exited_at_ms.load(Ordering::Acquire) != 0
-                && session.has_subscribers() == Some(false)
-            {
+            if session.exited_at_ms.load(Ordering::Acquire) != 0 && !session.has_subscribers() {
                 self.remove_session(session);
             }
         }
@@ -862,10 +835,12 @@ impl Core {
 
     fn drain(&self) {
         self.chats.stop_all();
-        let sessions: Vec<Arc<Session>> = match self.sessions.lock() {
-            Ok(mut sessions) => sessions.drain().map(|(_, session)| session).collect(),
-            Err(_) => return,
-        };
+        let sessions: Vec<Arc<Session>> = self
+            .sessions
+            .locked()
+            .drain()
+            .map(|(_, session)| session)
+            .collect();
         if sessions.is_empty() {
             return;
         }
@@ -953,19 +928,19 @@ async fn poll_sessions(core: Arc<Core>) {
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
-        let now = now_ms();
+        let now = uptime_ms();
         for session in core.all_sessions() {
             agent::poll(&core, &session, now);
             if !session.shell_protocol {
                 continue;
             }
-            let update = session.parser.lock().ok().and_then(|mut parser| {
-                parser
-                    .callbacks_mut()
-                    .shell
-                    .as_mut()
-                    .and_then(|shell| shell.take_due_event(now))
-            });
+            let update = session
+                .parser
+                .locked()
+                .callbacks_mut()
+                .shell
+                .as_mut()
+                .and_then(|shell| shell.take_due_event(now));
             if let Some(update) = update {
                 core.broadcast_event(&Event::ShellMetadata(update.into_event(session.id)));
             }
@@ -1002,7 +977,7 @@ async fn sweep(core: Arc<Core>) {
     ticker.tick().await;
     loop {
         ticker.tick().await;
-        let now = now_ms();
+        let now = uptime_ms();
         core.reclaim_exited_sessions(now);
         for session in core.all_sessions() {
             session::trim_if_idle(&session, now, IDLE_TRIM);
@@ -1023,9 +998,7 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
     if let Some(path) = config.cli_endpoint.clone() {
         match tools::ToolEndpoint::start(core.clone(), path).await {
             Ok(tools) => {
-                if let Ok(mut slot) = core.tools.lock() {
-                    *slot = Some(tools);
-                }
+                *core.tools.locked() = Some(tools);
             }
             Err(error) => eprintln!("sikemux core: agents' tools are unavailable: {error}"),
         }
@@ -1158,7 +1131,7 @@ pub(crate) async fn run_core(
     remote::stop_network(&core);
     remote::stop(&core).await;
     remote::stop_live(&core);
-    let tools = core.tools.lock().ok().and_then(|mut tools| tools.take());
+    let tools = core.tools.locked().take();
     if let Some(tools) = tools {
         tools.stop();
     }

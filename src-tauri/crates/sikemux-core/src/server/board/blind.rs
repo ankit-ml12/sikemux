@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
 use super::auto::Stage;
 use super::finish::{self, change_run, Step};
@@ -364,7 +365,7 @@ pub(super) fn record(core: &Core, agent_id: &str, params: &Value) -> Result<Valu
     if !approve && findings.is_empty() {
         return Err("Say what must change in findings when you do not approve".into());
     }
-    let mut state = core.boards.lock();
+    let mut state = core.boards.state.locked();
     let (project, card) = state
         .boards
         .iter_mut()
@@ -394,7 +395,7 @@ pub(super) fn record(core: &Core, agent_id: &str, params: &Value) -> Result<Valu
         approve,
         findings,
     });
-    card.updated_at = crate::server::remote::unix_ms();
+    card.updated_at = sikemux_process::clock::epoch_ms();
     let project = project.clone();
     core.boards.save(&mut state, &project);
     Ok(json!({
@@ -444,7 +445,7 @@ fn findings(value: Option<&Value>) -> Result<Vec<Finding>, String> {
 /// to the person.
 pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: &Ending) -> bool {
     let found = {
-        let state = core.boards.lock();
+        let state = core.boards.state.locked();
         reviewed_card(&state, agent_id).and_then(|(project, card)| {
             let run = card.auto.as_ref()?;
             Some((
@@ -483,12 +484,12 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: &Ending) -> b
 
 /// Stops a reviewer and takes its checkout away once Auto's next look runs.
 pub(super) fn dismiss_later(core: &Core, reviewer: Reviewer) {
-    core.boards.lock().dismissed.push(reviewer);
+    core.boards.state.locked().dismissed.push(reviewer);
     core.boards.wake.now();
 }
 
 pub(super) fn clear_dismissed(core: &Arc<Core>) {
-    let dismissed = std::mem::take(&mut core.boards.lock().dismissed);
+    let dismissed = std::mem::take(&mut core.boards.state.locked().dismissed);
     for reviewer in dismissed {
         let core = core.clone();
         tokio::spawn(async move { dismiss(&core, reviewer).await });

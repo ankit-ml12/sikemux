@@ -9,9 +9,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
+
 use crate::protocol::{Continuation, SessionId};
 
-use super::remote::unix_ms;
 use super::{launching, Core, CoreResult};
 
 /// How long a chat nobody looks at stays idle before it sleeps.
@@ -44,15 +46,13 @@ struct Starting<'a> {
 
 impl Drop for Starting<'_> {
     fn drop(&mut self) {
-        if let Ok(mut starting) = self.lifecycle.starting.lock() {
-            starting.remove(&self.agent_id);
-        }
+        self.lifecycle.starting.locked().remove(&self.agent_id);
     }
 }
 
 impl Lifecycle {
     fn claim(&self, agent_id: &str) -> Option<Starting<'_>> {
-        let mut starting = self.starting.lock().ok()?;
+        let mut starting = self.starting.locked();
         starting.insert(agent_id.to_owned()).then(|| Starting {
             lifecycle: self,
             agent_id: agent_id.to_owned(),
@@ -161,9 +161,7 @@ pub(crate) fn terminal_exited(
         return;
     }
     let now = Instant::now();
-    let Ok(mut resumed) = core.lifecycle.resumed.lock() else {
-        return;
-    };
+    let mut resumed = core.lifecycle.resumed.locked();
     resumed.retain(|_, at| now.duration_since(*at) < RESUME_WINDOW);
     if resumed.insert(agent_id.to_owned(), now).is_some() {
         return;
@@ -226,13 +224,13 @@ pub(crate) fn sleep_idle(core: &Core) -> usize {
 /// Puts to sleep the chats that have sat idle off every screen long enough.
 pub(crate) async fn serve(core: Arc<Core>) {
     settle_terminals(&core);
-    let began = unix_ms();
+    let began = epoch_ms();
     let mut ticker = tokio::time::interval(CHECK_EVERY);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     ticker.tick().await;
     loop {
         ticker.tick().await;
-        for agent_id in due(&core, began, unix_ms()) {
+        for agent_id in due(&core, began, epoch_ms()) {
             sleep(&core, &agent_id);
         }
     }

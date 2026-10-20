@@ -28,6 +28,8 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sikemux_process::clock::epoch_ms_of;
+use sikemux_process::sync::Locked;
 use tokio::process::Command;
 
 use crate::agent_catalog::AgentKind;
@@ -101,9 +103,7 @@ fn mtime_of(path: &Path) -> u64 {
     fs::metadata(path)
         .ok()
         .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |modified| epoch_ms_of(modified) / 1000)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -210,30 +210,27 @@ impl FileCache {
         F: FnOnce() -> Option<String>,
     {
         let cache = self.0.get_or_init(|| Mutex::new(HashMap::new()));
-        if let Ok(mut cache) = cache.lock() {
-            if let Some((cached_stamp, value, access)) = cache.get_mut(path) {
-                if *cached_stamp == stamp {
-                    *access = next_title_cache_access();
-                    return value.clone();
-                }
+        if let Some((cached_stamp, value, access)) = cache.locked().get_mut(path) {
+            if *cached_stamp == stamp {
+                *access = next_title_cache_access();
+                return value.clone();
             }
         }
         let value = compute();
-        if let Ok(mut cache) = cache.lock() {
-            if cache.len() >= MAX_TITLE_CACHE_ENTRIES && !cache.contains_key(path) {
-                if let Some(oldest) = cache
-                    .iter()
-                    .min_by_key(|(_, (_, _, access))| *access)
-                    .map(|(path, _)| path.clone())
-                {
-                    cache.remove(&oldest);
-                }
+        let mut cache = cache.locked();
+        if cache.len() >= MAX_TITLE_CACHE_ENTRIES && !cache.contains_key(path) {
+            if let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, (_, _, access))| *access)
+                .map(|(path, _)| path.clone())
+            {
+                cache.remove(&oldest);
             }
-            cache.insert(
-                path.to_path_buf(),
-                (stamp, value.clone(), next_title_cache_access()),
-            );
         }
+        cache.insert(
+            path.to_path_buf(),
+            (stamp, value.clone(), next_title_cache_access()),
+        );
         value
     }
 }

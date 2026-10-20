@@ -9,8 +9,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 
-use super::{git, lock, remember, Found};
+use super::{git, remember, Found};
 use crate::protocol::CodeHostChoice;
 use crate::server::board::codehost::{self, Repo};
 
@@ -463,7 +464,7 @@ async fn read_run(repo: &Repo, id: &Value, job: Option<Value>) -> Result<(Failin
 }
 
 fn cached(key: &str) -> Option<Arc<Failing>> {
-    lock(runs()).get(key).cloned()
+    runs().locked().get(key).cloned()
 }
 
 fn remember_run(key: &str, failing: &Arc<Failing>) {

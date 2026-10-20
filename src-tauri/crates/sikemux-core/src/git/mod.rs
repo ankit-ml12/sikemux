@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use git2::Repository;
+use sikemux_process::sync::Locked;
 use tokio::task::spawn_blocking;
 
 /// Runs a synchronous closure off the async workers, so a libgit2 walk of a
@@ -65,14 +66,9 @@ async fn shared<T: Clone>(
     key: String,
     work: impl std::future::Future<Output = Result<T, String>>,
 ) -> Result<T, String> {
-    let lock = || {
-        flights
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    };
-    let flight = lock().entry(key.clone()).or_default().clone();
+    let flight = flights.locked().entry(key.clone()).or_default().clone();
     let result = flight.get_or_init(|| work).await.clone();
-    let mut flights = lock();
+    let mut flights = flights.locked();
     if flights
         .get(&key)
         .is_some_and(|current| Arc::ptr_eq(current, &flight))

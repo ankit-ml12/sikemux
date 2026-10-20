@@ -9,13 +9,13 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_process::clock::epoch_ms;
 
 use crate::cli::protocol::{is_tool_agent_id, HarnessRequest};
 use crate::protocol::AgentStatus;
 
 use super::super::connection::blocking;
 use super::super::names::{self, Adopted, Worker};
-use super::super::remote::unix_ms;
 use super::super::sandbox;
 use super::super::spawn::{self as local, ForHost};
 use super::super::Core;
@@ -109,7 +109,7 @@ pub(crate) async fn spawn(
         parent: Some(lead_id.clone()),
         role: Role::Worker,
         status: AgentStatus::Starting,
-        active_at: Some(unix_ms()),
+        active_at: Some(epoch_ms()),
         repo: Some(packed.repo.clone()),
         landed: None,
     });
@@ -290,7 +290,7 @@ pub(super) async fn start_here(
             parent: None,
             role: Role::Lead,
             status: AgentStatus::Working,
-            active_at: Some(unix_ms()),
+            active_at: Some(epoch_ms()),
             repo: None,
             landed: None,
         });

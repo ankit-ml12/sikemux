@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
+use sikemux_process::vars;
 use sikemux_pty::launch::{
     account_dir, configure_interactive_command, configure_pty_environment, validate_direct_command,
     PtyContext,
@@ -161,7 +162,7 @@ pub(crate) fn prepare_terminal(
         cmd.arg("-l");
     }
     if let Some(startup) = startup.as_deref() {
-        cmd.env("SIKEMUX_SHELL", &shell);
+        cmd.env(vars::SHELL, &shell);
         cmd.arg("-c");
         cmd.arg(startup_bootstrap(startup, login_shell));
     }
@@ -243,10 +244,10 @@ pub(crate) fn prepare_task(
         launch.cli_endpoint.as_deref(),
         login_shell_environment(),
     );
-    task_command.env("SIKEMUX_TASK_EXECUTION_ID", execution_id);
-    task_command.env("SIKEMUX_TASK_TERMINAL_KEY", terminal_key);
-    task_command.env("SIKEMUX_TASK_ID", task_id);
-    task_command.env("SIKEMUX_TASK_SOURCE", source.as_str());
+    task_command.env(vars::TASK_EXECUTION_ID, execution_id);
+    task_command.env(vars::TASK_TERMINAL_KEY, terminal_key);
+    task_command.env(vars::TASK_ID, task_id);
+    task_command.env(vars::TASK_SOURCE, source.as_str());
     for (key, value) in env {
         task_command.env(key, value);
     }

@@ -9,12 +9,13 @@ mod words;
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
 
-use super::remote::unix_ms;
 use words::WORDS;
 
 const FILE: &str = "agent-names.json";
@@ -200,42 +201,27 @@ impl Names {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, Book> {
-        self.book
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// The agents running here with those running on linked hosts.
     fn open_with(&self, mut running: HashSet<String>) -> HashSet<String> {
-        running.extend(
-            self.pinned
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .iter()
-                .cloned(),
-        );
+        running.extend(self.pinned.locked().iter().cloned());
         running
     }
 
     /// The agents on linked hosts this host knows, whose names it keeps.
     pub(crate) fn pin(&self, agent_ids: HashSet<String>) {
-        *self
-            .pinned
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = agent_ids;
+        *self.pinned.locked() = agent_ids;
     }
 
     /// How many agents up the chain of leads the person's own agent is.
     pub(crate) fn depth(&self, agent_id: &str) -> usize {
-        self.lock().depth(agent_id)
+        self.book.locked().depth(agent_id)
     }
 
     /// Takes in an agent named on a linked host, under that name unless an
     /// open agent of its project here has it. `running` holds the agents
     /// running here.
     pub(crate) fn adopt(&self, adopted: Adopted<'_>, running: HashSet<String>) -> AgentName {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         let open = book.open(self.open_with(running));
         book.release(&open);
         book.remove(|entry| entry.agent_id == adopted.agent_id);
@@ -267,7 +253,7 @@ impl Names {
             provider: Some(adopted.provider.to_owned()),
             session_id: None,
             above,
-            at: unix_ms(),
+            at: epoch_ms(),
             seen: false,
             chosen: false,
             buddy: None,
@@ -290,7 +276,7 @@ impl Names {
         if hosts.is_empty() {
             return;
         }
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         let known = book.reached_from.entry(agent_id.to_owned()).or_default();
         let before = known.len();
         known.extend(hosts);
@@ -302,7 +288,7 @@ impl Names {
     /// The linked hosts whose agents started or messaged `agent_id` or any
     /// agent up its chain of leads.
     pub(crate) fn hosts_behind(&self, agent_id: &str) -> BTreeSet<String> {
-        let book = self.lock();
+        let book = self.book.locked();
         let mut hosts = BTreeSet::new();
         let mut current = Some(agent_id);
         for _ in 0..=book.agents.len() + book.closed_leads.len() {
@@ -317,7 +303,7 @@ impl Names {
 
     /// Calls an agent what the host it runs on calls it.
     pub(crate) fn set_name(&self, agent_id: &str, name: &str) {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         if let Some(entry) = book.entry_mut(agent_id).filter(|entry| entry.name != name) {
             entry.name = name.to_owned();
             self.save(&book);
@@ -325,7 +311,8 @@ impl Names {
     }
 
     pub(crate) fn name(&self, agent_id: &str) -> Option<String> {
-        self.lock()
+        self.book
+            .locked()
             .agents
             .iter()
             .find(|entry| entry.agent_id == agent_id)
@@ -333,7 +320,8 @@ impl Names {
     }
 
     pub(crate) fn get(&self, agent_id: &str) -> Option<AgentName> {
-        self.lock()
+        self.book
+            .locked()
             .agents
             .iter()
             .find(|entry| entry.agent_id == agent_id)
@@ -343,7 +331,8 @@ impl Names {
     /// The names of the agents in `agent_ids`, each with the agent that
     /// started it.
     pub(crate) fn of(&self, agent_ids: &HashSet<String>) -> Vec<AgentName> {
-        self.lock()
+        self.book
+            .locked()
             .agents
             .iter()
             .filter(|entry| agent_ids.contains(&entry.agent_id))
@@ -358,7 +347,7 @@ impl Names {
         starting: Starting<'_>,
         running: HashSet<String>,
     ) -> (AgentName, bool) {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         let open = book.open(self.open_with(running));
         let (named, mut changed) = book.give(starting, &open);
         changed |= book.release(&open);
@@ -375,7 +364,7 @@ impl Names {
         worker: Worker<'_>,
         running: HashSet<String>,
     ) -> Result<AgentName, String> {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         let open = book.open(self.open_with(running));
         book.release(&open);
         let lead = book
@@ -425,7 +414,7 @@ impl Names {
             provider: Some(worker.provider.to_owned()),
             session_id: worker.session.map(str::to_owned),
             above: 0,
-            at: unix_ms(),
+            at: epoch_ms(),
             seen: false,
             chosen: false,
             buddy: None,
@@ -439,14 +428,14 @@ impl Names {
 
     /// Forgets a worker that never started, so its name is free again.
     pub(crate) fn forget(&self, agent_id: &str) {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         if book.remove(|entry| entry.agent_id == agent_id) {
             self.save(&book);
         }
     }
 
     pub(crate) fn make_blind(&self, agent_id: &str) {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         if let Some(entry) = book.entry_mut(agent_id).filter(|entry| !entry.blind) {
             entry.blind = true;
             self.save(&book);
@@ -454,7 +443,8 @@ impl Names {
     }
 
     pub(crate) fn is_blind(&self, agent_id: &str) -> bool {
-        self.lock()
+        self.book
+            .locked()
             .agents
             .iter()
             .any(|entry| entry.agent_id == agent_id && entry.blind)
@@ -462,7 +452,8 @@ impl Names {
 
     /// The agent that hears how the agent's turns end, if any.
     pub(crate) fn reports_to(&self, agent_id: &str) -> Option<String> {
-        self.lock()
+        self.book
+            .locked()
             .agents
             .iter()
             .find(|entry| entry.agent_id == agent_id && !entry.quiet)
@@ -472,7 +463,7 @@ impl Names {
     /// The agent at the top of `agent_id`'s chain of leads, the one the person
     /// started, which names its team.
     pub(crate) fn team_of(&self, agent_id: &str) -> String {
-        let book = self.lock();
+        let book = self.book.locked();
         let mut current = agent_id;
         for _ in 0..=book.agents.len() + book.closed_leads.len() {
             match book.parent(current) {
@@ -485,12 +476,12 @@ impl Names {
 
     /// Whether `lead` started `agent_id`, or started an agent that did.
     pub(crate) fn leads(&self, lead: &str, agent_id: &str) -> bool {
-        self.lock().leads(lead, agent_id)
+        self.book.locked().leads(lead, agent_id)
     }
 
     /// `lead` and every named agent it started, or that one of those started.
     pub(crate) fn team(&self, lead: &str) -> Vec<String> {
-        let book = self.lock();
+        let book = self.book.locked();
         let mut team = vec![lead.to_owned()];
         team.extend(
             book.agents
@@ -504,7 +495,7 @@ impl Names {
     /// Takes the app's word for which agents it holds, and lets go of the
     /// names of agents closed since. `running` holds the agents running here.
     pub(crate) fn set_in_app(&self, agent_ids: HashSet<String>, running: HashSet<String>) {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         if book.in_app.as_ref() == Some(&agent_ids) {
             return;
         }
@@ -516,7 +507,8 @@ impl Names {
 
     /// The provider session the agent runs, once it is known.
     pub(crate) fn session_of(&self, agent_id: &str) -> Option<String> {
-        self.lock()
+        self.book
+            .locked()
             .agents
             .iter()
             .find(|entry| entry.agent_id == agent_id)
@@ -526,7 +518,7 @@ impl Names {
     /// The provider and session the agent ran, whether it is open or closed
     /// since.
     pub(crate) fn ran_session(&self, agent_id: &str) -> Option<RanSession> {
-        let book = self.lock();
+        let book = self.book.locked();
         if let Some(entry) = book.agents.iter().find(|entry| entry.agent_id == agent_id) {
             return Some(RanSession {
                 provider: entry.provider.clone()?,
@@ -543,7 +535,7 @@ impl Names {
     /// The provider session the agent ran, whether it is open or closed since,
     /// for one whose provider is not known too.
     pub(crate) fn last_session(&self, agent_id: &str) -> Option<String> {
-        let book = self.lock();
+        let book = self.book.locked();
         match book.agents.iter().find(|entry| entry.agent_id == agent_id) {
             Some(entry) => entry.session_id.clone(),
             None => book
@@ -556,7 +548,7 @@ impl Names {
 
     /// Whether an agent here runs or recently ran `session_id`.
     pub(crate) fn knows_session(&self, session_id: &str) -> bool {
-        let book = self.lock();
+        let book = self.book.locked();
         book.agents
             .iter()
             .any(|entry| entry.session_id.as_deref() == Some(session_id))
@@ -567,7 +559,7 @@ impl Names {
     }
 
     pub(crate) fn note_session(&self, agent_id: &str, session_id: &str) {
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         let Some(entry) = book.entry_mut(agent_id) else {
             return;
         };
@@ -587,7 +579,7 @@ impl Names {
         running: HashSet<String>,
     ) -> Result<AgentName, String> {
         let name = valid_name(name)?;
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         let open = book.open(self.open_with(running));
         book.release(&open);
         let project = book
@@ -626,7 +618,7 @@ impl Names {
         running: HashSet<String>,
     ) -> Option<Option<Value>> {
         let session = starting.resume_id?;
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         if book.entry_mut(starting.agent_id).is_some() {
             return None;
         }
@@ -642,7 +634,7 @@ impl Names {
         })?;
         entry.agent_id = starting.agent_id.to_owned();
         entry.seen = false;
-        entry.at = unix_ms();
+        entry.at = epoch_ms();
         let buddy = entry.buddy.clone();
         self.save(&book);
         Some(buddy)
@@ -653,7 +645,7 @@ impl Names {
     pub(crate) fn note_look(&self, agent_id: &str, buddy: Option<Value>, title: Option<String>) {
         let buddy = buddy.filter(|buddy| buddy.to_string().len() <= MAX_BUDDY_BYTES);
         let title = title.filter(|title| title.chars().count() <= MAX_TITLE_CHARS);
-        let mut book = self.lock();
+        let mut book = self.book.locked();
         let Some(entry) = book.entry_mut(agent_id) else {
             return;
         };
@@ -669,7 +661,7 @@ impl Names {
 
     /// The closed agents of `project` the person named, newest first.
     pub(crate) fn closed(&self, project: &str, running: HashSet<String>) -> Vec<ClosedAgent> {
-        let book = self.lock();
+        let book = self.book.locked();
         let open = book.open(self.open_with(running));
         let mut closed: Vec<&Entry> = book
             .agents
@@ -850,7 +842,7 @@ impl Book {
                 if moved {
                     entry.project = project;
                     entry.name = name;
-                    entry.at = unix_ms();
+                    entry.at = epoch_ms();
                 }
                 if let Some(provider) = provider.filter(|p| entry.provider.as_deref() != Some(*p)) {
                     entry.provider = Some(provider.to_owned());
@@ -875,7 +867,7 @@ impl Book {
             provider: provider.map(str::to_owned),
             session_id: resume_id.map(str::to_owned),
             above: 0,
-            at: unix_ms(),
+            at: epoch_ms(),
             seen: false,
             chosen: false,
             buddy: None,
@@ -953,7 +945,7 @@ impl Book {
         if self.in_app.is_none() {
             return false;
         }
-        let now = unix_ms();
+        let now = epoch_ms();
         let mut seen = false;
         let removed = self.remove(|entry| {
             if open.contains(&entry.agent_id) {

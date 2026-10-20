@@ -21,16 +21,18 @@ pub(crate) mod team;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use iroh::endpoint::Connection;
 use iroh::{EndpointAddr, RelayUrl};
 use serde::Serialize;
 use serde_json::{json, Value};
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
 use tokio::sync::Semaphore;
 
-use super::remote::{self, unix_ms, LinkedHost};
+use super::remote::{self, LinkedHost};
 use super::wake::{sooner, Wake};
 use super::{Core, CoreError, CoreResult};
 
@@ -86,28 +88,22 @@ impl Hosts {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     fn connected(&self, host: &str) -> Option<Connection> {
-        self.lock().connections.get(host).cloned()
+        self.state.locked().connections.get(host).cloned()
     }
 
     /// Whether `host` is reachable, as far as this host knows: connected, or
     /// not yet found out of reach.
     pub(crate) fn reachable(&self, host: &str) -> bool {
-        let state = self.lock();
+        let state = self.state.locked();
         state.connections.contains_key(host) || !state.down.contains_key(host)
     }
 
     /// Whether it is time to tell an agent's teammates elsewhere that it did
     /// other work, noting that they are told now.
     pub(crate) fn worked_due(&self, agent_id: &str, every_ms: u64) -> bool {
-        let now = unix_ms();
-        let mut state = self.lock();
+        let now = epoch_ms();
+        let mut state = self.state.locked();
         state
             .worked
             .retain(|_, at| now.saturating_sub(*at) < every_ms);
@@ -119,13 +115,17 @@ impl Hosts {
     }
 
     fn note_down(&self, host: &str) {
-        let now = unix_ms();
-        self.lock().down.entry(host.to_owned()).or_insert(Down {
-            since: now,
-            retry_at: now,
-            wait_ms: RETRY_FIRST_MS,
-            told: false,
-        });
+        let now = epoch_ms();
+        self.state
+            .locked()
+            .down
+            .entry(host.to_owned())
+            .or_insert(Down {
+                since: now,
+                retry_at: now,
+                wait_ms: RETRY_FIRST_MS,
+                told: false,
+            });
         self.wake.now();
     }
 }
@@ -315,7 +315,7 @@ pub(crate) fn goes_now(core: &Core, host: &str) -> bool {
 
 /// Sends what waits for `host`, in order, while it stays reachable.
 fn flush(core: &Arc<Core>, host: &str) {
-    if !core.hosts.lock().flushing.insert(host.to_owned()) {
+    if !core.hosts.state.locked().flushing.insert(host.to_owned()) {
         return;
     }
     let (core, host) = (core.clone(), host.to_owned());
@@ -345,7 +345,7 @@ fn flush(core: &Arc<Core>, host: &str) {
                 Err(Failed::Unreachable(_)) => break,
             }
         }
-        core.hosts.lock().flushing.remove(&host);
+        core.hosts.state.locked().flushing.remove(&host);
         if core.hosts.outbox.has(&host) {
             core.hosts.wake.now();
         }
@@ -356,7 +356,7 @@ fn flush(core: &Arc<Core>, host: &str) {
 /// sends what waits for it, and notices when it closes.
 fn adopt(core: &Arc<Core>, host: &str, connection: Connection) {
     let was_down = {
-        let mut state = core.hosts.lock();
+        let mut state = core.hosts.state.locked();
         state
             .connections
             .insert(host.to_owned(), connection.clone());
@@ -402,7 +402,7 @@ async fn answer_asks(core: Arc<Core>, host: String, connection: Connection) {
 async fn until_closed(core: Arc<Core>, host: String, connection: Connection) {
     connection.closed().await;
     let current = {
-        let mut state = core.hosts.lock();
+        let mut state = core.hosts.state.locked();
         let current = state
             .connections
             .get(&host)
@@ -453,7 +453,7 @@ pub(crate) fn unlink(core: &Core, host: &str) {
 pub(crate) fn unlinked(core: &Core, host: &str, why: &str) {
     core.hosts.outbox.forget(host);
     let connection = {
-        let mut state = core.hosts.lock();
+        let mut state = core.hosts.state.locked();
         state.down.remove(host);
         state.connections.remove(host)
     };
@@ -467,7 +467,7 @@ pub(crate) fn unlinked(core: &Core, host: &str, why: &str) {
 /// Remote access went off: every link connection closes with it.
 pub(crate) fn halt(core: &Core) {
     let connections: Vec<Connection> = {
-        let mut state = core.hosts.lock();
+        let mut state = core.hosts.state.locked();
         state
             .connections
             .drain()
@@ -494,12 +494,12 @@ pub(crate) fn settle(core: &Arc<Core>) {
     let links = core.remote.links();
     let linked: Vec<String> = links.iter().map(|link| link.id.clone()).collect();
     core.hosts.outbox.keep_only(&linked);
-    let now = unix_ms();
+    let now = epoch_ms();
     let mut next = None;
     let mut redial = Vec::new();
     let mut tell = Vec::new();
     {
-        let mut state = core.hosts.lock();
+        let mut state = core.hosts.state.locked();
         state.down.retain(|host, _| linked.contains(host));
         for link in &links {
             let wanted = core.hosts.outbox.has(&link.id) || core.hosts.team.has_host(&link.id);
@@ -532,7 +532,7 @@ pub(crate) fn settle(core: &Arc<Core>) {
         }
     }
     if core.remote.endpoint().is_none() {
-        core.hosts.lock().dialing.clear();
+        core.hosts.state.locked().dialing.clear();
         redial.clear();
     }
     for link in redial {
@@ -540,11 +540,11 @@ pub(crate) fn settle(core: &Arc<Core>) {
         tokio::spawn(async move {
             let dialed = dial(&core, &link.id, &link.addresses).await;
             {
-                let mut state = core.hosts.lock();
+                let mut state = core.hosts.state.locked();
                 state.dialing.remove(&link.id);
                 if dialed.is_err() {
                     if let Some(down) = state.down.get_mut(&link.id) {
-                        down.retry_at = unix_ms() + down.wait_ms;
+                        down.retry_at = epoch_ms() + down.wait_ms;
                         down.wait_ms = (down.wait_ms * 2).min(RETRY_MAX_MS);
                     }
                 }

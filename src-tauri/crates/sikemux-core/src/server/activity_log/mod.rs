@@ -9,12 +9,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::Value;
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
 
 use crate::agent_catalog::AgentKind;
 use crate::launch::model_feed::Feed;
@@ -144,12 +146,6 @@ pub(crate) struct ActivityLog {
     feed: Option<Feed>,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// The database the app kept before the core did, moved over once.
 fn take_over_app_database(path: &Path) {
     let Some(old) = sikemux_process::paths::config_file("activity", "sqlite3") else {
@@ -185,7 +181,7 @@ impl ActivityLog {
     /// reason for the action it describes to fail, so errors are dropped here.
     fn with_database<T>(&self, work: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> Option<T> {
         let path = self.path.as_ref()?;
-        let mut cache = lock(&self.database);
+        let mut cache = self.database.locked();
         if cache.is_none() {
             *cache = Some(open(path).ok()?);
         }
@@ -201,7 +197,7 @@ impl ActivityLog {
     /// only what is written from now on is counted.
     pub(crate) fn launched(self: &Arc<Self>, place: Place, transport: &'static str, resumed: bool) {
         let log = self.clone();
-        let at_ms = now_ms();
+        let at_ms = epoch_ms() as i64;
         in_background(move || {
             log.with_database(|db| {
                 db.execute(
@@ -229,9 +225,9 @@ impl ActivityLog {
 
     /// The agent began a turn; the commit it began on says which commits it made.
     pub(crate) fn turn_started(self: &Arc<Self>, agent_id: &str, cwd: String) {
-        let started_ms = now_ms();
+        let started_ms = epoch_ms() as i64;
         {
-            let mut turns = lock(&self.turns);
+            let mut turns = self.turns.locked();
             if turns.contains_key(agent_id) {
                 return;
             }
@@ -247,7 +243,9 @@ impl ActivityLog {
         let agent_id = agent_id.to_owned();
         in_background(move || {
             let head = head(&cwd);
-            if let Some(turn) = lock(&log.turns)
+            if let Some(turn) = log
+                .turns
+                .locked()
                 .get_mut(&agent_id)
                 .filter(|turn| turn.started_ms == started_ms)
             {
@@ -257,10 +255,10 @@ impl ActivityLog {
     }
 
     pub(crate) fn turn_ended(self: &Arc<Self>, agent_id: &str, place: Place) {
-        let Some(turn) = lock(&self.turns).remove(agent_id) else {
+        let Some(turn) = self.turns.locked().remove(agent_id) else {
             return;
         };
-        let ended_ms = now_ms();
+        let ended_ms = epoch_ms() as i64;
         let log = self.clone();
         in_background(move || {
             log.with_database(|db| {
@@ -310,7 +308,7 @@ impl ActivityLog {
     /// A commit the person made in Sikemux.
     pub(crate) fn record_commit(&self, repo: &str) {
         if let Some(sha) = head(repo) {
-            self.insert_commits(repo, &[(&sha, now_ms())], None);
+            self.insert_commits(repo, &[(&sha, epoch_ms() as i64)], None);
         }
     }
 
@@ -352,7 +350,7 @@ impl ActivityLog {
                 summarize(
                     db,
                     offset_ms.clamp(-DAY_MS, DAY_MS),
-                    now_ms(),
+                    epoch_ms() as i64,
                     project,
                     &prices,
                 )
@@ -433,13 +431,6 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
         ))?;
     }
     Ok(())
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as i64)
-        .unwrap_or(0)
 }
 
 fn git(repo: &str, args: &[&str]) -> Option<String> {

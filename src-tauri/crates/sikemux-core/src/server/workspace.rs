@@ -8,11 +8,13 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
 use tokio::sync::Notify;
 
 use crate::agent_accounts::status::{self, AgentStatus};
@@ -219,10 +221,6 @@ fn is_chat_provider(provider: &str) -> bool {
     crate::agent_catalog::agent(provider).is_some_and(|agent| agent.chat.is_some())
 }
 
-fn now_ms() -> u64 {
-    super::remote::unix_ms()
-}
-
 fn too_long(text: &str, chars: usize) -> bool {
     text.chars().count() > chars
 }
@@ -416,7 +414,7 @@ impl Workspaces {
             recent_stale: Notify::new(),
         };
         if upgraded {
-            workspaces.save(&workspaces.lock().saved);
+            workspaces.save(&workspaces.published.locked().saved);
         }
         workspaces
     }
@@ -429,12 +427,6 @@ impl Workspaces {
     /// The model providers the host's agents run on, and their keys.
     pub(crate) fn providers(&self) -> Option<&Providers> {
         self.providers.as_ref()
-    }
-
-    fn lock(&self) -> MutexGuard<'_, Published> {
-        self.published
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn save(&self, saved: &Saved) {
@@ -451,7 +443,7 @@ impl Workspaces {
 
     /// Changes what is saved, keeps it, and tells the core.
     fn change<T>(&self, change: impl FnOnce(&mut Saved) -> CoreResult<T>) -> CoreResult<T> {
-        let mut published = self.lock();
+        let mut published = self.published.locked();
         let changed = change(&mut published.saved)?;
         self.save(&published.saved);
         drop(published);
@@ -617,7 +609,8 @@ impl Workspaces {
     }
 
     pub(crate) fn agent(&self, agent_id: &str) -> Option<WorkspaceAgent> {
-        self.lock()
+        self.published
+            .locked()
             .saved
             .kept(agent_id)
             .map(|kept| kept.agent.clone())
@@ -631,7 +624,7 @@ impl Workspaces {
             draft.insert("id".into(), Value::String(id));
         }
         if !draft.contains_key("createdAt") {
-            draft.insert("createdAt".into(), now_ms().into());
+            draft.insert("createdAt".into(), epoch_ms().into());
         }
         let mut agent: WorkspaceAgent = serde_json::from_value(Value::Object(draft))
             .map_err(|error| CoreError::from(format!("that is not an agent: {error}")))?;
@@ -740,7 +733,8 @@ impl Workspaces {
 
     /// Every agent in the workspace, running or not.
     pub(crate) fn agent_ids(&self) -> std::collections::HashSet<String> {
-        self.lock()
+        self.published
+            .locked()
             .saved
             .agents
             .iter()
@@ -804,7 +798,7 @@ impl Workspaces {
             worktree,
             buddy: None,
             pty_id: None,
-            created_at: now_ms(),
+            created_at: epoch_ms(),
         };
         let Ok(Value::Object(draft)) = serde_json::to_value(agent) else {
             return;
@@ -835,7 +829,7 @@ impl Workspaces {
 
     /// How the agent's chat was last running, to start it again.
     pub(crate) fn kept_launch(&self, agent_id: &str) -> Option<Kept> {
-        self.lock().saved.kept(agent_id).cloned()
+        self.published.locked().saved.kept(agent_id).cloned()
     }
 
     /// The launcher and mode an agent runs with.
@@ -847,7 +841,7 @@ impl Workspaces {
     }
 
     pub(crate) fn accounts(&self) -> Option<Book> {
-        self.lock().saved.accounts.clone()
+        self.published.locked().saved.accounts.clone()
     }
 
     pub(crate) fn set_accounts(&self, book: Book) -> CoreResult<()> {
@@ -862,7 +856,7 @@ impl Workspaces {
 
     /// The agent `provider` on the person's account in `config_path`.
     pub(crate) fn account_spec(&self, provider: &str, config_path: Option<&str>) -> AgentSpec {
-        let published = self.lock();
+        let published = self.published.locked();
         match &published.saved.accounts {
             Some(book) => book.spec(provider, config_path),
             None => Book::default().spec(provider, config_path),
@@ -880,7 +874,7 @@ impl Workspaces {
     /// Each chat agent on each of the person's accounts, in the mode they
     /// start agents in: one launcher per profile, or one for an agent with none.
     fn offered(&self) -> Vec<Launcher> {
-        let published = self.lock();
+        let published = self.published.locked();
         let saved = &published.saved;
         let profiles = saved
             .accounts
@@ -924,7 +918,7 @@ impl Workspaces {
     }
 
     fn set_launchers(&self, launchers: Vec<Launcher>) {
-        self.lock().launchers = launchers;
+        self.published.locked().launchers = launchers;
         self.wake.now();
     }
 
@@ -936,7 +930,7 @@ impl Workspaces {
         config_path: Option<&str>,
         status: &AgentStatus,
     ) {
-        let mut published = self.lock();
+        let mut published = self.published.locked();
         let on_account = published.launchers.iter_mut().filter(|launcher| {
             launcher.agent.provider == provider
                 && launcher.agent.config_path.as_deref() == config_path
@@ -1008,11 +1002,12 @@ impl Workspaces {
     }
 
     pub(crate) fn project_info(&self, id: &str) -> Option<ProjectInfo> {
-        self.lock().saved.project(id).cloned()
+        self.published.locked().saved.project(id).cloned()
     }
 
     pub(crate) fn project_path(&self, id: &str) -> CoreResult<PathBuf> {
-        self.lock()
+        self.published
+            .locked()
             .saved
             .project(id)
             .map(|project| project.path.clone())
@@ -1020,7 +1015,7 @@ impl Workspaces {
     }
 
     pub(crate) fn launcher(&self, id: &str) -> CoreResult<Launcher> {
-        self.lock()
+        self.published.locked()
             .launchers
             .iter()
             .find(|launcher| launcher.id == id)
@@ -1043,14 +1038,15 @@ impl Workspaces {
                 return Err("the backdrop picture is larger than the core keeps".into());
             }
         }
-        let mut published = self.lock();
+        let mut published = self.published.locked();
         published.texture = texture;
         published.image = image;
         Ok(())
     }
 
     pub(crate) fn backdrop_image(&self) -> Option<String> {
-        self.lock()
+        self.published
+            .locked()
             .image
             .as_ref()
             .map(|image| image.data_url.clone())
@@ -1063,7 +1059,7 @@ impl Workspaces {
         if palette.len() > MAX_COLOURS || oversized {
             return Err("the app published more theme colours than the core keeps".into());
         }
-        self.lock().palette = palette;
+        self.published.locked().palette = palette;
         Ok(())
     }
 
@@ -1071,18 +1067,18 @@ impl Workspaces {
         if buddies.as_ref().is_some_and(Buddies::oversized) {
             return Err("the app published more buddies than the core keeps".into());
         }
-        self.lock().buddies = buddies;
+        self.published.locked().buddies = buddies;
         Ok(())
     }
 
     pub(crate) fn buddies(&self) -> Option<Buddies> {
-        self.lock().buddies.clone()
+        self.published.locked().buddies.clone()
     }
 
     /// The recent chats a device may take up again: those in a project on
     /// this host, leaving out any running now.
     pub(crate) fn recent(&self, open: &[ChatInfo]) -> Vec<RecentInfo> {
-        let published = self.lock();
+        let published = self.published.locked();
         let saved = &published.saved;
         published
             .recent
@@ -1108,7 +1104,7 @@ impl Workspaces {
     /// What to look for recent chats with: each launcher's account once, the
     /// projects, and the sessions agents here already hold.
     fn recent_requests(&self) -> Vec<(String, RecentRequest)> {
-        let published = self.lock();
+        let published = self.published.locked();
         let saved = &published.saved;
         let projects: Vec<String> = saved
             .projects
@@ -1157,7 +1153,7 @@ impl Workspaces {
     }
 
     fn set_recent(&self, recent: Vec<Recent>) -> bool {
-        let mut published = self.lock();
+        let mut published = self.published.locked();
         let changed = published.recent != recent;
         published.recent = recent;
         changed
@@ -1169,7 +1165,7 @@ impl Workspaces {
         choice: ResumeChoice,
         open: &[ChatInfo],
     ) -> CoreResult<ChatChoice> {
-        let published = self.lock();
+        let published = self.published.locked();
         let saved = &published.saved;
         let chat = published
             .recent
@@ -1206,7 +1202,8 @@ impl Workspaces {
     }
 
     pub(crate) fn project_paths(&self) -> Vec<PathBuf> {
-        self.lock()
+        self.published
+            .locked()
             .saved
             .projects
             .iter()
@@ -1226,7 +1223,8 @@ impl Workspaces {
             .get("configOptions")
             .filter(|options| options.is_array())
         {
-            self.lock()
+            self.published
+                .locked()
                 .config_options
                 .insert(provider.to_owned(), options.clone());
         }
@@ -1236,7 +1234,7 @@ impl Workspaces {
     /// agent's own unless the person renamed it, then the chat agents that are
     /// not running.
     pub(crate) fn listed(&self, mut running: Vec<ChatInfo>) -> Vec<ChatInfo> {
-        let published = self.lock();
+        let published = self.published.locked();
         let agents = &published.saved.agents;
         for chat in &mut running {
             let title = agents
@@ -1294,7 +1292,7 @@ impl Workspaces {
     }
 
     pub(crate) fn view(&self) -> Workspace {
-        let published = self.lock();
+        let published = self.published.locked();
         let saved = &published.saved;
         Workspace {
             projects: saved.projects.clone(),
@@ -1402,7 +1400,7 @@ impl Workspaces {
             return Ok((launch, lead.launcher.clone()));
         }
         let launcher = {
-            let published = self.lock();
+            let published = self.published.locked();
             let launchers = &published.launchers;
             let offered: Vec<&Launcher> = launchers
                 .iter()
@@ -1468,7 +1466,7 @@ impl Workspaces {
 
 impl Workspaces {
     pub(crate) fn has_launchers(&self) -> bool {
-        !self.lock().launchers.is_empty()
+        !self.published.locked().launchers.is_empty()
     }
 
     /// How Auto starts an agent of its own in `cwd`: with the launcher the
@@ -1482,7 +1480,7 @@ impl Workspaces {
         model: Option<String>,
     ) -> Result<(ChatLaunch, String), String> {
         let chosen = {
-            let published = self.lock();
+            let published = self.published.locked();
             let launchers = &published.launchers;
             let usable = |launcher: &&Launcher| {
                 !matches!(
@@ -1515,7 +1513,8 @@ impl Workspaces {
 
     /// The CLI the app's launcher `id` runs, such as `claude`.
     pub(crate) fn launcher_cli(&self, id: &str) -> Option<String> {
-        self.lock()
+        self.published
+            .locked()
             .launchers
             .iter()
             .find(|launcher| launcher.id == id)
@@ -1529,7 +1528,7 @@ impl Workspaces {
         chosen: Option<&str>,
         builder: Option<&str>,
     ) -> Result<Option<String>, String> {
-        let published = self.lock();
+        let published = self.published.locked();
         let other = |launcher: &&Launcher| builder != Some(launcher.agent.provider.as_str());
         let Some(id) = chosen else {
             return Ok(published

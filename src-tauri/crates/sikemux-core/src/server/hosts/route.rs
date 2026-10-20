@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_process::clock::epoch_ms;
 
 use crate::protocol::AgentStatus;
 
@@ -17,7 +18,6 @@ use super::super::connection::blocking;
 use super::super::follow::{self, Happened};
 use super::super::messages::{self, Carried, Kind, Reach};
 use super::super::names::Worker;
-use super::super::remote::unix_ms;
 use super::super::{questions, Core, CoreResult};
 use super::team::{Foreign, Role};
 use super::{ask, goes_now, name_of, post, Failed, Sending};
@@ -164,7 +164,7 @@ pub(super) fn happened_here(core: &Core, host: &str, params: Value) -> CoreResul
     let happened = Happened::of(&params.kind);
     core.hosts.team.update(&foreign.agent_id, |foreign| {
         foreign.status = params.status;
-        foreign.active_at = Some(unix_ms());
+        foreign.active_at = Some(epoch_ms());
     });
     if let Some(happened) = happened {
         core.harness
@@ -592,7 +592,7 @@ pub(super) fn hire_here(core: &Core, host: &str, params: Value) -> CoreResult<Va
         parent: Some(params.lead),
         role: Role::Worker,
         status: AgentStatus::Starting,
-        active_at: Some(unix_ms()),
+        active_at: Some(epoch_ms()),
         repo: lead.repo,
         landed: None,
     });

@@ -13,6 +13,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use sikemux_process::vars;
 
 use crate::acp::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use crate::agent_catalog::AgentKind;
@@ -107,9 +108,9 @@ impl Tools {
             }
             AgentKind::Codex => codex_args(&launch)?,
             AgentKind::Pi | AgentKind::Omp => {
-                environment.push(("SIKEMUX_TOOLS_MCP_COMMAND".into(), launch.command.clone()));
+                environment.push((vars::TOOLS_MCP_COMMAND.into(), launch.command.clone()));
                 environment.push((
-                    "SIKEMUX_TOOLS_MCP_ARGS".into(),
+                    vars::TOOLS_MCP_ARGS.into(),
                     serde_json::to_string(&launch.args).map_err(|error| error.to_string())?,
                 ));
                 let mut args = vec![
@@ -221,9 +222,9 @@ impl Tools {
     /// through the agent's process, so it never appears in a config file.
     fn base_environment(&self, agent_id: &str) -> Vec<(String, String)> {
         vec![
-            ("SIKEMUX_TOOLS_AGENT_ID".into(), agent_id.to_owned()),
+            (vars::TOOLS_AGENT_ID.into(), agent_id.to_owned()),
             (
-                "SIKEMUX_CLI_ENDPOINT".into(),
+                vars::CLI_ENDPOINT.into(),
                 self.endpoint.to_string_lossy().into_owned(),
             ),
         ]

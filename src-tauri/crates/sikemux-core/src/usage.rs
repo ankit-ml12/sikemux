@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -152,9 +152,7 @@ fn save_record(path: &Path, record: &UsageRecord) -> Result<(), String> {
 }
 
 fn utc_day(now: SystemTime) -> u64 {
-    now.duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs() / SECONDS_PER_DAY)
-        .unwrap_or(0)
+    sikemux_process::clock::epoch_ms_of(now) / 1000 / SECONDS_PER_DAY
 }
 
 fn account_hash(account: &str) -> String {
@@ -260,6 +258,8 @@ fn client() -> &'static Client {
 
 #[cfg(test)]
 mod tests {
+    use std::time::UNIX_EPOCH;
+
     use super::*;
 
     #[test]

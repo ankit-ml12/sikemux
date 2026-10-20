@@ -24,6 +24,7 @@ use std::time::Duration;
 use portable_pty::{Child, ChildKiller, ExitStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use sikemux_pty::output_log::OutputLog;
 use sikemux_pty::screen::{replay_snapshot, restored_parser};
 use sikemux_pty::shell::ShellLaunchIntegration;
@@ -39,8 +40,8 @@ use super::harness::HarnessRecord;
 use super::prepare::Owner;
 use super::session::{self, Session, SessionParts};
 use super::{
-    continue_clock, lock_path, now_ms, run_core, tools, Core, CoreError, CoreResult, ServerConfig,
-    ServerError,
+    continue_clock, lock_path, run_core, tools, uptime_ms, Core, CoreError, CoreResult,
+    ServerConfig, ServerError,
 };
 
 const STATE_FILE: &str = "state.json";
@@ -136,7 +137,7 @@ fn private_directory() -> std::io::Result<PathBuf> {
 }
 
 fn capture(session: &Session, directory: &Path) -> CoreResult<SessionRecord> {
-    let mut parser = session.parser.lock().map_err(CoreError::poisoned)?;
+    let mut parser = session.parser.locked();
     let (rows, cols) = parser.screen().size();
     let replay = replay_snapshot(&mut parser)?;
     let shell = parser
@@ -234,12 +235,10 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
             ),
         }
     }
-    let tools = core.tools.lock().ok().and_then(|tools| {
-        tools.as_ref().map(|tools| ToolsRecord {
-            path: tools.path().to_path_buf(),
-            fd: tools.fd(),
-            token: tools.token().to_owned(),
-        })
+    let tools = core.tools.locked().as_ref().map(|tools| ToolsRecord {
+        path: tools.path().to_path_buf(),
+        fd: tools.fd(),
+        token: tools.token().to_owned(),
     });
     let mut chats = Vec::new();
     let mut live_chats = Vec::new();
@@ -273,7 +272,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
     let state = HandoverState {
         format: RESUME_FORMAT,
         from_build: core.build.clone(),
-        uptime_ms: now_ms(),
+        uptime_ms: uptime_ms(),
         socket: config.socket.clone(),
         listener_fd: listening.listener_fd,
         lock_fd: listening.lock_fd,
@@ -756,7 +755,7 @@ fn adopt_bare(
             owner: Owner::default(),
             parser: restored_parser(rows, cols, &[], None, None, String::new()),
             shell_protocol: false,
-            last_activity_ms: now_ms(),
+            last_activity_ms: uptime_ms(),
             trimmed: false,
             killed: false,
             exit: None,
@@ -923,9 +922,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
             }
         }
     }
-    if let Ok(mut slot) = core.tools.lock() {
-        *slot = endpoint;
-    }
+    *core.tools.locked() = endpoint;
     if let Err(error) = std::fs::remove_dir_all(&recovery.directory) {
         eprintln!(
             "sikemux core: could not remove {}: {error}",

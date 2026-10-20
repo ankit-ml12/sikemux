@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use sikemux_process::sync::Locked;
 
 use super::{line_count, read_text, Edit, Lines};
 use crate::server::names::project_of;
@@ -143,9 +144,9 @@ pub(crate) fn owners_at(core: &Core, dir: &Path, staged: bool) -> Result<Owners,
     };
     type Read = HashMap<(PathBuf, bool), (u64, Arc<Diff>)>;
     static READ: Mutex<Option<Read>> = Mutex::new(None);
-    let lock = || READ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let at = (dir.to_path_buf(), staged);
-    let kept = lock()
+    let kept = READ
+        .locked()
         .get_or_insert_with(HashMap::new)
         .get(&at)
         .map(|(read_at, diff)| (*read_at, diff.clone()));
@@ -163,7 +164,7 @@ pub(crate) fn owners_at(core: &Core, dir: &Path, staged: bool) -> Result<Owners,
                 Some(diff) => diff?,
                 None => read_diff(dir, staged, true, None, false)?,
             });
-            let mut read = lock();
+            let mut read = READ.locked();
             let read = read.get_or_insert_with(HashMap::new);
             if read.len() >= REMEMBERED_CHECKOUTS && !read.contains_key(&at) {
                 read.clear();

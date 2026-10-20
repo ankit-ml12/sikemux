@@ -10,6 +10,7 @@ use std::time::Duration;
 use iroh::endpoint::Connection;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_process::clock::epoch_ms;
 use tokio::sync::Semaphore;
 
 use crate::accounts::protocol::JoinTicket;
@@ -18,7 +19,7 @@ use crate::protocol::PendingDevice;
 
 use super::super::join::{clean, NAME_LIMIT, PLATFORM_LIMIT};
 use super::super::notify::Signal;
-use super::super::remote::{self, unix_ms, LinkedHost, Pairing};
+use super::super::remote::{self, LinkedHost, Pairing};
 use super::super::{Core, CoreError, CoreResult};
 use super::{addresses_of, adopt, dial, introduction, link};
 
@@ -107,8 +108,8 @@ pub(crate) async fn link_host(core: &Arc<Core>, params: LinkParams) -> CoreResul
             name
         },
         platform,
-        linked_at: unix_ms(),
-        last_seen: Some(unix_ms()),
+        linked_at: epoch_ms(),
+        last_seen: Some(epoch_ms()),
         addresses: known,
         sign_ins: false,
     })?;
@@ -162,7 +163,7 @@ pub(super) async fn answer(core: Arc<Core>, connection: Connection) {
         name: clean(&hello.name, NAME_LIMIT),
         platform: clean(&hello.platform, PLATFORM_LIMIT),
         from_account: true,
-        expires_at: unix_ms() + APPROVAL_TIMEOUT.as_millis() as u64,
+        expires_at: epoch_ms() + APPROVAL_TIMEOUT.as_millis() as u64,
     };
     let answered = core.remote.ask(
         request.clone(),

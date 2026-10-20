@@ -419,7 +419,7 @@ fn read_chat(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<Value
 /// The last lines of a terminal agent's screen.
 fn screen_tail(core: &Core, agent_id: &str, lines: usize) -> Option<String> {
     let session = core.agent_session(agent_id)?;
-    let (screen, _) = super::agent::screen_text(&session)?;
+    let (screen, _) = super::agent::screen_text(&session);
     let mut tail: Vec<&str> = screen
         .lines()
         .map(str::trim_end)

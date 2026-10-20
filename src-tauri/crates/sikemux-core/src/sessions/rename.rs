@@ -1,7 +1,6 @@
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::task::spawn_blocking;
 
@@ -143,11 +142,7 @@ pub(super) fn append_line(path: &Path, line: &str) -> Result<(), String> {
 }
 
 pub(super) fn now_iso8601() -> String {
-    let ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or(0);
-    crate::accounts::live::rfc3339(ms)
+    crate::accounts::live::rfc3339(sikemux_process::clock::epoch_ms())
 }
 
 #[cfg(test)]
