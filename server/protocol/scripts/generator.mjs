@@ -546,7 +546,7 @@ export function rust(definitions, { include = () => true, imports = "" } = {}) {
         if (required.has(property)) {
           out += `    pub ${rustField(property)}: ${rustType(type)},\n`;
         } else {
-          out += `    #[serde(default, skip_serializing_if = "Option::is_none")]\n`;
+          out += `    #[serde(skip_serializing_if = "Option::is_none")]\n`;
           out += `    pub ${rustField(property)}: Option<${rustType(type)}>,\n`;
         }
       }

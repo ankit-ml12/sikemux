@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct Account {
     pub status: AccountStatus,
     /// Only while deleting: when the account is deleted for good unless restored first.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub deletes_at: Option<String>,
     /// How many days a deleted account can still be restored: deletesAt is this long after the deletion.
     pub restorable_days: i64,
@@ -30,7 +30,7 @@ pub struct AccountDeletion {
 #[serde(rename_all = "camelCase")]
 pub struct AccountDeletionRequest {
     /// A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub apple_authorization_code: Option<String>,
 }
 
@@ -54,13 +54,13 @@ pub struct AccountEvent {
     pub r#type: AccountEventType,
     pub at: String,
     /// The device the event is about. Absent from account.deleted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<DeviceKey>,
     /// That device's role. Absent from account.deleted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<DeviceRole>,
     /// Only on device.revoked.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<RevokeReason>,
 }
 
@@ -144,16 +144,6 @@ pub enum Channel {
     Unknown,
 }
 
-impl From<crate::protocol::BuildChannel> for Channel {
-    fn from(build: crate::protocol::BuildChannel) -> Self {
-        match build {
-            crate::protocol::BuildChannel::Dev => Self::Dev,
-            crate::protocol::BuildChannel::Nightly => Self::Nightly,
-            crate::protocol::BuildChannel::Stable => Self::Stable,
-        }
-    }
-}
-
 /// An app older than its channel's version, compared as semantic versions, must update before it connects.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -169,7 +159,7 @@ pub struct Device {
     pub role: DeviceRole,
     pub name: String,
     pub platform: Platform,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel: Option<Channel>,
     pub created_at: String,
     pub last_seen_at: Option<String>,
@@ -192,7 +182,7 @@ pub struct DeviceRegistration {
     pub role: DeviceRole,
     pub name: String,
     pub platform: Platform,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel: Option<Channel>,
     pub nonce: String,
     pub signature: String,
@@ -246,7 +236,7 @@ pub struct ErrorDetail {
     /// The same as the response's x-request-id header, and how the server's logs find this request.
     pub request_id: String,
     /// Only with reverify_required: how recently the person must have proved their first factor.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reverify_within_minutes: Option<i64>,
 }
 
@@ -438,13 +428,13 @@ pub struct LiveEvents {
 #[serde(rename_all = "camelCase")]
 pub struct LiveHello {
     pub role: LiveRole,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<DeviceKey>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub app: Option<LiveApp>,
 }
 
@@ -496,7 +486,7 @@ pub struct LiveReady {
     /// How often the server pings. A device that hears nothing for twice as long reconnects.
     pub heartbeat_ms: i64,
     /// Web only: send a fresh token in an auth message before this.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_expires_at: Option<String>,
 }
 
@@ -657,7 +647,7 @@ pub struct PushTokenRegistration {
     pub token: String,
     pub app: PushApp,
     /// Required when platform is apns, and absent otherwise.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub apns_environment: Option<ApnsEnvironment>,
     pub nonce: String,
     pub signature: String,
