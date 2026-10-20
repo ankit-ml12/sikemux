@@ -21,6 +21,7 @@ import { AddTaskDialog } from "./AddTaskDialog";
 import { failureFixRequest, findTasksRequest, testFixRequest } from "./agentRequests";
 import { FailureCard, TestResultsCard, type FinishedTestRun } from "./TestResultsCard";
 import { useNow } from "../hooks/useNow";
+import { basename } from "../lib/paths";
 
 function useSecondsSince(startedAt: number | null): number {
     const now = useNow(startedAt !== null);
@@ -57,7 +58,7 @@ function taskGroups(tasks: readonly ProjectTask[], project: string): TaskGroup[]
     for (const task of tasks.filter((candidate) => candidate.source === "detected" || candidate.source === "rerun"))
         byFolder.set(task.cwd, [...(byFolder.get(task.cwd) ?? []), task]);
     for (const [cwd, folderTasks] of byFolder) {
-        const folder = cwd === "." ? (project.split("/").pop() ?? project) : cwd;
+        const folder = cwd === "." ? basename(project) : cwd;
         const tool = BUILD_TOOL_LABELS[folderTasks[0].command.split(" ")[0]];
         const java = folderTasks[0].java;
         const javaText = java ? (java.runsOn !== null ? `Java ${java.runsOn}` : `needs Java ${java.required}`) : null;

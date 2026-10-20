@@ -339,7 +339,13 @@ export function ChatComposer({
         ),
         ...contexts.flatMap(({ tag, earlier }) =>
             tag && earlier?.named
-                ? [{ text: tag, kind: "agent" as const, agent: { id: earlier.named.agentId, type: earlier.chat.agent, buddy: earlier.named.buddy, name: earlier.named.name } }]
+                ? [
+                      {
+                          text: tag,
+                          kind: "agent" as const,
+                          agent: { id: earlier.named.agentId, type: earlier.chat.agent, buddy: earlier.named.buddy, name: earlier.named.name },
+                      },
+                  ]
                 : [],
         ),
         ...fileTags.map((file) => ({ text: file.tag, kind: "file" as const, label: basename(file.path) })),
@@ -405,7 +411,7 @@ export function ChatComposer({
 
     const selectEntry = (entry: ProjectEntry) => {
         const path = joinPath(cwd, entry.path);
-        const named = `+${entry.path.replace(/\/$/, "").split("/").pop()}`;
+        const named = `+${basename(entry.path)}`;
         const clash = fileTags.some((file) => file.tag === named && file.path !== path);
         const tag = clash ? `+${entry.path.replace(/\/$/, "")}` : named;
         writeTag(tag);

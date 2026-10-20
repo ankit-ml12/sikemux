@@ -27,6 +27,7 @@ import { coarse } from "./hooks";
 import { useNow } from "../../plugin-api/hooks";
 import { useCiWatch } from "../ciWatch";
 import { formatAgo, formatDuration } from "../../lib/format";
+import { basename } from "../../lib/paths";
 
 const FILTER_LABEL: Record<StatusFilter, string> = {
     all: "All",
@@ -111,7 +112,7 @@ const RunRow = memo(function RunRow({
 
 function actionsPage(runUrl: string, workflow: Workflow | null): string {
     const actions = runUrl.replace(/\/runs\/\d+.*$/u, "");
-    return workflow ? `${actions}/workflows/${workflow.path.split("/").pop()}` : actions;
+    return workflow ? `${actions}/workflows/${basename(workflow.path)}` : actions;
 }
 
 interface Props {
