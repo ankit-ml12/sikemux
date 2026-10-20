@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::changed::Topic;
 use super::connection::blocking;
@@ -167,22 +167,42 @@ pub(super) async fn add(adding: Adding) -> CoreResult<String> {
     blocking(move || Ok(folders::add(&adding.provider, &adding.name)?)).await
 }
 
-pub(super) async fn status(core: &Arc<Core>, account: Account) -> CoreResult<status::AgentStatus> {
+/// Where an account's agent program is, what was tried and failed on the
+/// way, and whether it is signed in. The program comes from the person's own
+/// profile, never from the caller.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Availability {
+    program: Option<PathBuf>,
+    failures: Vec<String>,
+    status: status::AgentStatus,
+}
+
+pub(super) async fn availability(core: &Arc<Core>, account: Account) -> CoreResult<Availability> {
     let (provider, config_path) = (&account.provider, account.config_path.as_deref());
     let spec = core.workspaces.account_spec(provider, config_path);
-    let status = match status::find(&spec).await {
-        Ok(program) => {
+    let (program, failures) = status::locate(&spec).await;
+    let status = match &program {
+        Some(program) => {
             let keys = {
                 let (core, provider) = (core.clone(), provider.clone());
                 blocking(move || Ok(core.workspaces.provider_keys(&provider))).await?
             };
-            status::signed_in(provider, &program, config_path, keys).await
+            status::signed_in(provider, program, config_path, keys).await
         }
-        Err(status) => status,
+        None => status::unfound(&failures),
     };
     core.workspaces.note_status(provider, config_path, &status);
     core.publish_device_view();
-    Ok(status)
+    Ok(Availability {
+        program,
+        failures,
+        status,
+    })
+}
+
+pub(super) async fn status(core: &Arc<Core>, account: Account) -> CoreResult<status::AgentStatus> {
+    Ok(availability(core, account).await?.status)
 }
 
 pub(super) async fn account_status(

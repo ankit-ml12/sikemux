@@ -129,19 +129,31 @@ pub async fn signed_in(
     status
 }
 
+/// Where `spec`'s program is, and why each program tried before it failed.
+pub async fn locate(spec: &AgentSpec) -> (Option<PathBuf>, Vec<String>) {
+    let Some(def) = AGENTS.iter().find(|def| def.kind == spec.provider) else {
+        return (None, Vec::new());
+    };
+    let candidates = discovery::candidates(def, spec.executable_path.as_deref());
+    discovery::first_healthy(def, candidates).await
+}
+
+/// An agent with no working program: missing, or broken by what `failures` say.
+pub fn unfound(failures: &[String]) -> AgentStatus {
+    if failures.is_empty() {
+        AgentStatus::Missing
+    } else {
+        AgentStatus::Broken {
+            reason: failures.join("; "),
+        }
+    }
+}
+
 /// Where `spec`'s program is, or why there is none: it is missing or broken.
 pub async fn find(spec: &AgentSpec) -> Result<PathBuf, AgentStatus> {
-    let def = AGENTS
-        .iter()
-        .find(|def| def.kind == spec.provider)
-        .ok_or(AgentStatus::Missing)?;
-    let candidates = discovery::candidates(def, spec.executable_path.as_deref());
-    match discovery::first_healthy(def, candidates).await {
+    match locate(spec).await {
         (Some(program), _) => Ok(program),
-        (None, failures) if failures.is_empty() => Err(AgentStatus::Missing),
-        (None, failures) => Err(AgentStatus::Broken {
-            reason: failures.join("; "),
-        }),
+        (None, failures) => Err(unfound(&failures)),
     }
 }
 
@@ -414,6 +426,51 @@ pub async fn account(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_agent_is_found_working_broken_or_missing() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let script = |name: &str, body: &str| {
+            let path = dir.path().join(name);
+            fs::write(&path, body).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        };
+        let pi = script(
+            "pi",
+            "#!/bin/sh\n[ \"$1\" = --version ] && echo 'pi 1.0' && exit 0\nexit 64\n",
+        );
+        let broken = script(
+            "omp",
+            "#!/bin/sh\nprintf 'launcher missing\\n' >&2\nexit 127\n",
+        );
+        let spec = |provider: &str, path: &Path| AgentSpec {
+            provider: provider.into(),
+            executable_path: Some(path.to_string_lossy().into_owned()),
+            config_path: None,
+            environment_keys: Vec::new(),
+        };
+
+        assert_eq!(locate(&spec("pi", &pi)).await.0, Some(pi.clone()));
+        let (program, failures) = locate(&spec("omp", &broken)).await;
+        assert!(program.is_none());
+        assert!(
+            matches!(unfound(&failures), AgentStatus::Broken { reason } if reason.contains("launcher missing"))
+        );
+        let (program, failures) = locate(&spec("grok", &dir.path().join("nowhere/grok"))).await;
+        assert!(program.is_none());
+        assert!(
+            matches!(
+                unfound(&failures),
+                AgentStatus::Missing | AgentStatus::Broken { .. }
+            ),
+            "a profile whose binary is gone is not ready"
+        );
+    }
 
     #[test]
     fn statuses_read_as_a_state_and_its_details() {
