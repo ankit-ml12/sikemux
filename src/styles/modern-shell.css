@@ -1029,11 +1029,16 @@ textarea:focus,
     &::-webkit-scrollbar-corner {
         background: transparent;
     }
+    /* Any styled bar stops macOS hiding it on its own, so the thumb shows only
+       while the pointer is over its list. */
     &::-webkit-scrollbar-thumb {
-        background: color-mix(in srgb, var(--ink-faint) 42%, transparent);
+        background: transparent;
         border-radius: 999px;
         border: 3px solid transparent;
         background-clip: padding-box;
+    }
+    &:hover::-webkit-scrollbar-thumb {
+        background-color: color-mix(in srgb, var(--ink-faint) 42%, transparent);
     }
     &::-webkit-scrollbar-thumb:hover {
         background: color-mix(in srgb, var(--ink-faint) 78%, transparent);
