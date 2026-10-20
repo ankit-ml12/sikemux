@@ -434,13 +434,11 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
 }
 
 fn git(repo: &str, args: &[&str]) -> Option<String> {
-    let mut command = crate::git::git_command(repo);
-    command.args(args);
-    let output = sikemux_process::run(&mut command, None, GIT_TIMEOUT, 1024 * 1024, None).ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    crate::git::Git::at(repo)
+        .timeout(GIT_TIMEOUT)
+        .limit(1024 * 1024)
+        .text(args)
+        .ok()
 }
 
 fn head(repo: &str) -> Option<String> {

@@ -17,7 +17,7 @@ use crate::trailers::{self, Agent};
 use super::board::codehost;
 use super::connection::blocking;
 use super::edits::note::{self, Note, Wrote};
-use super::edits::{self, footer};
+use super::edits::{footer, git};
 use super::messages::{self, Listed, Reach};
 use super::{saved, Core, CoreResult};
 
@@ -271,10 +271,6 @@ impl Found {
             notes: Vec::new(),
         }
     }
-}
-
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    edits::git(dir, args)
 }
 
 fn line_range(spec: &str) -> Option<(u64, u64)> {

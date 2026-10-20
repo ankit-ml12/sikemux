@@ -306,13 +306,8 @@ pub(crate) fn commit(
         })
         .unwrap_or_default();
     let signed = (!staged.is_empty() || fallback.is_some()) && attributed(dir);
-    let mut command = sikemux_process::user_environment::command("git");
-    command
-        .args(["-c", "core.fsmonitor=false", "commit", "-F", "-"])
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_EDITOR", "true");
+    let mut command = crate::git::git_command(dir);
+    command.args(["commit", "-F", "-"]).args(args);
     if signed {
         crate::git_guard::shim::sign_commit(&mut command, dir);
     }

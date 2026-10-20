@@ -350,19 +350,13 @@ fn remote_urls(path: &Path) -> Vec<String> {
 
 /// None when `repo` is not inside a repository.
 fn urls_of(repo: &Path) -> Option<Vec<String>> {
-    let mut command = sikemux_process::user_environment::command("git");
-    command
-        .arg("-C")
-        .arg(repo)
-        .args(["remote", "-v"])
-        .env("GIT_TERMINAL_PROMPT", "0");
-    let output =
-        sikemux_process::run(&mut command, None, GIT_TIMEOUT, GIT_OUTPUT_LIMIT, None).ok()?;
-    if !output.status.success() {
-        return None;
-    }
+    let listed = crate::git::Git::at(repo)
+        .timeout(GIT_TIMEOUT)
+        .limit(GIT_OUTPUT_LIMIT)
+        .text(&["remote", "-v"])
+        .ok()?;
     Some(
-        String::from_utf8_lossy(&output.stdout)
+        listed
             .lines()
             .filter_map(|line| line.strip_suffix(" (fetch)")?.split_once('\t'))
             .map(|(_, url)| with_real_ssh_host(url, ssh_hostname))
