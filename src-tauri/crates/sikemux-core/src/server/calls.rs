@@ -222,7 +222,6 @@ calls! { core, client, params;
         let params: NonceParams = parse(params)?;
         answer(signed(core.remote.sign_share_viewer(&params.nonce)?))
     },
-    "setLinkSignIns": Person => answer(super::hosts::sign_ins::set(&core, parse(params)?)?),
     "answerPairing": Person => answer(remote::answer_pairing(&core, parse(params)?)?),
     "changeDevice": Person => answer(remote::change_device(&core, parse(params)?)?),
     "questions": Watch, any_program => answer(questions::views(&core)),

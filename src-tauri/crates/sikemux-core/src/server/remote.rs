@@ -115,9 +115,6 @@ pub(crate) struct LinkedHost {
     /// Where it was last reached directly, beside the relays.
     #[serde(default)]
     pub addresses: Vec<String>,
-    /// The person lets agents it started or messaged use this host's sign-ins.
-    #[serde(default)]
-    pub sign_ins: bool,
 }
 
 /// A chat this host shares, and the key its link holds.
@@ -711,20 +708,6 @@ impl Remote {
         })
     }
 
-    /// Lets agents a linked host started or messaged use this host's sign-ins,
-    /// or stops them.
-    pub(crate) fn set_link_sign_ins(&self, id: &str, allowed: bool) -> CoreResult<()> {
-        self.change(|stored| {
-            let link = stored
-                .links
-                .iter_mut()
-                .find(|link| link.id == id)
-                .ok_or_else(|| CoreError::from("that host is no longer linked"))?;
-            link.sign_ins = allowed;
-            Ok(())
-        })
-    }
-
     /// Notes that a linked host was reached, and where.
     pub(crate) fn link_seen(&self, id: &str, addresses: Option<Vec<String>>) {
         let mut inner = self.inner.locked();
@@ -780,7 +763,6 @@ impl Remote {
                 linked_at: epoch_ms(),
                 last_seen: Some(epoch_ms()),
                 addresses,
-                sign_ins: false,
             };
             if let Err(error) = self.add_link(added) {
                 let _ = pending.answer.send(None);

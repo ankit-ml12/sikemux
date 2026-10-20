@@ -4,7 +4,7 @@
 //! team does is told to the hosts its teammates run on, which journal it for
 //! `agent_wait` and show it.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -468,8 +468,6 @@ pub(super) async fn deliver_here(
     } else {
         None
     };
-    core.names
-        .reached_from(&carried.to, BTreeSet::from([host.to_owned()]));
     let host = teammate.then(|| name_of(core, host));
     messages::from_host(core, host.as_deref(), carried, landed).await
 }

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { accountApi, type AccountHost, type AccountStatus } from "../api/account";
 import { AccountAvatar } from "../account/AccountAvatar";
 import { loadAccount, signInToAccount, signOutOfAccount, useAccount } from "../account/account";
@@ -376,14 +376,6 @@ function HostsSection({ now }: { now: number }) {
             reread();
         }
     };
-    const allowSignIns = async (host: LinkedHost, allowed: boolean) => {
-        try {
-            await remoteApi.setLinkSignIns(host.id, allowed);
-        } catch (error) {
-            reportError("Sign-ins for linked host")(error);
-        }
-        reread();
-    };
     const unlink = async (host: LinkedHost) => {
         try {
             await remoteApi.revokeDevice(host.id);
@@ -400,32 +392,20 @@ function HostsSection({ now }: { now: number }) {
                 Link another host on your account. Someone there allows it once, then agents here can start agents there, on that host&apos;s own
                 sign-ins.
             </p>
-            <p className="settings-hint">
-                Agents a linked host starts or messages here can&apos;t use this host&apos;s plugin sign-ins, database logins or signed-in browser
-                tabs until you allow that host.
-            </p>
             {links.length === 0 && hosts.length === 0 ? (
                 <p className="settings-hint">No other hosts on your account. Sign in to Sikemux on one to link it.</p>
             ) : (
                 <SettingsRows>
                     {links.map((host) => (
-                        <Fragment key={host.id}>
-                            <SettingsRow label={host.name || "Unnamed host"} desc={linkedLine(host, now)}>
-                                <button
-                                    className="settings-btn danger"
-                                    type="button"
-                                    onClick={() => void unlink(host)}
-                                    title="Unlink this host; agents on either side can no longer start agents on the other">
-                                    <IconTrash size={12} /> Remove
-                                </button>
-                            </SettingsRow>
-                            <SettingsRow
-                                label={`Let agents from ${host.name || "it"} use sign-ins here`}
-                                desc="They act as you in every plugin, database and signed-in tab on this host"
-                                asLabel>
-                                <Switch checked={host.signIns} onChange={(allowed) => void allowSignIns(host, allowed)} />
-                            </SettingsRow>
-                        </Fragment>
+                        <SettingsRow key={host.id} label={host.name || "Unnamed host"} desc={linkedLine(host, now)}>
+                            <button
+                                className="settings-btn danger"
+                                type="button"
+                                onClick={() => void unlink(host)}
+                                title="Unlink this host; agents on either side can no longer start agents on the other">
+                                <IconTrash size={12} /> Remove
+                            </button>
+                        </SettingsRow>
                     ))}
                     {[
                         ...links.map((host) => ({ id: host.id, name: host.name, platform: host.platform })),

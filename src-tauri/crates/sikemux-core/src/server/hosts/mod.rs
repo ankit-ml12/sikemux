@@ -14,7 +14,6 @@ mod join;
 mod link;
 mod outbox;
 pub(crate) mod route;
-pub(crate) mod sign_ins;
 pub(crate) mod spawn;
 pub(crate) mod team;
 
@@ -146,8 +145,6 @@ pub(crate) struct LinkView {
     connected: bool,
     /// Agents of teams this host shares with it.
     agents: usize,
-    /// Agents it started or messaged may use this host's sign-ins.
-    sign_ins: bool,
 }
 
 pub(crate) fn views(core: &Core) -> Vec<LinkView> {
@@ -163,7 +160,6 @@ pub(crate) fn views(core: &Core) -> Vec<LinkView> {
             platform: link.platform,
             linked_at: link.linked_at,
             last_seen: link.last_seen,
-            sign_ins: link.sign_ins,
         })
         .collect()
 }

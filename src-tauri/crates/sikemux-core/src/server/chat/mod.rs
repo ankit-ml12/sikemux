@@ -1560,9 +1560,7 @@ fn start(
 ) -> CoreResult<Arc<Chat>> {
     super::launching::own_tools(core, &mut launch_spec);
     rebind::name_accounts(core, &mut launch_spec);
-    for (key, value) in
-        super::plugins::agent_environment(core, &launch_spec.cwd, Some(&launch_spec.agent_id))
-    {
+    for (key, value) in super::plugins::agent_environment(core, &launch_spec.cwd) {
         launch_spec.env.entry(key).or_insert(value);
     }
     validate(&launch_spec)?;
