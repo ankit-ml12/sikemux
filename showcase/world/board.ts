@@ -71,7 +71,6 @@ export const DEMO_BOARD: ProjectBoard = {
     model: null,
     finish: "merge",
     check: "pnpm check",
-    statuses: { progress: "In Progress", done: "Done" },
     reviewer: null,
   },
   running: 1,

@@ -220,30 +220,6 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                 />
                 <span className="board-auto-hint">Agents run it when the pull request has no CI.</span>
             </section>
-            <section className="board-section">
-                <span className="board-section-name">Jira</span>
-                <div className="board-facts">
-                    <span className="board-fact">
-                        <span className="board-fact-name">Taken</span>
-                        <TextSetting
-                            value={settings?.statuses.progress ?? ""}
-                            placeholder="In Progress"
-                            label="Status a ticket moves to when its card is taken"
-                            onSave={(progress) => progress && void save({ statuses: { progress } })}
-                        />
-                    </span>
-                    <span className="board-fact">
-                        <span className="board-fact-name">Done</span>
-                        <TextSetting
-                            value={settings?.statuses.done ?? ""}
-                            placeholder="Done"
-                            label="Status a ticket moves to when its card is done"
-                            onSave={(done) => done && void save({ statuses: { done } })}
-                        />
-                    </span>
-                </div>
-                <span className="board-auto-hint">Tickets move as agents work their cards.</span>
-            </section>
         </aside>
     );
 }

@@ -24,7 +24,6 @@ const DEFAULT_SLOTS: u32 = 2;
 const MAX_LAUNCHER_CHARS: usize = 256;
 const MAX_MODEL_CHARS: usize = 200;
 const MAX_CHECK_BYTES: usize = 4096;
-const MAX_STATUS_CHARS: usize = 60;
 
 /// Where a card's run ends when its checks pass.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,24 +33,6 @@ pub(crate) enum Finish {
     Merge,
     /// At an open pull request, for the person to merge.
     Pr,
-}
-
-/// The ticket statuses a card's ticket moves to, by the names its tracker
-/// gives them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub(crate) struct Statuses {
-    pub progress: String,
-    pub done: String,
-}
-
-impl Default for Statuses {
-    fn default() -> Self {
-        Self {
-            progress: "In Progress".to_owned(),
-            done: "Done".to_owned(),
-        }
-    }
 }
 
 /// The agent that reviews a card's change before Auto merges it.
@@ -81,7 +62,6 @@ pub(crate) struct Settings {
     /// What proves a change sound when no CI runs on its pull request, run in
     /// the card's worktree.
     pub check: Option<String>,
-    pub statuses: Statuses,
     /// Who reviews each change before it merges; none for any signed-in
     /// agent on another CLI than its builder's.
     pub reviewer: Option<ReviewerChoice>,
@@ -97,7 +77,6 @@ impl Default for Settings {
             model: None,
             finish: Finish::Merge,
             check: None,
-            statuses: Statuses::default(),
             reviewer: None,
         }
     }
@@ -170,26 +149,6 @@ impl Settings {
             Some("merge") => settings.finish = Finish::Merge,
             Some("pr") => settings.finish = Finish::Pr,
             Some(_) => return Err("finish must be merge or pr".into()),
-        }
-        if let Some(statuses) = params.get("statuses") {
-            for (key, slot) in [
-                ("progress", &mut settings.statuses.progress),
-                ("done", &mut settings.statuses.done),
-            ] {
-                match statuses.get(key) {
-                    None => {}
-                    Some(Value::String(name))
-                        if !name.trim().is_empty() && name.chars().count() <= MAX_STATUS_CHARS =>
-                    {
-                        *slot = name.trim().to_owned();
-                    }
-                    Some(_) => {
-                        return Err(format!(
-                            "statuses.{key} must be a status name of at most {MAX_STATUS_CHARS} characters"
-                        ))
-                    }
-                }
-            }
         }
         Ok(settings)
     }

@@ -1,7 +1,7 @@
 //! Keeps the ticket behind each card in step with it through the person's
-//! own sign-in: a card taken moves its ticket to the project's In Progress,
-//! a card done moves it to Done with a comment naming its pull request, and
-//! a ticket closed in its tracker closes its card.
+//! own sign-in: a card taken moves its ticket into the workflow's in-progress
+//! statuses, a card done moves it into its done statuses with a comment naming
+//! its pull request, and a ticket closed in its tracker closes its card.
 
 use std::sync::Arc;
 
@@ -53,7 +53,8 @@ fn failed_key(status: Status) -> &'static str {
 enum Work {
     /// Move the ticket to match the card, then comment.
     Push {
-        to: String,
+        /// The Jira status category the ticket should be in.
+        to: &'static str,
         status: Status,
         comment: Option<String>,
     },
@@ -82,8 +83,8 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                     |what: &'static str| at(what).map_or(u64::MAX, |at| now.saturating_sub(at));
                 let wanted = match card.status {
                     Status::Open => None,
-                    Status::Progress => Some(&board.settings.statuses.progress),
-                    Status::Done => Some(&board.settings.statuses.done),
+                    Status::Progress => Some("indeterminate"),
+                    Status::Done => Some("done"),
                 };
                 let work = match wanted {
                     Some(to) if ticket.synced != Some(card.status) => {
@@ -99,7 +100,7 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                             .flatten()
                             .map(|pull| format!("Merged in {} by Sikemux's Auto.", pull.url));
                         Work::Push {
-                            to: to.clone(),
+                            to,
                             status: card.status,
                             comment,
                         }
@@ -163,7 +164,7 @@ async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Wo
             comment,
         } => {
             let outcome = match issue {
-                Ok(issue) => push(&ticket.key, &site, &issue, &to, comment).await,
+                Ok(issue) => push(&ticket.key, &site, &issue, to, comment).await,
                 Err(error) => Err(error),
             };
             settle(core, project, id, &ticket.key, status, outcome);
@@ -183,17 +184,30 @@ async fn push(
     key: &str,
     site: &Option<String>,
     issue: &Value,
-    to: &str,
+    category: &str,
     comment: Option<String>,
 ) -> Result<(), String> {
-    let there = issue["status"]
-        .as_str()
-        .is_some_and(|status| status.eq_ignore_ascii_case(to));
-    if !there {
+    if issue["statusCategory"].as_str() != Some(category) {
+        let offered = plugins::call(
+            "sikemux.jira",
+            "transition",
+            json!({ "key": key, "site": site }),
+        )
+        .await?;
+        let Some(id) = into_category(&offered["transitions"], category) else {
+            let into = if category == "done" {
+                "a done"
+            } else {
+                "an in-progress"
+            };
+            return Err(format!(
+                "its workflow has no way into {into} status from where it is now"
+            ));
+        };
         plugins::call(
             "sikemux.jira",
             "transition",
-            json!({ "key": key, "to": to, "site": site }),
+            json!({ "key": key, "to": id, "site": site }),
         )
         .await?;
     }
@@ -206,6 +220,30 @@ async fn push(
         .await?;
     }
     Ok(())
+}
+
+/// The transition into `category` a person would take: the one into the
+/// status named for it, such as In Progress or Done, else the first offered.
+fn into_category(transitions: &Value, category: &str) -> Option<String> {
+    let usual = if category == "done" {
+        "done"
+    } else {
+        "in progress"
+    };
+    let into: Vec<&Value> = transitions
+        .as_array()?
+        .iter()
+        .filter(|transition| transition["toCategory"].as_str() == Some(category))
+        .collect();
+    into.iter()
+        .find(|transition| {
+            transition["to"]
+                .as_str()
+                .is_some_and(|to| to.eq_ignore_ascii_case(usual))
+        })
+        .or(into.first())
+        .and_then(|transition| transition["id"].as_str())
+        .map(str::to_owned)
 }
 
 /// Notes on the card's ticket how its update went.

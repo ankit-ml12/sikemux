@@ -55,13 +55,11 @@ export interface BoardSettings {
     readonly finish: "merge" | "pr";
     /** What proves a change sound when no CI runs on its pull request. */
     readonly check: string | null;
-    /** The ticket statuses a card's ticket moves to when it is taken and done. */
-    readonly statuses: { readonly progress: string; readonly done: string };
     /** Who reviews each change before it merges; null for any signed-in agent on another CLI than its builder's. */
     readonly reviewer: ReviewerChoice | null;
 }
 
-export type SettingsChanges = Partial<Omit<BoardSettings, "statuses">> & { readonly statuses?: Partial<BoardSettings["statuses"]> };
+export type SettingsChanges = Partial<BoardSettings>;
 
 /** What the core says of a project's Auto beside its cards. */
 export interface BoardAuto {
