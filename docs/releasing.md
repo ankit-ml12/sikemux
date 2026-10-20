@@ -19,6 +19,8 @@ A run is titled with its tag, so the approval names what it will publish, and it
 
 Beside it, `pnpm build:linux` builds the x86_64 `.deb`, `.rpm` and `.AppImage` on Ubuntu 24.04. They carry no updater signature, because the update feed lists only macOS builds. Once the builds and the checks pass, `scripts/publish-release.sh` publishes them together. A prerelease version goes to the nightly channel and any other version to stable. Only one release runs at a time, and each run keeps its built artifacts.
 
+Every release also publishes `scripts/install.sh` as `install.sh`, the installer made for its own files, and sikemux.com/install serves the latest stable release's copy. A change to the installer therefore reaches people only with a release, never with a push to `main`. Before publishing, the host job installs the core it just built with that installer, twice, from the files laid out as the release will have them (`scripts/smoke-host-install.sh`), and stops the release if either install fails. With `SIKEMUX_CHANNEL=nightly`, the stable installer hands over to the nightly's own `install.sh`.
+
 If a release fails before it publishes, fix it and move the tag onto the fix. Only the owner can move a release tag, and moving it starts a fresh run:
 
 ```bash

@@ -493,6 +493,9 @@ jobs:
       - name: Check it runs without a window
         run: scripts/package-host.sh "${{ matrix.arch }}"
 
+      - name: Install it with the installer this release publishes
+        run: scripts/smoke-host-install.sh "${{ matrix.arch }}"
+
       - name: Keep the host core on the run
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
