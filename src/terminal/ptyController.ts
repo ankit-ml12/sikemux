@@ -1,5 +1,6 @@
 import type { PtyDirectCommand } from "../state/types";
 import { errorCategory, errorText } from "../lib/format";
+import { isRecord } from "../lib/guards";
 import { swallow } from "../state/toast";
 
 export type PtyOutputChunk = readonly number[] | Uint8Array;
@@ -208,10 +209,7 @@ const DEFAULT_MAX_LISTENER_ERRORS = 8;
 const DEFAULT_MAX_STATE_LISTENERS = 32;
 const DEFAULT_MAX_ATTACHMENTS = 16;
 const MAX_SUBSCRIPTION_ID = 0xffff_ffff;
-const MAX_SHELL_CWD_BYTES = 4_096;
-const UTF8_ENCODER = new TextEncoder();
 const SHELL_PHASES = new Set<PtyShellPhase>(["unknown", "prompt", "input", "running", "finished"]);
-const SHELL_SNAPSHOT_KEYS = new Set(["revision", "cwd", "phase", "lastExitCode"]);
 
 const defaultTimer: PtyTimerAdapter = {
     schedule: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
@@ -269,59 +267,13 @@ function asOutputChunk(value: unknown): PtyOutputChunk | null {
     return null;
 }
 
-function containsControlCharacter(value: string): boolean {
-    for (let index = 0; index < value.length; index += 1) {
-        const code = value.charCodeAt(index);
-        if (code <= 31 || (code >= 127 && code <= 159)) return true;
-    }
-    return false;
-}
-
-function ownDataRecord(value: unknown, allowed: ReadonlySet<string>): Record<string, unknown> | null {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-    try {
-        const descriptors = Object.getOwnPropertyDescriptors(value);
-        const result: Record<string, unknown> = {};
-        for (const key of Reflect.ownKeys(descriptors)) {
-            if (typeof key !== "string" || !allowed.has(key)) return null;
-            const descriptor = descriptors[key];
-            if (!descriptor || !("value" in descriptor)) return null;
-            result[key] = descriptor.value;
-        }
-        return result;
-    } catch {
-        return null;
-    }
-}
-
 export function parsePtyShellMetadataSnapshot(value: unknown): PtyShellMetadataSnapshot | null {
-    const record = ownDataRecord(value, SHELL_SNAPSHOT_KEYS);
-    if (!record) return null;
-    const { revision, cwd, phase, lastExitCode } = record;
-    if (!Number.isSafeInteger(revision) || (revision as number) < 0) return null;
-    if (typeof phase !== "string" || !SHELL_PHASES.has(phase as PtyShellPhase)) return null;
-    if (
-        cwd !== null &&
-        (typeof cwd !== "string" ||
-            cwd.length === 0 ||
-            cwd.length > MAX_SHELL_CWD_BYTES ||
-            containsControlCharacter(cwd) ||
-            UTF8_ENCODER.encode(cwd).byteLength > MAX_SHELL_CWD_BYTES)
-    ) {
-        return null;
-    }
-    if (
-        lastExitCode !== null &&
-        (!Number.isInteger(lastExitCode) || (lastExitCode as number) < -2_147_483_648 || (lastExitCode as number) > 2_147_483_647)
-    ) {
-        return null;
-    }
-    return Object.freeze({
-        revision: revision as number,
-        cwd: cwd as string | null,
-        phase: phase as PtyShellPhase,
-        lastExitCode: lastExitCode as number | null,
-    });
+    if (!isRecord(value)) return null;
+    const { revision, cwd, phase, lastExitCode } = value;
+    if (typeof revision !== "number" || typeof phase !== "string" || !SHELL_PHASES.has(phase as PtyShellPhase)) return null;
+    if (cwd !== null && typeof cwd !== "string") return null;
+    if (lastExitCode !== null && typeof lastExitCode !== "number") return null;
+    return { revision, cwd, phase: phase as PtyShellPhase, lastExitCode };
 }
 
 function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number): PtyShellMetadataSnapshot | null {
