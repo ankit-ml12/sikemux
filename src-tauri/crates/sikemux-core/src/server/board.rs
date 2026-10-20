@@ -14,15 +14,15 @@ use sha2::{Digest, Sha256};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
-use crate::text::clipped;
 use crate::cli::protocol::HarnessRequest;
 use crate::launch::providers::{self, ROUTED_ENV};
+use crate::text::clipped;
 
 use super::connection::blocking;
 use super::inbox::Recording;
+use super::kept::Kept;
 use super::messages;
 use super::names::project_of;
-use super::kept::Kept;
 use super::wake::{sooner, Wake};
 use super::Core;
 

@@ -17,11 +17,11 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 use tokio::sync::mpsc;
 
-use crate::text::clipped_line;
 use crate::accounts::live::Push;
 use crate::accounts::protocol::PushKind;
 use crate::protocol::{Attention, Event, NotifyPrefs, NotifyWhen, PendingDevice};
 use crate::push::{self, Notification, NotificationCategory, NotificationKind, MAX_PLAINTEXT};
+use crate::text::clipped_line;
 
 pub(crate) use presence::{Presence, SystemPresence};
 
@@ -562,7 +562,10 @@ fn question(core: &Core, agent_id: &str, id: &str, asked: &Asked) -> Option<Draf
     );
     draft.title = clipped_line(&format!("{} asks you", asked.name), MAX_TITLE_CHARS);
     draft.body = clipped_line(&asked.text, MAX_BODY_CHARS);
-    draft.detail = Some(clipped_line(&named.whereabouts(core, true), MAX_DETAIL_CHARS));
+    draft.detail = Some(clipped_line(
+        &named.whereabouts(core, true),
+        MAX_DETAIL_CHARS,
+    ));
     Some(draft)
 }
 
@@ -611,7 +614,8 @@ fn problem(core: &Core, agent_id: &str, message: &str, now: u64) -> Option<Draft
         MAX_TITLE_CHARS,
     );
     draft.body = clipped_line(&named.whereabouts(core, true), MAX_BODY_CHARS);
-    draft.detail = Some(clipped_line(message, MAX_DETAIL_CHARS)).filter(|detail| !detail.is_empty());
+    draft.detail =
+        Some(clipped_line(message, MAX_DETAIL_CHARS)).filter(|detail| !detail.is_empty());
     Some(draft)
 }
 

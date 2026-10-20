@@ -14,9 +14,9 @@ use serde_json::{json, Value};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
-use crate::text::clipped;
 use crate::cli::protocol::HarnessRequest;
 use crate::protocol::WindowCall;
+use crate::text::clipped;
 
 use super::activity::Activity;
 use super::connection::ClientId;

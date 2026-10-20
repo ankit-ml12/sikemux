@@ -12,6 +12,9 @@ pub(crate) fn clipped(text: &str, max: usize) -> String {
 
 /// The first line of `text` with anything in it, [`clipped`].
 pub(crate) fn clipped_line(text: &str, max: usize) -> String {
-    let line = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("");
+    let line = text
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("");
     clipped(line, max)
 }

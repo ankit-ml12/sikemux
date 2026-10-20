@@ -11,10 +11,10 @@ use serde_json::{json, Value};
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
-use crate::text::{clipped, clipped_line};
 use crate::protocol::{
     AgentGroup, AgentStatus, ChatInfo, PermissionChoices, SessionId, SessionInfo,
 };
+use crate::text::{clipped, clipped_line};
 
 use super::board::{self, Summary, Waits};
 use super::notify::provider_name;
@@ -624,7 +624,10 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
         let (kind, what) = match (&question.assumption, question.blocked) {
             (Some(assumption), false) => (
                 Kind::Assumption,
-                format!("Went on assuming {}", clipped_line(assumption, MAX_LINE_CHARS)),
+                format!(
+                    "Went on assuming {}",
+                    clipped_line(assumption, MAX_LINE_CHARS)
+                ),
             ),
             _ => (Kind::Question, "Asks you".to_owned()),
         };
