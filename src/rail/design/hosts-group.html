@@ -47,6 +47,9 @@
   .scope span { display:flex; align-items:center; justify-content:center; gap: 6px; height: 22px; border-radius: 5px; color: var(--low); }
   .scope span.on { background: var(--lift); color: var(--ink); }
   .scope svg.i { width: 13px; height: 13px; }
+  .row.here { color: var(--ink); }
+  .row .tag { color: var(--low); font-size: 11px; }
+  .row:not(.here) { color: var(--mid); }
   .trow { display:flex; align-items:center; gap: 9px; padding: 4px 8px; border-radius: 6px; color: var(--ink); font-size: 12.5px; min-width: 0; }
   .trow.chosen { background: var(--lift); }
   .trow .txt { display:grid; min-width: 0; }
@@ -74,7 +77,7 @@
 </svg>
 
 <h3>1 · The "+" menu stops growing with every host</h3>
-<p class="why">Three rows, always. They start on the current host: where the focused chat or terminal runs, else this one. The menu names it only when it isn't this one.</p>
+<p class="why">Three rows, always. They start where new work starts: the chosen host, else where the focused chat or terminal runs, else this one; ⌘N and ⌘T follow the same rule. The menu names it only when it isn't this one.</p>
 <div class="pair">
   <div>
     <div class="cap">Today</div>
@@ -178,13 +181,23 @@
       <div class="row"><svg class="i"><use href="#folder"/></svg><span class="proj">infra</span></div>
       <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
       <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
-      <div class="row chosen"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
+      <div class="row chosen here"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="tag">here</span><span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>nginx<span class="end"><span class="dot"></span></span></div>
     </div>
+    <div class="cap new" style="margin-top:14px">Side rail · sikemux chosen, a chat on this host in front</div>
+    <div class="rail">
+      <div class="glabel">PROJECTS<span class="rule"></span></div>
+      <div class="row chosen here"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
+      <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
+      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
+    </div>
+    <div class="note">The host where ⌘N and ⌘T start says <b>here</b>: its name in full ink and a small tag, never the chosen lift. Focus a chat on test-ec2 and the tag moves to test-ec2.</div>
   </div>
   <div>
     <div class="cap new">Tab rail · agents page</div>
     <div class="rail">
+      <div class="mhead">on <b>test-ec2</b></div>
       <div class="mrow"><svg class="i"><use href="#plus"/></svg>New chat<span class="k">⌘N</span></div>
       <div class="mrow"><svg class="i"><use href="#term"/></svg>New terminal<span class="k">⌘T</span></div>
       <div class="mrow"><svg class="i"><use href="#globe"/></svg>New browser<span class="k">⌘⇧T</span></div>

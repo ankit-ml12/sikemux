@@ -6,6 +6,7 @@ import { agentLabel, isAgentType } from "../agents/catalog";
 import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
 import { createSshSession } from "../state/commands/sessions";
+import { sshStartup } from "../terminal/sshStartup";
 import { offerResumableSessions } from "../terminal/sessionResume";
 import { agentWindowId, ownerSessionId } from "../state/selectors";
 import { collectPanes } from "../state/layout";
@@ -118,21 +119,25 @@ export function terminalsIn(copy: RemoteCopy): SessionInfo[] {
     );
 }
 
-/**
- * The host the person works on now: where the focused chat or terminal runs, else the host the session belongs to.
- * None is this one. New chats and terminals start there.
- */
-export function focusedHost(state: Pick<StoreState, "sessions" | "activeSessionId" | "windows" | "agents">): string | undefined {
-    const session = state.sessions[state.activeSessionId];
-    if (!session) return undefined;
-    const window = state.windows[session.activeWindowId];
-    const pane = window && collectPanes(window.root).find((candidate) => candidate.id === window.activePaneId);
-    return pane?.host ?? (pane && state.agents[pane.id]?.host) ?? session.host;
-}
-
 /** Where a new chat or terminal on `host` starts in `session`: its copy of the project there, if it has one. */
 export function copyOn(state: Pick<StoreState, "hosts" | "hostViews" | "projectIdentities">, session: Session, host: string): RemoteCopy | undefined {
     return remoteCopiesOf(state, session).find((copy) => copy.host.id === host);
+}
+
+/** The project a new chat on `host` starts in: `session`'s copy there, else the first open project with one. */
+export function projectCopyOn(
+    state: Pick<StoreState, "hosts" | "hostViews" | "projectIdentities" | "sessionOrder" | "sessions">,
+    host: string,
+    session: Session | undefined,
+): { session: Session; copy: RemoteCopy } | undefined {
+    const candidates = session
+        ? [session, ...state.sessionOrder.map((id) => state.sessions[id])]
+        : state.sessionOrder.map((id) => state.sessions[id]);
+    for (const candidate of candidates) {
+        const copy = candidate?.kind === "project" ? copyOn(state, candidate, host) : undefined;
+        if (copy) return { session: candidate, copy };
+    }
+    return undefined;
 }
 
 /** A host the side rail chooses: this one or one on the account, by its core's key (none for this one), or an SSH host by its alias. */
@@ -161,10 +166,47 @@ export function chooseHost(choice: HostChoice): void {
 }
 
 /** Brings `sessionId` forward for something opened from a host, keeping that host chosen. */
-function bringForward(d: Draft<StoreState>, sessionId: string): void {
+export function bringForward(d: Draft<StoreState>, sessionId: string): void {
     if (d.chosenHost?.over === d.activeSessionId) d.chosenHost.over = sessionId;
     d.activeSessionId = sessionId;
     d.zoomedPaneId = null;
+}
+
+const THIS_HOST: HostChoice = { kind: "core" };
+
+/**
+ * Where new chats and terminals start: the chosen host, else the host of the chat or terminal in front, else this one.
+ * Its row under Hosts says "here".
+ */
+export function newWorkHost(state: Pick<StoreState, "chosenHost" | "sessions" | "activeSessionId" | "windows" | "agents">): HostChoice {
+    const chosen = chosenHostOf(state);
+    if (chosen) return chosen;
+    const session = state.sessions[state.activeSessionId];
+    const window = session && state.windows[session.activeWindowId];
+    const pane = window && collectPanes(window.root).find((candidate) => candidate.id === window.activePaneId);
+    if (session?.kind === "ssh") return pane?.kind === "terminal" ? { kind: "ssh", alias: session.name } : THIS_HOST;
+    const host = pane?.host ?? (pane && state.agents[pane.id]?.host) ?? session?.host;
+    return host ? { kind: "core", host } : THIS_HOST;
+}
+
+/** Runs `open`, keeping a host chosen before it chosen over whatever it brings forward. */
+export function keepHostChosen(open: () => void): void {
+    const chosen = chosenHostOf(getState());
+    open();
+    if (chosen) setState({ chosenHost: { ...chosen, over: getState().activeSessionId } });
+}
+
+/** Another login on the SSH host `alias`, as a tab of its session, which its row under Hosts means is open. */
+export function newSshTerminalOn(alias: string): void {
+    mutate((d) => {
+        const session = d.sessionOrder.map((id) => d.sessions[id]).find((candidate) => candidate?.kind === "ssh" && candidate.name === alias);
+        if (!session) return;
+        const window = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
+        d.windows[window.id] = window;
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
+        session.activeWindowId = window.id;
+        bringForward(d, session.id);
+    });
 }
 
 /** Shows a tab that is open already, from a chosen host's list. */

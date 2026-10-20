@@ -5,9 +5,10 @@ import {
     approvalItem,
     chooseHost,
     chosenHostOf,
-    copyOn,
     installHere,
+    newWorkHost,
     openHostTerminal,
+    projectCopyOn,
     sameHost,
     startRemoteChat,
     type HostChoice,
@@ -62,15 +63,6 @@ function agentsLabel(count: number): string | null {
     return count === 0 ? null : `${count} ${count === 1 ? "agent" : "agents"}`;
 }
 
-/** The project sessions holding a copy on `host`, newest first, for a chat started from its row. */
-function sessionsWithCopy(state: StoreState, host: string): { session: Session; copy: NonNullable<ReturnType<typeof copyOn>> }[] {
-    return state.sessionOrder.flatMap((id) => {
-        const session = state.sessions[id];
-        const copy = session?.kind === "project" ? copyOn(state, session, host) : undefined;
-        return session && copy ? [{ session, copy }] : [];
-    });
-}
-
 function HostRow({
     kind,
     name,
@@ -91,6 +83,7 @@ function HostRow({
     onMenu: OpenMenu;
 }) {
     const chosen = useStore((s) => !s.settingsOpen && sameHost(chosenHostOf(s), choice));
+    const here = useStore((s) => sameHost(newWorkHost(s), choice));
     const show = (event: MouseEvent) => {
         event.preventDefault();
         void menu().then((items) => onMenu(event, items));
@@ -98,11 +91,12 @@ function HostRow({
     const icon = kind === "this" ? <IconLaptop size={14} /> : <IconServer size={14} />;
     return (
         <div className="session-row-shell host-row" onContextMenu={show}>
-            <button type="button" className={`sess-row${chosen ? " active" : ""}`} onClick={() => chooseHost(choice)}>
+            <button type="button" className={`sess-row${chosen ? " active" : ""}${here ? " is-here" : ""}`} onClick={() => chooseHost(choice)}>
                 <span className={`sess-icon host-${kind}`}>
                     <span className="sess-icon-glyph">{icon}</span>
                 </span>
                 <span className="sess-name">{name}</span>
+                {here && <span className="host-row-here">here</span>}
                 {load && <span className="host-row-load">{load}</span>}
                 {detail && <span className="host-row-detail">{detail}</span>}
             </button>
@@ -142,17 +136,15 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
     const load = useHostLoad(host.id, connected);
     const chat = () => {
         const state = getState();
-        const [first] = sessionsWithCopy(state, host.id);
-        if (!first) {
-            reportError(`New chat on ${host.name}`)(new Error(`${host.name} has no project yet`));
-            return;
-        }
-        void startRemoteChat(first.session.id, first.copy, state.lastAgentType ?? "claude").catch(reportError(`New chat on ${host.name}`));
+        const place = projectCopyOn(state, host.id, state.sessions[state.activeSessionId]);
+        if (!place) return;
+        void startRemoteChat(place.session.id, place.copy, state.lastAgentType ?? "claude").catch(reportError(`New chat on ${host.name}`));
     };
     const files = () => {
-        const [first] = sessionsWithCopy(getState(), host.id);
-        if (!first) return;
-        cmd.selectSession(first.session.id);
+        const state = getState();
+        const place = projectCopyOn(state, host.id, state.sessions[state.activeSessionId]);
+        if (!place) return;
+        cmd.selectSession(place.session.id);
         cmd.setTabRailPage("files");
     };
     const rename = async () => {
@@ -168,7 +160,7 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
         });
         if (confirmed) await accountApi.removeDevice(host.id).catch(reportError(`Remove ${host.name}`));
     };
-    const hasProject = useStore((s) => sessionsWithCopy(s, host.id).length > 0);
+    const hasProject = useStore((s) => !!projectCopyOn(s, host.id, undefined));
     return (
         <HostRow
             kind="sikemux"

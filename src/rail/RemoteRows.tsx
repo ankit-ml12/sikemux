@@ -2,7 +2,17 @@ import { useMemo } from "react";
 import { agentHandle } from "../agents/AgentLabel";
 import { agentLabel, isAgentType } from "../agents/catalog";
 import type { ChatInfo, SessionInfo } from "../api/generated/wire";
-import { chatsIn, focusedHost, hostName, openRemoteChat, openRemoteTerminal, remoteCopiesOf, terminalsIn, type RemoteCopy } from "../hosts/hosts";
+import {
+    chatsIn,
+    hostName,
+    hostTitle,
+    newWorkHost,
+    openRemoteChat,
+    openRemoteTerminal,
+    remoteCopiesOf,
+    terminalsIn,
+    type RemoteCopy,
+} from "../hosts/hosts";
 import { useStore } from "../state/store";
 import type { Session } from "../state/types";
 import { AgentIcon, IconAgent, IconTerminal } from "../ui/Icons";
@@ -27,7 +37,10 @@ export function useRemoteCopies(session: Session | undefined): RemoteCopy[] {
 
 /** Which host the new chat and terminal rows start on, said only when it is not this one. */
 export function NewOnHost() {
-    const name = useStore((s) => hostName(s, focusedHost(s)));
+    const name = useStore((s) => {
+        const here = newWorkHost(s);
+        return here.kind === "core" && !here.host ? null : hostTitle(s, here);
+    });
     return name ? <div className="agent-actions-host">on {name}</div> : null;
 }
 
