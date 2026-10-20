@@ -1,4 +1,4 @@
-import { coreCall } from "./core";
+import { coreCall, coreRequest, type CoreRequest } from "./core";
 import type { ChatInfo } from "./generated/wire";
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
@@ -56,33 +56,36 @@ export interface AcpEvent {
     payload: Record<string, unknown>;
 }
 
+function done(request: CoreRequest): Promise<void> {
+    return coreRequest<unknown>(request).then(() => undefined);
+}
+
 export const acpApi = {
     /** Starts the agent's chat as the core keeps it, unless it runs already; answers once its session is ready. */
     startChat: (agentId: string): Promise<void> => coreCall<void>("startChat", { agentId }),
     attach: (agentId: string): Promise<AcpAttachment> => invoke<AcpAttachment>("acp_attach", { agentId }),
     history: (agentId: string, feed: string, before: number, turns: number): Promise<AcpHistory> =>
-        invoke<AcpHistory>("acp_history", { agentId, feed, before, turns }),
-    list: () => invoke<ChatInfo[]>("acp_list"),
-    setPermissionMode: (agentId: string, permissionMode: AgentPermissionMode): Promise<void> =>
-        invoke<void>("acp_set_permission_mode", { agentId, permissionMode }),
+        coreRequest<AcpHistory>({ op: "acpHistory", agentId, feed, before, turns }),
+    list: () => coreRequest<{ chats: ChatInfo[] }>({ op: "acpList" }).then(({ chats }) => chats),
+    setPermissionMode: (agentId: string, mode: AgentPermissionMode): Promise<void> => done({ op: "acpSetPermissionMode", agentId, mode }),
     setConfig: (agentId: string, configId: string, value: string): Promise<Record<string, unknown>> =>
-        invoke("acp_set_config", { agentId, configId, value }),
+        coreRequest<{ value: Record<string, unknown> }>({ op: "acpSetConfig", agentId, configId, value }).then((reply) => reply.value),
     prompt: (agentId: string, text: string, paths: string[], context: PromptContext[] = [], messageId?: string): Promise<void> =>
-        invoke<void>("acp_prompt", { agentId, messageId: messageId ?? null, text, paths, context }),
+        done({ op: "acpPrompt", agentId, messageId, text, paths, context }),
     edit: (agentId: string, messageId: string, text: string, paths: string[], context: PromptContext[]): Promise<void> =>
-        invoke<void>("acp_edit", { agentId, messageId, text, paths, context }),
+        done({ op: "acpEdit", agentId, messageId, text, paths, context }),
     steer: (agentId: string, text: string, paths: string[], context: PromptContext[] = []): Promise<string> =>
-        invoke<string>("acp_steer", { agentId, text, paths, context }),
+        coreRequest<{ outcome: string }>({ op: "acpSteer", agentId, text, paths, context }).then(({ outcome }) => outcome),
     /** Puts the waiting messages `ids`, then `message` when given, into the running turn as one; a turn that just ended starts again with them. */
     steerQueued: (agentId: string, ids: string[], message?: { text: string; paths: string[]; context: PromptContext[] }): Promise<void> =>
         coreCall<void>("steerQueued", { agentId, ids, message: message ?? null }),
     /** Takes back waiting messages before they go out. */
     dropQueued: (agentId: string, ids: string[]): Promise<void> => coreCall<void>("dropQueued", { agentId, ids }),
     /** Stops the running turn; the messages waiting behind it are taken back. */
-    cancel: (agentId: string): Promise<void> => invoke<void>("acp_cancel", { agentId }),
-    stopTask: (agentId: string, taskId: string): Promise<void> => invoke<void>("acp_stop_task", { agentId, taskId }),
+    cancel: (agentId: string): Promise<void> => done({ op: "acpCancel", agentId }),
+    stopTask: (agentId: string, taskId: string): Promise<void> => done({ op: "acpStopTask", agentId, taskId }),
     permissionReply: (agentId: string, requestId: string, optionId?: string): Promise<void> =>
-        invoke<void>("acp_permission_reply", { agentId, requestId, optionId: optionId ?? null }),
+        done({ op: "acpPermissionReply", agentId, requestId, optionId: optionId ?? null }),
     stop: (agentId: string): Promise<void> => invoke<void>("acp_stop", { agentId }),
     /** Stops the chat unless its agent is still at work, which only the person stops. Answers whether it stopped. */
     stopIfIdle: (agentId: string): Promise<boolean> => coreCall<{ stopped: boolean }>("stopChatIfIdle", { agentId }).then(({ stopped }) => stopped),

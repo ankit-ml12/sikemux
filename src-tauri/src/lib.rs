@@ -236,10 +236,7 @@ pub fn run() {
         .manage(harness::HarnessBroker::default())
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
-        .manage(remote::PublishedOnScreen::default())
-        .manage(remote::PublishedPalette::default())
-        .manage(remote::PublishedBuddies::default())
-        .manage(remote::PublishedBackdrop::default())
+        .manage(remote::Published::default())
         .manage(BrowserManager::default())
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
@@ -248,16 +245,6 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol(pages::SCHEME, pages::handle)
         .invoke_handler(tauri::generate_handler![
             acp::acp_attach,
-            acp::acp_history,
-            acp::acp_list,
-            acp::acp_prompt,
-            acp::acp_edit,
-            acp::acp_set_permission_mode,
-            acp::acp_set_config,
-            acp::acp_cancel,
-            acp::acp_steer,
-            acp::acp_stop_task,
-            acp::acp_permission_reply,
             acp::acp_stop,
             acp::acp_switch_account,
             pty::commands::pty_spawn,
@@ -267,13 +254,8 @@ pub fn run() {
             pty::commands::pty_write,
             pty::commands::pty_resize,
             pty::commands::pty_reset_modes,
-            pty::commands::pty_shell_at_prompt,
             pty::commands::pty_kill,
             pty::commands::pty_sessions,
-            remote::remote_status,
-            remote::remote_set_enabled,
-            remote::remote_set_device_access,
-            remote::remote_revoke_device,
             account::account_status,
             account::account_refresh_profile,
             account::account_sign_in,
@@ -285,13 +267,9 @@ pub fn run() {
             share::share_access,
             share::share_viewer_hello,
             core_call::core_call,
-            remote::remote_answer_pairing,
-            remote::remote_allow_devices,
-            remote::remote_publish_on_screen,
+            core_call::core_request,
             notch::notch_configure,
-            remote::remote_publish_palette,
-            remote::remote_publish_buddies,
-            remote::remote_publish_backdrop,
+            remote::remote_publish,
             pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,
             pty::commands::agent_detection_manifests,

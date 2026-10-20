@@ -356,7 +356,7 @@ impl CoreClient {
         self.queue_with(request_id, frame, on_reply)
     }
 
-    async fn request(&self, request: Request) -> Result<Response, ClientError> {
+    pub async fn request(&self, request: Request) -> Result<Response, ClientError> {
         match self.submit(request, |reply| reply)?.await?? {
             Reply::Response(response) => Ok(response),
             Reply::Attached(_) => Err(ClientError::UnexpectedReply),

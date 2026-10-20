@@ -1,7 +1,7 @@
 import { isRecord } from "../lib/guards";
 import { performanceTelemetry } from "../lib/performance";
 import { parsePtyShellMetadataSnapshot, type PtyShellMetadataSnapshot, type PtyShellPhase } from "../terminal/ptyController";
-import { invokeCommand as invoke } from "./invoke";
+import { coreRequest } from "./core";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 
 export type PtyShellBoundary = "cwd" | "prompt_start" | "command_start" | "command_executed" | "command_finished";
@@ -16,7 +16,8 @@ export interface PtyShellMetadataEvent {
 }
 
 /** Whether the shell is waiting at its prompt with nothing running in it. */
-export const ptyShellAtPrompt = (ptyId: number): Promise<boolean> => invoke<boolean>("pty_shell_at_prompt", { id: ptyId });
+export const ptyShellAtPrompt = (ptyId: number): Promise<boolean> =>
+    coreRequest<{ atPrompt: boolean }>({ op: "shellAtPrompt", id: ptyId }).then(({ atPrompt }) => atPrompt);
 
 export type PtyShellMetadataListener = (event: PtyShellMetadataEvent) => void;
 

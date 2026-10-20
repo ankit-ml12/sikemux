@@ -122,10 +122,10 @@ pub async fn pty_attach(
         let client = manager.client().await?;
         let streams = manager.streams.clone();
         let replied = {
-            let mut guard = manager.streams.lock()?;
+            let mut guard = manager.streams.lock();
             guard.begin_attach(id)?;
             let submitted = client.submit(Request::Attach { id }, move |reply| {
-                let mut guard = streams.lock()?;
+                let mut guard = streams.lock();
                 match reply {
                     Ok(Reply::Attached(Attached {
                         alternate_screen,
@@ -180,7 +180,7 @@ pub async fn pty_unsubscribe(
         return Ok(());
     };
     let detached = {
-        let mut guard = manager.streams.lock()?;
+        let mut guard = manager.streams.lock();
         match guard.unsubscribe(id, sub_id) {
             Release::Nothing => None,
             Release::Ack(bytes) => {
@@ -251,12 +251,6 @@ pub async fn pty_resize(
 pub async fn pty_reset_modes(manager: State<'_, PtyManager>, id: SessionId) -> AppResult<()> {
     let client = manager.client().await?;
     client.reset_modes(id).await.map_err(core_error)
-}
-
-#[tauri::command]
-pub async fn pty_shell_at_prompt(manager: State<'_, PtyManager>, id: SessionId) -> AppResult<bool> {
-    let client = manager.client().await?;
-    client.shell_at_prompt(id).await.map_err(core_error)
 }
 
 #[tauri::command]

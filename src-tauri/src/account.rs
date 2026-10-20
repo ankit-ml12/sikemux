@@ -19,6 +19,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::{Method, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sikemux_core::accounts::protocol::{
     AccountProfile, Challenge, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
 };
@@ -27,7 +28,6 @@ use sikemux_core::protocol::{AccountLinkState, DeviceInfo, RemoteStatus};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
-use sha2::{Digest, Sha256};
 use sikemux_host::account::{api, http};
 use sikemux_loopback::{challenge, Callback, Finish, LoopbackError};
 use sikemux_process::sync::Locked;

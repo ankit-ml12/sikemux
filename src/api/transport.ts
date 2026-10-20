@@ -153,6 +153,7 @@ export type MemoryInvokeHandler = (args: IpcInvokeArguments | undefined, context
 /** An in-memory transport for frontend tests: registered commands answer invokes, and emit delivers events. */
 export class MemoryIpcTransport implements IpcTransport {
     private readonly handlers = new Map<string, MemoryInvokeHandler>();
+    private readonly coreRequests = new Map<string, MemoryInvokeHandler>();
     private readonly listeners = new Map<string, Set<IpcEventListener<unknown>>>();
     private eventSequence = 0;
 
@@ -172,6 +173,20 @@ export class MemoryIpcTransport implements IpcTransport {
         return () => {
             if (this.handlers.get(command) === handler) this.handlers.delete(command);
         };
+    }
+
+    /** Answers the core requests named `op` that the page sends through `core_request`. */
+    registerCoreRequest(op: string, handler: MemoryInvokeHandler): void {
+        if (this.coreRequests.size === 0) {
+            this.register("core_request", (args, context) => {
+                const request = (args as { request: { op: string } }).request;
+                const answer = this.coreRequests.get(request.op);
+                if (!answer) throw new Error(`No memory core request handler registered for ${request.op}`);
+                return answer(request, context);
+            });
+        }
+        if (this.coreRequests.has(op)) throw new TypeError(`Memory core request already registered: ${op}`);
+        this.coreRequests.set(op, handler);
     }
 
     invoke<Result>(command: string, args?: IpcInvokeArguments, { signal, native }: IpcInvokeOptions = {}): Promise<Result> {

@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use sikemux_process::sync::Locked;
 use tauri::async_runtime::spawn_blocking;
 
 use crate::error::{AppError, AppResult};
@@ -57,18 +58,16 @@ fn file_write_locks() -> &'static Mutex<HashMap<PathBuf, WeakFileWriteLock>> {
     LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn write_lock_for(path: &Path) -> AppResult<FileWriteLock> {
+fn write_lock_for(path: &Path) -> FileWriteLock {
     let key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let mut locks = file_write_locks()
-        .lock()
-        .map_err(|_| AppError::Other("file write lock registry poisoned".into()))?;
+    let mut locks = file_write_locks().locked();
     locks.retain(|_, lock| lock.strong_count() > 0);
     if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
-        return Ok(lock);
+        return lock;
     }
     let lock = Arc::new(Mutex::new(()));
     locks.insert(key, Arc::downgrade(&lock));
-    Ok(lock)
+    lock
 }
 
 fn content_version(bytes: &[u8]) -> String {
@@ -261,10 +260,8 @@ pub async fn read_file(path: String) -> AppResult<String> {
 pub async fn read_file_versioned(path: String) -> AppResult<FileSnapshot> {
     spawn_blocking(move || {
         let path = PathBuf::from(path);
-        let lock = write_lock_for(&path)?;
-        let _guard = lock
-            .lock()
-            .map_err(|_| AppError::Other("file write lock poisoned".into()))?;
+        let lock = write_lock_for(&path);
+        let _guard = lock.locked();
         let bytes = read_bounded(&path, EDITOR_TEXT_MAX_BYTES)?;
         let version = content_version(&bytes);
         let content =
@@ -381,7 +378,7 @@ fn person_wrote(manager: &crate::pty::PtyManager, path: PathBuf) {
     };
     tauri::async_runtime::spawn(async move {
         let params = serde_json::json!({ "path": path });
-        let _ = crate::core_call::call(&client, "personSaved".to_owned(), params).await;
+        let _ = client.call("personSaved", params).await;
     });
 }
 
@@ -406,10 +403,8 @@ pub async fn write_file_versioned(
             ));
         }
         let path = PathBuf::from(path);
-        let lock = write_lock_for(&path)?;
-        let _guard = lock
-            .lock()
-            .map_err(|_| AppError::Other("file write lock poisoned".into()))?;
+        let lock = write_lock_for(&path);
+        let _guard = lock.locked();
         write_file_versioned_sync(path, content.as_bytes(), &expected_version)
     })
     .await

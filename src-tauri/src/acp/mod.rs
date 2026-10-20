@@ -12,9 +12,9 @@ use sikemux_core::acp::bounded_text;
 use sikemux_core::agent_accounts;
 use sikemux_core::client::{ClientError, CoreClient, Reply};
 use sikemux_core::protocol::{
-    ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatStart,
-    Request, Response,
+    ChatAccount, ChatAttachment, ChatEvent, ChatEventKind, ChatStart, Request, Response,
 };
+use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::pty::PtyManager;
@@ -26,9 +26,9 @@ const REPLAY_BATCH: usize = 2_000;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AcpEvent<'a> {
+struct AcpEvent<'a, Kind> {
     agent_id: &'a str,
-    kind: &'a str,
+    kind: Kind,
     payload: Value,
 }
 
@@ -40,26 +40,21 @@ pub struct AcpManager {
 
 impl AcpManager {
     fn show(&self, agent_id: &str) {
-        if let Ok(mut shown) = self.shown.lock() {
-            shown.insert(agent_id.to_owned());
-        }
+        self.shown.locked().insert(agent_id.to_owned());
     }
 
     fn forget(&self, agent_id: &str) {
-        if let Ok(mut shown) = self.shown.lock() {
-            shown.remove(agent_id);
-        }
+        self.shown.locked().remove(agent_id);
     }
 
     fn take_shown(&self) -> Vec<String> {
-        self.shown
-            .lock()
-            .map(|mut shown| std::mem::take(&mut *shown).into_iter().collect())
-            .unwrap_or_default()
+        std::mem::take(&mut *self.shown.locked())
+            .into_iter()
+            .collect()
     }
 }
 
-fn emit(app: &AppHandle, agent_id: &str, kind: &str, payload: Value) {
+fn emit(app: &AppHandle, agent_id: &str, kind: impl Serialize + Clone, payload: Value) {
     let _ = app.emit_to(
         "main",
         "acp_event",
@@ -71,19 +66,6 @@ fn emit(app: &AppHandle, agent_id: &str, kind: &str, payload: Value) {
     );
 }
 
-fn kind_name(kind: ChatEventKind) -> &'static str {
-    match kind {
-        ChatEventKind::Status => "status",
-        ChatEventKind::Ready => "ready",
-        ChatEventKind::SessionUpdate => "session_update",
-        ChatEventKind::Prompt => "prompt",
-        ChatEventKind::TurnStarted => "turn_started",
-        ChatEventKind::TurnCompleted => "turn_completed",
-        ChatEventKind::PermissionRequest => "permission_request",
-        ChatEventKind::Error => "error",
-    }
-}
-
 /// Hands one event from the core to the page.
 pub(crate) fn deliver(app: &AppHandle, agent_id: &str, event: ChatEvent) {
     let ended = event.kind == ChatEventKind::Status
@@ -91,7 +73,7 @@ pub(crate) fn deliver(app: &AppHandle, agent_id: &str, event: ChatEvent) {
     if let (true, Some(manager)) = (ended, app.try_state::<AcpManager>()) {
         manager.forget(agent_id);
     }
-    emit(app, agent_id, kind_name(event.kind), event.payload);
+    emit(app, agent_id, event.kind, event.payload);
 }
 
 /// Replays a chat to the page as the events it would have heard, with
@@ -103,7 +85,7 @@ fn replay(app: &AppHandle, agent_id: &str, events: Vec<ChatEvent>) {
             emit(
                 app,
                 agent_id,
-                "session_update",
+                ChatEventKind::SessionUpdate,
                 json!({ "updates": std::mem::take(updates) }),
             );
         }
@@ -117,7 +99,7 @@ fn replay(app: &AppHandle, agent_id: &str, events: Vec<ChatEvent>) {
             continue;
         }
         flush(&mut updates);
-        emit(app, agent_id, kind_name(event.kind), event.payload);
+        emit(app, agent_id, event.kind, event.payload);
     }
     flush(&mut updates);
 }
@@ -149,7 +131,7 @@ pub(crate) async fn reconnected(app: &AppHandle, client: Option<&Arc<CoreClient>
             emit(
                 app,
                 &agent_id,
-                "status",
+                ChatEventKind::Status,
                 json!({ "state": "stopped", "reason": "exited" }),
             );
         }
@@ -199,18 +181,10 @@ pub enum Attachment {
         /// The core's run of this chat, which paging back names.
         feed: String,
         /// Set when the replay holds only the chat's last turns: the event
-        /// before which `acp_history` pages back.
+        /// before which `acpHistory` pages back.
         older_before: Option<u64>,
     },
     Missing,
-}
-
-/// Turns from before what the page shows, and where the page before them starts.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatHistory {
-    events: Vec<ChatEvent>,
-    older_before: Option<u64>,
 }
 
 /// Takes up a chat the core already runs, if it runs one for this agent.
@@ -274,28 +248,6 @@ pub async fn acp_attach(
     Ok(attachment)
 }
 
-/// The chat's turns before event `before` of its run `feed`, for a page shown
-/// only the chat's end.
-#[tauri::command]
-pub async fn acp_history(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    feed: String,
-    before: u64,
-    turns: u32,
-) -> Result<ChatHistory, String> {
-    bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
-    let (events, older_before) = core(&pty)
-        .await?
-        .acp_history(agent_id, feed, before, turns)
-        .await
-        .map_err(failure)?;
-    Ok(ChatHistory {
-        events,
-        older_before,
-    })
-}
-
 /// Moves a running chat to another account, on the same session.
 #[tauri::command]
 pub async fn acp_switch_account(
@@ -313,126 +265,6 @@ pub async fn acp_switch_account(
         .map_err(failure)
 }
 
-/// The chats the core runs, for the page to stop the ones it no longer shows.
-#[tauri::command]
-pub async fn acp_list(pty: State<'_, PtyManager>) -> Result<Vec<ChatInfo>, String> {
-    core(&pty).await?.acp_list().await.map_err(failure)
-}
-
-#[tauri::command]
-pub async fn acp_set_permission_mode(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    permission_mode: String,
-) -> Result<(), String> {
-    core(&pty)
-        .await?
-        .acp_set_permission_mode(agent_id, permission_mode)
-        .await
-        .map_err(failure)
-}
-
-#[tauri::command]
-pub async fn acp_set_config(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    config_id: String,
-    value: String,
-) -> Result<Value, String> {
-    core(&pty)
-        .await?
-        .acp_set_config(agent_id, config_id, value)
-        .await
-        .map_err(failure)
-}
-
-#[tauri::command]
-pub async fn acp_prompt(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    message_id: Option<String>,
-    text: String,
-    paths: Vec<String>,
-    context: Vec<ChatContext>,
-) -> Result<(), String> {
-    core(&pty)
-        .await?
-        .acp_prompt(agent_id, message_id, text, paths, context)
-        .await
-        .map_err(failure)
-}
-
-/// Takes the chat back to before the person's message `message_id` and sends
-/// `text` in its place.
-#[tauri::command]
-pub async fn acp_edit(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    message_id: String,
-    text: String,
-    paths: Vec<String>,
-    context: Vec<ChatContext>,
-) -> Result<(), String> {
-    core(&pty)
-        .await?
-        .acp_edit(agent_id, message_id, text, paths, context)
-        .await
-        .map_err(failure)
-}
-
-/// Puts a message into the running turn, answering `promptRequired` when the
-/// turn ended first and the caller should send it as a prompt of its own.
-#[tauri::command]
-pub async fn acp_steer(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    text: String,
-    paths: Vec<String>,
-    context: Vec<ChatContext>,
-) -> Result<String, String> {
-    core(&pty)
-        .await?
-        .acp_steer(agent_id, text, paths, context)
-        .await
-        .map_err(failure)
-}
-
-#[tauri::command]
-pub async fn acp_cancel(pty: State<'_, PtyManager>, agent_id: String) -> Result<(), String> {
-    core(&pty)
-        .await?
-        .acp_cancel(agent_id)
-        .await
-        .map_err(failure)
-}
-
-#[tauri::command]
-pub async fn acp_stop_task(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    task_id: String,
-) -> Result<(), String> {
-    core(&pty)
-        .await?
-        .acp_stop_task(agent_id, task_id)
-        .await
-        .map_err(failure)
-}
-
-#[tauri::command]
-pub async fn acp_permission_reply(
-    pty: State<'_, PtyManager>,
-    agent_id: String,
-    request_id: String,
-    option_id: Option<String>,
-) -> Result<(), String> {
-    core(&pty)
-        .await?
-        .acp_permission_reply(agent_id, request_id, option_id)
-        .await
-        .map_err(failure)
-}
-
 #[tauri::command]
 pub async fn acp_stop(
     manager: State<'_, AcpManager>,
@@ -446,22 +278,6 @@ pub async fn acp_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_event_kind_keeps_the_name_the_page_reads() {
-        for (kind, name) in [
-            (ChatEventKind::Status, "status"),
-            (ChatEventKind::Ready, "ready"),
-            (ChatEventKind::SessionUpdate, "session_update"),
-            (ChatEventKind::TurnStarted, "turn_started"),
-            (ChatEventKind::TurnCompleted, "turn_completed"),
-            (ChatEventKind::PermissionRequest, "permission_request"),
-            (ChatEventKind::Error, "error"),
-        ] {
-            assert_eq!(kind_name(kind), name);
-            assert_eq!(serde_json::to_value(kind).unwrap(), name);
-        }
-    }
 
     #[test]
     fn an_attachment_reads_as_the_page_expects() {
