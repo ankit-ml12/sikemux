@@ -49,7 +49,6 @@ import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 import { HostLabel } from "./RemoteRows";
-import { RailScroll } from "./RailScroll";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
 const LINE_ICON_SIZE = 13;
@@ -807,7 +806,7 @@ export const SideRail = memo(function SideRail() {
         <RailContext.Provider value={rail}>
             <aside ref={leavingRail} className="side-rail" {...LEAVES_SETTINGS}>
                 <RailMasthead />
-                <RailScroll>
+                <div className="rail-scroll">
                     <Group
                         label="Projects"
                         list={projects}
@@ -829,7 +828,7 @@ export const SideRail = memo(function SideRail() {
                     />
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
-                </RailScroll>
+                </div>
                 <UpdateChip />
                 <RailAccount />
             </aside>

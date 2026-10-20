@@ -94,13 +94,19 @@ textarea:focus,
     width: var(--tab-rail-w);
 }
 
+/* The scrollbar is always there and fills the right gutter, so the rows keep
+ * their width whether or not the list scrolls. */
+.rail-scroll {
+    padding: var(--gutter-rail) 0 var(--space-4) var(--gutter-rail);
+    overflow-y: scroll;
+}
+.rail-scroll::-webkit-scrollbar {
+    width: var(--gutter-rail);
+}
+
 /* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
  * tracked caps and a version chip, all above the first thing you actually use.
  * It is a quiet single line now. */
-.rail-scroll {
-    padding: var(--gutter-rail) var(--gutter-rail) var(--space-4);
-}
-
 .rail-masthead {
     display: flex;
     align-items: center;
@@ -1012,7 +1018,7 @@ textarea:focus,
  * default WebKit bar, which paints a light track on the dark chrome. This is
  * the app-wide default. The terminal and CodeMirror keep their own rules.
  */
-*:not(.xterm-viewport, .cm-scroller, .rail-scroll) {
+*:not(.xterm-viewport, .cm-scroller) {
     &::-webkit-scrollbar {
         width: 10px;
         height: 10px;

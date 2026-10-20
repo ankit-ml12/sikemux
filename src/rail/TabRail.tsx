@@ -37,7 +37,6 @@ import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
 import { remoteChatRows, RemoteNewRows, useRemoteCopies } from "./RemoteRows";
-import { RailScroll } from "./RailScroll";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -387,7 +386,7 @@ export function TabRailBody() {
                 </div>
                 <ScopeTabs scope={scope} projectName={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>
-            <RailScroll ref={scrollRef} onScroll={onRailScroll}>
+            <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 {scope === "all" && <AllProjectsAgents showEmpty={noRecents} />}
                 {scope === "project" && noContent && (
                     <RailEmpty
@@ -470,7 +469,7 @@ export function TabRailBody() {
                 )}
 
                 <RecentChatList recent={recent} providers={availableAgents} />
-            </RailScroll>
+            </div>
             {accounts}
         </>
     );
