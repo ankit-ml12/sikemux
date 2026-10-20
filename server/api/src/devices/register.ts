@@ -28,11 +28,16 @@ export function toDevice(row: Selectable<Tables["devices"]>): Device {
   return device;
 }
 
-/** Who is registering: the account, how it signed in, and a phone's Clerk session. */
+/**
+ * Who is registering: the account, how it signed in, and a phone's Clerk session. A host signs in
+ * to add the app on it as a client, which then joins the account's other hosts as a phone does.
+ */
 export interface Registrant {
   userId: string;
   via: string;
   sessionId?: string | undefined;
+  /** The host that signed the request, when one did. */
+  deviceKey?: string | undefined;
 }
 
 /**
@@ -41,9 +46,11 @@ export interface Registrant {
  */
 export async function registerDevice(
   db: Kysely<Tables>,
-  { userId, via, sessionId }: Registrant,
+  { userId, via, sessionId, deviceKey }: Registrant,
   registration: DeviceRegistration,
 ): Promise<{ row: Selectable<Tables["devices"]>; added: boolean }> {
+  if (via === "host" && registration.role !== "client")
+    throw forbidden("A host may add only its own app to the account.");
   if ((registration.role === "host") !== (registration.channel !== undefined)) {
     throw badRequest("Hosts say which channel they run; clients do not.");
   }
@@ -81,6 +88,17 @@ export async function registerDevice(
         409,
         "conflict",
         "This device is registered to another account.",
+      );
+    }
+    if (
+      existing &&
+      via === "host" &&
+      existing.registered_by !== (deviceKey ?? null)
+    ) {
+      throw new ApiFailure(
+        409,
+        "conflict",
+        "This device was added to the account another way.",
       );
     }
     if (existing && existing.role !== registration.role) {
@@ -130,6 +148,7 @@ export async function registerDevice(
             user_id: userId,
             role: registration.role,
             acked_event_id: eventId,
+            registered_by: via === "host" ? (deviceKey ?? null) : null,
             ...fields,
           })
           .returningAll()

@@ -93,7 +93,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
     let request = PendingDevice {
         id: uuid::Uuid::new_v4().to_string(),
         device_id: phone,
-        name: clean(&hello.name, NAME_LIMIT),
+        name: clean(&join::joiner_name(&hello), NAME_LIMIT),
         platform: clean(&hello.platform, PLATFORM_LIMIT),
         from_account: true,
         expires_at: sikemux_process::clock::epoch_ms() + APPROVAL_TIMEOUT.as_millis() as u64,

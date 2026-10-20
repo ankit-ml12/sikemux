@@ -67,6 +67,11 @@ export interface Tables {
       string | null,
       string | null | undefined,
       string | null
+    >; /** The host that added this client to the account, when a host did. */
+    registered_by: ColumnType<
+      string | null,
+      string | null | undefined,
+      string | null
     >;
   };
   challenges: { nonce: string; user_id: string; expires_at: Date };

@@ -237,7 +237,7 @@ export interface JoinRequest {
   host: DeviceKey;
 }
 
-/** The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal. */
+/** The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal, followed by `|<via>|<viaName>` when the ticket has them. */
 export interface JoinTicket {
   /** The ticket's format. Only 1 exists. */
   v: number;
@@ -251,6 +251,10 @@ export interface JoinTicket {
   issuedAt: number;
   /** When it stops being good, in unix seconds: ten minutes after issuedAt. */
   expiresAt: number;
+  /** The host that added the joining app to the account, when a host did, so the host it joins can say which. */
+  via?: DeviceKey;
+  /** What the account calls the host in via. */
+  viaName?: string;
   signature: string;
 }
 

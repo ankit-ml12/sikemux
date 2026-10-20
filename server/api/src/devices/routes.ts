@@ -47,13 +47,13 @@ export function deviceRoutes(
     .route("/", joinRoutes(database, limiter, join))
     .post(
       "/challenge",
-      allow("session", "macRegistration"),
+      allow("session", "macRegistration", "host"),
       perUser("challenge", 30),
       async (c) => c.json(await issueChallenge(db, c.get("identity").userId)),
     )
     .post(
       "/",
-      allow("session", "macRegistration"),
+      allow("session", "macRegistration", "host"),
       perUser("register", 20),
       async (c) => {
         const registration = await readBody(c, "DeviceRegistration");

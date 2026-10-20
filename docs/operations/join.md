@@ -13,6 +13,13 @@ Mac app's sign-in only when that key is one of the account's hosts, and for a ph
 when it is one of its phones. The host hands it over in a `join` ask over ALPN
 `sikemux/link/1`, and the other host's owner allows the link once (ADR 0013).
 
+The desktop app joins the account's other hosts as a device of its own, with a key of its own
+(ADR 0017). Its host adds that key to the account as a client, signing the request itself, and
+the route then signs tickets for it only when the host asking is the one that added it. Such a
+ticket also names that host, as `via` and `viaName`, signed after the other fields, and the host
+it joins asks its owner to allow "The app on <viaName>" rather than whatever the app calls
+itself. Removing the host from the account removes the apps it added.
+
 ## What runs
 
 | Piece               | Where                                                 |
@@ -23,7 +30,8 @@ when it is one of its phones. The host hands it over in a `join` ask over ALPN
 | Shared test vector  | `server/protocol/vectors/join.json` (a throwaway key) |
 
 The API signs the UTF-8 text
-`sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>` with Ed25519. A
+`sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>` with Ed25519,
+followed by `|<via>|<viaName>` for an app a host added. A
 ticket lasts ten minutes. Each phone gets 10 a minute, and each one writes `join.issued` to
 the audit table.
 

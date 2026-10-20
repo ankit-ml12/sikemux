@@ -271,7 +271,7 @@ pub struct JoinRequest {
     pub host: DeviceKey,
 }
 
-/// The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal.
+/// The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal, followed by `|<via>|<viaName>` when the ticket has them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JoinTicket {
@@ -287,6 +287,12 @@ pub struct JoinTicket {
     pub issued_at: i64,
     /// When it stops being good, in unix seconds: ten minutes after issuedAt.
     pub expires_at: i64,
+    /// The host that added the joining app to the account, when a host did, so the host it joins can say which.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<DeviceKey>,
+    /// What the account calls the host in via.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via_name: Option<String>,
     pub signature: String,
 }
 
