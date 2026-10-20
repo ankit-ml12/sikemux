@@ -204,26 +204,29 @@ export const FileTree = memo(function FileTree({
         return () => observer.disconnect();
     }, [hasLead]);
 
-    const loadDirs = useCallback(async (paths: readonly string[]) => {
-        if (paths.length === 0) return;
-        const batches: string[][] = [];
-        for (let at = 0; at < paths.length; at += READ_DIRS_BATCH) {
-            batches.push(paths.slice(at, at + READ_DIRS_BATCH) as string[]);
-        }
-        let listings;
-        try {
-            listings = (await Promise.all(batches.map((batch) => files.readDirs(batch)))).flat();
-        } catch (error) {
-            swallow("readDirs")(error);
-            return;
-        }
-        const loaded: Record<string, DirEntry[]> = {};
-        for (const listing of listings ?? []) {
-            if (listing?.error === null && Array.isArray(listing.entries)) loaded[listing.path] = listing.entries;
-        }
-        if (Object.keys(loaded).length === 0) return;
-        setDirs((d) => ({ ...d, ...loaded }));
-    }, [files]);
+    const loadDirs = useCallback(
+        async (paths: readonly string[]) => {
+            if (paths.length === 0) return;
+            const batches: string[][] = [];
+            for (let at = 0; at < paths.length; at += READ_DIRS_BATCH) {
+                batches.push(paths.slice(at, at + READ_DIRS_BATCH) as string[]);
+            }
+            let listings;
+            try {
+                listings = (await Promise.all(batches.map((batch) => files.readDirs(batch)))).flat();
+            } catch (error) {
+                swallow("readDirs")(error);
+                return;
+            }
+            const loaded: Record<string, DirEntry[]> = {};
+            for (const listing of listings ?? []) {
+                if (listing?.error === null && Array.isArray(listing.entries)) loaded[listing.path] = listing.entries;
+            }
+            if (Object.keys(loaded).length === 0) return;
+            setDirs((d) => ({ ...d, ...loaded }));
+        },
+        [files],
+    );
 
     const loadDir = useCallback((path: string) => loadDirs([path]), [loadDirs]);
 
@@ -575,7 +578,13 @@ export const FileTree = memo(function FileTree({
 
     const revealItem = (p: string): CtxItem[] =>
         host === undefined
-            ? [{ label: `Reveal in ${FILE_MANAGER_NAME}`, icon: <IconFolder size={13} />, run: () => void fsapi.revealInFinder(p).catch(reportError("reveal")) }]
+            ? [
+                  {
+                      label: `Reveal in ${FILE_MANAGER_NAME}`,
+                      icon: <IconFolder size={13} />,
+                      run: () => void fsapi.revealInFinder(p).catch(reportError("reveal")),
+                  },
+              ]
             : [];
 
     const deleteEntry = async (entry: DirEntry) => {

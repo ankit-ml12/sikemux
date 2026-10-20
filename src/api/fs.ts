@@ -65,7 +65,12 @@ async function readDirs(host: FilesHost, dirs: readonly string[]): Promise<DirLi
             const entries: DirEntry[] = [];
             const add = (page: WireListing) => {
                 for (const entry of page.entries) {
-                    entries.push({ name: entry.name, path: joinPath(page.dir, entry.name), is_dir: !!entry.dir, ...(entry.ignored ? { ignored: true } : {}) });
+                    entries.push({
+                        name: entry.name,
+                        path: joinPath(page.dir, entry.name),
+                        is_dir: !!entry.dir,
+                        ...(entry.ignored ? { ignored: true } : {}),
+                    });
                 }
             };
             add(listing);

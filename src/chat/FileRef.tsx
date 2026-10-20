@@ -161,7 +161,12 @@ export function ChatFileRef({
                 {!tile && <span className="chat-file-ref-name">{label}</span>}
             </button>
             {menu && (
-                <TreeContextMenu x={menu.x} y={menu.y} items={menuItems(refers, state, cwd, deskAgentId, remote, place)} onClose={() => setMenu(null)} />
+                <TreeContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    items={menuItems(refers, state, cwd, deskAgentId, remote, place)}
+                    onClose={() => setMenu(null)}
+                />
             )}
         </>
     );

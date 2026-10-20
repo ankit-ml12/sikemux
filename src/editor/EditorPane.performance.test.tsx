@@ -38,5 +38,8 @@ it("loads restored tabs only when they are shown, and reloads a changed one", as
     expect(invoke.mock.calls.filter(([cmd, args]) => fileRead(cmd, args))).toHaveLength(12);
     act(() => emit({ type: "fs-changed", repo: "/repo", paths: ["file-4.ts"] }));
     await waitFor(() => expect(invoke.mock.calls.filter(([cmd, args]) => fileRead(cmd, args))).toHaveLength(13));
-    expect(invoke.mock.calls.filter(([cmd, args]) => fileRead(cmd, args)).at(-1)?.[1]).toEqual({ method: "files.read", params: { path: paths[4], at: 0 } });
+    expect(invoke.mock.calls.filter(([cmd, args]) => fileRead(cmd, args)).at(-1)?.[1]).toEqual({
+        method: "files.read",
+        params: { path: paths[4], at: 0 },
+    });
 }, 30_000);
