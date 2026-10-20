@@ -80,7 +80,7 @@ describe("failures", () => {
 
 describe("what Bitbucket has no counterpart for", () => {
     it("refuses changes it cannot make without asking Bitbucket", async () => {
-        await expect(bitbucketHostApi.deleteRun(repo, "1")).rejects.toThrow("Bitbucket cannot delete a pipeline");
+        await expect(bitbucketHostApi.deleteRun(repo, "1")).rejects.toThrow("Bitbucket cannot delete a run");
         await expect(bitbucketHostApi.downloadAsset(repo, 1, "a.zip")).rejects.toThrow("Bitbucket cannot download release files");
         expect(fake.call).not.toHaveBeenCalled();
     });

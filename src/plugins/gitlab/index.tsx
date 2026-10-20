@@ -1,7 +1,7 @@
 import { registerFrontendPlugin } from "../../plugin-api";
 import { hostCiGlyph, registerCodeHost } from "../../plugin-api/codehost";
 import { openGitArea } from "../../plugin-api/host";
-import { gitlabHostApi } from "./api";
+import { gitlabCapabilities, gitlabHostApi } from "./api";
 import { GitlabMark } from "./components/GitlabMark";
 import { GitlabSignIn } from "./components/GitlabSignIn";
 import { GITLAB_PLUGIN } from "./kinds";
@@ -10,27 +10,7 @@ registerCodeHost({
     ...GITLAB_PLUGIN,
     ciName: "Pipelines",
     icon: (size) => <GitlabMark size={size} />,
-    capabilities: {
-        ci: {
-            graph: true,
-            attempts: false,
-            approvals: false,
-            dispatch: true,
-            annotations: false,
-            summaries: false,
-            artifacts: false,
-            billing: false,
-            workflowFile: true,
-            rerunFailed: true,
-            rerunJob: true,
-            debugLogs: false,
-            deleteRuns: true,
-        },
-        pulls: { draft: true, mergeMethods: ["merge", "squash"], requestChanges: false, reopen: true, mergeability: true },
-        issues: true,
-        releases: true,
-        inbox: true,
-    },
+    capabilities: gitlabCapabilities,
     api: gitlabHostApi,
     pullHeadRef: (number) => `merge-requests/${number}/head`,
     SignIn: GitlabSignIn,
