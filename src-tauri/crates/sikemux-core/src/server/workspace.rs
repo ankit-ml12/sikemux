@@ -497,6 +497,7 @@ impl Workspaces {
                 pinned: false,
                 space: None,
                 code_hosts: Default::default(),
+                identity: None,
             };
             check_project(&project, saved)?;
             saved.projects.push(project.clone());
@@ -537,11 +538,37 @@ impl Workspaces {
                 .iter()
                 .position(|project| project.id == id)
                 .ok_or_else(|| CoreError::from("that project is not on this host"))?;
-            let project = patched(&saved.projects[index], patch, &["id", "path"])?;
+            let project = patched(&saved.projects[index], patch, &["id", "path", "identity"])?;
             check_project(&project, saved)?;
             saved.projects[index] = project.clone();
             Ok(project)
         })
+    }
+
+    /// Keeps what each project is known by, answering whether any changed.
+    pub(crate) fn set_identities(&self, identities: Vec<(PathBuf, Option<String>)>) -> bool {
+        let changed = |saved: &Saved| {
+            identities.iter().any(|(path, identity)| {
+                saved
+                    .projects
+                    .iter()
+                    .any(|project| &project.path == path && &project.identity != identity)
+            })
+        };
+        if !changed(&self.published.locked().saved) {
+            return false;
+        }
+        self.change(|saved| {
+            for project in &mut saved.projects {
+                if let Some((_, identity)) =
+                    identities.iter().find(|(path, _)| *path == project.path)
+                {
+                    project.identity = identity.clone();
+                }
+            }
+            Ok(())
+        })
+        .is_ok()
     }
 
     fn move_project(&self, id: &str, index: usize) -> CoreResult<()> {
@@ -1858,6 +1885,7 @@ mod tests {
             pinned: false,
             space: None,
             code_hosts: Default::default(),
+            identity: None,
         }
     }
 

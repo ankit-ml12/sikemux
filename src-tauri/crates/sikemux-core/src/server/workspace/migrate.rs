@@ -149,6 +149,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 code_hosts: code_hosts_of(&cwd),
                 path: cwd.into(),
                 pinned: session["pinned"].as_bool().unwrap_or(false),
+                identity: None,
             })
         })
         .filter(|project| project.path.is_absolute())

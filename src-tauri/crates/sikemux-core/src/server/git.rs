@@ -187,5 +187,17 @@ pub(crate) fn follow_projects(core: &Core) {
     tokio::task::spawn_blocking(move || {
         core.git_watches
             .follow(|| core.workspaces.project_paths(), &changed);
+        let identities = core
+            .workspaces
+            .project_paths()
+            .into_iter()
+            .map(|path| {
+                let identity = crate::git::remote::project_identity(&path.to_string_lossy());
+                (path, identity)
+            })
+            .collect();
+        if core.workspaces.set_identities(identities) {
+            core.view_changed();
+        }
     });
 }

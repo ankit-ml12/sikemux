@@ -849,6 +849,11 @@ pub struct ProjectInfo {
     /// host's plugin id, over what its remote and the host's accounts say.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub code_hosts: BTreeMap<String, CodeHostChoice>,
+    /// What the project is known by on every host (ADR 0017): its remote,
+    /// normalised, else its repository's first commit. A folder outside git
+    /// has none. The core keeps it; clients only read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
 }
 
 /// A repository or account picked for a project on one code host.

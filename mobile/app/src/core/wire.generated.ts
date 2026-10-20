@@ -45,6 +45,12 @@ export interface ProjectInfo {
    * host's plugin id, over what its remote and the host's accounts say.
    */
   codeHosts?: Record<string, CodeHostChoice>;
+  /**
+   * What the project is known by on every host (ADR 0017): its remote,
+   * normalised, else its repository's first commit. A folder outside git
+   * has none. The core keeps it; clients only read it.
+   */
+  identity?: string;
 }
 
 /** A repository or account picked for a project on one code host. */
