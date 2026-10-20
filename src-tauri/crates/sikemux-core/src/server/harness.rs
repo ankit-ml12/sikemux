@@ -17,8 +17,8 @@ use tokio::time::Instant;
 
 use crate::cli::protocol::{
     is_browser_method, is_sim_method, validate_harness, HarnessRequest, COMMIT_FOOTER_METHOD,
-    GIT_GUARD_METHOD, PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD,
-    TOOLS_MANIFEST_METHOD,
+    CORE_REPLY_TIMEOUT, GIT_GUARD_METHOD, PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD,
+    SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
 };
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
 use crate::harness::journal::{EventsPage, JournalRecord, Journals};
@@ -36,9 +36,6 @@ use crate::skills;
 /// MCP hosts give up on a tool call after about a minute, so a start answers
 /// well before that with whatever state it reached.
 const START_BUDGET: Duration = Duration::from_secs(30);
-/// A little longer than the app gives its page, so the app's own timeout,
-/// which names the tool, is the one an agent sees.
-const WINDOW_REPLY_TIMEOUT: Duration = Duration::from_secs(66);
 /// A chatty task adds at most one output event per this long.
 const OUTPUT_EVENT_GAP: Duration = Duration::from_millis(250);
 const READY_POLL: Duration = Duration::from_millis(250);
@@ -459,7 +456,7 @@ fn no_answer(method: &str) -> String {
     format!(
         "{} got no answer from Sikemux within {} s. Check that the Sikemux window is open and responsive, then retry.",
         method.replace('.', "_"),
-        WINDOW_REPLY_TIMEOUT.as_secs()
+        CORE_REPLY_TIMEOUT.as_secs()
     )
 }
 
@@ -487,7 +484,7 @@ async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> 
         purpose(&request.method),
         false,
     )?;
-    answer_of(core, call, WINDOW_REPLY_TIMEOUT, no_answer(&request.method)).await
+    answer_of(core, call, CORE_REPLY_TIMEOUT, no_answer(&request.method)).await
 }
 
 /// Answers one tool call from the client at `peer` on the tool endpoint's

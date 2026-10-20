@@ -9,10 +9,15 @@ use std::time::{Duration, Instant};
 
 use uuid::Uuid;
 
+use sikemux_core::cli::client::{attempt, Failure};
 use sikemux_core::cli::protocol::{
     CliClientCommand, CliClientHello, CliCloseReason, CliEndpointDescriptor, CliOpenRequest,
     CliOpenTarget, CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, MAX_CLI_RESPONSE_BYTES,
+    TOOLS_REPLY_TIMEOUT,
 };
+use sikemux_process::vars;
+
+use crate::cli_paths::endpoint_to_read;
 
 /// Starts this binary as the MCP server agents use to reach their tools, instead of the editor.
 pub const TOOLS_MCP_FLAG: &str = "--tools-mcp";
@@ -218,7 +223,7 @@ fn execute_open(args: OpenArgs) -> Result<i32, String> {
         return Err("--wait requires at least one file target".into());
     }
 
-    let endpoint_path = endpoint_path()?;
+    let endpoint_path = endpoint_to_read()?;
     let descriptor = connect_or_launch(&endpoint_path)?;
     let request = CliOpenRequest {
         id: format!("request-{}", Uuid::new_v4().simple()),
@@ -275,7 +280,7 @@ fn execute_open(args: OpenArgs) -> Result<i32, String> {
 
 /// Whether the app's window is open, once the core's CLI endpoint answers.
 pub fn window_open() -> Option<bool> {
-    let descriptor = read_endpoint(&endpoint_path().ok()?).ok()?;
+    let descriptor = read_endpoint(&endpoint_to_read().ok()?).ok()?;
     probe(&descriptor).ok()
 }
 
@@ -433,12 +438,16 @@ fn enclosing_folder(path: &Path, kind: CliTargetKind) -> &Path {
     }
 }
 
-fn endpoint_path() -> Result<PathBuf, String> {
-    if let Some(path) = env::var_os("SIKEMUX_CLI_ENDPOINT") {
-        return Ok(PathBuf::from(path));
+/// The project a command run here works in: the one Sikemux started this
+/// shell or agent in, else the repository around the current folder.
+pub fn current_project() -> Result<String, String> {
+    if let Some(project) = env::var(vars::PROJECT).ok().filter(|project| !project.is_empty()) {
+        return Ok(project);
     }
-    sikemux_process::paths::config_file("cli", "json")
-        .ok_or_else(|| "home directory is unavailable".into())
+    let cwd = env::current_dir().map_err(|error| error.to_string())?;
+    Ok(project_root(&cwd, CliTargetKind::Directory)
+        .to_string_lossy()
+        .into_owned())
 }
 
 /// The endpoint once Sikemux's window is open, starting the app first when
@@ -657,40 +666,18 @@ fn execute_tool(args: &[String]) -> Result<i32, String> {
         .transpose()
         .map_err(|_| "invalid JSON params")?
         .unwrap_or(serde_json::json!({}));
-    let cwd = env::current_dir().map_err(|error| error.to_string())?;
-    let project = env::var("SIKEMUX_PROJECT").unwrap_or_else(|_| {
-        infer_project_root(&cwd, CliTargetKind::Directory, &cwd)
-            .to_string_lossy()
-            .into_owned()
-    });
-    let request = sikemux_core::cli::protocol::HarnessRequest {
-        id: Uuid::new_v4().to_string(),
-        project,
-        agent_id: env::var("SIKEMUX_AGENT_ID").ok(),
-        method: args[0].clone(),
-        params,
-    };
-    sikemux_core::cli::protocol::validate_harness(&request)?;
-    let descriptor = read_endpoint(&endpoint_path()?)?;
-    let mut reader = session(&descriptor)?;
-    reader
-        .get_ref()
-        .set_read_timeout(Some(Duration::from_secs(70)))
-        .map_err(|error| error.to_string())?;
-    let command = CliClientCommand::Harness {
-        protocol: CLI_PROTOCOL_VERSION,
-        token: descriptor.token,
-        request,
-    };
-    write_command(reader.get_mut(), &command)?;
-    match read_response(&mut reader)? {
-        CliServerResponse::Result { value } => {
-            println!("{}", value);
-            Ok(0)
-        }
-        CliServerResponse::Error { message } => Err(message),
-        _ => Err("unexpected harness response".into()),
-    }
+    let agent_id = env::var(vars::AGENT_ID).ok();
+    let value = attempt(
+        &endpoint_to_read()?,
+        &current_project()?,
+        agent_id.as_deref(),
+        &args[0],
+        &params,
+        TOOLS_REPLY_TIMEOUT,
+    )
+    .map_err(|(Failure::NotSent(message) | Failure::Sent(message))| message)?;
+    println!("{value}");
+    Ok(0)
 }
 
 #[cfg(test)]
