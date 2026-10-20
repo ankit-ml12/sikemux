@@ -37,6 +37,7 @@ const ROWS: u16 = 30;
 const TRUST_WAIT: Duration = Duration::from_secs(10 * 60);
 const MAX_RERUNS: usize = 16;
 const INSTALL_WAIT: Duration = Duration::from_secs(10 * 60);
+const INSTALL_OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -999,33 +1000,20 @@ fn fix(core: &Core, project: &Path, task: &Definition, found: &[Check]) -> Resul
 fn install_dependencies(cwd: &Path, install: &str) -> Result<(), String> {
     let mut words = install.split(' ');
     let program = words.next().ok_or("nothing to install with")?;
-    let mut child = sikemux_process::user_environment::command(program)
+    let mut command = sikemux_process::user_environment::command(program);
+    command
         .args(words)
         .current_dir(cwd)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("run {install}: {error}"))?;
-    let until = std::time::Instant::now() + INSTALL_WAIT;
-    loop {
-        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-            return if status.success() {
-                Ok(())
-            } else {
-                let mut stderr = String::new();
-                if let Some(mut pipe) = child.stderr.take() {
-                    let _ = std::io::Read::read_to_string(&mut pipe, &mut stderr);
-                }
-                Err(format!("{install} failed: {}", stderr.trim()))
-            };
-        }
-        if std::time::Instant::now() >= until {
-            let _ = child.kill();
-            return Err(format!("{install} did not finish within 10 minutes"));
-        }
-        std::thread::sleep(Duration::from_millis(250));
+        .stdin(std::process::Stdio::null());
+    let output = sikemux_process::run(&mut command, None, INSTALL_WAIT, INSTALL_OUTPUT_LIMIT, None)
+        .map_err(|error| format!("{install} did not finish: {error}"))?;
+    if output.status.success() {
+        return Ok(());
     }
+    Err(format!(
+        "{install} failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    ))
 }
 
 /// The person starts a task: it replaces the one their project is running.

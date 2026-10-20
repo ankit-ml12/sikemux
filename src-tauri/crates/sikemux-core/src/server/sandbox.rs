@@ -16,6 +16,7 @@ use super::connection::blocking;
 use super::custom_command::{self, CommandParams};
 use super::{launching, tasks, Core, CoreResult};
 use crate::tasks::config::{self, ConfigLoad};
+use crate::tasks::detect::PERSONAL_TASKS;
 
 const BRANCH_PREFIX: &str = "sikemux/";
 const NAME_TRIES: usize = 50;
@@ -28,7 +29,7 @@ const DEFAULT_INCLUDE: [&str; 6] = [
     "*/.env",
     "*/.env.*",
     ".sikemux/.gitignore",
-    ".sikemux/tasks.json",
+    PERSONAL_TASKS,
 ];
 const MAX_INCLUDED: usize = 50;
 

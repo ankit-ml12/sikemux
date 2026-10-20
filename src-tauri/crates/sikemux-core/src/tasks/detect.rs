@@ -9,13 +9,13 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 
+use crate::tasks::config::CONFIG_FILE;
 use crate::tasks::read_text;
 
 pub const DETECTED_PREFIX: &str = "detected.";
 pub const PERSONAL_PREFIX: &str = "personal.";
 /// Tasks one person added for themselves, in a folder that keeps itself out of Git.
 pub const PERSONAL_TASKS: &str = ".sikemux/tasks.json";
-const PROJECT_CONFIG: &str = "sikemux.json";
 
 /// Go and Cargo write no report of their own, so their test tasks keep a copy
 /// of the readable output for the results card. `.sikemux` ignores itself in
@@ -759,7 +759,7 @@ pub fn save_personal(project: &Path, task: &AddedTask) -> Result<String, String>
 
 /// Adds a task to the project's sikemux.json, keeping everything else in it; returns its task id.
 pub fn save_team(project: &Path, task: &AddedTask) -> Result<String, String> {
-    let path = project.join(PROJECT_CONFIG);
+    let path = project.join(CONFIG_FILE);
     let mut config = read_object(&path)?.unwrap_or_else(|| {
         let mut config = Map::new();
         config.insert("version".to_owned(), json!(1));
@@ -779,7 +779,7 @@ pub fn save_team(project: &Path, task: &AddedTask) -> Result<String, String> {
 /// Names the project's check command in `sikemux.json`, or takes it out when
 /// `command` is empty, leaving everything else in the file as it was.
 pub fn save_check(project: &Path, command: &str) -> Result<(), String> {
-    let path = project.join(PROJECT_CONFIG);
+    let path = project.join(CONFIG_FILE);
     let mut config = read_object(&path)?.unwrap_or_else(|| {
         let mut config = Map::new();
         config.insert("version".to_owned(), json!(1));
@@ -800,7 +800,7 @@ pub fn remove_saved(project: &Path, task_id: &str) -> Result<(), String> {
     }
     let (path, id) = match task_id.strip_prefix(PERSONAL_PREFIX) {
         Some(id) => (project.join(PERSONAL_TASKS), id),
-        None => (project.join(PROJECT_CONFIG), task_id),
+        None => (project.join(CONFIG_FILE), task_id),
     };
     let Some(mut stored) = read_object(&path)? else {
         return Err(format!("{} has no tasks", path.display()));

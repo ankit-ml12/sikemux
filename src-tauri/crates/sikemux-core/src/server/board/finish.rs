@@ -686,14 +686,11 @@ async fn checking(core: &Arc<Core>, step: Step) {
         Checks::None if waited < CI_START_WAIT_MS => {
             step.note(core, Stage::Checking, "Waiting for its checks to start");
         }
-        Checks::None => match {
-            let (core, project) = (core.clone(), step.project.clone());
-            blocking(move || Ok(super::check_command(&core, &project)))
-                .await
-                .ok()
-                .flatten()
-        } {
-            Some(command) => {
+        Checks::None => {
+            let (owner, project) = (core.clone(), step.project.clone());
+            let command = blocking(move || Ok(super::check_command(&owner, &project))).await;
+            match command {
+            Ok(Some(command)) => {
                 step.note(core, Stage::Checking, &format!("Running {command}"));
                 let cwd = step.tree();
                 let checked = blocking(move || git::check(&cwd, &command).map_err(Into::into)).await;
@@ -705,12 +702,14 @@ async fn checking(core: &Arc<Core>, step: Step) {
                     Err(error) => step.hold(core, format!("The check command did not run: {error}")),
                 }
             }
-            None => step.note(
+            Ok(None) => step.note(
                 core,
                 Stage::Review,
                 "No CI ran on its pull request and this project has no check command, so it waits for you",
             ),
-        },
+            Err(error) => step.hold(core, format!("The check command could not be read: {error}")),
+            }
+        }
     }
 }
 
