@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { openPortExternally, revealPortOwner } from "../ports/portActions";
 import { taskTerminalReveal } from "../ports/projectPorts";
 import { useProjectPorts } from "../ports/useProjectPorts";
@@ -8,15 +8,7 @@ import { reportError } from "../state/toast";
 import { IconAgent, IconCheck, IconChevron, IconClose, IconExternal, IconPlus, IconRefresh, IconRun, IconStop, IconTerminal } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { tasksApi, useProjectTasks, useTaskRuns, type ProjectTask, type TaskRun } from "./coreTasks";
-import {
-    dismissPendingCheck,
-    getPendingCheck,
-    personRuns,
-    runProjectTask,
-    stopTaskRun,
-    subscribePendingCheck,
-    type PendingCheck,
-} from "./projectTaskActions";
+import { dismissPendingCheck, personRuns, runProjectTask, stopTaskRun, usePendingCheck, type PendingCheck } from "./projectTaskActions";
 import { AddTaskDialog } from "./AddTaskDialog";
 import { failureFixRequest, findTasksRequest, testFixRequest } from "./agentRequests";
 import { FailureCard, TestResultsCard, type FinishedTestRun } from "./TestResultsCard";
@@ -126,7 +118,7 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
     const ports = useProjectPorts(sessionId);
     const [picked, setPicked] = useState<Readonly<Record<string, string>>>({});
     const [open, setOpen] = useState(false);
-    const pendingCheck = useSyncExternalStore(subscribePendingCheck, getPendingCheck);
+    const pendingCheck = usePendingCheck();
     const [dismissedTests, setDismissedTests] = useState<string | null>(null);
     const [failureShown, setFailureShown] = useState<string | null>(null);
     const [adding, setAdding] = useState(false);

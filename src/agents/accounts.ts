@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { externalValue, useExternalValue } from "../lib/externalValue";
 import { agentApi, type AgentAccountStatus } from "../api/agents";
 import { acpApi, type AcpAccount } from "../api/acp";
 import { invalidate } from "../state/resources";
@@ -51,22 +51,15 @@ async function refreshAccount(provider: AccountAgentType, configPath: string | u
 
 export type SignInState = { phase: "waiting"; url: string | null } | { phase: "failed"; message: string };
 
-const signIns = new Map<string, SignInState>();
-const listeners = new Set<() => void>();
+const signIns = externalValue<Readonly<Record<string, SignInState>>>({});
 
 function setSignIn(profileId: string, state: SignInState | null): void {
-    if (state) signIns.set(profileId, state);
-    else signIns.delete(profileId);
-    for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void): () => void {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
+    const { [profileId]: _was, ...rest } = signIns.get();
+    signIns.set(state ? { ...rest, [profileId]: state } : rest);
 }
 
 export function useSignIn(profileId: string): SignInState | undefined {
-    return useSyncExternalStore(subscribe, () => signIns.get(profileId));
+    return useExternalValue(signIns, (all) => all[profileId]);
 }
 
 /**
@@ -74,14 +67,14 @@ export function useSignIn(profileId: string): SignInState | undefined {
  * the page it opened is kept for when no browser came up. True once signed in.
  */
 export async function signIn(profile: ProviderProfile, executablePath?: string): Promise<boolean> {
-    if (!hasAccounts(profile.provider) || signIns.get(profile.id)?.phase === "waiting") return false;
+    if (!hasAccounts(profile.provider) || signIns.get()[profile.id]?.phase === "waiting") return false;
     const provider = profile.provider;
     setSignIn(profile.id, { phase: "waiting", url: null });
     const listening = new AbortController();
     void agentApi
         .onSignInPage((page) => {
             if (page.agent !== provider || !sameDirectory(page.configPath, profile.configPath)) return;
-            if (signIns.get(profile.id)?.phase === "waiting") setSignIn(profile.id, { phase: "waiting", url: page.url });
+            if (signIns.get()[profile.id]?.phase === "waiting") setSignIn(profile.id, { phase: "waiting", url: page.url });
         }, listening.signal)
         .catch(() => {});
     try {
@@ -103,7 +96,7 @@ export function cancelSignIn(profile: ProviderProfile): void {
 }
 
 export function dismissSignIn(profileId: string): void {
-    if (signIns.get(profileId)?.phase === "failed") setSignIn(profileId, null);
+    if (signIns.get()[profileId]?.phase === "failed") setSignIn(profileId, null);
 }
 
 export async function submitSignInCode(profile: ProviderProfile, code: string): Promise<void> {
@@ -140,29 +133,15 @@ export interface AccountDialogRequest {
     profileId?: string;
 }
 
-let dialog: (AccountDialogRequest & { id: number }) | null = null;
+const dialog = externalValue<(AccountDialogRequest & { id: number }) | null>(null);
 let dialogCount = 0;
-const dialogListeners = new Set<() => void>();
-
-function setDialog(next: typeof dialog): void {
-    dialog = next;
-    for (const listener of dialogListeners) listener();
-}
 
 export function openAccountDialog(request: AccountDialogRequest): void {
-    setDialog({ ...request, id: ++dialogCount });
+    dialog.set({ ...request, id: ++dialogCount });
 }
 
 export function closeAccountDialog(): void {
-    setDialog(null);
+    dialog.set(null);
 }
 
-export function useAccountDialog() {
-    return useSyncExternalStore(
-        (listener) => {
-            dialogListeners.add(listener);
-            return () => dialogListeners.delete(listener);
-        },
-        () => dialog,
-    );
-}
+export const useAccountDialog = () => useExternalValue(dialog);
