@@ -715,8 +715,6 @@ impl Session {
                     None => Reply::Answer(approvals::cancelled_elicitation()),
                 }
             }
-            "execCommandApproval" => Reply::Ask(approvals::legacy_command(&session, params)),
-            "applyPatchApproval" => Reply::Ask(approvals::legacy_patch(&session, params)),
             _ => Reply::Refuse,
         }
     }
