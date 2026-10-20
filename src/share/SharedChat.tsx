@@ -18,6 +18,7 @@ import { sharedChatTitle, type ShareSession, type ShareSnapshot } from "./sessio
 import "../styles/chat.css";
 import "../styles/share.css";
 import { formatTimeLeft } from "../lib/format";
+import { useNow } from "../hooks/useNow";
 
 const PROBLEMS: Partial<Record<ShareSnapshot["status"], string>> = {
     missing: "This chat is not running on its host right now.",
@@ -156,11 +157,7 @@ export function SharedChat({ session, visible, actions }: { session: ShareSessio
 }
 
 function SharedChatFoot({ snapshot }: { snapshot: ShareSnapshot }) {
-    const [now, setNow] = useState(Date.now);
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-        return () => window.clearInterval(timer);
-    }, []);
+    const now = useNow(true, 60_000);
     const live = snapshot.status === "live" || snapshot.status === "missing";
     const state = !live
         ? null

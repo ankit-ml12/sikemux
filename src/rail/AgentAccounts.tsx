@@ -13,15 +13,7 @@ import { CountUp } from "../ui/RollingText";
 import { Tooltip } from "../ui/Tooltip";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { planLabel, resetCountdown, resetTitle, usagePeak, usageTone } from "./usageFormat";
-
-function useMinuteClock(): number {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-        return () => window.clearInterval(timer);
-    }, []);
-    return now;
-}
+import { useNow } from "../hooks/useNow";
 
 /**
  * The rail's footer: the plan limits of the account new chats start on. The
@@ -167,7 +159,7 @@ function accountMenu(
 }
 
 function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {
-    const now = useMinuteClock();
+    const now = useNow(true, 60_000);
     const windows = usage.data?.windows ?? [];
     if (windows.length === 0) {
         return (

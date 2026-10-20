@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { openPortExternally, revealPortOwner } from "../ports/portActions";
 import { taskTerminalReveal } from "../ports/projectPorts";
 import { useProjectPorts } from "../ports/useProjectPorts";
@@ -20,15 +20,10 @@ import {
 import { AddTaskDialog } from "./AddTaskDialog";
 import { failureFixRequest, findTasksRequest, testFixRequest } from "./agentRequests";
 import { FailureCard, TestResultsCard, type FinishedTestRun } from "./TestResultsCard";
+import { useNow } from "../hooks/useNow";
 
 function useSecondsSince(startedAt: number | null): number {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        if (startedAt === null) return;
-        setNow(Date.now());
-        const timer = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(timer);
-    }, [startedAt]);
+    const now = useNow(startedAt !== null);
     return startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
