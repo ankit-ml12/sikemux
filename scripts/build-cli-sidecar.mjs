@@ -158,6 +158,7 @@ if (prebuiltCore) {
     `sikemux-host-${requestedTarget}${suffix}`,
   );
   copyFileSync(prebuiltCore, destination);
+  chmodSync(destination, 0o755);
   shipped.set("sikemux-host", destination);
 } else if (requestedTarget === "universal-apple-darwin") {
   const arm = buildFor("aarch64-apple-darwin", true);
