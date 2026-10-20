@@ -33,10 +33,13 @@ use crate::pty::{core_error, PtyManager};
 
 use sink::RemoteSink;
 
-const SLOT_SHIFT: u32 = 40;
+/// Core session ids start from the clock in milliseconds, which fits in 42
+/// bits until 2109. Above them sit the host's slot and, at the top of what a
+/// JavaScript number holds exactly (2^53), a bit no session of this host has.
+const SLOT_SHIFT: u32 = 42;
 const SESSION_MASK: SessionId = (1 << SLOT_SHIFT) - 1;
-/// The page keeps session ids as JavaScript numbers, exact to 2^53.
-const MAX_SLOT: u64 = (1 << (53 - SLOT_SHIFT)) - 1;
+const REMOTE: SessionId = 1 << 52;
+const MAX_SLOT: u64 = (1 << (52 - SLOT_SHIFT)) - 1;
 /// How long a request waits for a host that is reconnecting.
 const REACH_TIMEOUT: Duration = Duration::from_secs(20);
 const RETRY_FIRST: Duration = Duration::from_secs(1);
@@ -51,16 +54,24 @@ const KEY_SERVICE: &str = "sikemux-device-test";
 
 /// Which host a session id the page holds lives on: 0 is this one.
 pub(crate) fn slot_of(id: SessionId) -> u64 {
-    id >> SLOT_SHIFT
+    if id & REMOTE == 0 {
+        0
+    } else {
+        (id & !REMOTE) >> SLOT_SHIFT
+    }
 }
 
 fn page_id(slot: u64, id: SessionId) -> SessionId {
-    (slot << SLOT_SHIFT) | (id & SESSION_MASK)
+    REMOTE | (slot << SLOT_SHIFT) | (id & SESSION_MASK)
 }
 
 /// A session's id in its own host's core.
 pub(crate) fn core_session(id: SessionId) -> SessionId {
-    id & SESSION_MASK
+    if id & REMOTE == 0 {
+        id
+    } else {
+        id & SESSION_MASK
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
