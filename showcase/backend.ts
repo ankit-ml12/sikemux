@@ -653,6 +653,8 @@ export class ShowcaseBackend implements IpcTransport {
         remoteAgents: [],
         order: [],
         agents: [],
+        projects: {},
+        rollup: null,
       };
     });
     this.onCore(
