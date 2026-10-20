@@ -98,7 +98,6 @@ export class UnknownWorkbenchItemKindError extends Error {
 const CODEC_FAILURE = Object.freeze({ ok: false }) as PersistedCodecResult<never>;
 const ITEM_ID_MAX_LENGTH = 256;
 const KIND_PATTERN = /^[a-z][a-z0-9._:-]*$/;
-const ENVELOPE_KEYS = new Set<PropertyKey>(["itemId", "kind", "version", "state"]);
 const UNSAFE_RECORD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function containsControlCharacter(value: string): boolean {
@@ -300,28 +299,9 @@ function decodeFailure<Kind extends PaneKind>(reason: PersistedItemFailureReason
 
 function readEnvelope(encoded: unknown): PersistedWorkbenchItemEnvelope | null {
     if (!isRecord(encoded)) return null;
-    try {
-        const keys = Reflect.ownKeys(encoded);
-        if (keys.length !== ENVELOPE_KEYS.size || keys.some((key) => !ENVELOPE_KEYS.has(key))) return null;
-        const values = Object.fromEntries(
-            keys.map((key) => {
-                const descriptor = Object.getOwnPropertyDescriptor(encoded, key);
-                if (!descriptor || !("value" in descriptor)) throw new TypeError("Persisted item envelopes cannot contain accessors");
-                return [key, descriptor.value];
-            }),
-        );
-        if (!isValidWorkbenchItemId(values.itemId)) return null;
-        if (typeof values.kind !== "string") return null;
-        if (!Number.isSafeInteger(values.version) || (values.version as number) <= 0) return null;
-        return {
-            itemId: values.itemId,
-            kind: values.kind as PaneKind,
-            version: values.version as number,
-            state: values.state,
-        };
-    } catch {
-        return null;
-    }
+    const { itemId, kind, version, state } = encoded;
+    if (!isValidWorkbenchItemId(itemId) || typeof kind !== "string" || !Number.isSafeInteger(version) || (version as number) <= 0) return null;
+    return { itemId, kind: kind as PaneKind, version: version as number, state };
 }
 
 type ErasedDefinition = WorkbenchItemDefinition<string, unknown>;

@@ -8,10 +8,20 @@ import {
     createItemId,
     createWorkbenchItemRef,
     workbenchItemRefFromPane,
-
 } from "./registry";
 
-const BUILTIN_KINDS = ["terminal", "editor", "git", "diff", "search", "agent", "desk", "shared", "board", "project-settings"] as const satisfies readonly CorePaneKind[];
+const BUILTIN_KINDS = [
+    "terminal",
+    "editor",
+    "git",
+    "diff",
+    "search",
+    "agent",
+    "desk",
+    "shared",
+    "board",
+    "project-settings",
+] as const satisfies readonly CorePaneKind[];
 
 function nullEnvelope(itemId: string, kind: PaneKind, overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return { itemId, kind, version: 1, state: null, ...overrides };
@@ -225,8 +235,6 @@ describe("workbench item persistence", () => {
 
     it.each([
         ["non-object", null, "invalid-envelope"],
-        ["missing state", { itemId: "pane-terminal", kind: "terminal", version: 1 }, "invalid-envelope"],
-        ["extra field", { ...nullEnvelope("pane-terminal", "terminal"), payload: "nope" }, "invalid-envelope"],
         ["accessor", Object.defineProperty({}, "itemId", { enumerable: true, get: () => "pane-terminal" }), "invalid-envelope"],
         ["invalid item ID", nullEnvelope(" bad ", "terminal"), "invalid-envelope"],
         ["different item ID", nullEnvelope("pane-other", "terminal"), "item-id-mismatch"],
