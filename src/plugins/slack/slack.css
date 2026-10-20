@@ -24,6 +24,10 @@
     padding: 12px 8px;
     border-right: 1px solid var(--border);
     overflow-y: auto;
+    scrollbar-width: none;
+}
+.slack-sidebar::-webkit-scrollbar {
+    display: none;
 }
 
 .slack-workspace {

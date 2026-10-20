@@ -96,10 +96,6 @@ textarea:focus,
 
 .rail-scroll {
     padding: var(--gutter-rail) var(--gutter-rail) var(--space-4);
-    scrollbar-width: none;
-}
-.rail-scroll::-webkit-scrollbar {
-    display: none;
 }
 
 /* The brand was a 62px slab: a bordered, tinted logo tile next to heavily
@@ -1038,6 +1034,29 @@ textarea:focus,
     }
     &::-webkit-scrollbar-thumb:hover {
         background: color-mix(in srgb, var(--ink-faint) 78%, transparent);
+    }
+}
+
+/* Sidebars and menus scroll by gesture alone, like macOS's own menus. */
+:is(
+    .rail-scroll,
+    .ed-tree-scroll,
+    .settings-nav,
+    .git-repo-list,
+    .git-list,
+    .dd-menu,
+    .dd-list,
+    .env-dd-menu,
+    .picker-list,
+    .dlg-commands,
+    .session-switcher-list,
+    .tb-run-tests-list,
+    .chat-picker-options,
+    .theme-pick-list
+) {
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+        display: none;
     }
 }
 
