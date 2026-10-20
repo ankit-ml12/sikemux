@@ -162,14 +162,16 @@ export function gitChangeInvalidates(kind: string, args: unknown[], repo: string
 }
 
 /** Reads again what the core says moved in a project: the paths, with `.git` standing for its git state, which anything may depend on. */
-export function onGitChanged({ project, paths }: CoreChange): void {
+export function onGitChanged({ project, paths, host }: CoreChange): void {
     const repo = project ?? "";
     // An empty list would mean "these zero paths changed", and the scoped
     // consumers would refresh nothing, so it means "unknown" as none does.
     const moved = paths?.length && !paths.includes(".git") ? [...paths] : null;
-    filesApi.invalidate(repo || undefined);
-    invalidate((kind, args) => gitChangeInvalidates(kind, args, repo, moved));
-    emit({ type: "fs-changed", repo, ...(moved ? { paths: moved } : {}) });
+    if (host === undefined) {
+        filesApi.invalidate(repo || undefined);
+        invalidate((kind, args) => gitChangeInvalidates(kind, args, repo, moved));
+    }
+    emit({ type: "fs-changed", repo, ...(moved ? { paths: moved } : {}), ...(host === undefined ? {} : { host }) });
 }
 
 interface TreeDropTarget {

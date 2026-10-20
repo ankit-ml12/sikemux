@@ -71,16 +71,25 @@ pub struct PtyManager {
 
 pub(crate) fn core_error(error: ClientError) -> AppError {
     match error {
-        ClientError::Core(message) => {
-            if let Some(reason) = message.strip_prefix("invalid argument: ") {
-                AppError::BadArgText(reason.to_string())
-            } else if let Some(reason) = message.strip_prefix("pty: ") {
-                AppError::Pty(reason.to_string())
-            } else {
-                AppError::Other(message)
-            }
-        }
+        ClientError::Core(message) => core_message(message),
         other => AppError::Pty(other.to_string()),
+    }
+}
+
+/// What the core said went wrong, under the category its prefix names.
+pub(crate) fn core_message(message: String) -> AppError {
+    if let Some(reason) = message.strip_prefix("invalid argument: ") {
+        AppError::BadArgText(reason.to_string())
+    } else if let Some(reason) = message.strip_prefix("pty: ") {
+        AppError::Pty(reason.to_string())
+    } else if let Some(reason) = message.strip_prefix("fs: ") {
+        AppError::Fs(reason.to_string())
+    } else if let Some(reason) = message.strip_prefix("file-conflict: ") {
+        AppError::FileConflict(reason.to_string())
+    } else if let Some(path) = message.strip_prefix("not-text: ") {
+        AppError::NotText(path.to_string())
+    } else {
+        AppError::Other(message)
     }
 }
 

@@ -6,6 +6,8 @@ export interface CoreChange {
     readonly topic: CoreChangeTopic;
     readonly project: string | null;
     readonly paths: readonly string[] | null;
+    /** The other host whose core said so, or none for this one. */
+    readonly host?: string;
 }
 
 type Listener = (change: CoreChange) => void;

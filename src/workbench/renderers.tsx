@@ -38,6 +38,7 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
             <EditorPane
                 paneId={pane.id}
                 cwd={paneCwd(pane, session)}
+                host={pane.host}
                 active={active}
                 visible={visible}
                 showInsights={win.role !== "ssh-config"}

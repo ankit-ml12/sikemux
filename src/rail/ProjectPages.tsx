@@ -4,7 +4,8 @@ import { basename, dirname, relativePath } from "../lib/paths";
 import * as cmd from "../state/commands";
 import { collectPanes } from "../state/layout";
 import { activeTabRef, documentsOf, terminalLabel } from "../state/selectors";
-import { getState, useStore } from "../state/store";
+import { getState, useStore, type StoreState } from "../state/store";
+import type { FilesPlace } from "../state/commands/shared";
 import type { Session, TabRef } from "../state/types";
 import { FileIcon } from "../ui/FileIcon";
 import { IconClose, IconFile, IconPlus, IconTerminal } from "../ui/Icons";
@@ -20,7 +21,16 @@ import { HostLabel, remoteTerminalRows, RemoteNewRows, useRemoteCopies } from ".
 import { ScopeTabs } from "./ScopeTabs";
 
 const EMPTY_IDS: readonly string[] = [];
-const openEntry = (entry: { path: string }) => cmd.requestOpenFile(entry.path);
+
+/** The copy the Files page shows: the one the focused chat, terminal or editor works in on another host, else the project's own. */
+function filesPlace(state: StoreState, session: Session | undefined): FilesPlace | undefined {
+    if (!session) return undefined;
+    const win = state.windows[session.activeWindowId];
+    const pane = win && collectPanes(win.root).find((candidate) => candidate.id === win.activePaneId);
+    const agent = pane && state.agents[pane.id];
+    const host = pane?.host ?? agent?.host;
+    return pane && host !== undefined ? { cwd: agent?.cwd ?? pane.cwd, host } : { cwd: session.cwd, host: session.host };
+}
 
 type Menu = { x: number; y: number; items: CtxItem[] };
 
@@ -193,6 +203,8 @@ export function FilesPage() {
     const windowIds = useStore((s) => (session ? s.windowsBySession[session.id] : undefined) ?? EMPTY_IDS);
     const windows = useStore((s) => s.windows);
     const editorViews = useStore((s) => s.editorViews);
+    const host = useStore((s) => filesPlace(s, session)?.host);
+    const cwd = useStore((s) => filesPlace(s, session)?.cwd ?? "");
     const closeShortcut = useShortcutLabel("pane.close");
     const menu = useTabMenu();
 
@@ -205,7 +217,7 @@ export function FilesPage() {
         );
     }
 
-    const cwd = session.cwd;
+    const openEntry = (entry: { path: string }) => cmd.requestOpenFile(entry.path, undefined, undefined, { cwd, host });
     const live = activeTabRef(session, windows, editorViews);
     const open: { id: string; path: string }[] = [];
     let activePath: string | null = null;
@@ -241,7 +253,7 @@ export function FilesPage() {
     return (
         <>
             <PageHeader label="Files" />
-            <FileTree cwd={cwd} activePath={activePath} onOpenFile={openEntry} onKeepFile={openEntry} active={showing} lead={lead} />
+            <FileTree cwd={cwd} host={host} activePath={activePath} onOpenFile={openEntry} onKeepFile={openEntry} active={showing} lead={lead} />
             {menu.shown}
         </>
     );

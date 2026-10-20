@@ -47,12 +47,12 @@ describe("invokeCommand", () => {
         const failure = deferred<never>();
         const successHandler = vi.fn((_args: IpcInvokeArguments | undefined, _context: MemoryInvokeContext) => success.promise);
         const failureHandler = vi.fn((_args: IpcInvokeArguments | undefined, _context: MemoryInvokeContext) => failure.promise);
-        transport.register("read_file", successHandler);
+        transport.register("files_call", successHandler);
         transport.register("state_save", failureHandler);
 
         const readArgs = { path: "/project/file" };
         const statusArgs = { repo: "/project" };
-        const successful = invokeCommand<{ readonly marker: "result" }>("read_file", readArgs);
+        const successful = invokeCommand<{ readonly marker: "result" }>("files_call", readArgs);
         const failed = invokeCommand<never>("state_save", statusArgs);
 
         expect(performanceTelemetry.snapshot().gauges[IPC_INVOKE_ACTIVE_GAUGE]).toBe(2);
@@ -79,7 +79,7 @@ describe("invokeCommand", () => {
         });
         const spans = snapshot.spans.filter((span) => span.name === IPC_INVOKE_METRIC);
         expect(spans).toHaveLength(2);
-        expect(spans.map((span) => span.metadata.command)).toEqual(["read_file", "state_save"]);
+        expect(spans.map((span) => span.metadata.command)).toEqual(["files_call", "state_save"]);
         const requestIds = spans.map((span) => span.metadata.requestId as number);
         expect(requestIds[1]).toBe(requestIds[0] + 1);
         expect(spans[1].metadata).toMatchObject({ outcome: "error", category: "git" });

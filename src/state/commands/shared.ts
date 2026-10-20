@@ -80,13 +80,22 @@ const SPLITTABLE_TOOLS: ReadonlySet<PaneKind> = new Set(["git", "search"]);
  * none. `seedEditorPath` pre-opens a file so a freshly created editor hydrates
  * from the store the same way a restored session does.
  */
-export function ensureRoleWindow(kind: CorePaneKind, seedEditorPath?: string): void {
+/** A copy of a project: its folder, on `host` when that is not this one. */
+export interface FilesPlace {
+    cwd: string;
+    host?: string;
+}
+
+const windowHost = (win: Window | undefined): string | undefined => (win ? collectPanes(win.root)[0]?.host : undefined);
+
+export function ensureRoleWindow(kind: CorePaneKind, seedEditorPath?: string, place?: FilesPlace): void {
     const { role, title } = CORE_PANE_KINDS[kind];
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     if (!session || session.kind !== "project") return;
     const ids = st.windowsBySession[session.id] ?? [];
-    const existing = ids.find((id) => st.windows[id]?.role === role);
+    const host = place ? place.host : session.host;
+    const existing = ids.find((id) => st.windows[id]?.role === role && windowHost(st.windows[id]) === host);
     if (existing) {
         selectWindowId(existing);
         return;
@@ -103,7 +112,8 @@ export function ensureRoleWindow(kind: CorePaneKind, seedEditorPath?: string): v
     }
     mutate((d) => {
         const sess = d.sessions[session.id];
-        const w = makeWindow(sess.cwd, title, { kind, role });
+        const w = makeWindow(place?.cwd ?? sess.cwd, title, { kind, role });
+        if (host !== undefined) for (const pane of collectPanes(w.root)) pane.host = host;
         d.windows[w.id] = w;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), w.id];
         if (seedEditorPath) d.editorViews[w.activePaneId] = { openTabs: [seedEditorPath], activePath: seedEditorPath };
