@@ -246,7 +246,9 @@ const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
         }
         return null;
     });
-    const sessionWindows = useStore(useShallow((st) => (st.windowsBySession[s.id] ?? []).flatMap((id): Window[] => (st.windows[id] ? [st.windows[id]] : []))));
+    const sessionWindows = useStore(
+        useShallow((st) => (st.windowsBySession[s.id] ?? []).flatMap((id): Window[] => (st.windows[id] ? [st.windows[id]] : []))),
+    );
     const agents = useStore(useShallow((st) => agentIdsOf(st, s.id).flatMap((id): Agent[] => (st.agents[id] ? [st.agents[id]] : []))));
     const statuses = useStore(useShallow((st) => agents.map((agent) => st.agentStatus[agent.id])));
     const rollup = rollupAgentDisplays(statuses.map((status) => agentDisplay(status)));

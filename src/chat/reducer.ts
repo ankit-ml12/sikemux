@@ -608,13 +608,15 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
     if (update.sessionUpdate === "subagent_state_update") return setSubagentState(state, update);
     if (update.sessionUpdate === "subagent_usage") return setSubagentUsage(state, update);
     // No subagent shares the chat's own session, so its updates need no search through the subagents.
-    const inSubagent = main ? null : patchSubagent(state, sessionId, (subagent) => {
-        const next =
-            update.sessionUpdate === "subagent_spawned"
-                ? withSubagent(subagent, update, state.messages)
-                : transcriptUpdate(subagent, update, state.running);
-        return next ? { ...subagent, ...next } : subagent;
-    });
+    const inSubagent = main
+        ? null
+        : patchSubagent(state, sessionId, (subagent) => {
+              const next =
+                  update.sessionUpdate === "subagent_spawned"
+                      ? withSubagent(subagent, update, state.messages)
+                      : transcriptUpdate(subagent, update, state.running);
+              return next ? { ...subagent, ...next } : subagent;
+          });
     if (inSubagent) return inSubagent;
 
     if (update.sessionUpdate === "user_message_chunk") {

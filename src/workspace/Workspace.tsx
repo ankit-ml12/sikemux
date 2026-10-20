@@ -663,8 +663,7 @@ const WindowLayer = memo(function WindowLayer({
                 const paneVisible = live && shown;
                 const paneActive = paneVisible && isActive;
                 const panePainted = painted && shown;
-                const canUnsplit =
-                    separable[leaves.indexOf(p)] || (p.kind === "agent" && separable.includes(true));
+                const canUnsplit = separable[leaves.indexOf(p)] || (p.kind === "agent" && separable.includes(true));
                 return (
                     <div
                         key={p.id}
