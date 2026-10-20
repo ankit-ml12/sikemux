@@ -112,7 +112,7 @@ pub(crate) fn chat_launched(core: &Core, launch: &crate::protocol::ChatLaunch) {
 pub(crate) fn resumed_by(spawn: &crate::protocol::TerminalSpawn) -> Option<Option<String>> {
     let command = spawn.direct_command.as_ref()?;
     let agent = spawn.context.as_ref()?.agent_type.as_deref()?;
-    Some(resumed_session_in_args(agent, &command.args).map(str::to_owned))
+    Some(crate::launch::terminal::resumed_session(agent, &command.args).map(str::to_owned))
 }
 
 pub(crate) fn terminal_launched(
@@ -464,24 +464,6 @@ fn head(repo: &str) -> Option<String> {
     git(repo, &["rev-parse", "--verify", "--quiet", "HEAD"])
         .map(|sha| sha.trim().to_string())
         .filter(|sha| !sha.is_empty())
-}
-
-/// The session a terminal agent's command resumes, read from its arguments.
-pub(crate) fn resumed_session_in_args<'a>(agent: &str, args: &'a [String]) -> Option<&'a str> {
-    if agent == "codex" {
-        return (args.first().map(String::as_str) == Some("resume"))
-            .then(|| args.last().map(String::as_str))
-            .flatten();
-    }
-    let flag = match agent {
-        "claude" | "hermes" | "omp" | "grok" => "--resume",
-        "pi" | "opencode" => "--session",
-        "muse" => "resume",
-        _ => return None,
-    };
-    args.windows(2)
-        .find(|pair| pair[0] == flag)
-        .map(|pair| pair[1].as_str())
 }
 
 // ---- tokens ------------------------------------------------------------
@@ -1167,19 +1149,25 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            resumed_session_in_args("claude", &args(&["--model", "opus", "--resume", "abc"])),
+            crate::launch::terminal::resumed_session(
+                "claude",
+                &args(&["--model", "opus", "--resume", "abc"])
+            ),
             Some("abc")
         );
         assert_eq!(
-            resumed_session_in_args("codex", &args(&["resume", "--sandbox", "x", "abc"])),
+            crate::launch::terminal::resumed_session(
+                "codex",
+                &args(&["resume", "--sandbox", "x", "abc"])
+            ),
             Some("abc")
         );
         assert_eq!(
-            resumed_session_in_args("pi", &args(&["--session", "s1"])),
+            crate::launch::terminal::resumed_session("pi", &args(&["--session", "s1"])),
             Some("s1")
         );
         assert_eq!(
-            resumed_session_in_args("claude", &args(&["--model", "opus"])),
+            crate::launch::terminal::resumed_session("claude", &args(&["--model", "opus"])),
             None
         );
     }

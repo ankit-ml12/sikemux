@@ -14,9 +14,7 @@ use tokio::sync::mpsc;
 
 use crate::agent_catalog::AgentKind;
 use crate::protocol::WorkspaceAgent;
-use crate::sessions::roots::{
-    agent_config_root, grok_root, hermes_root, muse_data_root, omp_session_dirs,
-};
+use crate::sessions::roots::{agent_config_root, muse_data_root, omp_session_dirs};
 use crate::sessions::{self, claude_project_dir, opencode_data_dirs, pi_session_dir, AgentSession};
 
 use super::connection::blocking;
@@ -213,7 +211,7 @@ fn folders(group: &Group) -> Vec<(PathBuf, RecursiveMode)> {
             }
         }
         AgentKind::Hermes => {
-            if let Some(root) = hermes_root() {
+            if let Some(root) = AgentKind::Hermes.home_root() {
                 add(root, RecursiveMode::NonRecursive);
             }
         }
@@ -233,7 +231,7 @@ fn folders(group: &Group) -> Vec<(PathBuf, RecursiveMode)> {
             }
         }
         AgentKind::Grok => {
-            if let Some(root) = grok_root() {
+            if let Some(root) = AgentKind::Grok.home_root() {
                 add(root.join("sessions"), RecursiveMode::Recursive);
             }
         }

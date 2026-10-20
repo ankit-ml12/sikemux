@@ -15,7 +15,7 @@ use serde_json::Value;
 use super::folders::{link_shared, root, sessions_root};
 use super::usage::codex_app_server;
 use super::{cli, key};
-use crate::agent_catalog::AGENTS;
+use crate::agent_catalog::{AgentKind, AGENTS};
 use crate::launch::{discovery, AgentSpec};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -125,7 +125,7 @@ pub async fn find(spec: &AgentSpec) -> Result<PathBuf, AgentStatus> {
         .find(|def| def.kind == spec.provider)
         .ok_or(AgentStatus::Missing)?;
     let candidates = discovery::candidates(def, spec.executable_path.as_deref());
-    match discovery::first_healthy(def.kind, candidates).await {
+    match discovery::first_healthy(def, candidates).await {
         (Some(program), _) => Ok(program),
         (None, failures) if failures.is_empty() => Err(AgentStatus::Missing),
         (None, failures) => Err(AgentStatus::Broken {
@@ -241,15 +241,19 @@ async fn check_sign_in(
     config_path: Option<&str>,
     providers: BTreeMap<String, String>,
 ) -> AgentStatus {
-    match provider {
-        "claude" | "codex" => match account(provider, program, config_path).await {
+    let Some(kind) = AgentKind::from_name(provider) else {
+        return AgentStatus::Unknown;
+    };
+    match kind {
+        AgentKind::Claude | AgentKind::Codex => match account(provider, program, config_path).await
+        {
             Ok(account) if account.signed_in => AgentStatus::Ready {
                 account: account.method,
             },
             Ok(_) => AgentStatus::SignedOut,
             Err(_) => AgentStatus::Unknown,
         },
-        "pi" => {
+        AgentKind::Pi => {
             match exit_code_and_output(provider, program, config_path, &["auth", "check", "--json"])
                 .await
             {
@@ -257,7 +261,7 @@ async fn check_sign_in(
                 None => AgentStatus::Unknown,
             }
         }
-        "opencode" => {
+        AgentKind::Opencode => {
             let Some((_, listing)) =
                 exit_code_and_output(provider, program, config_path, &["auth", "list"]).await
             else {
@@ -272,7 +276,9 @@ async fn check_sign_in(
         }
         // Hermes answers in free text that changes with the provider, and Grok, OMP and Muse
         // have no check; a chat that is refused for sign-in marks them signed out instead.
-        _ => AgentStatus::Unknown,
+        AgentKind::Hermes | AgentKind::Grok | AgentKind::Omp | AgentKind::Muse => {
+            AgentStatus::Unknown
+        }
     }
 }
 

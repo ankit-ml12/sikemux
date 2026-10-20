@@ -13,6 +13,7 @@ use sikemux_pty::user_shell::login_shell_environment;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use super::{cli, key};
+use crate::agent_catalog::AgentKind;
 use crate::launch::discovery::error_detail;
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -117,9 +118,9 @@ pub async fn usage(
     if let Some(lookup) = remembered(&key) {
         return lookup;
     }
-    let lookup = match provider {
-        "claude" => claude_usage(program, config_path).await,
-        "codex" => codex_usage(program, config_path).await,
+    let lookup = match AgentKind::from_name(provider) {
+        Some(AgentKind::Claude) => claude_usage(program, config_path).await,
+        Some(AgentKind::Codex) => codex_usage(program, config_path).await,
         _ => Err(format!("{provider} does not expose structured plan usage")),
     };
     let ttl = match &lookup {

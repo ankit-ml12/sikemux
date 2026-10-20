@@ -11,9 +11,8 @@ use notify::{RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::sessions::roots::{
-    agent_config_root, environment_path, grok_root, hermes_root, pi_agent_root,
-};
+use crate::agent_catalog::AgentKind;
+use crate::sessions::roots::{agent_config_root, environment_path};
 use crate::skills::{self, Skill};
 
 use super::connection::blocking;
@@ -81,9 +80,9 @@ fn global_folders() -> Vec<(&'static str, PathBuf)> {
         ("Codex and other agents", Some(home.join(".agents/skills"))),
         ("OpenCode", Some(config_home.join("opencode/skills"))),
         ("OMP", skills(agent_config_root("omp", None))),
-        ("Grok", skills(grok_root())),
-        ("Hermes", skills(hermes_root())),
-        ("Pi", skills(pi_agent_root())),
+        ("Grok", skills(AgentKind::Grok.home_root())),
+        ("Hermes", skills(AgentKind::Hermes.home_root())),
+        ("Pi", skills(AgentKind::Pi.home_root())),
     ]
     .into_iter()
     .filter_map(|(label, folder)| Some((label, folder?)))

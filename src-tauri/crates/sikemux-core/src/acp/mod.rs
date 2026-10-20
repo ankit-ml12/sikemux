@@ -20,6 +20,7 @@ use url::Url;
 
 pub use agent_client_protocol::schema;
 
+use crate::agent_catalog::{self, ChatDriver};
 use crate::protocol::ChatContext;
 
 const MAX_PROMPT_BYTES: usize = 2 * 1024 * 1024;
@@ -61,13 +62,17 @@ pub fn permission_mode_id(
     mode: &str,
     setup: &Value,
 ) -> Result<Option<&'static str>, String> {
-    let expected = match (provider, mode) {
-        ("hermes", "bypass") => "dont_ask",
-        ("hermes", "workspace-write") => "accept_edits",
-        (_, "bypass" | "workspace-write") if native::arguments(provider).is_some() => {
-            return Ok(None)
-        }
-        _ => return Err(format!("Unsupported permission mode: {mode}")),
+    let unsupported = || format!("Unsupported permission mode: {mode}");
+    let Some(ChatDriver::Acp { modes, .. }) =
+        agent_catalog::agent(provider).and_then(|agent| agent.chat.as_ref())
+    else {
+        return Err(unsupported());
+    };
+    let expected = match (modes, mode) {
+        (Some(modes), "bypass") => modes.bypass,
+        (Some(modes), "workspace-write") => modes.normal,
+        (None, "bypass" | "workspace-write") => return Ok(None),
+        _ => return Err(unsupported()),
     };
     setup
         .pointer("/modes/availableModes")

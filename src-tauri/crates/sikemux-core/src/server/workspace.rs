@@ -216,9 +216,7 @@ fn named(agent: &WorkspaceAgent) -> Option<String> {
 }
 
 fn is_chat_provider(provider: &str) -> bool {
-    AGENTS
-        .iter()
-        .any(|def| def.kind == provider && def.kind != "pi")
+    crate::agent_catalog::agent(provider).is_some_and(|agent| agent.chat.is_some())
 }
 
 fn now_ms() -> u64 {
@@ -890,8 +888,7 @@ impl Workspaces {
             .map(|book| book.profiles.as_slice())
             .unwrap_or_default();
         let mut offered = Vec::new();
-        // Pi has no chat mode of its own.
-        for def in AGENTS.iter().filter(|def| def.kind != "pi") {
+        for def in AGENTS.iter().filter(|def| def.chat.is_some()) {
             let permission_mode = match saved.permission_mode.as_deref() {
                 Some(mode) if def.bypass => mode.to_owned(),
                 None if def.bypass => "bypass".to_owned(),
@@ -1371,10 +1368,6 @@ pub(crate) enum Paid {
     By(Option<String>),
 }
 
-/// Agents whose chats keep a private home of their own, which a worker of
-/// theirs must not share.
-const OWN_HOME: [&str; 2] = ["hermes", "grok"];
-
 impl Workspaces {
     /// How to start an agent of `provider` for `lead` in `cwd`: on the lead's
     /// account and in its permission mode, paid as `paid` says. The lead may
@@ -1396,7 +1389,10 @@ impl Workspaces {
             Paid::By(route) => route,
         };
         let as_lead = route == lead_route;
-        let own = lead_own.filter(|_| as_lead && !OWN_HOME.contains(&provider));
+        let private_home = crate::agent_catalog::agent(provider)
+            .and_then(|agent| agent.home.as_ref())
+            .is_some_and(|home| home.private.is_some());
+        let own = lead_own.filter(|_| as_lead && !private_home);
         if let Some(own) = own {
             let mut launch = own.clone();
             launch.cwd = cwd.to_path_buf();

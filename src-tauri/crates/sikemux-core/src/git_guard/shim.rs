@@ -182,8 +182,8 @@ pub(crate) fn folder() -> Option<&'static Path> {
 /// runs them in a login shell, whose profile puts the system's git ahead of
 /// it, unless told not to.
 pub(crate) fn arguments(provider: &str) -> &'static [&'static str] {
-    match provider {
-        "codex" if FOLDER.get().is_some() => &["-c", "allow_login_shell=false"],
+    match crate::agent_catalog::agent(provider) {
+        Some(agent) if FOLDER.get().is_some() => agent.git_shim_args,
         _ => &[],
     }
 }

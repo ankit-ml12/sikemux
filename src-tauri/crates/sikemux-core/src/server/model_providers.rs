@@ -13,9 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::launch::model_feed::Snapshot;
-use crate::launch::providers::{
-    self, Helper, KeySpec, Kind, Provider, Providers, KEY_SERVICE, ROUTED_AGENTS,
-};
+use crate::launch::providers::{self, Helper, KeySpec, Kind, Provider, Providers, KEY_SERVICE};
 use crate::protocol::ChatLaunch;
 
 use super::connection::blocking;
@@ -95,10 +93,9 @@ struct ModelFacts {
 
 fn choices(provider: &Provider, feed: &Snapshot, served: Option<&[String]>) -> Choices {
     let model = provider.coding_model("", feed, served);
-    let defaults: BTreeMap<_, _> = ROUTED_AGENTS
-        .iter()
+    let defaults: BTreeMap<_, _> = providers::routed_agents()
         .filter(|agent| provider.routes(agent))
-        .filter_map(|agent| Some((*agent, provider.coding_model(agent, feed, served)?)))
+        .filter_map(|agent| Some((agent, provider.coding_model(agent, feed, served)?)))
         .collect();
     let listed = provider
         .models_dev
@@ -257,9 +254,7 @@ pub(crate) async fn list(core: &Arc<Core>) -> CoreResult<Vec<ModelProvider>> {
             connected: models.is_some() || saved.contains(&provider.id),
             choices: choices(provider, &feed, models.as_deref()),
             models,
-            agents: ROUTED_AGENTS
-                .iter()
-                .copied()
+            agents: providers::routed_agents()
                 .filter(|agent| provider.routes(agent))
                 .collect(),
             checks: core.workspaces.model_checks.of(&provider.id),

@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::agent_catalog::AgentKind;
 use crate::cli::protocol::TOOLS_OFFER_ENV;
+use crate::launch::homes;
 use crate::launch::terminal::{self, TerminalRun};
 use crate::launch::tools::Tools;
 use crate::launch::AgentSpec;
@@ -168,10 +170,8 @@ pub(crate) fn own_tools(core: &Core, launch: &mut ChatLaunch) {
 /// Gives a Hermes or Grok chat its own home with the skills library, unless
 /// it has one. Answers whether the launch changed.
 pub(crate) async fn own_home(core: &Core, launch: &mut ChatLaunch) -> bool {
-    let has_home = ["HERMES_HOME", "GROK_HOME"]
-        .iter()
-        .any(|home| launch.env.contains_key(*home));
-    if has_home || !matches!(launch.provider.as_str(), "hermes" | "grok") {
+    let private = AgentKind::from_name(&launch.provider).and_then(homes::private);
+    if private.is_none_or(|(home, _)| launch.env.contains_key(home.variable)) {
         return false;
     }
     let Some(tools) = tools(core) else {

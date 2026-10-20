@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 use sikemux_pty::user_shell::user_variable;
 
+use crate::agent_catalog::AgentKind;
 use crate::skills::{library, ready_library, LIBRARY_ENV};
 
 /// `data_dir` with the skills library ready in it. Without one, agents launch
@@ -31,12 +32,12 @@ pub(super) fn chat(
 ) {
     let library = library(data_dir);
     env.insert(LIBRARY_ENV.into(), library.to_string_lossy().into_owned());
-    match provider {
-        "claude" => {
+    match AgentKind::from_name(provider) {
+        Some(AgentKind::Claude) => {
             args.splice(0..0, skill_args(Some(data_dir), claude_args));
         }
-        "omp" => args.extend(skill_args(Some(data_dir), omp_args)),
-        "opencode" => {
+        Some(AgentKind::Omp) => args.extend(skill_args(Some(data_dir), omp_args)),
+        Some(AgentKind::Opencode) => {
             let existing = env
                 .get("OPENCODE_CONFIG_CONTENT")
                 .cloned()

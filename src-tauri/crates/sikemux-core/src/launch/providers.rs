@@ -12,6 +12,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 
 use super::model_feed::{Feed, Snapshot};
+use crate::agent_catalog::{self, ProviderUse, AGENTS};
 
 /// A development build keeps entries of its own, so it never spends or replaces the
 /// installed app's sign-in.
@@ -28,11 +29,13 @@ pub const KEY_SERVICE: &str = "sikemux-model-provider-test";
 /// Names the provider a chat runs on in place of its agent's own account.
 pub const ROUTED_ENV: &str = "SIKEMUX_MODEL_PROVIDER";
 
-/// The agents that read every connected provider's key from their environment.
-const READERS: &[&str] = &["opencode", "pi", "omp"];
-
 /// The agents Sikemux can point at a provider in place of their makers' accounts.
-pub const ROUTED_AGENTS: &[&str] = &["claude", "codex"];
+pub fn routed_agents() -> impl Iterator<Item = &'static str> {
+    AGENTS
+        .iter()
+        .filter(|agent| matches!(agent.providers, Some(ProviderUse::Routed)))
+        .map(|agent| agent.kind)
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -408,7 +411,9 @@ impl Providers {
     /// The keys `agent` starts with, under the names it looks for. Reads the
     /// Keychain, so it blocks.
     pub fn environment(&self, agent: &str) -> BTreeMap<String, String> {
-        if !READERS.contains(&agent) {
+        let reads = agent_catalog::agent(agent)
+            .is_some_and(|agent| matches!(agent.providers, Some(ProviderUse::Reads)));
+        if !reads {
             return BTreeMap::new();
         }
         self.connected()

@@ -58,7 +58,7 @@ async fn catalog<F: Future<Output = AgentStatus>>(
             return None;
         }
 
-        let (resolved, failures) = discovery::first_healthy(def.kind, candidates).await;
+        let (resolved, failures) = discovery::first_healthy(def, candidates).await;
         let config_path = profile.and_then(|profile| profile.config_path.clone());
         let warning = resolved.as_ref().and_then(|path| {
             (!failures.is_empty())

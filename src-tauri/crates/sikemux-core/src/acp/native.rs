@@ -6,16 +6,15 @@ use agent_client_protocol::schema::v1::Meta;
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::agent_catalog::{self, ChatDriver};
 use crate::git_guard::shim;
 
-/// The arguments that put each agent's own binary into ACP mode.
-///
-/// Grok shares one background process between its clients unless told not to,
-/// and a chat's approval choices must not reach the other clients.
+/// The arguments that put the agent's own binary into ACP mode, when it has
+/// one. Grok's `--no-leader` keeps a chat's approval choices off the
+/// background process its other clients share.
 pub fn arguments(provider: &str) -> Option<&'static [&'static str]> {
-    match provider {
-        "opencode" | "omp" | "hermes" => Some(&["acp"]),
-        "grok" => Some(&["agent", "--no-leader", "stdio"]),
+    match agent_catalog::agent(provider)?.chat {
+        Some(ChatDriver::Acp { args, .. }) => Some(args),
         _ => None,
     }
 }
