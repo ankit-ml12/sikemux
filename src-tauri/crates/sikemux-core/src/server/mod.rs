@@ -82,7 +82,9 @@ use sikemux_pty::task::{
 use tokio::sync::{watch, Notify};
 
 use crate::client::{probe, ProbeError};
-use crate::protocol::{encode_control, BuildIdentity, DeviceView, Event, ServerMessage, SessionId};
+use crate::protocol::{
+    encode_control, AgentGroup, BuildIdentity, DeviceView, Event, ServerMessage, SessionId,
+};
 
 use connection::{ClientConn, ClientId};
 use session::Session;
@@ -93,8 +95,11 @@ const SESSION_POLL: Duration = Duration::from_millis(250);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
-/// How soon a paired device sees a change to what it shows of this host.
+/// How often what a paired device shows of this host is looked at again
+/// while something in it moves by itself, such as an agent mid-turn.
 const DEVICE_VIEW_INTERVAL: Duration = Duration::from_millis(400);
+/// A burst of changes to the view goes out as one.
+const DEVICE_VIEW_GATHER: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -711,8 +716,17 @@ impl Core {
         (chats, sessions)
     }
 
-    fn device_view_frame(&self) -> Option<Vec<u8>> {
+    /// The view devices are sent, and whether anything in it moves by itself.
+    fn device_view_frame(&self) -> Option<(Vec<u8>, bool)> {
         let (chats, sessions) = self.ranked_infos();
+        let moving = chats.iter().any(|chat| {
+            chat.group == AgentGroup::Working
+                || chat.subagents > 0
+                || chat.tasks > 0
+                || chat.reconnecting.is_some()
+        }) || sessions
+            .iter()
+            .any(|session| session.group == Some(AgentGroup::Working));
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         let recent = self.workspaces.recent(&chats);
@@ -725,10 +739,11 @@ impl Core {
             recent,
             inbox,
         };
-        encode_control(&ServerMessage::Event {
+        let frame = encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },
         })
-        .ok()
+        .ok()?;
+        Some((frame, moving))
     }
 
     /// Sends every paired device what it shows of this host, when that changed
@@ -740,29 +755,30 @@ impl Core {
             .collect()
     }
 
-    pub(crate) fn publish_device_view(&self) {
+    /// Whether anything in the view moves by itself.
+    pub(crate) fn publish_device_view(&self) -> bool {
         let devices = self.view_watchers();
         if devices.is_empty() {
-            return;
+            return false;
         }
         let mut last = self.device_view.locked();
-        let Some(frame) = self.device_view_frame() else {
-            return;
+        let Some((frame, moving)) = self.device_view_frame() else {
+            return false;
         };
-        if *last == frame {
-            return;
+        if *last != frame {
+            let shared: Arc<[u8]> = frame.as_slice().into();
+            for client in devices {
+                client.send(shared.clone());
+            }
+            *last = frame;
         }
-        let shared: Arc<[u8]> = frame.as_slice().into();
-        for client in devices {
-            client.send(shared.clone());
-        }
-        *last = frame;
+        moving
     }
 
     /// A device that just connected starts from the whole view.
     pub(crate) fn send_device_view(&self, client: &ClientConn) {
         let _last = self.device_view.locked();
-        if let Some(frame) = self.device_view_frame() {
+        if let Some((frame, _)) = self.device_view_frame() {
             client.send(frame.into());
         }
     }
@@ -783,6 +799,7 @@ impl Core {
                 client.send(frame.clone());
             }
         }
+        self.view_stale.notify_one();
     }
 
     /// Ends the connections of one paired device, or of every one.
@@ -956,18 +973,29 @@ async fn poll_sessions(core: Arc<Core>) {
     }
 }
 
+/// Sends devices the view when anything in it may have changed, and on a
+/// tick only while something in it moves by itself.
 async fn device_views(core: Arc<Core>) {
     let mut ticker = tokio::time::interval(DEVICE_VIEW_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut window = None;
+    let mut moving = true;
     loop {
         if core.view_watchers().is_empty() {
             core.view_watched.notified().await;
             ticker.reset();
         }
-        tokio::select! {
-            _ = ticker.tick() => {}
-            () = core.view_stale.notified() => {}
+        let changed = if moving {
+            tokio::select! {
+                _ = ticker.tick() => false,
+                () = core.view_stale.notified() => true,
+            }
+        } else {
+            core.view_stale.notified().await;
+            true
+        };
+        if changed {
+            tokio::time::sleep(DEVICE_VIEW_GATHER).await;
         }
         core.show_phones();
         let now = core.window.client_id();
@@ -975,7 +1003,7 @@ async fn device_views(core: Arc<Core>) {
             window = now;
             core.agents_changed();
         }
-        core.publish_device_view();
+        moving = core.publish_device_view();
     }
 }
 
