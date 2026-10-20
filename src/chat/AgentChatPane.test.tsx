@@ -37,15 +37,16 @@ vi.mock("../api/agents", () => ({
     agentApi: { available: async () => [], retryFailed: mocks.retryFailed, discardFailed: mocks.discardFailed },
 }));
 
-vi.mock("../api/fs", () => ({
-    fsapi: {
+vi.mock("../api/fs", () => {
+    const fsapi = {
         pathKinds: mocks.pathKinds,
         revealInFinder: mocks.revealInFinder,
         previewFile: vi.fn(async () => {
             throw new Error("no file");
         }),
-    },
-}));
+    };
+    return { fsapi, filesOn: () => fsapi };
+});
 
 vi.mock("../api/acp", () => ({
     acpApi: {
@@ -938,7 +939,7 @@ describe("AgentChatPane", () => {
         expect(mocks.openFileOnDesk).toHaveBeenCalledWith(agent.id, "/repo/src/styles/stage.css", 1, undefined);
         expect(mocks.requestOpenFile).not.toHaveBeenCalled();
         fireEvent.doubleClick(file);
-        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/repo/src/styles/stage.css", 1, undefined);
+        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/repo/src/styles/stage.css", 1, undefined, undefined);
 
         fireEvent.click(screen.getByRole("button", { name: /Show what the call did/ }));
         await waitFor(() => expect(document.querySelector(".chat-diff-line.add")).not.toBeNull());

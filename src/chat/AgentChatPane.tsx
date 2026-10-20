@@ -316,7 +316,7 @@ export function AgentChatPane({
     const failureDetail = failure?.detail && <span className="chat-recovery-detail">{failure.detail}</span>;
 
     return (
-        <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id}>
+        <PathRootsProvider cwd={cwd} home={home} agentId={chatAgent.id} host={agent.host}>
             <ChatAgentContext.Provider value={chatAgent}>
                 <ChatSubagentsContext.Provider value={subagentCards}>
                     <ReaderScrollContext.Provider value={scrollByReader}>
