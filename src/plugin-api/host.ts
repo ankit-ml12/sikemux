@@ -1,5 +1,6 @@
 import { dialogsApi } from "../api/dialogs";
 import { invokeCommand } from "../api/invoke";
+import { openUrl } from "../api/system";
 import { subscribe } from "../state/bus";
 import * as cmd from "../state/commands";
 import { getState, setState, useStore, type StoreState } from "../state/store";
@@ -16,7 +17,7 @@ import { nearestProjectSessionId } from "../agents/agentTargets";
 export { fsapi as files, type DirEntry } from "../api/fs";
 export { git } from "../api/git";
 export { basename, dirname, joinPath, relativePath } from "../lib/paths";
-export { copyText };
+export { copyText, openUrl };
 export { confirmDialog, promptDialog } from "../state/dialog";
 export { gitOverviewR } from "../state/resources.defs";
 export { usePluginOverlay } from "../plugins/overlays";
@@ -36,14 +37,10 @@ export function copyWithNotice(text: string, what: string): void {
     void copyText(text).then(() => notify("success", `copied ${what}`), reportError("copy"));
 }
 
-export function openUrl(url: string): Promise<void> {
-    return invokeCommand<void>("open_url", { url, app: null, shortcut: null });
-}
-
 /** Opens a sign-in page in the browser the person chose for single sign-on in Settings. */
 export function openSignInUrl(url: string): Promise<void> {
     const { cloudBrowser, cloudBrowserShortcut } = getState();
-    return invokeCommand<void>("open_url", { url, app: cloudBrowser || null, shortcut: cloudBrowserShortcut || null });
+    return openUrl(url, cloudBrowser || null, cloudBrowserShortcut || null);
 }
 
 /** Brings the single sign-on browser forward, for a CLI that opens its own sign-in page. */
