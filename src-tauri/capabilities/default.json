@@ -30,6 +30,7 @@
     "allow-pty-kill",
     "allow-pty-sessions",
     "allow-hosts-list",
+    "allow-host-install",
     "allow-account-remove-device",
     "allow-account-status",
     "allow-account-refresh-profile",

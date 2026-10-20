@@ -2,14 +2,14 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { accountApi } from "../api/account";
 import { coreCall } from "../api/core";
 import { sshApi } from "../api/ssh";
-import { copyOn, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
+import { copyOn, hostsApi, openHostTerminal, startRemoteChat, type HostEntry } from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
 import { getState, useStore, type StoreState } from "../state/store";
 import { reportError, swallow } from "../state/toast";
 import type { Session } from "../state/types";
 import { useSshTone } from "../terminal/sshLinks";
-import { IconFolder, IconLaptop, IconMore, IconPencil, IconPlus, IconServer, IconTerminal, IconTrash } from "../ui/Icons";
+import { IconDownload, IconFolder, IconLaptop, IconMore, IconPencil, IconPlus, IconServer, IconTerminal, IconTrash } from "../ui/Icons";
 import { StatusDot } from "../ui/StatusDot";
 import type { CtxItem } from "./FileTree";
 
@@ -170,12 +170,26 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
 function SshHostRow({ alias, session, onMenu }: { alias: string; session: Session | undefined; onMenu: OpenMenu }) {
     const tone = useSshTone(session?.id ?? "");
     const active = useStore((s) => !!session && s.activeSessionId === session.id);
+    const [installing, setInstalling] = useState(false);
     const open = () => cmd.createSshSession(alias);
+    const install = () => {
+        setInstalling(true);
+        hostsApi
+            .install(alias)
+            .catch(reportError(`Install Sikemux on ${alias}`))
+            .finally(() => setInstalling(false));
+    };
     return (
         <HostRow
             kind="ssh"
             name={alias}
-            status={<StatusDot tone={session ? tone : "idle"} label={session ? tone : "Not connected"} />}
+            detail={installing ? "installing" : null}
+            status={
+                <StatusDot
+                    tone={installing ? "pending" : session ? tone : "idle"}
+                    label={installing ? "Installing" : session ? tone : "Not connected"}
+                />
+            }
             active={active}
             onOpen={open}
             menu={[
@@ -187,6 +201,7 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
                         cmd.newSshTerminal(alias);
                     },
                 },
+                { label: "Install Sikemux here", icon: <IconDownload size={13} />, run: install, disabled: installing },
                 { sep: true },
                 { label: "Edit in ~/.ssh/config", icon: <IconPencil size={13} />, run: () => void cmd.openSshConfigEditor() },
             ]}
@@ -199,7 +214,8 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
 export function HostRows({ sshSessions, onMenu }: { sshSessions: readonly Session[]; onMenu: OpenMenu }) {
     const hosts = useStore((s) => s.hosts);
     const aliases = useSshAliases();
-    const sshNames = [...new Set([...aliases, ...sshSessions.map((session) => session.name)])];
+    const installed = new Set(hosts.flatMap((host) => host.ssh ?? []));
+    const sshNames = [...new Set([...aliases, ...sshSessions.map((session) => session.name)])].filter((alias) => !installed.has(alias));
     return (
         <>
             <ThisHostRow onMenu={onMenu} />

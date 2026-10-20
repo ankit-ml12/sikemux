@@ -346,6 +346,21 @@ async fn as_host<T: DeserializeOwned>(
     Ok(host_request(core, method, path, body).await?.json().await?)
 }
 
+/// Approves the sign-in code another host showed, for "Install Sikemux here",
+/// and answers with that host.
+pub(crate) async fn approve_host_code(
+    core: &CoreClient,
+    code: &str,
+) -> AppResult<sikemux_core::accounts::host::ApprovedHost> {
+    as_host(
+        core,
+        Method::POST,
+        &format!("/v1/host-sign-ins/{code}/approve-from-host"),
+        None,
+    )
+    .await
+}
+
 /// Takes a device or host off the account, which revokes it on every host at
 /// once.
 #[tauri::command]

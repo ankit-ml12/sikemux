@@ -5,6 +5,7 @@ import type {
   AccountDeletion,
   AccountDeletionRequest,
   AccountProfile,
+  ApprovedHost,
   Challenge,
   Device,
   DeviceList,
@@ -55,7 +56,7 @@ export function apiClient(send: Send) {
     /** Your devices. */
     listDevices: (query: { role?: DeviceRole } = {}) =>
       send<DeviceList>("GET", `/v1/devices${search(query)}`),
-    /** Take one of your devices off your account. */
+    /** Take one of your devices off your account, from the phone, the web app or the app on one of your hosts. */
     removeDevice: (key: string) =>
       send<void>("DELETE", `/v1/devices/${encodeURIComponent(key)}`),
     /** Deliver this phone's notifications to a push token. */
@@ -95,6 +96,12 @@ export function apiClient(send: Send) {
       send<void>(
         "POST",
         `/v1/host-sign-ins/${encodeURIComponent(userCode)}/approve`,
+      ),
+    /** Add the waiting host to your account from the app on another of your hosts, which read the code over SSH. */
+    approveHostSignInFromHost: (userCode: string) =>
+      send<ApprovedHost>(
+        "POST",
+        `/v1/host-sign-ins/${encodeURIComponent(userCode)}/approve-from-host`,
       ),
     /** Refuse the waiting host. */
     refuseHostSignIn: (userCode: string) =>

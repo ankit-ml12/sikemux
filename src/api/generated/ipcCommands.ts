@@ -13,6 +13,7 @@ export const IPC_COMMANDS = [
     "pty_kill",
     "pty_sessions",
     "hosts_list",
+    "host_install",
     "account_remove_device",
     "account_status",
     "account_refresh_profile",

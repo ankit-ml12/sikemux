@@ -172,9 +172,9 @@
     "/v1/devices/{key}": {
       "delete": {
         "operationId": "removeDevice",
-        "summary": "Take one of your devices off your account",
-        "security": [{ "session": [] }],
-        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "summary": "Take one of your devices off your account, from the phone, the web app or the app on one of your hosts",
+        "security": [{ "session": [] }, { "host": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host on the account.",
         "parameters": [
           {
             "name": "key",
@@ -638,6 +638,48 @@
         }
       }
     },
+    "/v1/host-sign-ins/{userCode}/approve-from-host": {
+      "post": {
+        "operationId": "approveHostSignInFromHost",
+        "summary": "Add the waiting host to your account from the app on another of your hosts, which read the code over SSH",
+        "security": [{ "host": [] }],
+        "description": "Only a request signed by a host on the account.",
+        "parameters": [
+          {
+            "name": "userCode",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved, naming the host. It finishes on its next ask.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApprovedHost" }
+              }
+            }
+          },
+          "404": {
+            "description": "The code is unknown, was refused, or has expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/live": {
       "get": {
         "operationId": "openLive",
@@ -962,6 +1004,16 @@
         "description": "Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store.",
         "type": "string",
         "enum": ["sandbox", "production"]
+      },
+      "ApprovedHost": {
+        "description": "The host a sign-in code belonged to, once approved.",
+        "type": "object",
+        "properties": {
+          "key": { "$ref": "#/components/schemas/DeviceKey" },
+          "name": { "type": "string" }
+        },
+        "required": ["key", "name"],
+        "additionalProperties": false
       },
       "AppVersion": {
         "description": "A semantic version, such as 0.5.0 or 0.6.0-nightly.3.",

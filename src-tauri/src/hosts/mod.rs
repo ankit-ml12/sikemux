@@ -7,6 +7,7 @@
 //! host's slot in the high bits and its session id below, so every id the page
 //! keys by stays unique and this host's own sessions keep their ids.
 
+pub(crate) mod install;
 mod sink;
 
 use std::collections::BTreeMap;
@@ -98,6 +99,10 @@ struct Saved {
 struct HostsFile {
     hosts: Vec<Saved>,
     slots: BTreeMap<String, u64>,
+    /// The SSH host each host was installed on from here, by its key, so the
+    /// rail shows them as one.
+    #[serde(default)]
+    ssh: BTreeMap<String, String>,
 }
 
 /// A host as the page lists it.
@@ -108,6 +113,8 @@ pub(crate) struct HostEntry {
     name: String,
     platform: String,
     reach: Reach,
+    /// The SSH host it was installed on from here.
+    ssh: Option<String>,
 }
 
 pub(crate) struct Host {
@@ -159,6 +166,7 @@ impl Host {
             name: self.name(),
             platform: self.saved.platform.clone(),
             reach: *self.reach.locked(),
+            ssh: None,
         }
     }
 
@@ -210,6 +218,7 @@ pub struct Hosts {
     device: tokio::sync::OnceCell<Arc<Device>>,
     hosts: Mutex<Vec<Arc<Host>>>,
     slots: Mutex<BTreeMap<String, u64>>,
+    ssh: Mutex<BTreeMap<String, String>>,
     saving: Mutex<()>,
     following: tokio::sync::Mutex<()>,
 }
@@ -267,6 +276,7 @@ impl Hosts {
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
         *self.slots.locked() = file.slots;
+        *self.ssh.locked() = file.ssh;
         for saved in file.hosts {
             self.add(saved);
         }
@@ -332,6 +342,7 @@ impl Hosts {
                 .map(|host| host.saved())
                 .collect(),
             slots: self.slots.locked().clone(),
+            ssh: self.ssh.locked().clone(),
         };
         if let Ok(bytes) = serde_json::to_vec_pretty(&saved) {
             if let Some(directory) = file.parent() {
@@ -342,11 +353,22 @@ impl Hosts {
     }
 
     pub(crate) fn entries(&self) -> Vec<HostEntry> {
+        let ssh = self.ssh.locked();
         self.hosts
             .locked()
             .iter()
-            .map(|host| host.entry())
+            .map(|host| HostEntry {
+                ssh: ssh.get(host.id()).cloned(),
+                ..host.entry()
+            })
             .collect()
+    }
+
+    /// Notes that the host with `key` was installed on the SSH host `alias`.
+    pub(crate) fn reached_by(&self, key: &str, alias: &str) {
+        self.ssh.locked().insert(key.to_owned(), alias.to_owned());
+        self.save();
+        self.changed();
     }
 
     fn changed(&self) {

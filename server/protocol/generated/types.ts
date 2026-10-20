@@ -79,6 +79,12 @@ export const apnsEnvironmentValues: readonly ApnsEnvironment[] = [
   "production",
 ];
 
+/** The host a sign-in code belonged to, once approved. */
+export interface ApprovedHost {
+  key: DeviceKey;
+  name: string;
+}
+
 /** A semantic version, such as 0.5.0 or 0.6.0-nightly.3. */
 export type AppVersion = string;
 
@@ -772,6 +778,7 @@ export interface Definitions {
   AccountStatus: AccountStatus;
   ApiError: ApiError;
   ApnsEnvironment: ApnsEnvironment;
+  ApprovedHost: ApprovedHost;
   AppVersion: AppVersion;
   Challenge: Challenge;
   Channel: Channel;

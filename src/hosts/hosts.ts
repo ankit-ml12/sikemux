@@ -19,10 +19,14 @@ export interface HostEntry {
     readonly name: string;
     readonly platform: string;
     readonly reach: "connecting" | "connected";
+    /** The SSH host it was installed on from here, which the rail shows it as. */
+    readonly ssh: string | null;
 }
 
 export const hostsApi = {
     list: () => invoke<HostEntry[]>("hosts_list"),
+    /** Installs Sikemux on the SSH host `alias` over the person's own SSH and signs it in to the account. */
+    install: (alias: string) => invoke<void>("host_install", { alias }),
 };
 
 /** One project's folder on another host. */

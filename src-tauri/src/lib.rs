@@ -261,6 +261,7 @@ pub fn run() {
             pty::commands::pty_kill,
             pty::commands::pty_sessions,
             hosts::hosts_list,
+            hosts::install::host_install,
             account::account_remove_device,
             account::account_status,
             account::account_refresh_profile,
