@@ -23,7 +23,6 @@ use crate::protocol::ChatLaunch;
 use super::rebind::Outcome;
 use super::{Chat, ChatCommand};
 
-pub(crate) use claude::transcript_path as claude_transcript;
 pub(crate) use process::{kill_group, AgentRecord, Released};
 pub(crate) use session::{Adopted, Begin, Handed, SessionState};
 

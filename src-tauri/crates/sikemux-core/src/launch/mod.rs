@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sikemux_pty::launch::{account_dir, account_variable};
+use sikemux_pty::launch::account_dir;
 use sikemux_pty::user_shell::user_variable;
 
 /// One agent, as the person set it up: which program, which account and which
@@ -96,6 +96,18 @@ impl AgentSpec {
         }
         launch
     }
+}
+
+/// The variable naming the folder an agent that keeps accounts keeps each
+/// one's sign-in and sessions in.
+pub fn account_variable(provider: &str) -> Option<&'static str> {
+    let agent = crate::agent_catalog::agent(provider).filter(|agent| agent.accounts)?;
+    agent.home.as_ref().map(|home| home.variable)
+}
+
+/// The account folder `env`, a launch's environment, names for `provider`.
+pub fn named_account<'a>(provider: &str, env: &'a BTreeMap<String, String>) -> Option<&'a str> {
+    env.get(account_variable(provider)?).map(String::as_str)
 }
 
 /// The variable naming the account folder an agent keeps its sign-in and

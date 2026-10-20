@@ -11,7 +11,6 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::acp::account;
 use crate::agent_accounts::usage;
 use crate::protocol::{ChatEventKind, ChatLaunch};
 
@@ -260,9 +259,7 @@ async fn resume(core: &Arc<Core>, agent_id: String) {
 /// When the account the chat runs on can be used again, from its usage.
 async fn reset_from_usage(core: &Core, launch: &ChatLaunch) -> Option<u64> {
     let provider = launch.provider.as_str();
-    let folder = account::directory_variable(provider)
-        .and_then(|variable| launch.env.get(variable))
-        .map(String::as_str);
+    let folder = crate::launch::named_account(provider, &launch.env);
     let program = core
         .workspaces
         .account_spec(provider, folder)

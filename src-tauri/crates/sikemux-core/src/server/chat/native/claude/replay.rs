@@ -7,35 +7,6 @@ use super::super::super::states::{self, Subagent};
 use super::super::json::{self, is_js_whitespace, js_str, str_field, truthy};
 use super::tools::{self, TaskPlan};
 
-/// The transcript file for a session: search `<config_dir>/projects/*/<session_id>.jsonl` (config_dir = CLAUDE_CONFIG_DIR or ~/.claude).
-pub fn transcript_path(config_dir: &Path, session_id: &str) -> Option<PathBuf> {
-    if !is_uuid(session_id) {
-        return None;
-    }
-    let file_name = format!("{session_id}.jsonl");
-    let mut project_dirs: Vec<PathBuf> = std::fs::read_dir(config_dir.join("projects"))
-        .ok()?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .collect();
-    project_dirs.sort();
-    project_dirs.into_iter().find_map(|dir| {
-        let candidate = dir.join(&file_name);
-        let non_empty =
-            std::fs::metadata(&candidate).is_ok_and(|meta| meta.is_file() && meta.len() > 0);
-        non_empty.then_some(candidate)
-    })
-}
-
-fn is_uuid(text: &str) -> bool {
-    let groups: Vec<&str> = text.split('-').collect();
-    groups.len() == 5
-        && groups
-            .iter()
-            .zip([8, 4, 4, 4, 12])
-            .all(|(group, len)| group.len() == len && group.bytes().all(|b| b.is_ascii_hexdigit()))
-}
-
 /// Reads the active branch of a transcript: follow parentUuid back from the LAST record that is user/assistant (and not isSidechain), producing the ordered chain of records.
 ///
 /// This is the SDK's `getSessionMessages`: compaction boundaries relink their preserved

@@ -16,13 +16,13 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::acp::account::directory_variable;
 use crate::agent_catalog::AgentKind;
 use crate::launch::model_feed::Feed;
+use crate::launch::named_account;
 pub(crate) use pricing::PriceOverride;
 use pricing::{Prices, PricingInfo};
 
-use super::transcript::{self, Cli};
+use super::transcript;
 use super::Core;
 
 const DAY_MS: i64 = 86_400_000;
@@ -52,9 +52,7 @@ pub(crate) struct Transcript {
 pub(crate) fn place(core: &Core, agent_id: &str) -> Option<Place> {
     if let Some(chat) = core.chats.get(agent_id) {
         let launch = chat.current_launch();
-        let home = directory_variable(&launch.provider)
-            .and_then(|variable| launch.env.get(variable))
-            .map(PathBuf::from);
+        let home = named_account(&launch.provider, &launch.env).map(PathBuf::from);
         let session = chat.feed.start().map(|start| start.session_id);
         return Some(Place {
             transcript: transcript_of(&launch.provider, session, home.as_deref()),
@@ -82,12 +80,8 @@ pub(crate) fn transcript_of(
     home: Option<&Path>,
 ) -> Option<Transcript> {
     let session = session?;
-    let cli = Cli::of(agent)?;
-    let path = transcript::locate(cli, home, &session)?;
-    let kind = match cli {
-        Cli::Claude => AgentKind::Claude,
-        Cli::Codex => AgentKind::Codex,
-    };
+    let kind = AgentKind::from_name(agent)?;
+    let path = transcript::locate(kind, home, &session)?;
     Some(Transcript {
         kind,
         session,
@@ -96,9 +90,7 @@ pub(crate) fn transcript_of(
 }
 
 pub(crate) fn chat_launched(core: &Core, launch: &crate::protocol::ChatLaunch) {
-    let home = directory_variable(&launch.provider)
-        .and_then(|variable| launch.env.get(variable))
-        .map(PathBuf::from);
+    let home = named_account(&launch.provider, &launch.env).map(PathBuf::from);
     let place = Place {
         agent: launch.provider.clone(),
         cwd: launch.cwd.to_string_lossy().into_owned(),

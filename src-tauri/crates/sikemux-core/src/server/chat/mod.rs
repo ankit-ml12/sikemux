@@ -37,7 +37,6 @@ use super::spawn::Ending;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
 use kept::{Keeper, KeptAgent, KeptChat};
-pub(crate) use native::claude_transcript;
 use native::Begin;
 
 const MAX_AGENT_ID: usize = 200;

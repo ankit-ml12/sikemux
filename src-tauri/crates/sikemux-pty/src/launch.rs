@@ -100,15 +100,6 @@ fn quote_shell_word(value: &str, kind: Option<ShellKind>) -> String {
     }
 }
 
-/// The variable each agent reads its account folder from.
-pub fn account_variable(agent: &str) -> Option<&'static str> {
-    match agent {
-        "claude" => Some("CLAUDE_CONFIG_DIR"),
-        "codex" => Some("CODEX_HOME"),
-        _ => None,
-    }
-}
-
 /// The account folder a profile's config path names: the path itself, or the
 /// folder of the config file it points at.
 pub fn account_dir(config_path: &str) -> PathBuf {

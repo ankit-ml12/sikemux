@@ -16,6 +16,7 @@ pub mod relocate;
 pub mod rename;
 pub mod roots;
 pub mod search;
+pub mod transcript;
 
 use std::collections::HashMap;
 use std::fs;
@@ -38,7 +39,6 @@ use muse::muse_sessions;
 use omp::omp_sessions;
 use opencode::opencode_sessions;
 use pi::pi_sessions;
-use roots::agent_config_root;
 use sikemux_pty::user_shell::login_shell_environment;
 
 pub use claude::claude_project_dir;
@@ -85,21 +85,10 @@ pub fn agent_sessions(agent: AgentKind, cwd: &str, config_path: Option<&str>) ->
 
 /// Points a CLI started on one of the person's accounts at that account's folder.
 pub fn apply_process_config(command: &mut Command, agent: &str, config_path: Option<&str>) {
-    let Some(root) = agent_config_root(agent, config_path) else {
+    let (Some(variable), Some(path)) = (crate::launch::account_variable(agent), config_path) else {
         return;
     };
-    if config_path.is_none() {
-        return;
-    }
-    match agent {
-        "codex" => {
-            command.env("CODEX_HOME", root);
-        }
-        "claude" => {
-            command.env("CLAUDE_CONFIG_DIR", root);
-        }
-        _ => {}
-    }
+    command.env(variable, sikemux_pty::launch::account_dir(path));
 }
 
 pub fn apply_login_environment(command: &mut Command) {

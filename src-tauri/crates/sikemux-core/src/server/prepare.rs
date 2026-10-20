@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
 use sikemux_pty::launch::{
-    account_dir, account_variable, configure_interactive_command, configure_pty_environment,
-    validate_direct_command, PtyContext,
+    account_dir, configure_interactive_command, configure_pty_environment, validate_direct_command,
+    PtyContext,
 };
 use sikemux_pty::shell::{
     configure_shell_integration, configure_task_command, inherited_ssh_environment,
@@ -117,7 +117,10 @@ pub(crate) fn prepare_terminal(
         &HashMap::new(),
     );
     let mut owner = Owner::from_context(context.as_ref());
-    let variable = owner.agent_type.as_deref().and_then(account_variable);
+    let variable = owner
+        .agent_type
+        .as_deref()
+        .and_then(crate::launch::account_variable);
     owner.account_home = variable
         .and_then(|variable| env.get(variable))
         .map(|home| account_dir(home));

@@ -17,15 +17,16 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use crate::agent_catalog::AgentKind;
 use crate::launch::providers::ROUTED_ENV;
 use crate::protocol::ChatLaunch;
+use crate::sessions::{self, roots::account_root};
 
 use super::super::Respond;
 use super::process::{Lines, Process, Reading, Released, Writer};
 use super::session::{Backend, Opened, Prompt, Sink};
 use control::Control;
 use reader::{Asking, Reader, ReaderState, Shared, Turn};
-pub(crate) use replay::transcript_path;
 
 /// Where a session starts: a new one under a chosen id, or a saved one.
 enum Start<'a> {
@@ -70,9 +71,11 @@ pub(crate) struct Claude {
     aliases: HashMap<String, String>,
 }
 
-fn config_dir(launch: &ChatLaunch) -> PathBuf {
-    crate::acp::account::directory("claude", &launch.env)
-        .unwrap_or_else(|| PathBuf::from(".claude"))
+/// The transcript Claude keeps of `session_id` for the account `launch` runs on.
+fn transcript(launch: &ChatLaunch, session_id: &str) -> Option<PathBuf> {
+    let root = account_root(AgentKind::Claude, None, &launch.env)?;
+    let cwd = launch.cwd.to_string_lossy();
+    sessions::transcript::find(AgentKind::Claude, &root, Some(&cwd), session_id)
 }
 
 /// The ACP tool server list as Claude Code's `--mcp-config` file.
@@ -355,8 +358,8 @@ impl Backend for Claude {
         // Claude takes a moment to start, so the saved chat is read and
         // replayed while it does.
         let replaying = launch.resume_id.is_some().then(|| {
-            let (dir, id, cwd, sink, shared) = (
-                config_dir(launch),
+            let (path, id, cwd, sink, shared) = (
+                transcript(launch, &session_id),
                 session_id.clone(),
                 launch.cwd.clone(),
                 sink.clone(),
@@ -364,7 +367,7 @@ impl Backend for Claude {
             );
             tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
                 let loaded = || sink.update(&id, json!({ "sessionUpdate": "history_loaded" }));
-                let Some(path) = replay::transcript_path(&dir, &id) else {
+                let Some(path) = path else {
                     loaded();
                     return Ok(None);
                 };
@@ -610,7 +613,7 @@ impl Backend for Claude {
             .get(message_id)
             .cloned()
             .unwrap_or_else(|| message_id.to_owned());
-        let path = replay::transcript_path(&config_dir(&self.launch), &self.session_id)
+        let path = transcript(&self.launch, &self.session_id)
             .ok_or("Claude has not saved this chat yet")?;
         // Claude Code refuses to drop turns it thinks the person has not seen.
         let newest = replay::read_chain(&path)?
