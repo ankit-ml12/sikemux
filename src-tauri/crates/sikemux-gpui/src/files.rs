@@ -467,7 +467,7 @@ fn row_view(
         ),
         _ => None,
     };
-    BaseButton::new(SharedString::from(format!("file-{}", row.path.display())))
+    let drawn = BaseButton::new(SharedString::from(format!("file-{}", row.path.display())))
         .accessibility_label(SharedString::from(row.entry.name.clone()))
         .w_full()
         .h(px(ROW_HEIGHT))
@@ -503,7 +503,8 @@ fn row_view(
                 .child(row.entry.name.clone()),
         )
         .children(tail)
-        .into_any_element()
+        .into_any_element();
+    crate::drag::tree_row(drawn, &row.path, row.entry.dir, &cx.entity(), cx)
 }
 
 const ROW_HEIGHT: f32 = 23.;

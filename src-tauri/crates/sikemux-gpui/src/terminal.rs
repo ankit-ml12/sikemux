@@ -529,6 +529,13 @@ pub fn pane(
                 }
             },
         ))
+        .on_drop(window.listener_for(
+            &this,
+            move |bench, dropped: &crate::drag::DraggedPath, _, _| {
+                let paths = vec![dropped.path.to_string_lossy().into_owned()];
+                send(bench, id, TerminalInput::Paths { paths });
+            },
+        ))
         .on_drop(
             window.listener_for(&this, move |bench, dropped: &ExternalPaths, _, _| {
                 let paths = dropped

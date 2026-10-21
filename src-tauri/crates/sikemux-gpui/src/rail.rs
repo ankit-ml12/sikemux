@@ -303,7 +303,7 @@ fn project_tree(
     div()
         .flex()
         .flex_col()
-        .child(
+        .child(crate::drag::project(
             Row::new(
                 SharedString::from(format!("project-{}", project.id)),
                 project.name.clone(),
@@ -314,8 +314,15 @@ fn project_tree(
             .chosen(active)
             .padding_right(4.)
             .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
-            .child(faces(&agents, cx)),
-        )
+            .child(faces(&agents, cx))
+            .into_any_element(),
+            crate::drag::DraggedProject {
+                id: project.id.clone(),
+                label: project.name.clone().into(),
+            },
+            &cx.entity(),
+            cx,
+        ))
         .when(active, |tree| {
             tree.pb(px(4.)).child(surfaces(
                 project,

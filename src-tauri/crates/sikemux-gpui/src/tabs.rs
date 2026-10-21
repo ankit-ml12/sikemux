@@ -527,7 +527,7 @@ fn strip_tab(
         move |bench, _, _, _| bench.close_tab(&strip, &tab_id)
     }));
     let view = first_view(&tab.pane);
-    match view {
+    let drawn = match view {
         Some((PaneKind::Agent, target)) => match match strip {
             Strip::Project(project) => bench.agents_of(project),
             Strip::Host(_) => Vec::new(),
@@ -555,7 +555,18 @@ fn strip_tab(
         )),
         None => base,
     }
-    .into_any_element()
+    .into_any_element();
+    let index = bench
+        .tabs(strip)
+        .iter()
+        .position(|other| other.id == tab.id)
+        .unwrap_or(0);
+    let dragged = crate::drag::DraggedTab {
+        strip: strip.clone(),
+        tab: tab.id.clone(),
+        label: label(bench, tab),
+    };
+    crate::drag::tab(drawn, dragged, index, &cx.entity(), cx).into_any_element()
 }
 
 /// A tab's name: the person's, else what its first view shows.

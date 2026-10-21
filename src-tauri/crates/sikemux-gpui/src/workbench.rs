@@ -1252,6 +1252,11 @@ impl Workbench {
         self.call("closeTab", strip.with(json!({ "tab": tab })));
     }
 
+    /// Moves a tab to `to` in its strip, counted as the strip is now.
+    pub fn move_tab(&self, strip: &Strip, tab: &str, to: usize) {
+        self.call("moveTab", strip.with(json!({ "tab": tab, "to": to })));
+    }
+
     /// Opens a terminal to an SSH host, in that host's strip.
     pub fn open_ssh_terminal(&self, alias: &str) {
         self.call("openSshTerminal", json!({ "host": alias }));
