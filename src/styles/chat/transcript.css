@@ -74,63 +74,55 @@
     padding-bottom: 10px;
 }
 
-/* A teammate's message is closed below by a rule like the one that opens it, so the agent's own words after it read apart. */
-.chat-letter-end {
-    height: 1px;
+/* A teammate's message is headed like the agent's own "Worked for" line, with the same hairline under it, and folds from it. */
+.chat-letter + .chat-letter,
+.chat-letter-answer + .chat-letter,
+.chat-letter + .chat-letter-answer {
     margin-top: 14px;
-    background: var(--line);
 }
 
-.chat-letter-from,
+.chat-letter-top {
+    margin-bottom: 8px;
+    font-size: calc(12.5px * var(--chat-text-em, 1));
+}
+
+.chat-letter-top::after {
+    content: "";
+    display: block;
+    height: 1px;
+    margin-top: 4px;
+    background: color-mix(in oklab, var(--ink) 14%, transparent);
+}
+
+.chat-letter-top .chat-tools-sum {
+    color: color-mix(in oklab, var(--ink) 60%, var(--ink-dim));
+    font-weight: var(--weight-medium);
+}
+
+.chat-letter-top b {
+    color: var(--ink);
+    font-weight: var(--weight-semibold);
+}
+
 .chat-ask-who {
     display: flex;
     align-items: center;
+    gap: 7px;
+    height: 22px;
+    margin-bottom: 2px;
     color: var(--ink-dim);
     font-size: var(--text-2xs);
 }
 
-.chat-letter-from {
-    gap: 8px;
-    margin-bottom: 4px;
-    line-height: 1.4;
-}
-
-.chat-ask-who {
-    gap: 7px;
-    height: 22px;
-    margin-bottom: 2px;
-}
-
-.chat-letter-from b,
 .chat-ask-who b {
     color: var(--ink);
     font-weight: 600;
 }
 
-.chat-letter-from > .agent-glyph,
 .chat-ask-who > .agent-glyph {
     flex: none;
 }
 
-.chat-letter-who {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.chat-letter-who > .agent-glyph {
-    flex: none;
-}
-
-.chat-letter-rule {
-    flex: 1;
-    height: 1px;
-    background: var(--line);
-}
-
-.chat-message.agent-letter .chat-markdown + .chat-letter-from {
-    margin-top: 14px;
-}
 
 .chat-ask-text {
     white-space: pre-wrap;
@@ -149,10 +141,6 @@
     overflow-wrap: anywhere;
 }
 
-.chat-letter-answer + .chat-letter-from,
-.chat-markdown + .chat-letter-answer {
-    margin-top: 14px;
-}
 
 .chat-message-content {
     flex: 1 1 auto;

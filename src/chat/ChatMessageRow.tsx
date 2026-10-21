@@ -1,4 +1,4 @@
-import { Fragment, memo, useContext, useMemo, useState, type ReactNode } from "react";
+import { memo, useContext, useMemo, useState, type ReactNode } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
 import {
@@ -17,7 +17,7 @@ import {
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentMark } from "../agents/AgentMark";
-import { messageLetters, type AgentLetter } from "./agentLetters";
+import { messageLetters, type AgentLetter, type AgentMessageLetter } from "./agentLetters";
 import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
@@ -277,6 +277,31 @@ function SentTime({ at, took }: { at: number; took: number | null }) {
     );
 }
 
+/** A teammate's message, headed like the agent's own "Worked for" line, which folds it. */
+function TeammateLetter({ id, letter }: { id: string; letter: AgentMessageLetter }) {
+    const [open, setOpen] = useState(true);
+    return (
+        <div className="chat-letter" title={letter.agentId}>
+            <div className="chat-letter-top">
+                <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
+                    <span className="chat-work-mark" aria-hidden="true">
+                        <AgentMark agentId={letter.agentId} cli={letter.cli} size={17} />
+                    </span>
+                    <span>
+                        Message from <b>{letter.name}</b>
+                    </span>
+                    <IconChevron size={10} className="chat-tools-chevron" />
+                </button>
+            </div>
+            {open && (
+                <div className="chat-markdown">
+                    <FoldedMarkdown id={id} text={letter.text} live={false} tree={letter.tree} />
+                </div>
+            )}
+        </div>
+    );
+}
+
 function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[]; at: number | null }) {
     return (
         <article className="chat-message agent-letter">
@@ -287,23 +312,9 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
                             <AnsweredQuestion letter={letter} />
                         </div>
                     ) : (
-                        <Fragment key={index}>
-                            <div className="chat-letter-from" title={letter.agentId}>
-                                <span className="chat-letter-rule" />
-                                <span>Message from</span>
-                                <span className="chat-letter-who">
-                                    <AgentMark agentId={letter.agentId} cli={letter.cli} />
-                                    <b>{letter.name}</b>
-                                </span>
-                                <span className="chat-letter-rule" />
-                            </div>
-                            <div className="chat-markdown">
-                                <FoldedMarkdown id={`${id}-letter-${index}`} text={letter.text} live={false} tree={letter.tree} />
-                            </div>
-                        </Fragment>
+                        <TeammateLetter key={index} id={`${id}-letter-${index}`} letter={letter} />
                     ),
                 )}
-                <div className="chat-letter-end" aria-hidden="true" />
                 <div className="chat-message-meta">
                     <CopyButton value={letters.map((letter) => letter.text).join("\n\n")} label="message" size={15} />
                     {at !== null && <SentTime at={at} took={null} />}
