@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use gpui_kit::component::theme::Theme as KitTheme;
+use gpui_kit::component::theme::{Theme as KitTheme, ThemeTokens};
 use gpui_kit::{px, App, BoxShadow, FontFeatures, Global, Hsla, Pixels, Rgba, SharedString};
 use sikemux_wire::grid::TerminalColors;
 use sikemux_wire::theme::{Palette, ThemeEditor, ThemeHighlight};
@@ -259,6 +259,7 @@ pub fn apply(palette: &Palette, cx: &mut App) {
         a: 0.42,
         ..tokens.text_tertiary
     };
+    kit.tokens = ThemeTokens::from(&kit.colors);
     cx.set_global(tokens);
 }
 

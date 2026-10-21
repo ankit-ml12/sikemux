@@ -4,7 +4,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position};
+use gpui_kit::component::input::{
+    Editor, EditorState, Input, InputEvent, InputState, Position, Replace,
+};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, Entity, FontWeight,
@@ -31,7 +33,7 @@ pub struct OpenAt {
     pub column: Option<u32>,
 }
 
-actions!(editor, [Save]);
+actions!(editor, [Save, GoToLine, CloseGoToLine]);
 
 const CONTEXT: &str = "FileEditor";
 /// How many times a read starts again when the file moves under it.
@@ -50,7 +52,17 @@ pub fn install(cx: &mut App) {
     } else {
         "ctrl-s"
     };
-    cx.bind_keys([KeyBinding::new(save, Save, Some(CONTEXT))]);
+    let mac = cfg!(target_os = "macos");
+    let keys = |mac_keys: &'static str, other: &'static str| if mac { mac_keys } else { other };
+    let text = Some("FileEditor > Input");
+    cx.bind_keys([
+        KeyBinding::new(save, Save, Some(CONTEXT)),
+        KeyBinding::new(keys("cmd-alt-g", "ctrl-alt-g"), GoToLine, Some(CONTEXT)),
+        KeyBinding::new("escape", CloseGoToLine, Some("GoToLine > Input")),
+        KeyBinding::new(keys("cmd-h", "ctrl-h"), Replace, text),
+        // The app's own search across the project keeps ⇧⌘F, which Kit's editor takes for replace.
+        KeyBinding::new(keys("cmd-shift-f", "ctrl-shift-f"), gpui::NoAction, text),
+    ]);
 }
 
 /// Every file open in an editor, by its path.
@@ -73,6 +85,8 @@ struct Document {
     /// Why the file could not be read or saved, or that it changed on disk
     /// while it had unsaved edits.
     notice: Option<Notice>,
+    /// The field asking which line to go to, while it is open.
+    goto: Option<(Entity<InputState>, Subscription)>,
     _changes: Subscription,
 }
 
@@ -141,6 +155,18 @@ pub fn pane(
                 save(bench, &saving, window, cx)
             }),
         )
+        .on_action({
+            let path = path.clone();
+            window.listener_for(&this, move |bench, _: &GoToLine, window, cx| {
+                open_goto(bench, &path, window, cx)
+            })
+        })
+        .on_action({
+            let path = path.clone();
+            window.listener_for(&this, move |bench, _: &CloseGoToLine, window, cx| {
+                close_goto(bench, &path, window, cx)
+            })
+        })
         .on_action(
             window.listener_for(&this, |bench, _: &TextSizeIncrease, _, _| {
                 rescale(bench, Some(TEXT_SCALE_STEP))
@@ -157,6 +183,28 @@ pub fn pane(
         .when_some(document.notice.clone(), |pane, notice| {
             pane.child(notice_bar(&this, &path, notice, cx))
         })
+        .when_some(document.goto.as_ref(), |pane, (input, _)| {
+            pane.child(
+                div()
+                    .key_context("GoToLine")
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .px(px(12.))
+                    .py(px(6.))
+                    .border_b_1()
+                    .border_color(t.border)
+                    .text_size(px(12.))
+                    .child(div().text_color(t.text_tertiary).child("Go to line"))
+                    .child(
+                        Input::new(input)
+                            .appearance(false)
+                            .flex_1()
+                            .p_0()
+                            .text_color(t.text_primary),
+                    ),
+            )
+        })
         .child(
             div()
                 .flex_1()
@@ -167,6 +215,64 @@ pub fn pane(
                 .child(Editor::new(&document.state).bordered(false).h_full()),
         )
         .into_any_element()
+}
+
+/// Opens the field asking which line to go to, as `line` or `line:column`
+/// counted from 1.
+fn open_goto(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Context<Workbench>) {
+    if !bench.editors.open.contains_key(path) {
+        return;
+    }
+    let input = cx.new(|cx| InputState::new(window, cx).placeholder("line[:column]"));
+    let asked_for = path.to_owned();
+    let entered = cx.subscribe_in(
+        &input,
+        window,
+        move |bench, input, event: &InputEvent, window, cx| {
+            if !matches!(event, InputEvent::PressEnter { .. }) {
+                return;
+            }
+            let asked = input.read(cx).value();
+            let mut parts = asked
+                .trim()
+                .splitn(2, ':')
+                .map(|part| part.trim().parse::<u32>().ok());
+            let line = parts.next().flatten();
+            let column = parts.next().flatten();
+            close_goto(bench, &asked_for, window, cx);
+            if let Some(line) = line {
+                let at = OpenAt {
+                    path: asked_for.clone(),
+                    line: line.saturating_sub(1),
+                    column: column.map(|column| column.saturating_sub(1)),
+                };
+                place_cursor(bench, &at, window, cx);
+            }
+        },
+    );
+    input.update(cx, |input, cx| input.focus(window, cx));
+    if let Some(document) = bench.editors.open.get_mut(path) {
+        document.goto = Some((input, entered));
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Closes the go-to-line field and gives the editor back the keyboard.
+fn close_goto(
+    bench: &mut Workbench,
+    path: &Path,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(document) = bench.editors.open.get_mut(path) else {
+        return;
+    };
+    if document.goto.take().is_some() {
+        document
+            .state
+            .update(cx, |state, cx| state.focus(window, cx));
+        bench.parts.redraw(&bench.parts.stage, cx);
+    }
 }
 
 /// The bar over an editor saying it could not read or save its file, or
@@ -272,6 +378,7 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             loaded: false,
             dirty: false,
             notice: None,
+            goto: None,
             _changes: changes,
         },
     );
