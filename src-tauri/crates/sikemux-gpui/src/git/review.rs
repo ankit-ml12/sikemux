@@ -353,12 +353,9 @@ impl Review {
         self.lay_out();
     }
 
-    /// Notes beside each working change's lines who wrote them, as `owners` says, or
-    /// `staged` for the staged half of a file with unstaged changes too.
+    /// Notes beside each diff's lines who wrote them, as `owners` says, or `staged` for
+    /// the staged half of a file with unstaged changes too.
     pub fn annotate(&mut self, owners: &Value, staged: &Value) {
-        if self.commit.is_some() {
-            return;
-        }
         for card in &mut self.cards {
             for section in &mut card.sections {
                 let owners = if section.side == Some(Side::Staged) {

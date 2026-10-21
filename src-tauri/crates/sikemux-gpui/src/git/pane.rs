@@ -348,6 +348,8 @@ pub struct GitPane {
     owners: Value,
     /// Who wrote the staged lines, read while a file has both staged and unstaged changes.
     staged_owners: Value,
+    /// Who wrote the lines of the commit shown, as its note says.
+    commit_lines: Value,
     /// The commit message as the core last kept it.
     synced: String,
     _keeping: Task<()>,
@@ -412,6 +414,7 @@ impl GitPane {
             bench,
             owners: Value::Null,
             staged_owners: Value::Null,
+            commit_lines: Value::Null,
             commands: VecDeque::new(),
             commands_open: false,
             synced: String::new(),
@@ -670,6 +673,7 @@ impl GitPane {
                     return;
                 }
                 self.asked_commit = Some(hash.clone());
+                self.read_commit_lines(&hash, cx);
                 let params = self.repo_call(json!({ "rev": hash }));
                 let answer = request(&self.asks, "git.commitFiles", params);
                 cx.spawn(async move |pane, cx| {
@@ -1380,7 +1384,7 @@ impl GitPane {
             pane.update(cx, |pane, cx| {
                 pane.owners = owners;
                 pane.staged_owners = staged;
-                pane.review.annotate(&pane.owners, &pane.staged_owners);
+                pane.annotate();
                 cx.notify();
             })
             .ok();
@@ -1390,11 +1394,42 @@ impl GitPane {
 
     /// Who wrote the lines a diff of `side` shows, as the core last said.
     pub(super) fn owners_of(&self, side: Option<Side>) -> &Value {
-        if side == Some(Side::Staged) {
+        if self.review.commit().is_some() {
+            &self.commit_lines
+        } else if side == Some(Side::Staged) {
             &self.staged_owners
         } else {
             &self.owners
         }
+    }
+
+    fn read_commit_lines(&mut self, hash: &str, cx: &mut Context<Self>) {
+        self.commit_lines = Value::Null;
+        let params = json!({ "dir": self.repo, "commit": hash });
+        let answer = request(&self.asks, "commitLines", params);
+        let hash = hash.to_owned();
+        cx.spawn(async move |pane, cx| {
+            let lines = answer.await.unwrap_or(Value::Null);
+            pane.update(cx, |pane, cx| {
+                if pane.asked_commit.as_deref() == Some(hash.as_str()) {
+                    pane.commit_lines = lines;
+                    pane.annotate();
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Notes beside the lines the review shows who wrote them.
+    fn annotate(&mut self) {
+        let (owners, staged) = if self.review.commit().is_some() {
+            (&self.commit_lines, &Value::Null)
+        } else {
+            (&self.owners, &self.staged_owners)
+        };
+        self.review.annotate(owners, staged);
     }
 
     /// The agents that wrote some of `path`'s uncommitted lines, by agent id, with the
