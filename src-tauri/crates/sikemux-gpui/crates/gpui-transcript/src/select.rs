@@ -4,6 +4,8 @@ use std::rc::Rc;
 
 use gpui::{Pixels, Point, SharedString, TextLayout};
 
+use crate::Markdown;
+
 /// A text a transcript draws: its row, which markdown in the row, which block, which text in the block.
 pub(crate) type Key = (SharedString, usize, usize, u32);
 
@@ -35,6 +37,12 @@ impl Span {
         let from = if text == first { start.4 } else { 0 };
         let to = if text == last { end.4.min(len) } else { len };
         (from < to).then_some(from..to)
+    }
+}
+
+impl Selecting {
+    pub fn place_of(&self, doc: &Markdown) -> usize {
+        self.docs.iter().position(|held| std::ptr::eq(*held, doc)).unwrap_or(self.docs.len())
     }
 }
 
@@ -83,6 +91,8 @@ pub(crate) fn spot_at(shown: &[Shown], point: Point<Pixels>) -> Option<Spot> {
 pub(crate) struct Selecting {
     pub row: SharedString,
     pub ix: usize,
+    /// Where each of the row's markdown is held, in the order `Row::docs` lists them.
+    pub docs: Vec<*const Markdown>,
     pub span: Option<Span>,
     pub shown: Rc<RefCell<Vec<Shown>>>,
 }

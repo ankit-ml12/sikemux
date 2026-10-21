@@ -1,21 +1,22 @@
 //! An agent's chat: the rows the core folds, kept in a transcript, and how
 //! each row draws. Rows change only by the core's changes.
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use gpui_kit::base::Scrollbar;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, AnyElement, App, AppContext, Entity, FontWeight, Hsla, IntoElement,
-    ParentElement, SharedString, Styled, WeakEntity, Window,
+    div, px, relative, AnyElement, App, AppContext, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, Radians, SharedString, StatefulInteractiveElement, Styled, Transformation, WeakEntity, Window,
 };
 use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::Subscription;
 use tokio::sync::mpsc::UnboundedSender;
 use gpui_transcript::{Change, Markdown, Pen, Row, Style, Transcript};
 use serde_json::{json, Map, Value};
-use sikemux_wire::chat::{ChatChange, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree};
+use sikemux_wire::chat::{ChatChange, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, SubagentState, WorkFold};
 use sikemux_wire::protocol::{ChatAttachment, ChatMark};
 
 use crate::core::{Ask, ChatAsk};
@@ -180,8 +181,8 @@ pub struct Chat {
 }
 
 impl Chat {
-    pub fn new(agent: String, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
-        let looks = Looks::new(Tokens::get(cx));
+    pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
+        let looks = Looks::new(Tokens::get(cx), provider);
         let transcript = cx.new(|cx| {
             Transcript::new(Vec::new(), looks.text.clone(), move |rows, ix, pen, window, cx| row(rows, ix, pen, &looks, window, cx), cx)
                 .on_reach_top(move |_, cx| {
@@ -195,8 +196,9 @@ impl Chat {
     pub fn attached(&mut self, attachment: ChatAttachment, cx: &mut App) {
         match attachment {
             ChatAttachment::Live { view, mark } => {
-                if let Ok(view) = serde_json::from_value::<ChatView>(view) {
-                    self.show(view, cx);
+                match serde_json::from_value::<ChatView>(view) {
+                    Ok(view) => self.show(view, cx),
+                    Err(error) => eprintln!("sikemux: the core's chat view does not read: {error}"),
                 }
                 self.mark = Some(mark);
             }
@@ -262,8 +264,9 @@ impl Chat {
     }
 
     fn apply(&mut self, changes: Value, cx: &mut App) {
-        let Ok(changes) = serde_json::from_value::<Vec<ChatChange>>(changes) else {
-            return;
+        let changes = match serde_json::from_value::<Vec<ChatChange>>(changes) {
+            Ok(changes) => changes,
+            Err(error) => return eprintln!("sikemux: the core's chat changes do not read: {error}"),
         };
         let mut rows = Vec::new();
         for change in changes {
@@ -368,10 +371,16 @@ struct Looks {
     bubble: Hsla,
     quiet: Hsla,
     faint: Hsla,
+    ink: Hsla,
+    hover: Hsla,
+    rule: Hsla,
+    provider: String,
+    /// The finished turns the reader opened, by their first row.
+    opened: Rc<RefCell<HashSet<String>>>,
 }
 
 impl Looks {
-    fn new(t: &Tokens) -> Looks {
+    fn new(t: &Tokens, provider: &str) -> Looks {
         let mut mono = gpui_kit::font(theme::MONO);
         mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![theme::MONO_ICONS.into()]));
         let text = Style {
@@ -399,22 +408,49 @@ impl Looks {
             bubble: Hsla { a: 0.72, ..t.line_soft },
             quiet: t.text_tertiary,
             faint: t.text_disabled,
+            ink: t.text_primary,
+            hover: t.surface_hover,
+            rule: Hsla { a: 0.14, ..t.text_primary },
+            provider: provider.to_owned(),
+            opened: Rc::default(),
         }
     }
 }
 
-/// A message's row: the person's in a bubble at the right, the agent's across the column.
+/// A message's row: the person's in a bubble at the right, the agent's across
+/// the column. A finished turn folds its work behind a line saying how long it
+/// worked, which the reader opens; its reply stays out.
 fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Window, cx: &mut App) -> AnyElement {
     let Some(row) = rows.get(ix) else {
         return div().into_any_element();
     };
     let message = &row.message;
     let user = message.role == ChatRole::User;
-    let parts: Vec<AnyElement> = message.parts.iter().map(|part| self::part(row, part, user, pen, looks, window, cx)).collect();
-    let letters = message.letters.iter().map(|letter| {
-        let from = ui::text(format!("From @{}", letter.name), 11., FontWeight::MEDIUM).text_color(looks.quiet);
-        div().flex().flex_col().gap(px(4.)).child(from).child(div().text_size(px(13.5)).child(letter.text.clone()))
+    let fold = message.fold.as_ref();
+    let folded = fold.is_some_and(|fold| !looks.opened.borrow().contains(&fold.id));
+    let opens = fold.filter(|fold| ix == 0 || rows[ix - 1].message.fold.as_ref().is_none_or(|before| before.id != fold.id));
+    let from = match fold {
+        Some(fold) if folded && fold.last != message.id => usize::MAX,
+        Some(fold) if folded => usize::try_from(fold.from).unwrap_or(0),
+        _ => 0,
+    };
+    let shown = message.parts.iter().enumerate().filter(|(index, part)| {
+        let reply = matches!(part, ChatPart::Text { .. } | ChatPart::Content { .. });
+        from == 0 || outlives(part) || *index >= from && reply
     });
+    let parts: Vec<AnyElement> = shown.map(|(_, part)| self::part(row, part, user, pen, looks, window, cx)).collect();
+    let letters: Vec<_> = message
+        .letters
+        .iter()
+        .map(|letter| {
+            let from = ui::text(format!("From @{}", letter.name), 11., FontWeight::MEDIUM).text_color(looks.quiet);
+            div().flex().flex_col().gap(px(4.)).child(from).child(div().text_size(px(13.5)).child(letter.text.clone()))
+        })
+        .collect();
+    let summary = opens.map(|fold| work(fold, !folded, looks));
+    if parts.is_empty() && letters.is_empty() && summary.is_none() {
+        return div().into_any_element();
+    }
     let content = if user {
         div()
             .max_w(relative(0.8))
@@ -426,7 +462,7 @@ fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Windo
             .bg(looks.bubble)
             .children(parts)
     } else {
-        div().flex().flex_col().gap(px(10.)).min_w_0().children(parts).children(letters)
+        div().flex().flex_col().gap(px(10.)).min_w_0().children(summary).children(parts).children(letters)
     };
     div()
         .w_full()
@@ -443,6 +479,61 @@ fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Windo
                 .child(content),
         )
         .into_any_element()
+}
+
+/// A page the agent showed and a subagent still at work stay in view when the turn around them folds.
+fn outlives(part: &ChatPart) -> bool {
+    match part {
+        ChatPart::Tool { page, .. } => page.is_some(),
+        ChatPart::Subagent { subagent, .. } => subagent.state == SubagentState::Running,
+        _ => false,
+    }
+}
+
+/// The line a finished turn folds behind: who worked, for how long, with how many tool calls.
+fn work(fold: &WorkFold, open: bool, looks: &Looks) -> AnyElement {
+    let verb = if fold.thought { "Thought" } else { "Worked" };
+    let worked = fold.took.map_or_else(|| verb.to_owned(), |took| format!("{verb} for {}", duration(took)));
+    let calls = (fold.calls > 0).then(|| format!("· {} tool {}", fold.calls, if fold.calls == 1 { "call" } else { "calls" }));
+    let (opened, id) = (looks.opened.clone(), fold.id.clone());
+    let (hover, ink) = (looks.hover, looks.ink);
+    let toggle = div()
+        .id(SharedString::from(format!("work:{}", fold.id)))
+        .h(px(22.))
+        .ml(px(-6.))
+        .px(px(6.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .rounded(theme::RADIUS_2)
+        .text_size(px(12.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(looks.quiet)
+        .cursor_pointer()
+        .hover(move |toggle| toggle.bg(hover).text_color(ink))
+        .child(ui::mark(&looks.provider, 17.))
+        .child(worked)
+        .children(calls)
+        .child(ui::icon(Icon::Chevron, 10.).text_color(looks.quiet).when(open, |chevron| chevron.with_transformation(Transformation::rotate(Radians(std::f32::consts::FRAC_PI_2)))))
+        .on_click(move |_, window, _| {
+            let mut opened = opened.borrow_mut();
+            if !opened.remove(&id) {
+                opened.insert(id.clone());
+            }
+            window.refresh();
+        });
+    div().mt(px(3.)).flex().flex_col().gap(px(4.)).child(div().flex().child(toggle)).child(div().h(px(1.)).bg(looks.rule)).into_any_element()
+}
+
+/// How long something took, as the app says it: milliseconds under a second, then seconds, minutes and hours.
+fn duration(ms: u64) -> String {
+    let seconds = (ms + 500) / 1000;
+    match ms {
+        0..1000 => format!("{ms}ms"),
+        _ if seconds < 60 => format!("{seconds}s"),
+        _ if seconds < 3600 => format!("{}m {:02}s", seconds / 60, seconds % 60),
+        _ => format!("{}h {:02}m", seconds / 3600, seconds / 60 % 60),
+    }
 }
 
 fn part(row: &ChatRow, part: &ChatPart, user: bool, pen: &Pen, looks: &Looks, window: &mut Window, cx: &mut App) -> AnyElement {

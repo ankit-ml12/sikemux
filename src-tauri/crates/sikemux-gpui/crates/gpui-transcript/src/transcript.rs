@@ -288,6 +288,7 @@ impl<R: Row> Render for Transcript<R> {
                 let selecting = this.rows.get(ix).map(|row| Selecting {
                     row: row.id().to_owned().into(),
                     ix,
+                    docs: row.docs().into_iter().map(|doc| doc as *const Markdown).collect(),
                     span,
                     shown: this.shown.clone(),
                 });

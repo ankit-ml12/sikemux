@@ -96,7 +96,6 @@ const TALL: usize = 12;
 pub struct Pen {
     style: Rc<Style>,
     selecting: Option<Rc<Selecting>>,
-    docs: Cell<usize>,
 }
 
 impl Pen {
@@ -108,7 +107,6 @@ impl Pen {
         Pen {
             style,
             selecting: selecting.map(Rc::new),
-            docs: Cell::new(0),
         }
     }
 
@@ -117,7 +115,7 @@ impl Pen {
     }
 
     /// Draws a message's markdown. `id` must be unique in the window. In a
-    /// transcript, a row draws its markdown in the order `Row::docs` lists it.
+    /// transcript, `doc` is one of those `Row::docs` lists, which is how a selection finds it.
     pub fn markdown(
         &self,
         id: impl Into<ElementId>,
@@ -143,7 +141,7 @@ impl Pen {
             blocks: doc.blocks().to_vec(),
             style: style.clone(),
             selecting: self.selecting.clone(),
-            doc: self.docs.replace(self.docs.get() + 1),
+            doc: self.selecting.as_ref().map_or(0, |selecting| selecting.place_of(doc)),
             width: doc.width.clone(),
             turned: doc.turned.clone(),
         };
