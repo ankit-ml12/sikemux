@@ -6,13 +6,16 @@ import { File } from 'expo-file-system';
 import type { ConnectionLike } from '@sikemux/native';
 
 import { composerPlaceholder } from '@mac/chat/chatStatus';
+import type { ChatMessage } from '@mac/chat/types';
 import { agentLabel } from '@mac/agents/catalog';
 import { ComposerAttachments } from '@/chat/Attachments';
 import { ChatTitle } from '@/chat/ChatTitle';
+import { Activity, Message } from '@/chat/Transcript';
+import { chatSession } from '@/chat/useChat';
 import { AttachSheet } from '@/chat/AttachSheet';
 import { YoloToggle } from '@/chat/Composer';
 import { ComposerInput } from '@/chat/ComposerInput';
-import { fitting, pathsOf, uploadEach, type Attachment } from '@/chat/uploads';
+import { fitting, uploadEach, type Attachment } from '@/chat/uploads';
 import { MAX_ATTACHMENTS, type ConfigPicker } from '@/core/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf } from '@/core/problem';
@@ -35,6 +38,27 @@ const accountName = (launcher: LauncherInfo) => {
   const prefix = `${agentLabel(launcher.provider)} · `;
   return launcher.label.startsWith(prefix) ? launcher.label.slice(prefix.length) : launcher.label;
 };
+
+/** What was sent, drawn as the chat will draw it while the agent starts. */
+type Sending = { message: ChatMessage; draft: string; attachments: Attachment[]; files: ReadonlyMap<string, Attachment>; since: number };
+
+function sendingOf(draft: string, attachments: Attachment[]): Sending {
+  const text = draft.trim();
+  const since = Date.now();
+  return {
+    message: {
+      id: 'starting',
+      role: 'user',
+      sentAt: since,
+      parts: text ? [{ id: 'starting-text', kind: 'text', text }] : [],
+      ...(attachments.length ? { attachments: attachments.map((attachment) => attachment.uri) } : {}),
+    },
+    draft,
+    attachments,
+    files: new Map(attachments.map((attachment) => [attachment.uri, attachment])),
+    since,
+  };
+}
 
 const choiceLabel = (picker: ConfigPicker | undefined, value: string | undefined) =>
   picker?.choices.find((choice) => choice.value === value)?.label;
@@ -180,7 +204,8 @@ export default function NewChat() {
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<'agent' | 'project' | 'attach' | 'settings'>();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [starting, setStarting] = useState(false);
+  const [sending, setSending] = useState<Sending>();
+  const starting = Boolean(sending);
   const [problem, setProblem] = useState<string>();
   const [started, setStarted] = useState<string>();
   const typing = useKeyboardShown();
@@ -225,15 +250,28 @@ export default function NewChat() {
       .catch((error: unknown) => setProblem(`Could not pick: ${problemOf(error)}`));
   };
 
-  const upload = async (connection: ConnectionLike, agentId: string): Promise<string[]> => {
+  /** Answers the files as they ended up, and all of them sent or null when one did not get there. */
+  const upload = async (connection: ConnectionLike, agentId: string, picked: Attachment[]) => {
+    let files = picked;
     const sent = await uploadEach(
-      attachments,
+      picked,
       async (attachment) => connection.attachFile(agentId, attachment.name, attachment.mime, await new File(attachment.uri).arrayBuffer()),
-      (id, change) => setAttachments((now) => now.map((known) => (known.id === id ? { ...known, ...change } : known))),
+      (id, change) => {
+        files = files.map((known) => (known.id === id ? { ...known, ...change } : known));
+      },
       problemOf,
     );
-    if (!sent) throw new Error('Could not send every file to the host');
-    return pathsOf(sent);
+    return { sent, files };
+  };
+
+  /** Puts what was sent back in the composer, to try again. */
+  const giveBack = (shown: Sending, files: Attachment[], why: string) => {
+    busy.current = false;
+    haptics.failure();
+    setProblem(why);
+    setDraft(shown.draft);
+    setAttachments(files);
+    setSending(undefined);
   };
 
   const start = async () => {
@@ -241,7 +279,10 @@ export default function NewChat() {
     if (busy.current || (!text && !attachments.length) || !launcher || !project || live.status !== 'open') return;
     busy.current = true;
     haptics.tap();
-    setStarting(true);
+    const shown = sendingOf(draft, attachments);
+    setSending(shown);
+    setDraft('');
+    setAttachments([]);
     setProblem(undefined);
     try {
       let agentId = started;
@@ -255,13 +296,12 @@ export default function NewChat() {
           if (picker && value && value !== picker.current) await live.connection.setChatConfig(agentId, picker.id, value);
         }
       }
-      await live.connection.prompt(agentId, text, await upload(live.connection, agentId));
+      const { sent, files } = await upload(live.connection, agentId, shown.attachments);
+      if (!sent) return giveBack(shown, files, 'Could not send every file to the host');
+      chatSession(core, agentId).sendWhenAttached(text, sent);
       router.replace({ pathname: '/device/[core]/chat/[agent]', params: { core, agent: agentId, started: '1' } });
     } catch (error) {
-      busy.current = false;
-      haptics.failure();
-      setProblem(problemOf(error));
-      setStarting(false);
+      giveBack(shown, shown.attachments, problemOf(error));
     }
   };
 
@@ -283,21 +323,28 @@ export default function NewChat() {
         }
       />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-        <View style={styles.welcome}>
-          {absent ? (
-            <PromptGlyph icon={absent} small />
-          ) : launcher ? (
-            <AgentFace agentId={project?.id} provider={launcher.provider} size={38} logoSize={40} />
-          ) : null}
-          <Text style={styles.welcomeTitle}>{project?.name ?? 'New chat'}</Text>
-          {noAgents ? <Text style={[type.meta, { textAlign: 'center' }]}>No agents on the host.</Text> : null}
-          {problem ? <Text style={styles.problem}>{problem}</Text> : null}
-          {!problem && blocked ? (
-            <Text style={[type.meta, { textAlign: 'center' }]} accessibilityLiveRegion="polite">
-              {blocked}
-            </Text>
-          ) : null}
-        </View>
+        {sending ? (
+          <View style={styles.sending}>
+            <Message message={sending.message} unsent={{ state: 'sending' }} sentFiles={sending.files} />
+            {launcher ? <Activity provider={launcher.provider} label="Starting" since={sending.since} /> : null}
+          </View>
+        ) : (
+          <View style={styles.welcome}>
+            {absent ? (
+              <PromptGlyph icon={absent} small />
+            ) : launcher ? (
+              <AgentFace agentId={project?.id} provider={launcher.provider} size={38} logoSize={40} />
+            ) : null}
+            <Text style={styles.welcomeTitle}>{project?.name ?? 'New chat'}</Text>
+            {noAgents ? <Text style={[type.meta, { textAlign: 'center' }]}>No agents on the host.</Text> : null}
+            {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+            {!problem && blocked ? (
+              <Text style={[type.meta, { textAlign: 'center' }]} accessibilityLiveRegion="polite">
+                {blocked}
+              </Text>
+            ) : null}
+          </View>
+        )}
         <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
           {project ? (
             <Pressable
@@ -445,6 +492,7 @@ const makeStyles = (colors: Palette) => {
       gap: 12,
       paddingHorizontal: 28,
     },
+    sending: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 28 },
     welcomeTitle: { fontFamily: fonts.uiSemibold, fontSize: 20, letterSpacing: -0.55, color: colors.ink },
     problem: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, textAlign: 'center' },
     wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },

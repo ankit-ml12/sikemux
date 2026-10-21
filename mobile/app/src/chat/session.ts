@@ -84,7 +84,8 @@ export type OpenTimes = {
   drawn: number;
 };
 
-type Outgoing = { key: number; messageId: string; text: string; paths: string[] } & Unsent;
+/** `waiting` is a message shown before the chat was attached, sent once it is. */
+type Outgoing = { key: number; messageId: string; text: string; paths: string[]; waiting?: boolean } & Unsent;
 
 /** Where the host's history of this run of the chat goes on before what the phone holds. */
 type Cursor = { feed: string; before: bigint };
@@ -294,6 +295,10 @@ export class ChatSession {
     this.notice = null;
     const attachments = this.attachments.length ? await this.upload() : [];
     if (!attachments) return false;
+    if (this.outbox.some((outgoing) => outgoing.waiting)) {
+      this.deliver(text, attachments, true);
+      return true;
+    }
     if (this.busy()) {
       const paths = pathsOf(attachments);
       void this.ask((connection) => connection.prompt(this.agentId, text, paths), 'Could not send the message');
@@ -315,6 +320,12 @@ export class ChatSession {
     this.attachments = [...attachments, ...this.attachments];
     this.emit();
     return false;
+  };
+
+  /** Shows a message begun on another screen at once, with its files already on the host, and sends it once the chat is attached. */
+  sendWhenAttached = (text: string, uploaded: Attachment[]) => {
+    this.sentFiles = new Map([...this.sentFiles, ...uploaded.flatMap((file) => (file.path ? [[file.path, file] as const] : []))]);
+    this.deliver(text, uploaded, true);
   };
 
   retrySend = (messageId: string) => {
@@ -679,6 +690,7 @@ export class ChatSession {
         } else {
           this.problem = ChatAttachment.Restart.instanceOf(attachment) ? TOO_LONG : null;
           this.attached = 'missing';
+          this.failWaiting(this.problem ?? 'the chat is gone from the host');
           this.emit();
           timed('missing', 0);
           return;
@@ -688,12 +700,14 @@ export class ChatSession {
         held = undefined;
         this.attached = 'live';
         this.take(waiting);
+        this.pushWaiting();
         this.emit();
       })
       .catch((error: unknown) => {
         if (run !== this.run) return;
         this.problem = problemOf(error);
         this.attached = 'missing';
+        this.failWaiting(this.problem);
         this.emit();
       });
   }
@@ -777,7 +791,7 @@ export class ChatSession {
     }
   }
 
-  private deliver(text: string, attachments: Attachment[]) {
+  private deliver(text: string, attachments: Attachment[], waiting = false) {
     const paths = pathsOf(attachments);
     this.apply([{ type: 'local_prompt', text, paths }]);
     this.optimistic = true;
@@ -787,10 +801,28 @@ export class ChatSession {
       text,
       paths,
       state: 'sending',
+      waiting,
     };
     this.outbox = [...this.outbox, entry];
     this.emit();
-    this.push(entry);
+    if (!waiting) this.push(entry);
+  }
+
+  /** Sends what was shown before the chat was attached, after the replay so the host's echo of it is not drawn twice. */
+  private pushWaiting() {
+    const waiting = this.outbox.filter((outgoing) => outgoing.waiting);
+    if (!waiting.length) return;
+    this.outbox = this.outbox.map((outgoing) => (outgoing.waiting ? { ...outgoing, waiting: false } : outgoing));
+    this.agent = { ...this.agent, running: true, suppressUserEcho: true };
+    this.optimistic = true;
+    for (const entry of waiting) this.push(entry);
+  }
+
+  private failWaiting(problem: string) {
+    if (!this.outbox.some((outgoing) => outgoing.waiting)) return;
+    this.optimistic = false;
+    this.agent = { ...this.agent, running: false };
+    this.outbox = this.outbox.map((outgoing) => (outgoing.waiting ? { ...outgoing, waiting: false, state: 'failed', problem } : outgoing));
   }
 
   private push(entry: Outgoing) {
