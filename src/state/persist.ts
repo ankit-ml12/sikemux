@@ -2,9 +2,6 @@ import { normaliseNotchSettings } from "../notch/notchSettings";
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
-import { clampTerminalFontSize } from "../terminal/fontSize";
-import { clampChatTextScale } from "../chat/textScale";
-import { clampEditorTextScale } from "../editor/textScale";
 import { isTheme } from "../themes";
 import { parseReleaseCredits } from "../api/releases";
 import type { AgentAccountBook } from "../api/agents";
@@ -113,13 +110,9 @@ const PREFS = {
     projectRoots: (saved, current) => (Array.isArray(saved) ? normaliseProjectRoots(saved) : current),
     themeId: text,
     customThemes: (saved, current) => (Array.isArray(saved) ? saved.filter(isTheme) : current),
-    uiTextScale: oneOf<number>(1, 1.1, 1.25),
     paneShader: flag,
     paneImage: (saved, current) => (typeof saved === "string" || saved === null ? saved : current),
     paneStrength: finite(clampPaneStrength),
-    terminalFontSize: finite(clampTerminalFontSize),
-    chatTextScale: finite(clampChatTextScale),
-    editorTextScale: finite(clampEditorTextScale),
     windowOpacity: finite(),
     windowBlur: finite(),
     cloudBrowser: text,

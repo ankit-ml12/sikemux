@@ -1085,13 +1085,40 @@ impl Default for FaceStyle {
     }
 }
 
+pub const DEFAULT_TERMINAL_FONT_SIZE: u32 = 13;
+pub const MIN_TERMINAL_FONT_SIZE: u32 = 8;
+pub const MAX_TERMINAL_FONT_SIZE: u32 = 32;
+/// How much larger than usual a chat's or an editor's text is drawn.
+pub const DEFAULT_TEXT_SCALE: f64 = 1.0;
+pub const MIN_TEXT_SCALE: f64 = 0.7;
+pub const MAX_TEXT_SCALE: f64 = 2.0;
+/// The sizes the whole interface's text may be drawn at.
+pub const UI_TEXT_SCALES: [f64; 3] = [1.0, 1.1, 1.25];
+
 /// How the person wants Sikemux to behave, the same in every app. A field
 /// left out reads as its default.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Preferences {
     /// What sending does while an agent's turn runs.
     pub mid_turn_send: MidTurnSend,
+    /// One of 1, 1.1 and 1.25.
+    pub ui_text_scale: f64,
+    pub terminal_font_size: u32,
+    pub chat_text_scale: f64,
+    pub editor_text_scale: f64,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            mid_turn_send: MidTurnSend::default(),
+            ui_text_scale: UI_TEXT_SCALES[0],
+            terminal_font_size: DEFAULT_TERMINAL_FONT_SIZE,
+            chat_text_scale: DEFAULT_TEXT_SCALE,
+            editor_text_scale: DEFAULT_TEXT_SCALE,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

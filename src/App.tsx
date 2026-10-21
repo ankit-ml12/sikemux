@@ -15,7 +15,7 @@ import { watchSshLinks } from "./terminal/sshLinks";
 import { watchTerminalTitles } from "./terminal/terminalTitles";
 import { watchRailNames } from "./terminal/railNames";
 import { watchFaceStyle } from "./buddies/faceStyle";
-import { watchPreferences } from "./state/preferences";
+import { showPreferences, usePreference, watchPreferences } from "./state/preferences";
 import { watchLspClaims } from "./api/lsp";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
@@ -70,7 +70,8 @@ import * as cmd from "./state/commands";
 import { offerSavedSessions, restoreCoreSessions } from "./workspace/restoreCoreSessions";
 import { startSpareShells } from "./terminal/spareShell";
 import { coreSessionsApi } from "./api/coreSessions";
-import type { Workspace as SharedWorkspace } from "./api/generated/wire";
+import { coreCall } from "./api/core";
+import type { Preferences, Workspace as SharedWorkspace } from "./api/generated/wire";
 import { fetchCoreWorkspace, startCoreWorkspace } from "./state/coreWorkspace";
 import { startHosts } from "./hosts/hosts";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
@@ -89,7 +90,7 @@ import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
 import { startPageTheme } from "./chat/pageTheme";
-import { applyTerminalFontSize } from "./terminal/fontSize";
+import { applyTerminalFontSize, currentTerminalFontSize } from "./terminal/fontSize";
 import { applyChatTextScale } from "./chat/textScale";
 import { applyEditorTextScale } from "./editor/textScale";
 import { dirname } from "./lib/paths";
@@ -610,10 +611,22 @@ export default function App() {
         void simApi.offerToAgents(iosSimulator).catch(swallow("switch the iOS Simulator"));
     }, [iosSimulator]);
     const settingsOpen = useStore((s) => s.settingsOpen);
-    const uiTextScale = useStore((s) => s.uiTextScale);
+    const uiTextScale = usePreference("uiTextScale");
     useEffect(() => {
-        document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
+        if (uiTextScale !== undefined) document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
     }, [uiTextScale]);
+    const terminalFontSize = usePreference("terminalFontSize");
+    useEffect(() => {
+        if (terminalFontSize !== undefined && terminalFontSize !== currentTerminalFontSize()) applyTerminalFontSize(terminalFontSize);
+    }, [terminalFontSize]);
+    const chatTextScale = usePreference("chatTextScale");
+    useEffect(() => {
+        if (chatTextScale !== undefined) applyChatTextScale(chatTextScale);
+    }, [chatTextScale]);
+    const editorTextScale = usePreference("editorTextScale");
+    useEffect(() => {
+        if (editorTextScale !== undefined) applyEditorTextScale(editorTextScale);
+    }, [editorTextScale]);
     const paneStrength = useStore((s) => s.paneStrength);
     useEffect(() => {
         document.documentElement.style.setProperty("--pane-strength", String(paneStrength));
@@ -658,15 +671,21 @@ export default function App() {
         void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
         let accounts: AgentAccountBook | null | undefined;
         let workspace: SharedWorkspace | undefined;
-        const fromCore = Promise.all([agentApi.accounts().catch(() => undefined), fetchCoreWorkspace(), agentApi.catalog()]);
+        const fromCore = Promise.all([
+            agentApi.accounts().catch(() => undefined),
+            fetchCoreWorkspace(),
+            agentApi.catalog(),
+            coreCall<Preferences>("preferences").catch(() => null),
+        ]);
         void fromCore.then(
             () => !disposed && setCoreAnswered(true),
             () => {},
         );
         Promise.all([invoke<BootInfo>("boot_init"), fromCore])
-            .then(([boot, [book, shared, catalog]]) => {
+            .then(([boot, [book, shared, catalog, preferences]]) => {
                 if (disposed) return;
                 cmd.takeAgentCatalog(catalog);
+                if (preferences) showPreferences(preferences);
                 accounts = book;
                 workspace = shared;
                 const hydrateSpan = performanceTelemetry.startSpan(bootSpan, "startup.hydrate");
@@ -678,9 +697,12 @@ export default function App() {
                     applyTheme(st.themeId);
                     startPageTheme();
                     applyWindowOpacity(st.windowOpacity);
-                    applyTerminalFontSize(st.terminalFontSize);
-                    applyChatTextScale(st.chatTextScale);
-                    applyEditorTextScale(st.editorTextScale);
+                    if (preferences) {
+                        document.documentElement.style.setProperty("--ui-text-scale", String(preferences.uiTextScale));
+                        applyTerminalFontSize(preferences.terminalFontSize);
+                        applyChatTextScale(preferences.chatTextScale);
+                        applyEditorTextScale(preferences.editorTextScale);
+                    }
                     cmd.setWindowBlur(st.windowBlur);
                     if (hydrationAllowsPersistence(hydrationResult)) {
                         offerSavedSessions();

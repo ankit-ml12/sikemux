@@ -409,7 +409,7 @@ describe("text size shortcuts", () => {
     }
 
     beforeEach(() => {
-        setState({ terminalFontSize: 13, chatTextScale: 1, editorTextScale: 1 });
+        setState({ preferences: { midTurnSend: "steer", uiTextScale: 1, terminalFontSize: 13, chatTextScale: 1, editorTextScale: 1 } });
     });
 
     it("resizes the terminal when the press lands outside a chat", () => {
@@ -417,8 +417,8 @@ describe("text size shortcuts", () => {
 
         press("Equal", window);
 
-        expect(getState().terminalFontSize).toBe(14);
-        expect(getState().chatTextScale).toBe(1);
+        expect(getState().preferences?.terminalFontSize).toBe(14);
+        expect(getState().preferences?.chatTextScale).toBe(1);
     });
 
     function EditorHarness() {
@@ -435,9 +435,9 @@ describe("text size shortcuts", () => {
 
         press("Equal", screen.getByRole("button", { name: "In editor" }));
 
-        expect(getState().editorTextScale).toBe(1.1);
-        expect(getState().terminalFontSize).toBe(13);
-        expect(getState().chatTextScale).toBe(1);
+        expect(getState().preferences?.editorTextScale).toBe(1.1);
+        expect(getState().preferences?.terminalFontSize).toBe(13);
+        expect(getState().preferences?.chatTextScale).toBe(1);
     });
 
     it("resizes the transcript when the press lands inside a chat", () => {
@@ -445,8 +445,8 @@ describe("text size shortcuts", () => {
 
         press("Equal", screen.getByRole("button", { name: "In chat" }));
 
-        expect(getState().chatTextScale).toBe(1.1);
-        expect(getState().terminalFontSize).toBe(13);
+        expect(getState().preferences?.chatTextScale).toBe(1.1);
+        expect(getState().preferences?.terminalFontSize).toBe(13);
     });
 
     it("shrinks and resets the transcript it is focused in", () => {
@@ -454,10 +454,10 @@ describe("text size shortcuts", () => {
         const inChat = screen.getByRole("button", { name: "In chat" });
 
         press("Minus", inChat);
-        expect(getState().chatTextScale).toBe(0.9);
+        expect(getState().preferences?.chatTextScale).toBe(0.9);
 
         press("Digit0", inChat);
-        expect(getState().chatTextScale).toBe(1);
+        expect(getState().preferences?.chatTextScale).toBe(1);
     });
 
     it("resizes the active pane's transcript when focus has fallen to the page", () => {
@@ -476,7 +476,7 @@ describe("text size shortcuts", () => {
 
         press("Equal", document.body);
 
-        expect(getState().chatTextScale).toBe(1.1);
-        expect(getState().terminalFontSize).toBe(13);
+        expect(getState().preferences?.chatTextScale).toBe(1.1);
+        expect(getState().preferences?.terminalFontSize).toBe(13);
     });
 });

@@ -4,9 +4,6 @@ import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
 import { DEFAULT_THEME_ID, type Theme } from "../themes";
-import { DEFAULT_TERMINAL_FONT_SIZE } from "../terminal/fontSize";
-import { DEFAULT_CHAT_TEXT_SCALE } from "../chat/textScale";
-import { DEFAULT_EDITOR_TEXT_SCALE } from "../editor/textScale";
 import type { KeybindingOverrides } from "../commands/keybindings";
 import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settings/settingsIndex";
@@ -61,7 +58,6 @@ export interface DomainState {
     themeId: string;
     /** User-defined themes, derived from a built-in or another custom theme via the theme editor. */
     customThemes: Theme[];
-    uiTextScale: number;
     paneShader: boolean;
     /** Agents show a character in place of their harness logo. */
     /** How agents' faces look, as the core keeps it. */
@@ -73,9 +69,6 @@ export interface DomainState {
     paneImage: string | null;
     /** How strongly the pane texture or picture shows, 1 being as designed. */
     paneStrength: number;
-    terminalFontSize: number;
-    chatTextScale: number;
-    editorTextScale: number;
     windowOpacity: number;
     windowBlur: number;
     cloudBrowser: string;
@@ -291,15 +284,11 @@ export const useStore = create<StoreState>(() => {
         projectRoots: [],
         themeId: DEFAULT_THEME_ID,
         customThemes: [],
-        uiTextScale: 1,
         paneShader: true,
         faceStyle: { on: false, pack: DEFAULT_BUDDY_STYLE.pack, shape: DEFAULT_BUDDY_STYLE.shape, motion: true },
         faces: {},
         paneImage: null,
         paneStrength: 1,
-        terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
-        chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
-        editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,
         windowOpacity: 1,
         windowBlur: 0,
         cloudBrowser: "",

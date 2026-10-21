@@ -1,6 +1,6 @@
-export const DEFAULT_TERMINAL_FONT_SIZE = 13;
-const MIN_TERMINAL_FONT_SIZE = 8;
-const MAX_TERMINAL_FONT_SIZE = 32;
+import { DEFAULT_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE } from "../api/generated/wire";
+
+export { DEFAULT_TERMINAL_FONT_SIZE };
 
 interface RegisteredTerminal {
     setFontSize: (size: number) => void;

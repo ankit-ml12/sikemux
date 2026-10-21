@@ -70,13 +70,13 @@ describe("frontend persistence", () => {
         const unsubscribe = subscribePersist();
         await vi.advanceTimersByTimeAsync(0);
         invoke.mockClear();
-        setState({ uiTextScale: 1.2 });
+        setState({ railDensity: "compact" });
         for (let index = 0; index < 6; index++) {
             await vi.advanceTimersByTimeAsync(100);
             setState({ terminalTitles: { pane: `output-${index}` } });
         }
         expect(invoke).toHaveBeenCalledTimes(1);
-        expect(JSON.parse(invoke.mock.calls[0][1].data).prefs.uiTextScale).toBe(1.2);
+        expect(JSON.parse(invoke.mock.calls[0][1].data).prefs.railDensity).toBe("compact");
         await vi.advanceTimersByTimeAsync(600);
         expect(invoke).toHaveBeenCalledTimes(1);
         unsubscribe();

@@ -186,6 +186,12 @@ const SWIFT_ROOTS = [
 /** Limits the clients check before they send, read from where the core enforces them. */
 const LIMITS = [
   [`${WIRE}/protocol.rs`, "MAX_ATTACHMENT_BYTES"],
+  [`${WIRE}/protocol.rs`, "DEFAULT_TERMINAL_FONT_SIZE"],
+  [`${WIRE}/protocol.rs`, "MIN_TERMINAL_FONT_SIZE"],
+  [`${WIRE}/protocol.rs`, "MAX_TERMINAL_FONT_SIZE"],
+  [`${WIRE}/protocol.rs`, "DEFAULT_TEXT_SCALE"],
+  [`${WIRE}/protocol.rs`, "MIN_TEXT_SCALE"],
+  [`${WIRE}/protocol.rs`, "MAX_TEXT_SCALE"],
   [`${CORE}/acp/mod.rs`, "MAX_ATTACHMENTS"],
 ];
 
@@ -349,10 +355,10 @@ const limits = (
     LIMITS.map(async ([file, name]) => {
       const text = await readFile(resolve(root, file), "utf8");
       const value = new RegExp(
-        `^(?:pub )?const ${name}: usize = ([\\d_ *]+);$`,
+        `^(?:pub )?const ${name}: (?:usize|u32|f64) = ([\\d_. *]+);$`,
         "m",
       ).exec(text)?.[1];
-      if (!value) fail(`${file} has no usize constant ${name}`);
+      if (!value) fail(`${file} has no number constant ${name}`);
       const product = value
         .split("*")
         .reduce(

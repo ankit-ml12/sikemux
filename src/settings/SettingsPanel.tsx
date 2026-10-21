@@ -1233,7 +1233,7 @@ interface ThemeEdit {
 }
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
-    const uiTextScale = useStore((state) => state.uiTextScale);
+    const uiTextScale = usePreference("uiTextScale");
     const paneShader = useStore((state) => state.paneShader);
     const paneImage = useStore((state) => state.paneImage);
     const paneStrength = useStore((state) => state.paneStrength);
@@ -1334,7 +1334,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                         <Dropdown
                             className="settings-dd"
                             label="Interface text size"
-                            value={String(uiTextScale)}
+                            value={uiTextScale === undefined ? "" : String(uiTextScale)}
                             options={[
                                 { value: "1", label: "100% · Default" },
                                 { value: "1.1", label: "110% · Larger" },

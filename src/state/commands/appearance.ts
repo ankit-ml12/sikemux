@@ -4,6 +4,7 @@ import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } fr
 import { applyTerminalFontSize, clampTerminalFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../../terminal/fontSize";
 import { applyChatTextScale, clampChatTextScale, DEFAULT_CHAT_TEXT_SCALE } from "../../chat/textScale";
 import { applyEditorTextScale, clampEditorTextScale, DEFAULT_EDITOR_TEXT_SCALE } from "../../editor/textScale";
+import { setPreference } from "../preferences";
 import { getState, setState } from "../store";
 import { swallow } from "../toast";
 
@@ -42,11 +43,11 @@ export function deleteCustomTheme(id: string): void {
 export function setTerminalFontSize(v: number): void {
     const value = clampTerminalFontSize(v);
     applyTerminalFontSize(value);
-    setState({ terminalFontSize: value });
+    setPreference("terminalFontSize", value);
 }
 
 export function adjustTerminalFontSize(step: number): void {
-    setTerminalFontSize(getState().terminalFontSize + step);
+    setTerminalFontSize(terminalFontSize() + step);
 }
 
 export function resetTerminalFontSize(): void {
@@ -56,11 +57,11 @@ export function resetTerminalFontSize(): void {
 export function setChatTextScale(v: number): void {
     const value = clampChatTextScale(v);
     applyChatTextScale(value);
-    setState({ chatTextScale: value });
+    setPreference("chatTextScale", value);
 }
 
 export function adjustChatTextScale(step: number): void {
-    setChatTextScale(getState().chatTextScale + step);
+    setChatTextScale(chatTextScale() + step);
 }
 
 export function resetChatTextScale(): void {
@@ -70,12 +71,16 @@ export function resetChatTextScale(): void {
 export function setEditorTextScale(v: number): void {
     const value = clampEditorTextScale(v);
     applyEditorTextScale(value);
-    setState({ editorTextScale: value });
+    setPreference("editorTextScale", value);
 }
 
 export function adjustEditorTextScale(step: number): void {
-    setEditorTextScale(getState().editorTextScale + step);
+    setEditorTextScale(editorTextScale() + step);
 }
+
+export const terminalFontSize = (): number => getState().preferences?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE;
+export const chatTextScale = (): number => getState().preferences?.chatTextScale ?? DEFAULT_CHAT_TEXT_SCALE;
+export const editorTextScale = (): number => getState().preferences?.editorTextScale ?? DEFAULT_EDITOR_TEXT_SCALE;
 
 export function resetEditorTextScale(): void {
     setEditorTextScale(DEFAULT_EDITOR_TEXT_SCALE);

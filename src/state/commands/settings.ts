@@ -6,6 +6,7 @@ import { adoptAgentAccounts } from "../persist";
 import { reportError } from "../toast";
 import { invalidate } from "../resources";
 import { projectRootsScanR } from "../resources.defs";
+import { setPreference } from "../preferences";
 import { getState, setState } from "../store";
 import type { AgentType } from "../../agents/catalog";
 
@@ -33,7 +34,7 @@ export const setBuddyMotion = (motion: boolean): void => changeFaceStyle({ motio
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
 export const clampPaneStrength = (value: number): number => Math.min(2, Math.max(0, Math.round(value * 20) / 20));
 export const setPaneStrength = (value: number): void => setState({ paneStrength: clampPaneStrength(value) });
-export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
+export const setUiTextScale = (value: number): void => setPreference("uiTextScale", value);
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
 export const setTabRailAllAgents = (value: boolean): void => setState({ tabRailAllAgents: value });

@@ -316,7 +316,13 @@ export class ShowcaseBackend implements IpcTransport {
     this.onCore(["lsp.locations", "lsp.symbols"], constant([]));
     this.onCore(
       ["preferences", "setPreference"],
-      constant({ midTurnSend: "steer" }),
+      constant({
+        midTurnSend: "steer",
+        uiTextScale: 1,
+        terminalFontSize: 13,
+        chatTextScale: 1,
+        editorTextScale: 1,
+      }),
     );
     this.onCore(
       [
