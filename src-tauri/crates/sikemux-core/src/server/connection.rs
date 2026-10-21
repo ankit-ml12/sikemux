@@ -680,10 +680,13 @@ async fn run_requests(
                 before,
                 turns,
             } => {
-                client.respond(
-                    request_id,
-                    chat::history(&core, &agent_id, &feed, before, turns),
-                );
+                tokio::spawn(async move {
+                    let reading = core.clone();
+                    let page =
+                        blocking(move || chat::history(&reading, &agent_id, &feed, before, turns))
+                            .await;
+                    client.respond(request_id, page);
+                });
             }
             Request::AcpDetach { agent_id } => {
                 chat::detach(&core, client.id, &agent_id);

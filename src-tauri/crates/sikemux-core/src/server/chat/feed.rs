@@ -41,13 +41,14 @@ const EVENT_OVERHEAD: usize = 48;
 const MAX_RECENT_BYTES: usize = 1024 * 1024;
 const MAX_RECENT_EVENTS: usize = 4096;
 
-/// A client opening a chat is sent this much of its end, and pages back
-/// through the rest. The byte bounds only stop a run of huge tool outputs; a
-/// chat full of tool calls still pages back whole turns at a time.
-const TAIL_TURNS: usize = 50;
-const TAIL_BYTES: usize = MAX_REPLAY_BYTES;
+/// A client opening a chat is sent about a screen or two of its end, so it
+/// draws at once over a slow network, and pages back through the rest. A turn
+/// longer than that, such as one full of screenshots, is cut where a page of
+/// its history can start.
+const TAIL_TURNS: usize = 8;
+const TAIL_BYTES: usize = 256 * 1024;
 const MAX_PAGE_TURNS: usize = 100;
-const PAGE_BYTES: u64 = MAX_REPLAY_BYTES as u64;
+const PAGE_BYTES: u64 = 1024 * 1024;
 /// A turn longer than a page is cut into pieces about this long.
 const PIECE_BYTES: usize = 64 * 1024;
 /// Updates that set how the chat stands rather than say something in it. A
@@ -875,8 +876,8 @@ impl Replay {
     }
 
     /// The last turns from index `floor` on, as many as fit, and whatever set
-    /// how the chat stands before them. A chat that has gone a whole replay
-    /// without a turn starting is cut where a page of its history can start.
+    /// how the chat stands before them. When not even the last turn fits, it is
+    /// cut where a page of its history can start.
     pub(crate) fn tail(&self, floor: u64) -> Tail {
         let lowest = self.entries.partition_point(|entry| entry.index < floor);
         let mut chosen = None;
@@ -885,7 +886,7 @@ impl Replay {
         let mut bytes = 0;
         for (position, entry) in self.entries.iter().enumerate().skip(lowest).rev() {
             bytes += entry.bytes;
-            if bytes > TAIL_BYTES && chosen.is_some() {
+            if bytes > TAIL_BYTES && (chosen.is_some() || piece.is_some()) {
                 break;
             }
             if entry.point {
@@ -2465,10 +2466,11 @@ mod tests {
             .filter_map(|update| update["update"]["content"]["text"].as_str())
             .map(str::to_owned)
             .collect();
-        assert_eq!(asked, asks(10..60));
+        let first = 60 - TAIL_TURNS;
+        assert_eq!(asked, asks(first..60));
         assert_eq!(
             updates.last().unwrap()["update"],
-            json!({ "sessionUpdate": "earlier_turns", "feed": feed.id, "before": 10 * 2 })
+            json!({ "sessionUpdate": "earlier_turns", "feed": feed.id, "before": first * 2 })
         );
     }
 
@@ -2499,13 +2501,16 @@ mod tests {
         else {
             panic!("a phone takes up a long chat");
         };
-        assert_eq!(asked(&replay), asks(10..60));
-        assert_eq!(older_before, Some(10 * 5));
+        let first = 60 - TAIL_TURNS;
+        assert_eq!(asked(&replay), asks(first..60));
+        assert_eq!(older_before, Some(first as u64 * 5));
         drop(inner);
-        let page = feed.history(&feed.id, 10 * 5, 100).unwrap();
-        assert_eq!(asked(&page.events), asks(0..10));
+        let page = feed.history(&feed.id, first as u64 * 5, 100).unwrap();
+        assert_eq!(asked(&page.events), asks(0..first));
         assert_eq!(page.older_before, None);
-        assert!(feed.history("an earlier run", 10 * 5, 100).is_err());
+        assert!(feed
+            .history("an earlier run", first as u64 * 5, 100)
+            .is_err());
         let mut inner = feed.inner.lock().unwrap();
 
         let history = History::open(dir.path(), "trimmed", MAX_HISTORY_BYTES);
