@@ -1,32 +1,38 @@
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Direction, Line, Point};
+use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
-use alacritty_terminal::term::search::{RegexIter, RegexSearch};
+use regex::RegexBuilder;
 use sikemux_wire::grid::{FindOptions, FindResult, GridPoint};
 
 use super::Terminal;
 
 const MAX_MATCHES: usize = 1_000;
 
+/// One cell's text and the columns it covers.
+struct Cell {
+    text: String,
+    width: u16,
+}
+
 impl Terminal {
-    fn top(&self) -> u64 {
-        self.pushed - self.history_len() as u64
-    }
-
-    fn term_point(&self, point: GridPoint) -> Point {
-        let bottom = self.pushed + self.term.screen_lines() as u64 - 1;
-        let line = point.line.clamp(self.top(), bottom);
-        Point::new(
-            Line((line as i64 - self.pushed as i64) as i32),
-            Column(usize::from(point.col).min(self.term.columns() - 1)),
-        )
-    }
-
-    fn grid_point(&self, point: Point) -> GridPoint {
-        GridPoint {
-            line: (self.pushed as i64 + i64::from(point.line.0)) as u64,
-            col: point.column.0 as u16,
-        }
+    /// A line's cells left to right, and whether it goes on in the next line.
+    fn cells(&self, line: u64) -> Option<(Vec<Cell>, bool)> {
+        let mut cells = Vec::new();
+        let wrapped = self.walk_line(line, |_, wide, cluster, text| {
+            let width = if wide { 2 } else { 1 };
+            if cluster {
+                cells.push(Cell {
+                    text: text.to_owned(),
+                    width,
+                });
+            } else {
+                cells.extend(text.chars().map(|character| Cell {
+                    text: character.to_string(),
+                    width,
+                }));
+            }
+        })?;
+        Some((cells, wrapped))
     }
 
     /// The cursor's row and column on the screen.
@@ -50,18 +56,54 @@ impl Terminal {
     /// The text between two cells, both included, lines that wrapped joined.
     pub fn text(&self, from: GridPoint, to: GridPoint) -> String {
         let (from, to) = if to < from { (to, from) } else { (from, to) };
-        self.term
-            .bounds_to_string(self.term_point(from), self.term_point(to))
+        let first = from.line.max(self.first_line());
+        let last = to.line.min(self.last_line());
+        let mut text = String::new();
+        for line in first..=last {
+            let Some((cells, wrapped)) = self.cells(line) else {
+                continue;
+            };
+            let start = if line == from.line { from.col } else { 0 };
+            let end = if line == to.line { to.col } else { u16::MAX };
+            let mut col = 0u16;
+            for cell in &cells {
+                if col >= start && col <= end {
+                    text.push_str(&cell.text);
+                }
+                col += cell.width;
+            }
+            if line == last {
+                break;
+            }
+            if wrapped {
+                let cols = self.term.columns() as u16;
+                if end >= cols {
+                    text.extend(std::iter::repeat_n(
+                        ' ',
+                        usize::from(cols.saturating_sub(col)),
+                    ));
+                }
+            } else {
+                text.truncate(text.trim_end_matches(' ').len());
+                text.push('\n');
+            }
+        }
+        text.truncate(text.trim_end().len());
+        text
     }
 
     /// Everything the terminal still holds, history and screen.
     pub fn all_text(&self) -> String {
-        let top = self.term.topmost_line();
-        let bottom = Point::new(self.term.bottommost_line(), self.last_column());
-        let text = self
-            .term
-            .bounds_to_string(Point::new(top, Column(0)), bottom);
-        text.trim_end().to_owned()
+        self.text(
+            GridPoint {
+                line: self.first_line(),
+                col: 0,
+            },
+            GridPoint {
+                line: self.last_line(),
+                col: u16::MAX,
+            },
+        )
     }
 
     /// The screen's text the way agent detection reads it: rows that wrapped
@@ -119,29 +161,73 @@ impl Terminal {
         let mut pattern = if options.regex {
             query.to_owned()
         } else {
-            regex_syntax_escape(query)
+            regex::escape(query)
         };
         if options.whole_word {
-            pattern = format!(r"(?-u:\b)(?:{pattern})(?-u:\b)");
+            pattern = format!(r"\b(?:{pattern})\b");
         }
-        let case = if options.case_sensitive {
-            "(?-i)"
-        } else {
-            "(?i)"
-        };
-        pattern = format!("{case}{pattern}");
-        let mut regex = RegexSearch::new(&pattern).map_err(|error| error.to_string())?;
-        let start = Point::new(self.term.topmost_line(), Column(0));
-        let end = Point::new(self.term.bottommost_line(), self.last_column());
-        for found in RegexIter::new(start, end, Direction::Right, &self.term, &mut regex) {
-            if result.matches.len() == MAX_MATCHES {
-                result.more = true;
-                break;
+        let regex = RegexBuilder::new(&pattern)
+            .case_insensitive(!options.case_sensitive)
+            .build()
+            .map_err(|error| error.to_string())?;
+        let cols = self.term.columns() as u16;
+        let mut text = String::new();
+        let mut places: Vec<(usize, GridPoint, u16)> = Vec::new();
+        let mut line = self.first_line();
+        'lines: while line <= self.last_line() {
+            text.clear();
+            places.clear();
+            loop {
+                let Some((cells, wrapped)) = self.cells(line) else {
+                    line += 1;
+                    break;
+                };
+                let mut col = 0u16;
+                for cell in &cells {
+                    places.push((text.len(), GridPoint { line, col }, cell.width));
+                    text.push_str(&cell.text);
+                    col += cell.width;
+                }
+                line += 1;
+                if !wrapped || line > self.last_line() {
+                    break;
+                }
+                while col < cols {
+                    places.push((
+                        text.len(),
+                        GridPoint {
+                            line: line - 1,
+                            col,
+                        },
+                        1,
+                    ));
+                    text.push(' ');
+                    col += 1;
+                }
             }
-            result.matches.push((
-                self.grid_point(*found.start()),
-                self.grid_point(*found.end()),
-            ));
+            for found in regex.find_iter(&text) {
+                if found.is_empty() {
+                    continue;
+                }
+                if result.matches.len() == MAX_MATCHES {
+                    result.more = true;
+                    break 'lines;
+                }
+                let at = |offset: usize| match places.binary_search_by_key(&offset, |place| place.0)
+                {
+                    Ok(index) => index,
+                    Err(index) => index.saturating_sub(1),
+                };
+                let (_, start, _) = places[at(found.start())];
+                let (_, end, width) = places[at(found.end() - 1)];
+                result.matches.push((
+                    start,
+                    GridPoint {
+                        line: end.line,
+                        col: end.col + width - 1,
+                    },
+                ));
+            }
         }
         if result.matches.is_empty() {
             return Ok(result);
@@ -163,15 +249,4 @@ impl Terminal {
         });
         Ok(result)
     }
-}
-
-fn regex_syntax_escape(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-    for character in text.chars() {
-        if "\\.+*?()|[]{}^$#&-~".contains(character) {
-            escaped.push('\\');
-        }
-        escaped.push(character);
-    }
-    escaped
 }

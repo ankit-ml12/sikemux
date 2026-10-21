@@ -1,85 +1,92 @@
 use std::fmt::Write;
 
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::TermMode;
-use alacritty_terminal::vte::ansi::{Color, CursorShape};
+use alacritty_terminal::vte::ansi::CursorShape;
+use sikemux_wire::grid::{self as wire, Color, SpanStyle};
 
 use super::Terminal;
 
-fn color(out: &mut String, color: Color, base: u8) {
+fn color(out: &mut String, color: Color, base: u16) {
     match color {
-        Color::Named(named) => {
-            let index = named as usize;
-            match index {
-                0..8 => {
-                    let _ = write!(out, ";{}", base as usize + index);
-                }
-                8..16 => {
-                    let _ = write!(out, ";{}", base as usize + 60 + index - 8);
-                }
-                259..267 => {
-                    let _ = write!(out, ";{}", base as usize + index - 259);
-                }
-                _ => {}
-            }
+        Color::Named(index @ 0..=7) => {
+            let _ = write!(out, ";{}", base + index);
         }
+        Color::Named(index @ 8..=15) => {
+            let _ = write!(out, ";{}", base + 60 + index - 8);
+        }
+        Color::Named(index @ 259..=266) => {
+            let _ = write!(out, ";{}", base + index - 259);
+        }
+        Color::Named(_) => {}
         Color::Indexed(index) => {
             let _ = write!(out, ";{};5;{index}", base + 8);
         }
-        Color::Spec(rgb) => {
-            let _ = write!(out, ";{};2;{};{};{}", base + 8, rgb.r, rgb.g, rgb.b);
+        Color::Rgb([r, g, b]) => {
+            let _ = write!(out, ";{};2;{r};{g};{b}", base + 8);
         }
     }
 }
 
-fn sgr(out: &mut String, cell: &Cell) {
-    out.push_str("\x1b[0");
-    for (flag, code) in [
-        (Flags::BOLD, "1"),
-        (Flags::DIM, "2"),
-        (Flags::ITALIC, "3"),
-        (Flags::UNDERLINE, "4"),
-        (Flags::DOUBLE_UNDERLINE, "4:2"),
-        (Flags::UNDERCURL, "4:3"),
-        (Flags::DOTTED_UNDERLINE, "4:4"),
-        (Flags::DASHED_UNDERLINE, "4:5"),
-        (Flags::INVERSE, "7"),
-        (Flags::HIDDEN, "8"),
-        (Flags::STRIKEOUT, "9"),
-    ] {
-        if cell.flags.contains(flag) {
-            out.push(';');
-            out.push_str(code);
-        }
-    }
-    color(out, cell.fg, 30);
-    color(out, cell.bg, 40);
-    match cell.underline_color() {
-        Some(Color::Indexed(index)) => {
-            let _ = write!(out, ";58;5;{index}");
-        }
-        Some(Color::Spec(rgb)) => {
-            let _ = write!(out, ";58;2;{};{};{}", rgb.r, rgb.g, rgb.b);
-        }
-        _ => {}
-    }
-    out.push('m');
+/// The look of a span without its link, which is set apart.
+#[derive(Clone, Copy, PartialEq)]
+struct Look {
+    fg: Color,
+    bg: Color,
+    flags: u16,
+    underline_color: Option<Color>,
 }
 
-fn same_look(a: &Cell, b: &Cell) -> bool {
-    const LOOK: Flags = Flags::BOLD
-        .union(Flags::DIM)
-        .union(Flags::ITALIC)
-        .union(Flags::ALL_UNDERLINES)
-        .union(Flags::INVERSE)
-        .union(Flags::HIDDEN)
-        .union(Flags::STRIKEOUT);
-    a.fg == b.fg
-        && a.bg == b.bg
-        && (a.flags & LOOK) == (b.flags & LOOK)
-        && a.underline_color() == b.underline_color()
+impl Look {
+    const PLAIN: Look = Look {
+        fg: Color::Named(wire::NAMED_FOREGROUND),
+        bg: Color::Named(wire::NAMED_BACKGROUND),
+        flags: 0,
+        underline_color: None,
+    };
+
+    fn of(style: &SpanStyle<'_>) -> Self {
+        Look {
+            fg: style.fg,
+            bg: style.bg,
+            flags: style.flags,
+            underline_color: style.underline_color,
+        }
+    }
+
+    fn sgr(&self, out: &mut String) {
+        out.push_str("\x1b[0");
+        for (flag, code) in [
+            (wire::STYLE_BOLD, "1"),
+            (wire::STYLE_DIM, "2"),
+            (wire::STYLE_ITALIC, "3"),
+            (wire::STYLE_UNDERLINE, "4"),
+            (wire::STYLE_DOUBLE_UNDERLINE, "4:2"),
+            (wire::STYLE_CURLY_UNDERLINE, "4:3"),
+            (wire::STYLE_DOTTED_UNDERLINE, "4:4"),
+            (wire::STYLE_DASHED_UNDERLINE, "4:5"),
+            (wire::STYLE_INVERSE, "7"),
+            (wire::STYLE_HIDDEN, "8"),
+            (wire::STYLE_STRIKE, "9"),
+        ] {
+            if self.flags & flag != 0 {
+                out.push(';');
+                out.push_str(code);
+            }
+        }
+        color(out, self.fg, 30);
+        color(out, self.bg, 40);
+        match self.underline_color {
+            Some(Color::Indexed(index)) => {
+                let _ = write!(out, ";58;5;{index}");
+            }
+            Some(Color::Rgb([r, g, b])) => {
+                let _ = write!(out, ";58;2;{r};{g};{b}");
+            }
+            _ => {}
+        }
+        out.push('m');
+    }
 }
 
 impl Terminal {
@@ -88,66 +95,59 @@ impl Terminal {
     pub fn replay(&self) -> Vec<u8> {
         let mut out = String::new();
         let mode = *self.term.mode();
-        if mode.contains(TermMode::ALT_SCREEN) {
+        let first = if mode.contains(TermMode::ALT_SCREEN) {
             out.push_str("\x1b[?1049h\x1b[H\x1b[2J");
-        }
-        let grid = self.term.grid();
+            self.pushed
+        } else {
+            self.first_line()
+        };
+        let last = self.last_line();
         let cols = self.term.columns();
-        let top = self.term.topmost_line().0;
-        let bottom = self.term.bottommost_line().0;
-        let plain = Cell::default();
-        let mut look = plain.clone();
+        let mut look = Look::PLAIN;
         let mut link: Option<String> = None;
-        for line in top..=bottom {
-            let row = &grid[Line(line)];
-            let wrapped = row[Column(cols - 1)].flags.contains(Flags::WRAPLINE);
-            let end = if wrapped {
-                cols
-            } else {
-                (0..cols)
-                    .rev()
-                    .find(|&column| {
-                        let cell = &row[Column(column)];
-                        cell.c != ' ' || !same_look(cell, &plain) || cell.hyperlink().is_some()
-                    })
-                    .map_or(0, |column| column + 1)
-            };
-            for column in 0..end {
-                let cell = &row[Column(column)];
-                if cell
-                    .flags
-                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-                {
-                    continue;
-                }
-                if !same_look(cell, &look) {
-                    sgr(&mut out, cell);
-                    look = cell.clone();
-                }
-                let uri = cell.hyperlink().map(|link| link.uri().to_owned());
-                if uri != link {
-                    let _ = write!(out, "\x1b]8;;{}\x1b\\", uri.as_deref().unwrap_or(""));
-                    link = uri;
-                }
-                out.push(if cell.c == '\t' { ' ' } else { cell.c });
-                out.extend(cell.zerowidth().into_iter().flatten());
-            }
-            if !wrapped && line != bottom {
-                if link.take().is_some() {
-                    out.push_str("\x1b]8;;\x1b\\");
-                }
-                if !same_look(&look, &plain) {
+        for line in first..=last {
+            let mut width = 0;
+            let wrapped = self
+                .walk_line(line, |style, wide, cluster, text| {
+                    let next = Look::of(style);
+                    if next != look {
+                        next.sgr(&mut out);
+                        look = next;
+                    }
+                    if style.link != link.as_deref() {
+                        let _ = write!(out, "\x1b]8;;{}\x1b\\", style.link.unwrap_or(""));
+                        link = style.link.map(str::to_owned);
+                    }
+                    out.push_str(text);
+                    let cells = if cluster { 1 } else { text.chars().count() };
+                    width += cells * if wide { 2 } else { 1 };
+                })
+                .unwrap_or(false);
+            if wrapped {
+                if width < cols && look != Look::PLAIN {
                     out.push_str("\x1b[0m");
-                    look = plain.clone();
+                    look = Look::PLAIN;
                 }
-                out.push_str("\r\n");
+                out.extend(std::iter::repeat_n(' ', cols.saturating_sub(width)));
+                continue;
             }
+            if line == last {
+                break;
+            }
+            if link.take().is_some() {
+                out.push_str("\x1b]8;;\x1b\\");
+            }
+            if look != Look::PLAIN {
+                out.push_str("\x1b[0m");
+                look = Look::PLAIN;
+            }
+            out.push_str("\r\n");
         }
         if link.is_some() {
             out.push_str("\x1b]8;;\x1b\\");
         }
         out.push_str("\x1b[0m");
-        let cursor = grid.cursor.point;
+        let cursor = self.term.grid().cursor.point;
         let _ = write!(out, "\x1b[{};{}H", cursor.line.0 + 1, cursor.column.0 + 1);
         for (flag, set) in [
             (TermMode::APP_CURSOR, "\x1b[?1h"),

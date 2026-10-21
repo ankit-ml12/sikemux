@@ -3,6 +3,7 @@
 
 mod counting;
 mod frame;
+mod history;
 pub mod input;
 mod replay;
 mod text;
@@ -12,10 +13,12 @@ use std::time::Instant;
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::Column;
+use alacritty_terminal::index::Line;
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle, Processor, Rgb};
-use sikemux_wire::grid::TerminalColors;
+use sikemux_wire::grid::{SpanStyle, TerminalColors};
+
+use history::History;
 
 pub use frame::View;
 
@@ -86,16 +89,28 @@ pub struct Terminal {
     term: Term<Events>,
     events: Events,
     parser: Processor,
-    history_limit: usize,
+    history: History,
     /// Lines ever pushed into the history; the number of the top row.
     pushed: u64,
     epoch: u32,
     /// Changes whenever anything a client draws may have changed.
     version: u64,
     palette_version: u32,
-    /// The history's length the last time the main screen was showing.
-    history_len: usize,
     frames: frame::Hashes,
+    text: String,
+}
+
+/// The emulator keeps only a screen's worth of history, which is moved into
+/// the terminal's own after every call that pushes lines.
+fn config(rows: usize) -> Config {
+    Config {
+        scrolling_history: rows,
+        default_cursor_style: CursorStyle {
+            shape: CursorShape::Block,
+            blinking: true,
+        },
+        ..Config::default()
+    }
 }
 
 impl Terminal {
@@ -104,26 +119,18 @@ impl Terminal {
             cols: usize::from(cols.max(1)),
             rows: usize::from(rows.max(1)),
         };
-        let config = Config {
-            scrolling_history: HISTORY_LINES + size.rows,
-            default_cursor_style: CursorStyle {
-                shape: CursorShape::Block,
-                blinking: true,
-            },
-            ..Config::default()
-        };
         let events = Events::default();
         Self {
-            term: Term::new(config, &size, events.clone()),
+            term: Term::new(config(size.rows), &size, events.clone()),
             events,
             parser: Processor::new(),
-            history_limit: HISTORY_LINES,
+            history: History::new(HISTORY_LINES),
             pushed: 0,
             epoch: 0,
             version: 1,
             palette_version: 0,
-            history_len: 0,
             frames: frame::Hashes::default(),
+            text: String::new(),
         }
     }
 
@@ -148,7 +155,7 @@ impl Terminal {
     }
 
     pub fn process(&mut self, bytes: &[u8], colors: &TerminalColors) -> Processed {
-        let mut sink = counting::Counting::new(&mut self.term, self.history_limit);
+        let mut sink = counting::Counting::new(&mut self.term, &mut self.history);
         self.parser.advance(&mut sink, bytes);
         let outcome = sink.finish();
         self.absorb(outcome);
@@ -163,7 +170,7 @@ impl Terminal {
 
     /// Shows a synchronized update whose program never ended it.
     pub fn end_sync(&mut self, colors: &TerminalColors) -> Processed {
-        let mut sink = counting::Counting::new(&mut self.term, self.history_limit);
+        let mut sink = counting::Counting::new(&mut self.term, &mut self.history);
         self.parser.stop_sync(&mut sink);
         let outcome = sink.finish();
         self.absorb(outcome);
@@ -173,13 +180,11 @@ impl Terminal {
     fn absorb(&mut self, outcome: counting::Outcome) {
         self.pushed += outcome.pushed;
         if outcome.cleared {
+            self.history.clear();
             self.epoch = self.epoch.wrapping_add(1);
         }
         if outcome.palette {
             self.palette_version = self.palette_version.wrapping_add(1);
-        }
-        if !self.alternate_screen() {
-            self.history_len = self.term.grid().history_size();
         }
         self.version += 1;
     }
@@ -206,22 +211,31 @@ impl Terminal {
         processed
     }
 
-    /// Resizes the screen, rewrapping the main screen's lines to the new
-    /// width. Line numbers start over, since rewrapping changes them.
+    /// Resizes the screen, rewrapping the main screen's lines and the
+    /// history to the new width. Line numbers start over, since rewrapping
+    /// changes them.
     pub fn resize(&mut self, rows: u16, cols: u16) {
         let size = Size {
             cols: usize::from(cols.max(1)),
             rows: usize::from(rows.max(1)),
         };
-        if (size.rows, size.cols) == (self.term.screen_lines(), self.term.columns()) {
+        let old_cols = self.term.columns();
+        if (size.rows, size.cols) == (self.term.screen_lines(), old_cols) {
             return;
         }
         self.term.resize(size);
-        self.set_history_limit(self.history_limit);
-        self.epoch = self.epoch.wrapping_add(1);
+        self.term.set_options(config(size.rows));
+        let _ = self.events.take();
         if !self.alternate_screen() {
-            self.history_len = self.term.grid().history_size();
+            self.pushed +=
+                counting::move_history(&mut self.term, &mut self.history, &mut self.text);
         }
+        if size.cols != old_cols {
+            let before = self.history.len() as u64;
+            let after = self.history.rewrap(size.cols) as u64;
+            self.pushed = (self.pushed + after).saturating_sub(before).max(after);
+        }
+        self.epoch = self.epoch.wrapping_add(1);
         self.version += 1;
     }
 
@@ -239,38 +253,46 @@ impl Terminal {
 
     /// Keeps at most `lines` of history, dropping the oldest beyond it.
     pub fn set_history_limit(&mut self, lines: usize) {
-        self.history_limit = lines;
-        let mut config = Config {
-            scrolling_history: lines,
-            default_cursor_style: CursorStyle {
-                shape: CursorShape::Block,
-                blinking: true,
-            },
-            ..Config::default()
-        };
-        self.term.set_options(config.clone());
-        config.scrolling_history = lines + self.term.screen_lines();
-        self.term.set_options(config);
-        let _ = self.events.take();
-        if !self.alternate_screen() {
-            self.history_len = self.term.grid().history_size();
-        }
+        self.history.set_limit(lines);
         self.version += 1;
     }
 
     pub fn history_limit(&self) -> usize {
-        self.history_limit
+        self.history.limit()
     }
 
     pub fn history_len(&self) -> usize {
-        if self.alternate_screen() {
-            self.history_len
-        } else {
-            self.term.grid().history_size()
-        }
+        self.history.len()
     }
 
-    pub(crate) fn last_column(&self) -> Column {
-        self.term.last_column()
+    /// The number of the first history line still kept.
+    fn first_line(&self) -> u64 {
+        self.pushed - self.history.len() as u64
+    }
+
+    /// The number of the bottom row of the screen.
+    fn last_line(&self) -> u64 {
+        self.pushed + self.term.screen_lines() as u64 - 1
+    }
+
+    /// Calls `each` with the spans of line `line`, from the history or the
+    /// screen, and answers whether it goes on in the next line, or nothing
+    /// when the line is not kept.
+    fn walk_line(
+        &self,
+        line: u64,
+        each: impl FnMut(&SpanStyle<'_>, bool, bool, &str),
+    ) -> Option<bool> {
+        if line < self.first_line() || line > self.last_line() {
+            return None;
+        }
+        if line < self.pushed {
+            let stored = self.history.line((line - self.first_line()) as usize)?;
+            return Some(history::walk(stored, each));
+        }
+        let cols = self.term.columns();
+        let row = &self.term.grid()[Line((line - self.pushed) as i32)];
+        frame::walk_row(row, cols, &mut String::new(), each);
+        Some(frame::wrapped(row, cols))
     }
 }

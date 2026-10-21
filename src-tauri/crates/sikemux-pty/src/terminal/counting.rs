@@ -1,13 +1,14 @@
-//! Hands the parsed output to the emulator while counting the lines that
-//! scroll into its history. Clients number history lines by that count, so
-//! it has to be exact, and alacritty keeps none: once its history is full,
-//! a line pushed in drops one out and its length stays the same.
+//! Hands the parsed output to the emulator, and moves every line that scrolls
+//! into its history into the terminal's own compact history at once.
+//! Clients number history lines by the lines pushed, so the count has to be
+//! exact.
 //!
-//! The emulator is allowed a screen's worth more history than the terminal
-//! keeps, more than one call can push, and is cut back after each call, so
-//! the length always grows by exactly the lines a call pushed.
+//! The emulator keeps a screen's worth of history, more than one call can
+//! push, and is emptied after each call: its history lines never change
+//! once pushed, so each is stored the moment it leaves the screen.
 
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::index::Line;
 use alacritty_terminal::term::{Term, TermMode};
 use alacritty_terminal::vte::ansi::{
     Attr, CharsetIndex, ClearMode, CursorShape, CursorStyle, Handler, Hyperlink, KeyboardModes,
@@ -15,6 +16,8 @@ use alacritty_terminal::vte::ansi::{
     ScpCharPath, ScpUpdateMode, StandardCharset, TabulationClearMode,
 };
 
+use super::frame::store_row;
+use super::history::History;
 use super::Events;
 
 #[derive(Default)]
@@ -27,15 +30,17 @@ pub(super) struct Outcome {
 
 pub(super) struct Counting<'a> {
     term: &'a mut Term<Events>,
-    limit: usize,
+    history: &'a mut History,
+    text: String,
     outcome: Outcome,
 }
 
 impl<'a> Counting<'a> {
-    pub(super) fn new(term: &'a mut Term<Events>, limit: usize) -> Self {
+    pub(super) fn new(term: &'a mut Term<Events>, history: &'a mut History) -> Self {
         Self {
             term,
-            limit,
+            history,
+            text: String::new(),
             outcome: Outcome::default(),
         }
     }
@@ -46,28 +51,35 @@ impl<'a> Counting<'a> {
 
     #[inline]
     fn counted(&mut self, act: impl FnOnce(&mut Term<Events>)) {
-        let alternate = self.term.mode().contains(TermMode::ALT_SCREEN);
-        let before = self.term.grid().history_size();
         act(self.term);
-        if alternate || self.term.mode().contains(TermMode::ALT_SCREEN) {
+        if self.term.mode().contains(TermMode::ALT_SCREEN) {
             return;
         }
-        let after = self.term.grid().history_size();
-        if after < before {
-            self.outcome.cleared = true;
-            return;
-        }
-        if after == before {
-            return;
-        }
-        self.outcome.pushed += (after - before) as u64;
-        if after > self.limit {
-            let room = self.limit + self.term.grid().screen_lines();
-            let grid = self.term.grid_mut();
-            grid.update_history(self.limit);
-            grid.update_history(room);
-        }
+        self.outcome.pushed += move_history(self.term, self.history, &mut self.text);
     }
+}
+
+/// Stores the emulator's history lines, oldest first, and empties its
+/// history. Answers how many there were.
+pub(super) fn move_history(
+    term: &mut Term<Events>,
+    history: &mut History,
+    text: &mut String,
+) -> u64 {
+    let pushed = term.grid().history_size();
+    if pushed == 0 {
+        return 0;
+    }
+    let cols = term.columns();
+    let grid = term.grid();
+    for age in (1..=pushed).rev() {
+        history.push(store_row(&grid[Line(-(age as i32))], cols, text));
+    }
+    let room = term.screen_lines();
+    let grid = term.grid_mut();
+    grid.update_history(0);
+    grid.update_history(room);
+    pushed as u64
 }
 
 macro_rules! pass {
@@ -99,9 +111,16 @@ impl Handler for Counting<'_> {
         newline();
         scroll_up(lines: usize);
         delete_lines(lines: usize);
-        clear_screen(mode: ClearMode);
         set_private_mode(mode: PrivateMode);
         unset_private_mode(mode: PrivateMode);
+    }
+
+    fn clear_screen(&mut self, mode: ClearMode) {
+        let history = matches!(mode, ClearMode::Saved);
+        self.counted(|term| term.clear_screen(mode));
+        if history {
+            self.outcome.cleared = true;
+        }
     }
 
     fn reset_state(&mut self) {

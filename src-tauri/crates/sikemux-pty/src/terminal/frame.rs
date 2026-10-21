@@ -9,6 +9,7 @@ use sikemux_wire::grid::{
     self as wire, Color, Cursor, FrameHeader, FrameWriter, SpanStyle, FRAME_RESET,
 };
 
+use super::history::{self, LineWriter};
 use super::Terminal;
 
 /// What one client was last sent: the frame after which it holds exactly
@@ -131,8 +132,14 @@ fn blank_cell(cell: &Cell) -> bool {
             .intersects(Flags::INVERSE | Flags::ALL_UNDERLINES | Flags::STRIKEOUT)
 }
 
-/// Writes one row's cells as spans of the same style.
-pub(super) fn write_row(writer: &mut FrameWriter, row: &Row<Cell>, cols: usize, text: &mut String) {
+/// Calls `each` with a row's cells as spans of the same style, left to
+/// right, leaving out blank cells after the last written one.
+pub(super) fn walk_row(
+    row: &Row<Cell>,
+    cols: usize,
+    text: &mut String,
+    mut each: impl FnMut(&SpanStyle<'_>, bool, bool, &str),
+) {
     let end = (0..cols)
         .rev()
         .find(|&column| !blank_cell(&row[Column(column)]))
@@ -158,7 +165,7 @@ pub(super) fn write_row(writer: &mut FrameWriter, row: &Row<Cell>, cols: usize, 
         if let Some(marks) = marks {
             text.push(cell.c);
             text.extend(marks.iter());
-            writer.span(&style, wide, true, text);
+            each(&style, wide, true, text);
             column += if wide { 2 } else { 1 };
             continue;
         }
@@ -191,12 +198,20 @@ pub(super) fn write_row(writer: &mut FrameWriter, row: &Row<Cell>, cols: usize, 
             });
             column += if wide { 2 } else { 1 };
         }
-        writer.span(&style, wide, false, text);
+        each(&style, wide, false, text);
     }
-    writer.end_row();
 }
 
-fn wrapped(row: &Row<Cell>, cols: usize) -> bool {
+/// A row as a line of history.
+pub(super) fn store_row(row: &Row<Cell>, cols: usize, text: &mut String) -> Box<[u8]> {
+    let mut line = LineWriter::default();
+    walk_row(row, cols, text, |style, wide, cluster, text| {
+        line.span(style, wide, cluster, text)
+    });
+    line.finish(wrapped(row, cols))
+}
+
+pub(super) fn wrapped(row: &Row<Cell>, cols: usize) -> bool {
     cols > 0 && row[Column(cols - 1)].flags.contains(Flags::WRAPLINE)
 }
 
@@ -358,7 +373,10 @@ impl Terminal {
             flush_copy(&mut writer, &mut copy);
             let row = &grid[Line(index as i32)];
             writer.row(at, wrapped(row, cols));
-            write_row(&mut writer, row, cols, &mut text);
+            walk_row(row, cols, &mut text, |style, wide, cluster, text| {
+                writer.span(style, wide, cluster, text)
+            });
+            writer.end_row();
         }
         flush_copy(&mut writer, &mut copy);
         flush_clear(&mut writer, &mut clear);
@@ -374,22 +392,20 @@ impl Terminal {
     /// History lines `start..start + count`, as many as are still kept.
     pub fn lines(&self, start: u64, count: u32) -> Vec<u8> {
         let mut writer = FrameWriter::new();
-        let first = self.pushed - self.history_len() as u64;
+        let first = self.pushed - self.history.len() as u64;
         let start = start.max(first);
         let end = start.saturating_add(u64::from(count)).min(self.pushed);
-        let count = if self.alternate_screen() {
-            0
-        } else {
-            end.saturating_sub(start) as u32
-        };
-        let cols = self.term.columns();
-        let grid = self.term.grid();
-        let mut text = String::new();
-        for offset in 0..u64::from(count) {
-            let line = Line(-((self.pushed - start - offset) as i32));
-            let row = &grid[line];
-            writer.line(wrapped(row, cols));
-            write_row(&mut writer, row, cols, &mut text);
+        let count = end.saturating_sub(start) as u32;
+        for line in start..end {
+            let stored = self
+                .history
+                .line((line - first) as usize)
+                .unwrap_or_default();
+            writer.line(history::wrapped(stored));
+            history::walk(stored, |style, wide, cluster, text| {
+                writer.span(style, wide, cluster, text)
+            });
+            writer.end_row();
         }
         writer.finish_lines(self.epoch, start, count)
     }
