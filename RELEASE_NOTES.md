@@ -1,15 +1,16 @@
-# Sikemux v0.5.4-nightly.5
+# Sikemux v0.5.4-nightly.6
 
-The fifth nightly on the 0.5.4 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The sixth nightly on the 0.5.4 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since nightly.4
+## New since nightly.5
 
-- **Anime agent names.** Agents can be named after anime characters, picked in Settings › Agents › Agent names.
-- **The agent pane's header** holds the worktree switch and the account picker; model and effort stay in the composer, and the account menu is the rail's.
-- **Hosts.** An SSH host that runs Sikemux shows as one row with its account host and keeps the alias you gave it. A host that has left the account says so, and a signed-out one offers Sign in. The app opens on your project, not on a host picked before it quit.
-- **Hosts stay signed in.** A failed write, a stop mid-save or a change to the remote file no longer signs a host out, and a host with the systemd service runs its core only under it.
-- **A crashed terminal agent comes back once.** A client asking for it after the core restarted it gets that terminal, instead of a second copy of the agent starting.
-- A subagent that ended before a chat's opening view no longer shows as running.
-- `sikemux status --json` names the host's public key as `coreId`.
+- **A new top bar.** The middle of the top bar says where the window is: the chosen host, then the project in front, each one a picker. Tabs move to a row of their own under it, edge to edge.
+- **Projects belong to their host.** Each host keeps the project last open there, a project's ⋯ opens it on another host, and a server's project opens on this host too. Opening a chat on another host switches to that host.
+- **SSH hosts without Sikemux** open as a shell, with an offer to install it.
+- **Teams fold together.** A lead and the agents it started fold together in the rail like a file group, and hovering an agent shows a card instead of branch lines.
+- New agents are named after anime characters, unless you pick Nature in Settings › Agents › Agent names.
+- The install and sign-in sheet starts its terminal again.
+- Settings stays at the foot of the rail while you're signed out.
+- When an agent's git command can't hear back from Sikemux in time, it says so and asks you to retry.
 
-For the complete patch history, compare [`v0.5.4-nightly.4...v0.5.4-nightly.5`](https://github.com/nodelike/sikemux/compare/v0.5.4-nightly.4...v0.5.4-nightly.5).
+For the complete patch history, compare [`v0.5.4-nightly.5...v0.5.4-nightly.6`](https://github.com/nodelike/sikemux/compare/v0.5.4-nightly.5...v0.5.4-nightly.6).
