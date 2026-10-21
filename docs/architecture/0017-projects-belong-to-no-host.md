@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Decision date: 2026-10-20
+- Amended: 2026-10-21, by [ADR 0018](./0018-the-account-is-the-trust.md): the person chooses a host
+  as they choose a project, and the tab rail lists what runs on that host
 
 ## Context
 

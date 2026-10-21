@@ -46,15 +46,14 @@ for whoever is signed in to the GitHub account.
   on the account, and each SSH host while the person has it open, one row each, with its state,
   and the account's host matched to its SSH entry when one installed the other. Any host in
   `~/.ssh/config` is opened from the group's picker, as before.
-- **A host is chosen as a project is.** Choosing a host's row shows, in the tab rail, every chat
-  and terminal running on it, from every project; choosing a project shows the project's from
-  every host. One row in the side rail is chosen at a time. Work starts on a host the person can
-  see: the chosen host, else the host of the focused chat or terminal, else this host. The
-  new-item menu, which keeps three rows, names it when it is not this host. A row's menu
-  starts a chat or terminal there, through the core on a Sikemux host and over SSH on any other,
-  opens its files, renames or removes it. An SSH host's menu offers **Install Sikemux here**,
-  which runs the installer over that SSH connection and signs the host in to the account by
-  itself.
+- **The person is always on one host, and in one project.** The Hosts group has its own chosen
+  row, this host by default, beside the chosen project; choosing one never unchooses the other.
+  The tab rail keeps its scopes, the project and all projects, and lists what runs on the chosen
+  host. New chats and terminals start on the chosen host, and the new-item menu, which keeps three
+  rows, names it when it is not this host. A row's menu starts a chat or terminal there, through
+  the core on a Sikemux host and over SSH on any other, opens its files, renames or removes it. An
+  SSH host's menu offers **Install Sikemux here**, which runs the installer over that SSH
+  connection and signs the host in to the account by itself.
 - **An agent uses the sign-ins of the host it runs on, whoever started or messaged it.** ADR 0013
   refused plugin calls and the browser to any agent that an agent on another host had started or
   messaged, and to every lead above it, until the person allowed that host. That rule goes: the
