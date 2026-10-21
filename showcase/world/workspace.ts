@@ -3,7 +3,6 @@ import type { Agent, LayoutNode, Session, Window } from "../../src/state/types";
 import { VERSION, type PersistedSnapshot } from "../../src/state/persist";
 import {
   DEMO_HOME,
-  DEMO_PROJECTS,
   FRONT,
   MOODBOARD,
   SIKEMUX,
