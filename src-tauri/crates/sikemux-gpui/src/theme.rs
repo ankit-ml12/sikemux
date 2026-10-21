@@ -175,6 +175,8 @@ pub fn install(cx: &mut App) {
         include_bytes!("../../../notch/Fonts/Figtree_400Regular.ttf").as_slice(),
         include_bytes!("../../../notch/Fonts/Figtree_500Medium.ttf").as_slice(),
         include_bytes!("../../../notch/Fonts/Figtree_600SemiBold.ttf").as_slice(),
+        include_bytes!("../assets/fonts/Figtree_400Regular_Italic.ttf").as_slice(),
+        include_bytes!("../assets/fonts/Figtree_600SemiBold_Italic.ttf").as_slice(),
         include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Regular-Base.ttf").as_slice(),
         include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Bold-Base.ttf").as_slice(),
         include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Italic-Base.ttf").as_slice(),
