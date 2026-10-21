@@ -21,14 +21,15 @@ import { settingsApi } from "../api/settings";
 import { agentNamesApi, type AgentNameTheme } from "../api/agentNames";
 import { openUrl } from "../api/system";
 import { isUpdateBusy, RELEASES_URL, updateCheckLabel, UPDATES_IN_APP } from "../api/updater";
-import { prettyPath } from "../lib/paths";
+import { basename, prettyPath } from "../lib/paths";
+import { previewUrl } from "../editor/viewers/fileKinds";
 import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
-import { ThemePicker } from "./ThemePicker";
+import { ThemePicker, type PictureSource } from "./ThemePicker";
 import { useLeaveSettingsOnNavigation } from "./leaveSettings";
 import {
     IconActivity,
@@ -1264,19 +1265,33 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
             baseName: src.name,
         });
 
-    const [readingWallpaper, setReadingWallpaper] = useState(false);
-    const fromWallpaper = async () => {
-        setReadingWallpaper(true);
+    const [readingPicture, setReadingPicture] = useState<PictureSource | null>(null);
+    const themeFromPicture = async (source: PictureSource, read: () => Promise<{ name: string; pixels: Uint8ClampedArray }>) => {
+        setReadingPicture(source);
         try {
-            const wallpaper = await settingsApi.wallpaperImage();
-            const theme = themeFromColours(wallpaperTheme(await wallpaperPixels(wallpaper.dataUrl), `${wallpaper.name} wallpaper`));
+            const picture = await read();
+            const theme = themeFromColours(wallpaperTheme(picture.pixels, picture.name));
             openEditor({ theme: cloneTheme(theme, { id: newCustomThemeId() }), original: cloneTheme(theme), isNew: true, baseName: theme.name });
         } catch (error) {
-            reportError("Theme from wallpaper")(error);
+            reportError(source === "wallpaper" ? "Theme from wallpaper" : "Theme from pane image")(error);
         } finally {
-            setReadingWallpaper(false);
+            setReadingPicture(null);
         }
     };
+    const fromWallpaper = () =>
+        themeFromPicture("wallpaper", async () => {
+            const wallpaper = await settingsApi.wallpaperImage();
+            return { name: `${wallpaper.name} wallpaper`, pixels: await wallpaperPixels(wallpaper.dataUrl) };
+        });
+    const fromPaneImage = (path: string) =>
+        themeFromPicture("paneImage", async () => {
+            const url = URL.createObjectURL(await (await fetch(previewUrl(path))).blob());
+            try {
+                return { name: basename(path).replace(/\.[^.]+$/, ""), pixels: await wallpaperPixels(url) };
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        });
 
     const editCustom = (src: Theme) => openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
 
@@ -1304,7 +1319,8 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     onCustomize={customizeFrom}
                     onEdit={editCustom}
                     onFromWallpaper={fromWallpaper}
-                    readingWallpaper={readingWallpaper}
+                    onFromPaneImage={paneImage ? () => fromPaneImage(paneImage) : undefined}
+                    readingPicture={readingPicture}
                 />
             </SettingsSection>
 
