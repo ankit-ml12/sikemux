@@ -12,6 +12,7 @@
 //   network  — Services with their ports and selectors, and Ingresses with their routes
 //   config   — ConfigMaps and Secrets by key name and size; no value is ever read
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
+//   nodes    — nodes with their roles, readiness, pressure and capacity, and cordoning one
 
 mod actions;
 mod config;
@@ -22,6 +23,7 @@ mod events;
 mod kubectl;
 mod logs;
 mod network;
+mod nodes;
 mod pods;
 mod workloads;
 
@@ -75,6 +77,8 @@ impl Plugin for Kubernetes {
                 "network" => answer(network::list(params(input)?)).await,
                 "config" => answer(config::list(params(input)?)).await,
                 "act" => answer(actions::act(params(input)?)).await,
+                "nodes" => answer(nodes::list(params(input)?)).await,
+                "cordon" => answer(nodes::cordon(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
