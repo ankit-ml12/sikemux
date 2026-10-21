@@ -26,6 +26,10 @@ pub struct Workbench {
     /// From asking the core to sign in until the browser is done or gives up.
     pub signing_in: bool,
     pub all_projects: bool,
+    /// The agent the rail was switched to, else the one the project last started.
+    pub launcher_choice: Option<String>,
+    /// The rail lists the recent chats of every agent, not one's.
+    pub all_harnesses: bool,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
     pub metric: usize,
     pub filter: Option<Entity<InputState>>,
@@ -69,6 +73,8 @@ impl Workbench {
             picture_hash: None,
             signing_in: false,
             all_projects: false,
+            launcher_choice: None,
+            all_harnesses: false,
             metric: 0,
             filter: None,
             filter_text: String::new(),
@@ -166,10 +172,26 @@ impl Workbench {
         active.and_then(|id| projects.iter().find(|project| project.id == id)).or(projects.first())
     }
 
-    /// What a new chat in the project in front starts with.
+    pub fn launchers(&self) -> &[LauncherInfo] {
+        self.view.as_ref().map_or(&[], |view| view.workspace.launchers.as_slice())
+    }
+
+    /// What a new chat started from the rail starts with.
     pub fn launcher(&self) -> Option<&LauncherInfo> {
-        let id = self.project()?.launcher.as_deref()?;
-        self.view.as_ref()?.workspace.launchers.iter().find(|launcher| launcher.id == id)
+        let launchers = self.launchers();
+        let chosen = |id: &str| launchers.iter().find(|launcher| launcher.id == id);
+        self.launcher_choice
+            .as_deref()
+            .and_then(chosen)
+            .or_else(|| self.project()?.launcher.as_deref().and_then(chosen))
+            .or(launchers.first())
+    }
+
+    /// The most of any window of its plan the launcher's account has used.
+    pub fn usage_peak(&self, launcher: &str) -> Option<f64> {
+        let account = self.read("usage")?.as_array()?.iter().find(|account| account["launcher"] == launcher)?;
+        let windows = account["usage"]["windows"].as_array()?;
+        windows.iter().filter_map(|window| window["usedPercent"].as_f64()).map(|used| used.clamp(0., 100.)).reduce(f64::max)
     }
 
     pub fn activate_project(&self, id: &str) {
@@ -280,6 +302,7 @@ impl Workbench {
             view.recent
                 .iter()
                 .filter(|recent| recent.project == project && recent.agent_id.is_none())
+                .filter(|recent| self.all_harnesses || self.launcher().is_some_and(|launcher| launcher.provider == recent.provider))
                 .filter(|recent| recent.title.to_lowercase().contains(&self.filter_text))
                 .collect()
         })

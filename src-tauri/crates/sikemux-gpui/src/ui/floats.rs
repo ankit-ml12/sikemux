@@ -69,6 +69,7 @@ pub struct MenuItem {
     id: ElementId,
     label: SharedString,
     icon: Option<Icon>,
+    mark: Option<AnyElement>,
     detail: Option<SharedString>,
     hint: Option<SharedString>,
     checked: bool,
@@ -83,6 +84,7 @@ impl MenuItem {
             id: id.into(),
             label: label.into(),
             icon: None,
+            mark: None,
             detail: None,
             hint: None,
             checked: false,
@@ -94,6 +96,12 @@ impl MenuItem {
 
     pub fn icon(mut self, icon: Icon) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// A mark drawn in its own colours where the icon goes, such as an agent's.
+    pub fn mark(mut self, mark: impl IntoElement) -> Self {
+        self.mark = Some(mark.into_any_element());
         self
     }
 
@@ -161,6 +169,7 @@ impl RenderOnce for MenuItem {
                         .group_hover(GROUP, move |style| style.text_color(hover)),
                 )
             }))
+            .children(self.mark.map(|mark| div().min_w(px(14.)).mr(px(-2.)).child(mark)))
             .child(
                 div()
                     .flex_1()
@@ -173,7 +182,7 @@ impl RenderOnce for MenuItem {
                     })),
             )
             .children(self.hint.map(|hint| text(hint, 10.5, FontWeight::NORMAL).text_color(t.text_tertiary)))
-            .when(self.checked, |item| item.child(icon(Icon::Check, 11.).text_color(t.text_primary)))
+            .when(self.checked, |item| item.child(icon(Icon::Check, 11.).text_color(t.accent)))
     }
 }
 

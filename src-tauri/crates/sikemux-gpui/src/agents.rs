@@ -1,16 +1,18 @@
 use std::f32::consts::FRAC_PI_2;
+use std::rc::Rc;
 
+use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, fill, point, px, radians, size, Transformation, App, Bounds, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    canvas, div, fill, point, px, AnyElement, Anchor, radians, size, Transformation, App, Bounds, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled,
 };
 use serde_json::Value;
 
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, Field, Group, IconButton, Row, Segmented};
+use crate::ui::{self, Field, Group, IconButton, Menu, MenuItem, Row, Segmented};
 use crate::workbench::{AgentRow, Workbench};
 
 pub const TAB_RAIL_WIDTH: f32 = 288.;
@@ -79,8 +81,6 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
 
 fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let (provider, label) = bench
-        .launcher().map_or(("", "Agents"), |launcher| (launcher.provider.as_str(), launcher.label.as_str()));
     div()
         .flex_none()
         .pt(px(6.))
@@ -96,14 +96,7 @@ fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                 .items_center()
                 .justify_between()
                 .gap(px(8.))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(7.))
-                        .child(ui::mark(provider, 16.))
-                        .child(ui::text(label.to_owned(), 13., FontWeight::SEMIBOLD).text_color(t.text_primary)),
-                )
+                .child(picker(bench, cx))
                 .child(
                     div()
                         .flex()
@@ -116,10 +109,76 @@ fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                                     cx.notify();
                                 })),
                         )
-                        .child(IconButton::new("start-agent", Icon::Plus, "New chat"))
-                        .child(IconButton::new("hide-tab-rail", Icon::PanelRight, "Hide the agent rail")),
+                        .child(IconButton::new("start-agent", Icon::Plus, "Choose agent — ⌘⇧N"))
+                        .child(IconButton::new("hide-tab-rail", Icon::PanelRight, "Hide agents rail")),
                 ),
         )
+}
+
+/// Which agent the rail is for, and a menu to switch it or show every agent's chats.
+fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let launcher = bench.launcher();
+    let (mark, label) = match launcher {
+        _ if bench.all_harnesses => (ui::icon(Icon::Inbox, 16.).text_color(t.text_secondary).into_any_element(), "All harnesses".to_owned()),
+        Some(launcher) => (ui::mark(&launcher.provider, 16.), launcher.label.clone()),
+        None => return ui::text("Agents", 13., FontWeight::SEMIBOLD).text_color(t.text_primary).into_any_element(),
+    };
+    let name = ui::text(label, 13., FontWeight::SEMIBOLD).letter_spacing(-0.015).text_color(t.text_primary);
+    if bench.launchers().len() < 2 {
+        return div().flex().items_center().gap(px(7.)).child(mark).child(name).into_any_element();
+    }
+    let chosen = if bench.all_harnesses { None } else { launcher.map(|launcher| launcher.id.clone()) };
+    let options: Vec<_> = bench
+        .launchers()
+        .iter()
+        .map(|launcher| (launcher.id.clone(), launcher.provider.clone(), launcher.label.clone(), bench.usage_peak(&launcher.id)))
+        .collect();
+    let choose = Rc::new(cx.listener(|bench, choice: &Option<String>, _, cx| {
+        bench.all_harnesses = choice.is_none();
+        if choice.is_some() {
+            bench.launcher_choice = choice.clone();
+        }
+        cx.notify();
+    }));
+    Popover::new("agent-picker")
+        .anchor(Anchor::TopLeft)
+        .offset(px(4.))
+        .trigger(
+            BaseButton::new("agent-picker-button")
+                .accessibility_label("Agent provider")
+                .h(px(28.))
+                .ml(px(-6.))
+                .px(px(6.))
+                .flex()
+                .items_center()
+                .gap(px(7.))
+                .rounded(theme::RADIUS_2)
+                .hover(move |style| style.bg(t.surface_hover))
+                .child(mark)
+                .child(name)
+                .child(ui::icon(Icon::Chevron, 9.).with_transformation(Transformation::rotate(radians(FRAC_PI_2))).text_color(t.text_tertiary)),
+        )
+        .content(move |_, _, cx| {
+            let popover = cx.entity();
+            let item = |id: SharedString, label: String, choice: Option<String>| {
+                let (choose, popover) = (choose.clone(), popover.clone());
+                MenuItem::new(id, label).checked(choice == chosen).on_click(move |_, window, cx| {
+                    choose(&choice, window, cx);
+                    popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+                })
+            };
+            div().w(px(200.)).child(
+                Menu::new().child(item("all-harnesses".into(), "All harnesses".into(), None).icon(Icon::Inbox)).children(options.iter().map(
+                    |(id, provider, label, peak)| {
+                        item(SharedString::from(format!("launcher-{id}")), label.clone(), Some(id.clone()))
+                            .mark(ui::mark(provider, 14.))
+                            .when_some(*peak, |item, peak| item.hint(format!("{}%", peak.round())))
+                    },
+                )),
+            )
+        })
+        .into_any_element()
 }
 
 fn new_row(id: &'static str, glyph: Icon, label: &'static str, keys: &'static str, cx: &App) -> impl IntoElement {
@@ -200,6 +259,9 @@ fn age(at: u64) -> String {
 /// The plan limits of the account new chats here start on, as its agent last reported them.
 fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
+    if bench.all_harnesses {
+        return None;
+    }
     let launcher = bench.launcher()?;
     let account = bench.read("usage")?.as_array()?.iter().find(|account| account["launcher"] == launcher.id.as_str())?;
     let name = account["label"].as_str().unwrap_or_default().to_owned();
