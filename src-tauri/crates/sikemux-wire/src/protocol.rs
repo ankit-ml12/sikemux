@@ -1942,6 +1942,12 @@ pub struct Layout {
     /// none left has no strip.
     #[serde(default)]
     pub hosts: BTreeMap<String, ProjectLayout>,
+    /// The tabs of terminals that belong to no project.
+    #[serde(default)]
+    pub terminals: ProjectLayout,
+    /// Whether the terminals' strip is in front instead of a project or host.
+    #[serde(default)]
+    pub terminals_in_front: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

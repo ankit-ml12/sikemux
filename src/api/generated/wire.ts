@@ -659,6 +659,10 @@ export interface Layout {
      * none left has no strip.
      */
     hosts: Record<string, ProjectLayout>;
+    /** The tabs of terminals that belong to no project. */
+    terminals: ProjectLayout;
+    /** Whether the terminals' strip is in front instead of a project or host. */
+    terminalsInFront: boolean;
 }
 
 export interface ProjectLayout {

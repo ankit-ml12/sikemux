@@ -12,6 +12,7 @@ use sikemux_process::sync::Locked;
 use crate::protocol::{SessionId, SpawnTarget, TerminalSpawn};
 use sikemux_wire::pty::launch::PtyContext;
 
+use super::layout::At;
 use super::wake::Wake;
 use super::{session, Core, CoreError, CoreResult};
 
@@ -265,11 +266,51 @@ pub(crate) fn opening_size(core: &Core) -> (u16, u16) {
     core.spares.held.locked().size.unwrap_or((80, 24))
 }
 
+#[derive(Deserialize)]
+pub(crate) struct NewTerminal {
+    #[serde(default)]
+    project: String,
+    /// Opens it among the terminals of no project, in the home folder.
+    #[serde(default)]
+    terminals: bool,
+}
+
 /// Opens a terminal tab in `project` on the shell started ahead when it fits,
-/// or on a new one. Answers the tab's id.
-pub(crate) async fn new_terminal(core: &Arc<Core>, params: TakeParams) -> CoreResult<String> {
+/// or on a new one, or among the terminals of no project. Answers the tab's id.
+pub(crate) async fn new_terminal(core: &Arc<Core>, params: NewTerminal) -> CoreResult<String> {
+    if params.terminals {
+        let id = home_shell(core).await?;
+        return super::layout::show_terminal(core, At::terminals(), id, None);
+    }
     let id = project_shell(core, &params.project).await?;
-    super::layout::show_terminal(core, params.project, id, None)
+    super::layout::show_terminal(core, At::project(&params.project), id, None)
+}
+
+/// Brings the terminals of no project to the front, opening one when there are none.
+pub(crate) async fn show_terminals(core: &Arc<Core>) -> CoreResult<()> {
+    if !super::layout::show_terminals(core)? {
+        let id = home_shell(core).await?;
+        super::layout::show_terminal(core, At::terminals(), id, None)?;
+    }
+    Ok(())
+}
+
+async fn home_shell(core: &Arc<Core>) -> CoreResult<SessionId> {
+    let context = PtyContext {
+        session_id: "terminals".into(),
+        session_name: "Terminals".into(),
+        session_kind: "command".into(),
+        project: None,
+        window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
+        pane_id: Some(format!("pane-{}", uuid::Uuid::new_v4().simple())),
+        agent_id: None,
+        agent_type: None,
+        initial_prompt_submitted: false,
+        shell_integration: true,
+    };
+    let home = sikemux_process::user_environment::var_os("HOME")
+        .map(|home| home.to_string_lossy().into_owned());
+    terminal(core, opening_size(core), home, context, None).await
 }
 
 /// A shell in `project`'s folder for a new terminal: the one started ahead
@@ -323,7 +364,7 @@ pub(crate) async fn command_terminal(
         Some(startup),
     )
     .await?;
-    super::layout::show_terminal(core, project, id, Some(title))
+    super::layout::show_terminal(core, At::project(&project), id, Some(title))
 }
 
 #[derive(Deserialize)]
