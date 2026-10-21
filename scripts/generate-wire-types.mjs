@@ -63,7 +63,6 @@ const RENAMES = {
     Choice: "QuestionChoice",
   },
   [`${CORE}/server/catalog.rs`]: { Driver: "ChatDriver" },
-  [`${CORE}/server/workspace.rs`]: { Buddies: "PublishedBuddies" },
   [`${CORE}/server/changed.rs`]: { Topic: "CoreChangeTopic" },
   [`${CORE}/server/board.rs`]: {
     Status: "CardStatus",

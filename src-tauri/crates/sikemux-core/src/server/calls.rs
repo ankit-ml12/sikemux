@@ -78,7 +78,6 @@ calls! { core, client, params;
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
     "closedAgents": Local => answer(closed_agents(&core, parse(params)?).await?),
-    "publishBuddies": Local => answer(core.workspaces.publish_buddies(parse(params)?)?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
     "agentCatalog": Watch, any_program => answer(super::catalog::view()),
     "hostLoad": Watch, any_program => answer(super::load::now()),

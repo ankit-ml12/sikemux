@@ -58,8 +58,6 @@ const MAX_COLOURS: usize = 64;
 /// A phone-sized JPEG is a few hundred kilobytes; this leaves room without letting one fill a frame.
 const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 const MAX_COLOUR_CHARS: usize = 64;
-const MAX_BUDDY_AGENTS: usize = 4096;
-const MAX_BUDDY_BOXES: usize = 512;
 /// Every buddy pack has at least this many colours, so an agent's colour
 /// number means the same slot whichever pack the person picks.
 const BUDDY_COLOURS: usize = 8;
@@ -159,49 +157,6 @@ struct Published {
     palette: BTreeMap<String, String>,
     texture: bool,
     image: Option<BackdropImage>,
-    buddies: Option<Buddies>,
-}
-
-/// The characters the app draws for its agents, so the notch and phones draw
-/// the same ones.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Buddies {
-    /// Whether the person turned buddies on; a named agent wears its own either way.
-    on: bool,
-    pack: String,
-    shape: String,
-    motion: bool,
-    /// Each agent's buddy as the app draws it, by agent id.
-    agents: BTreeMap<String, BuddyLook>,
-    /// The part of its 24-unit square each shape fills, by `pack/shape`, as a
-    /// viewBox; only the app can measure it.
-    boxes: BTreeMap<String, String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct BuddyLook {
-    pack: String,
-    shape: String,
-    color: String,
-}
-
-impl Buddies {
-    fn oversized(&self) -> bool {
-        let long = |text: &String| text.len() > MAX_COLOUR_CHARS;
-        long(&self.pack)
-            || long(&self.shape)
-            || self.agents.len() > MAX_BUDDY_AGENTS
-            || self.boxes.len() > MAX_BUDDY_BOXES
-            || self
-                .boxes
-                .iter()
-                .any(|(key, view_box)| long(key) || long(view_box))
-            || self.agents.iter().any(|(id, look)| {
-                long(id) || long(&look.pack) || long(&look.shape) || long(&look.color)
-            })
-    }
 }
 
 /// How an agent is launched, as the workspace keeps it.
@@ -1195,18 +1150,6 @@ impl Workspaces {
         }
         self.published.locked().palette = palette;
         Ok(())
-    }
-
-    pub(crate) fn publish_buddies(&self, buddies: Option<Buddies>) -> CoreResult<()> {
-        if buddies.as_ref().is_some_and(Buddies::oversized) {
-            return Err("the app published more buddies than the core keeps".into());
-        }
-        self.published.locked().buddies = buddies;
-        Ok(())
-    }
-
-    pub(crate) fn buddies(&self) -> Option<Buddies> {
-        self.published.locked().buddies.clone()
     }
 
     /// The recent chats a device may take up again: those in a project on

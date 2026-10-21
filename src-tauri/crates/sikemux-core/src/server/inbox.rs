@@ -170,9 +170,6 @@ pub(crate) struct View {
     pub projects: BTreeMap<String, Rollup>,
     /// How every open agent here shows together; none while none is open.
     pub rollup: Option<Rollup>,
-    /// The characters the app draws for its agents.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub buddies: Option<super::workspace::Buddies>,
 }
 
 /// How devices show an open agent here.
@@ -911,7 +908,6 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         agents: Vec::new(),
         projects: BTreeMap::new(),
         rollup: None,
-        buddies: core.workspaces.buddies(),
     }
 }
 

@@ -6,6 +6,7 @@
 import type { DeviceView, HostInfo, Inbox, RecentInfo, RemotePairing } from './wire.generated';
 
 export type {
+  AgentFace,
   AgentGroup,
   AgentQuestion,
   AgentStatus,
@@ -13,6 +14,7 @@ export type {
   ChatState,
   DeviceAccess,
   DeviceInfo,
+  FaceStyle,
   HostInfo,
   Inbox,
   InboxItem,
@@ -93,7 +95,6 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
     projects: same(previous.projects, next.projects) ? previous.projects : next.projects,
     rollup: same(previous.rollup, next.rollup) ? previous.rollup : next.rollup,
     agentMessages: same(previous.agentMessages, next.agentMessages) ? previous.agentMessages : next.agentMessages,
-    buddies: same(previous.buddies, next.buddies) ? previous.buddies : next.buddies,
   };
   const keys = new Set([...Object.keys(previous), ...Object.keys(kept)]) as Set<keyof Inbox>;
   return [...keys].every((key) => kept[key] === previous[key]) ? previous : kept;

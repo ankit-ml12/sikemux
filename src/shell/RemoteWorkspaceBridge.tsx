@@ -1,6 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useMemo, useState } from "react";
-import { publishBuddies, type PublishedBuddies } from "../buddies/published";
+import { useEffect, useState } from "react";
 import { remoteApi } from "../api/remote";
 import { backdropPicture, grainDotColor } from "../remote/backdrop";
 import { usePaneImage } from "../lib/paneImage";
@@ -14,14 +13,11 @@ import { useStore } from "../state/store";
 export const PUBLISH_DELAY_MS = 400;
 
 /**
- * Tells the core the buddies the app draws for the notch and paired devices, and which agent is on screen. While remote access is on, also the theme and backdrop devices draw in.
+ * Tells the core which agent is on screen. While remote access is on, also the theme and backdrop devices draw in.
  */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
     const [themeChanges, setThemeChanges] = useState(0);
-    const agents = useStore((s) => s.agents);
-    const style = useStore((s) => s.faceStyle);
-    const buddies = useMemo(() => JSON.stringify(publishBuddies(Object.values(agents), style, style.motion, style.on)), [agents, style]);
     const active = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const focused = useWindowFocused();
 
@@ -60,13 +56,6 @@ export function RemoteWorkspaceBridge() {
         }, PUBLISH_DELAY_MS);
         return () => window.clearTimeout(timer);
     }, [enabled, themeChanges]);
-
-    useEffect(() => {
-        const timer = window.setTimeout(() => {
-            remoteApi.publishBuddies(JSON.parse(buddies) as PublishedBuddies).catch(swallow("publish buddies to the core"));
-        }, PUBLISH_DELAY_MS);
-        return () => window.clearTimeout(timer);
-    }, [buddies]);
 
     useEffect(() => {
         remoteApi.publishOnScreen(active ? [active] : [], focused).catch(swallow("tell the core which agent is on screen"));

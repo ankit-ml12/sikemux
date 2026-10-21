@@ -460,8 +460,6 @@ export interface Inbox {
     projects: Record<string, AgentRollup>;
     /** How every open agent here shows together; none while none is open. */
     rollup: AgentRollup | null;
-    /** The characters the app draws for its agents. */
-    buddies?: PublishedBuddies;
 }
 
 /** One thing in the inbox: who, what they need or did, and where to open it. */
@@ -584,31 +582,6 @@ export interface AgentRollup {
     label: string;
     subagents: number;
     tasks: number;
-}
-
-/**
- * The characters the app draws for its agents, so the notch and phones draw
- * the same ones.
- */
-export interface PublishedBuddies {
-    /** Whether the person turned buddies on; a named agent wears its own either way. */
-    on: boolean;
-    pack: string;
-    shape: string;
-    motion: boolean;
-    /** Each agent's buddy as the app draws it, by agent id. */
-    agents: Record<string, BuddyLook>;
-    /**
-     * The part of its 24-unit square each shape fills, by `pack/shape`, as a
-     * viewBox; only the app can measure it.
-     */
-    boxes: Record<string, string>;
-}
-
-export interface BuddyLook {
-    pack: string;
-    shape: string;
-    color: string;
 }
 
 /** The tabs every desktop client draws, kept by the core. */
