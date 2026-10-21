@@ -23,6 +23,7 @@ use tokio::sync::mpsc;
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
+use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
 use crate::terminal::NewTerminal;
@@ -1249,6 +1250,7 @@ impl Render for Workbench {
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &Zoom, window, _| window.zoom_window())
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
+            .on_action(cx.listener(|bench, open: &OpenAt, _, _| bench.open_file(&open.path)))
             .flex()
             .flex_col()
             .pt(px(6.))
