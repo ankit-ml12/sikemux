@@ -32,11 +32,17 @@ export const hostsApi = {
     list: () => invoke<HostEntry[]>("hosts_list"),
 };
 
+/** What asking an SSH host found: which host it is, and whether it is on this host's account, signed out, or another's. */
+export interface SshProbe {
+    readonly key: string;
+    readonly account: "same" | "signedOut" | "other";
+}
+
 /**
- * Installs Sikemux on the SSH host `alias` over the person's own SSH, in a terminal tab of its SSH session where a
- * password sudo asks for is typed, and resolves once the host is on the account.
+ * Runs `command` on the SSH host `alias` over the person's own SSH, in a terminal tab of its SSH session where a
+ * password ssh or sudo asks for is typed, and resolves once the host is on the account.
  */
-export async function installHere(alias: string): Promise<void> {
+async function signInOverSsh(alias: string, command: "host_install" | "host_sign_in", title: string): Promise<void> {
     const controller = new AbortController();
     const done = new Promise<void>((resolve, reject) => {
         void getIpcTransport()
@@ -53,13 +59,13 @@ export async function installHere(alias: string): Promise<void> {
             .catch(reject);
     });
     try {
-        const id = await invoke<number>("host_install", { alias, cols: 100, rows: 30 });
+        const id = await invoke<number>(command, { alias, cols: 100, rows: 30 });
         offerResumableSessions([id]);
         createSshSession(alias);
         mutate((d) => {
             const session = d.sessions[d.activeSessionId];
             if (!session) return;
-            const window = makeWindow("", "Install Sikemux", { role: "named" });
+            const window = makeWindow("", title, { role: "named" });
             window.root = { ...(window.root as PaneNode), ptyId: id };
             d.windows[window.id] = window;
             d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
@@ -70,6 +76,22 @@ export async function installHere(alias: string): Promise<void> {
         throw error;
     }
     await done;
+}
+
+/** Installs Sikemux on the SSH host `alias` and signs it in to the account. */
+export const installHere = (alias: string): Promise<void> => signInOverSsh(alias, "host_install", "Install Sikemux");
+
+/** Signs the SSH host `alias`, which runs Sikemux but is off the account, in to it. */
+export async function signInHere(alias: string): Promise<void> {
+    await signInOverSsh(alias, "host_sign_in", "Sign in");
+    await probeSshHost(alias);
+}
+
+/** Asks the SSH host `alias` whether it runs Sikemux and which host it is, keeping the answer for its row. */
+async function probeSshHost(alias: string): Promise<void> {
+    const probed = await invoke<SshProbe | null>("host_probe", { alias });
+    const { [alias]: _, ...others } = getState().sshProbes;
+    setState({ sshProbes: probed ? { ...others, [alias]: probed } : others });
 }
 
 /** One project's folder on another host. */
@@ -462,7 +484,7 @@ function probeSshHosts(signal: AbortSignal): void {
         const alias = sshAliasOf(getState(), ptyId);
         if (!alias || asked.has(alias)) return;
         asked.add(alias);
-        void invoke("host_probe", { alias }).catch(swallow(`ask ${alias} which host it is`));
+        void probeSshHost(alias).catch(swallow(`ask ${alias} which host it is`));
     };
     void getIpcTransport()
         .subscribe<{ id: number; link: SshLink }>(

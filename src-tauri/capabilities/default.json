@@ -31,6 +31,7 @@
     "allow-pty-sessions",
     "allow-hosts-list",
     "allow-host-install",
+    "allow-host-sign-in",
     "allow-host-probe",
     "allow-account-remove-device",
     "allow-account-rename-device",

@@ -262,6 +262,7 @@ pub fn run() {
             pty::commands::pty_sessions,
             hosts::hosts_list,
             hosts::install::host_install,
+            hosts::install::host_sign_in,
             hosts::probe::host_probe,
             account::account_remove_device,
             account::account_rename_device,

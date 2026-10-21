@@ -13,14 +13,11 @@ use tauri::{AppHandle, Manager, State};
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
 
-use super::install::checked_alias;
+use super::install::{checked_alias, sikemux_over_ssh};
 use super::Hosts;
 
 /// Long enough to connect and ask; a host that takes longer is left alone.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
-/// `sikemux status` through the login shell's PATH, and where the installer
-/// puts it when that PATH does not reach it.
-const STATUS: &str = r#"exec "$SHELL" -lc 'PATH="$PATH:$HOME/.local/bin" sikemux status --json'"#;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +66,7 @@ pub async fn host_probe(
         "ConnectTimeout=10",
         "--",
         &alias,
-        STATUS,
+        &sikemux_over_ssh("status --json"),
     ])
     .stdin(Stdio::null())
     .stderr(Stdio::null())
