@@ -75,18 +75,18 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// Builds one stored line from its spans.
-pub(super) struct LineWriter {
-    bytes: Vec<u8>,
+/// Builds one stored line from its spans, in a buffer kept between lines.
+pub(super) struct LineWriter<'a> {
+    bytes: &'a mut Vec<u8>,
 }
 
-impl Default for LineWriter {
-    fn default() -> Self {
-        Self { bytes: vec![0] }
+impl<'a> LineWriter<'a> {
+    pub(super) fn new(bytes: &'a mut Vec<u8>) -> Self {
+        bytes.clear();
+        bytes.push(0);
+        Self { bytes }
     }
-}
 
-impl LineWriter {
     pub(super) fn span(&mut self, style: &SpanStyle<'_>, wide: bool, cluster: bool, text: &str) {
         let mut flags = 0;
         if wide {
@@ -103,22 +103,22 @@ impl LineWriter {
         }
         self.bytes.push(flags);
         self.bytes.extend_from_slice(&style.flags.to_le_bytes());
-        put_color(&mut self.bytes, style.fg);
-        put_color(&mut self.bytes, style.bg);
+        put_color(self.bytes, style.fg);
+        put_color(self.bytes, style.bg);
         if let Some(color) = style.underline_color {
-            put_color(&mut self.bytes, color);
+            put_color(self.bytes, color);
         }
         if let Some(link) = style.link {
-            put_varint(&mut self.bytes, link.len());
+            put_varint(self.bytes, link.len());
             self.bytes.extend_from_slice(link.as_bytes());
         }
-        put_varint(&mut self.bytes, text.len());
+        put_varint(self.bytes, text.len());
         self.bytes.extend_from_slice(text.as_bytes());
     }
 
-    pub(super) fn finish(mut self, wrapped: bool) -> Box<[u8]> {
+    pub(super) fn finish(self, wrapped: bool) -> &'a [u8] {
         self.bytes[0] = u8::from(wrapped);
-        self.bytes.into_boxed_slice()
+        self.bytes
     }
 }
 
@@ -196,14 +196,31 @@ impl OwnedStyle {
     }
 }
 
+/// Lines are written back to back into chunks this big, so storing one costs
+/// no allocation of its own, and a chunk is freed once its last line goes.
+const CHUNK_BYTES: usize = 64 * 1024;
+
+/// Where a line is: its chunk's number, and its place in that chunk.
+#[derive(Clone, Copy)]
+struct Place {
+    chunk: u64,
+    start: u32,
+    len: u32,
+}
+
 pub(super) struct History {
-    lines: VecDeque<Box<[u8]>>,
+    chunks: VecDeque<Vec<u8>>,
+    /// The number of the chunk at the front of `chunks`.
+    first_chunk: u64,
+    lines: VecDeque<Place>,
     limit: usize,
 }
 
 impl History {
     pub(super) fn new(limit: usize) -> Self {
         Self {
+            chunks: VecDeque::new(),
+            first_chunk: 0,
             lines: VecDeque::new(),
             limit,
         }
@@ -214,21 +231,55 @@ impl History {
     }
 
     pub(super) fn line(&self, index: usize) -> Option<&[u8]> {
-        self.lines.get(index).map(|line| &line[..])
+        let place = self.lines.get(index)?;
+        let chunk = self.chunks.get((place.chunk - self.first_chunk) as usize)?;
+        chunk.get(place.start as usize..(place.start + place.len) as usize)
     }
 
-    pub(super) fn push(&mut self, line: Box<[u8]>) {
+    pub(super) fn push(&mut self, line: &[u8]) {
         if self.limit == 0 {
             return;
         }
-        if self.lines.len() == self.limit {
-            self.lines.pop_front();
+        let full = self
+            .chunks
+            .back()
+            .is_none_or(|chunk| chunk.len() + line.len() > chunk.capacity());
+        if full {
+            self.chunks
+                .push_back(Vec::with_capacity(CHUNK_BYTES.max(line.len())));
         }
-        self.lines.push_back(line);
+        let chunk_number = self.first_chunk + self.chunks.len() as u64 - 1;
+        let Some(chunk) = self.chunks.back_mut() else {
+            return;
+        };
+        self.lines.push_back(Place {
+            chunk: chunk_number,
+            start: chunk.len() as u32,
+            len: line.len() as u32,
+        });
+        chunk.extend_from_slice(line);
+        if self.lines.len() > self.limit {
+            self.lines.pop_front();
+            self.drop_unused_chunks();
+        }
+    }
+
+    fn drop_unused_chunks(&mut self) {
+        let oldest = self
+            .lines
+            .front()
+            .map_or(self.first_chunk + self.chunks.len() as u64, |place| {
+                place.chunk
+            });
+        while self.first_chunk < oldest && !self.chunks.is_empty() {
+            self.chunks.pop_front();
+            self.first_chunk += 1;
+        }
     }
 
     pub(super) fn clear(&mut self) {
         self.lines = VecDeque::new();
+        self.chunks = VecDeque::new();
     }
 
     pub(super) fn limit(&self) -> usize {
@@ -240,15 +291,16 @@ impl History {
         let extra = self.lines.len().saturating_sub(limit);
         self.lines.drain(..extra);
         self.lines.shrink_to_fit();
+        self.drop_unused_chunks();
     }
 
     /// Wraps the lines again at `cols` columns, as the screen is after a
     /// resize. Answers how many lines there are now.
     pub(super) fn rewrap(&mut self, cols: usize) -> usize {
-        let old = std::mem::take(&mut self.lines);
+        let old = std::mem::replace(self, History::new(self.limit));
         let mut styles: Vec<OwnedStyle> = Vec::new();
         let mut cells: Vec<Cell> = Vec::new();
-        for line in &old {
+        for line in (0..old.len()).filter_map(|index| old.line(index)) {
             let wrapped = walk(line, |style, wide, cluster, text| {
                 let index = match styles.iter().rposition(|known| known.same(style)) {
                     Some(index) => index,
@@ -283,12 +335,11 @@ impl History {
         if !cells.is_empty() {
             self.wrap_cells(&cells, &styles, cols);
         }
-        let extra = self.lines.len().saturating_sub(self.limit);
-        self.lines.drain(..extra);
         self.lines.len()
     }
 
     fn wrap_cells(&mut self, cells: &[Cell], styles: &[OwnedStyle], cols: usize) {
+        let mut scratch = Vec::new();
         let mut start = 0;
         loop {
             let mut width = 0;
@@ -304,7 +355,7 @@ impl History {
             if end == start && end < cells.len() {
                 end += 1;
             }
-            let mut writer = LineWriter::default();
+            let mut writer = LineWriter::new(&mut scratch);
             let mut run = start;
             while run < end {
                 let first = &cells[run];
@@ -328,7 +379,8 @@ impl History {
                 );
                 run = next;
             }
-            self.lines.push_back(writer.finish(end < cells.len()));
+            let line = writer.finish(end < cells.len());
+            self.push(line);
             if end >= cells.len() {
                 return;
             }

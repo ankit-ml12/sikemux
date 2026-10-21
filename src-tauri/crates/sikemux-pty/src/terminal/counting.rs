@@ -32,6 +32,7 @@ pub(super) struct Counting<'a> {
     term: &'a mut Term<Events>,
     history: &'a mut History,
     text: String,
+    scratch: Vec<u8>,
     outcome: Outcome,
 }
 
@@ -41,6 +42,7 @@ impl<'a> Counting<'a> {
             term,
             history,
             text: String::new(),
+            scratch: Vec::new(),
             outcome: Outcome::default(),
         }
     }
@@ -55,7 +57,8 @@ impl<'a> Counting<'a> {
         if self.term.mode().contains(TermMode::ALT_SCREEN) {
             return;
         }
-        self.outcome.pushed += move_history(self.term, self.history, &mut self.text);
+        self.outcome.pushed +=
+            move_history(self.term, self.history, &mut self.text, &mut self.scratch);
     }
 }
 
@@ -65,6 +68,7 @@ pub(super) fn move_history(
     term: &mut Term<Events>,
     history: &mut History,
     text: &mut String,
+    scratch: &mut Vec<u8>,
 ) -> u64 {
     let pushed = term.grid().history_size();
     if pushed == 0 {
@@ -73,7 +77,7 @@ pub(super) fn move_history(
     let cols = term.columns();
     let grid = term.grid();
     for age in (1..=pushed).rev() {
-        history.push(store_row(&grid[Line(-(age as i32))], cols, text));
+        history.push(store_row(&grid[Line(-(age as i32))], cols, text, scratch));
     }
     let room = term.screen_lines();
     let grid = term.grid_mut();

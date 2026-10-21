@@ -227,8 +227,12 @@ impl Terminal {
         self.term.set_options(config(size.rows));
         let _ = self.events.take();
         if !self.alternate_screen() {
-            self.pushed +=
-                counting::move_history(&mut self.term, &mut self.history, &mut self.text);
+            self.pushed += counting::move_history(
+                &mut self.term,
+                &mut self.history,
+                &mut self.text,
+                &mut Vec::new(),
+            );
         }
         if size.cols != old_cols {
             let before = self.history.len() as u64;

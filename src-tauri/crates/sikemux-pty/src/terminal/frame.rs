@@ -202,9 +202,14 @@ pub(super) fn walk_row(
     }
 }
 
-/// A row as a line of history.
-pub(super) fn store_row(row: &Row<Cell>, cols: usize, text: &mut String) -> Box<[u8]> {
-    let mut line = LineWriter::default();
+/// A row as a line of history, built in `scratch`.
+pub(super) fn store_row<'a>(
+    row: &Row<Cell>,
+    cols: usize,
+    text: &mut String,
+    scratch: &'a mut Vec<u8>,
+) -> &'a [u8] {
+    let mut line = LineWriter::new(scratch);
     walk_row(row, cols, text, |style, wide, cluster, text| {
         line.span(style, wide, cluster, text)
     });
