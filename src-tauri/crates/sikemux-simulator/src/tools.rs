@@ -17,8 +17,8 @@ const BOOT_MARGIN: Duration = Duration::from_secs(12);
 const SETTLE_MARGIN: Duration = Duration::from_secs(4);
 const SETTLE_STEP: Duration = Duration::from_millis(300);
 /// A device reports itself booted a little before its screen can be read; this waits up to 30 s.
-const SCREEN_READY_READS: usize = 30;
-const SCREEN_READY_STEP: Duration = Duration::from_secs(1);
+pub(crate) const SCREEN_READY_READS: usize = 30;
+pub(crate) const SCREEN_READY_STEP: Duration = Duration::from_secs(1);
 /// Enough reads for an app to finish launching, about three and a half seconds.
 const SETTLE_READS: usize = 12;
 /// Elements whose centre is above this are the status bar's: time, signal, battery.

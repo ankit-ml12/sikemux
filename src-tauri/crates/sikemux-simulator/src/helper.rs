@@ -645,8 +645,16 @@ mod tests {
         let udid = device["udid"].as_str().unwrap().to_owned();
         let was_booted = device["state"] == "booted";
         call(json!({ "type": "boot", "udid": udid })).await.unwrap();
-        let tree = call(json!({ "type": "tree", "udid": udid })).await.unwrap();
-        assert!(tree["elements"].is_array());
+        // A device says it is booted a little before its screen can be read, as sim_attach allows for.
+        let mut tree = Err(String::new());
+        for _ in 0..crate::tools::SCREEN_READY_READS {
+            tree = call(json!({ "type": "tree", "udid": udid })).await;
+            if tree.is_ok() {
+                break;
+            }
+            tokio::time::sleep(crate::tools::SCREEN_READY_STEP).await;
+        }
+        assert!(tree.unwrap()["elements"].is_array());
         let missing =
             call(json!({ "type": "tapLabel", "udid": udid, "label": "no such label anywhere" }))
                 .await
