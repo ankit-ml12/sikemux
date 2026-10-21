@@ -6,7 +6,6 @@ import { parseReleaseCredits } from "../api/releases";
 import type { AgentAccountBook } from "../api/agents";
 import type { ProjectInfo, Workspace } from "../api/generated/wire";
 import { normaliseKeybindingOverrides } from "../commands/keybindings";
-import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { accountAgentTypes, agentTypes, hasAccounts, isAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
@@ -78,11 +77,6 @@ const oneOf =
     (saved, current) =>
         values.includes(saved as T) ? (saved as T) : current;
 
-function normalisePluginSettings(value: unknown): Record<string, unknown> {
-    if (!isRecord(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter(([id]) => isPluginId(id)));
-}
-
 function readReleaseNotes(saved: unknown): StoreState["lastReleaseNotes"] {
     if (!isRecord(saved) || typeof saved.version !== "string") return null;
     return {
@@ -100,18 +94,14 @@ const PREFS = {
     paneStrength: finite(clampPaneStrength),
     windowOpacity: finite(),
     windowBlur: finite(),
-    cloudBrowser: text,
-    cloudBrowserShortcut: text,
     keybindingOverrides: (saved) => normaliseKeybindingOverrides(saved),
     sideRailOpen: flag,
     tabRailOpen: flag,
     sideRailWidth: finite((width) => clampRailWidth("start", width)),
     tabRailWidth: finite((width) => clampRailWidth("end", width)),
-    pluginSettings: (saved) => normalisePluginSettings(saved),
     activeSpaceId: (saved, current) => (typeof saved === "string" ? saved : current),
     notch: (saved) => normaliseNotchSettings(saved),
     voiceDictation: flag,
-    iosSimulator: flag,
     simulatorFrame: flag,
     notificationsIntroduced: flag,
     keptRunningNoticeShown: flag,
@@ -121,7 +111,6 @@ const PREFS = {
     tabRailPage: oneOf("agents", "terminals", "files"),
     onboardingComplete: flag,
     lastSeenVersion: text,
-    customCommands: (saved) => normaliseCustomCommands(saved),
     updateChannel: oneOf("stable", "nightly"),
     shareUsageData: flag,
     lastReleaseNotes: (saved) => readReleaseNotes(saved),
@@ -188,31 +177,6 @@ export interface PersistedSnapshot {
     itemStates: Record<string, PersistedWorkbenchItemEnvelope>;
     /** The chats open here that run on other hosts, which this host's core does not keep. */
     hostAgents?: Agent[];
-}
-
-const COMMAND_PLACEMENTS = new Set<CustomCommandPlacement>(["background", "terminal", "split", "popup", "replace"]);
-
-function normaliseCustomCommands(value: unknown): CustomCommand[] {
-    if (!Array.isArray(value)) return [];
-    const seen = new Set<string>();
-    const commands: CustomCommand[] = [];
-    for (const row of value) {
-        if (!isRecord(row) || typeof row.id !== "string" || !row.id || seen.has(row.id)) continue;
-        if (typeof row.title !== "string" || !row.title.trim() || typeof row.command !== "string" || !row.command.trim()) continue;
-        if (!COMMAND_PLACEMENTS.has(row.placement as CustomCommandPlacement)) continue;
-        const contexts = Array.isArray(row.contexts) ? row.contexts.filter((v): v is CommandContext => isSessionKind(v)) : [];
-        seen.add(row.id);
-        commands.push({
-            id: row.id.slice(0, 100),
-            title: row.title.trim().slice(0, 120),
-            detail: typeof row.detail === "string" ? row.detail.trim().slice(0, 240) : "",
-            command: row.command.slice(0, 8_000),
-            contexts,
-            placement: row.placement as CustomCommandPlacement,
-        });
-        if (commands.length >= 100) break;
-    }
-    return commands;
 }
 
 function isLayout(value: unknown): value is Window["root"] {

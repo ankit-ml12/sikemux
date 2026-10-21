@@ -1,6 +1,7 @@
 //! How the person wants Sikemux to behave, kept here so every app follows
 //! the same choices. Each one's default is `Preferences::default()`.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,8 +12,8 @@ use sikemux_process::sync::Locked;
 use super::kept::Kept;
 use super::{CoreError, CoreResult};
 use crate::protocol::{
-    Preferences, MAX_PROJECT_DEPTH, MAX_TERMINAL_FONT_SIZE, MAX_TEXT_SCALE, MIN_TERMINAL_FONT_SIZE, MIN_TEXT_SCALE,
-    UI_TEXT_SCALES,
+    CustomCommand, Preferences, MAX_PROJECT_DEPTH, MAX_TERMINAL_FONT_SIZE, MAX_TEXT_SCALE,
+    MIN_TERMINAL_FONT_SIZE, MIN_TEXT_SCALE, UI_TEXT_SCALES,
 };
 
 const FILE: &str = "preferences.json";
@@ -94,7 +95,9 @@ fn read(values: &Map<String, Value>) -> Preferences {
 
 fn put(values: &mut Map<String, Value>, key: &str, value: Value) -> CoreResult<Preferences> {
     if !values.contains_key(key) {
-        return Err(CoreError::from(format!("there is no preference named {key}")));
+        return Err(CoreError::from(format!(
+            "there is no preference named {key}"
+        )));
     }
     let mut next = values.clone();
     next.insert(key.to_owned(), value);
@@ -108,7 +111,8 @@ fn put(values: &mut Map<String, Value>, key: &str, value: Value) -> CoreResult<P
 }
 
 fn within_limits(mut preferences: Preferences) -> Preferences {
-    let scale = |value: f64| ((value * 100.0).round() / 100.0).clamp(MIN_TEXT_SCALE, MAX_TEXT_SCALE);
+    let scale =
+        |value: f64| ((value * 100.0).round() / 100.0).clamp(MIN_TEXT_SCALE, MAX_TEXT_SCALE);
     preferences.chat_text_scale = scale(preferences.chat_text_scale);
     preferences.editor_text_scale = scale(preferences.editor_text_scale);
     preferences.terminal_font_size = preferences
@@ -125,9 +129,37 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
     for root in &mut preferences.project_roots {
         root.depth = root.depth.min(MAX_PROJECT_DEPTH);
     }
+    preferences.custom_commands = commands_within_limits(preferences.custom_commands);
+    preferences.cloud_browser = preferences.cloud_browser.trim().to_owned();
+    preferences.cloud_browser_shortcut = preferences.cloud_browser_shortcut.trim().to_owned();
     preferences.last_agent_type = preferences
         .last_agent_type
         .filter(|agent| crate::agent_catalog::agent(agent).is_some());
     preferences
 }
 
+const MAX_CUSTOM_COMMANDS: usize = 100;
+
+/// Keeps commands with an id, a title and a command, once each by id, each
+/// field cut to what the palette shows.
+fn commands_within_limits(commands: Vec<CustomCommand>) -> Vec<CustomCommand> {
+    let cut = |text: &str, chars: usize| text.chars().take(chars).collect::<String>();
+    let mut seen = HashSet::new();
+    commands
+        .into_iter()
+        .filter(|command| {
+            !command.title.trim().is_empty()
+                && !command.command.trim().is_empty()
+                && !command.id.is_empty()
+                && seen.insert(command.id.clone())
+        })
+        .take(MAX_CUSTOM_COMMANDS)
+        .map(|command| CustomCommand {
+            id: cut(&command.id, 100),
+            title: cut(command.title.trim(), 120),
+            detail: cut(command.detail.trim(), 240),
+            command: cut(&command.command, 8_000),
+            ..command
+        })
+        .collect()
+}

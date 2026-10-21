@@ -596,8 +596,6 @@ function baseSnapshot(): PersistedSnapshot {
       sideRailWidth: 258,
       tabRailWidth: 256,
       windowBlur: 0,
-      cloudBrowser: "",
-      cloudBrowserShortcut: "",
       sideRailOpen: true,
       tabRailOpen: true,
       onboardingComplete: true,
@@ -605,11 +603,6 @@ function baseSnapshot(): PersistedSnapshot {
       lastReleaseNotes: null,
       lastSeenVersion: "0.5.3",
       activeSpaceId: null,
-      pluginSettings: {
-        "sikemux.rundeck": { activeProject: "platform", activeGroup: null },
-        "sikemux.signoz": { minutes: 60, environment: "production" },
-        "sikemux.github": { pinned: [] },
-      },
     },
     itemStates: {
       "p-editor": {

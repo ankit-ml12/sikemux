@@ -25,7 +25,7 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { setPreference, usePreference, projectRootsOf } from "../state/preferences";
+import { customCommandsOf, setPreference, usePreference, projectRootsOf } from "../state/preferences";
 import type { MidTurnSend } from "../api/generated/wire";
 import {
     cloneTheme,
@@ -126,8 +126,8 @@ export function SettingsPanel() {
     const themeId = usePreference("themeId") ?? DEFAULT_THEME_ID;
     const windowOpacity = useStore((s) => s.windowOpacity);
     const windowBlur = useStore((s) => s.windowBlur);
-    const cloudBrowser = useStore((s) => s.cloudBrowser);
-    const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
+    const cloudBrowser = usePreference("cloudBrowser") ?? "";
+    const cloudBrowserShortcut = usePreference("cloudBrowserShortcut") ?? "";
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const home = useStore((s) => s.home);
     const paneShader = useStore((s) => s.paneShader);
@@ -399,7 +399,7 @@ function blankCommand(): CustomCommand {
 }
 
 function ActionsPage() {
-    const commands = useStore((s) => s.customCommands);
+    const commands = useStore(customCommandsOf);
     const pluginManifests = useStore((s) => s.pluginManifests);
     const contextOptions = useMemo(
         () => [
@@ -1846,7 +1846,7 @@ function xcodeDescription(path: string | null): string {
 }
 
 function SimulatorSection() {
-    const enabled = useStore((s) => s.iosSimulator);
+    const enabled = usePreference("iosSimulator") === true;
     const frame = useStore((s) => s.simulatorFrame);
     const status = useSimStatus();
     const [setup, setSetup] = useState<SimSetup | "unread" | null>(null);

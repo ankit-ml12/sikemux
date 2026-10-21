@@ -17,6 +17,11 @@ export function testPreferences(changes: Partial<Preferences> = {}): Preferences
         projectRoots: [],
         defaultGitRepos: {},
         languageServerTrust: {},
+        customCommands: [],
+        pluginSettings: {},
+        cloudBrowser: "",
+        cloudBrowserShortcut: "",
+        iosSimulator: true,
         ...changes,
     };
 }

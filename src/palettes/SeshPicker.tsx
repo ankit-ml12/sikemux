@@ -21,7 +21,7 @@ import { enabledFrontendPlugins } from "../plugins/enabled";
 import { pluginSurface } from "../plugins/registry";
 import { IconClose, IconFolder, IconSearch, IconServer, IconTerminal } from "../ui/Icons";
 import { leavingOverlay } from "../lib/motion";
-import { projectRootsOf } from "../state/preferences";
+import { pluginSettingsOf, projectRootsOf } from "../state/preferences";
 
 type Item =
     | { kind: "session"; id: string; name: string; sub: string; sk: SessionKind; cwd: string | null }
@@ -58,7 +58,7 @@ export function SeshPicker() {
     const railNames = useRailNames();
     const home = useStore((s) => s.home);
     const projectRoots = useStore(projectRootsOf);
-    const pluginSettings = useStore((s) => s.pluginSettings);
+    const pluginSettings = useStore(pluginSettingsOf);
     const disabledPlugins = useStore((s) => s.disabledPlugins);
     const mode = useStore((s) => s.pickerMode);
     const moving = useStore((s) => (s.pickerMovingAgentId ? s.agents[s.pickerMovingAgentId] : undefined));

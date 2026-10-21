@@ -11,15 +11,15 @@ import { MAX_PROJECT_DEPTH, type ProjectRoot } from "../../api/generated/wire";
 import { getState, setState } from "../store";
 import type { AgentType } from "../../agents/catalog";
 
-export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
-export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
+export const setCloudBrowser = (v: string): void => setPreference("cloudBrowser", v.trim());
+export const setCloudBrowserShortcut = (v: string): void => setPreference("cloudBrowserShortcut", v.trim());
 
 export const setRestoreAgentTabs = (value: boolean): void => setPreference("restoreAgentTabs", value);
 export const setAgentNotifications = (value: boolean): void => setPreference("agentNotifications", value);
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
 export const setNotch = (patch: Partial<import("../../notch/notchSettings").NotchSettings>): void =>
     setState({ notch: { ...getState().notch, ...patch } });
-export const setIosSimulator = (value: boolean): void => setState({ iosSimulator: value });
+export const setIosSimulator = (value: boolean): void => setPreference("iosSimulator", value);
 export const setSimulatorFrame = (value: boolean): void => setState({ simulatorFrame: value });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
 /** Changes how agents' faces look for every client, showing the change here at once. */

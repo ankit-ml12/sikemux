@@ -15,7 +15,7 @@ import { watchSshLinks } from "./terminal/sshLinks";
 import { watchTerminalTitles } from "./terminal/terminalTitles";
 import { watchRailNames } from "./terminal/railNames";
 import { watchFaceStyle } from "./buddies/faceStyle";
-import { showPreferences, usePreference, watchPreferences } from "./state/preferences";
+import { customCommandsOf, showPreferences, usePreference, watchPreferences } from "./state/preferences";
 import { watchLspClaims } from "./api/lsp";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
@@ -302,7 +302,7 @@ async function quitAndStopEverything(): Promise<void> {
 
 function ApplicationCommandPalette() {
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
-    const customCommands = useStore((s) => s.customCommands);
+    const customCommands = useStore(customCommandsOf);
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
     const activeProjectCwd = useStore(activeProjectCwdOf);
@@ -607,9 +607,9 @@ export default function App() {
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
     const installedPlugins = useInstalledPlugins();
-    const iosSimulator = useStore((s) => s.iosSimulator);
+    const iosSimulator = usePreference("iosSimulator");
     useEffect(() => {
-        void simApi.offerToAgents(iosSimulator).catch(swallow("switch the iOS Simulator"));
+        if (iosSimulator !== undefined) void simApi.offerToAgents(iosSimulator).catch(swallow("switch the iOS Simulator"));
     }, [iosSimulator]);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = usePreference("uiTextScale");

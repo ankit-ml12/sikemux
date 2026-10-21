@@ -333,6 +333,15 @@ export class ShowcaseBackend implements IpcTransport {
         languageServerTrust: Object.fromEntries(
           DEMO_PROJECTS.map((project) => [project.path, true]),
         ),
+        customCommands: [],
+        pluginSettings: {
+          "sikemux.rundeck": { activeProject: "platform", activeGroup: null },
+          "sikemux.signoz": { minutes: 60, environment: "production" },
+          "sikemux.github": { pinned: [] },
+        },
+        cloudBrowser: "",
+        cloudBrowserShortcut: "",
+        iosSimulator: true,
       }),
     );
     this.onCore(

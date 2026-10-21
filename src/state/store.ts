@@ -4,7 +4,6 @@ import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
 import type { KeybindingOverrides } from "../commands/keybindings";
-import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
 import { DEFAULT_BUDDY_STYLE } from "../buddies/style";
@@ -64,16 +63,12 @@ export interface DomainState {
     paneStrength: number;
     windowOpacity: number;
     windowBlur: number;
-    cloudBrowser: string;
-    cloudBrowserShortcut: string;
     keybindingOverrides: KeybindingOverrides;
     sideRailOpen: boolean;
     tabRailOpen: boolean;
     sideRailWidth: number;
     tabRailWidth: number;
     diffTarget: Record<string, DiffTarget | null>;
-    /** Each plugin's own settings, by plugin id, in whatever shape the plugin decodes. */
-    pluginSettings: Readonly<Record<string, unknown>>;
     /** Plugins switched off in Settings; they are built in but act as if absent. */
     disabledPlugins: readonly string[];
     /** The repository and account picked by hand on each code host, by project folder, as the core keeps them. */
@@ -85,8 +80,6 @@ export interface DomainState {
     activeSpaceId: string | null;
     notch: import("../notch/notchSettings").NotchSettings;
     voiceDictation: boolean;
-    /** Agents get the iOS Simulator tools on a Mac that can run it. */
-    iosSimulator: boolean;
     /** The simulator tab draws the device's frame and side buttons around its screen. */
     simulatorFrame: boolean;
     notificationsIntroduced: boolean;
@@ -104,7 +97,6 @@ export interface DomainState {
     pinnedChats: PinnedChat[];
     onboardingComplete: boolean;
     lastSeenVersion: string;
-    customCommands: CustomCommand[];
     updateChannel: "stable" | "nightly";
     shareUsageData: boolean;
     lastReleaseNotes: HeldRelease | null;
@@ -271,15 +263,12 @@ export const useStore = create<StoreState>(() => {
         paneStrength: 1,
         windowOpacity: 1,
         windowBlur: 0,
-        cloudBrowser: "",
-        cloudBrowserShortcut: "",
         keybindingOverrides: {},
         sideRailOpen: true,
         tabRailOpen: true,
         sideRailWidth: RAIL_WIDTH.start.initial,
         tabRailWidth: RAIL_WIDTH.end.initial,
         diffTarget: {},
-        pluginSettings: {},
         disabledPlugins: [],
         codeHosts: {},
         spaces: [],
@@ -287,7 +276,6 @@ export const useStore = create<StoreState>(() => {
         activeSpaceId: null,
         notch: DEFAULT_NOTCH_SETTINGS,
         voiceDictation: false,
-        iosSimulator: true,
         simulatorFrame: true,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
@@ -300,7 +288,6 @@ export const useStore = create<StoreState>(() => {
         pinnedChats: [],
         onboardingComplete: false,
         lastSeenVersion: "",
-        customCommands: [],
         updateChannel: "stable",
         shareUsageData: true,
         lastReleaseNotes: null,

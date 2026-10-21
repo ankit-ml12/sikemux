@@ -1098,6 +1098,32 @@ pub const DEFAULT_THEME_ID: &str = "aura-noir";
 /// How many folders below a project root projects are looked for, at most.
 pub const MAX_PROJECT_DEPTH: u32 = 8;
 
+/// Where a custom command's output goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CustomCommandPlacement {
+    Background,
+    Terminal,
+    Split,
+    Popup,
+    Replace,
+}
+
+/// A shell command the person added to the command palette.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomCommand {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub detail: String,
+    pub command: String,
+    /// The kinds of tab it is offered in; none means every tab.
+    #[serde(default)]
+    pub contexts: Vec<String>,
+    pub placement: CustomCommandPlacement,
+}
+
 /// A folder the person keeps projects in.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1142,6 +1168,16 @@ pub struct Preferences {
     /// Whether a project's language servers may run, by its folder, once the
     /// person said.
     pub language_server_trust: BTreeMap<String, bool>,
+    /// The commands the person added to the command palette.
+    pub custom_commands: Vec<CustomCommand>,
+    /// Each plugin's own settings, by the plugin's id, as the plugin reads them.
+    pub plugin_settings: BTreeMap<String, Value>,
+    /// The browser app single sign-on opens in, or none for the default one.
+    pub cloud_browser: String,
+    /// The shortcut that brings that browser's desktop forward.
+    pub cloud_browser_shortcut: String,
+    /// Agents may drive the iOS Simulator.
+    pub ios_simulator: bool,
 }
 
 impl Default for Preferences {
@@ -1161,6 +1197,11 @@ impl Default for Preferences {
             project_roots: Vec::new(),
             default_git_repos: BTreeMap::new(),
             language_server_trust: BTreeMap::new(),
+            custom_commands: Vec::new(),
+            plugin_settings: BTreeMap::new(),
+            cloud_browser: String::new(),
+            cloud_browser_shortcut: String::new(),
+            ios_simulator: true,
         }
     }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import { mergeByService } from "./health";
 import {
     addFilter,
@@ -14,6 +14,10 @@ import {
     zoomTo,
     type SignozSettings,
 } from "./state";
+import { setState } from "../../state/store";
+import { testPreferences } from "../../test/preferences";
+
+beforeEach(() => setState({ preferences: testPreferences() }));
 
 describe("signozSettings", () => {
     it("falls back to usable settings whatever was saved", () => {

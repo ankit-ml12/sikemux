@@ -1238,6 +1238,16 @@ export interface Preferences {
      * person said.
      */
     languageServerTrust: Record<string, boolean>;
+    /** The commands the person added to the command palette. */
+    customCommands: CustomCommand[];
+    /** Each plugin's own settings, by the plugin's id, as the plugin reads them. */
+    pluginSettings: Record<string, unknown>;
+    /** The browser app single sign-on opens in, or none for the default one. */
+    cloudBrowser: string;
+    /** The shortcut that brings that browser's desktop forward. */
+    cloudBrowserShortcut: string;
+    /** Agents may drive the iOS Simulator. */
+    iosSimulator: boolean;
 }
 
 export type MidTurnSend = "steer" | "queue";
@@ -1328,6 +1338,20 @@ export interface ProjectRoot {
     /** The folder is a project itself, whether or not it is a git repository. */
     selfIndex: boolean;
 }
+
+/** A shell command the person added to the command palette. */
+export interface CustomCommand {
+    id: string;
+    title: string;
+    detail: string;
+    command: string;
+    /** The kinds of tab it is offered in; none means every tab. */
+    contexts: string[];
+    placement: CustomCommandPlacement;
+}
+
+/** Where a custom command's output goes. */
+export type CustomCommandPlacement = "background" | "terminal" | "split" | "popup" | "replace";
 
 /**
  * The picked theme with the colours every app works out from it, nudged

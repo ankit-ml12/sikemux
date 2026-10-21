@@ -49,6 +49,9 @@ import { hostSettings, resetView, setFollowBranch, updateView, viewOf } from "..
 import { InHost, picked, registerTestHost, TEST_HOST } from "../testHost";
 import { setState } from "../../state/store";
 import { HostArea } from "./HostArea";
+import { testPreferences } from "../../test/preferences";
+
+beforeEach(() => setState({ preferences: testPreferences() }));
 
 const signIn = vi.hoisted(() => ({ last: null as null | ((account: string | null) => void) }));
 const host = {

@@ -1,6 +1,6 @@
 import { coreCall } from "../api/core";
 import { onCoreChanged } from "../api/coreChanged";
-import type { Preferences, ProjectRoot } from "../api/generated/wire";
+import type { CustomCommand, Preferences, ProjectRoot } from "../api/generated/wire";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { swallow } from "./toast";
 
@@ -32,6 +32,10 @@ export function watchPreferences(): () => void {
 
 const NO_PROJECT_ROOTS: ProjectRoot[] = [];
 export const projectRootsOf = (s: StoreState): ProjectRoot[] => s.preferences?.projectRoots ?? NO_PROJECT_ROOTS;
+const NO_CUSTOM_COMMANDS: CustomCommand[] = [];
+export const customCommandsOf = (s: StoreState): CustomCommand[] => s.preferences?.customCommands ?? NO_CUSTOM_COMMANDS;
+const NO_PLUGIN_SETTINGS: Readonly<Record<string, unknown>> = {};
+export const pluginSettingsOf = (s: StoreState): Readonly<Record<string, unknown>> => s.preferences?.pluginSettings ?? NO_PLUGIN_SETTINGS;
 
 /** A preference's value, or undefined until the core has said. */
 export function usePreference<K extends keyof Preferences>(key: K): Preferences[K] | undefined {
