@@ -6,7 +6,7 @@ use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, radians, Anchor, AnyElement, App, Entity, Focusable, FontWeight, Hsla, Image, ImageFormat, InteractiveElement,
+    div, img, px, radians, Anchor, App, Entity, Focusable, FontWeight, Hsla, Image, ImageFormat, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use sikemux_wire::chat::ContextUsage;

@@ -13,11 +13,32 @@ use serde_json::Value;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Menu, MenuItem, Row, Segmented};
-use crate::workbench::{AgentRow, Workbench};
+use crate::workbench::{AgentRow, RailPage, Workbench};
 
 pub const TAB_RAIL_WIDTH: f32 = 288.;
 
-pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
+pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+    if bench.rail_page == RailPage::Files {
+        let t = Tokens::get(cx).clone();
+        return ui::panel(cx)
+            .w(px(TAB_RAIL_WIDTH))
+            .min_w(px(240.))
+            .flex_none()
+            .child(
+                div()
+                    .flex_none()
+                    .min_h(px(40.))
+                    .px(px(14.))
+                    .flex()
+                    .items_center()
+                    .border_b_1()
+                    .border_color(t.line_soft)
+                    .child(ui::text("Files", 13., FontWeight::SEMIBOLD).text_color(t.text_primary)),
+            )
+            .child(crate::files::page(bench, cx))
+            .child(pages(bench, cx))
+            .into_any_element();
+    }
     let project = bench.project();
     let agents = bench.listed_agents();
     let rows: Vec<_> = agents.iter().map(|agent| agent_row(bench, agent, cx).into_any_element()).collect();
@@ -76,7 +97,8 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
                 .when(!recent.is_empty(), |scroll| scroll.child(Group::new("Recent", "").children(recent))),
         )
         .children(limits(bench, cx))
-        .child(pages(cx))
+        .child(pages(bench, cx))
+        .into_any_element()
 }
 
 fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
@@ -410,8 +432,14 @@ fn countdown(reset: Option<chrono::DateTime<chrono::Utc>>) -> String {
     }
 }
 
-fn pages(cx: &App) -> impl IntoElement {
+fn pages(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let border = Tokens::get(cx).border;
+    let page = |id: &'static str, glyph: Icon, label: &'static str, shown: RailPage, cx: &mut Context<Workbench>| {
+        IconButton::new(id, glyph, label).width(32.).pressed(bench.rail_page == shown).on_click(cx.listener(move |bench, _, _, cx| {
+            bench.rail_page = shown;
+            cx.notify();
+        }))
+    };
     div()
         .flex_none()
         .h(px(35.))
@@ -422,7 +450,7 @@ fn pages(cx: &App) -> impl IntoElement {
         .gap(px(4.))
         .border_t_1()
         .border_color(border)
-        .child(IconButton::new("page-agents", Icon::Agents, "Agents").width(32.).pressed(true))
+        .child(page("page-agents", Icon::Agents, "Agents", RailPage::Agents, cx))
         .child(IconButton::new("page-terminals", Icon::Terminal, "Terminals").width(32.))
-        .child(IconButton::new("page-files", Icon::File, "Files").width(32.))
+        .child(page("page-files", Icon::File, "Files", RailPage::Files, cx))
 }

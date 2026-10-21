@@ -3,6 +3,7 @@
 //!   cargo run --example shot -- out.png [seconds to wait for the core]
 //!     [--account "Name <email>"]  draws the rail as if the host were signed in as them
 //!     [--scroll pixels]           scrolls the side rail down that far first
+//!     [--files]                   shows the tab rail's Files page
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,6 +22,7 @@ fn main() -> anyhow::Result<()> {
         args.iter().position(|arg| arg == name).and_then(|at| args.get(at + 1).cloned())
     };
     let account = option("--account");
+    let files = std::env::args().any(|arg| arg == "--files");
     let scroll: Option<f32> = option("--scroll").and_then(|pixels| pixels.parse().ok());
     let bench = Rc::new(RefCell::new(None));
     let kept = bench.clone();
@@ -51,6 +53,14 @@ fn main() -> anyhow::Result<()> {
             },
         )
     })?;
+    if files {
+        if let Some(bench) = bench.borrow().clone() {
+            cx.update(|cx| bench.update(cx, |bench, cx| {
+                bench.rail_page = workbench::RailPage::Files;
+                cx.notify();
+            }));
+        }
+    }
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs_f64(wait) {
         cx.run_until_parked();

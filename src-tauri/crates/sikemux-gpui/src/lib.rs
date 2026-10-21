@@ -5,6 +5,7 @@ mod battery;
 mod chat;
 pub mod composer;
 mod faces;
+mod files;
 pub mod core;
 mod home;
 pub mod icons;

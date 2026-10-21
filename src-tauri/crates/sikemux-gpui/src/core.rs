@@ -24,6 +24,8 @@ pub enum Update {
     Lost(String),
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
+    /// The core said something under a followed topic moved; no paths means anything may have.
+    Changed { topic: String, project: Option<String>, paths: Option<Vec<String>> },
 }
 
 pub enum ChatNews {
@@ -85,6 +87,8 @@ pub enum Ask {
     /// The theme's colours, which the core answers programs' colour queries with.
     TerminalColors(TerminalColors),
     Chat(ChatAsk),
+    /// Hands the window the core's changes under `topic`, with what moved.
+    Follow(&'static str),
 }
 
 pub enum ChatAsk {
@@ -148,6 +152,7 @@ pub fn start(home: Home) -> Link {
 
 async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc::UnboundedReceiver<Ask>) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
+    let mut followed: Vec<&'static str> = Vec::new();
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
     let mut colors = None;
     loop {
@@ -194,9 +199,12 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                             Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
                                 let _ = updates.send(Update::Chat(agent_id, ChatNews::Changes { seq, changes }));
                             }
-                            Some(ClientEvent::Event(Event::Changed { topic, .. })) => {
+                            Some(ClientEvent::Event(Event::Changed { topic, project, paths })) => {
                                 for (key, watch) in watches.iter().filter(|(_, watch)| watch.topics.contains(&topic.as_str())) {
                                     read(&client, key, watch, &current, &updates);
+                                }
+                                if followed.contains(&topic.as_str()) {
+                                    let _ = updates.send(Update::Changed { topic, project, paths });
                                 }
                             }
                             Some(_) => {}
@@ -208,6 +216,11 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                                 current.lock().expect("watch generations").insert(key, watch.generation);
                                 read(&client, key, &watch, &current, &updates);
                                 watches.insert(key, watch);
+                            }
+                            Some(Ask::Follow(topic)) => {
+                                if !followed.contains(&topic) {
+                                    followed.push(topic);
+                                }
                             }
                             Some(Ask::Answer { key, method, params }) => {
                                 let (client, updates) = (client.clone(), updates.clone());

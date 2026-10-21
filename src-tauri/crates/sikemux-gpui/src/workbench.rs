@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::Timelike;
@@ -12,6 +13,7 @@ use tokio::sync::mpsc;
 
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question};
+use crate::files::FileTree;
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
@@ -34,6 +36,9 @@ pub struct Workbench {
     /// From asking the core to sign in until the browser is done or gives up.
     pub signing_in: bool,
     pub all_projects: bool,
+    /// Which of its pages the tab rail shows.
+    pub rail_page: RailPage,
+    pub files: FileTree,
     /// The agent the rail was switched to, else the one the project last started.
     pub launcher_choice: Option<String>,
     /// The rail lists the recent chats of every agent, not one's.
@@ -58,6 +63,12 @@ pub struct CiRepo {
     pub name: String,
     pub account: Option<String>,
     pub branch: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RailPage {
+    Agents,
+    Files,
 }
 
 /// An agent as the rails and tabs show it.
@@ -113,6 +124,7 @@ impl Workbench {
         let _ = asks.send(Ask::Watch("runs", Watch::new("taskRuns", json!({}), &["runs"])));
         let _ = asks.send(Ask::Watch("questions", Watch::new("questions", json!({}), &["questions"])));
         let _ = asks.send(Ask::Watch("catalog", Watch::new("agentCatalog", json!({}), &[])));
+        let _ = asks.send(Ask::Follow("git"));
         cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
                 break;
@@ -135,6 +147,8 @@ impl Workbench {
             picture_hash: None,
             signing_in: false,
             all_projects: false,
+            rail_page: RailPage::Agents,
+            files: FileTree::default(),
             launcher_choice: None,
             all_harnesses: false,
             metric: 0,
@@ -214,11 +228,18 @@ impl Workbench {
                     self.signing_in = false;
                 }
             }
+            Update::Read("files.list", value) => self.files.listed(&value, &self.asks),
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
             }
             Update::Terminal(session, screenful) => self.terminals.apply(session, screenful, cx),
             Update::Lost(reason) => self.lost = Some(reason),
+            Update::Changed { topic, project, paths } => {
+                let root = self.files.root.as_ref().map(|root| root.to_string_lossy().into_owned());
+                if topic == "git" && (project.is_none() || project == root) {
+                    self.files.changed(paths.as_deref(), &self.asks);
+                }
+            }
         }
         cx.notify();
     }
@@ -339,6 +360,8 @@ impl Workbench {
         let _ = self.asks.send(Ask::Watch("activity", Watch::new("activitySummary", activity, &["activity"])));
         let _ = self.asks.send(Ask::Watch("tasks", Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"])));
         let _ = self.asks.send(Ask::Watch("ports", Watch::new("ports", json!({ "project": path }), &["ports"])));
+        let _ = self.asks.send(Ask::Watch("git-overview", Watch::new("git.overview", json!({ "repo": path }), &["git"])));
+        self.files.show(path.clone().map(PathBuf::from), &self.asks);
         self.watched_project = path;
     }
 
@@ -475,6 +498,19 @@ impl Workbench {
         let account = self.read("usage")?.as_array()?.iter().find(|account| account["launcher"] == launcher)?;
         let windows = account["usage"]["windows"].as_array()?;
         windows.iter().filter_map(|window| window["usedPercent"].as_f64()).map(|used| used.clamp(0., 100.)).reduce(f64::max)
+    }
+
+    /// The file the tab in front shows, when it is an editor.
+    pub fn front_file(&self) -> Option<PathBuf> {
+        let (kind, target) = crate::tabs::first_view(&self.tab()?.pane)?;
+        (kind == PaneKind::Files).then(|| PathBuf::from(target))
+    }
+
+    /// Brings the file's editor tab to the front, opening one when none shows it.
+    pub fn open_file(&self, path: &Path) {
+        if let Some(project) = self.project() {
+            self.call("openTab", json!({ "project": project.id, "kind": "files", "target": path.to_string_lossy() }));
+        }
     }
 
     pub fn activate_project(&self, id: &str) {
