@@ -25,7 +25,7 @@ use gpui::{
 };
 
 #[cfg(target_os = "macos")]
-pub use macos::OwnedView;
+pub use macos::{window_view, OwnedView};
 #[cfg(target_os = "macos")]
 pub use objc2::rc::Retained;
 #[cfg(target_os = "macos")]
@@ -159,7 +159,7 @@ impl Element for NativeView {
             window.set_focus_handle(focus, cx);
         }
         let visible = bounds.intersect(&window.content_mask().bounds);
-        window.insert_hitbox(visible, HitboxBehavior::BlockMouse);
+        window.insert_hitbox(visible, HitboxBehavior::BlockMouseExceptScroll);
         let frame = (!visible.is_empty()).then_some(Frame { bounds, visible });
         let id = id.expect("a native view has an id");
         window.with_element_state(id, |placement: Option<Placement>, window| {

@@ -22,6 +22,7 @@ flate2 = "1"
 # The same GPUI as GPUI Kit's, named `gpui` for the macros that expand to it.
 gpui = { package = "gpui-pre", version = "=0.3.9" }
 gpui-kit = { version = "=0.8.0", default-features = false, features = ["component"] }
+gpui-native-view = { path = "crates/gpui-native-view" }
 gpui-terminal-grid = { path = "crates/gpui-terminal-grid" }
 gpui-transcript = { path = "crates/gpui-transcript", features = ["fork"] }
 lsp-types = "0.97"
@@ -29,6 +30,7 @@ memchr = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = "1"
+sikemux-browser = { path = "../sikemux-browser" }
 sikemux-core = { path = "../sikemux-core" }
 sikemux-host = { path = "../sikemux-host", default-features = false }
 sikemux-markdown = { path = "../sikemux-markdown" }

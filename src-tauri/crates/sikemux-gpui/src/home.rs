@@ -8,14 +8,13 @@ use gpui_kit::{
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::protocol::PaneKind;
 
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, Menu, MenuItem, PaneHeader, Segmented, Toggle, Variant};
 use crate::workbench::{AgentRow, Workbench};
-use crate::{chat, tabs, terminal};
+use crate::{chat, panes};
 
 const WEEKS: i64 = 53;
 const CELL_GAP: f32 = 3.;
@@ -29,33 +28,12 @@ pub const METRICS: [(&str, &str); 5] = [
     ("sessions", "Sessions"),
 ];
 
-/// The stage: the chosen agent's pane, on what a new chat opens on: the project, and
-/// what its agents did in it.
+/// The stage: the tab in front, its views side by side, or what a project with nothing
+/// open says.
 pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> AnyElement {
     if bench.settings.is_some() {
         return crate::settings::view(bench, window, cx);
     }
-    if let Some((PaneKind::Terminal, session)) =
-        bench.tab().and_then(|tab| tabs::first_view(&tab.pane))
-    {
-        let pane = ui::pane(cx).child(terminal::pane(bench, &cx.entity(), session, window));
-        return div().flex_1().min_w_0().child(pane).into_any_element();
-    }
-    if let Some((PaneKind::Files, path)) = bench.tab().and_then(|tab| tabs::first_view(&tab.pane)) {
-        let pane = ui::pane(cx).child(crate::editor::pane(bench, &cx.entity(), path, window, cx));
-        return div().flex_1().min_w_0().child(pane).into_any_element();
-    }
-    if let (Some((PaneKind::Git, _)), Some(pane)) = (
-        bench.tab().and_then(|tab| tabs::first_view(&tab.pane)),
-        &bench.git,
-    ) {
-        return div()
-            .flex_1()
-            .min_w_0()
-            .child(pane.clone())
-            .into_any_element();
-    }
-    let project = bench.project();
     if bench
         .strip()
         .is_some_and(|strip| bench.tabs(&strip).is_empty())
@@ -66,11 +44,45 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
             .child(ui::pane(cx).child(empty_stage(cx)))
             .into_any_element();
     }
-    let agent = bench.agent();
+    let shown = match bench.tab() {
+        Some(tab) => panes::tab(bench, tab, window, cx),
+        None => ui::pane(cx)
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .justify_center()
+                    .child(welcome(bench, None, cx)),
+            )
+            .into_any_element(),
+    };
+    div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .child(shown)
+        .into_any_element()
+}
+
+/// One agent's view of a tab: its chat under its header, or what a new chat opens on.
+pub fn agent_view(
+    bench: &Workbench,
+    tab: &str,
+    view: &str,
+    agent: &str,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let project = bench.project();
+    let agent = project.and_then(|project| {
+        bench
+            .agents_of(&project.id)
+            .into_iter()
+            .find(|row| row.id == agent)
+    });
     let header = agent
         .as_ref()
         .zip(project)
-        .map(|(agent, project)| pane_header(bench, agent, &project.id));
+        .map(|(agent, project)| pane_header(bench, agent, &project.id, tab, view, cx));
     if let Some((agent, chat)) = agent
         .as_ref()
         .and_then(|agent| Some((agent, bench.chats.get(&agent.id)?)))
@@ -78,23 +90,20 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
         let welcome = chat
             .is_empty(cx)
             .then(|| welcome(bench, Some(agent), cx).into_any_element());
-        let pane = ui::pane(cx)
+        return ui::pane(cx)
             .child(chat::pane(bench, agent, chat, welcome, cx))
-            .children(header);
-        return div().flex_1().min_w_0().child(pane).into_any_element();
+            .children(header)
+            .into_any_element();
     }
-    div()
-        .flex_1()
-        .min_w_0()
+    ui::pane(cx)
         .child(
-            ui::pane(cx)
-                .child(div().size_full().flex().justify_center().child(welcome(
-                    bench,
-                    agent.as_ref(),
-                    cx,
-                )))
-                .children(header),
+            div()
+                .size_full()
+                .flex()
+                .justify_center()
+                .child(welcome(bench, agent.as_ref(), cx)),
         )
+        .children(header)
         .into_any_element()
 }
 
@@ -189,10 +198,16 @@ pub fn welcome(
         }))
 }
 
-fn pane_header(bench: &Workbench, agent: &AgentRow, project: &str) -> impl IntoElement {
+fn pane_header(
+    bench: &Workbench,
+    agent: &AgentRow,
+    project: &str,
+    tab: &str,
+    view: &str,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     let asks = bench.asks.clone();
-    let tab = bench.tab().map(|tab| tab.id.clone()).unwrap_or_default();
-    let close = json!({ "project": project, "tab": tab });
+    let close = json!({ "project": project, "tab": tab, "pane": view });
     let menu = Popover::new("agent-menu")
         .anchor(Anchor::TopLeft)
         .offset(px(4.))
@@ -208,13 +223,15 @@ fn pane_header(bench: &Workbench, agent: &AgentRow, project: &str) -> impl IntoE
                     .icon(Icon::Close)
                     .on_click(move |_, window, cx| {
                         let _ = asks.send(Ask::Call {
-                            method: "closeTab",
+                            method: "closePane",
                             params: close.clone(),
                         });
                         popover.update(cx, |popover, cx| popover.dismiss(window, cx));
                     }),
             )
         });
+    let desk_open = bench.desk_of(tab, &agent.id).is_some();
+    let (tab, view, agent_id) = (tab.to_owned(), view.to_owned(), agent.id.clone());
     let views = vec![
         (Icon::Agent, SharedString::from("GUI")),
         (Icon::Terminal, SharedString::from("TUI")),
@@ -230,7 +247,19 @@ fn pane_header(bench: &Workbench, agent: &AgentRow, project: &str) -> impl IntoE
         .action(IconButton::new("agent-share", Icon::Share, "Share").round())
         .action(menu)
         .controls(Segmented::new("agent-view", views, 0).pill())
-        .side(IconButton::new("agent-desk", Icon::PanelRight, "Open the desk").glyph(13.))
+        .side(
+            IconButton::new(
+                "agent-desk",
+                Icon::PanelRight,
+                if desk_open {
+                    "Close the desk"
+                } else {
+                    "Open the desk"
+                },
+            )
+            .glyph(13.)
+            .on_click(cx.listener(move |bench, _, _, _| bench.toggle_desk(&tab, &view, &agent_id))),
+        )
 }
 
 pub(crate) fn number(value: &Value) -> f64 {

@@ -5,7 +5,8 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, App, ClickEvent, ElementId, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    ParentElement, Radians, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Transformation, Window,
 };
 
 use super::{icon, kbd, text};
@@ -26,6 +27,8 @@ pub struct IconButton {
     quiet: bool,
     round: bool,
     pressed: bool,
+    disabled: bool,
+    turned: f32,
     label: SharedString,
     on_click: Option<OnClick>,
 }
@@ -42,9 +45,23 @@ impl IconButton {
             quiet: true,
             round: false,
             pressed: false,
+            disabled: false,
+            turned: 0.,
             label: label.into(),
             on_click: None,
         }
+    }
+
+    /// Shown, but with nothing to do now, as Back on a page with no history.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Turns the glyph by `radians`, as a chevron pointing back.
+    pub fn turned(mut self, radians: f32) -> Self {
+        self.turned = radians;
+        self
     }
 
     /// The 18px add and edit buttons beside a group's header.
@@ -92,13 +109,20 @@ impl IconButton {
 impl RenderOnce for IconButton {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx);
-        let rest = if self.quiet {
+        let rest = if self.disabled {
+            t.text_disabled
+        } else if self.quiet {
             t.icon_quiet
         } else {
             t.text_tertiary
         };
         let (hover, primary, chosen) = (t.surface_hover, t.text_primary, t.surface_chosen);
-        let on_click = self.on_click;
+        let (hover, primary) = if self.disabled {
+            (Hsla::transparent_black(), rest)
+        } else {
+            (hover, primary)
+        };
+        let on_click = self.on_click.filter(|_| !self.disabled);
         BaseButton::new(self.id)
             .group(GROUP)
             .tooltip(super::tooltip(self.label.clone()))
@@ -124,6 +148,7 @@ impl RenderOnce for IconButton {
             })
             .child(
                 icon(self.icon, self.glyph)
+                    .with_transformation(Transformation::rotate(Radians(self.turned)))
                     .text_color(if self.pressed { primary } else { rest })
                     .group_hover(GROUP, move |style| style.text_color(primary)),
             )

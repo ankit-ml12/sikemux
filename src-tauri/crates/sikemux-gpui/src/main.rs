@@ -30,6 +30,9 @@ fn main() {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
+                if let Err(error) = window.enable_scene_overlay() {
+                    eprintln!("sikemux: pages will cover menus, with no overlay plane: {error}");
+                }
                 cx.new(|cx| workbench::Workbench::new(link, window, cx))
             })
             .expect("window opens");

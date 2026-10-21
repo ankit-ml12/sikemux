@@ -23,6 +23,7 @@ use tokio::sync::mpsc;
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question, Sent};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
+use crate::desk::{NewPage, ToggleDesk};
 use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
@@ -94,6 +95,8 @@ pub struct Workbench {
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     pub parts: Parts,
+    pub panes: crate::panes::Panes,
+    pub desks: crate::desk::Desks,
     _filtering: Option<Subscription>,
 }
 
@@ -115,7 +118,7 @@ pub enum Strip {
 
 impl Strip {
     /// `params` naming this strip, as the core's tab calls take it.
-    fn with(&self, mut params: Value) -> Value {
+    pub(crate) fn with(&self, mut params: Value) -> Value {
         let (key, id) = match self {
             Strip::Project(id) => ("project", id),
             Strip::Host(alias) => ("host", alias),
@@ -281,6 +284,8 @@ impl Workbench {
             settings: None,
             focus: cx.focus_handle(),
             parts: Parts::new(cx),
+            panes: crate::panes::Panes::default(),
+            desks: crate::desk::Desks::new(window, cx),
             _filtering: None,
         };
         bench.focus.focus(window, cx);
@@ -469,6 +474,7 @@ impl Workbench {
                 crate::settings::remote_moved(self, cx);
                 return self.parts.redraw(&self.parts.stage, cx);
             }
+            Update::WindowCall(call_id, call) => self.answer_window_call(call_id, call),
             Update::Changed {
                 topic,
                 project,
@@ -990,7 +996,7 @@ impl Workbench {
         self.reads.get(key)
     }
 
-    fn call(&self, method: &'static str, params: Value) {
+    pub(crate) fn call(&self, method: &'static str, params: Value) {
         let _ = self.asks.send(Ask::Call { method, params });
     }
 
@@ -1510,15 +1516,20 @@ fn same_kind(tab: &Tab, front: &Tab) -> bool {
     kind(tab) == kind(front)
 }
 
-/// What a tab's pane shows when it is one view of `kind`.
+/// What the tab's first view of `kind` shows, among its splits.
 pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
-    match &tab.pane {
+    shown_in(&tab.pane, kind)
+}
+
+fn shown_in(pane: &Pane, kind: PaneKind) -> Option<&String> {
+    match pane {
         Pane::View {
             kind: shown,
             target,
             ..
         } if *shown == kind => Some(target),
-        _ => None,
+        Pane::View { .. } => None,
+        Pane::Split { panes, .. } => panes.iter().find_map(|pane| shown_in(pane, kind)),
     }
 }
 
@@ -1584,6 +1595,7 @@ impl Parts {
                     bench.compose(window, cx);
                     bench.hint(window, cx);
                     bench.git_pane(window, cx);
+                    crate::desk::prepare(bench, window, cx);
                     home::stage(bench, window, cx)
                 },
                 false,
@@ -1662,6 +1674,8 @@ impl Render for Workbench {
             )
             .on_action(cx.listener(|bench, _: &NewChat, _, _| bench.new_chat()))
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
+            .on_action(cx.listener(|bench, _: &ToggleDesk, _, _| bench.toggle_front_desk()))
+            .on_action(cx.listener(|bench, _: &NewPage, _, _| bench.new_front_page()))
             .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
             .on_action(cx.listener(|bench, _: &NextTab, _, _| bench.step_tab(1, |_, _| true)))
             .on_action(cx.listener(|bench, _: &PreviousOfKind, _, _| bench.step_tab(-1, same_kind)))

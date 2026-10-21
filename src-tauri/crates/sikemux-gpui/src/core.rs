@@ -12,8 +12,8 @@ use sikemux_wire::grid::{
     decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
 };
 use sikemux_wire::protocol::{
-    ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event, RemoteStatus, Request,
-    SessionId, StreamId,
+    CallId, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event, RemoteStatus,
+    Request, SessionId, StreamId, WindowAnswer, WindowCall,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -33,6 +33,8 @@ pub enum Update {
     Remote(Box<RemoteStatus>),
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
+    /// Something the core asks of a window, such as an agent's browser step.
+    WindowCall(CallId, WindowCall),
     /// The core said something under a followed topic moved; no paths means anything may have.
     Changed {
         topic: String,
@@ -154,6 +156,9 @@ pub enum Ask {
     Chat(ChatAsk),
     /// Hands the window the core's changes under `topic`, with what moved.
     Follow(&'static str),
+    /// Makes this window the one the core hands its calls to, as when it comes to the front.
+    RegisterWindow,
+    AnswerWindow(CallId, WindowAnswer),
     /// Starts a chat with `launcher`'s agent in `project` and brings its tab to the front,
     /// answering the new agent's id to `started` when it is there.
     StartChat {
@@ -361,6 +366,9 @@ async fn run(
                 if let Err(error) = client.watch_view().await {
                     let _ = updates.send(Update::Lost(error.to_string()));
                 }
+                if let Err(error) = client.register_window().await {
+                    eprintln!("sikemux: the core would not hand this window its calls: {error}");
+                }
                 for (key, watch) in &watches {
                     read(&client, key, watch, &current, &updates);
                 }
@@ -391,6 +399,9 @@ async fn run(
                                     let _ = updates.send(Update::Changed { topic, project, paths });
                                 }
                             }
+                            Some(ClientEvent::WindowCall { call_id, call }) => {
+                                let _ = updates.send(Update::WindowCall(call_id, call));
+                            }
                             Some(_) => {}
                             None => break,
                         },
@@ -401,6 +412,15 @@ async fn run(
                                 read(&client, key, &watch, &current, &updates);
                                 watches.insert(key, watch);
                             }
+                            Some(Ask::RegisterWindow) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    if let Err(error) = client.register_window().await {
+                                        eprintln!("sikemux: the core would not hand this window its calls: {error}");
+                                    }
+                                });
+                            }
+                            Some(Ask::AnswerWindow(call_id, answer)) => client.answer_window(call_id, answer),
                             Some(Ask::Follow(topic)) => {
                                 if !followed.contains(&topic) {
                                     followed.push(topic);

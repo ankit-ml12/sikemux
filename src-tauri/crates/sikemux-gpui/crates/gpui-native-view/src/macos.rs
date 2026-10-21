@@ -27,7 +27,7 @@ pub struct OwnedView {
 impl OwnedView {
     /// Adds `view` to the window, out of sight until an element places it.
     pub fn new(view: Retained<NSView>, window: &Window) -> Option<Self> {
-        let parent = gpui_view(window)?;
+        let parent = window_view(window)?;
         let clip = NSView::initWithFrame(MainThreadMarker::from(&*parent).alloc(), NSRect::ZERO);
         clip.setWantsLayer(true);
         clip.layer()?.setMasksToBounds(true);
@@ -97,8 +97,8 @@ fn rect_in(parent: &NSView, bounds: Bounds<Pixels>) -> NSRect {
     )
 }
 
-/// The view GPUI draws the window into.
-fn gpui_view(window: &Window) -> Option<Retained<NSView>> {
+/// The view GPUI draws the window into, which native views are added to.
+pub fn window_view(window: &Window) -> Option<Retained<NSView>> {
     let handle = HasWindowHandle::window_handle(window).ok()?;
     let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
         return None;
@@ -135,7 +135,7 @@ impl Keyboard {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<Self> {
-        let gpui_view = gpui_view(window)?;
+        let gpui_view = window_view(window)?;
         watch_first_responder(&gpui_view, window, cx);
         let mark = MARKS.with(|marks| {
             marks.set(marks.get() + 1);
@@ -259,7 +259,7 @@ fn watch_first_responder(gpui_view: &NSView, window: &mut Window, cx: &mut App) 
 }
 
 fn follow_native_focus(window: &mut Window, cx: &mut App) {
-    let Some(responder) = gpui_view(window).and_then(|view| first_responder(&view)) else {
+    let Some(responder) = window_view(window).and_then(|view| first_responder(&view)) else {
         return;
     };
     let focus = FOLLOWERS.with(|followers| {
