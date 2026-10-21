@@ -540,6 +540,7 @@ pub fn render(
         .unwrap_or_default();
 
     let mut top: Vec<AnyElement> = Vec::new();
+    let mut access: Vec<AnyElement> = Vec::new();
     match account {
         None if !known => top.push(top_row(
             div()
@@ -595,7 +596,7 @@ pub fn render(
                 })
             })
     };
-    top.push(top_row(
+    access.push(top_row(
         ui::icon(Icon::Globe, 18.).into_any_element(),
         "Remote access",
         match signed_in {
@@ -614,7 +615,7 @@ pub fn render(
                 let on = *on;
                 this.update(cx, |bench, cx| set_require_approval(bench, on, cx))
             });
-        top.push(top_row(
+        access.push(top_row(
             ui::icon(Icon::Shield, 18.).into_any_element(),
             "Require approval for new devices",
             "Ask before a device or host on your account connects here for the first time",
@@ -623,56 +624,69 @@ pub fn render(
         ));
     }
 
-    let mut sections = vec![rows::section(
-        "Remote access",
-        None,
-        None,
-        lit("Remote access") || lit("Your account"),
-        div().children(top),
-        cx,
-    )];
-    if known && !signed_in {
-        sections.push(rows::section(
+    let account_section: AnyElement = match (known, signed_in) {
+        (true, false) => rows::section(
             "Your account",
             None,
             None,
-            false,
+            lit("Your account"),
             sign_in_panel(bench, link, this, cx),
             cx,
-        ));
-    } else if signed_in && status.is_some() && devices.is_empty() {
-        sections.push(rows::section(
-            "Your phone",
+        ),
+        _ => rows::section(
+            "Your account",
             None,
             None,
-            false,
-            phone_panel(cx),
+            lit("Your account"),
+            div().children(top),
             cx,
-        ));
-    }
-    if !known || signed_in || !devices.is_empty() {
-        let phones: AnyElement = match status {
-            None => div().into_any_element(),
-            Some(_) if devices.is_empty() => rows::note("None yet. Waiting for your phone.", cx),
-            Some(status) => div()
-                .children(
-                    devices
-                        .iter()
-                        .map(|device| phone_row(device, status, this, cx)),
-                )
-                .into_any_element(),
-        };
-        sections.push(rows::section(
-            "Phones",
+        ),
+    };
+    let phone_waiting = signed_in && status.is_some() && devices.is_empty();
+    let access_section = div()
+        .flex()
+        .flex_col()
+        .gap(px(28.))
+        .child(rows::section(
+            "Remote access",
             None,
             None,
-            lit("Phones"),
-            phones,
+            lit("Remote access"),
+            div().children(access),
             cx,
-        ));
-    }
-    if signed_in {
-        if let Some(links) = &fields.links {
+        ))
+        .when(phone_waiting, |access| {
+            access.child(rows::section(
+                "Your phone",
+                None,
+                None,
+                false,
+                phone_panel(cx),
+                cx,
+            ))
+        })
+        .into_any_element();
+    let phones_section: AnyElement = match !known || signed_in || !devices.is_empty() {
+        false => div().into_any_element(),
+        true => {
+            let phones: AnyElement = match status {
+                None => div().into_any_element(),
+                Some(_) if devices.is_empty() => {
+                    rows::note("None yet. Waiting for your phone.", cx)
+                }
+                Some(status) => div()
+                    .children(
+                        devices
+                            .iter()
+                            .map(|device| phone_row(device, status, this, cx)),
+                    )
+                    .into_any_element(),
+            };
+            rows::section("Phones", None, None, lit("Phones"), phones, cx)
+        }
+    };
+    let hosts_section: AnyElement = match (signed_in, &fields.links) {
+        (true, Some(links)) => {
             let hosts: AnyElement = match links.is_empty() {
                 true => rows::note(
                     "No other hosts on your account. Sign in to Sikemux on one to add it.",
@@ -682,15 +696,21 @@ pub fn render(
                     .children(links.iter().map(|link| host_row(link, fields, this, cx)))
                     .into_any_element(),
             };
-            sections.push(rows::section(
+            rows::section(
                 "Hosts",
                 None,
                 Some("Every host signed in to your account links with this one, so agents here can start agents there, on that host's own sign-ins.".into()),
                 lit("Hosts"),
                 hosts,
                 cx,
-            ));
+            )
         }
-    }
-    sections
+        _ => div().into_any_element(),
+    };
+    vec![
+        account_section,
+        access_section,
+        phones_section,
+        hosts_section,
+    ]
 }

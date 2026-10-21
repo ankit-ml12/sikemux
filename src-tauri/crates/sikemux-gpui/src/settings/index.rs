@@ -215,6 +215,7 @@ pub const ENTRIES: &[Entry] = &[
     section(Devices, "Your account", "account sign in sign out login google github email delete"),
     section(Devices, "Remote access", "phone mobile iphone android remote away connect host enable turn on off"),
     section(Devices, "Phones", "phone mobile iphone android qr code scan revoke remove forget access watch full control"),
+    section(Devices, "Hosts", "linked hosts machines servers rename remove account link"),
     section(Cloud, "Single sign-on", "sso aws gcp login"),
     row(Cloud, "Single sign-on", "Browser app", "chrome safari firefox arc"),
     row(Cloud, "Single sign-on", "Workspace shortcut", "desktop space mission control"),
