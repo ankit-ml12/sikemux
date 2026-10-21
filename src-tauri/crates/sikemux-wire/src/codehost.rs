@@ -685,6 +685,161 @@ pub struct ReleaseList {
     pub latest: Option<u64>,
 }
 
+/// One attempt of a run as its page shows it, with what the core works out
+/// from it.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenRun {
+    pub run: Run,
+    pub jobs: Vec<ListedJob>,
+    /// How many attempts the run has had.
+    pub attempts: u64,
+    pub unfinished: bool,
+    /// How many jobs are over.
+    pub done: u32,
+    pub failed: u32,
+    /// The first job that failed.
+    pub failed_job: Option<String>,
+    pub graph: JobGraph,
+    /// What it took and is billed for, once it is over.
+    pub timing: Option<RunTiming>,
+    /// The jobs that may have written a summary, once the run is over.
+    pub summaries: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ListedJob {
+    pub job: Job,
+    /// The step it failed at.
+    pub stopped_at: Option<String>,
+}
+
+/// A run's jobs in columns as the host draws them: each column after every
+/// column it waits for.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobGraph {
+    pub columns: Vec<Vec<GraphBox>>,
+    pub edges: Vec<GraphEdge>,
+}
+
+/// A lone job, a matrix job's runs, or jobs that wait for the same jobs and
+/// are waited on by the same jobs.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphBox {
+    pub id: String,
+    /// A matrix job's or a called workflow's name.
+    pub title: Option<String>,
+    pub jobs: Vec<GraphJob>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphJob {
+    /// None for a job the workflow file declares that the run has not made yet.
+    pub job: Option<String>,
+    pub label: String,
+    /// The job that called its workflow was skipped, so it never will run.
+    pub skipped: bool,
+}
+
+/// From a box to a box that waits for it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphEdge {
+    pub from: String,
+    pub to: String,
+}
+
+/// A job's log as its page shows it, split into its steps: all of it, or the
+/// lines a client asked for.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenJobLog {
+    pub lines: Vec<JobLogLine>,
+    /// Where in the log the first of `lines` is.
+    pub from: usize,
+    /// How many lines the whole log has.
+    pub total: usize,
+    /// Over the whole log.
+    pub sections: Vec<LogSection>,
+    /// The log has aged out of the host's retention, so nothing is coming.
+    pub expired: bool,
+    /// The log was too long to read whole, so only its end is here.
+    pub truncated: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobLogLine {
+    pub number: u64,
+    /// Without its colour codes or the runner's `##[...]` markup, which `mark`
+    /// says instead.
+    pub text: String,
+    /// Its text in the colours the job printed it in; none for a plain line.
+    pub spans: Vec<LogSpan>,
+    pub mark: Option<LogMark>,
+    /// Part of the script a step runs, as its log repeats it before running it.
+    pub script: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LogMark {
+    Group,
+    Endgroup,
+    Section,
+    Command,
+    Error,
+    Warning,
+    Notice,
+    Debug,
+}
+
+/// A stretch of a line in one style.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LogSpan {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fg: Option<LogColor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg: Option<LogColor>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub bold: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dim: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub italic: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub underline: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LogColor {
+    /// One of the terminal's 256: the first sixteen are its theme's own.
+    Palette { index: u8 },
+    /// Written out as `#rrggbb`.
+    Rgb { hex: String },
+}
+
+/// One step's stretch of the log: lines `from` up to `to`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LogSection {
+    /// The step's number, or none for a job without steps.
+    pub step: Option<u64>,
+    pub from: usize,
+    pub to: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::Outcome;

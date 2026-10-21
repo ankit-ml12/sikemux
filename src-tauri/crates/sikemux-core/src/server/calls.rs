@@ -326,6 +326,8 @@ calls! { core, client, params;
     "codeHostReleases": Watch => answer(super::codehost::releases(&core, client.id, parse(params)?).await),
     "codeHostPull": Watch => answer(super::codehost::pull(&core, client.id, parse(params)?).await),
     "codeHostTracked": Watch => answer(super::codehost::tracked(&core, client.id, parse(params)?).await),
+    "codeHostRun": Watch => answer(super::codehost::run(&core, client.id, parse(params)?).await),
+    "codeHostJobLog": Watch => answer(super::codehost::job_log(&core, client.id, parse(params)?).await),
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),

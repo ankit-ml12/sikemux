@@ -236,6 +236,174 @@ export type ReviewVerdict = "approved" | "changesRequested";
 
 export type MergeReadiness = "ready" | "conflicts" | "blocked" | "behind" | "checking";
 
+/**
+ * One attempt of a run as its page shows it, with what the core works out
+ * from it.
+ */
+export interface OpenRun {
+    run: Run;
+    jobs: ListedJob[];
+    /** How many attempts the run has had. */
+    attempts: number;
+    unfinished: boolean;
+    /** How many jobs are over. */
+    done: number;
+    failed: number;
+    /** The first job that failed. */
+    failedJob: string | null;
+    graph: JobGraph;
+    /** What it took and is billed for, once it is over. */
+    timing: RunTiming | null;
+    /** The jobs that may have written a summary, once the run is over. */
+    summaries: string[];
+}
+
+export interface ListedJob {
+    job: Job;
+    /** The step it failed at. */
+    stoppedAt: string | null;
+}
+
+export interface Job {
+    id: string;
+    name: string;
+    status: string;
+    conclusion: string | null;
+    outcome: Outcome;
+    startedAt: string | null;
+    completedAt: string | null;
+    runner: string | null;
+    url: string | null;
+    /** Where this job's annotations live; absent on a job its host never checked. */
+    checkRunId: string | null;
+    steps: Step[];
+}
+
+export interface Step {
+    number: number;
+    name: string;
+    status: string;
+    conclusion: string | null;
+    outcome: Outcome;
+    startedAt: string | null;
+    completedAt: string | null;
+}
+
+/**
+ * A run's jobs in columns as the host draws them: each column after every
+ * column it waits for.
+ */
+export interface JobGraph {
+    columns: GraphBox[][];
+    edges: GraphEdge[];
+}
+
+/**
+ * A lone job, a matrix job's runs, or jobs that wait for the same jobs and
+ * are waited on by the same jobs.
+ */
+export interface GraphBox {
+    id: string;
+    /** A matrix job's or a called workflow's name. */
+    title: string | null;
+    jobs: GraphJob[];
+}
+
+export interface GraphJob {
+    /** None for a job the workflow file declares that the run has not made yet. */
+    job: string | null;
+    label: string;
+    /** The job that called its workflow was skipped, so it never will run. */
+    skipped: boolean;
+}
+
+/** From a box to a box that waits for it. */
+export interface GraphEdge {
+    from: string;
+    to: string;
+}
+
+/**
+ * What a run took on the clock, and what it is billed for. A run on a
+ * private repository costs minutes; a public one is free and reports none.
+ */
+export interface RunTiming {
+    runDurationMs: number | null;
+    billable: Billable[];
+}
+
+export interface Billable {
+    /** The runner it ran on: `UBUNTU`, `MACOS`, `WINDOWS`. */
+    runner: string;
+    totalMs: number;
+    jobs: number;
+}
+
+/**
+ * A job's log as its page shows it, split into its steps: all of it, or the
+ * lines a client asked for.
+ */
+export interface OpenJobLog {
+    lines: JobLogLine[];
+    /** Where in the log the first of `lines` is. */
+    from: number;
+    /** How many lines the whole log has. */
+    total: number;
+    /** Over the whole log. */
+    sections: LogSection[];
+    /** The log has aged out of the host's retention, so nothing is coming. */
+    expired: boolean;
+    /** The log was too long to read whole, so only its end is here. */
+    truncated: boolean;
+}
+
+export interface JobLogLine {
+    number: number;
+    /**
+     * Without its colour codes or the runner's `##[...]` markup, which `mark`
+     * says instead.
+     */
+    text: string;
+    /** Its text in the colours the job printed it in; none for a plain line. */
+    spans: LogSpan[];
+    mark: LogMark | null;
+    /** Part of the script a step runs, as its log repeats it before running it. */
+    script: boolean;
+}
+
+/** A stretch of a line in one style. */
+export interface LogSpan {
+    text: string;
+    fg?: LogColor;
+    bg?: LogColor;
+    bold?: boolean;
+    dim?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+}
+
+export type LogColor =
+    /** One of the terminal's 256: the first sixteen are its theme's own. */
+    | {
+          kind: "palette";
+          index: number;
+      }
+    /** Written out as `#rrggbb`. */
+    | {
+          kind: "rgb";
+          hex: string;
+      };
+
+export type LogMark = "group" | "endgroup" | "section" | "command" | "error" | "warning" | "notice" | "debug";
+
+/** One step's stretch of the log: lines `from` up to `to`. */
+export interface LogSection {
+    /** The step's number, or none for a job without steps. */
+    step: number | null;
+    from: number;
+    to: number;
+}
+
 export interface RateLimit {
     /** Whether requests are being held back until `resets_at`. */
     limited: boolean;
@@ -290,47 +458,6 @@ export interface RunPage {
 export interface RunDetail {
     run: Run;
     jobs: Job[];
-}
-
-export interface Job {
-    id: string;
-    name: string;
-    status: string;
-    conclusion: string | null;
-    outcome: Outcome;
-    startedAt: string | null;
-    completedAt: string | null;
-    runner: string | null;
-    url: string | null;
-    /** Where this job's annotations live; absent on a job its host never checked. */
-    checkRunId: string | null;
-    steps: Step[];
-}
-
-export interface Step {
-    number: number;
-    name: string;
-    status: string;
-    conclusion: string | null;
-    outcome: Outcome;
-    startedAt: string | null;
-    completedAt: string | null;
-}
-
-/**
- * What a run took on the clock, and what it is billed for. A run on a
- * private repository costs minutes; a public one is free and reports none.
- */
-export interface RunTiming {
-    runDurationMs: number | null;
-    billable: Billable[];
-}
-
-export interface Billable {
-    /** The runner it ran on: `UBUNTU`, `MACOS`, `WINDOWS`. */
-    runner: string;
-    totalMs: number;
-    jobs: number;
 }
 
 export interface JobLog {

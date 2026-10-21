@@ -15,15 +15,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use sikemux_wire::codehost::{
-    CheckTally, Issue, IssueList, IssuePage, ListedPull, ListedRun, MergeReadiness, OpenPull,
-    Outcome, Pull, PullCounts, PullList, PullState, Release, ReleaseList, Review, ReviewVerdict,
-    Run, RunList, RunPage, TrackedItem, TrackedKind,
+    CheckTally, Issue, IssueList, IssuePage, Job, JobLog, ListedJob, ListedPull, ListedRun,
+    MergeReadiness, OpenPull, OpenRun, Outcome, Pull, PullCounts, PullList, PullState, Release,
+    ReleaseList, Review, ReviewVerdict, Run, RunDetail, RunList, RunPage, RunTiming, TrackedItem,
+    TrackedKind, WorkflowFile,
 };
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
 
 use super::board::codehost::{of_project, Repo};
 use super::changed::Topic;
 use super::connection::ClientId;
+use super::job_graph::{self, WorkflowFiles};
 use super::names::project_of;
 use super::plugins::{Failure, Outcome as Answer};
 use super::Core;
@@ -41,6 +44,15 @@ const OWN_RUNS_AT_MOST: usize = 30;
 /// A commit's runs, once all are over, are not asked for again this long.
 const SETTLED_RUNS: Duration = Duration::from_secs(600);
 const COMMITS_AT_MOST: usize = 500;
+/// A run still going is read again this often while it is shown.
+const LIVE_RUN: Duration = Duration::from_secs(4);
+/// And the log of a job still going.
+const LIVE_LOG: Duration = Duration::from_secs(5);
+/// The soonest the core reads anything again.
+const QUICKEST: Duration = Duration::from_secs(1);
+/// A commit's workflow files never change, but are dropped after a while.
+const WORKFLOWS_KEPT: Duration = Duration::from_secs(3600);
+const WORKFLOWS_AT_MOST: usize = 32;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +83,8 @@ enum List {
     Releases,
     Tracked,
     Pull { number: u64 },
+    Run { id: String, attempt: Option<u64> },
+    JobLog { run: String, job: String },
 }
 
 impl List {
@@ -83,6 +97,22 @@ impl List {
             Self::Releases => 3,
             Self::Tracked => 4,
             Self::Pull { .. } => 5,
+            Self::Run { .. } => 6,
+            Self::JobLog { .. } => 7,
+        }
+    }
+
+    /// What a `codeHost` change names it by.
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Pulls { .. } => "pulls",
+            Self::Runs(_) => "runs",
+            Self::Issues { .. } => "issues",
+            Self::Releases => "releases",
+            Self::Tracked => "tracked",
+            Self::Pull { .. } => "pull",
+            Self::Run { .. } => "run",
+            Self::JobLog { .. } => "jobLog",
         }
     }
 }
@@ -128,7 +158,24 @@ struct Kept {
     answer: Value,
     repo: Repo,
     read: Instant,
+    /// How long after `read` it is read again while shown.
+    fresh: Duration,
     asked: Instant,
+}
+
+/// A list as the code host gave it, and how long it holds.
+struct Read {
+    answer: Value,
+    fresh: Duration,
+}
+
+impl Read {
+    fn of(repo: &Repo, list: impl Serialize, fresh: Duration) -> Result<Self, Failure> {
+        Ok(Self {
+            answer: shaped(repo, list)?,
+            fresh,
+        })
+    }
 }
 
 /// The repository a project's code host shows, as the core last worked it out.
@@ -153,12 +200,16 @@ struct State {
     found: HashMap<String, Found>,
     /// By repository and commit.
     commits: HashMap<(String, String), CommitRuns>,
+    /// By repository, commit and the run's own workflow file.
+    workflows: HashMap<(String, String, String), (Arc<WorkflowFiles>, Instant)>,
 }
 
 #[derive(Default)]
 pub(crate) struct Lists {
     state: Mutex<State>,
     ticking: AtomicBool,
+    /// Wakes the reading loop when a list arrives that is read again soon.
+    wake: Arc<Notify>,
 }
 
 fn listed_state(state: Option<String>) -> Result<String, Failure> {
@@ -236,19 +287,81 @@ pub(crate) async fn pull(core: &Arc<Core>, client: ClientId, params: PullParams)
     let list = List::Pull {
         number: params.number,
     };
-    match (params.project, params.repo) {
+    named_or_project(core, client, params.project, params.repo, list).await
+}
+
+pub(crate) async fn releases(core: &Arc<Core>, client: ClientId, params: ReleasesParams) -> Answer {
+    answered(core, client, params.project, List::Releases).await
+}
+
+/// One attempt of a run, the latest when none is named.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RunParams {
+    project: Option<String>,
+    repo: Option<Named>,
+    run_id: String,
+    attempt: Option<u64>,
+}
+
+pub(crate) async fn run(core: &Arc<Core>, client: ClientId, params: RunParams) -> Answer {
+    let list = List::Run {
+        id: params.run_id,
+        attempt: params.attempt,
+    };
+    named_or_project(core, client, params.project, params.repo, list).await
+}
+
+/// A job's log, or `count` of its lines from `from` on.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct JobLogParams {
+    project: Option<String>,
+    repo: Option<Named>,
+    run_id: String,
+    job_id: String,
+    from: Option<usize>,
+    count: Option<usize>,
+}
+
+pub(crate) async fn job_log(core: &Arc<Core>, client: ClientId, params: JobLogParams) -> Answer {
+    let list = List::JobLog {
+        run: params.run_id,
+        job: params.job_id,
+    };
+    let answer = named_or_project(core, client, params.project, params.repo, list).await;
+    match (answer, params.from, params.count) {
+        (Answer::Value(mut log), from, count) if from.is_some() || count.is_some() => {
+            if let Some(lines) = log["lines"].as_array_mut() {
+                let from = from.unwrap_or_default().min(lines.len());
+                let to = count.map_or(lines.len(), |count| {
+                    from.saturating_add(count).min(lines.len())
+                });
+                *lines = lines.drain(from..to).collect();
+                log["from"] = json!(from);
+            }
+            Answer::Value(log)
+        }
+        (answer, _, _) => answer,
+    }
+}
+
+async fn named_or_project(
+    core: &Arc<Core>,
+    client: ClientId,
+    project: Option<String>,
+    repo: Option<Named>,
+    list: List,
+) -> Answer {
+    match (project, repo) {
         (Some(project), _) => answered(core, client, project, list).await,
         (None, Some(repo)) => answered_at(core, client, Place::Repo(repo), list).await,
         (None, None) => Answer::Failed(Failure::new(
             "codehost",
             "invalid",
-            "a pull request needs its project or its repository",
+            "this needs its project or its repository",
         )),
     }
-}
-
-pub(crate) async fn releases(core: &Arc<Core>, client: ClientId, params: ReleasesParams) -> Answer {
-    answered(core, client, params.project, List::Releases).await
 }
 
 async fn answered(core: &Arc<Core>, client: ClientId, project: String, list: List) -> Answer {
@@ -275,8 +388,9 @@ async fn answered_at(core: &Arc<Core>, client: ClientId, place: Place, list: Lis
         return Answer::Value(answer);
     }
     match read(core, &repo, &key.list).await {
-        Ok(answer) => {
-            keep(core, key, answer.clone(), repo);
+        Ok(read) => {
+            let answer = read.answer.clone();
+            keep(core, key, read, repo);
             Answer::Value(answer)
         }
         Err(failure) => Answer::Failed(failure),
@@ -320,14 +434,15 @@ async fn repo_of(core: &Arc<Core>, place: &Place) -> Result<Repo, Failure> {
     Ok(repo)
 }
 
-fn keep(core: &Arc<Core>, key: Key, answer: Value, repo: Repo) {
+fn keep(core: &Arc<Core>, key: Key, read: Read, repo: Repo) {
     {
         let mut state = core.code_host_lists.state.locked();
         let now = Instant::now();
         let kept = Kept {
-            answer,
+            answer: read.answer,
             repo,
             read: now,
+            fresh: read.fresh,
             asked: now,
         };
         state.kept.insert(key, kept);
@@ -343,6 +458,7 @@ fn keep(core: &Arc<Core>, key: Key, answer: Value, repo: Repo) {
             state.kept.remove(&oldest);
         }
     }
+    core.code_host_lists.wake.notify_one();
     follow(core);
 }
 
@@ -353,9 +469,14 @@ fn follow(core: &Arc<Core>) {
         return;
     }
     let weak = Arc::downgrade(core);
+    let wake = core.code_host_lists.wake.clone();
     tokio::spawn(async move {
+        let mut wait = QUICKEST;
         loop {
-            tokio::time::sleep(TICK).await;
+            tokio::select! {
+                () = tokio::time::sleep(wait) => {}
+                () = wake.notified() => {}
+            }
             let Some(core) = weak.upgrade() else { return };
             let connected: HashSet<ClientId> =
                 core.clients().iter().map(|client| client.id).collect();
@@ -382,18 +503,28 @@ fn follow(core: &Arc<Core>) {
                 state.found.retain(|project, found| {
                     projects.contains(project) || found.read.elapsed() < GRACE
                 });
+                state
+                    .workflows
+                    .retain(|_, (_, read)| read.elapsed() < WORKFLOWS_KEPT);
                 if state.kept.is_empty() {
                     core.code_host_lists.ticking.store(false, Ordering::Release);
                     return;
                 }
-                state
-                    .kept
-                    .iter()
-                    .filter(|(key, kept)| shown.contains(key) && kept.read.elapsed() >= FRESH)
+                let shown_kept = || state.kept.iter().filter(|(key, _)| shown.contains(*key));
+                wait = shown_kept()
+                    .map(|(_, kept)| kept.fresh.saturating_sub(kept.read.elapsed()))
+                    .min()
+                    .unwrap_or(TICK)
+                    .clamp(QUICKEST, TICK);
+                shown_kept()
+                    .filter(|(_, kept)| kept.read.elapsed() >= kept.fresh)
                     .map(|(key, _)| key.clone())
                     .collect::<Vec<_>>()
             };
-            refresh(&core, due).await;
+            if !due.is_empty() {
+                refresh(&core, due).await;
+                wait = QUICKEST;
+            }
         }
     });
 }
@@ -401,7 +532,7 @@ fn follow(core: &Arc<Core>) {
 /// Reads `keys` again, telling clients about each project that shows a list
 /// that changed.
 async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
-    let mut moved = HashSet::new();
+    let mut reading = JoinSet::new();
     for key in keys {
         let repo = core
             .code_host_lists
@@ -411,20 +542,26 @@ async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
             .get(&key)
             .map(|kept| kept.repo.clone());
         let Some(repo) = repo else { continue };
-        let Ok(answer) = read(core, &repo, &key.list).await else {
-            continue;
-        };
+        let core = core.clone();
+        reading.spawn(async move {
+            let read = read(&core, &repo, &key.list).await;
+            (key, read)
+        });
+    }
+    let mut moved: HashMap<Option<String>, HashSet<&'static str>> = HashMap::new();
+    while let Some(Ok((key, read))) = reading.join_next().await {
+        let Ok(read) = read else { continue };
         let mut state = core.code_host_lists.state.locked();
         let Some(kept) = state.kept.get_mut(&key) else {
             continue;
         };
-        if kept.answer == answer {
-            kept.read = Instant::now();
+        kept.read = Instant::now();
+        kept.fresh = read.fresh;
+        if kept.answer == read.answer {
             continue;
         }
-        kept.answer = answer;
-        kept.read = Instant::now();
-        let showing: Vec<Option<String>> = state
+        kept.answer = read.answer;
+        let mut showing: Vec<Option<String>> = state
             .shown
             .iter()
             .filter(|(_, shown)| **shown == key)
@@ -434,13 +571,16 @@ async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
             })
             .collect();
         if showing.is_empty() {
-            moved.insert(None);
+            showing.push(None);
         }
-        moved.extend(showing);
+        for project in showing {
+            moved.entry(project).or_default().insert(key.list.name());
+        }
     }
-    for project in moved {
+    for (project, names) in moved {
+        let names = names.into_iter().map(str::to_owned).collect();
         core.changes
-            .changed(Topic::CodeHost, project.as_deref(), None);
+            .changed(Topic::CodeHost, project.as_deref(), Some(names));
     }
 }
 
@@ -553,7 +693,7 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
             key.repo == repo
                 && matches!(
                     key.list,
-                    List::Pulls { .. } | List::Runs(_) | List::Pull { .. }
+                    List::Pulls { .. } | List::Runs(_) | List::Pull { .. } | List::Run { .. }
                 )
         })
         .cloned()
@@ -565,14 +705,26 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
     tokio::spawn(async move { refresh(&core, keys).await });
 }
 
-async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Value, Failure> {
+async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Read, Failure> {
     match list {
-        List::Pulls { state } => shaped(repo, pull_list(core, repo, state).await?),
-        List::Runs(query) => shaped(repo, run_list(repo, query).await?),
-        List::Issues { state, page } => shaped(repo, issue_list(repo, state, *page).await?),
-        List::Releases => shaped(repo, release_list(repo).await?),
-        List::Tracked => shaped(repo, tracked_list(repo).await?),
-        List::Pull { number } => shaped(repo, open_pull(repo, *number).await?),
+        List::Pulls { state } => Read::of(repo, pull_list(core, repo, state).await?, FRESH),
+        List::Runs(query) => Read::of(repo, run_list(repo, query).await?, FRESH),
+        List::Issues { state, page } => {
+            Read::of(repo, issue_list(repo, state, *page).await?, FRESH)
+        }
+        List::Releases => Read::of(repo, release_list(repo).await?, FRESH),
+        List::Tracked => Read::of(repo, tracked_list(repo).await?, FRESH),
+        List::Pull { number } => Read::of(repo, open_pull(repo, *number).await?, FRESH),
+        List::Run { id, attempt } => {
+            let run = open_run(core, repo, id, *attempt).await?;
+            let fresh = match (attempt, run.unfinished) {
+                (Some(_), _) => SETTLED_RUNS,
+                (None, true) => LIVE_RUN,
+                (None, false) => FRESH,
+            };
+            Read::of(repo, run, fresh)
+        }
+        List::JobLog { run, job } => job_log_of(core, repo, run, job).await,
     }
 }
 
@@ -918,6 +1070,191 @@ fn readiness(merge_state: Option<&str>) -> MergeReadiness {
     }
 }
 
+/// One attempt of a run, or the latest, with its jobs laid out by the
+/// workflow files at its commit.
+async fn open_run(
+    core: &Core,
+    repo: &Repo,
+    id: &str,
+    attempt: Option<u64>,
+) -> Result<OpenRun, Failure> {
+    let latest = repo.call("run", json!({ "runId": id }));
+    let (detail, attempts): (RunDetail, u64) = match attempt {
+        None => {
+            let detail: RunDetail = typed(repo, latest.await?)?;
+            let attempts = detail.run.attempt;
+            (detail, attempts)
+        }
+        Some(attempt) => {
+            let (older, latest) = tokio::join!(
+                repo.call("runAttempt", json!({ "runId": id, "attempt": attempt })),
+                latest,
+            );
+            let latest = latest
+                .ok()
+                .and_then(|found| typed::<RunDetail>(repo, found).ok())
+                .map_or(attempt, |latest| latest.run.attempt);
+            (typed(repo, older?)?, latest.max(attempt))
+        }
+    };
+    let RunDetail { run, jobs } = detail;
+    let unfinished = unfinished(&run);
+    let (files, timing) = tokio::join!(workflow_files(core, repo, &run), async {
+        if unfinished {
+            return None;
+        }
+        let found = repo.call("runTiming", json!({ "runId": id })).await.ok()?;
+        typed::<RunTiming>(repo, found).ok()
+    });
+    let graph = job_graph::graph_of(&jobs, &files, run.path.as_deref());
+    let failed = |job: &&Job| job.outcome == Outcome::Failure;
+    let summaries = summaries(&jobs, unfinished);
+    Ok(OpenRun {
+        attempts,
+        unfinished,
+        done: jobs.iter().filter(|job| job.status == "completed").count() as u32,
+        failed: jobs.iter().filter(failed).count() as u32,
+        failed_job: jobs.iter().find(failed).map(|job| job.id.clone()),
+        graph,
+        timing,
+        summaries,
+        jobs: jobs
+            .into_iter()
+            .map(|job| ListedJob {
+                stopped_at: job
+                    .steps
+                    .iter()
+                    .find(|step| step.outcome == Outcome::Failure)
+                    .map(|step| step.name.clone()),
+                job,
+            })
+            .collect(),
+        run,
+    })
+}
+
+/// The jobs that may have written a summary. Each is its own request, so a
+/// run still going has none asked for until it ends.
+fn summaries(jobs: &[Job], unfinished: bool) -> Vec<String> {
+    if unfinished {
+        return Vec::new();
+    }
+    jobs.iter()
+        .filter(|job| {
+            job.status == "completed"
+                && job.check_run_id.is_some()
+                && job.conclusion.as_deref() != Some("skipped")
+        })
+        .map(|job| job.id.clone())
+        .collect()
+}
+
+/// The workflow file a run came from and every file it calls, as they were
+/// at the run's commit. Only GitHub's are read.
+async fn workflow_files(core: &Core, repo: &Repo, run: &Run) -> Arc<WorkflowFiles> {
+    let Some(path) = run
+        .path
+        .as_deref()
+        .filter(|path| path.starts_with(".github/"))
+    else {
+        return Arc::default();
+    };
+    let key = (repo.key(), run.sha.clone(), path.to_owned());
+    if let Some((files, _)) = core.code_host_lists.state.locked().workflows.get(&key) {
+        return files.clone();
+    }
+    let mut files = WorkflowFiles::new();
+    let mut pending = vec![path.to_owned()];
+    for _ in 0..job_graph::CALLS_AT_MOST {
+        if pending.is_empty() {
+            break;
+        }
+        let mut reading = JoinSet::new();
+        for each in pending.drain(..) {
+            let repo = repo.clone();
+            let sha = run.sha.clone();
+            reading.spawn(async move {
+                let found = repo
+                    .call("workflowFileAt", json!({ "path": each, "gitRef": sha }))
+                    .await
+                    .ok()
+                    .and_then(|found| serde_json::from_value::<WorkflowFile>(found).ok());
+                (
+                    each,
+                    found.and_then(|file| job_graph::read_jobs(&file.text)),
+                )
+            });
+        }
+        let mut next = HashSet::new();
+        while let Some(Ok((each, jobs))) = reading.join_next().await {
+            for called in jobs.iter().flat_map(|jobs| job_graph::calls(jobs)) {
+                next.insert(called.to_owned());
+            }
+            files.insert(each, jobs);
+        }
+        pending = next
+            .into_iter()
+            .filter(|called| !files.contains_key(called))
+            .collect();
+    }
+    let files = Arc::new(files);
+    let mut state = core.code_host_lists.state.locked();
+    state.workflows.insert(key, (files.clone(), Instant::now()));
+    while state.workflows.len() > WORKFLOWS_AT_MOST {
+        let Some(oldest) = state
+            .workflows
+            .iter()
+            .min_by_key(|(_, (_, read))| *read)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        state.workflows.remove(&oldest);
+    }
+    files
+}
+
+/// A job's log split into its steps. A job still going is read again soon;
+/// one that was over before this read began has written all it will.
+async fn job_log_of(core: &Core, repo: &Repo, run: &str, job: &str) -> Result<Read, Failure> {
+    let known = shown_job(core, &repo.key(), run, job);
+    let found = match known {
+        Some(found) => Some(found),
+        None => repo
+            .call("run", json!({ "runId": run }))
+            .await
+            .ok()
+            .and_then(|found| typed::<RunDetail>(repo, found).ok())
+            .and_then(|detail| detail.jobs.into_iter().find(|each| each.id == job)),
+    };
+    let fresh = match &found {
+        Some(found) if found.status == "completed" => SETTLED_RUNS,
+        Some(_) => LIVE_LOG,
+        None => FRESH,
+    };
+    let log: JobLog = typed(repo, repo.call("jobLog", json!({ "jobId": job })).await?)?;
+    let steps = found.map(|found| found.steps).unwrap_or_default();
+    Read::of(repo, job_graph::log_of(log, &steps), fresh)
+}
+
+/// The job `job` of the run `run` as the core last read the run.
+fn shown_job(core: &Core, repo: &str, run: &str, job: &str) -> Option<Job> {
+    let state = core.code_host_lists.state.locked();
+    state
+        .kept
+        .iter()
+        .filter(|(key, _)| {
+            key.repo == repo && matches!(&key.list, List::Run { id, .. } if id == run)
+        })
+        .find_map(|(_, kept)| {
+            kept.answer["jobs"]
+                .as_array()?
+                .iter()
+                .find(|listed| listed["job"]["id"] == job)
+                .and_then(|listed| serde_json::from_value(listed["job"].clone()).ok())
+        })
+}
+
 async fn release_list(repo: &Repo) -> Result<ReleaseList, Failure> {
     let releases: Vec<Release> = typed(repo, repo.call("releases", json!({})).await?)?;
     let latest = releases
@@ -932,14 +1269,52 @@ mod tests {
     use super::*;
 
     fn run(outcome: Outcome) -> Run {
+        run_as("completed", outcome)
+    }
+
+    fn run_as(status: &str, outcome: Outcome) -> Run {
         serde_json::from_value(json!({
             "id": "1", "name": "CI", "title": "", "workflowId": "1", "path": null,
-            "runNumber": 1, "attempt": 1, "event": "push", "status": "completed",
+            "runNumber": 1, "attempt": 1, "event": "push", "status": status,
             "conclusion": null, "outcome": outcome, "branch": null, "sha": "abc",
             "shortSha": "abc", "actor": null, "avatarUrl": null, "createdAt": "",
             "startedAt": null, "updatedAt": "", "pullRequests": [], "url": ""
         }))
         .expect("a run")
+    }
+
+    #[test]
+    fn queued_running_and_waiting_for_approval_are_unfinished_and_nothing_completed_is() {
+        assert!(unfinished(&run_as("in_progress", Outcome::Running)));
+        assert!(unfinished(&run_as("queued", Outcome::Queued)));
+        assert!(unfinished(&run_as("waiting", Outcome::Blocked)));
+        assert!(!unfinished(&run_as("completed", Outcome::Success)));
+        assert!(!unfinished(&run_as("completed", Outcome::Blocked)));
+    }
+
+    fn job(id: u32, conclusion: &str, check_run: Option<&str>) -> Job {
+        serde_json::from_value(json!({
+            "id": id.to_string(), "name": format!("job {id}"), "status": "completed",
+            "conclusion": conclusion, "outcome": "success", "startedAt": null,
+            "completedAt": null, "runner": null, "url": null, "checkRunId": check_run,
+            "steps": []
+        }))
+        .expect("a job")
+    }
+
+    #[test]
+    fn asks_for_no_summaries_while_the_run_is_still_going() {
+        assert!(summaries(&[job(1, "success", Some("1"))], true).is_empty());
+    }
+
+    #[test]
+    fn skips_jobs_that_could_not_have_written_a_summary() {
+        let jobs = [
+            job(1, "success", Some("1")),
+            job(2, "skipped", Some("2")),
+            job(3, "success", None),
+        ];
+        assert_eq!(summaries(&jobs, false), ["1"]);
     }
 
     fn pull(number: u64, head_label: &str, created_at: &str) -> Pull {
