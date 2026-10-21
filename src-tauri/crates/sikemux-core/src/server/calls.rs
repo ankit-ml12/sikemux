@@ -347,6 +347,9 @@ calls! { core, client, params;
         if params.key == "updateChannel" {
             core.updates.check_soon();
         }
+        if matches!(params.key.as_str(), "agentWorktreeDefaults" | "lastAgentType") {
+            core.view_changed();
+        }
         let preferences = core.preferences.get();
         core.theme_changed();
         core.changes.changed(Topic::Preferences, None, None);

@@ -473,6 +473,7 @@ impl Workspaces {
                 git: None,
                 launcher: None,
                 code_host: None,
+                worktree_default: false,
             };
             check_project(&project, saved)?;
             saved.projects.push(project.clone());
@@ -2052,6 +2053,7 @@ mod tests {
             git: None,
             launcher: None,
             code_host: None,
+            worktree_default: false,
         }
     }
 

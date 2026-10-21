@@ -339,9 +339,29 @@ async fn start_new(
         account: None,
         fallbacks: Vec::new(),
     };
+    let kind = chosen
+        .launcher
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
     let started = start(core, Some(client), chosen).await?;
+    remember_kind(core, &kind);
     let start = chat::until_started(core, started).await?;
     Ok(Response::ChatBegun { agent_id, start })
+}
+
+/// Keeps the kind of agent a chat was started as, so a project with no agent of its own
+/// starts its next chat as that kind.
+fn remember_kind(core: &Core, kind: &str) {
+    if core.preferences.get().last_agent_type.as_deref() == Some(kind) {
+        return;
+    }
+    if core.preferences.set("lastAgentType", kind.into()).is_ok() {
+        core.changes
+            .changed(super::changed::Topic::Preferences, None, None);
+        core.view_changed();
+    }
 }
 
 /// Takes up a recent chat again, answering like [`start_chat`].

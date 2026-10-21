@@ -879,14 +879,29 @@ impl Core {
     /// The workspace as clients are sent it, each agent under its name and
     /// in its face.
     pub(crate) fn workspace_view(&self) -> crate::protocol::Workspace {
+        let preferences = self.preferences.get();
         let mut workspace = self.workspaces.view();
         workspace.palette = themes::by_name(&self.palette.locked().tokens);
         self.names.fill(&mut workspace.agents);
         self.faces.fill(&mut workspace.agents);
         let chips = self.git_chips.locked();
         let hosts = self.code_hosts.locked();
+        let preferred = preferences.last_agent_type.as_deref().and_then(|kind| {
+            let launchers = &workspace.launchers;
+            launchers.iter().find(|launcher| launcher.provider == kind)
+        });
+        let preferred = preferred.map(|launcher| launcher.id.clone());
         for project in &mut workspace.projects {
             let folder = project.path.to_string_lossy();
+            project.worktree_default =
+                preferences.agent_worktree_defaults.get(&*folder) == Some(&true);
+            let fresh = !workspace
+                .agents
+                .iter()
+                .any(|agent| agent.project == project.id);
+            if fresh && preferred.is_some() {
+                project.launcher.clone_from(&preferred);
+            }
             let hosted = hosts.get(&*folder);
             project.code_host = hosted.and_then(|hosted| hosted.shown.clone());
             project.git = chips.get(&*folder).cloned().map(|mut chip| {

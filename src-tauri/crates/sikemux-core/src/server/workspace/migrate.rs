@@ -128,6 +128,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 git: None,
                 launcher: None,
                 code_host: None,
+                worktree_default: false,
             })
         })
         .filter(|project| project.path.is_absolute())

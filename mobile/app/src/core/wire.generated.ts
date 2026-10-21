@@ -70,9 +70,15 @@ export interface ProjectInfo {
   git?: ProjectGit;
   /**
    * The launcher a new agent here starts with: that of the agent last
-   * started here, else the first offered. The core fills it in.
+   * started here, else one of the kind of agent last started anywhere, else
+   * the first offered. The core fills it in.
    */
   launcher?: string;
+  /**
+   * A new chat here starts in a worktree of its own, as the person chose for
+   * the project. The core fills it in from its preferences.
+   */
+  worktreeDefault?: boolean;
   /**
    * Where its repository is on a code host, while its origin is on one.
    * The core fills it in.
