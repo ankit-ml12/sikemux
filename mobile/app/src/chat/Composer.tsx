@@ -5,9 +5,8 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { unknownCommand } from '@mac/chat/composerInput';
-import { recordOf } from '@mac/lib/guards';
 import { contextShare, contextTone, money, tokenCount } from '@mac/chat/contextUsage';
-import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
+import { currentLabel } from '@mac/chat/sessionConfig';
 import { toolKind, toolLabel, toolPath } from '@mac/chat/toolLabels';
 import type { ChatRows } from '@mac/chat/rows';
 import type { ChatCommandInfo, ContextUsage, PermissionAsk, ToolCall } from '@mac/chat/types';
@@ -293,23 +292,22 @@ function ConfigSheet({
   visible,
   onClose,
   provider,
-  configs,
+  model,
+  effort,
   usage,
   onPick,
 }: {
   visible: boolean;
   onClose: () => void;
   provider: string;
-  configs: SessionConfig[];
+  model: ChatRows['model'];
+  effort: ChatRows['effort'];
   usage: ChatRows['usage'];
-  onPick: (config: SessionConfig, value: string) => void;
+  onPick: (picker: NonNullable<ChatRows['model']>, value: string) => void;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const brand = useAgentBrand(provider);
-  const slots = pickerSlots(configs, provider);
-  const model = slots[0]?.config;
-  const effort = slots[1]?.config;
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.sheetHead}>
@@ -320,8 +318,8 @@ function ConfigSheet({
         <>
           <Text style={styles.sheetLabel}>Model</Text>
           <View style={styles.group}>
-            {model.options.map((option, index) => {
-              const on = option.value === model.currentValue;
+            {model.choices.map((option, index) => {
+              const on = option.value === model.current;
               return (
                 <Pressable
                   key={option.value}
@@ -342,9 +340,9 @@ function ConfigSheet({
         <>
           <Text style={styles.sheetLabel}>Effort</Text>
           <Track
-            value={effort.currentValue}
+            value={effort.current}
             onChange={(value) => onPick(effort, value)}
-            options={effort.options.map((option) => ({ value: option.value, label: option.label }))}
+            options={effort.choices.map((option) => ({ value: option.value, label: option.label }))}
           />
         </>
       ) : null}
@@ -407,7 +405,8 @@ export const Composer = memo(function Composer({
   session,
   provider,
   running,
-  setup,
+  model,
+  effort,
   usage,
   commands,
   requests,
@@ -428,7 +427,8 @@ export const Composer = memo(function Composer({
   session: ChatSession;
   provider: string;
   running: boolean;
-  setup: ChatRows['setup'];
+  model: ChatRows['model'];
+  effort: ChatRows['effort'];
   usage: ChatRows['usage'];
   commands: ChatCommandInfo[];
   /** The permission requests waiting on an answer, the first one shown first. */
@@ -465,10 +465,8 @@ export const Composer = memo(function Composer({
   const input = inputRef ?? ownInput;
   const [sheet, setSheet] = useState(false);
   const typing = useKeyboardShown();
-  const configs = sessionConfigs(recordOf(setup) ?? {});
-  const slots = pickerSlots(configs, provider);
-  const model = currentLabel(slots[0]?.config);
-  const effort = currentLabel(slots[1]?.config);
+  const modelLabel = currentLabel(model);
+  const effortLabel = currentLabel(effort);
   const pulls = !draft && onRecent !== undefined;
   const pullUp = useMemo(
     () =>
@@ -555,29 +553,29 @@ export const Composer = memo(function Composer({
             <Icon name="IconPlus" size={17} color={colors.inkDim} />
           </Pressable>
           <YoloToggle mode={permissionMode} provider={provider} locked={modeLocked} onToggle={session.setPermissionMode} />
-          {model ? (
+          {modelLabel ? (
             <Pressable
               style={[styles.picker, styles.model]}
               onPress={() => setSheet(true)}
               accessibilityRole="button"
-              accessibilityLabel={`Model, ${model}`}>
+              accessibilityLabel={`Model, ${modelLabel}`}>
               <AgentIcon provider={provider} size={16} />
               <Text style={[styles.pickerText, styles.modelText, { color: colors.accent }]} numberOfLines={1}>
-                {model}
+                {modelLabel}
               </Text>
               <View style={{ transform: [{ rotate: '90deg' }], opacity: 0.6 }}>
                 <Icon name="IconChevron" size={10} color={colors.accent} />
               </View>
             </Pressable>
           ) : null}
-          {effort ? (
+          {effortLabel ? (
             <Pressable
               style={styles.picker}
               onPress={() => setSheet(true)}
               accessibilityRole="button"
-              accessibilityLabel={`Effort, ${effort}`}>
+              accessibilityLabel={`Effort, ${effortLabel}`}>
               <Text style={styles.pickerText} numberOfLines={1}>
-                {effort}
+                {effortLabel}
               </Text>
               <View style={{ transform: [{ rotate: '90deg' }], opacity: 0.6 }}>
                 <Icon name="IconChevron" size={10} color={colors.inkDim} />
@@ -614,10 +612,11 @@ export const Composer = memo(function Composer({
         visible={sheet}
         onClose={() => setSheet(false)}
         provider={provider}
-        configs={configs}
+        model={model}
+        effort={effort}
         usage={usage}
-        onPick={(config, value) => {
-          session.setConfig(config.id, value);
+        onPick={(picker, value) => {
+          session.setConfig(picker.id, value);
           setSheet(false);
         }}
       />

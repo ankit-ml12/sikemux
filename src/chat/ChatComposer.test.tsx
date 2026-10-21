@@ -60,7 +60,6 @@ function renderComposer(worktree?: { state: WorktreeSwitchState; toggle: () => v
                 running={false}
                 steerable={false}
                 commands={[]}
-                setup={{}}
                 awaitingPermission={false}
                 agentLocked={false}
                 changingConfig={false}

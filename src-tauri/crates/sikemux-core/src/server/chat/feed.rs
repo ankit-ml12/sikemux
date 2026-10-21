@@ -1082,6 +1082,8 @@ struct Inner {
     replay: Replay,
     /// The chat folded into rows, while a client watches it or a turn runs.
     fold: Option<Fold>,
+    /// The agent always offers an effort picker.
+    offers_effort: bool,
     flush_scheduled: bool,
     settle_scheduled: bool,
     catch_up_scheduled: bool,
@@ -1139,6 +1141,16 @@ fn queued_view(queued: &[Queued]) -> Vec<QueuedMessage> {
         .collect()
 }
 
+/// A fold for a chat, showing an effort picker from the start when its agent
+/// always offers one.
+fn new_fold(permission_mode: &str, offers_effort: bool) -> Fold {
+    let mut fold = Fold::new(permission_mode);
+    if offers_effort {
+        fold.offer_effort();
+    }
+    fold
+}
+
 impl Feed {
     /// With `history`, everything the chat says is also kept in a file there,
     /// for clients to page back through.
@@ -1159,6 +1171,7 @@ impl Feed {
                 seq: 0,
                 replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, history),
                 fold: Some(Fold::new(&permission_mode)),
+                offers_effort: false,
                 flush_scheduled: false,
                 settle_scheduled: false,
                 catch_up_scheduled: false,
@@ -1224,6 +1237,7 @@ impl Feed {
                 seq: state.seq,
                 replay,
                 fold: None,
+                offers_effort: false,
                 flush_scheduled: false,
                 settle_scheduled: false,
                 catch_up_scheduled: false,
@@ -1300,7 +1314,7 @@ impl Feed {
     /// The fold, built again from the chat's events when it was let go.
     fn fold<'a>(&self, inner: &'a mut Inner) -> &'a mut Fold {
         if inner.fold.is_none() {
-            let mut fold = Fold::new(&inner.permission_mode);
+            let mut fold = new_fold(&inner.permission_mode, inner.offers_effort);
             if let Some(start) = &inner.start {
                 fold.apply(
                     inner.replay.next_index,
@@ -1704,6 +1718,16 @@ impl Feed {
             inner
                 .subscribers
                 .retain(|_, subscriber| subscriber.client.send(frame.clone()));
+        }
+    }
+
+    /// Shows an effort picker from the start, as agents that offer effort on
+    /// every model do.
+    pub(crate) fn offer_effort(&self) {
+        let mut inner = self.inner.locked();
+        inner.offers_effort = true;
+        if let Some(fold) = inner.fold.as_mut() {
+            fold.offer_effort();
         }
     }
 

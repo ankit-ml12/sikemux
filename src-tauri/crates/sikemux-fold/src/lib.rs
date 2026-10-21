@@ -4,6 +4,7 @@
 //! agent's own messages and a streamed token costs only itself.
 
 mod event;
+pub mod pickers;
 mod prompt;
 mod send;
 #[cfg(test)]
@@ -259,6 +260,9 @@ pub struct Fold {
     /// The main rows from this position on may have new folds or meta.
     settle_from: Option<usize>,
     seq: u64,
+    /// The agent always offers an effort picker, empty until its session
+    /// lists the levels.
+    offers_effort: bool,
 }
 
 const TEXT_PART: &str = "text";
@@ -516,6 +520,34 @@ impl Fold {
             dropped: None,
             settle_from: None,
             seq: 0,
+            offers_effort: false,
+        }
+    }
+
+    /// Shows an effort picker from the start, as agents that offer effort on
+    /// every model do.
+    pub fn offer_effort(&mut self) {
+        self.offers_effort = true;
+        self.read_pickers();
+    }
+
+    /// The head's model and effort pickers, read from the session's options.
+    fn read_pickers(&mut self) {
+        let (model, mut effort) = pickers::pickers(&self.head.setup["configOptions"]);
+        if effort.is_none() && self.offers_effort {
+            effort = Some(sikemux_wire::protocol::ConfigPicker {
+                id: "effort".into(),
+                current: String::new(),
+                choices: Vec::new(),
+            });
+        }
+        if self.head.model != model {
+            self.head.model = model;
+            self.set_head("model");
+        }
+        if self.head.effort != effort {
+            self.head.effort = effort;
+            self.set_head("effort");
         }
     }
 
@@ -548,6 +580,7 @@ impl Fold {
     pub fn set_setup(&mut self, setup: &Value) {
         self.head.setup = setup.clone();
         self.set_head("setup");
+        self.read_pickers();
     }
 
     pub fn set_config_options(&mut self, options: Value) {
@@ -558,6 +591,7 @@ impl Fold {
             setup.insert("configOptions".into(), options);
         }
         self.set_head("setup");
+        self.read_pickers();
     }
 
     pub fn set_queued(&mut self, queued: Vec<QueuedMessage>) {
@@ -627,6 +661,7 @@ impl Fold {
                 for field in ["connection", "capabilities", "setup", "error", "failure"] {
                     self.set_head(field);
                 }
+                self.read_pickers();
             }
             ChatEventKind::SessionUpdate => {
                 let updates: Vec<&Value> = match payload.get("updates").and_then(Value::as_array) {

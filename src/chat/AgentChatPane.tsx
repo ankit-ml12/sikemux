@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorText } from "../lib/format";
 import { acpApi } from "../api/acp";
-import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
+import type { ConfigPicker } from "../api/generated/wire";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -240,18 +240,18 @@ export const AgentChatPane = memo(function AgentChatPane({
         }
     };
 
-    const changeConfig = async (config: SessionConfig, value: string) => {
+    const changeConfig = async (picker: ConfigPicker, value: string) => {
         if (configPending.current || state.running || changingPermissions) return;
         configPending.current = true;
         setChangingConfig(true);
         setComposerError(null);
         const sessionId = state.sessionId;
         try {
-            const response = await acpApi.setConfig(agent.id, config.id, value);
+            await acpApi.setConfig(agent.id, picker.id, value);
             if (agentRef.current.id !== agent.id) return;
-            const options = sessionConfigs({ configOptions: response.configOptions });
-            const model = options.find((option) => option.id === "model")?.currentValue ?? agent.model;
-            const effort = effortConfig(options)?.currentValue ?? agent.effort;
+            const chosen = (held: ConfigPicker | undefined) => (held && picker.id === held.id ? value : held?.current);
+            const model = chosen(state.model) ?? agent.model;
+            const effort = chosen(state.effort) || agent.effort;
             cmd.setAgentModelPreferences(agent.id, model, knownEffort(effort));
         } catch (error) {
             if (state.sessionId === sessionId) setComposerError(errorText(error));
@@ -426,7 +426,8 @@ export const AgentChatPane = memo(function AgentChatPane({
                                         running={state.running}
                                         steerable={steerable}
                                         commands={state.commands}
-                                        setup={state.setup}
+                                        model={state.model}
+                                        effort={state.effort}
                                         awaitingPermission={state.permissions.length > 0}
                                         agentLocked={agentLockedRef.current}
                                         changingConfig={changingConfig}

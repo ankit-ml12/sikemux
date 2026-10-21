@@ -7,7 +7,7 @@ import { agentCatalogR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { defaultProviderProfileSelection, type Agent, type ProviderProfile } from "../state/types";
 import { AgentIcon, IconCheck } from "../ui/Icons";
-import type { ConfigChoice } from "./sessionConfig";
+import type { ConfigChoice } from "../api/generated/wire";
 
 export interface Choice extends ConfigChoice {
     icon?: ReactNode;

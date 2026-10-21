@@ -1355,6 +1355,17 @@ impl Chats {
             };
             (feed, flags)
         });
+        let offers_effort = crate::agent_catalog::agent(&launch.provider)
+            .and_then(|agent| agent.chat.as_ref())
+            .is_some_and(|driver| {
+                matches!(
+                    driver,
+                    crate::agent_catalog::ChatDriver::Claude | crate::agent_catalog::ChatDriver::Codex
+                )
+            });
+        if offers_effort {
+            feed.offer_effort();
+        }
         let keeper = Keeper::new(self.kept.as_deref(), feed.id());
         let chat = Arc::new(Chat {
             generation: self.next_generation.fetch_add(1, Ordering::Relaxed),

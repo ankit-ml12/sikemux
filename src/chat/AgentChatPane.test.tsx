@@ -381,28 +381,17 @@ describe("AgentChatPane", () => {
     });
 
     it("changes the model live and persists only the confirmed configuration", async () => {
-        const configs = (model: string) => [
-            {
-                id: "model",
-                name: "Model",
-                type: "select",
-                currentValue: model,
-                options: [
-                    { value: "astra", name: "GPT-6 Astra" },
-                    { value: "sol", name: "GPT-5.6 Sol" },
-                ],
-            },
-            {
-                id: "reasoning_effort",
-                name: "Effort",
-                category: "thought_level",
-                type: "select",
-                currentValue: "high",
-                options: [{ value: "high", name: "High" }],
-            },
-        ];
-        mocks.start.mockResolvedValueOnce({ setup: { configOptions: configs("astra") } });
-        mocks.setConfig.mockResolvedValueOnce({ configOptions: configs("sol") });
+        const model = (current: string) => ({
+            id: "model",
+            current,
+            choices: [
+                { value: "astra", label: "GPT-6 Astra" },
+                { value: "sol", label: "GPT-5.6 Sol" },
+            ],
+        });
+        const effort = { id: "reasoning_effort", current: "high", choices: [{ value: "high", label: "High" }] };
+        mocks.start.mockResolvedValueOnce({ model: model("astra"), effort });
+        mocks.setConfig.mockResolvedValueOnce({});
         render(<AgentChatPane agent={agent} cwd="/repo" active onBusyChange={() => {}} />);
         await waitFor(() => expect(screen.getByRole("button", { name: "Model" })).toBeEnabled());
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
@@ -410,7 +399,7 @@ describe("AgentChatPane", () => {
         fireEvent.keyDown(screen.getByRole("combobox", { name: "Search model" }), { key: "Enter" });
         await waitFor(() => expect(mocks.setConfig).toHaveBeenCalledWith(agent.id, "model", "sol"));
         await waitFor(() => expect(mocks.setAgentModelPreferences).toHaveBeenCalledWith(agent.id, "sol", "high"));
-        send(head({ setup: { configOptions: configs("sol") } }));
+        send(head({ model: model("sol") }));
         expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("GPT-5.6 Sol");
         expect(mocks.start).toHaveBeenCalledTimes(1);
         expect(acpApi.stop).not.toHaveBeenCalled();

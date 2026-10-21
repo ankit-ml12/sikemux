@@ -36,44 +36,42 @@ const tool = (kind: string, title: string, status = 'completed'): Step => ({
   part: { kind: 'tool', id: next('part'), tool: { toolCallId: next('tool'), kind, title, status } },
 });
 
-const MODELS: Record<string, unknown[]> = {
-  claude: [
-    {
-      type: 'select',
+type Pickers = Pick<ChatView['head'], 'model' | 'effort'>;
+
+const gpt = { id: 'model', current: 'gpt-5.5', choices: [{ value: 'gpt-5.5', label: 'GPT-5.5' }] };
+
+const PICKERS: Record<string, Pickers> = {
+  claude: {
+    model: {
       id: 'model',
-      name: 'Model',
-      currentValue: 'opus',
-      options: [
-        { value: 'opus', name: 'Opus 5.5' },
-        { value: 'sonnet', name: 'Sonnet 5' },
+      current: 'opus',
+      choices: [
+        { value: 'opus', label: 'Opus 5.5' },
+        { value: 'sonnet', label: 'Sonnet 5' },
       ],
     },
-    {
-      type: 'select',
+    effort: {
       id: 'effort',
-      name: 'Effort',
-      currentValue: 'high',
-      options: [
-        { value: 'medium', name: 'Medium' },
-        { value: 'high', name: 'High' },
+      current: 'high',
+      choices: [
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
       ],
     },
-  ],
-  codex: [
-    { type: 'select', id: 'model', name: 'Model', currentValue: 'gpt-5.5', options: [{ value: 'gpt-5.5', name: 'GPT-5.5' }] },
-    {
-      type: 'select',
+  },
+  codex: {
+    model: gpt,
+    effort: {
       id: 'reasoning_effort',
-      name: 'Reasoning',
-      currentValue: 'medium',
-      options: [
-        { value: 'low', name: 'Low' },
-        { value: 'medium', name: 'Medium' },
-        { value: 'high', name: 'High' },
+      current: 'medium',
+      choices: [
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
       ],
     },
-  ],
-  hermes: [{ type: 'select', id: 'model', name: 'Model', currentValue: 'gpt-5.5', options: [{ value: 'gpt-5.5', name: 'GPT-5.5' }] }],
+  },
+  hermes: { model: gpt },
 };
 
 export type DemoChat = {
@@ -422,7 +420,8 @@ export function chatHead(chat: DemoChat): ChatView['head'] {
     permissionMode: chat.permissionMode,
     commands: [],
     capabilities: {},
-    setup: setupOf(chat),
+    setup: {},
+    ...PICKERS[chat.provider],
     permissions: asking ? [asking] : [],
     tasks: [],
     runningSubagents: [],
@@ -443,10 +442,6 @@ export function permissionPayload(chat: DemoChat): PermissionAsk | undefined {
       { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
     ],
   };
-}
-
-function setupOf(chat: DemoChat) {
-  return { configOptions: MODELS[chat.provider] ?? [] };
 }
 
 const MINUTE = 60_000;

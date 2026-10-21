@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type Reac
 import { errorText } from "../lib/format";
 import { dialogsApi } from "../api/dialogs";
 import { ComposerPickers } from "./ComposerPickers";
-import type { SessionConfig } from "./sessionConfig";
+import type { ConfigPicker } from "../api/generated/wire";
 import { basename, joinPath } from "../lib/paths";
 import { animate } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
@@ -213,7 +213,8 @@ export function ChatComposer({
     running,
     steerable,
     commands,
-    setup,
+    model,
+    effort,
     awaitingPermission,
     agentLocked,
     changingConfig,
@@ -241,7 +242,8 @@ export function ChatComposer({
     running: boolean;
     steerable: boolean;
     commands: ChatCommandInfo[];
-    setup: Record<string, unknown>;
+    model?: ConfigPicker | null;
+    effort?: ConfigPicker | null;
     awaitingPermission: boolean;
     agentLocked: boolean;
     changingConfig: boolean;
@@ -255,7 +257,7 @@ export function ChatComposer({
     onStop: () => void;
     queuedCount: number;
     usage: ContextUsage | null;
-    onConfig: (config: SessionConfig, value: string) => void;
+    onConfig: (picker: ConfigPicker, value: string) => void;
     history: readonly string[];
     worktree?: { state: WorktreeSwitchState; toggle: () => void };
     /** The question an agent asked that whatever is sent answers. */
@@ -779,7 +781,8 @@ export function ChatComposer({
                 <ComposerPickers
                     agent={agent}
                     profile={profile}
-                    setup={setup}
+                    model={model}
+                    effort={effort}
                     agentLocked={agentLocked}
                     running={running}
                     moveDisabled={connection !== "ready" || changingPermissions || changingConfig}

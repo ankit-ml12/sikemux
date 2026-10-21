@@ -2,7 +2,6 @@ import { ChatAttachment, MobileError, type ChatMark, type ConnectionLike } from 
 import { randomUUID } from 'expo-crypto';
 import { File } from 'expo-file-system';
 
-import { recordOf } from '@mac/lib/guards';
 import { answerText } from '@mac/chat/answerText';
 import { applyChanges, emptyChat, fromView, withPage, type ChatRows } from '@mac/chat/rows';
 import type { ChatChange, ChatMessage, ChatPage, ChatView, PermissionAsk, QueuedMessage, ToolDetail } from '@mac/chat/types';
@@ -390,14 +389,7 @@ export class ChatSession {
   setConfig = (configId: string, value: string) => {
     this.notice = null;
     this.emit();
-    this.ask(
-      (connection) => connection.setChatConfig(this.agentId, configId, value),
-      'Could not change the setting',
-      (json) => {
-        const configOptions = recordOf(JSON.parse(json))?.configOptions;
-        if (configOptions) this.chat = { ...this.chat, setup: { ...recordOf(this.chat.setup), configOptions } };
-      },
-    );
+    this.ask((connection) => connection.setChatConfig(this.agentId, configId, value), 'Could not change the setting');
   };
 
   /** Says what went wrong where the person is looking. */

@@ -1122,6 +1122,9 @@ pub struct ConfigPicker {
 pub struct ConfigChoice {
     pub value: String,
     pub label: String,
+    /// What the agent says about it, shown under its label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

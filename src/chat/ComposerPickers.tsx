@@ -9,7 +9,8 @@ import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
 import type { Agent, ProviderProfile } from "../state/types";
 import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
-import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from "./sessionConfig";
+import type { ConfigPicker } from "../api/generated/wire";
+import { currentLabel } from "./sessionConfig";
 
 export function Picker({
     name,
@@ -269,7 +270,8 @@ function AccountPicker({ agent, profile, running, disabled }: { agent: Agent; pr
 export function ComposerPickers({
     agent,
     profile,
-    setup,
+    model: modelPicker,
+    effort: effortPicker,
     disabled,
     running = false,
     moveDisabled = true,
@@ -279,37 +281,40 @@ export function ComposerPickers({
 }: {
     agent: Agent;
     profile?: ProviderProfile;
-    setup: Record<string, unknown>;
+    /** The session's model picker and effort picker, as the core reads them. */
+    model?: ConfigPicker | null;
+    effort?: ConfigPicker | null;
     disabled: boolean;
     running?: boolean;
     /** Whether the chat cannot move to another account now, which it can while a turn runs. */
     moveDisabled?: boolean;
     agentLocked?: boolean;
     onAgent: (type: AgentType, profileId?: string, model?: string, modelProvider?: string) => void;
-    onConfig: (config: SessionConfig, value: string) => void;
+    onConfig: (picker: ConfigPicker, value: string) => void;
 }) {
-    const configs = sessionConfigs(setup);
+    const slots = [{ id: "model", picker: modelPicker }, ...(effortPicker ? [{ id: effortPicker.id, picker: effortPicker }] : [])];
     const agentIcon = <AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />;
     const rowIcon = <AgentIcon type={agent.type} size={15} className={`agent-glyph ${agent.type}`} />;
-    const [switching, setSwitching] = useState<Record<string, unknown>>();
+    /* The model picker an agent switch started from; a new one says the new agent's session is ready. */
+    const [switching, setSwitching] = useState<{ from: ConfigPicker | null | undefined }>();
     const [routes, loadRoutes] = useRoutes(agent.type, agent.modelProvider);
-    const loading = switching !== undefined && (disabled || switching === setup);
+    const loading = switching !== undefined && (disabled || (modelPicker != null && switching.from === modelPicker));
     useEffect(() => {
         if (switching && !loading) setSwitching(undefined);
     }, [switching, loading]);
     const route = routes.find((item) => item.provider.id === agent.modelProvider);
     const relaunch: typeof onAgent = (...choice) => {
-        setSwitching(setup);
+        setSwitching({ from: modelPicker });
         onAgent(...choice);
     };
     return (
         <div className="chat-pickers">
-            {pickerSlots(configs, agent.type).map(({ id, config }) => {
+            {slots.map(({ id, picker: config }) => {
                 const model = id === "model";
                 const name = model ? "Model" : "Reasoning effort";
                 const current = currentLabel(config) ?? (model ? agent.model || "Model" : agent.effort || "Effort");
                 const label = model && route ? `${current} · ${route.provider.label}` : current;
-                const listed = config?.options || [];
+                const listed = config?.choices || [];
                 const served = model ? (route?.served.models ?? []).filter((value) => !listed.some((option) => option.value === value)) : [];
                 const options = [...listed, ...served.map((value) => ({ value, label: route ? servedLabel(route, value) : value }))];
                 return (
@@ -317,7 +322,7 @@ export function ComposerPickers({
                         key={id}
                         name={name}
                         label={label}
-                        value={config?.currentValue || ""}
+                        value={config?.current || ""}
                         options={model ? options.map((option) => ({ ...option, icon: rowIcon })) : options}
                         disabled={disabled || (!options.length && (!model || agentLocked))}
                         icon={model ? agentIcon : undefined}
@@ -348,7 +353,7 @@ export function ComposerPickers({
                         }
                         compact={model}
                         onSelect={(value) => {
-                            if (config && value !== config.currentValue) onConfig(config, value);
+                            if (config && value !== config.current) onConfig(config, value);
                         }}
                     />
                 );

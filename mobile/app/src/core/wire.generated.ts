@@ -230,6 +230,8 @@ export interface ConfigPicker {
 export interface ConfigChoice {
   value: string;
   label: string;
+  /** What the agent says about it, shown under its label. */
+  description?: string;
 }
 
 /** What the app draws behind its panes. */
@@ -683,6 +685,13 @@ export interface ChatHead {
   commands: ChatCommandInfo[];
   capabilities: unknown;
   setup: unknown;
+  /** The model the session runs on, and the ones it can switch to. */
+  model?: ConfigPicker;
+  /**
+   * How hard the model thinks. An agent that always offers it has one
+   * with no choices until its session says them.
+   */
+  effort?: ConfigPicker;
   permissions: PermissionAsk[];
   tasks: AsyncTask[];
   /** The chat's own subagents still at work. */
