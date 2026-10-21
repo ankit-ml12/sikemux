@@ -40,7 +40,7 @@ percent-encoding = { version = "2" }
 phf = { version = "0.13", features = ["macros"] }
 phf_shared = { version = "0.13", default-features = false, features = ["std"] }
 regex-automata = { version = "0.4" }
-reqwest = { version = "0.13", default-features = false, features = ["cookies", "form", "gzip", "json", "multipart", "query", "rustls-no-provider", "stream", "system-proxy"] }
+reqwest = { version = "0.13", default-features = false, features = ["cookies", "form", "gzip", "json", "multipart", "query", "rustls-no-provider", "stream"] }
 rusqlite = { version = "0.40", features = ["bundled", "column_decltype"] }
 rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 rustls-pki-types = { version = "1", features = ["std"] }
@@ -107,10 +107,9 @@ errno = { version = "0.3" }
 flate2 = { version = "1" }
 getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "client-proxy", "client-proxy-system", "http1"] }
 idna = { version = "1" }
 objc2 = { version = "0.6", features = ["disable-encoding-assertions", "exception"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAccessibilityProtocols", "NSAlert", "NSAnimation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBitmapImageRep", "NSBox", "NSButton", "NSCell", "NSColor", "NSColorPanel", "NSControl", "NSController", "NSDragging", "NSEvent", "NSFont", "NSGlassEffectView", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSInputManager", "NSKeyValueBinding", "NSLayoutManager", "NSMenu", "NSMenuItem", "NSOpenGLView", "NSOpenPanel", "NSPanel", "NSPasteboard", "NSPopover", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSRunningApplication", "NSSavePanel", "NSScreen", "NSSpellProtocol", "NSText", "NSTextContainer", "NSTextContent", "NSTextField", "NSTextFinder", "NSTextInputClient", "NSTextView", "NSUserActivity", "NSUserInterfaceItemIdentification", "NSUserInterfaceValidation", "NSView", "NSViewController", "NSVisualEffectView", "NSWindow", "NSWorkspace", "block2", "objc2-core-foundation", "objc2-core-graphics", "objc2-quartz-core", "std"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAccessibilityProtocols", "NSAlert", "NSAnimation", "NSAppearance", "NSApplication", "NSAttributedString", "NSBitmapImageRep", "NSBox", "NSButton", "NSCell", "NSColor", "NSControl", "NSDragging", "NSEvent", "NSFont", "NSGlassEffectView", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSMenu", "NSMenuItem", "NSOpenGLView", "NSOpenPanel", "NSPanel", "NSPasteboard", "NSPopover", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSRunningApplication", "NSSavePanel", "NSScreen", "NSTextField", "NSTextFinder", "NSTextView", "NSUserActivity", "NSUserInterfaceItemIdentification", "NSUserInterfaceValidation", "NSView", "NSViewController", "NSVisualEffectView", "NSWindow", "NSWorkspace", "block2", "objc2-core-foundation", "objc2-core-graphics", "objc2-quartz-core", "std"] }
 objc2-core-foundation = { version = "0.3", features = ["CFBase"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGBitmapContext", "CGColor", "CGColorSpace", "CGContext", "CGDirectDisplay", "CGEventTypes", "CGFont", "CGImage", "CGPath", "objc2", "std"] }
 objc2-foundation = { version = "0.3" }
