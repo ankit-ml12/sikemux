@@ -126,7 +126,7 @@
     padding: 0 10px;
     border-color: transparent;
     border-radius: var(--radius-full);
-    background: var(--surface-chosen);
+    background: transparent;
     color: var(--text-primary);
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
@@ -135,7 +135,7 @@
 .top-bar .tb-place .tb-place-btn:hover,
 .top-bar .tb-place .tb-place-btn[aria-expanded="true"] {
     border-color: transparent;
-    background: color-mix(in oklab, var(--ink) 13%, transparent);
+    background: var(--surface-chosen);
 }
 
 /* Hosts and projects keep the colours the side rail gives them. */
