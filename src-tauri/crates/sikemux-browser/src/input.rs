@@ -305,7 +305,7 @@ fn owner_of(responder: Retained<NSResponder>) -> Retained<NSResponder> {
 fn takes_keyboard_into_tab(window: &NSWindow, responder: &NSResponder) -> bool {
     let Some(tab) = responder
         .downcast_ref::<NSView>()
-        .and_then(super::macos::tab_holding)
+        .and_then(crate::macos::tab_holding)
     else {
         return false;
     };
@@ -346,7 +346,7 @@ unsafe extern "C-unwind" fn make_first_responder(
             }
             if responder
                 .downcast_ref::<NSView>()
-                .and_then(super::macos::tab_holding)
+                .and_then(crate::macos::tab_holding)
                 .is_none()
             {
                 PERSON_CLICKED.with(|clicked| clicked.borrow_mut().take());

@@ -90,8 +90,9 @@ impl History {
         let Some(url) = remembered(url) else {
             return;
         };
-        let changed =
-            self.with_store(folder, |store| store.note(&url, title, icon, visited, now()));
+        let changed = self.with_store(folder, |store| {
+            store.note(&url, title, icon, visited, now())
+        });
         if changed {
             self.save_soon(folder);
         }

@@ -10,20 +10,18 @@
 mod discard;
 mod favicon;
 mod handover;
-#[cfg(target_os = "macos")]
-mod input;
 mod layout;
-#[cfg(target_os = "macos")]
-pub(crate) mod macos;
 #[cfg(target_os = "macos")]
 mod recording;
 pub mod tools;
 
 pub use sikemux_browser::{
     address, burst, documents, downloads, history, local_files, viewport, BrowserBounds,
-    BrowserDownload, BrowserShortcut, BrowserSnapshot, BrowserTab, DownloadState, PageDialog,
-    TabStall, BLANK_URL, RECORDER_SCRIPT, USER_AGENT,
+    BrowserDownload, BrowserSnapshot, BrowserTab, DownloadState, PageDialog, TabStall, BLANK_URL,
+    RECORDER_SCRIPT, USER_AGENT,
 };
+#[cfg(target_os = "macos")]
+pub(crate) use sikemux_browser::{input, macos};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -67,7 +65,6 @@ const LOAD_SETTLE: Duration = Duration::from_secs(2);
 /// The longest a reloaded tab waits off screen for its page before showing
 /// whatever it has so far.
 const REVEAL_LIMIT: Duration = Duration::from_secs(3);
-
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TabPage {
@@ -1107,9 +1104,11 @@ impl BrowserManager {
         #[cfg(target_os = "macos")]
         {
             let app = app.clone();
-            let _ = app
-                .clone()
-                .run_on_main_thread(move || macos::install_shortcuts(app));
+            let _ = app.clone().run_on_main_thread(move || {
+                macos::install_shortcuts(move |shortcut| {
+                    let _ = app.emit(BROWSER_SHORTCUT_EVENT, shortcut);
+                })
+            });
         }
         #[cfg(not(target_os = "macos"))]
         {

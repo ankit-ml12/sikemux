@@ -6,7 +6,11 @@ pub mod burst;
 pub mod documents;
 pub mod downloads;
 pub mod history;
+#[cfg(target_os = "macos")]
+pub mod input;
 pub mod local_files;
+#[cfg(target_os = "macos")]
+pub mod macos;
 mod runtime;
 pub mod viewport;
 

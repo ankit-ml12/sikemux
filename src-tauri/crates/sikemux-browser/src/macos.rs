@@ -38,11 +38,10 @@ use objc2_web_kit::{
     WKUIDelegate, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
 };
 use sikemux_process::sync::Locked;
-use tauri::{AppHandle, Emitter};
 
-use super::burst::Burst;
-use super::documents::DocumentEvent;
-use super::{BrowserShortcut, PageDialog, TabStall, BROWSER_SHORTCUT_EVENT};
+use crate::burst::Burst;
+use crate::documents::DocumentEvent;
+use crate::{BrowserShortcut, PageDialog, TabStall};
 
 /// The property the tab watches to hear about a page that moved on its own.
 const URL_KEY_PATH: &str = "URL";
@@ -1392,7 +1391,7 @@ define_class!(
             }
             // The file chooser blocks the whole app and brings it to the front, so
             // an agent uploads through `browser_upload` instead.
-            if super::input::agent_input_is_latest() {
+            if crate::input::agent_input_is_latest() {
                 handler.call((std::ptr::null(),));
                 return;
             }
@@ -1699,7 +1698,9 @@ pub(super) fn tab_holding(view: &NSView) -> Option<Retained<WKWebView>> {
     })
 }
 
-pub fn install_shortcuts(app: AppHandle) {
+/// Watches the keyboard for app chords pressed while a page has focus, and
+/// hands each one to `shortcut` instead of the page.
+pub fn install_shortcuts(shortcut: impl Fn(BrowserShortcut) + 'static) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
@@ -1707,10 +1708,10 @@ pub fn install_shortcuts(app: AppHandle) {
         let pass = event.as_ptr();
         // SAFETY: AppKit hands the monitor a live event for the length of the call.
         let event = unsafe { event.as_ref() };
-        if super::input::stop_returned_key(event) {
+        if crate::input::stop_returned_key(event) {
             return std::ptr::null_mut();
         }
-        super::input::note_person(event);
+        crate::input::note_person(event);
         let flags = event.modifierFlags();
         if !flags.contains(NSEventModifierFlags::Command) {
             return pass;
@@ -1725,17 +1726,14 @@ pub fn install_shortcuts(app: AppHandle) {
         let Some((tab_id, agent_id)) = focused_tab(event, mtm) else {
             return pass;
         };
-        let _ = app.emit(
-            BROWSER_SHORTCUT_EVENT,
-            BrowserShortcut {
-                agent_id,
-                tab_id,
-                code: dom_code(event.keyCode(), &key),
-                key,
-                shift: flags.contains(NSEventModifierFlags::Shift),
-                alt: false,
-            },
-        );
+        shortcut(BrowserShortcut {
+            agent_id,
+            tab_id,
+            code: dom_code(event.keyCode(), &key),
+            key,
+            shift: flags.contains(NSEventModifierFlags::Shift),
+            alt: false,
+        });
         std::ptr::null_mut()
     });
     // SAFETY: main thread (checked above). AppKit copies the block, and the monitor it
@@ -1820,7 +1818,7 @@ fn guard_activation() {
 fn watch_the_person() {
     let block = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
         // SAFETY: AppKit hands the monitor a live event for the length of the call.
-        super::input::note_person(unsafe { event.as_ref() });
+        crate::input::note_person(unsafe { event.as_ref() });
         event.as_ptr()
     });
     let mask = NSEventMask::MouseMoved
@@ -1834,8 +1832,8 @@ fn watch_the_person() {
     // monitor it returns is kept in PERSON_MONITOR so it stays installed.
     let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
     PERSON_MONITOR.with(|slot| *slot.borrow_mut() = monitor);
-    super::input::guard_cursor();
-    super::input::guard_keyboard();
+    crate::input::guard_cursor();
+    crate::input::guard_keyboard();
 }
 
 #[cfg(test)]
