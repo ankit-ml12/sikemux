@@ -249,6 +249,10 @@ impl Workbench {
                 }
             }
             Update::Read("files.list", value) => self.files.listed(&value, &self.asks),
+            Update::Read("git-overview", value) => {
+                self.files.mark(&value);
+                self.reads.insert("git-overview", value);
+            }
             Update::Read("projectFiles", value) => {
                 if self.project_files.answered(&value) {
                     self.rank(cx);

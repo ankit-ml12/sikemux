@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
@@ -44,6 +46,10 @@ pub struct FileTree {
     totals: HashMap<PathBuf, usize>,
     pub expanded: HashSet<PathBuf>,
     pub selected_dir: Option<PathBuf>,
+    /// What git says of each changed file and the folders holding it, by absolute path.
+    pub marks: HashMap<PathBuf, (Option<char>, Mark)>,
+    /// The rows as last laid out, until a listing or an opened folder changes them.
+    rows: RefCell<Option<Rc<Vec<Row>>>>,
 }
 
 impl FileTree {
@@ -79,6 +85,7 @@ impl FileTree {
                 .collect();
             let total = folder["total"].as_u64().unwrap_or(0) as usize;
             let paging = self.totals.contains_key(&dir);
+            self.rows.take();
             let list = self.listed.entry(dir.clone()).or_default();
             if !paging {
                 list.clear();
@@ -123,6 +130,7 @@ impl FileTree {
 
     pub fn toggle(&mut self, dir: &Path, asks: &UnboundedSender<Ask>) {
         self.selected_dir = Some(dir.to_owned());
+        self.rows.take();
         if !self.expanded.remove(dir) {
             self.expanded.insert(dir.to_owned());
             if !self.listed.contains_key(dir) {
@@ -138,15 +146,28 @@ impl FileTree {
 
     pub fn collapse_all(&mut self) {
         self.expanded.clear();
+        self.rows.take();
+    }
+
+    /// Takes in what git says of the project's files.
+    pub fn mark(&mut self, overview: &Value) {
+        if let Some(root) = &self.root {
+            self.marks = git_marks(root, overview);
+        }
     }
 
     /// The rows to draw: the project's entries, and those of every open folder under its own.
-    pub fn rows(&self) -> Vec<Row> {
-        let mut rows = Vec::new();
-        if let Some(root) = &self.root {
-            self.walk(root, 0, &mut rows);
-        }
-        rows
+    pub fn rows(&self) -> Rc<Vec<Row>> {
+        self.rows
+            .borrow_mut()
+            .get_or_insert_with(|| {
+                let mut rows = Vec::new();
+                if let Some(root) = &self.root {
+                    self.walk(root, 0, &mut rows);
+                }
+                Rc::new(rows)
+            })
+            .clone()
     }
 
     fn walk(&self, dir: &Path, depth: usize, rows: &mut Vec<Row>) {
@@ -191,9 +212,9 @@ impl Mark {
 
 /// Every changed file's letter and mark, and every folder holding changes with the most
 /// telling mark below it, by absolute path.
-pub fn git_marks(root: &Path, overview: Option<&Value>) -> HashMap<PathBuf, (Option<char>, Mark)> {
+fn git_marks(root: &Path, overview: &Value) -> HashMap<PathBuf, (Option<char>, Mark)> {
     let mut marks: HashMap<PathBuf, (Option<char>, Mark)> = HashMap::new();
-    for file in overview.map(|overview| &overview["status"]["files"]).and_then(Value::as_array).into_iter().flatten() {
+    for file in overview["status"]["files"].as_array().into_iter().flatten() {
         let Some(path) = file["path"].as_str() else { continue };
         let sides = [file["index"].as_str().unwrap_or(" "), file["worktree"].as_str().unwrap_or(" ")];
         let Some((letter, mark)) = sides.into_iter().filter_map(Mark::of).max_by_key(|(_, mark)| *mark) else { continue };
@@ -277,9 +298,9 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 "file-rows",
                 count,
                 cx.processor(|bench: &mut Workbench, range: Range<usize>, _window, cx| {
-                    let marks = bench.files.root.as_deref().map(|root| git_marks(root, bench.read("git-overview"))).unwrap_or_default();
                     let front = bench.front_file();
-                    bench.files.rows().into_iter().skip(range.start).take(range.len()).map(|row| row_view(row, &marks, front.as_deref(), cx)).collect::<Vec<_>>()
+                    let rows = bench.files.rows();
+                    rows[range.start.min(rows.len())..range.end.min(rows.len())].iter().map(|row| row_view(row, &bench.files.marks, front.as_deref(), cx)).collect::<Vec<_>>()
                 }),
             )
             .flex_1()
@@ -288,7 +309,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
         )
 }
 
-fn row_view(row: Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Option<&Path>, cx: &mut Context<Workbench>) -> AnyElement {
+fn row_view(row: &Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Option<&Path>, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let mark = marks.get(&row.path).copied();
     let colour = |mark: Mark| match mark {
@@ -359,7 +380,7 @@ fn row_view(row: Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Opt
             cx.notify();
         }))
         .child(lead)
-        .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.entry.name))
+        .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.entry.name.clone()))
         .children(tail)
         .into_any_element()
 }
