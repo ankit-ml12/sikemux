@@ -42,6 +42,16 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
         let pane = ui::pane(cx).child(crate::editor::pane(bench, &cx.entity(), path, window, cx));
         return div().flex_1().min_w_0().child(pane).into_any_element();
     }
+    if let (Some((PaneKind::Git, _)), Some(pane)) = (
+        bench.tab().and_then(|tab| tabs::first_view(&tab.pane)),
+        &bench.git,
+    ) {
+        return div()
+            .flex_1()
+            .min_w_0()
+            .child(pane.clone())
+            .into_any_element();
+    }
     let project = bench.project();
     if bench
         .strip()

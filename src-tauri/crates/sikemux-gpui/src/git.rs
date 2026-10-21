@@ -24,7 +24,11 @@ use crate::syntax::{self, LineRuns};
 use crate::theme::{self, Tokens};
 use crate::ui;
 
+pub use pane::{FocusGit, GitPane};
 pub use sikemux_core::git::diff::DiffKind;
+
+mod pane;
+mod review;
 
 /// A diff side longer than this is drawn without colours.
 const COLOURED_MAX_LINES: usize = 10_000;
@@ -219,7 +223,7 @@ impl Colours {
         diff: &Diff,
         language: Option<&str>,
         cx: &mut Context<V>,
-        coloured: impl Fn(&mut V) -> &mut Colours + Copy + 'static,
+        coloured: impl Fn(&mut V) -> Option<&mut Colours> + Clone + 'static,
     ) {
         let version = syntax::version(cx);
         if self.version == Some(version) {
@@ -232,13 +236,15 @@ impl Colours {
         };
         for (side, text) in diff.sides.iter().enumerate() {
             let task = syntax::colour_lines(language, text.clone(), cx);
+            let coloured = coloured.clone();
             cx.spawn(async move |view, cx| {
                 let Some(lines) = task.await else {
                     return;
                 };
                 view.update(cx, |view, cx| {
-                    let colours = coloured(view);
-                    if colours.version == Some(version) {
+                    if let Some(colours) =
+                        coloured(view).filter(|colours| colours.version == Some(version))
+                    {
                         colours.sides[side] = Some(lines);
                         cx.notify();
                     }
@@ -484,7 +490,7 @@ impl Render for DiffView {
         };
         self.colours
             .ask(diff, self.language.as_deref(), cx, |view: &mut Self| {
-                &mut view.colours
+                Some(&mut view.colours)
             });
         let advance = advance(window);
         let width = diff.width(advance);
@@ -535,4 +541,24 @@ impl Render for DiffView {
             .child(rows.size_full())
             .into_any_element()
     }
+}
+
+/// Tells `list` only the run of `old` that `new` replaced, so what is in view stays put.
+fn relist<T: PartialEq>(list: &ListState, old: &[T], new: &[T]) {
+    if list.item_count() != old.len() {
+        list.reset(new.len());
+        return;
+    }
+    let start = old
+        .iter()
+        .zip(new)
+        .take_while(|(old, new)| old == new)
+        .count();
+    let end = old[start..]
+        .iter()
+        .rev()
+        .zip(new[start..].iter().rev())
+        .take_while(|(old, new)| old == new)
+        .count();
+    list.splice(start..old.len() - end, new.len() - start - end);
 }

@@ -26,6 +26,7 @@ use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watc
 use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
+use crate::git::{FocusGit, GitPane};
 use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
@@ -82,6 +83,8 @@ pub struct Workbench {
     pub questions: Vec<Question>,
     pub terminals: terminal::Terminals,
     pub editors: crate::editor::Editors,
+    /// The Git pane of the project whose Git tab was last in front.
+    pub git: Option<Entity<GitPane>>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     pub parts: Parts,
@@ -264,6 +267,7 @@ impl Workbench {
             questions: Vec::new(),
             terminals: terminal::Terminals::default(),
             editors: crate::editor::Editors::default(),
+            git: None,
             focus: cx.focus_handle(),
             parts: Parts::new(cx),
             _filtering: None,
@@ -403,6 +407,9 @@ impl Workbench {
             }
             Update::Read("git-overview", value) => {
                 self.files.mark(&value);
+                if let Some(pane) = &self.git {
+                    pane.update(cx, |pane, cx| pane.overview(&value, cx));
+                }
                 self.reads.insert("git-overview", value);
                 self.parts.redraw(&self.parts.top, cx);
                 return self.parts.redraw(&self.parts.tabs, cx);
@@ -419,6 +426,12 @@ impl Workbench {
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
                 }
                 self.reads.insert("preferences", value);
+            }
+            Update::Read("catalog", value) => {
+                if let Some(pane) = &self.git {
+                    pane.update(cx, |pane, cx| pane.catalog(&value, cx));
+                }
+                self.reads.insert("catalog", value);
             }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
@@ -1138,6 +1151,41 @@ impl Workbench {
         }
     }
 
+    /// Makes the Git pane when the project's Git tab comes to the front.
+    fn git_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
+        let (Some((PaneKind::Git, _)), Some(project)) = (front, self.project()) else {
+            return;
+        };
+        let repo = project.path.to_string_lossy().into_owned();
+        if self
+            .git
+            .as_ref()
+            .is_some_and(|pane| pane.read(cx).repo == repo)
+        {
+            return;
+        }
+        let asks = self.asks.clone();
+        let pane = cx.new(|cx| GitPane::new(asks, repo, window, cx));
+        if let Some(overview) = self.reads.get("git-overview") {
+            pane.update(cx, |pane, cx| pane.overview(overview, cx));
+        }
+        if let Some(catalog) = self.reads.get("catalog") {
+            pane.update(cx, |pane, cx| pane.catalog(catalog, cx));
+        }
+        self.git = Some(pane);
+    }
+
+    /// Brings the project's Git tab to the front, opening one when it has none.
+    fn open_git(&self) {
+        if let Some(project) = self.project() {
+            self.call(
+                "openTab",
+                json!({ "project": project.id, "kind": "git", "target": project.path.to_string_lossy() }),
+            );
+        }
+    }
+
     pub fn new_terminal(&self) {
         if let Some(project) = self.project() {
             self.call("newTerminal", json!({ "project": project.id }));
@@ -1457,6 +1505,7 @@ impl Parts {
                 |bench, window, cx| {
                     bench.compose(window, cx);
                     bench.hint(window, cx);
+                    bench.git_pane(window, cx);
                     home::stage(bench, window, cx)
                 },
                 false,
@@ -1527,6 +1576,7 @@ impl Render for Workbench {
                 cx.notify();
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
+            .on_action(cx.listener(|bench, _: &FocusGit, _, _| bench.open_git()))
             .on_action(cx.listener(|bench, _: &NewChat, _, _| bench.new_chat()))
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
             .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
