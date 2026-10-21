@@ -10,7 +10,7 @@ const api = vi.hoisted(() => ({
     accounts: vi.fn(() => Promise.resolve([])),
     commitAuthors: vi.fn(),
     image: vi.fn((url: string) => Promise.resolve(`data:${url}`)),
-    pullFiles: vi.fn(() => Promise.resolve([])),
+    pullCommits: vi.fn(() => Promise.resolve([])),
 }));
 
 const localGit = vi.hoisted(() => ({ remotes: vi.fn(), overview: vi.fn() }));
@@ -51,7 +51,7 @@ import { AuthorAvatar } from "../../git/AuthorAvatar";
 import { invalidate, useResource } from "../../plugin-api/resources";
 import { emit } from "../../state/bus";
 import type { GitArea } from "../../state/types";
-import { pullFilesR } from "../resources";
+import { pullCommitsR } from "../resources";
 import { setProjectRepo } from "../state";
 import { picked, registerTestHost, TEST_HOST } from "../testHost";
 import { setState } from "../../state/store";
@@ -71,8 +71,8 @@ const remoteUrl = "git@example.test:nodelike/sikemux.git";
 const signedIn: HostAccount = { id: "ada-id", ok: true, login: "ada", avatarUrl: null, host: "example.test", canWriteCi: true, warning: null };
 
 function PullCount() {
-    const files = useResource(pullFilesR, { provider: TEST_HOST, owner: "nodelike", name: "sikemux" }, 1);
-    return <span>pull read: {files.data ? "yes" : "no"}</span>;
+    const commits = useResource(pullCommitsR, { provider: TEST_HOST, owner: "nodelike", name: "sikemux" }, 1);
+    return <span>pull read: {commits.data ? "yes" : "no"}</span>;
 }
 
 /** The account the shell lends the local workbench, drawn where its side panel would draw it. */
@@ -160,12 +160,12 @@ describe("GitHostShell", () => {
     it("reads the host again after a push or pull in this folder, and not in another", async () => {
         shell("local", <PullCount />);
         await screen.findByText("pull read: yes");
-        expect(api.pullFiles).toHaveBeenCalledTimes(1);
+        expect(api.pullCommits).toHaveBeenCalledTimes(1);
         act(() => emit({ type: "git-refresh", repo: "/work/other" }));
         await act(async () => {});
-        expect(api.pullFiles).toHaveBeenCalledTimes(1);
+        expect(api.pullCommits).toHaveBeenCalledTimes(1);
         act(() => emit({ type: "git-refresh", repo: CWD }));
-        await waitFor(() => expect(api.pullFiles).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(api.pullCommits).toHaveBeenCalledTimes(2));
     });
 
     it("picks another repository for the project, and forgets the choice when the remote's own is picked", async () => {

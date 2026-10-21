@@ -9,7 +9,6 @@ const api = vi.hoisted(() => ({
     pullReviews: vi.fn(() => Promise.resolve([])),
     timeline: vi.fn(() => Promise.resolve([])),
     pullCommits: vi.fn(),
-    pullFiles: vi.fn(),
     runs: vi.fn(() => Promise.resolve({ runs: [] as Run[], total: 0 })),
     branches: vi.fn(() => Promise.resolve(["main", "feat/run-page"])),
     createPull: vi.fn(() => Promise.resolve({ number: 32 })),
@@ -48,7 +47,9 @@ import { PullsView } from "./PullsView";
 
 const host = registerTestHost(api);
 const checks = new Map<number, CheckTally>();
-ciCore(api, (listed) => checks.get(listed.number) ?? null);
+ciCore(api, (listed) => checks.get(listed.number) ?? null, {
+    codeHostPullFiles: () => [{ path: "src/run.ts", status: "added", additions: 3, deletions: 0, rows: [[1, 1, "x"]] }],
+});
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const pull: Pull = {
@@ -94,7 +95,6 @@ beforeEach(() => {
         { sha: "aaaaaaa1111111", message: "feat: first", author: "someone", avatarUrl: null, date: "2026-01-01T10:00:00Z" },
         { sha: "bbbbbbb2222222", message: "feat: second\n\nwith a body", author: "someone", avatarUrl: null, date: "2026-01-01T11:00:00Z" },
     ]);
-    api.pullFiles.mockResolvedValue([{ path: "src/run.ts", status: "added", additions: 3, deletions: 0, patch: "@@ -0,0 +1,1 @@\n+x" }]);
 });
 afterEach(cleanup);
 

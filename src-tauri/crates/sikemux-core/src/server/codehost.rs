@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use sikemux_wire::codehost::{
-    CheckTally, Issue, IssueList, IssuePage, Job, JobLog, ListedJob, ListedPull, ListedRun,
-    MergeReadiness, OpenPull, OpenRun, Outcome, Pull, PullCounts, PullList, PullState, Release,
-    ReleaseList, Review, ReviewVerdict, Run, RunDetail, RunList, RunPage, RunTiming, TrackedItem,
-    TrackedKind, WorkflowFile,
+    ChangedFile, CheckTally, Issue, IssueList, IssuePage, Job, JobLog, ListedJob, ListedPull,
+    ListedRun, MergeReadiness, OpenPull, OpenRun, Outcome, Pull, PullCounts, PullList, PullState,
+    Release, ReleaseList, Review, ReviewVerdict, Run, RunDetail, RunList, RunPage, RunTiming,
+    TrackedItem, TrackedKind, WorkflowFile,
 };
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
@@ -83,6 +83,7 @@ enum List {
     Releases,
     Tracked,
     Pull { number: u64 },
+    PullFiles { number: u64 },
     Run { id: String, attempt: Option<u64> },
     JobLog { run: String, job: String },
 }
@@ -99,6 +100,7 @@ impl List {
             Self::Pull { .. } => 5,
             Self::Run { .. } => 6,
             Self::JobLog { .. } => 7,
+            Self::PullFiles { .. } => 8,
         }
     }
 
@@ -113,6 +115,7 @@ impl List {
             Self::Pull { .. } => "pull",
             Self::Run { .. } => "run",
             Self::JobLog { .. } => "jobLog",
+            Self::PullFiles { .. } => "pullFiles",
         }
     }
 }
@@ -285,6 +288,14 @@ pub(crate) struct PullParams {
 
 pub(crate) async fn pull(core: &Arc<Core>, client: ClientId, params: PullParams) -> Answer {
     let list = List::Pull {
+        number: params.number,
+    };
+    named_or_project(core, client, params.project, params.repo, list).await
+}
+
+/// The files a pull request changes, each with its patch as the rows of a diff.
+pub(crate) async fn pull_files(core: &Arc<Core>, client: ClientId, params: PullParams) -> Answer {
+    let list = List::PullFiles {
         number: params.number,
     };
     named_or_project(core, client, params.project, params.repo, list).await
@@ -671,7 +682,11 @@ pub(crate) fn refs_moved(core: &Arc<Core>, projects: &[String]) {
                 repos.contains(&key.repo)
                     && matches!(
                         key.list,
-                        List::Pulls { .. } | List::Runs(_) | List::Tracked | List::Pull { .. }
+                        List::Pulls { .. }
+                            | List::Runs(_)
+                            | List::Tracked
+                            | List::Pull { .. }
+                            | List::PullFiles { .. }
                     )
             })
             .cloned()
@@ -719,6 +734,7 @@ async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Read, Failur
         List::Releases => Read::of(repo, release_list(repo).await?, FRESH),
         List::Tracked => Read::of(repo, tracked_list(repo).await?, FRESH),
         List::Pull { number } => Read::of(repo, open_pull(repo, *number).await?, FRESH),
+        List::PullFiles { number } => Read::of(repo, pull_files_of(repo, *number).await?, FRESH),
         List::Run { id, attempt } => {
             let run = open_run(core, repo, id, *attempt).await?;
             let fresh = pace(&run.run, attempt.is_some());
@@ -741,6 +757,30 @@ fn typed<T: DeserializeOwned>(repo: &Repo, found: Value) -> Result<T, Failure> {
             format!("the code host answered in an unknown shape: {error}"),
         )
     })
+}
+
+/// A file a pull request changes, with its patch as the rows the Git tab's diff draws.
+#[derive(Serialize)]
+struct PulledFile {
+    #[serde(flatten)]
+    file: ChangedFile,
+    rows: Vec<crate::git::diff::DiffRow>,
+}
+
+async fn pull_files_of(repo: &Repo, number: u64) -> Result<Vec<PulledFile>, Failure> {
+    let asked = json!({ "number": number, "fullPatches": true });
+    let files: Vec<ChangedFile> = typed(repo, repo.call("pullFiles", asked).await?)?;
+    Ok(files
+        .into_iter()
+        .map(|mut file| {
+            let rows = file
+                .patch
+                .take()
+                .map(|patch| crate::git::diff::patch_rows(&patch))
+                .unwrap_or_default();
+            PulledFile { file, rows }
+        })
+        .collect())
 }
 
 /// How many are open and closed, from hosts that count them cheaply.

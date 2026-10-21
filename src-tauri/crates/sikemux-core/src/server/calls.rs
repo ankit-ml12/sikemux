@@ -407,6 +407,7 @@ calls! { core, client, params;
     "codeHostIssues": Watch => answer(super::codehost::issues(&core, client.id, parse(params)?).await),
     "codeHostReleases": Watch => answer(super::codehost::releases(&core, client.id, parse(params)?).await),
     "codeHostPull": Watch => answer(super::codehost::pull(&core, client.id, parse(params)?).await),
+    "codeHostPullFiles": Watch => answer(super::codehost::pull_files(&core, client.id, parse(params)?).await),
     "codeHostTracked": Watch => answer(super::codehost::tracked(&core, client.id, parse(params)?).await),
     "codeHostRun": Watch => answer(super::codehost::run(&core, client.id, parse(params)?).await),
     "codeHostJobLog": Watch => answer(super::codehost::job_log(&core, client.id, parse(params)?).await),

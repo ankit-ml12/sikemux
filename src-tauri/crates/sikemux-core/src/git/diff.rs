@@ -106,6 +106,55 @@ pub const ROW_HIDDEN: u8 = 3;
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct DiffRow(pub u8, pub u32, pub String);
 
+/// A code host's unified patch for one file as rows: added and unchanged lines
+/// numbered in the new file, removed ones in the old, and the unchanged lines
+/// between hunks, which the patch leaves out, as a hidden row of their count.
+pub fn patch_rows(patch: &str) -> Vec<DiffRow> {
+    let mut rows = Vec::new();
+    let (mut old_line, mut new_line, mut shown_up_to) = (0u32, 0u32, 0u32);
+    for line in patch.lines() {
+        if let Some((old, new)) = hunk_starts(line) {
+            (old_line, new_line) = (old, new);
+            let skipped = new_line.saturating_sub(1).saturating_sub(shown_up_to);
+            if skipped > 0 {
+                rows.push(DiffRow(ROW_HIDDEN, skipped, String::new()));
+            }
+            continue;
+        }
+        if old_line == 0 && new_line == 0 {
+            continue;
+        }
+        let text = line.get(1..).unwrap_or_default().to_owned();
+        match line.as_bytes().first() {
+            Some(b'+') => {
+                rows.push(DiffRow(ROW_ADDED, new_line, text));
+                shown_up_to = new_line;
+                new_line += 1;
+            }
+            Some(b'-') => {
+                rows.push(DiffRow(ROW_DELETED, old_line, text));
+                old_line += 1;
+            }
+            Some(b'\\') => {}
+            _ => {
+                rows.push(DiffRow(ROW_CONTEXT, new_line, text));
+                shown_up_to = new_line;
+                new_line += 1;
+                old_line += 1;
+            }
+        }
+    }
+    rows
+}
+
+/// Where a hunk starts in the old and new file, from its `@@ -a,b +c,d @@` header.
+fn hunk_starts(line: &str) -> Option<(u32, u32)> {
+    let ranges = line.strip_prefix("@@ -")?.split(" @@").next()?;
+    let (old, new) = ranges.split_once(" +")?;
+    let start = |range: &str| range.split(',').next()?.parse().ok();
+    Some((start(old)?, start(new)?))
+}
+
 /// Unchanged lines kept on each side of a change.
 const CONTEXT_LINES: usize = 4;
 /// A run of unchanged lines only this much longer than the context around it
@@ -296,5 +345,50 @@ mod tests {
             .unwrap();
         assert_eq!((rows[comment].0, rows[comment].1), (ROW_DELETED, 41));
         assert_eq!((rows[comment + 1].0, rows[comment + 1].1), (ROW_ADDED, 41));
+    }
+
+    fn rows(rows: &[(u8, u32, &str)]) -> Vec<DiffRow> {
+        rows.iter()
+            .map(|&(kind, number, text)| DiffRow(kind, number, text.to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn a_patch_numbers_added_and_unchanged_lines_in_the_new_file_and_removed_ones_in_the_old() {
+        let patch = "@@ -3,3 +3,3 @@\n keep\n-old\n+new\n tail";
+        assert_eq!(
+            patch_rows(patch),
+            rows(&[
+                (3, 2, ""),
+                (0, 3, "keep"),
+                (2, 4, "old"),
+                (1, 4, "new"),
+                (0, 5, "tail")
+            ])
+        );
+    }
+
+    #[test]
+    fn a_patch_counts_the_unchanged_lines_between_hunks_which_it_leaves_out() {
+        let patch = "@@ -1,2 +1,2 @@\n a\n-b\n+B\n@@ -10,1 +10,2 @@\n j\n+k";
+        let found = patch_rows(patch);
+        assert_eq!(found[3], DiffRow(ROW_HIDDEN, 7, String::new()));
+        assert_eq!(found[4..], rows(&[(0, 10, "j"), (1, 11, "k")]));
+    }
+
+    #[test]
+    fn a_patch_of_a_new_file_hides_nothing_before_it() {
+        assert_eq!(
+            patch_rows("@@ -0,0 +1,2 @@\n+one\n+two\n"),
+            rows(&[(1, 1, "one"), (1, 2, "two")])
+        );
+    }
+
+    #[test]
+    fn a_patch_skips_the_note_about_a_missing_newline_at_the_end() {
+        assert_eq!(
+            patch_rows("@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b"),
+            rows(&[(2, 1, "a"), (1, 1, "b")])
+        );
     }
 }

@@ -4,7 +4,8 @@ import type { PluginFailure } from "../api/plugins";
 import { isSignedOutFailure } from "../plugin-api/backend";
 import { resourceKind } from "../plugin-api/identity";
 import { invalidate, resource } from "../state/resources";
-import type { IssueList, OpenJobLog, OpenPull, OpenRun, PullList, ReleaseList, RepoRef, RunList, TrackedItem } from "./types";
+import type { DiffRow } from "../api/git";
+import type { ChangedFile, IssueList, OpenJobLog, OpenPull, OpenRun, PullList, ReleaseList, RepoRef, RunList, TrackedItem } from "./types";
 
 type Answer<T> = { value: T } | { failed: PluginFailure & { plugin: string } };
 
@@ -26,6 +27,7 @@ const LISTS: Readonly<Record<string, string>> = {
     releases: "host.releaseList",
     tracked: "host.trackedList",
     pull: "host.pullView",
+    pullFiles: "host.pullFiles",
     run: "host.runView",
     jobLog: "host.jobLogView",
 };
@@ -84,6 +86,16 @@ export const trackedListR = resource({
 export const pullViewR = resource({
     kind: "host.pullView",
     fetch: (project: string | null, repo: RepoRef, number: number): Promise<OpenPull> => list("codeHostPull", { ...placeOf(project, repo), number }),
+});
+
+/** A file a pull request changes, with its patch as the rows the git pane's diff draws, as the core reads them. */
+export type PulledFile = Omit<ChangedFile, "patch"> & { rows: DiffRow[] };
+
+/** The files a pull request changes: of the project's code host, or of `repo` when no project holds it. */
+export const pullFilesR = resource({
+    kind: "host.pullFiles",
+    fetch: (project: string | null, repo: RepoRef, number: number): Promise<PulledFile[]> =>
+        list("codeHostPullFiles", { ...placeOf(project, repo), number }),
 });
 
 /** One attempt of a run, or the latest when `attempt` is null, with its jobs laid out; the core reads it again while it is going. */

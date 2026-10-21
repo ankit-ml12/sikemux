@@ -3,7 +3,6 @@ import {
     type Annotation,
     type JobSummary,
     type WorkflowFile,
-    type ChangedFile,
     type Issue,
     type Notification,
     type PullCommit,
@@ -88,12 +87,6 @@ export const approvalsR = resource({
     kind: "host.approvals",
     fetch: (repo: RepoRef, runId: string): Promise<PendingApproval[]> => hostApi(repo.provider).pendingApprovals(repo, runId),
     staleAfterMs: 15_000,
-});
-
-export const pullFilesR = resource({
-    kind: "host.pullFiles",
-    fetch: (repo: RepoRef, number: number): Promise<ChangedFile[]> => hostApi(repo.provider).pullFiles(repo, number),
-    staleAfterMs: 5 * 60_000,
 });
 
 export const timelineR = resource({

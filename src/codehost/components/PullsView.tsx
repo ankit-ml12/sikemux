@@ -43,8 +43,8 @@ import {
     type ReviewVerdict,
 } from "../api";
 import { errorText } from "../../lib/format";
-import { pullCommitsR, pullFilesR, timelineR } from "../resources";
-import { pullListR, pullViewR } from "../lists";
+import { pullCommitsR, timelineR } from "../resources";
+import { pullFilesR, pullListR, pullViewR } from "../lists";
 import { tallySummary, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
@@ -384,19 +384,21 @@ function CheckoutButton({ cwd, repo, pull, current }: { cwd: string | null; repo
 
 /** The pull request's changed files as rows, like Changes lists staged and unstaged ones. */
 function PullFileRows({
+    project,
     repo,
     number,
     active,
     focus,
     onFocus,
 }: {
+    project: string | null;
     repo: RepoRef;
     number: number;
     active: boolean;
     focus: string | null;
     onFocus: (path: string) => void;
 }) {
-    const files = useResourceEnabled(active, pullFilesR, repo, number);
+    const files = useResourceEnabled(active, pullFilesR, project, repo, number);
     const list = files.data ?? [];
     const added = list.reduce((sum, file) => sum + file.additions, 0);
     const removed = list.reduce((sum, file) => sum + file.deletions, 0);
@@ -576,7 +578,7 @@ export function PullRight({
                     <EmptyState message="This repository is not checked out here, so its commits cannot be opened." />
                 )
             ) : (
-                <PullFiles repo={repo} pull={found} cwd={cwd} active={active} focusPath={focus ?? undefined} />
+                <PullFiles project={project} repo={repo} pull={found} cwd={cwd} active={active} focusPath={focus ?? undefined} />
             )}
         </div>
     );
@@ -718,7 +720,7 @@ function PullColumn({
                         id: "files",
                         label: "Files",
                         icon: <IconFile size={14} />,
-                        content: <PullFileRows repo={repo} number={number} active={active} focus={focus} onFocus={onFocus} />,
+                        content: <PullFileRows project={project} repo={repo} number={number} active={active} focus={focus} onFocus={onFocus} />,
                     },
                     {
                         id: "commits",
