@@ -84,7 +84,7 @@ fn label(bench: &Workbench, tab: &LayoutTab) -> SharedString {
     }
 }
 
-fn first_view(pane: &Pane) -> Option<(PaneKind, &String)> {
+pub fn first_view(pane: &Pane) -> Option<(PaneKind, &String)> {
     match pane {
         Pane::View { kind, target, .. } => Some((*kind, target)),
         Pane::Split { panes, .. } => panes.iter().find_map(first_view),

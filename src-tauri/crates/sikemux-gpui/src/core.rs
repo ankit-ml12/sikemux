@@ -98,9 +98,6 @@ pub fn start(home: Home) -> Link {
 async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc::UnboundedReceiver<Ask>) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
-    if let Some(logs) = home.launch.as_ref().and_then(|launch| launch.log.parent()) {
-        let _ = std::fs::create_dir_all(logs);
-    }
     loop {
         if let Some(launch) = &home.launch {
             match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false).await {
