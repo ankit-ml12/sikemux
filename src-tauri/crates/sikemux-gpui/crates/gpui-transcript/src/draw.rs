@@ -52,6 +52,9 @@ pub struct Style {
     pub code_ground: Hsla,
     pub mark_ground: Hsla,
     pub selection: Hsla,
+    /// The ground under each place a find found, and under the one the reader is on.
+    pub found: Hsla,
+    pub found_current: Hsla,
     pub line: Hsla,
     pub line_soft: Hsla,
     pub table_ground: Hsla,
@@ -81,6 +84,8 @@ impl Default for Style {
             code_ground: rgba(0x09090bb8).into(),
             mark_ground: rgba(0xa277ff1a).into(),
             selection: rgba(0xa277ff4d).into(),
+            found: rgba(0xa277ff47).into(),
+            found_current: rgba(0xa277ffff).into(),
             line: rgba(0x24242bcc).into(),
             line_soft: rgb(0x19191e).into(),
             table_ground: rgba(0x19191eb8).into(),
@@ -417,7 +422,19 @@ impl Draw<'_> {
             .marks
             .iter()
             .filter(|(_, marks)| marks.has(Marks::CODE));
-        let own = highlights(rich, selected, style);
+        let found: Vec<(Range<usize>, bool)> = on
+            .selecting
+            .as_ref()
+            .map(|selecting| {
+                selecting
+                    .hits
+                    .iter()
+                    .filter(|hit| hit.text == place)
+                    .map(|hit| (hit.range.clone(), hit.current))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let own = highlights(rich, selected, &found, style);
         let looks = match colours {
             Some(colours) => combine_highlights(colours.iter().cloned(), own).collect(),
             None => own,
@@ -717,13 +734,15 @@ impl Draw<'_> {
 fn highlights(
     rich: &Rich,
     selected: Option<Range<usize>>,
+    found: &[(Range<usize>, bool)],
     style: &Style,
 ) -> Vec<(Range<usize>, HighlightStyle)> {
     let ranges = rich
         .marks
         .iter()
         .map(|(range, _)| range.clone())
-        .chain(selected.clone());
+        .chain(selected.clone())
+        .chain(found.iter().map(|(range, _)| range.clone()));
     let mut edges: Vec<usize> = ranges.flat_map(|range| [range.start, range.end]).collect();
     edges.sort_unstable();
     edges.dedup();
@@ -742,11 +761,19 @@ fn highlights(
             let chosen = selected
                 .as_ref()
                 .is_some_and(|selected| inside(selected, &run));
+            let hit = found.iter().find(|(range, _)| inside(range, &run));
             let mut look = match marks {
                 Some(marks) => highlight(marks, style),
-                None if chosen => HighlightStyle::default(),
+                None if chosen || hit.is_some() => HighlightStyle::default(),
                 None => return None,
             };
+            if let Some((_, current)) = hit {
+                look.background_color = Some(if *current {
+                    style.found_current
+                } else {
+                    style.found
+                });
+            }
             if chosen {
                 look.background_color = Some(style.selection);
             }

@@ -9,10 +9,12 @@
 //!   earlier pages as the reader nears the top, and selects and copies text.
 
 mod draw;
+mod find;
 mod markdown;
 mod select;
 mod transcript;
 
 pub use draw::{CodeColours, CodeRuns, DrawFence, DrawImage, Fence, OnLink, Pen, Style};
+pub use find::{FoundChanged, Query};
 pub use markdown::{Kind, Markdown, Marks, Node, Piece, Rich, Table};
 pub use transcript::{init, Change, Copy, EmptyChanged, Row, Transcript};

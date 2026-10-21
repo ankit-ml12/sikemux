@@ -1,16 +1,18 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
 
 use gpui::{
     actions, div, list, px, AnyElement, App, ClipboardItem, Context, EventEmitter, FocusHandle,
-    FollowMode, InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListState, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Point, Render, SharedString, Styled, Window,
+    FollowMode, InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListOffset, ListState,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Point, Render, SharedString,
+    Styled, Window,
 };
 
 use crate::draw::{Pen, Style};
+use crate::find::{ranges_in, FoundChanged, Hit, Query};
 use crate::markdown::Markdown;
-use crate::select::{spot_at, Place, Selecting, Shown, Span, Spot};
+use crate::select::{spot_at, Place, RowHit, Selecting, Shown, Span, Spot};
 
 actions!(transcript, [Copy]);
 
@@ -76,6 +78,31 @@ pub struct Transcript<R: Row> {
     ends: Option<(Spot, Spot)>,
     dragging: bool,
     shown: Rc<RefCell<Vec<Shown>>>,
+    /// What the reader looks for, every place it is found in reading order, and the one
+    /// they are on. The places are found again in the rows that change.
+    query: Option<Query>,
+    hits: Vec<Hit>,
+    current: usize,
+    stale: Stale,
+}
+
+/// The rows whose places found are out of date.
+enum Stale {
+    None,
+    Rows(BTreeSet<usize>),
+    All,
+}
+
+impl Stale {
+    fn row(&mut self, ix: usize) {
+        match self {
+            Stale::None => *self = Stale::Rows(BTreeSet::from([ix])),
+            Stale::Rows(rows) => {
+                rows.insert(ix);
+            }
+            Stale::All => {}
+        }
+    }
 }
 
 impl<R: Row> Transcript<R> {
@@ -107,6 +134,91 @@ impl<R: Row> Transcript<R> {
             ends: None,
             dragging: false,
             shown: Rc::default(),
+            query: None,
+            hits: Vec::new(),
+            current: 0,
+            stale: Stale::None,
+        }
+    }
+
+    /// Looks for `query` in every row, or stops looking with none.
+    pub fn find(&mut self, query: Option<Query>, cx: &mut Context<Self>) {
+        if query == self.query {
+            return;
+        }
+        self.hits.clear();
+        (self.query, self.current, self.stale) = (query, 0, Stale::All);
+        cx.notify();
+    }
+
+    /// Moves to the next place found, or the one before, round the ends, and brings it into view.
+    pub fn step(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let total = self.hits.len();
+        if total == 0 {
+            return;
+        }
+        self.current = if forward {
+            (self.current + 1) % total
+        } else {
+            (self.current + total - 1) % total
+        };
+        self.reveal();
+        cx.emit(FoundChanged);
+        cx.notify();
+    }
+
+    /// Which place found the reader is on, counting from 0, and how many there are.
+    pub fn found(&self) -> (usize, usize) {
+        (self.current, self.hits.len())
+    }
+
+    /// Brings the row of the place the reader is on into view: from its top when it is
+    /// above, so a header drawn over the list does not cover it.
+    fn reveal(&self) {
+        let Some(hit) = self.hits.get(self.current) else {
+            return;
+        };
+        let row = hit.at.0;
+        if row <= self.list.logical_scroll_top().item_ix {
+            self.list.scroll_to(ListOffset {
+                item_ix: row,
+                offset_in_item: px(0.),
+            });
+        } else {
+            self.list.scroll_to_reveal_item(row);
+        }
+    }
+
+    /// Finds the query again in the rows that changed.
+    fn find_again(&mut self, cx: &mut Context<Self>) {
+        let stale = std::mem::replace(&mut self.stale, Stale::None);
+        let Some(query) = &self.query else {
+            return;
+        };
+        let was = self.hits.len();
+        let whole = matches!(stale, Stale::All);
+        match stale {
+            Stale::None => return,
+            Stale::All => {
+                self.hits = (0..self.rows.len())
+                    .flat_map(|ix| hits_in(&self.rows[ix], ix, query))
+                    .collect();
+            }
+            Stale::Rows(rows) => {
+                for ix in rows.into_iter().filter(|ix| *ix < self.rows.len()) {
+                    let from = self.hits.partition_point(|hit| hit.at.0 < ix);
+                    let to = self.hits.partition_point(|hit| hit.at.0 <= ix);
+                    let found = hits_in(&self.rows[ix], ix, query);
+                    self.hits.splice(from..to, found);
+                }
+            }
+        }
+        self.current = self.current.min(self.hits.len().saturating_sub(1));
+        if was == 0 && !self.hits.is_empty() {
+            self.reveal();
+        }
+        if whole || was != self.hits.len() {
+            cx.emit(FoundChanged);
         }
     }
 
@@ -151,25 +263,30 @@ impl<R: Row> Transcript<R> {
                     Some(ix) => {
                         self.rows[ix] = row;
                         self.list.remeasure_items(ix..ix + 1);
+                        self.stale.row(ix);
                     }
                     None => {
                         self.rows.push(row);
                         self.list.splice(end..end, 1);
+                        self.stale.row(end);
                     }
                 },
                 Change::Update(id, change) => {
                     if let Some(ix) = self.position(&id) {
                         change(&mut self.rows[ix]);
                         self.list.remeasure_items(ix..ix + 1);
+                        self.stale.row(ix);
                     }
                 }
                 Change::DropFrom(id) => {
                     if let Some(ix) = self.position(&id) {
                         self.rows.truncate(ix);
                         self.list.splice(ix..end, 0);
+                        self.stale = Stale::All;
                     }
                 }
                 Change::Keep(ids) => {
+                    self.stale = Stale::All;
                     let kept: HashSet<&str> = ids.iter().map(|id| id.as_ref()).collect();
                     let first = self.rows.iter().position(|row| kept.contains(row.id()));
                     for ix in (first.unwrap_or(0)..end).rev() {
@@ -187,9 +304,11 @@ impl<R: Row> Transcript<R> {
                         .collect();
                     self.list.splice(0..0, older.len());
                     self.rows.splice(0..0, older);
+                    self.stale = Stale::All;
                     self.asked_earlier = false;
                 }
                 Change::Reset(rows) => {
+                    self.stale = Stale::All;
                     self.rows = rows;
                     self.list.reset(self.rows.len());
                     self.list.set_follow_mode(FollowMode::Tail);
@@ -296,9 +415,16 @@ pub struct EmptyChanged(pub bool);
 
 impl<R: Row> EventEmitter<EmptyChanged> for Transcript<R> {}
 
+impl<R: Row> EventEmitter<FoundChanged> for Transcript<R> {}
+
 impl<R: Row> Render for Transcript<R> {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply(cx);
+        if self.query.is_some() {
+            self.find_again(cx);
+        } else {
+            self.stale = Stale::None;
+        }
         self.shown.borrow_mut().clear();
         let span = self.span();
         let this = cx.entity();
@@ -314,6 +440,20 @@ impl<R: Row> Render for Transcript<R> {
                         .collect(),
                     span,
                     shown: this.shown.clone(),
+                    hits: this
+                        .hits
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, hit)| hit.at.0 == ix)
+                        .map(|(at, hit)| {
+                            let (_, doc, block, n) = hit.at;
+                            RowHit {
+                                text: (doc, block, n),
+                                range: hit.range.clone(),
+                                current: at == this.current,
+                            }
+                        })
+                        .collect(),
                 });
                 let pen = Pen::selecting(this.style.clone(), selecting);
                 let draw_row = this.draw_row.clone();
@@ -336,4 +476,20 @@ impl<R: Row> Render for Transcript<R> {
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .child(rows.size_full())
     }
+}
+
+/// Every place `query` is found in row `ix`, in reading order.
+fn hits_in<R: Row>(row: &R, ix: usize, query: &Query) -> Vec<Hit> {
+    let mut hits = Vec::new();
+    for (doc, markdown) in row.docs().into_iter().enumerate() {
+        for block in 0..markdown.blocks().len() {
+            for (n, text) in (1..).zip(markdown.texts(block)) {
+                hits.extend(ranges_in(&text, query).into_iter().map(|range| Hit {
+                    at: (ix, doc, block, n),
+                    range,
+                }));
+            }
+        }
+    }
+    hits
 }

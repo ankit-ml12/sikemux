@@ -98,4 +98,14 @@ pub(crate) struct Selecting {
     pub docs: Vec<*const Markdown>,
     pub span: Option<Span>,
     pub shown: Rc<RefCell<Vec<Shown>>>,
+    /// The places found in the row's texts.
+    pub hits: Vec<RowHit>,
+}
+
+/// A place found in a row: the text it is in, by doc, block and text, its bytes there, and
+/// whether it is the one the reader is on.
+pub struct RowHit {
+    pub text: (usize, usize, u32),
+    pub range: Range<usize>,
+    pub current: bool,
 }

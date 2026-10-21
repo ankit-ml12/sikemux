@@ -26,6 +26,10 @@ only the rows in view, anchored to the bottom.
   copies it: the `Copy` action, bound in the `Transcript` key context by
   `init`, which the app calls once. A copy reads the rows' own markdown,
   through `Row::docs`, so rows scrolled out of view copy too.
+- `find(Some(Query))` marks every place a text is found in the rows' markdown, with
+  case and whole words as the query says, and `step` moves between them and brings
+  each into view. `found()` says where the reader is, and `FoundChanged` is emitted
+  when that or the places change. The host draws its own find bar.
 
 The crate draws no rows itself. You hand `Transcript::new` a function that
 draws the row at an index with the `Pen` it is given, calling `markdown` for
