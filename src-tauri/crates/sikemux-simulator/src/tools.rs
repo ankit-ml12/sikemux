@@ -29,6 +29,9 @@ const LAUNCH_READS: usize = 33;
 const LAUNCH_IN_FLIGHT: Duration = Duration::from_secs(60);
 /// How many reads, a step apart, to wait for an action to change the screen.
 const CHANGE_READS: usize = 5;
+/// How many reads, a step apart, to wait for Home to bring the Home Screen up from an app:
+/// it always does, but a busy device starts leaving the app late. Six seconds.
+const HOME_READS: usize = 20;
 /// A swipe that starts this close to an edge is sent as a system gesture, as the helper decides.
 const EDGE: f64 = 10.0;
 const MAX_ELEMENTS: usize = 200;
@@ -202,6 +205,14 @@ pub(super) async fn run(
             manager
                 .request("button", json!({ "udid": device.udid, "button": button }))
                 .await?;
+            if button == "home" && before.app != HOME_SCREEN {
+                for _ in 0..HOME_READS {
+                    if near_deadline() || read_screen(manager, &device).await?.app == HOME_SCREEN {
+                        break;
+                    }
+                    pause(SETTLE_STEP).await?;
+                }
+            }
             settled_state(manager, agent_id, Some(before), report(params)?).await
         }
         "sim.screenshot" => {
