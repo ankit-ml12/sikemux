@@ -27,7 +27,7 @@ use crate::protocol::{
     Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, LauncherInfo,
     PinnedChat, ProjectInfo, RecentInfo, SpaceInfo, Workspace, WorkspaceAgent,
 };
-use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRef, RecentRequest};
+use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRequest};
 
 use super::chat;
 use super::connection::blocking;
@@ -387,11 +387,15 @@ fn recent_id(chat: &Recent) -> String {
     format!("{}:{}", chat.provider, chat.session_id)
 }
 
-fn running_now(chat: &Recent, open: &[ChatInfo]) -> bool {
-    open.iter().any(|live| {
-        live.provider == chat.provider
-            && live.session_id.as_deref() == Some(chat.session_id.as_str())
-    })
+/// Whether the agent of `provider` on `session` holds the recent chat.
+fn holds(chat: &Recent, provider: &str, session: Option<&str>) -> bool {
+    provider == chat.provider && session == Some(chat.session_id.as_str())
+}
+
+/// The open chat that is the recent one.
+fn running_now<'a>(chat: &Recent, open: &'a [ChatInfo]) -> Option<&'a ChatInfo> {
+    open.iter()
+        .find(|live| holds(chat, &live.provider, live.session_id.as_deref()))
 }
 
 impl Workspaces {
@@ -1156,10 +1160,22 @@ impl Workspaces {
     pub(crate) fn recent(&self, open: &[ChatInfo]) -> Vec<RecentInfo> {
         let published = self.published.locked();
         let saved = &published.saved;
+        let holder = |chat: &Recent| {
+            running_now(chat, open)
+                .map(|live| live.agent_id.clone())
+                .or_else(|| {
+                    saved
+                        .agents
+                        .iter()
+                        .find(|kept| {
+                            holds(chat, &kept.agent.provider, kept.agent.resume_id.as_deref())
+                        })
+                        .map(|kept| kept.agent.id.clone())
+                })
+        };
         published
             .recent
             .iter()
-            .filter(|chat| !running_now(chat, open))
             .filter_map(|chat| {
                 let project = saved
                     .projects
@@ -1172,6 +1188,7 @@ impl Workspaces {
                     project: project.id.clone(),
                     cwd: chat.cwd.clone(),
                     active_at: chat.active_at,
+                    agent_id: holder(chat),
                 })
             })
             .collect()
@@ -1203,13 +1220,6 @@ impl Workspaces {
             if !chosen || taken {
                 continue;
             }
-            let exclude = saved
-                .agents
-                .iter()
-                .filter(|kept| kept.agent.provider == launcher.agent.provider)
-                .filter_map(|kept| kept.agent.resume_id.clone())
-                .map(|id| RecentRef { agent, id })
-                .collect();
             requests.push((
                 launcher.id.clone(),
                 RecentRequest {
@@ -1221,7 +1231,7 @@ impl Workspaces {
                     limit: RECENT_LIMIT,
                     cursor: None,
                     query: None,
-                    exclude,
+                    exclude: Vec::new(),
                 },
             ));
         }
@@ -1250,7 +1260,7 @@ impl Workspaces {
             .ok_or_else(|| {
                 CoreError::from("that chat is no longer among the recent ones on this host")
             })?;
-        if running_now(chat, open) {
+        if running_now(chat, open).is_some() {
             return Err("that chat is already open on this host".into());
         }
         let project = saved
@@ -2043,7 +2053,7 @@ mod tests {
     }
 
     #[test]
-    fn a_device_sees_recent_chats_in_open_projects_but_not_running_ones() {
+    fn a_device_sees_recent_chats_in_open_projects_with_the_agent_holding_each() {
         let workspaces = Workspaces::new(None);
         offer(&workspaces, vec![launcher()]);
         workspaces.set_recent(vec![
@@ -2091,9 +2101,12 @@ mod tests {
             status: Default::default(),
             attention_rank: 0,
         };
-        assert_eq!(workspaces.recent(std::slice::from_ref(&live)).len(), 1);
+        let held = workspaces.recent(std::slice::from_ref(&live));
+        assert_eq!(held.len(), 2);
+        assert_eq!(held[0].agent_id.as_deref(), Some("agent-1"));
+        assert_eq!(held[1].agent_id, None);
         live.provider = "codex".into();
-        assert_eq!(workspaces.recent(&[live]).len(), 2);
+        assert_eq!(workspaces.recent(&[live])[0].agent_id, None);
     }
 
     #[test]

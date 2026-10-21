@@ -336,6 +336,8 @@ export interface RecentInfo {
     cwd: string;
     /** Unix milliseconds. */
     activeAt: number;
+    /** The agent in the workspace that holds the chat, open or asleep. */
+    agentId?: string;
 }
 
 export interface Inbox {

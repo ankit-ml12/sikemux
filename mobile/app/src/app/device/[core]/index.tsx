@@ -88,7 +88,7 @@ function Recent({
   const [resuming, setResuming] = useState<string>();
   const [note, setNote] = useState<{ text: string; failed: boolean }>();
   const chats = snapshot.recent.filter(
-    (chat) => (!scope || chat.project === scope.id) && (provider === 'all' || chat.provider === provider),
+    (chat) => !chat.agentId && (!scope || chat.project === scope.id) && (provider === 'all' || chat.provider === provider),
   );
   const shown = all ? chats : chats.slice(0, RECENT_SHOWN);
 

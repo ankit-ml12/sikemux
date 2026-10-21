@@ -479,6 +479,9 @@ pub struct RecentInfo {
     pub cwd: PathBuf,
     /// Unix milliseconds.
     pub active_at: u64,
+    /// The agent in the workspace that holds the chat, open or asleep.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
 }
 
 /// Something read elsewhere and handed to the agent whole, such as an issue.
