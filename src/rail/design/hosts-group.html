@@ -261,5 +261,28 @@
   </div>
 </div>
 
+<h3>7 · Open a project on another host</h3>
+<p class="why">A project's ⋯ offers <b>Open on &lt;host&gt;</b> for each other Sikemux host (ADR 0019). That host opens a checkout it has of the same repository; otherwise it clones it beside most of its projects, else in its home folder, under a new name when that one is taken, from the remote with its own sign-in, or from a bundle this host sends when it cannot reach the remote or lacks the commit. Only committed work goes over. Then you are on that host, in that project.</p>
+<div class="pair">
+  <div>
+    <div class="cap new">⋯ on sikemux</div>
+    <div class="menu">
+      <div class="mrow"><svg class="i"><use href="#pen"/></svg>Project settings</div>
+      <div class="mrow hot"><svg class="i core"><use href="#server"/></svg>Open on test-ec2</div>
+      <div class="mrow" style="color:var(--low)"><svg class="i core"><use href="#server"/></svg>Open on staging<span class="on">out of reach</span></div>
+      <hr>
+      <div class="mrow"><svg class="i"><use href="#folder"/></svg>No Space</div>
+    </div>
+  </div>
+  <div>
+    <div class="cap new">The confirmation</div>
+    <div class="rail" style="padding:16px 18px;">
+      <div style="font-weight:600; margin-bottom:6px;">Open sikemux on test-ec2?</div>
+      <div class="note" style="margin:0 0 12px;">test-ec2 clones it from its remote, or takes it from here when it cannot reach the remote. Only what is committed goes over; uncommitted changes stay here.</div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;"><div class="mrow">Cancel</div><div class="mrow hot">Open</div></div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

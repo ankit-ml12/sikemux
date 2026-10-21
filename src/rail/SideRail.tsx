@@ -51,6 +51,8 @@ import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 import { HostRows } from "./HostsGroup";
+import { openOnHost, type HostEntry } from "../hosts/hosts";
+import { reportError } from "../state/toast";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
 const LINE_ICON_SIZE = 13;
@@ -469,10 +471,17 @@ function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: str
 
 type OpenMenu = (event: ReactMouseEvent, items: CtxItem[]) => void;
 
-function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined): CtxItem[] {
+function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined, hosts: readonly HostEntry[]): CtxItem[] {
     const mark = (selected: boolean) => (selected ? "✓" : undefined);
+    const elsewhere = hosts.filter((host) => host.id !== session.host);
     return [
         { label: "Project settings", icon: <IconSettings size={13} />, run: () => cmd.openProjectSettings(session.id) },
+        ...elsewhere.map((host) => ({
+            label: `Open on ${host.name}`,
+            icon: <IconServer size={13} />,
+            disabled: host.reach !== "connected",
+            run: () => void openOnHost(session, host).catch(reportError(`Open ${session.name} on ${host.name}`)),
+        })),
         { sep: true },
         ...spaces.map((space) => ({
             label: space.name,
@@ -792,7 +801,7 @@ export const SideRail = memo(function SideRail() {
             selectProject: (id) => handlers.current.selectProject(id),
             openSpaceMenu: (event, session) => {
                 const { openMenu, spaces, projectSpaces } = handlers.current;
-                openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd]));
+                openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd], getState().hosts));
             },
             jumpToWindow: (sessionId, winId) => handlers.current.jumpToWindow(sessionId, winId),
             kb: (id) => keybindingLabelForAction(keybindingOverrides, id),

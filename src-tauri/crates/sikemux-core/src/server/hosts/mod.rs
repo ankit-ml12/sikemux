@@ -13,6 +13,7 @@ mod calls;
 mod code;
 mod join;
 mod link;
+pub(crate) mod open;
 mod outbox;
 pub(crate) mod route;
 pub(crate) mod spawn;

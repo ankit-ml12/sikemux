@@ -13,6 +13,7 @@ import { agentWindowId, ownerSessionId } from "../state/selectors";
 import { collectPanes } from "../state/layout";
 import { getState, mutate, setState, useStore, type StoreState } from "../state/store";
 import { notify, reportError, swallow } from "../state/toast";
+import { confirmDialog } from "../state/dialog";
 import { accountApi } from "../api/account";
 import type { Agent, PaneNode, Session } from "../state/types";
 import type { Draft } from "immer";
@@ -470,6 +471,41 @@ export async function startRemoteChat(sessionId: string, place: HostProject, typ
         place.host.id,
     );
     openRemoteChat(sessionId, place.host.id, { agentId: begun.agentId, provider: type, title: null, name: null, cwd: place.project.path });
+}
+
+/** How long the app waits for a host to show a project it was asked to open, after it answered. */
+const OPENED_WAIT_MS = 30_000;
+
+/**
+ * Opens `session`'s project on the Sikemux host `host` (ADR 0019): that host opens a checkout it has of the same
+ * repository, or clones it from its remote with its own sign-in, or takes it from the project's host when it cannot.
+ * Only committed work goes; uncommitted changes stay where they are. Then the person is on that host, in that project.
+ */
+export async function openOnHost(session: Session, host: HostEntry): Promise<void> {
+    const confirmed = await confirmDialog({
+        title: `Open ${session.name} on ${host.name}?`,
+        body: `${host.name} clones it from its remote, or takes it from here when it cannot reach the remote. Only what is committed goes over; uncommitted changes stay here.`,
+        confirmLabel: "Open",
+    });
+    if (!confirmed) return;
+    notify("info", `Opening ${session.name} on ${host.name}…`);
+    const opened = await coreCall<{ project: string }>("openOnHost", { path: session.cwd, host: host.id }, session.host);
+    const id = remoteSessionId(host.id, opened.project);
+    const shown = await new Promise<boolean>((resolve) => {
+        if (getState().sessions[id]) return resolve(true);
+        const timer = window.setTimeout(() => {
+            stop();
+            resolve(false);
+        }, OPENED_WAIT_MS);
+        const stop = useStore.subscribe((state) => {
+            if (!state.sessions[id]) return;
+            window.clearTimeout(timer);
+            stop();
+            resolve(true);
+        });
+    });
+    if (!shown) throw new Error(`${host.name} opened it but has not shown it here yet`);
+    mutate((d) => bringForward(d, id));
 }
 
 /** Says when a device or host joins the account, with one tap to take it off again (ADR 0018). */
