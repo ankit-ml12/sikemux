@@ -9,8 +9,8 @@ mod shapes;
 use std::ops::Range;
 
 use gpui::{
-    fill, point, px, size, App, Bounds, Font, FontStyle, FontWeight, Hsla, Path, Pixels, Point,
-    ShapedLine, SharedString, Size, TextAlign, TextRun, UnderlineStyle, Window,
+    fill, point, px, size, App, Bounds, Font, FontStyle, FontWeight, Hsla, LetterSpacing, Path,
+    Pixels, Point, ShapedLine, SharedString, Size, TextAlign, TextRun, UnderlineStyle, Window,
 };
 
 /// The cells a terminal shows, row by row from the top of the drawn area.
@@ -131,8 +131,9 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    /// Measures `font` at `font_size`; rows are `line_height` times the size
-    /// tall, or the font's own height when that is taller.
+    /// Measures `font` at `font_size`, spacing its letters a whole cell apart.
+    /// Rows are `line_height` times the size tall, or the font's own height
+    /// when that is taller.
     pub fn new(font: Font, font_size: Pixels, line_height: f32, window: &Window) -> Self {
         let scale = window.scale_factor();
         let snap = |value: f32| px((value * scale).round().max(1.) / scale);
@@ -147,6 +148,11 @@ impl Metrics {
             .ceil()
             .max((f32::from(font_size) * line_height * scale).round())
             / scale;
+        let width = snap(advance);
+        let font = Font {
+            letter_spacing: LetterSpacing((f32::from(width) - advance) / f32::from(font_size)),
+            ..font
+        };
         let bold = Font {
             weight: FontWeight::BOLD,
             ..font.clone()
@@ -162,7 +168,7 @@ impl Metrics {
         Self {
             fonts: [font, bold, italic, bold_italic],
             font_size,
-            cell: size(snap(advance), px(height)),
+            cell: size(width, px(height)),
             baseline: snap((height - ascent - descent) / 2. + ascent),
             stroke: snap(f32::from(font_size) / 12.),
         }
