@@ -141,7 +141,21 @@ export interface S3Bucket {
     created_at: string | null;
 }
 
+/** Whether AWS calls work as the profile the pane shows. */
+export interface AwsSignInStatus {
+    readonly configured: boolean;
+    readonly ok: boolean;
+    readonly authFailed: boolean;
+    readonly message: string | null;
+    readonly profile: string | null;
+    readonly account: string | null;
+}
+
 export const awsApi = {
+    status: () => backend.call<AwsSignInStatus>("status"),
+    /** The profile the pane shows, which the plugin keeps. */
+    profile: () => backend.call<{ profile: string | null }>("profile"),
+    pickProfile: (profile: string | null) => backend.call<{ profile: string | null }>("setDefaultAccount", { profile }),
     profiles: () => backend.call<AwsProfile[]>("profiles", {}),
     setup: () => backend.call<AwsSetup>("setup", {}),
     agentProfilePicks: (project: string | null) => backend.call<AgentProfilePicks>("agentProfilePicks", { project }),

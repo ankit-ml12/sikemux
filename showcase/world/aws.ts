@@ -90,7 +90,22 @@ const month = (offset: number, total: number, current = false) => {
   };
 };
 
+let paneProfile: string | null = null;
+
 export const AWS: Record<string, (params: Params) => unknown> = {
+  profile: () => ({ profile: paneProfile }),
+  setDefaultAccount: (params) => {
+    paneProfile = typeof params.profile === "string" ? params.profile : null;
+    return { profile: paneProfile };
+  },
+  status: () => ({
+    configured: paneProfile !== null,
+    ok: paneProfile !== null,
+    authFailed: false,
+    message: null,
+    profile: paneProfile,
+    account: paneProfile && "123456789012",
+  }),
   profiles: () => [
     {
       name: "acme-prod",

@@ -1,8 +1,10 @@
-import { pluginResources } from "../../plugin-api/service";
+import { defineService } from "../../plugin-api/service";
 import { awsApi } from "./api";
 import { AWS_PLUGIN } from "./kinds";
 
-export const aws = pluginResources(AWS_PLUGIN);
+export const aws = defineService(AWS_PLUGIN, () => awsApi.status());
+
+export const awsProfileR = aws.resource("profile", () => awsApi.profile());
 
 export const awsProfilesR = aws.resource("profiles", () => awsApi.profiles());
 
@@ -10,7 +12,7 @@ export const awsAgentProfileR = aws.resource("agentProfile", (project: string | 
 
 export const awsSetupR = aws.resource("setup", () => awsApi.setup());
 
-export const awsIdentityR = aws.resource("status", (profile: string, force: boolean) => awsApi.identity(profile, force), 60_000);
+export const awsIdentityR = aws.resource("identity", (profile: string, force: boolean) => awsApi.identity(profile, force), 60_000);
 
 export const ecsClustersR = aws.resource("ecs.clusters", (profile: string) => awsApi.ecsClusters(profile), 30_000);
 

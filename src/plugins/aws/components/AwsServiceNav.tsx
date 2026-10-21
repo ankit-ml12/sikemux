@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useResource, useResourceEnabled } from "../../../plugin-api/resources";
+import { reportError } from "../../../plugin-api/host";
 import { IconChevron, IconUser } from "../../../plugin-api/ui";
 import { awsIdentityR, awsProfilesR } from "../resources";
 import { AWS_SERVICES, awsSettings, setAwsProfile, setAwsService, useAws, type AwsService } from "../state";
@@ -106,7 +107,7 @@ function Account({ profile }: { profile: string }) {
                                 autoFocus={on}
                                 onClick={() => {
                                     setOpen(false);
-                                    if (!on) setAwsProfile(p.name);
+                                    if (!on) void setAwsProfile(p.name).catch(reportError("Switch AWS profile"));
                                 }}>
                                 <span className="tree-ctx-icon">
                                     <IconUser size={13} />

@@ -1,7 +1,7 @@
 import type { ComponentType, KeyboardEvent } from "react";
-import { useResourceEnabled } from "../../../plugin-api/resources";
+import { useResource, useResourceEnabled } from "../../../plugin-api/resources";
 import { deriveAuthState, needsAuth } from "../auth";
-import { awsIdentityR } from "../resources";
+import { awsIdentityR, awsProfileR } from "../resources";
 import { AWS_SERVICES, awsSettings, setAwsService, setEcsLevel, setLambdaLogs, useAws, type AwsService } from "../state";
 import { AwsServiceNav } from "./AwsServiceNav";
 import { AwsEcsView } from "./AwsEcsView";
@@ -39,11 +39,13 @@ function goBack(profile: string, service: AwsService): boolean {
 }
 
 export function AwsPane({ active }: { active: boolean }) {
-    const profile = awsSettings.useSelect((s) => s.profile);
+    const picked = useResource(awsProfileR);
+    const profile = picked.data?.profile ?? null;
     const service = awsSettings.useSelect((s) => s.service);
     const identity = useResourceEnabled(active && !!profile, awsIdentityR, profile ?? "", false);
     const auth = deriveAuthState(profile, identity);
 
+    if (!picked.data && picked.status !== "error") return null;
     if (auth.kind === "no-profile") return <AwsAuthEmpty mode="no-profile" />;
     const signedOut = needsAuth(auth);
     const ServiceView = AWS_VIEW[service];

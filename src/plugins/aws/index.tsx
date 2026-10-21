@@ -1,11 +1,9 @@
 import { lazy } from "react";
 import { registerFrontendPlugin } from "../../plugin-api";
-import { useResourceEnabled } from "../../plugin-api/resources";
-import { deriveAuthState } from "./auth";
-import { awsIdentityR } from "./resources";
+import { aws } from "./resources";
 import { IconAws, IS_MACOS } from "../../plugin-api/ui";
 import { AWS_CONSOLE, AWS_PLUGIN } from "./kinds";
-import { awsSettings, openAwsSession } from "./state";
+import { openAwsSession } from "./state";
 
 const AwsPane = lazy(() => import("./components/AwsPane").then((module) => ({ default: module.AwsPane })));
 
@@ -23,11 +21,5 @@ registerFrontendPlugin({
     openTitle: `Open ${AWS_PLUGIN.name}`,
     mark: (size) => <IconAws size={size} />,
     openShortcut: IS_MACOS ? "Meta+Alt+KeyA" : "Ctrl+Alt+KeyA",
-    useSignIn: function useAwsSignIn() {
-        const profile = awsSettings.useSelect((s) => s.profile);
-        const auth = deriveAuthState(profile, useResourceEnabled(!!profile, awsIdentityR, profile ?? "", false));
-        if (auth.kind === "checking") return "checking";
-        if (auth.kind === "authed") return "signed-in";
-        return auth.kind === "expired" || auth.kind === "error" ? "failed" : "signed-out";
-    },
+    useSignIn: aws.useSignIn,
 });

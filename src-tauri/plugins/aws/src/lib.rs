@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_plugin_api::{
     answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
@@ -51,6 +51,11 @@ struct ProfileParams {
 #[derive(Deserialize)]
 struct AgentProfilePicksParams {
     project: Option<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PaneProfile {
+    profile: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -141,6 +146,15 @@ impl Plugin for Aws {
                     reply(auth::identity(Target::named(&profile), force).await)
                 }
                 "status" => reply(auth::status(ctx).await),
+                "profile" => reply(PaneProfile {
+                    profile: agent_profile::pane_profile(ctx),
+                }),
+                "setDefaultAccount" => {
+                    let PaneProfile { profile } = params(input)?;
+                    reply(PaneProfile {
+                        profile: agent_profile::pick_pane(ctx, profile)?,
+                    })
+                }
                 "ecsClusters" => answer(ecs::clusters(&params(input)?)).await,
                 "ecsServices" => {
                     let ClusterParams { target, cluster } = params(input)?;

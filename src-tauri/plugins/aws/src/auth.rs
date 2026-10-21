@@ -359,9 +359,9 @@ pub(crate) struct Signed {
     account: Option<String>,
 }
 
-/// Whether AWS calls work as the profile agents start on outside any project.
+/// Whether AWS calls work as the profile the AWS pane shows.
 pub(crate) async fn status(ctx: &PluginContext) -> SignInStatus<Signed> {
-    let Ok(target) = resolve(ctx, Target::default()).await else {
+    let Some(profile) = crate::agent_profile::pane_profile(ctx) else {
         return SignInStatus {
             configured: false,
             ok: false,
@@ -373,8 +373,8 @@ pub(crate) async fn status(ctx: &PluginContext) -> SignInStatus<Signed> {
             },
         };
     };
-    let profile = target.profile.clone();
-    let id = identity(target, false).await;
+    let id = identity(Target::named(&profile), false).await;
+    let profile = Some(profile);
     SignInStatus {
         configured: true,
         ok: id.status == AwsStatus::Authed,
