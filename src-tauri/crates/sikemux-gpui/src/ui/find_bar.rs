@@ -36,6 +36,7 @@ pub struct FindBar {
     found: SharedString,
     match_case: bool,
     whole_word: bool,
+    regex: Option<(bool, Act)>,
     on_case: Act,
     on_word: Act,
     on_step: Step,
@@ -51,6 +52,7 @@ impl FindBar {
             found: found.into(),
             match_case: false,
             whole_word: false,
+            regex: None,
             on_case: none.clone(),
             on_word: none.clone(),
             on_step: Rc::new(|_, _, _| {}),
@@ -74,6 +76,12 @@ impl FindBar {
     /// Whether only whole words count, and what flips it.
     pub fn whole_word(mut self, on: bool, flip: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         (self.whole_word, self.on_word) = (on, Rc::new(flip));
+        self
+    }
+
+    /// Offers matching by regular expression: whether it is on, and what flips it.
+    pub fn regex(mut self, on: bool, flip: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.regex = Some((on, Rc::new(flip)));
         self
     }
 
@@ -134,6 +142,9 @@ impl RenderOnce for FindBar {
                 Toggle::new("find-word", "W", self.whole_word)
                     .on_click(move |_, window, cx| word(window, cx)),
             )
+            .children(self.regex.map(|(on, flip)| {
+                Toggle::new("find-regex", ".*", on).on_click(move |_, window, cx| flip(window, cx))
+            }))
             .child(
                 IconButton::new("find-previous", Icon::ArrowUp, "Previous match")
                     .small()

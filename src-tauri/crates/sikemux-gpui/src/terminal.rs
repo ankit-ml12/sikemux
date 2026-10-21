@@ -10,11 +10,11 @@ use gpui_kit::component::input::{Copy, InputEvent, InputState, Paste, SelectAll}
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds,
-    ClickEvent, ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle,
-    FontFallbacks, Hsla, InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent,
-    Keystroke, Modifiers, MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, RenderOnce, Rgba, ScrollWheelEvent, SharedString, Styled,
-    Subscription, Task, UTF16Selection, Window,
+    ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks, Hsla,
+    InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Modifiers,
+    MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, RenderOnce, Rgba, ScrollWheelEvent, SharedString, Styled, Subscription, Task,
+    UTF16Selection, Window,
 };
 use gpui_terminal_grid::{
     Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
@@ -32,7 +32,7 @@ use crate::core::{Ask, Screenful, TerminalAsk};
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
-use crate::ui::{self, Field, IconButton, Menu, MenuItem, Toggle};
+use crate::ui::{self, Menu, MenuItem};
 use crate::workbench::Workbench;
 
 const PAGE: u64 = 256;
@@ -552,13 +552,7 @@ pub fn pane(
             pane = pane.cursor(CursorStyle::PointingHand);
         }
         if let Some(find) = &terminal.find {
-            pane = pane.child(FindBar {
-                bench: this.clone(),
-                id,
-                input: find.input.clone(),
-                options: find.options.clone(),
-                found: find.label(),
-            });
+            pane = pane.child(find_bar(&this, id, find));
         }
         if let Some(position) = terminal.menu {
             let menu = TerminalMenu {
@@ -1345,19 +1339,11 @@ fn open_find(
         Some(find) => find.input.clone(),
         None => {
             let input = cx.new(|cx| InputState::new(window, cx).placeholder("Find in terminal"));
-            let typing = cx.subscribe(
-                &input,
-                move |bench, _, event: &InputEvent, cx| match event {
-                    InputEvent::Change => find(bench, id, Step::Typed, cx),
-                    InputEvent::PressEnter { shift, .. } => find(
-                        bench,
-                        id,
-                        if *shift { Step::Previous } else { Step::Next },
-                        cx,
-                    ),
-                    _ => {}
-                },
-            );
+            let typing = cx.subscribe(&input, move |bench, _, event: &InputEvent, cx| {
+                if let InputEvent::Change = event {
+                    find_in(bench, id, Step::Typed, cx);
+                }
+            });
             terminal.find = Some(Find {
                 input: input.clone(),
                 options: FindOptions::default(),
@@ -1374,7 +1360,7 @@ fn open_find(
         state.focus(window, cx);
         state.select_all(window, cx);
     });
-    find(bench, id, Step::Typed, cx);
+    find_in(bench, id, Step::Typed, cx);
 }
 
 fn close_find(bench: &mut Workbench, id: SessionId, window: &mut Window, cx: &mut App) {
@@ -1384,7 +1370,7 @@ fn close_find(bench: &mut Workbench, id: SessionId, window: &mut Window, cx: &mu
     }
 }
 
-fn find(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Workbench>) {
+fn find_in(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Workbench>) {
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return;
     };
@@ -1482,107 +1468,48 @@ fn paste(bench: &mut Workbench, id: SessionId, cx: &mut App) {
 }
 
 /// The find bar over the pane's top right corner.
-#[derive(IntoElement)]
-struct FindBar {
-    bench: Entity<Workbench>,
-    id: SessionId,
-    input: Entity<InputState>,
-    options: FindOptions,
-    found: SharedString,
-}
-
-impl RenderOnce for FindBar {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Tokens::get(cx);
-        let (bench, id) = (self.bench.clone(), self.id);
-        let act =
-            move |change: fn(&mut Workbench, SessionId, &mut Window, &mut Context<Workbench>)| {
-                let bench = bench.clone();
-                move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                    bench.update(cx, |bench, cx| change(bench, id, window, cx))
+fn find_bar(bench: &Entity<Workbench>, id: SessionId, find: &Find) -> ui::FindBar {
+    let act = |change: fn(&mut Workbench, SessionId, &mut Window, &mut Context<Workbench>)| {
+        let bench = bench.clone();
+        move |window: &mut Window, cx: &mut App| {
+            bench.update(cx, |bench, cx| change(bench, id, window, cx))
+        }
+    };
+    let flip = |flip: fn(&mut FindOptions)| {
+        let bench = bench.clone();
+        move |_: &mut Window, cx: &mut App| {
+            bench.update(cx, |bench, cx| {
+                if let Some(find) = bench
+                    .terminals
+                    .open
+                    .get_mut(&id)
+                    .and_then(|terminal| terminal.find.as_mut())
+                {
+                    flip(&mut find.options);
+                    find.found = FindResult::default();
                 }
-            };
-        let option =
-            |name: &'static str, label: &'static str, pressed: bool, flip: fn(&mut FindOptions)| {
-                let bench = self.bench.clone();
-                Toggle::new(name, label, pressed).on_click(move |_, _, cx| {
-                    bench.update(cx, |bench, cx| {
-                        if let Some(find) = bench
-                            .terminals
-                            .open
-                            .get_mut(&id)
-                            .and_then(|terminal| terminal.find.as_mut())
-                        {
-                            flip(&mut find.options);
-                            find.found = FindResult::default();
-                        }
-                        find(bench, id, Step::Typed, cx);
-                    });
-                })
-            };
-        div()
-            .absolute()
-            .top(px(7.))
-            .right(px(12.))
-            .flex()
-            .items_center()
-            .gap(px(3.))
-            .p(px(5.))
-            .border_1()
-            .border_color(t.line)
-            .rounded(theme::RADIUS_3)
-            .bg(t.surface_overlay)
-            .on_mouse_down(Button::Left, |_, _, cx| cx.stop_propagation())
-            .on_key_down({
-                let bench = self.bench.clone();
-                move |event: &KeyDownEvent, window, cx| {
-                    if event.keystroke.key == "escape" {
-                        cx.stop_propagation();
-                        bench.update(cx, |bench, cx| close_find(bench, id, window, cx));
-                    }
-                }
+                find_in(bench, id, Step::Typed, cx);
             })
-            .child(div().w(px(250.)).child(Field::new(&self.input)))
-            .child(
-                div()
-                    .min_w(px(42.))
-                    .flex()
-                    .justify_center()
-                    .child(ui::mono(self.found, 10., cx)),
-            )
-            .child(option(
-                "find-case",
-                "Aa",
-                self.options.case_sensitive,
-                |options| options.case_sensitive ^= true,
-            ))
-            .child(option(
-                "find-word",
-                "W",
-                self.options.whole_word,
-                |options| options.whole_word ^= true,
-            ))
-            .child(option("find-regex", ".*", self.options.regex, |options| {
-                options.regex ^= true
-            }))
-            .child(
-                IconButton::new("find-previous", Icon::ArrowUp, "Previous match")
-                    .small()
-                    .on_click(act(|bench, id, _, cx| find(bench, id, Step::Previous, cx))),
-            )
-            .child(
-                IconButton::new("find-next", Icon::ArrowDown, "Next match")
-                    .small()
-                    .on_click(act(|bench, id, _, cx| find(bench, id, Step::Next, cx))),
-            )
-            .child(
-                IconButton::new("find-close", Icon::Close, "Close")
-                    .small()
-                    .on_click(act(|bench, id, window, cx| {
-                        close_find(bench, id, window, cx)
-                    })),
-            )
-    }
+        }
+    };
+    let stepping = bench.clone();
+    ui::FindBar::new(&find.input, find.label())
+        .match_case(
+            find.options.case_sensitive,
+            flip(|options| options.case_sensitive ^= true),
+        )
+        .whole_word(
+            find.options.whole_word,
+            flip(|options| options.whole_word ^= true),
+        )
+        .regex(find.options.regex, flip(|options| options.regex ^= true))
+        .on_step(move |forward, _, cx| {
+            let step = if forward { Step::Next } else { Step::Previous };
+            stepping.update(cx, |bench, cx| find_in(bench, id, step, cx));
+        })
+        .on_close(act(|bench, id, window, cx| {
+            close_find(bench, id, window, cx)
+        }))
 }
 
 /// The menu a right click opens over a terminal.
