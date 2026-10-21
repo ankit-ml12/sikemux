@@ -3,12 +3,14 @@
 //! and opens or reveals it.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use base64::Engine;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, uniform_list, AnyElement, Context, Entity, InteractiveElement, IntoElement,
-    ObjectFit, ParentElement, SharedString, StatefulInteractiveElement, Styled, StyledImage,
+    div, img, px, uniform_list, AnyElement, App, Context, Entity, ImgResourceLoader,
+    InteractiveElement, IntoElement, ObjectFit, ParentElement, RenderOnce, Resource, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Window,
 };
 use serde_json::json;
 
@@ -57,8 +59,39 @@ struct About {
 enum Zoom {
     #[default]
     Fit,
-    /// One pixel of the picture to one of the screen, scrolled when larger.
-    Actual,
+    /// So many points to one of the picture's pixels, scrolled when larger.
+    Scale(f32),
+}
+
+const ZOOM_STEP: f32 = 1.25;
+
+/// A picture fitted to the pane, or at a scale of its own size.
+#[derive(IntoElement)]
+struct Picture {
+    path: PathBuf,
+    zoom: Zoom,
+}
+
+impl RenderOnce for Picture {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let picture = img(self.path.clone());
+        let Zoom::Scale(scale) = self.zoom else {
+            return picture.size_full().object_fit(ObjectFit::Contain);
+        };
+        let resource = Resource::Path(Arc::from(self.path.as_path()));
+        let natural = window
+            .use_asset::<ImgResourceLoader>(&resource, cx)
+            .and_then(Result::ok)
+            .map(|image| image.size(0));
+        match natural {
+            Some(size) => picture
+                .flex_none()
+                .w(px(size.width.0 as f32 * scale))
+                .h(px(size.height.0 as f32 * scale))
+                .object_fit(ObjectFit::Fill),
+            None => picture.object_fit(ObjectFit::None),
+        }
+    }
 }
 
 #[derive(PartialEq)]
@@ -162,10 +195,9 @@ pub(super) fn pane(
         (Some(error), _) => message(error.clone(), &t),
         (None, None) => message("Reading…".into(), &t),
         (None, Some(Kind::Image)) => {
-            let picture = img(path.to_owned());
-            let picture = match viewer.zoom {
-                Zoom::Fit => picture.size_full().object_fit(ObjectFit::Contain),
-                Zoom::Actual => picture.object_fit(ObjectFit::None),
+            let picture = Picture {
+                path: path.to_owned(),
+                zoom: viewer.zoom,
             };
             div()
                 .id("viewer-image")
@@ -263,7 +295,7 @@ fn bar(
         |name| name.to_string_lossy().into_owned(),
     );
     let about = viewer.about.as_ref();
-    let zoom = |id: &'static str, label: &'static str, to: Zoom| {
+    let zoom = |id: &'static str, label: &'static str, to: fn(Zoom) -> Zoom| {
         let (this, path) = (this.clone(), path.to_owned());
         div()
             .id(id)
@@ -274,7 +306,7 @@ fn bar(
             .on_click(move |_, _, cx| {
                 this.update(cx, |bench, cx| {
                     if let Some(viewer) = bench.editors.viewers.get_mut(&path) {
-                        viewer.zoom = to;
+                        viewer.zoom = to(viewer.zoom);
                     }
                     bench.parts.redraw(&bench.parts.stage, cx);
                 })
@@ -299,11 +331,16 @@ fn bar(
         .children(about.map(|about| div().text_color(t.text_tertiary).child(about.mime.clone())))
         .child(div().flex_1())
         .when(image, |bar| {
-            bar.child(zoom("viewer-fit", "Fit", Zoom::Fit)).child(zoom(
-                "viewer-actual",
-                "1:1",
-                Zoom::Actual,
-            ))
+            bar.child(zoom("viewer-fit", "Fit", |_| Zoom::Fit))
+                .child(zoom("viewer-actual", "1:1", |_| Zoom::Scale(1.)))
+                .child(zoom("viewer-out", "−", |zoom| match zoom {
+                    Zoom::Fit => Zoom::Scale(1. / ZOOM_STEP),
+                    Zoom::Scale(scale) => Zoom::Scale(scale / ZOOM_STEP),
+                }))
+                .child(zoom("viewer-in", "+", |zoom| match zoom {
+                    Zoom::Fit => Zoom::Scale(ZOOM_STEP),
+                    Zoom::Scale(scale) => Zoom::Scale(scale * ZOOM_STEP),
+                }))
         })
         .child(
             ui::IconButton::new("viewer-reload", Icon::Refresh, "Read it again")
