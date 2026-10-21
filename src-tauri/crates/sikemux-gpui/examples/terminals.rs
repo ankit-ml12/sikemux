@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, App, Element, ElementId, GlobalElementId, InspectorElementId, LayoutId, Pixels, div, point, px, relative, size, AnyWindowHandle, AppContext, Bounds, Context, Entity, HeadlessAppContext,
-    IntoElement, Keystroke, ParentElement, PlatformInput, Render, ScrollDelta, ScrollWheelEvent, Styled, Window,
+    IntoElement, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PlatformInput, Render, ScrollDelta, ScrollWheelEvent, Styled, Window,
     WindowBounds, WindowOptions,
 };
 use sikemux_client::client::CoreClient;
@@ -116,12 +116,16 @@ struct Run {
     bench: Entity<Workbench>,
     panes: Entity<Panes>,
     last: Instant,
+    clock: Instant,
 }
 
 impl Run {
     /// Runs what is ready, as a window's thread would between frames. Never
-    /// waits to park: while terminals flood, more is always arriving.
+    /// waits to park: while terminals flood, more is always arriving. The test
+    /// clock is moved on with the real one, so the window's timers fire.
     fn pump(&mut self) {
+        self.cx.advance_clock(self.clock.elapsed());
+        self.clock = Instant::now();
         let began = Instant::now();
         while self.cx.background_executor().tick() && began.elapsed() < Duration::from_millis(4) {}
     }
@@ -186,6 +190,10 @@ impl Run {
             }
             self.cx.update_window(self.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
             latencies.push(began.elapsed().as_secs_f64() * 1e3);
+            if latencies.len() >= 3 && latencies[latencies.len() - 3..].iter().all(|latency| *latency >= 1000.) {
+                eprintln!("three keys went unanswered: GPUI's test scheduler lost the window's wake-up; run again");
+                std::process::exit(3);
+            }
             self.last = Instant::now();
             for _ in 0..5 {
                 self.frame();
@@ -203,6 +211,23 @@ impl Run {
         self.cx
             .update_window(self.window, |_, window, cx| window.dispatch_event(PlatformInput::ScrollWheel(event), cx))
             .ok();
+    }
+
+    /// Moves the mouse over a cell of a lone pane, then clicks it `clicks` times.
+    fn point(&mut self, row: u16, col: u16, clicks: Option<usize>) {
+        let cell = self.bench.read_with(&self.cx, |bench, _| bench.terminals.cell()).unwrap_or_default();
+        let position = point(px(16.) + cell.width * (f32::from(col) + 0.5), px(8.) + cell.height * (f32::from(row) + 0.5));
+        let mut events = vec![PlatformInput::MouseMove(MouseMoveEvent { position, ..Default::default() })];
+        for click_count in 1..=clicks.unwrap_or(0) {
+            events.push(PlatformInput::MouseDown(MouseDownEvent { button: MouseButton::Left, position, click_count, ..Default::default() }));
+            events.push(PlatformInput::MouseUp(MouseUpEvent { button: MouseButton::Left, position, click_count, ..Default::default() }));
+        }
+        for event in events {
+            self.cx.update_window(self.window, |_, window, cx| window.dispatch_event(event, cx)).ok();
+        }
+        for _ in 0..10 {
+            self.frame();
+        }
     }
 
     fn shot(&mut self, folder: &Option<PathBuf>, name: &str) {
@@ -261,7 +286,7 @@ fn main() {
     let typist = spawn(&runtime, &client, "stty -icanon; exec cat");
     let flood = format!("while :; do cat '{log}'; done");
     let floods: Vec<SessionId> = (0..4).map(|_| spawn(&runtime, &client, &flood)).collect();
-    let history = spawn(&runtime, &client, "seq 1 20000; exec cat");
+    let history = spawn(&runtime, &client, "seq 1 20000; echo 'docs live at https://sikemux.com/docs/terminal.'; exec cat");
 
     let mut cx = HeadlessAppContext::with_platform(
         gpui_platform::bench_text_system(),
@@ -299,7 +324,7 @@ fn main() {
         .expect("window opens")
         .into();
     let (bench, panes) = parts.expect("window parts");
-    let mut run = Run { cx, window, bench, panes, last: Instant::now() };
+    let mut run = Run { cx, window, bench, panes, last: Instant::now(), clock: Instant::now() };
 
     run.show(vec![typist]);
     let idle = run.typing(typist, 100);
@@ -336,6 +361,19 @@ fn main() {
     }
     println!("scrolling back 1,600 lines of 20,000, 4 lines a frame: panes laid out and painted {}", spread(DRAWS.with_borrow_mut(std::mem::take)));
     run.shot(&shots, "history");
+    for _ in 0..500 {
+        run.wheel(-8.);
+    }
+    for _ in 0..30 {
+        run.frame();
+    }
+    let (row, _) = run.cursor(history);
+    run.point(row.saturating_sub(1), 20, None);
+    run.shot(&shots, "link");
+    run.point(row.saturating_sub(1), 1, Some(2));
+    run.shot(&shots, "word");
+    run.point(row.saturating_sub(1), 1, Some(3));
+    run.shot(&shots, "line");
     println!("app peak RSS {:.0} MB", peak_rss_mb());
     drop(client);
 }

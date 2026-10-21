@@ -4,11 +4,11 @@
 //! cargo run --release --example grid -- out.png
 //! ```
 //!
-//! It saves a picture of one terminal showing colours, styles, wide characters
-//! and box drawing. Then one terminal and then four side by side scroll a
-//! fresh screen of coloured output every frame, and it prints how long
-//! frames took to draw: render, layout, prepaint and paint, everything but
-//! handing the frame to the GPU.
+//! It saves a picture of one terminal showing colours, styles, wide characters,
+//! box drawing, a hovered link and text an input method is composing. Then one
+//! terminal and then four side by side scroll a fresh screen of coloured output
+//! every frame, and it prints how long frames took to draw: render, layout,
+//! prepaint and paint, everything but handing the frame to the GPU.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -19,7 +19,7 @@ use gpui::{
     WindowOptions,
 };
 use gpui_terminal_grid::{
-    Cursor, CursorShape, Grid, Highlight, Layout, Look, Metrics, Span, Underline,
+    Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
 };
 
 const COLUMNS: u16 = 120;
@@ -64,7 +64,24 @@ impl Grid for Screen {
             row: 3,
             columns: 4..30,
             color: rgb(0x3d375e).into(),
+            underline: false,
         });
+        each(Highlight {
+            row: 2,
+            columns: 7..11,
+            color: rgb(0xedecee).into(),
+            underline: true,
+        });
+    }
+
+    fn marked(&self) -> Option<Marked<'_>> {
+        Some(Marked {
+            row: ROWS - 1,
+            column: 2,
+            text: "にほんご",
+            fg: rgb(0xedecee).into(),
+            bg: rgb(0x0f0f13).into(),
+        })
     }
 }
 

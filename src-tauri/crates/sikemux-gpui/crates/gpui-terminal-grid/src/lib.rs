@@ -1,6 +1,7 @@
 //! Draws a terminal's grid of cells in GPUI, from cells emulated anywhere.
 //!
-//! - [`Grid`] is what the drawing reads: rows of styled spans, a cursor, highlights.
+//! - [`Grid`] is what the drawing reads: rows of styled spans, a cursor, highlights
+//!   and text an input method is composing.
 //! - [`Metrics`] measures a font's cell and maps between points and cells.
 //! - [`Layout`] shapes a grid in a canvas prepaint and paints it.
 
@@ -29,6 +30,11 @@ pub trait Grid {
     /// Calls `each` with the cells to tint behind the text, such as a
     /// selection or search matches.
     fn highlights(&self, _each: &mut dyn FnMut(Highlight)) {}
+
+    /// Text an input method is composing, drawn over the grid until it is committed.
+    fn marked(&self) -> Option<Marked<'_>> {
+        None
+    }
 }
 
 /// Text in one look, starting at a column.
@@ -116,6 +122,18 @@ pub struct Highlight {
     pub row: u16,
     pub columns: Range<u16>,
     pub color: Hsla,
+    /// A line under the text, such as a hovered link, instead of a tint behind it.
+    pub underline: bool,
+}
+
+/// Composed text starting at a cell, on its own opaque ground.
+#[derive(Clone, Copy)]
+pub struct Marked<'a> {
+    pub row: u16,
+    pub column: u16,
+    pub text: &'a str,
+    pub fg: Hsla,
+    pub bg: Hsla,
 }
 
 /// A font's cell, snapped to whole device pixels so rows and columns tile.
@@ -237,6 +255,8 @@ pub struct Layout {
     lines: Vec<(Point<Pixels>, ShapedLine)>,
     /// Box drawing, decorations and the other cursors, drawn over it.
     over: Vec<Mark>,
+    cursor_bounds: Option<Bounds<Pixels>>,
+    marked: Option<(Bounds<Pixels>, Hsla, ShapedLine)>,
 }
 
 /// Text placed on the grid but not yet shaped: cells of one width, side by side.
@@ -261,6 +281,8 @@ impl Layout {
             block: None,
             lines: Vec::new(),
             over: Vec::new(),
+            cursor_bounds: None,
+            marked: None,
         };
         let (columns, rows) = grid.size();
         let cursor = grid
@@ -340,11 +362,9 @@ impl Layout {
             });
             layout.shape(&mut pending, metrics, row, origin, window);
             if let Some(cursor) = cursor {
-                layout.cursor(
-                    cursor,
-                    metrics.cells(origin, row, cursor.column, cursor_width),
-                    metrics.stroke,
-                );
+                let cell = metrics.cells(origin, row, cursor.column, cursor_width);
+                layout.cursor_bounds = Some(cell);
+                layout.cursor(cursor, cell, metrics.stroke);
             }
         }
         let mut highlights = Vec::new();
@@ -352,14 +372,49 @@ impl Layout {
             if highlight.row < rows && highlight.columns.start < columns {
                 let end = highlight.columns.end.min(columns);
                 let width = end.saturating_sub(highlight.columns.start);
-                highlights.push(Mark::Fill(
-                    metrics.cells(origin, highlight.row, highlight.columns.start, width),
-                    highlight.color,
-                ));
+                let cells = metrics.cells(origin, highlight.row, highlight.columns.start, width);
+                if highlight.underline {
+                    let y = cells.origin.y
+                        + (metrics.cell.height - metrics.stroke)
+                            .min(metrics.baseline + metrics.stroke);
+                    let line = Bounds::new(
+                        point(cells.origin.x, y),
+                        size(cells.size.width, metrics.stroke),
+                    );
+                    layout.over.push(Mark::Fill(line, highlight.color));
+                } else {
+                    highlights.push(Mark::Fill(cells, highlight.color));
+                }
             }
         });
         layout.under.extend(highlights);
         layout.under.extend(layout.block.take());
+        if let Some(marked) = grid
+            .marked()
+            .filter(|marked| marked.row < rows && !marked.text.is_empty())
+        {
+            let run = TextRun {
+                len: marked.text.len(),
+                font: metrics.fonts[0].clone(),
+                color: marked.fg,
+                background_color: None,
+                underline: Some(UnderlineStyle {
+                    thickness: metrics.stroke,
+                    color: Some(marked.fg),
+                    wavy: false,
+                }),
+                strikethrough: None,
+            };
+            let shaped = window.text_system().shape_line(
+                SharedString::from(marked.text.to_owned()),
+                metrics.font_size,
+                &[run],
+                None,
+            );
+            let mut ground = metrics.cells(origin, marked.row, marked.column, 1);
+            ground.size.width = ground.size.width.max(shaped.width);
+            layout.marked = Some((ground, marked.bg, shaped));
+        }
         layout
     }
 
@@ -497,6 +552,22 @@ impl Layout {
         for mark in self.over {
             mark.paint(window);
         }
+        if let Some((ground, bg, line)) = self.marked {
+            window.paint_quad(fill(ground, bg));
+            let _ = line.paint(
+                ground.origin,
+                self.line_height,
+                TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
+        }
+    }
+
+    /// The cursor's cell, where an input method places its candidates.
+    pub fn cursor_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.cursor_bounds
     }
 }
 

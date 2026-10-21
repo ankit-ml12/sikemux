@@ -3,12 +3,14 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
+use std::ops::Range;
+
 use gpui_kit::{
-    canvas, div, font, px, AnyElement, App, ClipboardItem, Context, Entity, FocusHandle, FontFallbacks, Hsla, InteractiveElement, IntoElement,
-    KeyDownEvent, Keystroke, Modifiers, MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Rgba, ScrollWheelEvent, Styled, Window,
+    canvas, div, font, px, AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, Entity, FocusHandle, FontFallbacks, Hsla,
+    InputHandler, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton as Button, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Rgba, ScrollWheelEvent, Styled, UTF16Selection, Window,
 };
-use gpui_terminal_grid::{Cursor, CursorShape, Grid, Highlight, Layout, Look, Metrics, Span, Underline};
+use gpui_terminal_grid::{Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline};
 use sikemux_wire::grid::{self as wire, Color, GridPoint, Mods, MouseAction, MouseButton, Row, Screen, TerminalInput};
 use sikemux_wire::protocol::SessionId;
 use tokio::sync::mpsc;
@@ -22,6 +24,8 @@ const PAGE: u64 = 256;
 const HISTORY_KEPT: usize = 4_000;
 const FONT_SIZE: f32 = 13.;
 const LINE_HEIGHT: f32 = 1.32;
+/// Characters that end a word picked by a double click.
+const WORD_SEPARATORS: &str = " ()[]{}<>'\"`,;│|";
 
 /// Every terminal this window has attached, by session.
 #[derive(Default)]
@@ -40,11 +44,33 @@ struct Terminal {
     selection: Option<(GridPoint, GridPoint)>,
     /// Where a selection being dragged started.
     anchor: Option<GridPoint>,
+    /// The mouse moved since the button went down, so letting go opens no link.
+    dragged: bool,
+    /// The link under the mouse.
+    link: Option<Link>,
+    /// What an input method is composing.
+    marked: Option<String>,
     focus: FocusHandle,
     acked: u32,
     asked_size: (u16, u16),
     origin: Point<Pixels>,
     wheel: f32,
+}
+
+#[derive(Clone, PartialEq)]
+struct Link {
+    line: u64,
+    columns: Range<u16>,
+    uri: String,
+}
+
+impl Link {
+    /// The address to open: only web pages, and none carrying a user name or password.
+    fn web_address(&self) -> Option<&str> {
+        let rest = self.uri.strip_prefix("https://").or_else(|| self.uri.strip_prefix("http://"))?;
+        let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+        (!host.is_empty() && !host.contains('@')).then_some(self.uri.as_str())
+    }
 }
 
 impl Terminal {
@@ -65,6 +91,94 @@ impl Terminal {
         }
     }
 
+    /// The row's text one entry per column; the second column of a wide character is empty.
+    fn cells(&self, line: u64) -> Option<Vec<&str>> {
+        let row = self.row(line)?;
+        let mut cells = vec![" "; usize::from(self.screen.header.cols)];
+        for span in &row.spans {
+            let pieces: Vec<&str> = if span.cluster {
+                vec![span.text.as_str()]
+            } else {
+                span.text.char_indices().map(|(at, character)| &span.text[at..at + character.len_utf8()]).collect()
+            };
+            let step = if span.wide { 2 } else { 1 };
+            for (index, piece) in pieces.into_iter().enumerate() {
+                let col = usize::from(span.col) + index * step;
+                if let Some(cell) = cells.get_mut(col) {
+                    *cell = piece;
+                }
+                if let Some(cell) = cells.get_mut(col + 1).filter(|_| span.wide) {
+                    *cell = "";
+                }
+            }
+        }
+        Some(cells)
+    }
+
+    fn select_word(&mut self, point: GridPoint) {
+        let Some(cells) = self.cells(point.line) else {
+            return;
+        };
+        let word = |col: usize| cells.get(col).is_some_and(|cell| !cell.is_empty() && !WORD_SEPARATORS.contains(*cell));
+        let mut from = usize::from(point.col);
+        let mut to = from;
+        if word(from) {
+            while from > 0 && (word(from - 1) || cells[from - 1].is_empty()) {
+                from -= 1;
+            }
+            while to + 1 < cells.len() && (word(to + 1) || cells[to + 1].is_empty()) {
+                to += 1;
+            }
+        }
+        self.selection = Some((GridPoint { line: point.line, col: from as u16 }, GridPoint { line: point.line, col: to as u16 }));
+    }
+
+    fn select_line(&mut self, point: GridPoint) {
+        let mut first = point.line;
+        while first > 0 && self.row(first - 1).is_some_and(|row| row.wrapped) {
+            first -= 1;
+        }
+        let mut last = point.line;
+        while self.row(last).is_some_and(|row| row.wrapped) {
+            last += 1;
+        }
+        let end = GridPoint { line: last, col: self.screen.header.cols.saturating_sub(1) };
+        self.selection = Some((GridPoint { line: first, col: 0 }, end));
+    }
+
+    /// The link at a cell: one the program marked, or a web address in the text.
+    fn link_at(&self, point: GridPoint) -> Option<Link> {
+        let row = self.row(point.line)?;
+        let span = row.spans.iter().find(|span| (span.col..span.col + span.width).contains(&point.col));
+        if let Some((span, uri)) = span.and_then(|span| Some((span, span.style.link.clone()?))) {
+            let mut columns = span.col..span.col + span.width;
+            for other in row.spans.iter().filter(|other| other.style.link.as_deref() == Some(&*uri)) {
+                if other.col + other.width == columns.start {
+                    columns.start = other.col;
+                }
+                if other.col == columns.end {
+                    columns.end = other.col + other.width;
+                }
+            }
+            return Some(Link { line: point.line, columns, uri: uri.to_string() });
+        }
+        let cells = self.cells(point.line)?;
+        let text: String = cells.concat();
+        let columns_at: Vec<u16> = cells.iter().enumerate().flat_map(|(col, cell)| std::iter::repeat_n(col as u16, cell.len())).collect();
+        let mut from = 0;
+        while let Some(found) = ["https://", "http://"].iter().filter_map(|scheme| text[from..].find(scheme)).min() {
+            let start = from + found;
+            let length = text[start..].find(|c: char| c.is_whitespace() || "\"'<>`".contains(c)).unwrap_or(text.len() - start);
+            let uri = text[start..start + length].trim_end_matches(|c: char| ".,;:!?)]}".contains(c));
+            let columns = columns_at[start]..columns_at[start + uri.len() - 1] + 1;
+            if columns.contains(&point.col) {
+                return Some(Link { line: point.line, columns, uri: uri.to_owned() });
+            }
+            from = start + length.max(1);
+        }
+        None
+    }
+
     fn reset(&mut self) {
         self.screen = Screen::default();
         self.history.clear();
@@ -78,6 +192,11 @@ impl Terminal {
 impl Terminals {
     pub fn focus(&self, session: SessionId) -> Option<&FocusHandle> {
         self.open.get(&session).map(|terminal| &terminal.focus)
+    }
+
+    /// The size of one cell, once a terminal has been drawn.
+    pub fn cell(&self) -> Option<gpui_kit::Size<Pixels>> {
+        self.metrics.as_ref().map(|metrics| metrics.cell)
     }
 
     pub fn screen(&self, session: SessionId) -> Option<&Screen> {
@@ -159,7 +278,7 @@ pub fn pane(bench: &Workbench, this: &Entity<Workbench>, session: &str, window: 
             }
         }))
         .on_mouse_up(Button::Left, window.listener_for(&this, move |bench, event: &MouseUpEvent, _, cx| {
-            mouse_up(bench, id, event);
+            mouse_up(bench, id, event, cx);
             cx.notify();
         }))
         .on_scroll_wheel(window.listener_for(&this, move |bench, event: &ScrollWheelEvent, _, cx| {
@@ -169,12 +288,22 @@ pub fn pane(bench: &Workbench, this: &Entity<Workbench>, session: &str, window: 
         }));
     if let Some(terminal) = bench.terminals.open.get(&id) {
         pane = pane.track_focus(&terminal.focus);
+        if terminal.link.is_some() {
+            pane = pane.cursor(CursorStyle::PointingHand);
+        }
     }
     pane.child(
         div().size_full().overflow_hidden().child(
             canvas(
-                move |bounds, window, cx| this.update(cx, |bench, cx| layout(bench, id, bounds, window, cx)),
-                |_, layout, window, cx| layout.paint(window, cx),
+                {
+                    let this = this.clone();
+                    move |bounds, window, cx| this.update(cx, |bench, cx| layout(bench, id, bounds, window, cx))
+                },
+                move |_, (layout, focus), window, cx| {
+                    let cursor = layout.cursor_bounds();
+                    window.handle_input(&focus, Typing { bench: this, id, cursor }, cx);
+                    layout.paint(window, cx);
+                },
             )
             .size_full(),
         ),
@@ -191,7 +320,7 @@ fn layout(
     bounds: gpui_kit::Bounds<Pixels>,
     window: &mut Window,
     cx: &mut Context<Workbench>,
-) -> Layout {
+) -> (Layout, FocusHandle) {
     let metrics = bench
         .terminals
         .metrics
@@ -212,6 +341,9 @@ fn layout(
             top: None,
             selection: None,
             anchor: None,
+            dragged: false,
+            link: None,
+            marked: None,
             focus: cx.focus_handle(),
             acked: 0,
             asked_size: (0, 0),
@@ -244,7 +376,7 @@ fn layout(
     }
     let tokens = Tokens::get(cx);
     let view = View { terminal, top, tokens, focused: terminal.focus.is_focused(window) };
-    Layout::new(&view, bounds.origin, &metrics, window)
+    (Layout::new(&view, bounds.origin, &metrics, window), terminal.focus.clone())
 }
 
 /// A terminal as the grid draws it: the rows from `top`, coloured by the theme.
@@ -338,6 +470,12 @@ impl Grid for View<'_> {
     }
 
     fn highlights(&self, each: &mut dyn FnMut(Highlight)) {
+        if let Some(link) = &self.terminal.link {
+            if let Some(row) = link.line.checked_sub(self.top).and_then(|row| u16::try_from(row).ok()) {
+                let color = self.rgb(Color::Named(wire::NAMED_FOREGROUND));
+                each(Highlight { row, columns: link.columns.clone(), color, underline: true });
+            }
+        }
         let Some((start, end)) = self.terminal.selection else {
             return;
         };
@@ -349,8 +487,15 @@ impl Grid for View<'_> {
             }
             let from = if line == start.line { start.col } else { 0 };
             let to = if line == end.line { end.col + 1 } else { cols };
-            each(Highlight { row, columns: from..to, color: self.tokens.terminal_selection });
+            each(Highlight { row, columns: from..to, color: self.tokens.terminal_selection, underline: false });
         }
+    }
+
+    fn marked(&self) -> Option<Marked<'_>> {
+        let text = self.terminal.marked.as_deref()?;
+        let header = &self.terminal.screen.header;
+        let row = u16::try_from((header.history_end + u64::from(header.cursor.row)).checked_sub(self.top)?).ok()?;
+        Some(Marked { row, column: header.cursor.col, text, fg: self.rgb(Color::Named(wire::NAMED_FOREGROUND)), bg: self.rgb(Color::Named(wire::NAMED_BACKGROUND)) })
     }
 }
 
@@ -434,13 +579,76 @@ fn key(bench: &mut Workbench, id: SessionId, keystroke: &Keystroke, cx: &mut Con
         let typed = if modifiers.shift { typed.to_uppercase() } else { typed.to_owned() };
         TerminalInput::Key { key: typed, mods: mods(modifiers) }
     } else {
-        match &keystroke.key_char {
-            Some(text) if !text.is_empty() => TerminalInput::Text { text: text.clone() },
-            _ => return false,
-        }
+        return false;
     };
     send(bench, id, input);
     true
+}
+
+/// Text typed into a terminal, through the input method so accents and
+/// composed characters arrive whole. What it is still composing shows at the cursor.
+struct Typing {
+    bench: Entity<Workbench>,
+    id: SessionId,
+    cursor: Option<Bounds<Pixels>>,
+}
+
+impl Typing {
+    fn marked(&self, cx: &App) -> Option<String> {
+        self.bench.read(cx).terminals.open.get(&self.id)?.marked.clone()
+    }
+
+    fn set_marked(&self, marked: Option<String>, cx: &mut App) {
+        let id = self.id;
+        self.bench.update(cx, |bench, cx| {
+            if let Some(terminal) = bench.terminals.open.get_mut(&id) {
+                terminal.marked = marked.filter(|text| !text.is_empty());
+                cx.notify();
+            }
+        });
+    }
+}
+
+impl InputHandler for Typing {
+    fn selected_text_range(&mut self, _: bool, _: &mut Window, cx: &mut App) -> Option<UTF16Selection> {
+        let end = self.marked(cx).map_or(0, |text| text.encode_utf16().count());
+        Some(UTF16Selection { range: end..end, reversed: false })
+    }
+
+    fn marked_text_range(&mut self, _: &mut Window, cx: &mut App) -> Option<Range<usize>> {
+        self.marked(cx).map(|text| 0..text.encode_utf16().count())
+    }
+
+    fn text_for_range(&mut self, range: Range<usize>, adjusted: &mut Option<Range<usize>>, _: &mut Window, cx: &mut App) -> Option<String> {
+        let units: Vec<u16> = self.marked(cx)?.encode_utf16().collect();
+        let range = range.start.min(units.len())..range.end.min(units.len());
+        *adjusted = Some(range.clone());
+        String::from_utf16(&units[range]).ok()
+    }
+
+    fn replace_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut App) {
+        self.set_marked(None, cx);
+        if !text.is_empty() {
+            let (id, text) = (self.id, text.to_owned());
+            self.bench.update(cx, |bench, _| send(bench, id, TerminalInput::Text { text }));
+        }
+    }
+
+    fn replace_and_mark_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: Option<Range<usize>>, _: &mut Window, cx: &mut App) {
+        self.set_marked(Some(text.to_owned()), cx);
+    }
+
+    fn unmark_text(&mut self, _: &mut Window, cx: &mut App) {
+        self.set_marked(None, cx);
+    }
+
+    fn bounds_for_range(&mut self, _: Range<usize>, _: &mut Window, _: &mut App) -> Option<Bounds<Pixels>> {
+        self.cursor
+    }
+
+    fn character_index_for_point(&mut self, _: Point<Pixels>, _: &mut Window, _: &mut App) -> Option<usize> {
+        None
+    }
 }
 
 /// Moves the view by `lines`, negative toward older output.
@@ -470,23 +678,18 @@ fn mouse_down(bench: &mut Workbench, id: SessionId, event: &MouseDownEvent, wind
     };
     window.focus(&terminal.focus, cx);
     let (point, row) = point_at(terminal, &metrics, event.position);
-    if event.modifiers.platform {
-        let link = terminal.row(point.line).and_then(|line| {
-            let span = line.spans.iter().find(|span| (span.col..span.col + span.width).contains(&point.col))?;
-            span.style.link.clone()
-        });
-        if let Some(link) = link {
-            cx.open_url(&link);
-        }
-        return;
-    }
     if reports_mouse(terminal, &event.modifiers) {
         let input = TerminalInput::Mouse { action: MouseAction::Press, button: MouseButton::Left, col: point.col, row, mods: mods(&event.modifiers) };
         let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(input)));
         return;
     }
-    terminal.selection = None;
+    terminal.dragged = false;
     terminal.anchor = Some(point);
+    match event.click_count {
+        2 => terminal.select_word(point),
+        3.. => terminal.select_line(point),
+        _ => terminal.selection = None,
+    }
 }
 
 fn mouse_move(bench: &mut Workbench, id: SessionId, event: &MouseMoveEvent) -> bool {
@@ -508,20 +711,30 @@ fn mouse_move(bench: &mut Workbench, id: SessionId, event: &MouseMoveEvent) -> b
         return false;
     }
     let Some(anchor) = terminal.anchor.filter(|_| event.pressed_button == Some(Button::Left)) else {
-        return false;
+        let link = terminal.link_at(point);
+        let changed = link != terminal.link;
+        terminal.link = link;
+        return changed;
     };
+    if point == anchor && !terminal.dragged {
+        return false;
+    }
+    terminal.dragged = true;
     terminal.selection = Some(if point < anchor { (point, anchor) } else { (anchor, point) });
     true
 }
 
-fn mouse_up(bench: &mut Workbench, id: SessionId, event: &MouseUpEvent) {
+fn mouse_up(bench: &mut Workbench, id: SessionId, event: &MouseUpEvent, cx: &mut App) {
     let Some(metrics) = bench.terminals.metrics.clone() else {
         return;
     };
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return;
     };
-    terminal.anchor = None;
+    let clicked = terminal.anchor.take().is_some() && !terminal.dragged && event.click_count == 1;
+    if let Some(address) = terminal.link.as_ref().filter(|_| clicked).and_then(Link::web_address) {
+        cx.open_url(address);
+    }
     if reports_mouse(terminal, &event.modifiers) {
         let (point, row) = point_at(terminal, &metrics, event.position);
         let input = TerminalInput::Mouse { action: MouseAction::Release, button: MouseButton::Left, col: point.col, row, mods: mods(&event.modifiers) };
