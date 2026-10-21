@@ -1,7 +1,17 @@
 import type { AgentQuestion } from "../api/agentQuestions";
-import type { BoardCard, BoardSettings, CardStatus, CardTicket, ProjectBoard, RunStage } from "../api/generated/wire";
+import type { BoardCard, BoardColumn, BoardSettings, CardStatus, CardTicket, ProjectBoard, RunStage } from "../api/generated/wire";
 
-export type { BoardCard, BoardSettings, CardRun, CardStatus, CardTicket, ProjectBoard, ReviewerChoice, RunStage } from "../api/generated/wire";
+export type {
+    BoardCard,
+    BoardColumn,
+    BoardSettings,
+    CardRun,
+    CardStatus,
+    CardTicket,
+    ProjectBoard,
+    ReviewerChoice,
+    RunStage,
+} from "../api/generated/wire";
 
 export type SettingsChanges = Partial<BoardSettings>;
 
@@ -9,9 +19,6 @@ export type SettingsChanges = Partial<BoardSettings>;
 export type BoardAuto = Pick<ProjectBoard, "settings" | "running" | "autoNote">;
 
 export const RUN_WAITS_ON_PERSON: ReadonlySet<RunStage> = new Set(["review", "held"]);
-
-/** Where a board shows a card: "needs" holds the cards waiting on the person. */
-export type BoardColumn = CardStatus | "needs";
 
 export const COLUMN_LABELS: Record<BoardColumn, string> = {
     open: "Open",

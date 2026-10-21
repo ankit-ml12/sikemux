@@ -29,6 +29,8 @@ const card = (
   createdByName: OTTER.name,
   result: null,
   ticket: null,
+  ticketAbove: null,
+  column: fields.status,
   auto: null,
   paidBy: null,
   recordings: [],
@@ -161,6 +163,7 @@ export const DEMO_BOARD: ProjectBoard = {
       ownerName: "Heron",
       ownerCli: "codex",
       ticket: { key: "PROJ-31", source: "Bug", provider: "jira" },
+      column: "needs",
       auto: run("agent-heron", "proj-31-retry-webhooks-that-timed-out", {
         stage: "held",
         note: "Its checks failed again after a fix:\ntest (ubuntu): failure",

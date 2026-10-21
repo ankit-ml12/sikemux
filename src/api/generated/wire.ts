@@ -1567,6 +1567,9 @@ export interface BoardCard {
     createdByName: string;
     result: string | null;
     ticket: CardTicket | null;
+    /** The ticket of the nearest card above it that has one, which it is filed under. */
+    ticketAbove: string | null;
+    column: BoardColumn;
     auto: CardRun | null;
     recordings: InboxRecording[];
     at: number;
@@ -1593,6 +1596,9 @@ export interface CardTicket {
 
 /** Where a card's ticket lives. */
 export type Tracker = "jira" | "linear";
+
+/** Where a board shows a card: `needs` holds the cards waiting on the person. */
+export type BoardColumn = "open" | "progress" | "needs" | "done";
 
 /** A card's run as the app and devices read it. */
 export interface CardRun {

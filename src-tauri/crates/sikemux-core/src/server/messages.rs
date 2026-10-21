@@ -581,6 +581,13 @@ pub(crate) fn logged(core: &Core, project: &str, limit: Option<usize>) -> Vec<En
     core.harness.mailbox.log.read(project, limit)
 }
 
+/// The project's messages between agents, one row each, newest first.
+pub(crate) fn logged_rows(core: &Core, project: &str) -> Value {
+    json!(log::rows(&logged(core, project, None), |id| core
+        .names
+        .name(id)))
+}
+
 /// Notes in the log of the project of agent `to` what became of messages
 /// for it.
 fn log<'a>(core: &Core, to: &str, queued: impl IntoIterator<Item = &'a Queued>, outcome: Outcome) {
