@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use serde::Deserialize;
 use sikemux_process::sync::Locked;
 
-use crate::protocol::{Layout, Pane, PaneKind, SessionInfo, Tab, Workspace};
+use crate::protocol::{Layout, Pane, PaneKind, SessionId, SessionInfo, Tab, Workspace};
 
 use super::kept::Kept;
 use super::{Core, CoreError, CoreResult};
@@ -212,6 +212,20 @@ pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
         strip.active = Some(id.clone());
         Ok(id)
     })
+}
+
+/// Brings the tab showing the terminal `id` to the front in `project`,
+/// opening one when none does. Answers its id.
+pub(crate) fn show_terminal(core: &Core, project: String, id: SessionId) -> CoreResult<String> {
+    open_tab(
+        core,
+        OpenTab {
+            project,
+            kind: PaneKind::Terminal,
+            target: id.to_string(),
+            title: None,
+        },
+    )
 }
 
 #[derive(Deserialize)]

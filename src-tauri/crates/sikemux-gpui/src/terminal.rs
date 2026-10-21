@@ -10,7 +10,7 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
     anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds, ClickEvent,
     ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks, Hsla,
-    InputHandler, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers,
+    InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Modifiers,
     MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
     Point, RenderOnce, Rgba, ScrollWheelEvent, SharedString, Styled, Subscription, Task,
     UTF16Selection, Window,
@@ -36,6 +36,20 @@ const PAGE: u64 = 256;
 const HISTORY_KEPT: usize = 4_000;
 const FONT_SIZE: f32 = 13.;
 const LINE_HEIGHT: f32 = 1.32;
+/// Named by today's command id, so a shortcut the person set for it still finds it.
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "terminal.new", no_json)]
+pub struct NewTerminal;
+
+pub fn install(cx: &mut App) {
+    let new = if cfg!(target_os = "macos") {
+        "cmd-t"
+    } else {
+        "ctrl-shift-t"
+    };
+    cx.bind_keys([KeyBinding::new(new, NewTerminal, None)]);
+}
+
 /// How long a blinking cursor stays shown, and then hidden.
 const BLINK: Duration = Duration::from_millis(600);
 /// Wakes just past each flip, so a timer that lands a hair early does not redraw twice.

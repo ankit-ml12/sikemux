@@ -326,6 +326,7 @@ calls! { core, client, params;
         .await?;
         answer(json!({}))
     },
+    "newTerminal": Full => answer(super::spare::new_terminal(&core, parse(params)?).await?),
     "takeSpareShell": Local => answer(super::spare::take(&core, parse(params)?)),
     "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),
     "themePalette": Watch => {

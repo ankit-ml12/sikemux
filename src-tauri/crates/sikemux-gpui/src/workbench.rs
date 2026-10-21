@@ -25,6 +25,7 @@ use crate::chat::{Chat, Composing, Question};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
+use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
 
@@ -109,6 +110,7 @@ impl Workbench {
         crate::syntax::install(cx);
         crate::finder::install(cx);
         crate::chat::install(cx);
+        crate::terminal::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -829,6 +831,13 @@ impl Workbench {
         }
     }
 
+    /// A terminal tab in the project in front, on the shell the core keeps ready there.
+    pub fn new_terminal(&self) {
+        if let Some(project) = self.project() {
+            self.call("newTerminal", json!({ "project": project.id }));
+        }
+    }
+
     pub fn activate_project(&self, id: &str) {
         self.call("activateProject", json!({ "project": id }));
     }
@@ -1141,6 +1150,7 @@ impl Render for Workbench {
                 bench.toggle_finder(window, cx);
                 cx.notify();
             }))
+            .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
             .flex()
             .flex_col()
             .pt(px(6.))

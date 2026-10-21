@@ -13,7 +13,7 @@ use crate::protocol::{SessionId, SpawnTarget, TerminalSpawn};
 use sikemux_wire::pty::launch::PtyContext;
 
 use super::wake::Wake;
-use super::{session, Core};
+use super::{session, Core, CoreError, CoreResult};
 
 /// How long the front project and the terminal size stay put before a shell
 /// starts, so a burst of changes starts one.
@@ -154,16 +154,18 @@ pub(crate) fn settle(core: &Arc<Core>) {
 /// The project in front, by id, with its folder and name.
 fn front_project(core: &Core) -> Option<(String, String, String)> {
     let id = super::layout::front_project(core)?;
-    let workspace = core.workspace_view();
-    let project = workspace
+    let (path, name) = project_folder(core, &id)?;
+    Some((id, path, name))
+}
+
+/// A project's folder and name.
+fn project_folder(core: &Core, id: &str) -> Option<(String, String)> {
+    let project = core
+        .workspace_view()
         .projects
         .into_iter()
         .find(|project| project.id == id)?;
-    Some((
-        id,
-        project.path.to_string_lossy().into_owned(),
-        project.name,
-    ))
+    Some((project.path.to_string_lossy().into_owned(), project.name))
 }
 
 async fn start(
@@ -175,37 +177,15 @@ async fn start(
     pane_id: String,
 ) {
     let window_id = format!("win-spare-{}", uuid::Uuid::new_v4().simple());
-    let spawn = TerminalSpawn {
-        cols: size.0,
-        rows: size.1,
-        cwd: Some(path.clone()),
-        context: Some(PtyContext {
-            session_id: project.clone(),
-            session_name: name,
-            session_kind: "project".into(),
-            project: Some(path),
-            window_id: Some(window_id.clone()),
-            pane_id: Some(pane_id.clone()),
-            agent_id: None,
-            agent_type: None,
-            initial_prompt_submitted: false,
-            shell_integration: true,
-        }),
-        ..TerminalSpawn::default()
-    };
-    let target = Box::new(SpawnTarget::Terminal(spawn));
-    let started =
-        super::connection::spawn(core.clone(), core.launch_identity(), target, None).await;
-    let pending = match started {
-        Ok(pending) => pending,
+    let started = shell(&core, &project, path, name, size, &window_id, &pane_id).await;
+    let id = match started {
+        Ok(id) => id,
         Err(error) => {
             eprintln!("sikemux core: a spare shell did not start: {error}");
             core.spares.held.locked().starting = None;
             return;
         }
     };
-    let id = pending.id();
-    pending.start(&core);
     let mut held = core.spares.held.locked();
     held.starting = None;
     held.spare = Some(Spare {
@@ -218,6 +198,73 @@ async fn start(
     });
     drop(held);
     core.spares.wake.now();
+}
+
+/// Starts a shell in a project's folder, as a terminal of that project.
+async fn shell(
+    core: &Arc<Core>,
+    project: &str,
+    path: String,
+    name: String,
+    size: (u16, u16),
+    window_id: &str,
+    pane_id: &str,
+) -> CoreResult<SessionId> {
+    let spawn = TerminalSpawn {
+        cols: size.0,
+        rows: size.1,
+        cwd: Some(path.clone()),
+        context: Some(PtyContext {
+            session_id: project.to_owned(),
+            session_name: name,
+            session_kind: "project".into(),
+            project: Some(path),
+            window_id: Some(window_id.to_owned()),
+            pane_id: Some(pane_id.to_owned()),
+            agent_id: None,
+            agent_type: None,
+            initial_prompt_submitted: false,
+            shell_integration: true,
+        }),
+        ..TerminalSpawn::default()
+    };
+    let target = Box::new(SpawnTarget::Terminal(spawn));
+    let pending =
+        super::connection::spawn(core.clone(), core.launch_identity(), target, None).await?;
+    let id = pending.id();
+    pending.start(core);
+    Ok(id)
+}
+
+/// Opens a terminal tab in `project` on the shell started ahead when it fits,
+/// or on a new one. Answers the tab's id.
+pub(crate) async fn new_terminal(core: &Arc<Core>, params: TakeParams) -> CoreResult<String> {
+    let id = match take(
+        core,
+        TakeParams {
+            project: params.project.clone(),
+        },
+    ) {
+        Some(taken) => taken.id,
+        None => {
+            let (path, name) = project_folder(core, &params.project)
+                .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+            let size = core.spares.held.locked().size.unwrap_or((80, 24));
+            let window_id = format!("win-{}", uuid::Uuid::new_v4().simple());
+            let pane_id = format!("pane-{}", uuid::Uuid::new_v4().simple());
+            shell(
+                core,
+                &params.project,
+                path,
+                name,
+                size,
+                &window_id,
+                &pane_id,
+            )
+            .await?
+        }
+    };
+    super::layout::show_terminal(core, params.project, id)
 }
 
 /// Stops the shell started ahead, as before the core hands itself over.
