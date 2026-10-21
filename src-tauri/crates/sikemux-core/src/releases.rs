@@ -7,13 +7,12 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use futures::future::join_all;
 use semver::Version;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 
-use crate::error::{AppError, AppResult};
-use sikemux_core::http::{client, data_url, fetch_image};
+use crate::http::{client, data_url, fetch_image};
 
 const REPO_API: &str = "https://api.github.com/repos/nodelike/sikemux";
 const REPO_WEB: &str = "https://github.com/nodelike/sikemux";
@@ -122,17 +121,16 @@ pub fn bundled_credits(manifest: &serde_json::Value) -> Option<ReleaseCredits> {
 /// The notes of one published release, and everyone who committed to it.
 /// The notes are what matter, so a failed contributor lookup leaves the
 /// credits empty rather than failing the whole answer.
-#[tauri::command]
-pub async fn release_notes(version: String) -> AppResult<ReleaseNotes> {
+pub async fn release_notes(version: String) -> Result<ReleaseNotes, String> {
     let parsed = Version::parse(&version)
-        .map_err(|_| AppError::BadArg("a release version must be a semantic version"))?;
+        .map_err(|_| "a release version must be a semantic version".to_owned())?;
     if let Some(known) = cached_notes(&version) {
         return Ok(known);
     }
     let tag = format!("v{version}");
     let release: GithubRelease = get_json(&format!("{REPO_API}/releases/tags/{tag}"))
         .await
-        .map_err(|error| AppError::Other(format!("GitHub has no release {tag}: {error}")))?;
+        .map_err(|error| format!("GitHub has no release {tag}: {error}"))?;
     let credits = match previous_tag(&parsed).await {
         Some(previous) => credits_between(&previous, &tag).await,
         None => None,
@@ -228,17 +226,19 @@ fn tally(commits: Vec<ComparedCommit>) -> Vec<Contributor> {
     people
 }
 
-async fn get_json<T: DeserializeOwned>(url: &str) -> AppResult<T> {
-    let response = client()?
+async fn get_json<T: DeserializeOwned>(url: &str) -> Result<T, String> {
+    let response = client()
+        .map_err(|error| error.to_string())?
         .get(url)
         .timeout(FETCH_TIMEOUT)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
-        .await?;
+        .await
+        .map_err(|error| error.to_string())?;
     if !response.status().is_success() {
-        return Err(AppError::Other(response.status().to_string()));
+        return Err(response.status().to_string());
     }
-    Ok(response.json().await?)
+    response.json().await.map_err(|error| error.to_string())
 }
 
 fn notes_cache() -> &'static Mutex<HashMap<String, ReleaseNotes>> {
@@ -263,28 +263,31 @@ fn remember_notes(version: &str, notes: ReleaseNotes) {
 
 /// Avatars keyed by the address GitHub gave. One that fails to load is left
 /// out, and the modal draws the contributor's initial instead.
-#[tauri::command]
 pub async fn release_avatars(urls: Vec<String>) -> HashMap<String, String> {
-    let wanted: Vec<String> = urls
+    let mut fetching = JoinSet::new();
+    for url in urls
         .into_iter()
         .filter(|url| url.starts_with(AVATAR_ORIGIN))
         .take(MAX_AVATARS)
-        .collect();
-    let fetched = join_all(wanted.into_iter().map(|url| async move {
-        if let Some(known) = cached_avatar(&url) {
-            return (url, Some(known));
+    {
+        fetching.spawn(async move {
+            if let Some(known) = cached_avatar(&url) {
+                return (url, Some(known));
+            }
+            let data = fetch_avatar(&url).await;
+            if let Some(data) = &data {
+                remember_avatar(&url, data.clone());
+            }
+            (url, data)
+        });
+    }
+    let mut found = HashMap::new();
+    while let Some(Ok((url, data))) = fetching.join_next().await {
+        if let Some(data) = data {
+            found.insert(url, data);
         }
-        let data = fetch_avatar(&url).await;
-        if let Some(data) = &data {
-            remember_avatar(&url, data.clone());
-        }
-        (url, data)
-    }))
-    .await;
-    fetched
-        .into_iter()
-        .filter_map(|(url, data)| data.map(|data| (url, data)))
-        .collect()
+    }
+    found
 }
 
 fn avatar_cache() -> &'static Mutex<HashMap<String, String>> {
@@ -442,7 +445,7 @@ mod tests {
     #[test]
     #[ignore = "requires network access"]
     fn release_avatars_reads_github() {
-        crate::install_tls_crypto();
+        let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
         let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
         let urls = vec![
             "https://avatars.githubusercontent.com/u/95223229?v=4".to_owned(),
@@ -460,11 +463,11 @@ mod tests {
     }
 
     // Network check, excluded from the normal suite. Run with
-    // `cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored release_notes_reads_github`.
+    // `cargo test -p sikemux-core --lib -- --ignored release_notes_reads_github`.
     #[test]
     #[ignore = "requires network access"]
     fn release_notes_reads_github() {
-        crate::install_tls_crypto();
+        let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
         let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
         let notes = runtime
             .block_on(release_notes("0.4.0-nightly.10".into()))

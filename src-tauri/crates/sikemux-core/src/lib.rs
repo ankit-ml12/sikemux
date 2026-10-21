@@ -29,6 +29,7 @@ pub use sikemux_wire::grid;
 pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;
+pub mod releases;
 #[cfg(unix)]
 pub use sikemux_client::device;
 #[cfg(unix)]

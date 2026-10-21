@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use sikemux_pty::user_shell::configured_shell;
 use tauri::async_runtime::spawn_blocking;
 
 use crate::{
@@ -17,36 +16,6 @@ pub use sikemux_host::environment::{child_path, user_environment};
 
 pub fn user_home() -> PathBuf {
     sikemux_process::paths::home().unwrap_or_default()
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IntegrationHealth {
-    shell: String,
-    git: bool,
-    aws: bool,
-    rnd: bool,
-}
-
-#[tauri::command]
-pub async fn integration_health() -> IntegrationHealth {
-    spawn_blocking(read_integration_health)
-        .await
-        .unwrap_or_else(|_| IntegrationHealth {
-            shell: configured_shell(),
-            git: false,
-            aws: false,
-            rnd: false,
-        })
-}
-
-fn read_integration_health() -> IntegrationHealth {
-    IntegrationHealth {
-        shell: configured_shell(),
-        git: sikemux_process::user_environment::find_executable("git").is_some(),
-        aws: sikemux_process::user_environment::find_executable("aws").is_some(),
-        rnd: sikemux_process::user_environment::find_executable("rnd").is_some(),
-    }
 }
 
 /// Existing modules use HOME for established ~/.config, ~/.ssh and ~/.aws

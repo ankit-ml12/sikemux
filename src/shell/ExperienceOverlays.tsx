@@ -20,7 +20,7 @@ import { useOccludeNativeViews } from "../state/nativeViews";
 import { copyText } from "../lib/clipboard";
 import { errorText } from "../lib/format";
 import { swallow } from "../state/toast";
-import { integrationHealth } from "../api/system";
+import { hostTools } from "../api/system";
 
 /** Real first moves. Picking one closes the welcome and runs the action. */
 const WELCOME_MOVES = [
@@ -107,11 +107,11 @@ export function Onboarding() {
         if (!open) return;
         let disposed = false;
         setGitMissing(false);
-        void integrationHealth()
+        void hostTools()
             .then((value) => {
                 if (!disposed) setGitMissing(!value.git);
             })
-            .catch(swallow("read integration health"));
+            .catch(swallow("read the host's tools"));
         return () => {
             disposed = true;
         };

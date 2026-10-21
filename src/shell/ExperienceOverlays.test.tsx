@@ -44,7 +44,9 @@ function expectPersistedComplete() {
 
 beforeEach(() => {
     invoke.mockReset();
-    invoke.mockImplementation(async (command: string) => (command === "integration_health" ? health : undefined));
+    invoke.mockImplementation(async (command: string, args?: { method?: string }) =>
+        command === "core_call" && args?.method === "hostTools" ? health : undefined,
+    );
     resetPersistenceForTests();
     setState(initial, true);
     setState({ onboardingOpen: false, preferences: testPreferences({ onboardingComplete: false }) });
@@ -161,11 +163,13 @@ describe("Onboarding", () => {
 
     it("warns only when git is missing", async () => {
         openOnboarding();
-        await waitFor(() => expect(invoke).toHaveBeenCalledWith("integration_health"));
+        await waitFor(() => expect(invoke).toHaveBeenCalledWith("core_call", { method: "hostTools", params: null }));
         expect(screen.queryByText(/git not found/)).not.toBeInTheDocument();
 
         cleanup();
-        invoke.mockImplementation(async (command: string) => (command === "integration_health" ? { git: false } : undefined));
+        invoke.mockImplementation(async (command: string, args?: { method?: string }) =>
+            command === "core_call" && args?.method === "hostTools" ? { git: false } : undefined,
+        );
         openOnboarding();
         expect(await screen.findByText("git not found: the Git view needs it")).toBeInTheDocument();
     });

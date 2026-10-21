@@ -415,6 +415,9 @@ calls! { core, client, params;
     },
     "plugin": Person => answer(plugins::window_call(&core, parse(params)?).await),
     "pluginManifests": Person => answer(plugins::manifests()),
+    "releaseNotes": Watch => answer(super::about::release_notes(parse(params)?).await?),
+    "releaseAvatars": Watch => answer(super::about::release_avatars(parse(params)?).await),
+    "hostTools": Watch => answer(super::about::tools().await?),
     "showFiles": Watch => {
         super::open_files::show(&core, client.id, parse(params)?)?;
         answer(())

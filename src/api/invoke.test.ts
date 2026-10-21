@@ -164,13 +164,13 @@ describe("invokeCommand", () => {
         const firstRequestId = performanceTelemetry.snapshot().spans[0].metadata.requestId as number;
 
         performanceTelemetry.reset();
-        transport.register("integration_health", async () => null);
-        await invokeCommand<null>("integration_health");
+        transport.register("open_url", async () => null);
+        await invokeCommand<null>("open_url");
 
         const snapshot = performanceTelemetry.snapshot();
         expect(snapshot.spans[0].metadata.requestId).toBeGreaterThan(firstRequestId);
         expect(snapshot.spans[0].metadata).toEqual({
-            command: "integration_health",
+            command: "open_url",
             requestId: snapshot.spans[0].metadata.requestId,
             outcome: "success",
         });

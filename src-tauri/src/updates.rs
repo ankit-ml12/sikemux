@@ -8,7 +8,7 @@ use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
 use crate::error::{AppError, AppResult};
 use crate::observability::{global_observability, Metadata, ScalarValue, SpanContext, SpanOutcome};
-use crate::release_credits::{bundled_credits, ReleaseCredits};
+use sikemux_core::releases::{bundled_credits, ReleaseCredits};
 
 const STABLE_ENDPOINT: &str =
     "https://github.com/nodelike/sikemux/releases/latest/download/latest.json";

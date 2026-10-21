@@ -1,4 +1,4 @@
-import { invokeCommand as invoke } from "./invoke";
+import { coreCall } from "./core";
 import { isRecord } from "../lib/guards";
 
 export interface ReleaseContributor {
@@ -53,6 +53,6 @@ export function parseReleaseCredits(value: unknown): ReleaseCredits | null {
 }
 
 export const releasesApi = {
-    notes: (version: string) => invoke<ReleaseNotes>("release_notes", { version }),
-    avatars: (urls: string[]) => invoke<Record<string, string>>("release_avatars", { urls }),
+    notes: (version: string) => coreCall<ReleaseNotes>("releaseNotes", { version }),
+    avatars: (urls: string[]) => coreCall<Record<string, string>>("releaseAvatars", { urls }),
 };

@@ -30,7 +30,6 @@ mod plugins;
 mod preview;
 mod pty;
 mod relaunch;
-mod release_credits;
 mod remote;
 mod share;
 mod sim;
@@ -285,7 +284,6 @@ pub fn run() {
             system::boot_init,
             system::battery_status,
             system::runtime_diagnostics,
-            system::integration_health,
             observability::observability_ui_heartbeat,
             observability::observability_ui_activity,
             updates::update_check,
@@ -293,8 +291,6 @@ pub fn run() {
             pty::commands::update_blockers,
             pty::commands::update_force_core,
             usage::usage_report_active,
-            release_credits::release_avatars,
-            release_credits::release_notes,
             grammars::grammar_load,
             state::state_save,
             agents::executable::available_agents,

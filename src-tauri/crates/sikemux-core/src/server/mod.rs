@@ -1,3 +1,4 @@
+mod about;
 mod access;
 mod account;
 mod activity;
