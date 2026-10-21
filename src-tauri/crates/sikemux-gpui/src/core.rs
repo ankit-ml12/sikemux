@@ -12,7 +12,8 @@ use sikemux_wire::grid::{
     decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
 };
 use sikemux_wire::protocol::{
-    ChatAttachment, ChatContext, ChatMark, DeviceView, Event, Request, SessionId, StreamId,
+    ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event, RemoteStatus, Request,
+    SessionId, StreamId,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -28,6 +29,8 @@ pub enum Update {
     Lost(String),
     /// The core stopped everything it ran, as the person asked, so the app can quit.
     ShutDown,
+    /// Where remote access stands, whenever it changes.
+    Remote(Box<RemoteStatus>),
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
     /// The core said something under a followed topic moved; no paths means anything may have.
@@ -165,6 +168,18 @@ pub enum Ask {
     },
     /// Stops every agent and terminal the core runs.
     Shutdown,
+    Remote(RemoteAsk),
+}
+
+/// What the window asks of remote access, each answered with where it stands now.
+pub enum RemoteAsk {
+    Status,
+    Enable(bool),
+    Access {
+        device: String,
+        access: DeviceAccess,
+    },
+    Revoke(String),
 }
 
 pub enum ChatAsk {
@@ -362,6 +377,9 @@ async fn run(
                             Some(ClientEvent::Event(Event::DeviceView { view })) => {
                                 let _ = updates.send(Update::View(Box::new(view)));
                             }
+                            Some(ClientEvent::Event(Event::Remote { status })) => {
+                                let _ = updates.send(Update::Remote(Box::new(status)));
+                            }
                             Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
                                 let _ = updates.send(Update::Chat(agent_id, ChatNews::Changes { seq, changes }));
                             }
@@ -447,6 +465,21 @@ async fn run(
                             Some(Ask::Shutdown) => {
                                 let _ = client.shutdown(true).await;
                                 let _ = updates.send(Update::ShutDown);
+                            }
+                            Some(Ask::Remote(ask)) => {
+                                let (client, updates) = (client.clone(), updates.clone());
+                                tokio::spawn(async move {
+                                    let status = match ask {
+                                        RemoteAsk::Status => client.remote_status().await,
+                                        RemoteAsk::Enable(enabled) => client.set_remote_access(enabled).await,
+                                        RemoteAsk::Access { device, access } => client.set_device_access(device, access).await,
+                                        RemoteAsk::Revoke(device) => client.revoke_device(device).await,
+                                    };
+                                    let _ = updates.send(match status {
+                                        Ok(status) => Update::Remote(Box::new(status)),
+                                        Err(error) => Update::Refused("remote", error.to_string()),
+                                    });
+                                });
                             }
                             None => return,
                         },

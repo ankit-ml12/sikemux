@@ -76,6 +76,7 @@ const DRAWN = {
   linear: ["/src/plugins/linear/components/LinearMark.tsx", "LinearMark"],
   slack: ["/src/plugins/slack/components/SlackMark.tsx", "SlackMark"],
   vercel: ["/src/plugins/vercel/components/VercelMark.tsx", "VercelMark"],
+  "phone-qr": ["/src/settings/QrCode.tsx", "QrCode", { text: "https://sikemux.com/phone", label: "QR code for https://sikemux.com/phone" }],
   activity: [ICONS, "IconActivity"],
   book: [ICONS, "IconBook"],
   user: [ICONS, "IconUser"],

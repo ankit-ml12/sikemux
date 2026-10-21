@@ -158,6 +158,7 @@ icons!(
     Upload => "upload",
     User => "user",
     Vercel => "vercel",
+    PhoneQr => "phone-qr",
     Warning => "warning",
     Waterfall => "waterfall",
     Window => "window",

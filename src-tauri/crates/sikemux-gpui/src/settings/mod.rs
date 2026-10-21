@@ -4,7 +4,7 @@
 
 use std::time::{Duration, Instant};
 
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, AnyElement, App, AppContext, Context, Entity, InteractiveElement,
@@ -115,6 +115,8 @@ pub fn close(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
     bench.focus.focus(window, cx);
     cx.notify();
 }
+
+pub use pages::remote_moved;
 
 /// Sets one of the person's preferences in the core.
 pub(super) fn set(bench: &Workbench, key: &str, value: impl Into<Value>) {

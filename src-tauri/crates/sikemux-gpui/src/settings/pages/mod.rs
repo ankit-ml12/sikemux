@@ -12,6 +12,7 @@ mod activity;
 mod appearance;
 mod cli;
 mod cloud;
+mod devices;
 mod general;
 mod keybindings;
 mod plugins;
@@ -20,6 +21,7 @@ mod plugins;
 /// for them, and the fields being typed in.
 #[derive(Default)]
 pub struct State {
+    pub devices: Option<devices::Fields>,
     pub actions: Option<actions::Fields>,
     pub activity: Option<activity::Fields>,
     pub appearance: Option<appearance::Fields>,
@@ -59,7 +61,7 @@ pub fn sections(page: Page) -> &'static [&'static str] {
         ],
         Page::Actions => actions::SECTIONS,
         Page::Cli => cli::SECTIONS,
-        Page::Devices => &["Your account", "Remote access", "Phones"],
+        Page::Devices => devices::SECTIONS,
         Page::Cloud => cloud::SECTIONS,
         Page::Plugins => plugins::SECTIONS,
     }
@@ -81,10 +83,23 @@ pub fn render(
         Page::Activity => activity::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Appearance => appearance::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),
+        Page::Devices => devices::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cloud => cloud::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Plugins => plugins::render(bench, &lit, this, cx),
         Page::General => general::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Keybindings => keybindings::render(bench, &settings.pages, &lit, this, window, cx),
         _ => Vec::new(),
+    }
+}
+
+/// Lists the account's other hosts again while the Devices page shows them,
+/// since a change to remote access may have linked or dropped one.
+pub fn remote_moved(bench: &Workbench, cx: &mut Context<Workbench>) {
+    let shown = bench
+        .settings
+        .as_ref()
+        .is_some_and(|settings| settings.pages.devices.is_some());
+    if shown {
+        devices::read_links(bench, cx);
     }
 }

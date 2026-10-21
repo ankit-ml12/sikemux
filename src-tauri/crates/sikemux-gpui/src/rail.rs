@@ -4,11 +4,11 @@ use gpui_kit::base::Popover;
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement,
+    div, px, Anchor, AnyElement, App, Context, Div, FontWeight, InteractiveElement, IntoElement,
     ParentElement, SharedString, StatefulInteractiveElement, Styled,
 };
 use serde_json::Value;
-use sikemux_wire::protocol::{PaneKind, ProjectInfo};
+use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
 
 use crate::icons::Icon;
 use crate::keymap;
@@ -560,28 +560,8 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .clone()
         .or_else(|| account.email.clone())
         .unwrap_or_else(|| "Signed in".into());
-    let initials = initials(account.name.as_deref(), account.email.as_deref());
     let row = Row::new("account", who)
-        .mark(
-            24.,
-            div()
-                .size(px(24.))
-                .rounded_full()
-                .border_1()
-                .border_color(t.border)
-                .bg(t.surface_raised)
-                .overflow_hidden()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(9.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(t.text_secondary)
-                .map(|face| match bench.picture() {
-                    Some(picture) => face.child(gpui_kit::img(picture).size_full()),
-                    None => face.child(initials),
-                }),
-        )
+        .mark(24., avatar(bench, account, 24., &t))
         .when_some(
             account.name.as_ref().and(account.email.clone()),
             |row, email| row.subtitle(ui::meta(email, cx)),
@@ -620,6 +600,29 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                 .on_click(|_, window, cx| keymap::dispatch("settings.toggle", window, cx)),
         )
         .into_any_element()
+}
+
+/// The account's picture in a circle, else its initials.
+pub(crate) fn avatar(bench: &Workbench, account: &AccountInfo, size: f32, t: &Tokens) -> Div {
+    let initials = initials(account.name.as_deref(), account.email.as_deref());
+    div()
+        .size(px(size))
+        .flex_none()
+        .rounded_full()
+        .border_1()
+        .border_color(t.border)
+        .bg(t.surface_raised)
+        .overflow_hidden()
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(size * 0.375))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(t.text_secondary)
+        .map(|face| match bench.picture() {
+            Some(picture) => face.child(gpui_kit::img(picture).size_full()),
+            None => face.child(initials),
+        })
 }
 
 /// The first letters of the first and last words of the name, else the email's first.

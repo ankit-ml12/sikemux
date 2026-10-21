@@ -16,7 +16,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
-    Preferences, ProjectInfo, ProjectLayout, RecentInfo, SessionInfo, SpaceInfo, Tab,
+    Preferences, ProjectInfo, ProjectLayout, RecentInfo, RemoteStatus, SessionInfo, SpaceInfo, Tab,
 };
 use tokio::sync::mpsc;
 
@@ -53,6 +53,8 @@ pub struct Workbench {
     picture_hash: Option<String>,
     /// From asking the core to sign in until the browser is done or gives up.
     pub signing_in: bool,
+    /// Where remote access stands, once the core has said.
+    pub remote: Option<RemoteStatus>,
     pub all_projects: bool,
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
@@ -252,6 +254,7 @@ impl Workbench {
             picture: None,
             picture_hash: None,
             signing_in: false,
+            remote: None,
             all_projects: false,
             space: None,
             side_rail_open: true,
@@ -455,6 +458,11 @@ impl Workbench {
             }
             Update::Lost(reason) => self.lost = Some(reason),
             Update::ShutDown => return cx.quit(),
+            Update::Remote(status) => {
+                self.remote = Some(*status);
+                crate::settings::remote_moved(self, cx);
+                return self.parts.redraw(&self.parts.stage, cx);
+            }
             Update::Changed {
                 topic,
                 project,
