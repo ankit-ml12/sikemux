@@ -33,7 +33,6 @@ mod simulator;
 mod state;
 mod system;
 mod transparency;
-mod usage;
 mod voice;
 mod wallpaper;
 mod wheel;
@@ -289,7 +288,6 @@ pub fn run() {
             observability::observability_ui_activity,
             pty::commands::update_force_core,
             relaunch::update_restart,
-            usage::usage_report_active,
             grammars::grammar_load,
             state::state_save,
             fs::keep_dropped_paths,

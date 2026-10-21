@@ -49,7 +49,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "observability_ui_activity",
     "update_force_core",
     "update_restart",
-    "usage_report_active",
     "grammar_load",
     "state_save",
     "keep_dropped_paths",

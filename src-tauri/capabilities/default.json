@@ -66,7 +66,6 @@
     "allow-observability-ui-activity",
     "allow-update-force-core",
     "allow-update-restart",
-    "allow-usage-report-active",
     "allow-grammar-load",
     "allow-state-save",
     "allow-keep-dropped-paths",

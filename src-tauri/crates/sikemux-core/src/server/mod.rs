@@ -374,6 +374,8 @@ pub(crate) struct Core {
     pub(crate) spares: spare::Spares,
     pub(crate) updates: updates::Updates,
     pub(crate) remote_images: remote_image::RemoteImages,
+    /// Rings when a window opens, so the day's usage counts it at once.
+    pub(crate) usage_wake: Notify,
     pub(crate) tasks: tasks::Tasks,
     pub(crate) git_watches: crate::git::watch::Watches,
     /// Each project's branch chip, by project folder.
@@ -483,6 +485,7 @@ impl Core {
             spares: spare::Spares::default(),
             updates: updates::Updates::default(),
             remote_images: remote_image::RemoteImages::default(),
+            usage_wake: Notify::new(),
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
             git_chips: Default::default(),
@@ -1255,16 +1258,7 @@ pub(crate) async fn run_core(
         tokio::spawn(workspace::refresh_launchers(core.clone()));
         skill_library::watch_global(&core);
         account::start(&core);
-        if crate::usage::Install::Host.published() {
-            let host = host_info();
-            let core = core.clone();
-            tokio::spawn(crate::usage::report_host(
-                data_dir.to_owned(),
-                host.version,
-                host.channel,
-                move || core.remote.owner(),
-            ));
-        }
+        tokio::spawn(crate::usage::serve(core.clone(), data_dir.to_owned()));
     }
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;

@@ -5,7 +5,6 @@ import { whenIdle } from "./lib/idle";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { followUpdates, UPDATES_IN_APP } from "./api/updater";
-import { reportActive } from "./api/usage";
 import { TopBar } from "./shell/TopBar";
 import { SideRail } from "./rail/SideRail";
 import { TabRail } from "./rail/TabRail";
@@ -822,16 +821,6 @@ export default function App() {
     useEffect(() => onCoreChanged("git", onGitChanged), []);
 
     useEffect(() => (UPDATES_IN_APP ? followUpdates() : undefined), []);
-
-    useEffect(() => {
-        if (import.meta.env.DEV) return;
-        const firstReport = window.setTimeout(() => void reportActive(), 5000);
-        const poll = window.setInterval(() => void reportActive(), 60 * 60_000);
-        return () => {
-            window.clearTimeout(firstReport);
-            window.clearInterval(poll);
-        };
-    }, []);
 
     useEffect(() => {
         const clearTreeHover = () => {
