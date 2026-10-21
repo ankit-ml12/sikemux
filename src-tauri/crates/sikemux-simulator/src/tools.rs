@@ -768,7 +768,8 @@ async fn launch(
 }
 
 /// A newly installed app takes a few seconds to open the first time, longer than
-/// any screen change is waited for, so a launch waits until its process is in front.
+/// any screen change is waited for, so a launch waits until its process is in front
+/// and has drawn more than a blank launch screen.
 async fn wait_for_front(
     manager: &SimulatorManager,
     device: &Device,
@@ -778,12 +779,14 @@ async fn wait_for_front(
         if near_deadline() {
             return Ok(false);
         }
-        let front = manager
+        let reply = manager
             .request("tree", json!({ "udid": device.udid }))
             .await
-            .ok()
-            .and_then(|reply| frontmost_pid(&reply));
-        if front == Some(pid) {
+            .ok();
+        let drawn = reply.as_ref().is_some_and(|reply| {
+            frontmost_pid(reply) == Some(pid) && !launching(&elements_from(reply, None))
+        });
+        if drawn {
             return Ok(true);
         }
         pause(SETTLE_STEP).await?;
