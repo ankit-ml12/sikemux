@@ -129,6 +129,16 @@ export const schema = {
       type: "string",
       enum: ["sandbox", "production"],
     },
+    ApprovedHost: {
+      description: "The host a sign-in code belonged to, once approved.",
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        name: { type: "string" },
+      },
+      required: ["key", "name"],
+      additionalProperties: false,
+    },
     AppVersion: {
       description: "A semantic version, such as 0.5.0 or 0.6.0-nightly.3.",
       type: "string",
@@ -204,6 +214,14 @@ export const schema = {
         signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
       },
       required: ["key", "role", "name", "platform", "nonce", "signature"],
+      additionalProperties: false,
+    },
+    DeviceRename: {
+      description:
+        "What a device or host is called on the account, everywhere it is shown.",
+      type: "object",
+      properties: { name: { type: "string", minLength: 1, maxLength: 64 } },
+      required: ["name"],
       additionalProperties: false,
     },
     DeviceRole: {

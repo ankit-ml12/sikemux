@@ -768,10 +768,13 @@ async fn run_requests(
                 before,
                 turns,
             } => {
-                client.respond(
-                    request_id,
-                    chat::history(&core, &agent_id, &feed, before, turns),
-                );
+                tokio::spawn(async move {
+                    let reading = core.clone();
+                    let page =
+                        blocking(move || chat::history(&reading, &agent_id, &feed, before, turns))
+                            .await;
+                    client.respond(request_id, page);
+                });
             }
             Request::AcpDetach { agent_id } => {
                 chat::detach(&core, client.id, &agent_id);
@@ -1166,11 +1169,7 @@ pub(crate) async fn spawn(
                         .filter(|project| !project.is_empty())
                 });
                 if let Some(folder) = &folder {
-                    let agent_id = spawn
-                        .context
-                        .as_ref()
-                        .and_then(|context| context.agent_id.clone());
-                    give_agent_environment(&core, folder, agent_id.as_deref(), &mut spawn.env);
+                    give_agent_environment(&core, folder, &mut spawn.env);
                 }
                 let resumed = super::activity_log::resumed_by(&spawn);
                 let prepared = prepare_terminal(&launch, spawn)?;
@@ -1189,8 +1188,7 @@ pub(crate) async fn spawn(
                 prepared
             }
             SpawnTarget::Task { mut request } => {
-                let agent_id = request.agent_id.clone();
-                give_agent_environment(&core, &request.cwd, agent_id.as_deref(), &mut request.env);
+                give_agent_environment(&core, &request.cwd, &mut request.env);
                 prepare_task(&launch, request)?
             }
         };
@@ -1200,13 +1198,8 @@ pub(crate) async fn spawn(
     .await
 }
 
-fn give_agent_environment(
-    core: &Core,
-    folder: &str,
-    agent_id: Option<&str>,
-    env: &mut HashMap<String, String>,
-) {
-    let given = super::plugins::agent_environment(core, std::path::Path::new(folder), agent_id);
+fn give_agent_environment(core: &Core, folder: &str, env: &mut HashMap<String, String>) {
+    let given = super::plugins::agent_environment(core, std::path::Path::new(folder));
     for (key, value) in given {
         env.entry(key).or_insert(value);
     }

@@ -614,7 +614,6 @@ const WindowLayer = memo(function WindowLayer({
 }) {
     const editorPaneId = useStore((s) => editorPaneOf(win, s.editorViews));
     const editorView = useStore((s) => s.editorViews[editorPaneId]);
-    const splitState = useStore(useShallow((s) => ({ dirtyEditorPaths: s.dirtyEditorPaths, editorViews: s.editorViews })));
     usePluginDocumentsVersion();
     const editorViews = editorView ? { [editorPaneId]: editorView } : {};
     const active = activeTabRef(session, { [win.id]: win }, editorViews);
@@ -637,6 +636,8 @@ const WindowLayer = memo(function WindowLayer({
     const stackTitleList = useStore(useShallow((s) => stackPtyIds.map((id) => s.terminalTitles[id] ?? "")));
     const stackTitles = useMemo(() => Object.fromEntries(stackPtyIds.map((id, index) => [id, stackTitleList[index]])), [stackPtyIds, stackTitleList]);
     const leaves = useMemo(() => collectPanes(win.root), [win.root]);
+    /* Read as one flag per pane, so a file opened or edited in another window does not re-render this one. */
+    const separable = useStore(useShallow((s) => leaves.map((leaf) => paneToSeparate(win, s, leaf.id) !== null)));
     const zoomActive = live && zoomedPaneId != null;
 
     return (
@@ -661,12 +662,11 @@ const WindowLayer = memo(function WindowLayer({
                 const paneVisible = live && shown;
                 const paneActive = paneVisible && isActive;
                 const panePainted = painted && shown;
-                const canUnsplit =
-                    paneToSeparate(win, splitState, p.id) || (p.kind === "agent" && leaves.some((leaf) => paneToSeparate(win, splitState, leaf.id)));
+                const canUnsplit = separable[leaves.indexOf(p)] || (p.kind === "agent" && separable.includes(true));
                 return (
                     <div
                         key={p.id}
-                        className={`pane-cell${inStack.has(p.id) ? " in-stack" : ""}`}
+                        className={`pane-cell${inStack.has(p.id) ? " in-stack" : ""}${shown ? "" : " unshown"}`}
                         data-pane-cell={p.id}
                         style={{
                             ...cellPlacement(rect),

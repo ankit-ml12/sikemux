@@ -31,6 +31,7 @@ mod kept;
 mod launching;
 mod layout;
 mod lifecycle;
+mod load;
 mod local_peer;
 mod messages;
 mod model_providers;
@@ -1174,6 +1175,11 @@ pub(crate) async fn run_core(
             core.clone(),
             |core| &core.hosts.wake,
             hosts::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.hosts.relink,
+            hosts::account::relink,
         )),
         tokio::spawn(wake::serve(
             core.clone(),

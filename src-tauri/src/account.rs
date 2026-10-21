@@ -299,12 +299,12 @@ pub(crate) struct HostSignature {
 
 /// Calls the accounts API as this host, signed with the core's key, which
 /// the server takes until the host is taken off the account.
-async fn as_host<T: DeserializeOwned>(
+async fn host_request(
     core: &CoreClient,
     method: Method,
     path: &str,
     body: Option<&serde_json::Value>,
-) -> AppResult<T> {
+) -> AppResult<Response> {
     let body = match body {
         Some(body) => serde_json::to_vec(body)?,
         None => Vec::new(),
@@ -334,7 +334,59 @@ async fn as_host<T: DeserializeOwned>(
     if !response.status().is_success() {
         return Err(api_failure(response).await);
     }
-    Ok(response.json().await?)
+    Ok(response)
+}
+
+async fn as_host<T: DeserializeOwned>(
+    core: &CoreClient,
+    method: Method,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> AppResult<T> {
+    Ok(host_request(core, method, path, body).await?.json().await?)
+}
+
+/// Approves the sign-in code another host showed, for "Install Sikemux here",
+/// and answers with that host.
+pub(crate) async fn approve_host_code(
+    core: &CoreClient,
+    code: &str,
+) -> AppResult<sikemux_core::accounts::host::ApprovedHost> {
+    as_host(
+        core,
+        Method::POST,
+        &format!("/v1/host-sign-ins/{code}/approve-from-host"),
+        None,
+    )
+    .await
+}
+
+/// Renames a device or host on the account, which every device and host
+/// shows from then on.
+#[tauri::command]
+pub async fn account_rename_device(
+    manager: State<'_, PtyManager>,
+    key: String,
+    name: String,
+) -> AppResult<()> {
+    let core = manager.client().await?;
+    host_request(
+        &core,
+        Method::POST,
+        &format!("/v1/devices/{key}/name"),
+        Some(&serde_json::json!({ "name": name })),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Takes a device or host off the account, which revokes it on every host at
+/// once.
+#[tauri::command]
+pub async fn account_remove_device(manager: State<'_, PtyManager>, key: String) -> AppResult<()> {
+    let core = manager.client().await?;
+    host_request(&core, Method::DELETE, &format!("/v1/devices/{key}"), None).await?;
+    Ok(())
 }
 
 async fn account_profile(core: &CoreClient) -> AppResult<AccountProfile> {
@@ -421,64 +473,6 @@ pub async fn account_phones(manager: State<'_, PtyManager>) -> AppResult<Vec<Dev
     };
     let list: DeviceList = as_host(&core, Method::GET, "/v1/devices?role=client", None).await?;
     Ok(unpaired_phones(list.devices, &remote.devices))
-}
-
-/// The other hosts on the account that this one has not linked with, newest
-/// first.
-#[tauri::command]
-pub async fn account_hosts(manager: State<'_, PtyManager>) -> AppResult<Vec<Device>> {
-    let core = manager.client().await?;
-    let Some(remote) = owned(&core).await? else {
-        return Ok(Vec::new());
-    };
-    let list: DeviceList = as_host(&core, Method::GET, "/v1/devices?role=host", None).await?;
-    let own = remote.core_id;
-    let pairing = core
-        .call("pairing", serde_json::Value::Null)
-        .await
-        .map_err(core_error)?;
-    let linked: Vec<&str> = pairing["links"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|link| link["id"].as_str())
-        .collect();
-    Ok(list
-        .devices
-        .into_iter()
-        .filter(|device| device.role == DeviceRole::Host && device.key != own)
-        .filter(|device| !linked.contains(&device.key.as_str()))
-        .collect())
-}
-
-/// Links this host with `key`, another host on the account, with a ticket
-/// from the account, once the person there allows it. Answers with this
-/// host's devices and links.
-#[tauri::command]
-pub async fn account_link_host(
-    manager: State<'_, PtyManager>,
-    key: String,
-    name: String,
-    platform: String,
-) -> AppResult<serde_json::Value> {
-    let core = manager.client().await?;
-    let own = owned(&core)
-        .await?
-        .ok_or_else(|| AppError::Other("sign in to link this host with another".into()))?
-        .core_id;
-    let ticket: JoinTicket = as_host(
-        &core,
-        Method::POST,
-        &format!("/v1/devices/{own}/join"),
-        Some(&serde_json::json!({ "host": key })),
-    )
-    .await?;
-    core.call(
-        "linkHost",
-        serde_json::json!({ "ticket": ticket, "name": name, "platform": platform }),
-    )
-    .await
-    .map_err(core_error)
 }
 
 /// Adds this app to the account as a device of its own, added by this host,

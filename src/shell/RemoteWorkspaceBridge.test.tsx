@@ -21,6 +21,7 @@ function status(enabled: boolean): RemoteStatus {
         account: null,
         updateRequired: null,
         notifications: [],
+        requireApproval: false,
     };
 }
 

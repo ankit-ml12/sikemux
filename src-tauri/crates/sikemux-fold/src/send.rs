@@ -22,10 +22,11 @@ const ANSWER: Options = Options {
     html_images: false,
 };
 
-/// A client opening a chat is sent this much of its end and pages back
-/// through the rest. The byte bound only stops a run of huge tool calls.
-const TAIL_TURNS: usize = 50;
-const TAIL_BYTES: usize = 2 * 1024 * 1024;
+/// A client opening a chat is sent about a screen or two of its end, so it
+/// draws at once over a slow network, and pages back through the rest. A turn
+/// longer than that, such as one full of screenshots, is cut between its rows.
+pub const TAIL_TURNS: usize = 8;
+const TAIL_BYTES: usize = 256 * 1024;
 /// The most of a long chat the fold holds; older rows page back from the
 /// chat's events.
 const FOLD_BYTES: usize = 8 * 1024 * 1024;
@@ -384,25 +385,23 @@ impl Fold {
         let rows = &self.main.rows;
         let mut turns = 0;
         let mut bytes = 0;
-        let mut start = rows.len();
+        let mut start = None;
+        let mut piece = None;
         for (position, row) in rows.iter().enumerate().rev() {
             bytes += row_bytes(row);
-            if bytes > TAIL_BYTES && start < rows.len() {
+            if bytes > TAIL_BYTES && (start.is_some() || piece.is_some()) {
                 break;
             }
+            piece = Some(position);
             if starts_turn(rows, position) {
-                start = position;
+                start = Some(position);
                 turns += 1;
                 if turns >= TAIL_TURNS {
                     break;
                 }
             }
         }
-        if start == rows.len() {
-            0
-        } else {
-            start
-        }
+        start.or(piece).unwrap_or(0)
     }
 
     fn subagent_rows(&self, rows: &[&Row]) -> BTreeMap<String, Vec<ChatMessage>> {

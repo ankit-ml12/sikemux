@@ -12,6 +12,8 @@ import type { ChatChange, ChatMessage } from "./types";
 
 /** How many turns one trip back through a long chat brings from the host. */
 const PAGE_TURNS = 20;
+/* A chat nobody is looking at takes in what streamed this often instead of at once, and all of it the moment it shows. */
+const HIDDEN_FLUSH_MS = 1000;
 
 export type Recovery = { phase: "resuming" } | { phase: "failed"; detail: string | null };
 
@@ -46,12 +48,14 @@ function pendingRow({ messageId, text, paths, context, at }: Pending): ChatMessa
  */
 export function useAcpSession({
     active,
+    visible = active,
     agent,
     profile,
     cwd,
     onError,
 }: {
     active: boolean;
+    visible?: boolean;
     agent: Agent;
     profile?: ProviderProfile;
     cwd: string;
@@ -67,6 +71,9 @@ export function useAcpSession({
     /* The mode this app last set, until the core says what it is now. */
     const [setMode, setSetMode] = useState<string | null>(null);
     const feedRef = useRef<string | null>(null);
+    const flushRef = useRef<(() => void) | null>(null);
+    const visibleRef = useRef(visible);
+    visibleRef.current = visible;
     const agentRef = useRef(agent);
     agentRef.current = agent;
     const profileRef = useRef(profile);
@@ -113,6 +120,17 @@ export function useAcpSession({
         /* Changes the core sends before the attach answers wait, and those the answer already holds are dropped. */
         let mark: number | null = null;
         let early: { seq: number; changes: ChatChange[] }[] = [];
+        let queued: ChatChange[] = [];
+        let flushTimer: number | null = null;
+        const flush = () => {
+            if (flushTimer !== null) window.clearTimeout(flushTimer);
+            flushTimer = null;
+            if (queued.length === 0) return;
+            const changes = queued;
+            queued = [];
+            setHeld((chat) => applyChanges(chat, changes));
+        };
+        flushRef.current = flush;
 
         const handleEvent = (event: AcpEvent) => {
             if (!mounted || event.agentId !== agent.id) return;
@@ -122,6 +140,7 @@ export function useAcpSession({
                 return;
             }
             if (event.kind === "stopped") {
+                flush();
                 setHeld((chat) => ({ ...chat, connection: "stopped", running: false }));
                 return;
             }
@@ -132,7 +151,9 @@ export function useAcpSession({
                 return;
             }
             if (seq <= mark) return;
-            setHeld((chat) => applyChanges(chat, changes));
+            queued.push(...changes);
+            if (visibleRef.current) flush();
+            else if (flushTimer === null) flushTimer = window.setTimeout(flush, HIDDEN_FLUSH_MS);
         };
 
         const lifecycle = lifecycleRef.current
@@ -171,6 +192,8 @@ export function useAcpSession({
         lifecycleRef.current = lifecycle;
         return () => {
             mounted = false;
+            if (flushTimer !== null) window.clearTimeout(flushTimer);
+            flushRef.current = null;
             controller.abort();
             lifecycleRef.current = lifecycle;
         };
@@ -178,6 +201,10 @@ export function useAcpSession({
 
     useEffect(() => setSetMode(null), [held.sessionId]);
     const appliedMode = setMode ?? held.permissionMode;
+
+    useEffect(() => {
+        if (visible) flushRef.current?.();
+    }, [visible]);
 
     /* The agent's permission mode follows the person's setting while the chat is up and shown. */
     useEffect(() => {

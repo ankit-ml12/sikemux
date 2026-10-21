@@ -49,6 +49,7 @@ function status(pending: PendingDevice[] = []): RemoteStatus {
         account: null,
         updateRequired: null,
         notifications: [],
+        requireApproval: false,
     };
 }
 

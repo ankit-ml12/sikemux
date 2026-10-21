@@ -301,7 +301,6 @@ pub(super) async fn start_here(
                 provider: &lead.cli,
                 reports: true,
                 depth: lead.depth,
-                from_host: Some(host),
             },
             core.open_agents(),
         );
@@ -309,7 +308,6 @@ pub(super) async fn start_here(
     pin(core);
     core.hosts.team.add_tree(tree.clone());
     let plan = ForHost {
-        host: host.to_owned(),
         agent_id: params.agent_id.clone(),
         name: params.name.clone(),
         lead_id: lead.agent_id.clone(),

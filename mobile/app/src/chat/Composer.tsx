@@ -114,7 +114,7 @@ function PermissionDock({
           </View>
         ) : null}
       </View>
-      <ScrollView style={styles.dockCmd} contentContainerStyle={styles.dockCmdPad} nestedScrollEnabled>
+      <ScrollView style={styles.dockCmd} contentContainerStyle={styles.dockCmdPad} nestedScrollEnabled showsVerticalScrollIndicator={false}>
         <Text style={styles.dockCmdText} selectable>
           {run ? <Text style={{ color: colors.toolRun }}>$ </Text> : null}
           {asked(request.toolCall)}

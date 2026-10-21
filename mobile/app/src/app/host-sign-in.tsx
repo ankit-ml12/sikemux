@@ -93,7 +93,7 @@ export default function HostSignIn() {
     return (
       <Screen>
         <Nav back="Back" onBack={() => setStep({ kind: 'enter' })} />
-        <ScrollView contentContainerStyle={{ paddingBottom: bottom }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: bottom }} showsVerticalScrollIndicator={false}>
           <Prompt
             icon={host.platform === 'linux' ? 'desktop' : 'laptop'}
             title={`Add ${host.name} to your account?`}
@@ -150,7 +150,10 @@ export default function HostSignIn() {
   return (
     <Screen>
       <Nav back="Devices" />
-      <ScrollView contentContainerStyle={{ paddingBottom: bottom }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: bottom }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
         <Prompt
           icon="IconServer"
           title="Add a host with a code"

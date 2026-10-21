@@ -1247,6 +1247,11 @@ export interface RemoteStatus {
   updateRequired?: UpdateRequired;
   /** The phones that asked this host for notifications. */
   notifications?: PhoneNotifications[];
+  /**
+   * The person asked to allow each new device and host here, rather than
+   * let in whatever their account signed in (ADR 0018).
+   */
+  requireApproval?: boolean;
 }
 
 /** A device approved to reach this core from another machine. */
@@ -1343,8 +1348,6 @@ export interface LinkedHost {
   connected: boolean;
   /** Agents of teams this host shares with it. */
   agents: number;
-  /** Agents it started or messaged may use this host's sign-ins. */
-  signIns: boolean;
 }
 
 /** What happened to this host's network. */

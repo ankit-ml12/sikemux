@@ -524,25 +524,26 @@ async fn a_phone_is_sent_a_long_chat_s_last_turns_and_pages_back_to_its_start() 
         .view
         .older_before
         .expect("the phone is sent the chat's end, with more before it");
-    assert_eq!(shown.prompts(), turns(5..55));
+    let opened = shown.prompts();
+    assert!(!opened.is_empty() && opened.len() < 55, "{opened:?}");
+    assert_eq!(opened, turns(55 - opened.len()..55));
     assert_eq!(shown.view.rows[0].role, ChatRole::User);
 
-    let earlier = page(
-        client
-            .acp_history("agent-long".into(), mark.feed.clone(), before, 3)
-            .await
-            .expect("a watching phone reads the history"),
-    );
-    assert_eq!(prompts(&earlier.rows), turns(2..5));
-    let older = earlier.older_before.expect("there is more");
-    let earliest = page(
-        client
-            .acp_history("agent-long".into(), mark.feed.clone(), older, 3)
-            .await
-            .expect("history"),
-    );
-    assert_eq!(prompts(&earliest.rows), turns(0..2));
-    assert_eq!(earliest.older_before, None);
+    let mut paged = opened;
+    let mut older = Some(before);
+    while let Some(from) = older {
+        let earlier = page(
+            client
+                .acp_history("agent-long".into(), mark.feed.clone(), from, 3)
+                .await
+                .expect("a watching phone reads the history"),
+        );
+        let found = prompts(&earlier.rows);
+        assert_eq!(found.len(), 3.min(55 - paged.len()), "{found:?}");
+        paged.splice(0..0, found);
+        older = earlier.older_before;
+    }
+    assert_eq!(paged, turns(0..55));
 
     let mut taken = Folded::default();
     taken.attached(&app.acp_attach("agent-long".into()).await.expect("attach"));

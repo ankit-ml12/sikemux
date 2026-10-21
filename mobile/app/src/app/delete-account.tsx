@@ -65,7 +65,10 @@ export default function DeleteAccount() {
   return (
     <Screen>
       <Nav back="Back" onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={{ paddingBottom: bottom }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: bottom }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
         <Prompt
           icon="IconTrash"
           tone="danger"

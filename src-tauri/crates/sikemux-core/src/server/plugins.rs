@@ -108,19 +108,11 @@ fn plugins(plugin: &str) -> Result<&'static dyn Plugins, Failure> {
 }
 
 /// What the plugins set for an agent, terminal or task started in `cwd`,
-/// asked of the project that holds it. An agent a linked host is behind gets
-/// it only once the person allows that host.
-pub(crate) fn agent_environment(
-    core: &Core,
-    cwd: &Path,
-    agent_id: Option<&str>,
-) -> BTreeMap<String, String> {
+/// asked of the project that holds it.
+pub(crate) fn agent_environment(core: &Core, cwd: &Path) -> BTreeMap<String, String> {
     let Some(plugins) = PLUGINS.get() else {
         return BTreeMap::new();
     };
-    if agent_id.is_some_and(|agent_id| !super::hosts::sign_ins::allowed(core, agent_id)) {
-        return BTreeMap::new();
-    }
     let project = super::names::project_of(cwd, &core.workspaces.project_paths());
     plugins.agent_environment(Path::new(&project))
 }

@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
-import { AppState, Platform } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@clerk/expo';
 import { nativeApplicationVersion } from 'expo-application';
@@ -8,6 +8,7 @@ import type { Device } from '@protocol';
 import { liveUrl } from '@protocol/live';
 
 import { problem as problemOf } from '@/core/problem';
+import { alertFailure } from '@/ui/prompt';
 import { notifier } from '../../modules/notify';
 import { deviceIdentity } from '@/device/identity';
 import { hostsArrived } from '@/devices/arrivals';
@@ -15,7 +16,7 @@ import { joinShowing } from '@/devices/joining';
 import { pairedDevices } from '@/devices/paired';
 import { onNetworkChange } from '@/network/connectivity';
 import { syncPushToken } from '@/notify/token';
-import { accountHosts, registerPhone } from './api';
+import { accountDevice, accountHosts, registerPhone, removeAccountDevice, type TokenSource } from './api';
 import { apiUrl } from './config';
 import { farewellFor } from './farewell';
 import { signOutHere } from './leave';
@@ -128,6 +129,16 @@ export function useAccountStatus(): AccountStatus | undefined {
   );
 }
 
+/** Signing in is enough to reach every host, so a device that joins the account is shown, with one tap to take it off (ADR 0018). */
+async function askAboutNewDevice(token: TokenSource, key: string) {
+  const device = await accountDevice(token, key).catch(() => undefined);
+  if (!device) return;
+  Alert.alert('New device on your account', device.name, [
+    { text: 'Keep', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: () => void removeAccountDevice(token, key).catch(alertFailure("Couldn't remove it")) },
+  ]);
+}
+
 /** Tries adding this phone to the account again now, as the person asked. */
 export function retryRegistration() {
   running?.retryNow();
@@ -157,6 +168,7 @@ export function useAccountSequence() {
       app: { platform: Platform.OS === 'ios' ? 'ios' : 'android', version: nativeApplicationVersion ?? 'unknown' },
       cursor: savedCursor,
       hostsChanged,
+      deviceAdded: (key) => void askAboutNewDevice(() => token(), key),
       ready: retryHosts,
       gone: (reason) => void leave(farewellFor(reason)),
     });

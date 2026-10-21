@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 
 use super::protocol::*;
 
+/// The host a sign-in code belonged to, once approved.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovedHost {
+    pub key: DeviceKey,
+    pub name: String,
+}
+
 /// What the host shows and keeps while its person approves it from a device already signed in.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +106,7 @@ pub struct PendingHost {
 pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
     use super::through;
     Some(match name {
+        "ApprovedHost" => through::<ApprovedHost>(json),
         "HostSignIn" => through::<HostSignIn>(json),
         "HostSignInCode" => through::<HostSignInCode>(json),
         "HostSignInFinish" => through::<HostSignInFinish>(json),

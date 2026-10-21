@@ -103,6 +103,7 @@ pub(crate) fn report_all_exited(streams: &StreamTable) {
 
 impl EventSink for AppSink {
     fn grid(&self, stream: StreamId, frame: &[u8]) {
+        crate::hosts::install::screen_changed();
         let observer = global_observability();
         // Every observability call allocates a name and takes one global lock,
         // and this runs for every frame of every terminal. Instrument a
@@ -143,6 +144,7 @@ impl EventSink for AppSink {
                 signal,
                 killed,
             } => {
+                crate::hosts::install::ended(id);
                 self.emit(
                     PTY_EXITED_EVENT,
                     PtyExited {
@@ -175,6 +177,7 @@ impl EventSink for AppSink {
             Event::Remote { status } => {
                 crate::account::notice_remote(&self.app, &status);
                 crate::remote::follow_remote_access(&self.app, status.enabled);
+                crate::hosts::follow_links(&self.app);
                 self.emit("remote_status_changed", status);
             }
             Event::ChatBegun { .. } => {}
@@ -187,6 +190,22 @@ impl EventSink for AppSink {
                 "agent_notice",
                 serde_json::json!({ "title": title, "body": body, "agentId": agent_id }),
             ),
+            Event::AccountDevice {
+                key,
+                name,
+                platform,
+            } => {
+                let own = self
+                    .app
+                    .try_state::<crate::hosts::Hosts>()
+                    .and_then(|hosts| hosts.own_key());
+                if own.as_deref() != Some(key.as_str()) {
+                    self.emit(
+                        "account_device",
+                        serde_json::json!({ "key": key, "name": name, "platform": platform }),
+                    );
+                }
+            }
             Event::FocusAgent { agent_id } => {
                 crate::agent_notification::focus_agent(&self.app, agent_id)
             }

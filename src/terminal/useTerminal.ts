@@ -139,7 +139,8 @@ export function useTerminal(opts: {
             restartTimer = window.setTimeout(() => {
                 restartTimer = null;
                 delete host.dataset.terminalOutput;
-                startNow();
+                // A hidden terminal whose start keeps failing would otherwise retry off screen; showing it boots it.
+                if (visibleRef.current) startNow();
             }, decision.delayMs);
         };
 

@@ -7,6 +7,7 @@
 //! host's slot in the high bits and its session id below, so every id the page
 //! keys by stays unique and this host's own sessions keep their ids.
 
+pub(crate) mod install;
 mod sink;
 
 use std::collections::BTreeMap;
@@ -79,8 +80,8 @@ pub(crate) fn core_session(id: SessionId) -> SessionId {
 pub(crate) enum Reach {
     Connecting,
     Connected,
-    /// The host forgot this app; it has to be joined again.
-    Unpaired,
+    /// The last try to reach it failed; the app keeps trying.
+    Away,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -100,6 +101,10 @@ struct Saved {
 struct HostsFile {
     hosts: Vec<Saved>,
     slots: BTreeMap<String, u64>,
+    /// The SSH host each host was installed on from here, by its key, so the
+    /// rail shows them as one.
+    #[serde(default)]
+    ssh: BTreeMap<String, String>,
 }
 
 /// A host as the page lists it.
@@ -110,10 +115,14 @@ pub(crate) struct HostEntry {
     name: String,
     platform: String,
     reach: Reach,
+    /// The SSH host it was installed on from here.
+    ssh: Option<String>,
 }
 
 pub(crate) struct Host {
     saved: Saved,
+    /// What this host is linked under now, which the person may change.
+    name: Mutex<String>,
     key: PublicKey,
     pub(crate) streams: Arc<StreamTable>,
     client: watch::Sender<Option<Arc<CoreClient>>>,
@@ -128,16 +137,38 @@ impl Host {
         &self.saved.id
     }
 
+    /// Takes the name the host is linked under, answering whether it changed.
+    fn renamed(&self, name: &str) -> bool {
+        let mut current = self.name.locked();
+        let changed = *current != name;
+        if changed {
+            name.clone_into(&mut current);
+        }
+        changed
+    }
+
     pub(crate) fn page_id(&self, id: SessionId) -> SessionId {
         page_id(self.saved.slot, id)
+    }
+
+    fn name(&self) -> String {
+        self.name.locked().clone()
+    }
+
+    fn saved(&self) -> Saved {
+        Saved {
+            name: self.name(),
+            ..self.saved.clone()
+        }
     }
 
     fn entry(&self) -> HostEntry {
         HostEntry {
             id: self.saved.id.clone(),
-            name: self.saved.name.clone(),
+            name: self.name(),
             platform: self.saved.platform.clone(),
             reach: *self.reach.locked(),
+            ssh: None,
         }
     }
 
@@ -160,7 +191,7 @@ impl Host {
                 {
                     return Some(client);
                 }
-                if *self.reach.locked() == Reach::Unpaired || changes.changed().await.is_err() {
+                if self.forgotten.load(Ordering::Acquire) || changes.changed().await.is_err() {
                     return None;
                 }
             }
@@ -169,7 +200,7 @@ impl Host {
         reached
             .ok()
             .flatten()
-            .ok_or_else(|| AppError::Pty(format!("{} is out of reach right now", self.saved.name)))
+            .ok_or_else(|| AppError::Pty(format!("{} is out of reach right now", self.name())))
     }
 
     /// Keeps the host's view, with its sessions under the page's ids, and
@@ -189,7 +220,9 @@ pub struct Hosts {
     device: tokio::sync::OnceCell<Arc<Device>>,
     hosts: Mutex<Vec<Arc<Host>>>,
     slots: Mutex<BTreeMap<String, u64>>,
+    ssh: Mutex<BTreeMap<String, String>>,
     saving: Mutex<()>,
+    following: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone, Serialize)]
@@ -245,9 +278,16 @@ impl Hosts {
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
         *self.slots.locked() = file.slots;
+        *self.ssh.locked() = file.ssh;
         for saved in file.hosts {
             self.add(saved);
         }
+    }
+
+    /// The key this app is known by on the account, once it has gone on the
+    /// network.
+    pub(crate) fn own_key(&self) -> Option<String> {
+        self.device.get().map(|device| device.id())
     }
 
     fn app(&self) -> AppResult<&AppHandle> {
@@ -276,6 +316,7 @@ impl Hosts {
     fn add(&self, saved: Saved) -> Option<Arc<Host>> {
         let key = saved.id.parse().ok()?;
         let host = Arc::new(Host {
+            name: Mutex::new(saved.name.clone()),
             saved,
             key,
             streams: Arc::default(),
@@ -300,9 +341,10 @@ impl Hosts {
                 .hosts
                 .locked()
                 .iter()
-                .map(|host| host.saved.clone())
+                .map(|host| host.saved())
                 .collect(),
             slots: self.slots.locked().clone(),
+            ssh: self.ssh.locked().clone(),
         };
         if let Ok(bytes) = serde_json::to_vec_pretty(&saved) {
             if let Some(directory) = file.parent() {
@@ -313,11 +355,22 @@ impl Hosts {
     }
 
     pub(crate) fn entries(&self) -> Vec<HostEntry> {
+        let ssh = self.ssh.locked();
         self.hosts
             .locked()
             .iter()
-            .map(|host| host.entry())
+            .map(|host| HostEntry {
+                ssh: ssh.get(host.id()).cloned(),
+                ..host.entry()
+            })
             .collect()
+    }
+
+    /// Notes that the host with `key` was installed on the SSH host `alias`.
+    pub(crate) fn reached_by(&self, key: &str, alias: &str) {
+        self.ssh.locked().insert(key.to_owned(), alias.to_owned());
+        self.save();
+        self.changed();
     }
 
     fn changed(&self) {
@@ -404,14 +457,17 @@ async fn stay_connected(app: AppHandle, host: Arc<Host>) {
                 hosts.changed();
             }
             Err(ClientError::NotPaired) => {
-                *host.reach.locked() = Reach::Unpaired;
-                host.client.send_replace(None);
-                crate::pty::sink::report_all_exited(&host.streams);
+                forget(&hosts, &host);
+                hosts.save();
                 hosts.changed();
+                follow_links(&app);
                 return;
             }
             Err(error) => {
-                eprintln!("Sikemux could not reach {}: {error}", host.saved.name);
+                eprintln!("Sikemux could not reach {}: {error}", host.name());
+                if std::mem::replace(&mut *host.reach.locked(), Reach::Away) != Reach::Away {
+                    hosts.changed();
+                }
                 tokio::time::sleep(wait).await;
                 wait = (wait * 2).min(RETRY_MOST);
             }
@@ -425,63 +481,6 @@ pub fn hosts_list(hosts: State<'_, Hosts>) -> Vec<HostEntry> {
     hosts.entries()
 }
 
-/// Joins `id`, another host on the account, as a device of this app's own,
-/// once the person there allows it, and stays connected to it.
-#[tauri::command]
-pub async fn host_join(
-    hosts: State<'_, Hosts>,
-    manager: State<'_, PtyManager>,
-    id: String,
-    name: String,
-    platform: String,
-) -> AppResult<HostEntry> {
-    let key: PublicKey = id
-        .parse()
-        .map_err(|_| AppError::BadArg("a host is named by its key"))?;
-    let device = hosts.device().await?;
-    let core = manager.client().await?;
-    let ticket: JoinTicket = crate::account::app_join_ticket(&core, &device, &id).await?;
-    let hello = JoinHello {
-        ticket,
-        name: String::new(),
-        platform: serde_json::to_value(Platform::Macos)?
-            .as_str()
-            .unwrap_or_default()
-            .to_owned(),
-    };
-    match device
-        .join(key, &hello)
-        .await
-        .map_err(|error| AppError::Other(error.to_string()))?
-    {
-        JoinReply::Allowed { .. } => {}
-        JoinReply::Denied => return Err(AppError::Other(format!("{name} did not allow this app"))),
-        JoinReply::Refused { reason } => {
-            return Err(AppError::Other(format!(
-                "{name} would not take this app's ticket ({reason})"
-            )))
-        }
-    }
-    if let Ok(known) = hosts.by_id(&id) {
-        if *known.reach.locked() != Reach::Unpaired {
-            return Ok(known.entry());
-        }
-        forget(&hosts, &known);
-    }
-    let saved = Saved {
-        slot: hosts.slot_for(&id)?,
-        id,
-        name,
-        platform,
-    };
-    let host = hosts
-        .add(saved)
-        .ok_or_else(|| AppError::Other("hosts are not set up yet".into()))?;
-    hosts.save();
-    hosts.changed();
-    Ok(host.entry())
-}
-
 fn forget(hosts: &Hosts, host: &Arc<Host>) {
     host.forgotten.store(true, Ordering::Release);
     hosts.hosts.locked().retain(|kept| !Arc::ptr_eq(kept, host));
@@ -489,17 +488,113 @@ fn forget(hosts: &Hosts, host: &Arc<Host>) {
     host.client.send_replace(None);
 }
 
-/// Takes this app off `id`, which forgets it, and stops reaching it.
-#[tauri::command]
-pub async fn host_leave(hosts: State<'_, Hosts>, id: String) -> AppResult<()> {
-    let host = hosts.by_id(&id)?;
-    if let Some(client) = host.current() {
-        let _ = client.unpair().await;
+/// A host this one is linked with, as the core lists it.
+#[derive(Deserialize)]
+struct Linked {
+    id: String,
+    name: String,
+    platform: String,
+}
+
+/// Joins every host this host is linked with, which is every other host on
+/// the account (ADR 0018), and lets go of those it no longer is.
+pub(crate) fn follow_links(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let (Some(hosts), Some(manager)) =
+            (app.try_state::<Hosts>(), app.try_state::<PtyManager>())
+        else {
+            return;
+        };
+        if let Err(error) = hosts.follow(&manager).await {
+            eprintln!("Sikemux could not reach the account's other hosts: {error}");
+        }
+    });
+}
+
+impl Hosts {
+    async fn follow(&self, manager: &PtyManager) -> AppResult<()> {
+        let _one_at_a_time = self.following.lock().await;
+        let core = manager.client().await?;
+        let pairing = core
+            .call("pairing", serde_json::Value::Null)
+            .await
+            .map_err(core_error)?;
+        let links: Vec<Linked> = serde_json::from_value(pairing["links"].clone())?;
+        let gone: Vec<Arc<Host>> = self
+            .hosts
+            .locked()
+            .iter()
+            .filter(|host| !links.iter().any(|link| link.id == host.saved.id))
+            .cloned()
+            .collect();
+        for host in &gone {
+            forget(self, host);
+        }
+        let mut joined = !gone.is_empty();
+        for link in links {
+            if let Ok(known) = self.by_id(&link.id) {
+                if known.renamed(&link.name) {
+                    joined = true;
+                }
+                continue;
+            }
+            match self.join(&core, link).await {
+                Ok(()) => joined = true,
+                Err(error) => eprintln!("Sikemux could not join another host: {error}"),
+            }
+        }
+        if joined {
+            self.save();
+            self.changed();
+        }
+        Ok(())
     }
-    forget(&hosts, &host);
-    hosts.save();
-    hosts.changed();
-    Ok(())
+
+    /// Joins the linked host as a device of this app's own, with a ticket
+    /// the account gives this host for it.
+    async fn join(&self, core: &CoreClient, link: Linked) -> AppResult<()> {
+        let key: PublicKey = link
+            .id
+            .parse()
+            .map_err(|_| AppError::BadArg("a host is named by its key"))?;
+        let device = self.device().await?;
+        let ticket: JoinTicket = crate::account::app_join_ticket(core, &device, &link.id).await?;
+        let hello = JoinHello {
+            ticket,
+            name: String::new(),
+            platform: serde_json::to_value(Platform::Macos)?
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        };
+        match device
+            .join(key, &hello)
+            .await
+            .map_err(|error| AppError::Other(error.to_string()))?
+        {
+            JoinReply::Allowed { .. } => {}
+            JoinReply::Denied => {
+                return Err(AppError::Other(format!(
+                    "{} did not allow this app",
+                    link.name
+                )))
+            }
+            JoinReply::Refused { reason } => {
+                return Err(AppError::Other(format!(
+                    "{} would not take this app's ticket ({reason})",
+                    link.name
+                )))
+            }
+        }
+        self.add(Saved {
+            slot: self.slot_for(&link.id)?,
+            id: link.id,
+            name: link.name,
+            platform: link.platform,
+        });
+        Ok(())
+    }
 }
 
 /// The sessions `id` listed last, waiting a while for a host that is

@@ -5,6 +5,7 @@ import {
     useContext,
     useEffect,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
     type MouseEvent as ReactMouseEvent,
@@ -17,8 +18,8 @@ import { keybindingLabelForAction, type KeybindingActionId } from "../commands/k
 import type { Agent, Session, SessionKind, Window } from "../state/types";
 import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
-import type { AgentRollup } from "../api/generated/wire";
 import { getState, useStore } from "../state/store";
+import { useShallow } from "zustand/react/shallow";
 import { AgentFace } from "../buddies/Buddy";
 import { IconAgent, IconClose, IconFolder, IconMove, IconPencil, IconPlus, IconServer, IconSettings, IconTerminal, WindowIcon } from "../ui/Icons";
 import { useHostRepo } from "../codehost/project";
@@ -49,6 +50,8 @@ import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 import { HostLabel } from "./RemoteRows";
+import { HostRows } from "./HostsGroup";
+import { chosenHostOf } from "../hosts/hosts";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
 const LINE_ICON_SIZE = 13;
@@ -128,10 +131,6 @@ function projectRects(): Map<string, DOMRect> {
  */
 interface RailContextValue {
     activeSessionId: string;
-    windowsById: Record<string, Window>;
-    windowsBySession: Record<string, string[]>;
-    agentsById: Record<string, Agent>;
-    projectStatus: Record<string, AgentRollup>;
     draggingProjectId: string | null;
     projectDragClass: (id: string) => string;
     onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
@@ -228,9 +227,10 @@ function useProjectUnfold(tree: RefObject<HTMLDivElement | null>, active: boolea
     }, [active, tree]);
 }
 
-function ProjectBlock({ s }: { s: Session }) {
+/* Each project reads only its own windows, agents and their states, so one agent changing state re-renders its own project and not the rail. */
+const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
     const rail = useRail();
-    const { activeSessionId, agentsById, projectStatus, windowsById, windowsBySession, draggingProjectId, kb } = rail;
+    const { activeSessionId, draggingProjectId, kb } = rail;
     const active = s.id === activeSessionId;
     // Active or not, a project is one tree root holding its row, so the row survives the switch and its tint cross-fades.
     const treeRef = useRef<HTMLDivElement>(null);
@@ -245,12 +245,11 @@ function ProjectBlock({ s }: { s: Session }) {
         }
         return null;
     });
-    const winIds = windowsBySession[s.id] ?? [];
-    const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
-    const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
-        .map((id) => agentsById[id])
-        .filter(Boolean);
-    const rollup = projectStatus[s.id];
+    const sessionWindows = useStore(
+        useShallow((st) => (st.windowsBySession[s.id] ?? []).flatMap((id): Window[] => (st.windows[id] ? [st.windows[id]] : []))),
+    );
+    const agents = useStore(useShallow((st) => agentIdsOf(st, s.id).flatMap((id): Agent[] => (st.agents[id] ? [st.agents[id]] : []))));
+    const rollup = useStore((st) => st.projectStatus[s.id]);
 
     const visibleAgents = agents.slice(0, MAX_BADGE_ICONS);
     const agentOverflow = agents.length - visibleAgents.length;
@@ -411,7 +410,7 @@ function ProjectBlock({ s }: { s: Session }) {
             </div>
         </div>
     );
-}
+});
 
 interface SubRow {
     key: string;
@@ -557,14 +556,11 @@ function Group({
 export const SideRail = memo(function SideRail() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const windowsById = useStore((s) => s.windows);
-    const windowsBySession = useStore((s) => s.windowsBySession);
-    const agentsById = useStore((s) => s.agents);
-    const projectStatus = useStore((s) => s.projectStatus);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
+    const hostChosen = useStore((s) => !!chosenHostOf(s));
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
-    const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
+    const activeSessionId = settingsOpen || hostChosen ? "" : rawActiveSessionId;
     const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
@@ -593,7 +589,7 @@ export const SideRail = memo(function SideRail() {
     const projects = shownProjects(allProjects, projectSpaces, activeSpaceId);
     const activeSpace = spaces.find((space) => space.id === activeSpaceId);
     const sshs = inGroup("ssh");
-    const commands = inGroup("command");
+    const commands = inGroup("command").filter((session) => !session.host);
     const plugins = inGroup("plugins");
     const enabledPlugins = useInstalledPlugins();
     // Every enabled plugin always has a row; its session is only made on the first click.
@@ -763,12 +759,6 @@ export const SideRail = memo(function SideRail() {
         cmd.selectSession(id);
     };
 
-    const projectDragClass = (id: string) => {
-        if (draggingProjectId === id) return " project-drag-source";
-        if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
-        return "";
-    };
-
     useEffect(() => () => endProjectDrag(), [endProjectDrag]);
 
     useLayoutEffect(() => {
@@ -787,20 +777,29 @@ export const SideRail = memo(function SideRail() {
             ? `translate3d(${ghostPoint.x - projectDragVisual.grabX}px, ${ghostPoint.y - projectDragVisual.grabY}px, 0)`
             : "translate3d(-100vw, -100vh, 0)";
 
-    const rail: RailContextValue = {
-        activeSessionId,
-        windowsById,
-        windowsBySession,
-        agentsById,
-        projectStatus,
-        draggingProjectId,
-        projectDragClass,
-        onProjectPointerDown,
-        selectProject,
-        openSpaceMenu: (event, session) => openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd])),
-        jumpToWindow,
-        kb,
-    };
+    /* The handlers change on every render; the rows reach them through this, so the context changes only with what the rows show. */
+    const handlers = useRef({ onProjectPointerDown, selectProject, openMenu, spaces, projectSpaces, jumpToWindow });
+    handlers.current = { onProjectPointerDown, selectProject, openMenu, spaces, projectSpaces, jumpToWindow };
+    const rail = useMemo<RailContextValue>(
+        () => ({
+            activeSessionId,
+            draggingProjectId,
+            projectDragClass: (id) => {
+                if (draggingProjectId === id) return " project-drag-source";
+                if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
+                return "";
+            },
+            onProjectPointerDown: (event, sourceId) => handlers.current.onProjectPointerDown(event, sourceId),
+            selectProject: (id) => handlers.current.selectProject(id),
+            openSpaceMenu: (event, session) => {
+                const { openMenu, spaces, projectSpaces } = handlers.current;
+                openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd]));
+            },
+            jumpToWindow: (sessionId, winId) => handlers.current.jumpToWindow(sessionId, winId),
+            kb: (id) => keybindingLabelForAction(keybindingOverrides, id),
+        }),
+        [activeSessionId, draggingProjectId, projectDrop, keybindingOverrides],
+    );
 
     return (
         <RailContext.Provider value={rail}>
@@ -817,14 +816,15 @@ export const SideRail = memo(function SideRail() {
                         toolbar={allProjects.length > 0 && <SpaceSwitch spaces={spaces} activeSpaceId={activeSpaceId} />}
                     />
                     <Group
-                        label="SSH"
+                        label="Hosts"
                         list={sshs}
+                        rows={<HostRows sshSessions={sshs} onMenu={openMenu} />}
                         add={() => cmd.openPicker("ssh")}
-                        addTitle={`Connect to SSH host — ${kb("ssh.open")}`}
+                        addTitle={`Find a host — ${kb("ssh.open")}`}
                         addKbd={kb("ssh.open")}
                         action={() => void cmd.openSshConfigEditor()}
                         actionTitle="Edit ~/.ssh/config"
-                        emptyText="no SSH hosts"
+                        emptyText="no hosts"
                     />
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />

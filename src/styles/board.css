@@ -411,34 +411,24 @@ button.board-lane-title:hover,
     gap: 6px;
 }
 
+/* One list edge to edge across the panel, a hairline between messages; only how one went carries colour. */
 .board-messages {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin: 0;
+    margin: 0 -12px;
     padding: 0;
+    border-top: 1px solid var(--border);
     list-style: none;
 }
 
 .board-message {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
+    gap: 3px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
     font-size: var(--text-xs);
-    color: var(--text-secondary);
-}
-
-.board-message.held {
-    border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
-    background: color-mix(in srgb, var(--warn) 7%, transparent);
-}
-
-.board-message.failed {
-    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-    background: color-mix(in srgb, var(--danger) 7%, transparent);
+    color: var(--text-tertiary);
 }
 
 .board-message-who {

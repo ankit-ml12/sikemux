@@ -1472,10 +1472,6 @@ async fn deliver_as(
             kind: letter.kind,
         }),
     };
-    core.names.reached_from(
-        &target.agent_id,
-        super::hosts::sign_ins::behind(core, &letter.from_id),
-    );
     let handed = handed(core, target, letter, &queued).await;
     let outcome = handed
         .as_ref()

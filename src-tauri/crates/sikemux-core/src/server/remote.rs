@@ -21,7 +21,8 @@ use tokio::task::JoinHandle;
 use crate::accounts::live::{self, Link, Push, Want};
 use crate::accounts::network;
 use crate::accounts::protocol::{
-    AccountEvent, AccountEventType, JoinTicket, LiveApp, Network, PushResult, Relay, RevokeReason,
+    AccountEvent, AccountEventType, DeviceRole, JoinTicket, LiveApp, Network, PushResult, Relay,
+    RevokeReason,
 };
 use crate::join::{self, Expected, Refusal, TrustedKeys, JOIN_ALPN};
 use crate::protocol::{
@@ -46,6 +47,8 @@ const NETWORK_REFRESH: Duration = Duration::from_secs(4 * 60 * 60);
 const NETWORK_RETRY: Duration = Duration::from_secs(5 * 60);
 const SIGNED_OUT: &str = "sign in to use Sikemux on your phone";
 const BOUND: &str = "this host belongs to another Sikemux account; to move it, sign in from Sikemux's app or run `sudo sikemux login`";
+/// How long after a device joins the account the person still hears of it.
+const NEW_DEVICE_NEWS_MS: u64 = 10 * 60_000;
 /// How far a signed request's time may be from now; the server allows the same.
 const HOST_REQUEST_SKEW_SECS: u64 = 60;
 
@@ -90,6 +93,10 @@ struct Stored {
     /// and reach agents here and the other way round.
     #[serde(default)]
     links: Vec<LinkedHost>,
+    /// The person asks to allow each new device and host, rather than let
+    /// in whatever their account signed in.
+    #[serde(default)]
+    require_approval: bool,
 }
 
 fn readable_or_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -115,9 +122,6 @@ pub(crate) struct LinkedHost {
     /// Where it was last reached directly, beside the relays.
     #[serde(default)]
     pub addresses: Vec<String>,
-    /// The person lets agents it started or messaged use this host's sign-ins.
-    #[serde(default)]
-    pub sign_ins: bool,
 }
 
 /// A chat this host shares, and the key its link holds.
@@ -172,6 +176,7 @@ impl Stored {
             links: Vec<LinkedHost>,
             shares: &'a [StoredShare],
             revoked: &'a BTreeMap<String, u64>,
+            require_approval: bool,
         }
         let trusted = Trusted {
             owner: &self.owner,
@@ -195,6 +200,7 @@ impl Stored {
                 .collect(),
             shares: &self.shares,
             revoked: &self.revoked,
+            require_approval: self.require_approval,
         };
         let digest = <sha2::Sha256 as sha2::Digest>::digest(serde_json::to_vec(&trusted)?);
         Ok(hex::encode(digest))
@@ -383,7 +389,29 @@ impl Remote {
             account: account_link(&inner),
             update_required: inner.update_required.clone(),
             notifications: notifications(&inner),
+            require_approval: inner.stored.require_approval,
         }
+    }
+
+    /// Whether a device or host with a good ticket waits for the person.
+    pub(crate) fn requires_approval(&self) -> bool {
+        self.inner.locked().stored.require_approval
+    }
+
+    /// Lets a device in at full access as the person, with no question: its
+    /// ticket shows it is signed in to this host's own account.
+    pub(super) fn admit(&self, device: &PendingDevice, account: String) -> CoreResult<()> {
+        self.add_device(
+            DeviceInfo {
+                id: device.device_id.clone(),
+                name: device.name.clone(),
+                platform: device.platform.clone(),
+                access: DeviceAccess::Full,
+                paired_at: epoch_ms(),
+                last_seen: None,
+            },
+            Some(account),
+        )
     }
 
     /// Keeps a paired phone's notification key and preferences, replacing
@@ -689,6 +717,23 @@ impl Remote {
             .cloned()
     }
 
+    /// Calls the linked hosts what the account calls them, answering whether
+    /// any name changed.
+    pub(crate) fn name_links(&self, names: &[(String, String)]) -> CoreResult<bool> {
+        self.change(|stored| {
+            let mut changed = false;
+            for link in &mut stored.links {
+                if let Some((_, name)) = names.iter().find(|(id, _)| *id == link.id) {
+                    if !name.is_empty() && link.name != *name {
+                        link.name.clone_from(name);
+                        changed = true;
+                    }
+                }
+            }
+            Ok(changed)
+        })
+    }
+
     /// Keeps a host this one is now linked with, replacing what it knew of it.
     pub(crate) fn add_link(&self, link: LinkedHost) -> CoreResult<()> {
         self.change(|stored| {
@@ -708,20 +753,6 @@ impl Remote {
         forgotten.unwrap_or_else(|error| {
             eprintln!("sikemux core: could not save forgetting a host: {error}");
             false
-        })
-    }
-
-    /// Lets agents a linked host started or messaged use this host's sign-ins,
-    /// or stops them.
-    pub(crate) fn set_link_sign_ins(&self, id: &str, allowed: bool) -> CoreResult<()> {
-        self.change(|stored| {
-            let link = stored
-                .links
-                .iter_mut()
-                .find(|link| link.id == id)
-                .ok_or_else(|| CoreError::from("that host is no longer linked"))?;
-            link.sign_ins = allowed;
-            Ok(())
         })
     }
 
@@ -780,7 +811,6 @@ impl Remote {
                 linked_at: epoch_ms(),
                 last_seen: Some(epoch_ms()),
                 addresses,
-                sign_ins: false,
             };
             if let Err(error) = self.add_link(added) {
                 let _ = pending.answer.send(None);
@@ -1430,6 +1460,9 @@ pub(crate) async fn set_owner(
         }
         Ok(stored.pending_leave.is_some())
     })?;
+    if core.remote.owner().is_none() {
+        unlink_all(core);
+    }
     if core.remote.is_enabled() {
         if let Err(error) = listen(core).await {
             eprintln!("sikemux core: remote access did not start: {error}");
@@ -1577,6 +1610,9 @@ impl live::Account for HostAccount {
         if changed {
             announce(&core);
         }
+        if link == Link::Live {
+            core.hosts.relink.now();
+        }
     }
 
     fn removed(&self, reason: Option<RevokeReason>) {
@@ -1660,6 +1696,23 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
             AccountEventType::AccountDeleted => {
                 released = Some(Some(RevokeReason::AccountDeleted));
             }
+            AccountEventType::DeviceChanged if event.role == Some(DeviceRole::Host) => {
+                core.hosts.relink.now();
+            }
+            AccountEventType::DeviceAdded => {
+                if event.role == Some(DeviceRole::Host) {
+                    core.hosts.relink.now();
+                }
+                // Events a host missed while offline come all at once; only a
+                // device that joined lately is news.
+                let lately = live::parse_rfc3339(&event.at)
+                    .is_some_and(|at| epoch_ms().saturating_sub(at) < NEW_DEVICE_NEWS_MS);
+                if let (true, Some(key), Some(core)) = (lately, &event.key, core.me.upgrade()) {
+                    if Some(key) != own.as_ref() {
+                        super::hosts::account::tell_joined(&core, key.clone());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1718,6 +1771,17 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
 
 /// The account no longer has this host: forget it, keep why until the person
 /// signs in again, and turn remote access off. Paired devices stay.
+/// A host off its account is linked with none of the account's hosts; it
+/// links with them again by itself once it signs in.
+fn unlink_all(core: &Core) {
+    let links = core
+        .remote
+        .change(|stored| Ok(std::mem::take(&mut stored.links)));
+    for link in links.unwrap_or_default() {
+        super::hosts::unlinked(core, &link.id, "this host left your account");
+    }
+}
+
 fn let_go(core: &Core, reason: Option<RevokeReason>) {
     let released = core.remote.change(|stored| {
         let asked = stored.pending_leave.is_some();
@@ -1746,6 +1810,7 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
             core.remote.bind(None)
         }
     });
+    unlink_all(core);
     if let Err(error) = released {
         eprintln!("sikemux core: could not save leaving the account: {error}");
     }
@@ -1808,6 +1873,25 @@ pub(crate) struct DeviceChange {
     id: String,
     /// None unpairs the device.
     access: Option<DeviceAccess>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApprovalSetting {
+    require_approval: bool,
+}
+
+/// Turns the lock of ADR 0018 on or off: whether each new device and host
+/// waits for the person rather than being let in on its account's word.
+pub(crate) fn set_require_approval(
+    core: &Core,
+    setting: ApprovalSetting,
+) -> CoreResult<RemoteStatus> {
+    core.remote.change(|stored| {
+        stored.require_approval = setting.require_approval;
+        Ok(())
+    })?;
+    Ok(announce(core))
 }
 
 pub(crate) fn change_device(core: &Core, change: DeviceChange) -> CoreResult<Pairing> {
@@ -1904,6 +1988,7 @@ mod tests {
             shares: Vec::new(),
             joined_through: BTreeMap::new(),
             links: Vec::new(),
+            require_approval: false,
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),

@@ -1171,6 +1171,10 @@ pub struct RemoteStatus {
     /// The phones that asked this host for notifications.
     #[serde(default)]
     pub notifications: Vec<PhoneNotifications>,
+    /// The person asked to allow each new device and host here, rather than
+    /// let in whatever their account signed in (ADR 0018).
+    #[serde(default)]
+    pub require_approval: bool,
 }
 
 /// What a phone wants to hear about from this host. The phone owns these
@@ -1496,6 +1500,13 @@ pub enum Event {
         title: String,
         body: String,
         agent_id: String,
+    },
+    /// A device or host joined the person's account, which the app's window
+    /// offers to remove (ADR 0018).
+    AccountDevice {
+        key: String,
+        name: String,
+        platform: String,
     },
     /// The program in a terminal set its title. Sent only to clients on this
     /// host; devices read it in their view.

@@ -560,12 +560,6 @@ async fn dispatch(
                 request.method.replace('.', "_")
             ));
         }
-        if uses_sign_ins(&request.method) {
-            let tool = tool_name(&request).unwrap_or_default().replace('.', "_");
-            if let Some(refusal) = super::hosts::sign_ins::refused(core, agent_id, &tool) {
-                return Err(refusal);
-            }
-        }
     }
     match request.method.as_str() {
         "task.read" => task_read(core, &request).await,
@@ -1297,12 +1291,6 @@ async fn output_appears(
         }
         tokio::time::sleep_until((Instant::now() + READY_POLL).min(until)).await;
     }
-}
-
-/// Tools that act through this host's sign-ins: plugin calls, and browser
-/// tabs, which hold the host browser's site sign-ins.
-fn uses_sign_ins(method: &str) -> bool {
-    method == "plugins.call" || is_browser_method(method)
 }
 
 /// A plugin tool is named by the agent's tool name, anything else by its

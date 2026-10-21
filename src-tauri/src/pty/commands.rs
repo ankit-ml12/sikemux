@@ -55,7 +55,7 @@ fn session_current(
     }
 }
 
-fn launch_identity(app: &AppHandle) -> LaunchIdentity {
+pub(crate) fn launch_identity(app: &AppHandle) -> LaunchIdentity {
     LaunchIdentity {
         version: app.package_info().version.to_string(),
         cli_executable: crate::cli_paths::cli_executable_path(),

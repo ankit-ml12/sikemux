@@ -11,6 +11,7 @@ import { problem as problemOf } from '@/core/problem';
 import type { ChatInfo } from '@/core/protocol';
 import type { ChatDelivery } from '@/devices/hub';
 import { Folds } from './folds';
+import type { ChatStore, Kept } from './kept';
 import { fitting, pathsOf, uploadEach, type Attachment } from './uploads';
 
 export type Attached = 'attaching' | 'live' | 'missing';
@@ -58,6 +59,22 @@ type Options = {
   now?: () => number;
   /** The contents of a file on this phone. */
   read?: (uri: string) => Promise<ArrayBuffer>;
+  /** Where the chat is kept between launches. */
+  store?: ChatStore;
+  /** Told how long each step of taking the chat up took, to measure it. */
+  timed?: (took: OpenTimes) => void;
+};
+
+/** In milliseconds, from when the phone began taking the chat up. */
+export type OpenTimes = {
+  /** Reading the chat as this phone last kept it, or null when it had not. */
+  restore: number | null;
+  woke: boolean;
+  answered: number;
+  answer: 'live' | 'resumed' | 'missing';
+  bytes: number;
+  applied: number;
+  drawn: number;
 };
 
 /** `sent` is taken by the host and not shown by it yet. */
@@ -140,13 +157,39 @@ export class ChatSession {
   private run = 0;
   private stopRun: (() => void) | undefined;
   private snap: ChatSnapshot;
+  private keptChat: ChatRows | undefined;
+  private restoreTook: number | null = null;
 
   constructor(
     readonly agentId: string,
     private readonly options: Options,
   ) {
     this.turnSince = this.now();
+    const reading = performance.now();
+    const kept = options.store?.load();
+    if (kept) {
+      this.restore(kept);
+      this.restoreTook = performance.now() - reading;
+    }
     this.snap = this.build();
+  }
+
+  /** Writes the chat down as drawn, unless it has not changed since it last was. */
+  keep = () => {
+    const store = this.options.store;
+    const mark = this.mark;
+    if (!store || !mark || this.chat === this.keptChat) return;
+    this.keptChat = this.chat;
+    store.save({ chat: this.chat, mark: { feed: mark.feed, seq: String(mark.seq) } });
+  };
+
+  /** Draws the chat as this phone last kept it; the first attach asks only for what came after. */
+  private restore(kept: Kept) {
+    this.chat = kept.chat;
+    this.keptChat = kept.chat;
+    this.mark = { feed: kept.mark.feed, seq: BigInt(kept.mark.seq) };
+    this.taken = this.mark.seq;
+    this.attached = 'live';
   }
 
   subscribe = (listener: () => void) => {
@@ -331,11 +374,11 @@ export class ChatSession {
     });
   };
 
-  /** Ends the chat's agent on the host. Answers whether it did. */
+  /** Ends the chat's agent on the host and closes it in every app. Answers whether it did. */
   stopChat = async (): Promise<boolean> => {
     let stopped = false;
     await this.ask(
-      (connection) => connection.stopChat(this.agentId),
+      (connection) => connection.call('closeChat', JSON.stringify({ agentId: this.agentId })),
       'Could not stop the chat',
       () => {
         stopped = true;
@@ -608,6 +651,7 @@ export class ChatSession {
     this.stopRun?.();
     this.stopRun = undefined;
     if (this.earlier === 'loading') this.earlier = 'idle';
+    this.keep();
   }
 
   private start() {
@@ -634,24 +678,45 @@ export class ChatSession {
       if (connection.isOpen()) connection.detachChat(agentId).catch(() => {});
     };
 
-    // A chat the host put to sleep starts again first; one already running answers at once.
-    connection
-      .wakeChat(agentId)
-      .then(() => connection.attachChat(agentId, this.mark))
+    const began = performance.now();
+    let woke = false;
+    const wakeAndAttach = () => {
+      woke = true;
+      return connection.wakeChat(agentId).then(() => connection.attachChat(agentId, this.mark));
+    };
+    // A chat the host says is up is taken up at once; one asleep, or gone since the host said so, is started first.
+    const attaching = this.hostUp
+      ? connection
+          .attachChat(agentId, this.mark)
+          .then((attachment) => (ChatAttachment.Missing.instanceOf(attachment) ? wakeAndAttach() : attachment))
+      : wakeAndAttach();
+    attaching
       .then((attachment) => {
         if (run !== this.run) return;
+        const answered = performance.now() - began;
+        const timed = (answer: OpenTimes['answer'], bytes: number) => {
+          const report = this.options.timed;
+          if (!report) return;
+          const applied = performance.now() - began;
+          (this.options.frame ?? animationFrame)(() =>
+            report({ restore: this.restoreTook, woke, answered, answer, bytes, applied, drawn: performance.now() - began }),
+          );
+        };
         if (ChatAttachment.Live.instanceOf(attachment)) {
           const view = JSON.parse(attachment.inner.viewJson) as ChatView;
           this.pending = [];
           this.apply(() => fromView(view));
           this.mark = attachment.inner.mark;
+          timed('live', attachment.inner.viewJson.length);
         } else if (ChatAttachment.Resumed.instanceOf(attachment)) {
           const changes = JSON.parse(attachment.inner.changesJson) as ChatChange[];
           this.apply((chat) => applyChanges(chat, changes));
           this.mark = attachment.inner.mark;
+          timed('resumed', attachment.inner.changesJson.length);
         } else {
           this.attached = 'missing';
           this.emit();
+          timed('missing', 0);
           return;
         }
         this.taken = this.mark.seq;

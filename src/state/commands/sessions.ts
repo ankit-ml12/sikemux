@@ -123,6 +123,7 @@ export function selectSession(id: string): void {
     mutate((d) => {
         if (!d.sessions[id]) return;
         d.activeSessionId = id;
+        d.chosenHost = null;
         d.zoomedPaneId = null;
         d.sessionSwitcher = null;
         d.pickerOpen = false;

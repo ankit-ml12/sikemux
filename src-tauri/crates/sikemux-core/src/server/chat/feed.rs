@@ -37,7 +37,7 @@ pub(crate) const MAX_REPLAY_EVENTS: usize = 20_000;
 /// Roughly what an event costs beyond its payload once it is on the wire.
 const EVENT_OVERHEAD: usize = 48;
 const MAX_PAGE_TURNS: usize = 100;
-const PAGE_BYTES: u64 = MAX_REPLAY_BYTES as u64;
+const PAGE_BYTES: u64 = 1024 * 1024;
 /// A turn longer than a page is cut into pieces about this long.
 const PIECE_BYTES: usize = 64 * 1024;
 /// Updates that set how the chat stands rather than say something in it. A
@@ -2535,8 +2535,9 @@ mod tests {
                 views.len()
             );
         };
-        assert_eq!(prompts(&view.rows), asks(10..60));
-        assert_eq!(view.older_before, Some(10 * 2));
+        let first = 60 - sikemux_fold::TAIL_TURNS;
+        assert_eq!(prompts(&view.rows), asks(first..60));
+        assert_eq!(view.older_before, Some(first as u64 * 2));
     }
 
     fn prompts(rows: &[sikemux_wire::chat::ChatMessage]) -> Vec<String> {
@@ -2570,13 +2571,16 @@ mod tests {
             turn(&mut inner.replay, n);
         }
         let opened = view(&mut inner);
-        assert_eq!(prompts(&opened.rows), asks(10..60));
-        assert_eq!(opened.older_before, Some(10 * 5));
+        let first = 60 - sikemux_fold::TAIL_TURNS;
+        assert_eq!(prompts(&opened.rows), asks(first..60));
+        assert_eq!(opened.older_before, Some(first as u64 * 5));
         drop(inner);
-        let page = feed.history(&feed.id, 10 * 5, 100).unwrap();
-        assert_eq!(prompts(&page.rows), asks(0..10));
+        let page = feed.history(&feed.id, first as u64 * 5, 100).unwrap();
+        assert_eq!(prompts(&page.rows), asks(0..first));
         assert_eq!(page.older_before, None);
-        assert!(feed.history("an earlier run", 10 * 5, 100).is_err());
+        assert!(feed
+            .history("an earlier run", first as u64 * 5, 100)
+            .is_err());
         let mut inner = feed.inner.lock().unwrap();
 
         let history = History::open(dir.path(), "trimmed", MAX_HISTORY_BYTES);

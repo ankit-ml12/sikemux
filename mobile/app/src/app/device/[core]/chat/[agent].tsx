@@ -265,6 +265,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                       <MaskedView style={styles.transcript} maskElement={<EdgeFades />}>
                         <FlashList
                           ref={list}
+                          showsVerticalScrollIndicator={false}
                           data={state.messages}
                           keyExtractor={(message) => message.id}
                           // Folded work draws nothing, so it is never recycled into a whole answer.

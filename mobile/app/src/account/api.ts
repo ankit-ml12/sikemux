@@ -91,6 +91,16 @@ export async function clearPushToken(token: TokenSource): Promise<void> {
 }
 
 /** The hosts signed in to the account. */
+/** The account's device or host with this key, if it is still on the account. */
+export async function accountDevice(token: TokenSource, key: string): Promise<Device | undefined> {
+  return (await api(token).listDevices({})).devices.find((device) => device.key === key);
+}
+
+/** Takes a device or host off the account, which revokes it on every host at once. */
+export async function removeAccountDevice(token: TokenSource, key: string): Promise<void> {
+  await api(token).removeDevice(key);
+}
+
 export async function accountHosts(token: TokenSource): Promise<Device[]> {
   return (await api(token).listDevices({ role: 'host' })).devices;
 }

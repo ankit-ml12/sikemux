@@ -14,8 +14,8 @@ One word for each idea, in the interface, docs and the core's messages.
 | host                      | Anything running the core: a server, a Mac mini, a laptop. "This host", never "this computer".                                 |
 | device                    | What the person holds to reach hosts: a phone, a laptop, a browser.                                                            |
 | app                       | The software on a device: the desktop app, phone app, web app and the notch.                                                   |
-| pair                      | A device joins a host, once the host's owner allows it.                                                                        |
-| link                      | Two hosts on one account work for each other ([ADR 0013](./0013-hosts-link-to-run-agents-for-each-other.md)).                  |
+| pair                      | A device on another account joins a host, once the host's owner allows it.                                                     |
+| link                      | Every host on one account works for the others ([ADR 0018](./0018-the-account-is-the-trust.md)).                               |
 | project, copy             | A git repository, shown once on every client; a checkout of it on one host ([ADR 0017](./0017-projects-belong-to-no-host.md)). |
 | you                       | Devices on the host's own account with full access, which act as the person. In code, "the person".                            |
 | full access               | Can run any command on the host as the person.                                                                                 |

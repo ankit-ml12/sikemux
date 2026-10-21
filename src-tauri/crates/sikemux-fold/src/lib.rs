@@ -25,6 +25,7 @@ use sikemux_wire::chat::{
 };
 
 pub use event::{ChatEvent, ChatEventKind};
+pub use send::TAIL_TURNS;
 
 /// The change a call made and what it printed, from everything said of it.
 pub fn detail_of(raw: &Map<String, Value>) -> ToolDetail {

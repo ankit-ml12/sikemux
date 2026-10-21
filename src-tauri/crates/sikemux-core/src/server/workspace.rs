@@ -1862,6 +1862,11 @@ pub(crate) fn close_agents(core: &Core, params: CloseAgentsParams) -> CoreResult
     close(core, &params.agent_ids)
 }
 
+/// Stops the agent and takes it out of the workspace, so every app closes it.
+pub(crate) fn close_agent(core: &Core, agent_id: String) -> CoreResult<()> {
+    close(core, &[agent_id])
+}
+
 pub(crate) fn close(core: &Core, agent_ids: &[String]) -> CoreResult<()> {
     let before = core.workspaces.agent_ids();
     core.workspaces.close_agents(agent_ids)?;
@@ -1883,11 +1888,7 @@ pub(crate) fn retitle(core: &Core, agent_id: &str, title: Option<String>, stand_
 
 /// Takes out of the workspace agents that have nothing left to show.
 pub(crate) fn close_gone(core: &Core, agent_ids: &[String]) {
-    let before = core.workspaces.agent_ids();
-    if core.workspaces.close_agents(agent_ids).is_ok() {
-        agents_closed(core, before);
-        core.view_changed();
-    }
+    let _ = close(core, agent_ids);
 }
 
 /// What follows agents leaving the workspace, however they left: their chats

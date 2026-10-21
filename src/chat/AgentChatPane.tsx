@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorText } from "../lib/format";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
@@ -43,7 +43,8 @@ const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
 const ProjectStrip = lazy(() => import("./ProjectStrip").then(({ ProjectStrip }) => ({ default: ProjectStrip })));
 
-export function AgentChatPane({
+/* Memoised so switching tabs, which renders every window of the project again, leaves each chat as it was. */
+export const AgentChatPane = memo(function AgentChatPane({
     agent,
     profile,
     cwd,
@@ -75,7 +76,7 @@ export function AgentChatPane({
         unshow,
         rewind,
         dismissError,
-    } = useAcpSession({ active, agent, profile, cwd, onError: setComposerError });
+    } = useAcpSession({ active, visible, agent, profile, cwd, onError: setComposerError });
     /* A pane out of sight keeps what it last drew, so its rows are not laid out again for nothing. */
     const displayStateRef = useRef(state);
     if (visible) displayStateRef.current = state;
@@ -469,4 +470,4 @@ export function AgentChatPane({
             </ChatAgentContext.Provider>
         </PathRootsProvider>
     );
-}
+});

@@ -241,6 +241,8 @@ export interface ViewState {
     hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
     /** What each of this host's projects is known by on every host, by project folder, as its core works it out. */
     projectIdentities: Readonly<Record<string, string>>;
+    /** The host chosen in the side rail, chosen only while the session it was chosen over is still in front. */
+    chosenHost: import("../hosts/hosts").ChosenHost | null;
 
     pendingUpdate: PendingUpdate | null;
     /** The chats a waiting update waits on before it installs. */
@@ -387,6 +389,7 @@ export const useStore = create<StoreState>(() => {
         hosts: [],
         hostViews: {},
         projectIdentities: {},
+        chosenHost: null,
         pendingUpdate: null,
         updateBlockers: [],
         lastUpdateCheck: null,

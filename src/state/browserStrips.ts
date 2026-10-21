@@ -19,6 +19,9 @@ export async function refreshBrowserStrip(agentId: string): Promise<void> {
         do {
             rereadWanted.set(agentId, false);
             const strip = await browserApi.snapshot(agentId);
+            /* Every page event reaches every desk; the desks whose tabs did not change are left as they are. */
+            const previous = getState().browserStrips[agentId];
+            if (previous && JSON.stringify(previous) === JSON.stringify(strip)) continue;
             mutate((d) => placeBrowserStrip(d, agentId, strip));
         } while (rereadWanted.get(agentId));
     } finally {

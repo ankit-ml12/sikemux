@@ -19,6 +19,7 @@ figure{margin:0} figcaption{color:var(--text-tertiary);font-size:var(--text-2xs)
 .host{flex:none;margin-left:var(--space-2);color:var(--text-tertiary);font-size:var(--text-2xs);font-weight:400}
 .name{flex:none;color:var(--text-tertiary);font-size:var(--text-2xs)}
 .kbd{flex:none;color:var(--text-tertiary);font-size:var(--text-2xs)}
+.onhost{padding:4px 8px 2px;color:var(--text-tertiary);font-size:var(--text-2xs)}
 .rule{height:1px;background:var(--border);margin:6px 2px}
 .proj{font-weight:600;color:var(--ink)}
 .settings{width:560px;grid-column:1/-1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-3);padding:4px 0}
@@ -30,16 +31,15 @@ figure{margin:0} figcaption{color:var(--text-tertiary);font-size:var(--text-2xs)
 </style></head><body>
 <header>
 <h1>Other hosts in the app</h1>
-<p>The app joins the account's other hosts as a device (ADR 0017). Their chats and terminals sit under the project they belong to, beside this host's, with a quiet <em>on &lt;host&gt;</em> only when they run elsewhere. A project only another host holds gets its own row. Until the host chip (card 33), a project with a copy elsewhere offers new chats and terminals there beside the usual entries.</p>
+<p>The app reaches every host on the account (ADR 0017, 0018). Their chats and terminals sit under the project they belong to, beside this host's, with a quiet <em>on &lt;host&gt;</em> only when they run elsewhere. A project only another host holds gets its own row. The new rows start on the host of the focused chat or terminal and name it when it is not this one; the hosts themselves are one group in the side rail (hosts-group.html).</p>
 </header>
 
-<figure><figcaption>Tab rail, agents page, project <b>sikemux</b> with a copy on test-ec2</figcaption>
+<figure><figcaption>Tab rail, agents page, project <b>sikemux</b>, focused on a chat on test-ec2</figcaption>
 <div class="rail">
+  <div class="onhost">on test-ec2</div>
   <div class="row"><span class="glyph">+</span><span class="title">New chat</span><span class="kbd">⌘N</span></div>
   <div class="row"><span class="glyph term">›_</span><span class="title">New terminal</span><span class="kbd">⌘T</span></div>
   <div class="row"><span class="glyph">◎</span><span class="title">New browser</span></div>
-  <div class="row"><span class="glyph">+</span><span class="title">New chat <span class="host">on test-ec2</span></span></div>
-  <div class="row"><span class="glyph term">›_</span><span class="title">New terminal <span class="host">on test-ec2</span></span></div>
   <div class="rule"></div>
   <div class="row active"><span class="glyph claude">✳</span><span class="title">Fix the flaky upload test</span><span class="name">@Otter</span></div>
   <div class="row"><span class="glyph claude">✳</span><span class="title">Wire the host chip<span class="host">on test-ec2</span></span><span class="name">@Kite</span></div>
@@ -60,10 +60,4 @@ figure{margin:0} figcaption{color:var(--text-tertiary);font-size:var(--text-2xs)
 
 <figure></figure>
 
-<figure class="settings"><figcaption style="padding:6px 14px 0">Settings → Devices → Hosts</figcaption>
-  <div class="srow"><div class="label"><b>test-ec2</b><span>Linux · linked · connected now</span></div><span class="btn">Remove</span></div>
-  <div class="srow"><div class="label"><b>Show test-ec2 in this app</b><span>Its projects, chats and terminals appear here · connected</span></div><span class="switch on"></span></div>
-  <div class="srow"><div class="label"><b>Show studio in this app</b><span>Someone at studio allows this app once</span></div><span class="switch"></span></div>
-  <div class="srow"><div class="label"><b>Show mini in this app</b><span>Waiting for mini to allow this app…</span></div><span class="switch on"></span></div>
-</figure>
 </body></html>

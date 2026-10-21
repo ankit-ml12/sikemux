@@ -90,6 +90,7 @@ impl EventSink for RemoteSink {
                 json!({ "title": title, "body": body, "agentId": agent_id }),
             ),
             Event::SshLink { .. }
+            | Event::AccountDevice { .. }
             | Event::TaskOutput { .. }
             | Event::AgentState(_)
             | Event::Remote { .. }

@@ -81,6 +81,7 @@ calls! { core, client, params;
     "publishBuddies": Local => answer(core.workspaces.publish_buddies(parse(params)?)?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
     "agentCatalog": Watch, any_program => answer(super::catalog::view()),
+    "hostLoad": Watch, any_program => answer(super::load::now()),
     "stopChatIfIdle": Local => {
         let params: AgentParams = parse(params)?;
         answer(json!({ "stopped": super::lifecycle::sleep(&core, &params.agent_id) }))
@@ -131,6 +132,10 @@ calls! { core, client, params;
     "createAgent": Person => answer(workspace::create_agent(&core, parse(params)?)?),
     "updateAgent": Person => answer(workspace::update_agent(&core, parse(params)?)?),
     "closeAgents": Person => answer(workspace::close_agents(&core, parse(params)?)?),
+    "closeChat": Full => {
+        let params: AgentParams = parse(params)?;
+        answer(workspace::close_agent(&core, params.agent_id)?)
+    },
     "createAgentWorktree": Person => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
     "agentWorktreeAt": Full => answer(super::sandbox::at(parse(params)?).await?),
     "savedSessions": Full, any_program => answer(saved_sessions::list(parse(params)?).await?),
@@ -228,7 +233,6 @@ calls! { core, client, params;
     },
     "shares": Full, any_program => answer(share::list(&core)),
     "pairing": Person, any_program => answer(remote::pairing(&core)),
-    "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
     "signHostRequest": Local => {
         let request: crate::accounts::HostRequest = parse(params)?;
         answer(signed(core.remote.sign_host_request(&request)?))
@@ -237,9 +241,11 @@ calls! { core, client, params;
         let params: NonceParams = parse(params)?;
         answer(signed(core.remote.sign_share_viewer(&params.nonce)?))
     },
-    "setLinkSignIns": Person => answer(super::hosts::sign_ins::set(&core, parse(params)?)?),
     "answerPairing": Person => answer(remote::answer_pairing(&core, parse(params)?)?),
     "changeDevice": Person => answer(remote::change_device(&core, parse(params)?)?),
+    "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
+    "requireApproval": Person => answer(json!({ "requireApproval": core.remote.requires_approval() })),
+    "setRequireApproval": Person => answer(remote::set_require_approval(&core, parse(params)?)?),
     "questions": Watch, any_program => answer(questions::views(&core)),
     "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),
     "answerQuestions": Full => answer(questions::answer_all(&core, parse(params)?).await?),
