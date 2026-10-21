@@ -119,8 +119,8 @@ function mergeContext(current: ComposerContext[], incoming: readonly ComposerCon
 
 function readContext(item: ComposerContext): Promise<PromptContext> {
     if (item.text !== null) return Promise.resolve({ uri: item.uri, title: item.title, text: item.text });
-    const { earlier } = item;
-    if (earlier) return import("./earlierChats").then(({ wakeEarlier }) => wakeEarlier(earlier));
+    // The core opens an earlier chat again as the message goes, and writes what the agent is told of it.
+    if (item.earlier) return Promise.resolve({ uri: item.uri, title: item.title, text: "" });
     if (!item.tracked) return Promise.reject(new Error(`${item.title} has nothing to send`));
     const { repo, kind, number } = item.tracked;
     return import("../codehost/tracked").then(({ loadTrackedContext }) =>

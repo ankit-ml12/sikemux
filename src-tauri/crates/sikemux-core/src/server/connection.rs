@@ -813,8 +813,22 @@ async fn run_requests(
                 paths,
                 context,
             } => {
-                let result = chat::prompt(&core, &agent_id, message_id, text, paths, context);
-                client.respond(request_id, result.map(|()| Response::Done));
+                if chat::mentions::wakes(&context) {
+                    tokio::spawn(async move {
+                        let mut context = context;
+                        let result =
+                            match chat::mentions::wake(&core, &agent_id, &mut context).await {
+                                Ok(()) => {
+                                    chat::prompt(&core, &agent_id, message_id, text, paths, context)
+                                }
+                                Err(error) => Err(error),
+                            };
+                        client.respond(request_id, result.map(|()| Response::Done));
+                    });
+                } else {
+                    let result = chat::prompt(&core, &agent_id, message_id, text, paths, context);
+                    client.respond(request_id, result.map(|()| Response::Done));
+                }
             }
             Request::AcpEdit {
                 agent_id,
@@ -824,8 +838,13 @@ async fn run_requests(
                 context,
             } => {
                 tokio::spawn(async move {
-                    let result =
-                        chat::edit(&core, &agent_id, message_id, text, paths, context).await;
+                    let mut context = context;
+                    let result = match chat::mentions::wake(&core, &agent_id, &mut context).await {
+                        Ok(()) => {
+                            chat::edit(&core, &agent_id, message_id, text, paths, context).await
+                        }
+                        Err(error) => Err(error),
+                    };
                     client.respond(request_id, result.map(|()| Response::Done));
                 });
             }
@@ -836,7 +855,11 @@ async fn run_requests(
                 context,
             } => {
                 tokio::spawn(async move {
-                    let result = chat::steer(&core, &agent_id, text, paths, context).await;
+                    let mut context = context;
+                    let result = match chat::mentions::wake(&core, &agent_id, &mut context).await {
+                        Ok(()) => chat::steer(&core, &agent_id, text, paths, context).await,
+                        Err(error) => Err(error),
+                    };
                     client.respond(
                         request_id,
                         result.map(|outcome| Response::Steered { outcome }),

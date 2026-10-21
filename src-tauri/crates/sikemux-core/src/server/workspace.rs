@@ -483,7 +483,7 @@ impl Workspaces {
 
     /// The project `cwd` is in, added when it is in none, for an agent that
     /// started there.
-    fn project_for(&self, cwd: &Path) -> CoreResult<String> {
+    pub(crate) fn project_for(&self, cwd: &Path) -> CoreResult<String> {
         let path = PathBuf::from(project_of(cwd, &self.project_paths()));
         Ok(self.add_project(path, None, None)?.id)
     }

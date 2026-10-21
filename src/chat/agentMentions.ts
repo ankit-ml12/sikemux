@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { agentLabel } from "../agents/catalog";
 import type { PromptContext } from "../api/acp";
 import { MENTION_URI } from "./promptContext";
 import type { AgentShown } from "../api/generated/wire";
@@ -42,22 +41,6 @@ export function useMates(agentId: string): Mate[] {
             });
         });
     }, [agentId, agents, sessions, windows, windowsBySession, sessionOrder, status]);
-}
-
-export function mateNote(mate: Mate, status: string, earlier?: string, keptName = false): string {
-    return [
-        mate.project
-            ? `@${mate.name} is an agent in another project, ${mate.project}, not the person.`
-            : `@${mate.name} is another agent in this project, not the person.`,
-        ...(earlier
-            ? [`Sikemux opened its earlier chat "${earlier}" again for this message, ${keptName ? "under the name it had" : "under this new name"}.`]
-            : []),
-        `Agent id: ${mate.id}`,
-        `CLI: ${agentLabel(mate.type)}`,
-        `Status: ${status}`,
-        `Working on: ${mate.title}`,
-        `To message it, call agent_send with to "${mate.project ? mate.id : mate.name}".`,
-    ].join("\n");
 }
 
 /** Each agent the message names with `@`, by id; the core writes what the agent is told of it. */

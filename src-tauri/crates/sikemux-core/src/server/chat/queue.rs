@@ -149,6 +149,13 @@ pub(crate) async fn steer(
     message: Option<Message>,
 ) -> CoreResult<()> {
     let chat = core.chats.running(agent_id)?;
+    let message = match message {
+        Some(mut message) => {
+            super::mentions::wake(core, agent_id, &mut message.context).await?;
+            Some(message)
+        }
+        None => None,
+    };
     let mut taken = chat.feed.take_queued(Some(&ids));
     taken.extend(message.map(|mut message| {
         super::mentions::fill(core, agent_id, &mut message.context);
