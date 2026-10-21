@@ -846,6 +846,8 @@ impl Workbench {
             menu: None,
             earlier: Vec::new(),
             refusal: None,
+            preparing: None,
+            send_when_ready: false,
             sent: None,
             returned: None,
             synced: json!({ "text": "" }),
@@ -924,6 +926,7 @@ impl Workbench {
         let Some(agent) = self.agent().map(|agent| agent.id) else {
             return;
         };
+        self.send_after_worktree(&agent, window, cx);
         let resumes = self.view.as_ref().is_some_and(|view| {
             view.workspace
                 .agents
@@ -974,6 +977,22 @@ impl Workbench {
             .update(cx, |voice, cx| voice.send_after_words(agent, primary, cx));
         if waits {
             return;
+        }
+        let preparing = self
+            .chats
+            .get(agent)
+            .and_then(|chat| chat.composer.as_ref())
+            .is_some_and(|composing| composing.preparing.is_some());
+        if preparing {
+            return;
+        }
+        if self.starts_in_worktree(agent, cx) {
+            let text = self
+                .chats
+                .get(agent)
+                .and_then(|chat| Some(chat.composer.as_ref()?.draft.read(cx).value().to_string()))
+                .unwrap_or_default();
+            return self.begin_worktree(agent, text, cx);
         }
         let Some(composing) = self
             .chats

@@ -55,6 +55,7 @@ mod meta;
 mod page;
 mod status;
 mod tools;
+mod worktree;
 
 pub use draft::key as draft_key;
 
@@ -407,6 +408,10 @@ pub struct Composing {
     pub earlier: Vec<(String, String)>,
     /// Why the core turned down the last message, until the next is sent.
     pub refusal: Option<SharedString>,
+    /// What the core is doing to start the chat in a worktree, while it does.
+    pub preparing: Option<String>,
+    /// The message waits for the chat to be ready in its new worktree.
+    pub send_when_ready: bool,
     /// The last message as it was written, chips, files and all, until the core takes it.
     pub sent: Option<Sent>,
     /// A turned-down message, going back into the draft when it next draws.

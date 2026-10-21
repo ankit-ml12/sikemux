@@ -372,10 +372,7 @@ fn chat_controls(
         return Vec::new();
     };
     let mut controls = Vec::new();
-    if let Some(switch) =
-        crate::worktree_switch::state(saved.worktree.as_ref(), false, true, None, false)
-    {
-        let flip: crate::worktree_switch::Flip = std::rc::Rc::new(|_, _| {});
+    if let Some((switch, flip)) = bench.worktree_switch(&agent.id, cx) {
         controls.push(crate::worktree_switch::toggle(
             format!("worktree-{}", agent.id),
             &switch,
