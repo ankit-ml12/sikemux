@@ -14,6 +14,7 @@
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 //   nodes    — nodes with their roles, readiness, pressure and capacity, and cordoning one
 //   rollouts — a workload's revisions with their images and change causes, and which is live
+//   helm     — releases, each one's history and the objects it made, and rolling one back
 
 mod actions;
 mod config;
@@ -21,6 +22,7 @@ mod contexts;
 mod describe;
 mod error;
 mod events;
+mod helm;
 mod kubectl;
 mod logs;
 mod network;
@@ -82,6 +84,9 @@ impl Plugin for Kubernetes {
                 "nodes" => answer(nodes::list(params(input)?)).await,
                 "cordon" => answer(nodes::cordon(params(input)?)).await,
                 "history" => answer(rollouts::history(params(input)?)).await,
+                "helmReleases" => answer(helm::releases(params(input)?)).await,
+                "helmRelease" => answer(helm::release(params(input)?)).await,
+                "helmRollback" => answer(helm::rollback(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
