@@ -211,6 +211,15 @@ pub(crate) struct AgentRun {
     pub permission_mode: String,
 }
 
+/// An account the agent picker offers whose agent reports its plan usage.
+pub(crate) struct UsageAccount {
+    pub launcher: String,
+    pub label: String,
+    pub provider: String,
+    pub config_path: Option<String>,
+    pub signed_in: bool,
+}
+
 /// The launcher that starts `agent`: its CLI on the account it runs on.
 pub(crate) fn launcher_of(agent: &WorkspaceAgent) -> String {
     match &agent.profile_id {
@@ -802,6 +811,26 @@ impl Workspaces {
                 }),
             };
         }
+    }
+
+    /// Each offered account whose agent reports how much of its plan is used.
+    pub(crate) fn usage_accounts(&self) -> Vec<UsageAccount> {
+        self.published
+            .locked()
+            .launchers
+            .iter()
+            .filter(|launcher| {
+                crate::agent_catalog::agent(&launcher.agent.provider)
+                    .is_some_and(|agent| agent.usage)
+            })
+            .map(|launcher| UsageAccount {
+                launcher: launcher.id.clone(),
+                label: launcher.label.clone(),
+                provider: launcher.agent.provider.clone(),
+                config_path: launcher.agent.config_path.clone(),
+                signed_in: matches!(launcher.status, Some(AgentStatus::Ready { .. })),
+            })
+            .collect()
     }
 
     /// The project of every agent in the workspace, by agent id.

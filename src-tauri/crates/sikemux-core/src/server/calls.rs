@@ -174,6 +174,7 @@ calls! { core, client, params;
         answer(agent_accounts::account_status(&core, parse(params)?).await?)
     },
     "agentUsage": Full, any_program => answer(agent_accounts::usage(&core, parse(params)?).await?),
+    "agentUsages": Watch, any_program => answer(agent_accounts::usages(&core).await),
     "cancelResume": Full => {
         agent_accounts::cancel_resume(&core, parse(params)?);
         answer(())

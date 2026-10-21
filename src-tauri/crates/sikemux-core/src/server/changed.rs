@@ -35,6 +35,8 @@ pub(crate) enum Topic {
     Skills,
     Tasks,
     Trust,
+    /// How much of their plans the agent accounts have used.
+    Usage,
 }
 
 /// Paths by topic and project; none means anything may have changed.

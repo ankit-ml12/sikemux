@@ -2,9 +2,12 @@
 //! settings and rail make.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use sikemux_process::sync::Locked;
 
 use super::changed::Topic;
 use super::connection::blocking;
@@ -226,7 +229,11 @@ pub(super) fn forget(core: &Arc<Core>, forget: Forget) {
     if let Some(provider) = provider {
         usage::forget(provider, config_path);
     }
-    tokio::spawn(refresh_launchers(core.clone()));
+    let refreshed = core.clone();
+    tokio::spawn(async move {
+        refresh_launchers(refreshed.clone()).await;
+        read_usage_later(&refreshed);
+    });
 }
 
 pub(super) fn mark_signed_out(core: &Core, account: Account) {
@@ -261,3 +268,87 @@ pub(super) async fn authenticate(core: &Arc<Core>, params: Authenticate) -> Core
     super::chat::authenticate(core, &params.agent_id, params.method_id).await?;
     Ok(())
 }
+
+/// How much of its plan an account has used, as the core last read it.
+#[derive(Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AccountUsage {
+    /// The launcher that starts agents on the account.
+    launcher: String,
+    provider: String,
+    /// The account as the agent picker names it.
+    label: String,
+    signed_in: bool,
+    /// Its plan and rolling windows, once its CLI reported them.
+    usage: Option<usage::Usage>,
+    /// Why there is no reading.
+    problem: Option<String>,
+}
+
+/// The usage clients were last told of, and whether a reading waits to be taken.
+#[derive(Default)]
+pub(crate) struct UsageWatch {
+    told: Mutex<Vec<AccountUsage>>,
+    waiting: AtomicBool,
+}
+
+/// Every offered account's usage, from the readings kept for a while.
+pub(super) async fn usages(core: &Arc<Core>) -> Vec<AccountUsage> {
+    let mut found = Vec::new();
+    for account in core.workspaces.usage_accounts() {
+        let asked = Account {
+            provider: account.provider.clone(),
+            config_path: account.config_path.clone(),
+        };
+        let read = match program(core, &asked).await {
+            Ok(program) => {
+                usage::usage(&account.provider, &program, account.config_path.as_deref()).await
+            }
+            Err(error) => Err(error.to_string()),
+        };
+        let (usage, problem) = match read {
+            Ok(usage) => (Some(usage), None),
+            Err(problem) => (None, Some(problem)),
+        };
+        found.push(AccountUsage {
+            launcher: account.launcher,
+            provider: account.provider,
+            label: account.label,
+            signed_in: account.signed_in,
+            usage,
+            problem,
+        });
+    }
+    *core.usage.told.locked() = found.clone();
+    found
+}
+
+/// An agent's turn ended or an account changed, so usage may have moved: once
+/// every kept reading may be out of date, reads them again and tells clients
+/// when any changed. One reading waits at a time, and none before a client
+/// has asked, since each lookup starts the agent's CLI.
+pub(crate) fn read_usage_later(core: &Arc<Core>) {
+    if core.usage.told.locked().is_empty() || core.usage.waiting.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let core = core.clone();
+    tokio::spawn(async move {
+        let wait = core
+            .workspaces
+            .usage_accounts()
+            .iter()
+            .map(|account| usage::kept_for(&account.provider, account.config_path.as_deref()))
+            .max()
+            .unwrap_or_default()
+            .min(MAX_USAGE_WAIT);
+        tokio::time::sleep(wait).await;
+        core.usage.waiting.store(false, Ordering::Release);
+        let before = core.usage.told.locked().clone();
+        if usages(&core).await != before {
+            core.changes.changed(Topic::Usage, None, None);
+        }
+    });
+}
+
+/// The longest a reading after a turn waits for the kept one to go stale.
+const MAX_USAGE_WAIT: Duration = Duration::from_secs(120);

@@ -132,6 +132,17 @@ pub async fn usage(
     lookup
 }
 
+/// How long the account's last reading is kept before the next lookup asks
+/// its CLI again; none when nothing is kept.
+pub(crate) fn kept_for(provider: &str, config_path: Option<&str>) -> Duration {
+    usage_cache()
+        .locked()
+        .get(&key(provider, config_path))
+        .map_or(Duration::ZERO, |(stored, ttl, _)| {
+            ttl.saturating_sub(stored.elapsed())
+        })
+}
+
 /// Drops the usage remembered for one account, whose sign-in just changed.
 pub(crate) fn forget(provider: &str, config_path: Option<&str>) {
     usage_cache().locked().remove(&key(provider, config_path));

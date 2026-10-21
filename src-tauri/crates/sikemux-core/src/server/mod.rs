@@ -345,6 +345,7 @@ pub(crate) struct Core {
     pub(crate) git_watches: crate::git::watch::Watches,
     /// Each project's branch chip, by project folder.
     pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
+    pub(crate) usage: agent_accounts::UsageWatch,
     pub(crate) ci: ci::Ci,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
@@ -424,6 +425,7 @@ impl Core {
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
             git_chips: Default::default(),
+            usage: Default::default(),
             ci: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
