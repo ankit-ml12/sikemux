@@ -63,7 +63,7 @@ mod skill_library;
 mod spawn;
 mod ssh;
 mod tasks;
-mod themes;
+pub mod themes;
 mod tools;
 mod transcript;
 mod upgrade;

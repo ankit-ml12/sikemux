@@ -1,11 +1,12 @@
-//! DESIGN.md's tokens, derived from a theme's palette the way src/styles/tokens.css
-//! derives them, so every theme the app has can be one palette here.
+//! DESIGN.md's tokens, derived from the palette the core resolves the way
+//! src/styles/tokens.css derives them.
 
 use std::borrow::Cow;
 
 use gpui_kit::component::theme::Theme as KitTheme;
 use gpui_kit::{px, App, BoxShadow, FontFeatures, Global, Hsla, Pixels, Rgba, SharedString};
 use sikemux_wire::grid::TerminalColors;
+use sikemux_wire::theme::{Palette, ThemeEditor, ThemeHighlight};
 
 pub const UI: &str = "Figtree";
 pub const MONO: &str = "JetBrainsMono NFM";
@@ -18,61 +19,9 @@ pub const RADIUS_2: Pixels = px(5.);
 pub const RADIUS_3: Pixels = px(10.);
 pub const RADIUS_4: Pixels = px(14.);
 
-/// A theme's own colours, as src/themes/index.ts lists them.
-pub struct Palette {
-    pub bg: u32,
-    pub bg_dim: u32,
-    pub bg_raised: u32,
-    pub ink: u32,
-    pub ink_dim: u32,
-    pub acc: u32,
-    pub line: u32,
-    pub danger: u32,
-    pub live: u32,
-    pub warn: u32,
-    pub cmd: u32,
-    pub terminal: TerminalPalette,
-}
-
-/// A theme's terminal colours, as src/themes/index.ts lists them.
-pub struct TerminalPalette {
-    pub background: u32,
-    pub foreground: u32,
-    pub cursor: u32,
-    /// The character under a block cursor.
-    pub cursor_text: u32,
-    pub selection: u32,
-    pub find_match: u32,
-    pub find_current: u32,
-    pub ansi: [u32; 16],
-}
-
-pub const AURA_NOIR: Palette = Palette {
-    bg: 0x0f0f13,
-    bg_dim: 0x09090b,
-    bg_raised: 0x19191e,
-    ink: 0xe7e5ef,
-    ink_dim: 0x8b8898,
-    acc: 0xa277ff,
-    line: 0x24242b,
-    danger: 0xff6767,
-    live: 0x78dca1,
-    warn: 0xe9ba6c,
-    cmd: 0xff6ac1,
-    terminal: TerminalPalette {
-        background: 0x0f0f13,
-        foreground: 0xedecee,
-        cursor: 0xa277ff,
-        cursor_text: 0x0f0f13,
-        selection: 0x3d375e,
-        find_match: 0x433866,
-        find_current: 0xa277ff,
-        ansi: [
-            0x1f1f25, 0xff6767, 0x54ffbe, 0xffca85, 0xa277ff, 0xff6ac1, 0x61ffca, 0xedecee, 0x3d3a5a, 0xff8585, 0x88ffd8,
-            0xffe5b0, 0xc4a8ff, 0xff85d5, 0x88ffe0, 0xffffff,
-        ],
-    },
-};
+/// What a find in a terminal tints its matches with, the current one brighter, in every theme.
+const FIND_MATCH: u32 = 0x433866;
+const FIND_CURRENT: u32 = 0xa277ff;
 
 #[derive(Clone)]
 pub struct Tokens {
@@ -122,22 +71,31 @@ pub struct Tokens {
     pub terminal_selection: Hsla,
     pub terminal_match: Hsla,
     pub terminal_match_current: Hsla,
+    /// The code editor's colours and syntax highlighting, as CSS colours [`color`] reads.
+    pub editor: ThemeEditor,
+    pub highlight: ThemeHighlight,
 }
 
 impl Global for Tokens {}
 
 impl Tokens {
     pub fn new(palette: &Palette) -> Self {
-        let ink = hex(palette.ink);
-        let base = hex(palette.bg);
+        let (c, t) = (&palette.theme.chrome, &palette.theme.terminal);
+        let ink = parse(&c.ink);
+        let base = parse(&c.bg);
         let gray = |percent: f32| mix_oklab(ink, base, percent / 100.);
         let tint = |color: Rgba, alpha: f32| Rgba { a: alpha, ..color };
-        let acc = hex(palette.acc);
+        let acc = parse(&c.acc);
+        let (bg_dim, ink_dim, line, cmd) = (parse(&c.bg_dim), parse(&c.ink_dim), parse(&c.line), parse(&palette.cmd));
+        let ansi = [
+            &t.black, &t.red, &t.green, &t.yellow, &t.blue, &t.magenta, &t.cyan, &t.white, &t.bright_black, &t.bright_red,
+            &t.bright_green, &t.bright_yellow, &t.bright_blue, &t.bright_magenta, &t.bright_cyan, &t.bright_white,
+        ];
         Self {
-            surface_sunken: hex(palette.bg_dim).into(),
+            surface_sunken: bg_dim.into(),
             surface: base.into(),
             surface_raised: gray(7.).into(),
-            surface_composer: mix_srgb(gray(7.), hex(palette.bg_dim), 0.55).into(),
+            surface_composer: mix_srgb(gray(7.), bg_dim, 0.55).into(),
             surface_overlay: gray(4.).into(),
             surface_hover: tint(ink, 0.06).into(),
             surface_chosen: tint(ink, 0.09).into(),
@@ -147,38 +105,40 @@ impl Tokens {
             border: gray(11.).into(),
             border_strong: gray(22.).into(),
             border_selected: tint(acc, 0.42).into(),
-            line: hex(palette.line).into(),
-            line_soft: hex(palette.bg_raised).into(),
+            line: line.into(),
+            line_soft: parse(&c.bg_raised).into(),
             text_primary: ink.into(),
             text_secondary: gray(76.).into(),
-            text_tertiary: hex(palette.ink_dim).into(),
+            text_tertiary: parse(&palette.ink_muted).into(),
             text_disabled: gray(32.).into(),
-            git_modified: hex(0xe2c08d).into(),
-            git_untracked: hex(0x73c991).into(),
-            git_added: hex(0x81b88b).into(),
-            git_deleted: hex(0xed806b).into(),
-            git_renamed: hex(0x94b1ef).into(),
+            git_modified: parse(&palette.git_modified).into(),
+            git_untracked: parse(&palette.git_untracked).into(),
+            git_added: parse(&palette.git_added).into(),
+            git_deleted: parse(&palette.git_deleted).into(),
+            git_renamed: parse(&palette.git_renamed).into(),
             icon_quiet: gray(42.).into(),
             accent: acc.into(),
-            on_accent: hex(palette.bg_dim).into(),
-            danger: hex(palette.danger).into(),
-            live: hex(palette.live).into(),
-            warn: hex(palette.warn).into(),
-            cmd: hex(palette.cmd).into(),
-            host: mix_oklab(acc, hex(palette.ink_dim), 0.8).into(),
-            ssh: mix_oklab(hex(palette.cmd), hex(palette.ink_dim), 0.7).into(),
-            tree_spine: mix_srgb(acc, hex(palette.line), 0.52).into(),
+            on_accent: bg_dim.into(),
+            danger: parse(&palette.danger).into(),
+            live: parse(&palette.live).into(),
+            warn: parse(&palette.warn).into(),
+            cmd: cmd.into(),
+            host: mix_oklab(acc, ink_dim, 0.8).into(),
+            ssh: mix_oklab(cmd, ink_dim, 0.7).into(),
+            tree_spine: mix_srgb(acc, line, 0.52).into(),
             tree_tick: tint(acc, 0.72).into(),
             terminal: TerminalColors {
-                foreground: bytes(palette.terminal.foreground),
-                background: bytes(palette.terminal.background),
-                cursor: Some(bytes(palette.terminal.cursor)),
-                ansi: palette.terminal.ansi.map(bytes),
+                foreground: bytes(parse(&t.foreground)),
+                background: bytes(parse(&t.background)),
+                cursor: Some(bytes(parse(&t.cursor))),
+                ansi: ansi.map(|color| bytes(parse(color))),
             },
-            terminal_cursor_text: hex(palette.terminal.cursor_text).into(),
-            terminal_selection: hex(palette.terminal.selection).into(),
-            terminal_match: hex(palette.terminal.find_match).into(),
-            terminal_match_current: hex(palette.terminal.find_current).into(),
+            terminal_cursor_text: parse(&t.cursor_accent).into(),
+            terminal_selection: parse(&t.selection_background).into(),
+            terminal_match: hex(FIND_MATCH).into(),
+            terminal_match_current: hex(FIND_CURRENT).into(),
+            editor: palette.theme.editor.clone(),
+            highlight: palette.theme.highlight.clone(),
         }
     }
 
@@ -218,7 +178,7 @@ pub fn brand(provider: &str) -> Hsla {
         "omp" => 0xf97316,
         "grok" => 0xfcfcfc,
         "muse" => 0x0081fb,
-        _ => AURA_NOIR.ink_dim,
+        _ => 0x8b8898,
     })
     .into()
 }
@@ -227,7 +187,7 @@ pub fn tabular() -> FontFeatures {
     FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)]))
 }
 
-/// Loads the bundled fonts, sets the tokens, and gives GPUI Kit's widgets the same.
+/// Loads the bundled fonts and draws with the default theme until the core says which is picked.
 pub fn install(cx: &mut App) {
     let fonts = [
         include_bytes!("../../../notch/Fonts/Figtree_400Regular.ttf").as_slice(),
@@ -245,7 +205,12 @@ pub fn install(cx: &mut App) {
         .add_fonts(fonts.into_iter().map(Cow::Borrowed).collect())
         .expect("bundled fonts load");
 
-    let tokens = Tokens::new(&AURA_NOIR);
+    apply(&sikemux_core::server::themes::default_palette(), cx);
+}
+
+/// Draws with `palette` from the next frame, GPUI Kit's widgets too.
+pub fn apply(palette: &Palette, cx: &mut App) {
+    let tokens = Tokens::new(palette);
     let kit = KitTheme::global_mut(cx);
     kit.font_family = SharedString::new_static(UI);
     kit.mono_font_family = SharedString::new_static(MONO);
@@ -274,9 +239,34 @@ pub fn install(cx: &mut App) {
     cx.set_global(tokens);
 }
 
-fn bytes(value: u32) -> [u8; 3] {
-    let [_, r, g, b] = value.to_be_bytes();
-    [r, g, b]
+fn bytes(color: Rgba) -> [u8; 3] {
+    [color.r, color.g, color.b].map(|channel| (channel * 255.).round() as u8)
+}
+
+/// A CSS colour as themes write them: `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()` or `transparent`.
+pub fn color(css: &str) -> Hsla {
+    parse(css).into()
+}
+
+fn parse(css: &str) -> Rgba {
+    let css = css.trim();
+    if css == "transparent" {
+        return Rgba { r: 0., g: 0., b: 0., a: 0. };
+    }
+    if let Some(digits) = css.strip_prefix('#') {
+        let digits: String = if digits.len() == 3 { digits.chars().flat_map(|digit| [digit, digit]).collect() } else { digits.to_owned() };
+        match (digits.len(), u32::from_str_radix(&digits, 16)) {
+            (6, Ok(value)) => return gpui_kit::rgb(value),
+            (8, Ok(value)) => return gpui_kit::rgba(value),
+            _ => {}
+        }
+    }
+    let channels = css.strip_prefix("rgba(").or_else(|| css.strip_prefix("rgb(")).and_then(|rest| rest.strip_suffix(')'));
+    let parts: Vec<f32> = channels.into_iter().flat_map(|rest| rest.split(',')).filter_map(|part| part.trim().parse().ok()).collect();
+    match parts.as_slice() {
+        [r, g, b, rest @ ..] => Rgba { r: r / 255., g: g / 255., b: b / 255., a: rest.first().copied().unwrap_or(1.) },
+        _ => Rgba { r: 0., g: 0., b: 0., a: 1. },
+    }
 }
 
 fn hex(value: u32) -> Rgba {

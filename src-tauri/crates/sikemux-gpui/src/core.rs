@@ -8,7 +8,7 @@ use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch, IDENTIFIER};
 use sikemux_host::cli_paths;
-use sikemux_wire::grid::{decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalColors, TerminalInput};
+use sikemux_wire::grid::{decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput};
 use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event, Request, SessionId, StreamId};
 use tokio::sync::mpsc;
 
@@ -91,8 +91,6 @@ pub enum Ask {
     /// A call whose answer the window waits for, sent back under `key`.
     Answer { key: &'static str, method: &'static str, params: Value },
     Terminal(SessionId, TerminalAsk),
-    /// The theme's colours, which the core answers programs' colour queries with.
-    TerminalColors(TerminalColors),
     Chat(ChatAsk),
     /// Hands the window the core's changes under `topic`, with what moved.
     Follow(&'static str),
@@ -163,7 +161,6 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
     let mut followed: Vec<&'static str> = Vec::new();
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
-    let mut colors = None;
     loop {
         if let Some(launch) = &home.launch {
             match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false).await {
@@ -188,9 +185,6 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                 }
                 for (key, watch) in &watches {
                     read(&client, key, watch, &current, &updates);
-                }
-                if let Some(colors) = &colors {
-                    let _ = client.set_terminal_colors(Clone::clone(colors)).await;
                 }
                 let mut streams = Streams::new(&client, &updates);
                 loop {
@@ -253,12 +247,6 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                                 });
                             }
                             Some(Ask::Terminal(session, ask)) => streams.ask(session, ask),
-                            Some(Ask::TerminalColors(theme)) => {
-                                let client = client.clone();
-                                let sent = theme.clone();
-                                tokio::spawn(async move { client.set_terminal_colors(sent).await });
-                                colors = Some(theme);
-                            }
                             None => return,
                         },
                     }

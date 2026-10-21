@@ -405,6 +405,14 @@ fn main() {
     run.key("escape");
     run.right_click(row.saturating_sub(1), 30);
     run.shot(&shots, "menu");
+    let pick = serde_json::json!({ "key": "themeId", "value": "dracula" });
+    if let Err(error) = runtime.block_on(client.call("setPreference", pick)) {
+        eprintln!("the core would not change the theme: {error}");
+    }
+    for _ in 0..60 {
+        run.frame();
+    }
+    run.shot(&shots, "dracula");
     println!("app peak RSS {:.0} MB", peak_rss_mb());
     drop(client);
 }

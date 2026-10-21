@@ -56,6 +56,11 @@ pub(crate) fn resolve(preferences: &Preferences) -> Theme {
         .expect("the default theme is in the catalogue")
 }
 
+/// The default theme's palette, for an app to draw with before its core answers.
+pub fn default_palette() -> Palette {
+    palette(&Preferences::default())
+}
+
 /// The picked theme with the colours worked out from it for drawing.
 pub(crate) fn palette(preferences: &Preferences) -> Palette {
     let theme = resolve(preferences);

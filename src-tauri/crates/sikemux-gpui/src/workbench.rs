@@ -128,7 +128,7 @@ impl Workbench {
             }
         })
         .detach();
-        let _ = asks.send(Ask::TerminalColors(Tokens::get(cx).terminal.clone()));
+        let _ = asks.send(Ask::Watch("theme", Watch::new("theme", json!({}), &["preferences"])));
         let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
         let _ = asks.send(Ask::Watch("hosts", Watch::new("hosts", json!({}), &["hosts"])));
         let _ = asks.send(Ask::Watch("runs", Watch::new("taskRuns", json!({}), &["runs"])));
@@ -233,6 +233,12 @@ impl Workbench {
                 Ok(questions) => self.questions = questions,
                 Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
             },
+            Update::Read("theme", value) => {
+                if let Ok(palette) = serde_json::from_value(value) {
+                    theme::apply(&palette, cx);
+                    cx.refresh_windows();
+                }
+            }
             Update::Read("picture", value) => self.picture = decode_picture(&value),
             Update::Read("sign-in", value) => match value["url"].as_str() {
                 Some(url) => {
