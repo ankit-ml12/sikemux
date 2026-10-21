@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use sikemux_wire::protocol::{AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
 use tokio::sync::mpsc;
 
+use crate::battery::Battery;
 use crate::chat::Chat;
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::theme::{self, Tokens};
@@ -24,6 +25,7 @@ pub struct Workbench {
     pub lost: Option<String>,
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
+    pub battery: Option<Battery>,
     /// The repository and branch whose latest CI run the top bar shows.
     pub watched_ci: Option<CiRepo>,
     /// The account's picture, and the hash the core named the one asked for by.
@@ -74,6 +76,22 @@ impl Workbench {
     pub fn new(link: Link, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Link { mut updates, asks } = link;
         crate::faces::install(cx);
+        let (power_changed, mut power) = mpsc::unbounded_channel();
+        crate::battery::watch(move || {
+            let _ = power_changed.send(());
+        });
+        cx.spawn(async move |this, cx| {
+            while power.recv().await.is_some() {
+                let read = |bench: &mut Self, cx: &mut Context<Self>| {
+                    bench.battery = crate::battery::read();
+                    cx.notify();
+                };
+                if this.update(cx, read).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
         cx.spawn(async move |this, cx| {
             while let Some(update) = updates.recv().await {
                 if this.update(cx, |this, cx| this.apply(update, cx)).is_err() {
@@ -102,6 +120,7 @@ impl Workbench {
             lost: None,
             watched_project: None,
             watched_ci: None,
+            battery: crate::battery::read(),
             picture: None,
             picture_hash: None,
             signing_in: false,

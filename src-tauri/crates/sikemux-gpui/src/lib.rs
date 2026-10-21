@@ -1,6 +1,7 @@
 //! The desktop UI on GPUI, a client of the core.
 
 mod agents;
+mod battery;
 mod chat;
 mod faces;
 pub mod core;

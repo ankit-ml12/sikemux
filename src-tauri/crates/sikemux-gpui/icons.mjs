@@ -94,6 +94,11 @@ try {
     await writeFile(resolve(out, `${file}.svg`), `${markup}\n`);
   }
   for (const [file, path] of Object.entries(PICTURES)) await copyFile(resolve(root, path), resolve(out, `${file}.svg`));
+  const { BATTERY_BOLT } = await server.ssrLoadModule(ICONS);
+  const bolt = (extra) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="7 -3 12 19" fill="currentColor"><path d="${BATTERY_BOLT}"${extra}></path></svg>\n`;
+  await writeFile(resolve(out, "battery-bolt.svg"), bolt(""));
+  await writeFile(resolve(out, "battery-bolt-gap.svg"), bolt(' stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"'));
   const { MARK_INNER } = await server.ssrLoadModule(SECTIONS);
   for (const [outcome, d] of Object.entries(MARK_INNER)) {
     const mark = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"></path></svg>`;

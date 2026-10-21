@@ -58,6 +58,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .children(run_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
                 .children(ports_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
                 .children(ci_glyph(bench, cx))
+                .children(battery_chip(bench, cx))
                 .child(clock(cx))
                 .child(IconButton::new("focus", Icon::Focus, "Focus mode — hide rails — ⌘B").width(30.)),
         )
@@ -164,6 +165,52 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .tooltip(ui::tooltip(about))
             .child(ui::status_of_run(outcome, 12., cx))
             .child(ui::mono(format!("#{number}"), 11., cx).font_features(crate::theme::tabular()).text_color(t.text_secondary))
+            .into_any_element(),
+    )
+}
+
+/// How full this device's battery is, drawn as the app's battery icon.
+fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    let battery = bench.battery?;
+    let percent = battery.percent;
+    let tint = match percent {
+        _ if battery.charging => t.live,
+        0..=10 => t.danger,
+        11..=20 => t.warn,
+        _ => t.accent,
+    };
+    let time = battery.minutes.map(|minutes| format!("{}:{:02}", minutes / 60, minutes % 60));
+    let about = match (battery.charging, time) {
+        (true, Some(time)) => format!("{percent}% · charging · {time} until full"),
+        (true, None) => format!("{percent}% · charging"),
+        (false, Some(time)) => format!("{percent}% · {time} remaining"),
+        (false, None) => format!("{percent}%"),
+    };
+    let unit = 12. / 13.;
+    let at = |units: f32| px(units * unit);
+    let level = f32::from(percent) / 100.;
+    let fill = if level > 0. { (20.5 * level).max(2.2) } else { 0. };
+    let frame = Hsla { a: 0.45, ..tint };
+    let bolt = |glyph: Icon, color: Hsla| ui::icon(glyph, 19. * unit).w(at(12.)).absolute().left(at(7.)).top(at(-3.)).text_color(color);
+    let icon = div()
+        .relative()
+        .flex_none()
+        .w(at(28.))
+        .h(at(13.))
+        .child(div().absolute().left_0().top_0().w(at(24.5)).h(at(13.)).border(at(1.)).border_color(frame).rounded(at(4.1)))
+        .child(div().absolute().left(at(25.4)).top(at(4.4)).w(at(1.6)).h(at(4.2)).rounded_r(at(1.6)).bg(frame))
+        .child(div().absolute().left(at(2.)).top(at(2.)).w(at(fill)).h(at(9.)).rounded(at(2.2)).bg(tint))
+        .when(battery.charging, |icon| icon.child(bolt(Icon::BatteryBoltGap, t.surface_sunken)).child(bolt(Icon::BatteryBolt, tint)));
+    Some(
+        div()
+            .id("battery")
+            .flex()
+            .items_center()
+            .gap(px(5.))
+            .tooltip(ui::tooltip(about))
+            .child(icon)
+            .child(ui::text(format!("{percent}%"), 11., FontWeight::SEMIBOLD).font_features(crate::theme::tabular()).text_color(tint))
             .into_any_element(),
     )
 }

@@ -30,6 +30,8 @@ icons!(
     Agent => "agent",
     Agents => "agents",
     Aws => "aws",
+    BatteryBolt => "battery-bolt",
+    BatteryBoltGap => "battery-bolt-gap",
     Board => "board",
     Bruno => "bruno",
     Check => "check",
