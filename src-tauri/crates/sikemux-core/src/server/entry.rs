@@ -7,9 +7,9 @@ use crate::frozen::{UpgradeInfo, UPGRADE_INFO_ARG};
 use crate::protocol::{BuildIdentity, SessionId};
 
 use super::handover::{self, Recovery};
-use super::{ServerConfig, ServerError, DEFAULT_IDLE_EXIT};
+use super::{ServerConfig, ServerError, DEFAULT_IDLE_EXIT, NEVER_IDLE_EXIT};
 
-const USAGE: &str = "usage: sikemux core [--socket <path>] [--cli-endpoint <path>] [--data-dir <path>] [--idle-exit-secs N] | --upgrade-info";
+const USAGE: &str = "usage: sikemux core [--socket <path>] [--cli-endpoint <path>] [--data-dir <path>] [--idle-exit-secs N | --no-idle-exit] | --upgrade-info";
 
 #[derive(Default)]
 struct CoreArgs {
@@ -67,6 +67,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<CoreArgs, String
                     "--idle-exit-secs",
                 )?));
             }
+            "--no-idle-exit" => parsed.idle_exit = Some(NEVER_IDLE_EXIT),
             "--idle-exit-ms" => {
                 parsed.idle_exit = Some(Duration::from_millis(number(
                     args.next(),
