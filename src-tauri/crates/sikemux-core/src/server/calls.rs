@@ -303,6 +303,7 @@ calls! { core, client, params;
             None => answer(core.palette()),
         }
     },
+    "takeSpareShell": Local => answer(super::spare::take(&core, parse(params)?)),
     "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),
     "themePalette": Watch => {
         let params: ThemePaletteParams = parse(params)?;

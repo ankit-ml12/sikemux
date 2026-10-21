@@ -154,7 +154,13 @@ fn edit<T>(core: &Core, change: impl FnOnce(&mut Layout) -> CoreResult<T>) -> Co
         answer
     };
     core.view_changed();
+    core.spares.front_changed();
     Ok(answer)
+}
+
+/// The project the person has in front, by id, as the layout last said.
+pub(crate) fn front_project(core: &Core) -> Option<String> {
+    core.layouts.layout.locked().active_project.clone()
 }
 
 fn strip<'a>(

@@ -212,6 +212,7 @@ fn upgrade_info(binary: &Path) -> Result<UpgradeInfo, String> {
 /// Stops taking work, lets what is in flight land, and replaces the process.
 /// Returns only if that failed.
 async fn hand_over(core: &Arc<Core>, binary: PathBuf) -> String {
+    super::spare::discard(core);
     if !core.launching.settle(LAUNCH_SETTLE).await {
         return "a session was still starting".into();
     }

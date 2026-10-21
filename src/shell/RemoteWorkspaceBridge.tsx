@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
+import { coreCall } from "../api/core";
 import { remoteApi } from "../api/remote";
 import { backdropPicture } from "../remote/backdrop";
 import { usePaneImage } from "../lib/paneImage";
@@ -12,12 +13,16 @@ import { preferencesOf } from "../state/preferences";
 export const PUBLISH_DELAY_MS = 400;
 
 /**
- * Tells the core which agent is on screen. While remote access is on, also the backdrop devices draw in.
+ * Tells the core which agent is on screen and which project is in front. While remote access is on, also the backdrop devices draw in.
  */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
     const active = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const focused = useWindowFocused();
+    const frontProject = useStore((s) => {
+        const session = s.sessions[s.activeSessionId];
+        return session?.kind === "project" && !session.host ? session.id : null;
+    });
 
     useEffect(() => {
         const controller = new AbortController();
@@ -47,6 +52,11 @@ export function RemoteWorkspaceBridge() {
     useEffect(() => {
         remoteApi.publishOnScreen(active ? [active] : [], focused).catch(swallow("tell the core which agent is on screen"));
     }, [active, focused]);
+
+    // The core keeps a shell ready for the project in front. A project it does not know yet is refused until the person comes back to it.
+    useEffect(() => {
+        if (frontProject) coreCall("activateProject", { project: frontProject }).catch(() => {});
+    }, [frontProject]);
 
     return null;
 }

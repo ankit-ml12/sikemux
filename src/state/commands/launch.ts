@@ -72,11 +72,10 @@ export function newTerminal(): void {
         const copy = session ? copyOn(st, session, here.host) : undefined;
         return newRemoteTerminal(copy && session ? session.id : null, here.host, copy?.project.path ?? "");
     }
-    if ((session?.kind === "project" || session?.kind === "command") && !session.host) {
-        const spare = takeSpareShell(session);
-        if (spare) openSpareShell(spare);
-        else newWindow();
-    } else keepHostChosen(createCommandSession);
+    if (session?.kind === "project" && !session.host) {
+        void takeSpareShell(session).then((spare) => (spare ? openSpareShell(spare) : newWindow()));
+    } else if (session?.kind === "command" && !session.host) newWindow();
+    else keepHostChosen(createCommandSession);
 }
 
 function openSpareShell(spare: SpareShell): void {

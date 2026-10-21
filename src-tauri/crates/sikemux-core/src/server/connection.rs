@@ -730,6 +730,7 @@ async fn run_requests(
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::Resize { id, cols, rows } => {
+                core.spares.note_size(cols, rows);
                 let result = match validate_pty_dimensions(cols, rows) {
                     Ok(()) => match session_or_missing(&core, id) {
                         Ok(target) => blocking(move || session::resize(&target, cols, rows)).await,
@@ -1159,6 +1160,7 @@ pub(crate) async fn spawn(
     started_by: Option<String>,
 ) -> CoreResult<PendingStart> {
     if let SpawnTarget::Terminal(spawn) = target.as_mut() {
+        core.spares.note_size(spawn.cols, spawn.rows);
         super::launching::terminal_agent(&core, spawn).await;
     }
     blocking(move || {

@@ -15,7 +15,6 @@ import { runShownIn, taskRuns, type TaskRun } from "../tasks/coreTasks";
 import { coreSessionsApi } from "../api/coreSessions";
 import { noteSpawnedSession, takeResumableSession } from "./sessionResume";
 import { readRailNames } from "./railNames";
-import { noteTerminalSize } from "./spareShell";
 import { integrationHealth } from "../api/system";
 
 type NativeChannel = Channel<ArrayBuffer>;
@@ -101,10 +100,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
     input: (id, input) => invoke<void>("pty_input", { id, input }),
-    resize: (id, cols, rows) => {
-        noteTerminalSize(cols, rows);
-        return invoke<void>("pty_resize", { id, cols, rows });
-    },
+    resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
     kill: coreSessionsApi.kill,
     attach: async (id, channel) => decodeAttachResponse(await invoke<ArrayBuffer>("pty_attach", { id, onEvent: channel })),
     detach: (id, subId) => invoke<void>("pty_unsubscribe", { id, subId }),

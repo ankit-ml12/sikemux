@@ -61,6 +61,7 @@ mod session;
 mod session_watch;
 mod share;
 mod skill_library;
+mod spare;
 mod spawn;
 mod ssh;
 mod tasks;
@@ -355,6 +356,7 @@ pub(crate) struct Core {
     pub(crate) boards: board::Boards,
     pub(crate) changes: changed::Changes,
     pub(crate) ports: ports::Ports,
+    pub(crate) spares: spare::Spares,
     pub(crate) tasks: tasks::Tasks,
     pub(crate) git_watches: crate::git::watch::Watches,
     /// Each project's branch chip, by project folder.
@@ -455,6 +457,7 @@ impl Core {
             boards: board::Boards::new(data_dir),
             changes: changed::Changes::default(),
             ports: ports::Ports::default(),
+            spares: spare::Spares::default(),
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
             git_chips: Default::default(),
@@ -711,7 +714,7 @@ impl Core {
         self.sessions
             .locked()
             .values()
-            .filter(|s| s.is_running())
+            .filter(|s| s.is_running() && !self.spares.is_spare(s.id))
             .count()
     }
 
@@ -775,7 +778,12 @@ impl Core {
     /// Every session, with what the app calls its agent and whether the
     /// person has seen what the agent last did.
     pub(crate) fn session_infos(&self) -> Vec<crate::protocol::SessionInfo> {
-        let mut sessions: Vec<_> = self.all_sessions().iter().map(|s| s.info()).collect();
+        let mut sessions: Vec<_> = self
+            .all_sessions()
+            .iter()
+            .map(|s| s.info())
+            .filter(|info| !self.spares.hides(info.pane_id.as_deref()))
+            .collect();
         sessions.sort_by_key(|info| info.id);
         self.workspaces.place(&mut sessions);
         for info in &mut sessions {
@@ -1277,6 +1285,11 @@ pub(crate) async fn run_core(
             core.clone(),
             |core| &core.ports.wake,
             ports::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.spares.wake,
+            spare::settle,
         )),
         tokio::spawn(workspace::recents(core.clone())),
         tokio::spawn(notify::run(core.clone())),

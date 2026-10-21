@@ -68,7 +68,6 @@ import { fsapi } from "./api/fs";
 import { emit } from "./state/bus";
 import * as cmd from "./state/commands";
 import { offerSavedSessions, restoreCoreSessions } from "./workspace/restoreCoreSessions";
-import { startSpareShells } from "./terminal/spareShell";
 import { coreSessionsApi } from "./api/coreSessions";
 import { coreCall } from "./api/core";
 import type { Preferences, Workspace as SharedWorkspace } from "./api/generated/wire";
@@ -664,7 +663,6 @@ export default function App() {
     useEffect(() => {
         let disposed = false;
         let unsub = () => {};
-        let stopSpareShells = () => {};
         let stopHosts = () => {};
         let stopPaneResources = () => {};
         let stopAccountSync = () => {};
@@ -748,7 +746,6 @@ export default function App() {
                     setBootReady(true);
                     introduceNotifications();
                     void restoreCoreSessions();
-                    stopSpareShells = startSpareShells();
                     stopHosts = startHosts();
                 }
                 finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
@@ -759,7 +756,6 @@ export default function App() {
             unsub();
             stopWorkspaceSync();
             stopAccountSync();
-            stopSpareShells();
             stopHosts();
             stopPaneResources();
         };
