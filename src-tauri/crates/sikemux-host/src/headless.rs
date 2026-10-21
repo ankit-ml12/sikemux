@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::json;
 use sikemux_core::cli::protocol::CliServerResponse;
 use sikemux_core::client::{probe, wait_for_core, ClientError, CoreClient, ProbeError};
-use sikemux_core::protocol::{AccountLinkState, RemoteStatus};
+use sikemux_core::protocol::{AccountLinkState, RemoteStatus, Request, Response};
 use sikemux_core::server::plugins::{Failure, StreamEvent};
 use sikemux_core::waiting;
 
@@ -268,6 +268,8 @@ struct Status {
     account: Option<String>,
     /// The host's public key, which the account and its devices know it by.
     core_id: Option<String>,
+    /// The host's own name, which it signs in to the account under.
+    name: Option<String>,
     account_connection: Option<&'static str>,
     remote_access: Option<bool>,
     devices: usize,
@@ -281,9 +283,10 @@ fn status(json: bool) -> i32 {
         return 1;
     };
     let hello = probe(&launch.socket, PROBE_TIMEOUT).ok();
-    let remote = hello
+    let about = hello
         .as_ref()
-        .and_then(|_| runtime().ok()?.block_on(remote_status(&launch.socket)).ok());
+        .and_then(|_| runtime().ok()?.block_on(about(&launch.socket)).ok());
+    let (remote, name) = about.map_or((None, None), |(remote, name)| (Some(remote), Some(name)));
     let status = Status {
         running: hello.is_some(),
         pid: hello.as_ref().map(|hello| hello.pid),
@@ -298,6 +301,7 @@ fn status(json: bool) -> i32 {
             .as_ref()
             .map(|remote| remote.core_id.clone())
             .filter(|id| !id.is_empty()),
+        name,
         account_connection: remote
             .as_ref()
             .and_then(|remote| remote.account.as_ref())
@@ -466,11 +470,21 @@ async fn plugin_login(socket: &Path, endpoint: PathBuf, plugin: &str) -> Result<
     }
 }
 
-async fn remote_status(socket: &Path) -> Result<RemoteStatus, String> {
+/// What the core says of remote access, and the host's own name.
+async fn about(socket: &Path) -> Result<(RemoteStatus, String), String> {
     let (core, _events) = CoreClient::connect(socket)
         .await
         .map_err(|error| error.to_string())?;
-    core.remote_status()
+    let remote = core
+        .remote_status()
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    match core
+        .request(Request::Host)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        Response::Host { host } => Ok((remote, host.name)),
+        _ => Err("the core answered with something else".into()),
+    }
 }

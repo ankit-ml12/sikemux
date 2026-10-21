@@ -369,9 +369,12 @@ pub async fn account_rename_device(
     key: String,
     name: String,
 ) -> AppResult<()> {
-    let core = manager.client().await?;
+    rename_device(&*manager.client().await?, &key, &name).await
+}
+
+pub(crate) async fn rename_device(core: &CoreClient, key: &str, name: &str) -> AppResult<()> {
     host_request(
-        &core,
+        core,
         Method::POST,
         &format!("/v1/devices/{key}/name"),
         Some(&serde_json::json!({ "name": name })),

@@ -27,6 +27,8 @@ const STATUS: &str = r#"exec "$SHELL" -lc 'PATH="$PATH:$HOME/.local/bin" sikemux
 struct Status {
     core_id: Option<String>,
     account: Option<String>,
+    /// The host's own name, which it signed in to the account under.
+    name: Option<String>,
 }
 
 /// Whose the host is, beside this host's account.
@@ -47,7 +49,8 @@ pub struct Probed {
 }
 
 /// Asks the SSH host `alias` whether it runs Sikemux, and which host it is,
-/// and makes it one row with that host when the account has it.
+/// and makes it one row with that host when the account has it. A host still
+/// under the name it signed in with takes the alias, the person's name for it.
 #[tauri::command]
 pub async fn host_probe(
     app: AppHandle,
@@ -77,25 +80,24 @@ pub async fn host_probe(
     let Some(Status {
         core_id: Some(key),
         account,
+        name,
     }) = serde_json::from_slice(&output.stdout).ok()
     else {
         return Ok(None);
     };
-    let own = manager
-        .client()
-        .await?
-        .remote_status()
-        .await
-        .map_err(core_error)?
-        .owner;
+    let core = manager.client().await?;
+    let own = core.remote_status().await.map_err(core_error)?.owner;
     let account = match account {
         None => SshAccount::SignedOut,
         Some(account) if Some(&account) == own.as_ref() => SshAccount::Same,
         Some(_) => SshAccount::Other,
     };
     if let Some(hosts) = app.try_state::<Hosts>() {
-        if hosts.by_id(&key).is_ok() {
+        if let Ok(host) = hosts.by_id(&key) {
             hosts.reached_by(&key, &alias);
+            if name.is_some_and(|name| name == host.name() && name != alias) {
+                crate::account::rename_device(&core, &key, &alias).await?;
+            }
         }
     }
     Ok(Some(Probed { key, account }))
