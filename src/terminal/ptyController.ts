@@ -522,10 +522,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.startPromise = null;
         this.resizeSequence += 1;
         this.rejectPendingResizes(new PtyControllerReplacedError());
-        if (
-            lifecycleStarted &&
-            (this.initialInputStatus === "pending" || this.initialInputStatus === "delivering")
-        ) {
+        if (lifecycleStarted && (this.initialInputStatus === "pending" || this.initialInputStatus === "delivering")) {
             this.initialInputStatus = "cancelled";
             this.cancelInitialInput();
         }
