@@ -1,6 +1,7 @@
 import { coreCall, coreRequest } from "../api/core";
 import type { CoreChange } from "../api/coreChanged";
-import type { ChatInfo, DeviceView, ProjectInfo, SessionInfo } from "../api/generated/wire";
+import type { ChatInfo, DeviceView, ProjectInfo, SessionInfo, SshLink } from "../api/generated/wire";
+import { coreSessionsApi } from "../api/coreSessions";
 import { invokeCommand as invoke } from "../api/invoke";
 import { getIpcTransport } from "../api/transport";
 import { agentLabel, isAgentType } from "../agents/catalog";
@@ -15,7 +16,6 @@ import { notify, reportError, swallow } from "../state/toast";
 import { accountApi } from "../api/account";
 import type { Agent, PaneNode, Session } from "../state/types";
 import type { Draft } from "immer";
-import { isRecord } from "../lib/guards";
 
 /** A row of the rail's Hosts group, as the core lists it: a host linked with this one, or an SSH host a terminal is open to. */
 export interface HostRow {
@@ -36,11 +36,17 @@ export const hostsApi = {
     list: () => coreCall<HostRow[]>("hosts"),
 };
 
+/** What asking an SSH host found: which host it is, and whether it is on this host's account, signed out, or another's. */
+export interface SshProbe {
+    readonly key: string;
+    readonly account: "same" | "signedOut" | "other";
+}
+
 /**
- * Installs Sikemux on the SSH host `alias` over the person's own SSH, in a terminal tab of its SSH session where a
- * password sudo asks for is typed, and resolves once the host is on the account.
+ * Runs `command` on the SSH host `alias` over the person's own SSH, in a terminal tab of its SSH session where a
+ * password ssh or sudo asks for is typed, and resolves once the host is on the account.
  */
-export async function installHere(alias: string): Promise<void> {
+async function signInOverSsh(alias: string, command: "host_install" | "host_sign_in", title: string): Promise<void> {
     const controller = new AbortController();
     const done = new Promise<void>((resolve, reject) => {
         void getIpcTransport()
@@ -57,13 +63,13 @@ export async function installHere(alias: string): Promise<void> {
             .catch(reject);
     });
     try {
-        const id = await invoke<number>("host_install", { alias, cols: 100, rows: 30 });
+        const id = await invoke<number>(command, { alias, cols: 100, rows: 30 });
         offerResumableSessions([id]);
         createSshSession(alias);
         mutate((d) => {
             const session = d.sessions[d.activeSessionId];
             if (!session) return;
-            const window = makeWindow("", "Install Sikemux", { role: "named" });
+            const window = makeWindow("", title, { role: "named" });
             window.root = { ...(window.root as PaneNode), ptyId: id };
             d.windows[window.id] = window;
             d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
@@ -74,6 +80,22 @@ export async function installHere(alias: string): Promise<void> {
         throw error;
     }
     await done;
+}
+
+/** Installs Sikemux on the SSH host `alias` and signs it in to the account. */
+export const installHere = (alias: string): Promise<void> => signInOverSsh(alias, "host_install", "Install Sikemux");
+
+/** Signs the SSH host `alias`, which runs Sikemux but is off the account, in to it. */
+export async function signInHere(alias: string): Promise<void> {
+    await signInOverSsh(alias, "host_sign_in", "Sign in");
+    await probeSshHost(alias);
+}
+
+/** Asks the SSH host `alias` whether it runs Sikemux and which host it is, keeping the answer for its row. */
+async function probeSshHost(alias: string): Promise<void> {
+    const probed = await invoke<SshProbe | null>("host_probe", { alias });
+    const { [alias]: _, ...others } = getState().sshProbes;
+    setState({ sshProbes: probed ? { ...others, [alias]: probed } : others });
 }
 
 /** One project's folder on another host. */
@@ -154,25 +176,6 @@ export type ChosenHost = HostChoice & { readonly over: string };
 /** The host chosen in the side rail, while the session it was chosen over is still in front. */
 export function chosenHostOf(state: Pick<StoreState, "chosenHost" | "activeSessionId">): HostChoice | undefined {
     return state.chosenHost?.over === state.activeSessionId ? state.chosenHost : undefined;
-}
-
-/** The chosen host as a restart keeps it, beside the session it was chosen over. */
-export function savedHostChoice(state: Pick<StoreState, "chosenHost" | "activeSessionId">): HostChoice | undefined {
-    const chosen = chosenHostOf(state);
-    if (!chosen) return undefined;
-    return chosen.kind === "ssh" ? { kind: "ssh", alias: chosen.alias } : chosen.host ? { kind: "core", host: chosen.host } : { kind: "core" };
-}
-
-/** A saved host choice, chosen again over `over` when it still names this host, an account host or an open SSH host. */
-export function restoredHostChoice(saved: unknown, sessions: Readonly<Record<string, Session>>, over: string): ChosenHost | null {
-    if (!isRecord(saved)) return null;
-    if (saved.kind === "core" && (saved.host === undefined || typeof saved.host === "string"))
-        return saved.host ? { kind: "core", host: saved.host, over } : { kind: "core", over };
-    if (saved.kind === "ssh" && typeof saved.alias === "string") {
-        const alias = saved.alias;
-        return Object.values(sessions).some((session) => session.kind === "ssh" && session.name === alias) ? { kind: "ssh", alias, over } : null;
-    }
-    return null;
 }
 
 export function sameHost(a: HostChoice | undefined, b: HostChoice): boolean {
@@ -464,21 +467,52 @@ function noticeNewDevices(signal: AbortSignal): void {
         .catch(swallow("follow new devices on the account"));
 }
 
+/** The SSH host a terminal runs on, by the session it is a tab of. */
+function sshAliasOf(state: Pick<StoreState, "sessionOrder" | "sessions" | "windowsBySession" | "windows">, ptyId: number): string | undefined {
+    const holds = (windowId: string) => {
+        const window = state.windows[windowId];
+        return !!window && collectPanes(window.root).some((pane) => pane.ptyId === ptyId);
+    };
+    return state.sessionOrder
+        .map((id) => state.sessions[id])
+        .find((session) => session?.kind === "ssh" && (state.windowsBySession[session.id] ?? []).some(holds))?.name;
+}
+
+/**
+ * Asks each SSH host once, as a terminal on it connects, whether it runs Sikemux and which host it is, so a host on
+ * the account shows as one row (ADR 0018).
+ */
+function probeSshHosts(signal: AbortSignal): void {
+    const asked = new Set<string>();
+    const probe = (ptyId: number) => {
+        const alias = sshAliasOf(getState(), ptyId);
+        if (!alias || asked.has(alias)) return;
+        asked.add(alias);
+        void probeSshHost(alias).catch(swallow(`ask ${alias} which host it is`));
+    };
+    void getIpcTransport()
+        .subscribe<{ id: number; link: SshLink }>(
+            "pty_ssh_link",
+            ({ payload }) => {
+                if (payload.link === "connected") probe(payload.id);
+            },
+            { signal },
+        )
+        .catch(swallow("follow SSH terminals connecting"));
+    void coreSessionsApi
+        .list()
+        .then((sessions) => {
+            for (const session of sessions) if (session.ssh === "connected") probe(session.id);
+        })
+        .catch(swallow("list SSH terminals"));
+}
+
 /** Keeps the store's hosts and their views as the app reaches them. */
 export function startHosts(): () => void {
     const controller = new AbortController();
     const transport = getIpcTransport();
     noticeNewDevices(controller.signal);
-    // A host chosen before the restart gives way to the project once the app finds it gone or out of reach.
-    let restored = getState().chosenHost;
-    const settleRestored = (hosts: readonly HostEntry[]) => {
-        const choice = restored;
-        if (choice?.kind !== "core" || !choice.host) return;
-        const host = hosts.find((candidate) => candidate.id === choice.host);
-        if (host?.reach === "connecting") return;
-        restored = null;
-        if ((!host || host.reach === "away") && getState().chosenHost === choice) setState({ chosenHost: null });
-    };
+    probeSshHosts(controller.signal);
     const setHosts = (rows: HostRow[]) => {
         const hosts = rows.filter((row): row is HostEntry => row.id !== null);
         const ids = new Set(hosts.map((host) => host.id));
@@ -487,7 +521,6 @@ export function startHosts(): () => void {
             openSshHosts: rows.filter((row) => row.id === null),
             hostViews: Object.fromEntries(Object.entries(getState().hostViews).filter(([id]) => ids.has(id))),
         });
-        settleRestored(hosts);
         placeRemoteProjects();
     };
     void transport

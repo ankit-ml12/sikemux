@@ -180,6 +180,7 @@ pub(super) fn agent_letters(text: &str) -> Option<Vec<AgentLetter>> {
                 question: attribute("question"),
                 text: body,
                 secret: attribute("secret") == "true",
+                tree: None,
             }
         } else {
             AgentLetter {
@@ -188,6 +189,7 @@ pub(super) fn agent_letters(text: &str) -> Option<Vec<AgentLetter>> {
                 agent_id: attribute("agent-id"),
                 cli: attribute("cli"),
                 question: String::new(),
+                tree: Some(super::send::read(&body)),
                 text: body,
                 secret: false,
             }

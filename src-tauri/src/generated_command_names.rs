@@ -19,6 +19,8 @@ pub const IPC_COMMANDS: &[&str] = &[
     "pty_kill",
     "pty_sessions",
     "host_install",
+    "host_sign_in",
+    "host_probe",
     "share_access",
     "share_viewer_hello",
     "core_call",

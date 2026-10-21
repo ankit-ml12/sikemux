@@ -13,7 +13,7 @@ use super::attachments;
 use super::changed::Topic;
 use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
-use super::names::{project_of, AgentName, ClosedAgent, Starting};
+use super::names::{project_of, AgentName, ClosedAgent, NameTheme, Starting};
 use super::workspace;
 use super::{
     agent_accounts, agent_sign_in, board, inbox, messages, model_providers, plugins, questions,
@@ -81,6 +81,12 @@ calls! { core, client, params;
     "closedAgents": Local => answer(closed_agents(&core, parse(params)?).await?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
     "agentCatalog": Watch, any_program => answer(super::catalog::view()),
+    "agentNameTheme": Full => answer(NameThemeParams { theme: core.names.theme() }),
+    "setAgentNameTheme": Person => {
+        let params: NameThemeParams = parse(params)?;
+        core.names.set_theme(params.theme);
+        answer(params)
+    },
     "hostLoad": Watch, any_program => answer(super::load::now()),
     "stopChatIfIdle": Local => {
         let params: AgentParams = parse(params)?;
@@ -565,6 +571,11 @@ fn signed((key, signature): (String, String)) -> Value {
 #[derive(Debug, Deserialize)]
 struct NonceParams {
     nonce: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct NameThemeParams {
+    theme: NameTheme,
 }
 
 #[derive(Deserialize)]

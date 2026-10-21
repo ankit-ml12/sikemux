@@ -17,7 +17,6 @@ import { notify } from "./toast";
 import { errorText } from "../lib/format";
 import { isSessionKind, validatePersistedLayout } from "./persistValidation";
 import { isRecord } from "../lib/guards";
-import { restoredHostChoice, savedHostChoice, type HostChoice } from "../hosts/hosts";
 import { isWindowRole } from "./windowRoles";
 import { isPluginId } from "../plugins/kinds";
 import { decodeItemState, encodeItemState, type PersistedWorkbenchItemEnvelope } from "../workbench/itemStates";
@@ -108,7 +107,6 @@ const PERSISTED_KEYS = [
     "sessionOrder",
     "windowsBySession",
     "activeSessionId",
-    "chosenHost",
     "recent",
     "editorViews",
     "deskPanes",
@@ -148,8 +146,6 @@ export interface PersistedSnapshot {
     windowsBySession: Record<string, Window[]>;
     sessionOrder: string[];
     activeSessionId: string;
-    /** The host chosen in the side rail over the active session, when one was. */
-    chosenHost?: HostChoice;
     recent: RecentEntry[];
     prefs: Partial<PersistedPrefs>;
     /** Versioned item-owned state. Live processes, buffers, and credentials are excluded. */
@@ -377,7 +373,6 @@ function snapshot(): string {
         windowsBySession,
         sessionOrder: sessions.map((s) => s.id),
         activeSessionId: s.activeSessionId,
-        chosenHost: savedHostChoice(s),
         recent: s.recent,
         prefs: { ...unreadPrefs, ...packPrefs(s) },
         itemStates,
@@ -908,7 +903,6 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
         agentStatus: {},
         projectStatus: {},
         activeSessionId,
-        chosenHost: restoredHostChoice(decoded.chosenHost, sessions, activeSessionId),
         recent: Array.isArray(decoded.recent) ? decoded.recent.filter(isRecent) : [],
         editorViews,
         deskPanes,

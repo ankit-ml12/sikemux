@@ -439,6 +439,9 @@ pub struct AgentLetter {
     /// The answer is a secret the agent reads from a file, so `text` only says where.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub secret: bool,
+    /// The tree of a message's `text`, for a client that cannot read markdown itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree: Option<PartTree>,
 }
 
 /// The core's markdown tree of a part's text and how much of the text it covers.
