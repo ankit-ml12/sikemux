@@ -105,7 +105,7 @@ if (packet.length !== 42 || packet.subarray(0, 2).toString("ascii") !== "Ed") fa
 NODE
 
 # Shipped clients resolve this exact URL, so the endpoint is a fixed contract.
-grep -Fq 'releases/download/nightly/latest.json' src-tauri/src/updates.rs || {
+grep -Fq 'releases/download/nightly/latest.json' src-tauri/crates/sikemux-core/src/server/updates.rs || {
   echo "nightly updater endpoint is missing" >&2
   exit 1
 }
