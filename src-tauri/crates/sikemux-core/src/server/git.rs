@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use git2::Repository;
+
+use super::board::codehost;
+use super::connection::blocking;
+use crate::protocol::{ProjectCodeHost, ProjectPull, PullChecks};
 use serde::Deserialize;
 use serde_json::Value;
 use sikemux_process::sync::Locked;
@@ -202,6 +206,118 @@ fn read_chips(core: &Arc<Core>, folders: Vec<String>) {
     });
 }
 
+/// A project's repository on its code host, and the pull request its branch
+/// was in when last read.
+#[derive(Clone, PartialEq)]
+pub(crate) struct Hosted {
+    pub shown: Option<ProjectCodeHost>,
+    pub branch: Option<String>,
+    pub pull: Option<ProjectPull>,
+    /// The repository as the CI watch names it, once an account reaches it.
+    pub watched: Option<super::ci::Shown>,
+}
+
+/// Reads again where the projects at `folders` are on their code hosts and
+/// the pull requests their branches are in, and sends devices the view when
+/// either changed. Runs when a project's branch or refs move, its CI moves,
+/// or the person picks another repository for it.
+pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
+    let core = core.clone();
+    tokio::spawn(async move {
+        let mut read = Vec::with_capacity(folders.len());
+        for folder in folders {
+            let found = {
+                let folder = PathBuf::from(&folder);
+                let core = core.clone();
+                blocking(move || {
+                    let origin = super::board::git::origin(&folder);
+                    Ok((origin, super::board::codehost::picks(&core, &folder)))
+                })
+                .await
+            };
+            let Ok((Some(origin), picks)) = found else {
+                read.push((folder, None));
+                continue;
+            };
+            let shown = codehost::shown(&origin, &picks).await;
+            let branch = crate::git::status::git_chip(folder.clone())
+                .await
+                .ok()
+                .map(|chip| chip.branch);
+            let (pull, watched) = match (&shown, &branch) {
+                (Some(_), Some(branch)) => match codehost::find(&origin, &picks).await {
+                    Ok(repo) => (
+                        codehost::branch_pull(&repo, branch).await.ok().flatten(),
+                        Some(repo.watched()),
+                    ),
+                    Err(_) => (None, None),
+                },
+                _ => (None, None),
+            };
+            let hosted = Hosted {
+                shown,
+                branch,
+                pull,
+                watched,
+            };
+            read.push((folder, Some(hosted)));
+        }
+        let projects: HashSet<String> = core
+            .workspaces
+            .project_paths()
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        let changed = {
+            let mut hosts = core.code_hosts.locked();
+            let before = hosts.len();
+            hosts.retain(|folder, _| projects.contains(folder));
+            let mut changed = hosts.len() != before;
+            for (folder, hosted) in read {
+                changed |= match hosted.filter(|_| projects.contains(&folder)) {
+                    Some(hosted) => hosts.insert(folder, hosted.clone()) != Some(hosted),
+                    None => hosts.remove(&folder).is_some(),
+                };
+            }
+            changed
+        };
+        if changed {
+            core.view_changed();
+        }
+    });
+}
+
+/// The repositories whose pull request checks are still running, which the
+/// CI watch keeps checking until they settle.
+pub(crate) fn pending_pulls(core: &Core) -> Vec<super::ci::Shown> {
+    core.code_hosts
+        .locked()
+        .values()
+        .filter(|hosted| {
+            hosted
+                .pull
+                .as_ref()
+                .is_some_and(|pull| pull.checks == Some(PullChecks::Pending))
+        })
+        .filter_map(|hosted| hosted.watched.clone())
+        .collect()
+}
+
+/// The CI of `repo` moved, so the pull requests of the projects on it are
+/// read again.
+pub(crate) fn ci_moved(core: &Arc<Core>, repo: &super::ci::Shown) {
+    let folders: Vec<String> = core
+        .code_hosts
+        .locked()
+        .iter()
+        .filter(|(_, hosted)| hosted.watched.as_ref() == Some(repo))
+        .map(|(folder, _)| folder.clone())
+        .collect();
+    if !folders.is_empty() {
+        read_hosts(core, folders);
+    }
+}
+
 /// Watches the workspace's projects as they are now, telling every client
 /// when one moves.
 pub(crate) fn follow_projects(core: &Core) {
@@ -215,6 +331,9 @@ pub(crate) fn follow_projects(core: &Core) {
             .as_ref()
             .is_none_or(|paths| paths.iter().any(|path| path == watch::GIT_STATE));
         read_chips(&core, projects.to_vec());
+        if state_moved {
+            read_hosts(&core, projects.to_vec());
+        }
         for project in projects {
             core.changes
                 .changed(Topic::Git, Some(project), paths.clone());

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::auto::Pull;
-use crate::protocol::CodeHostChoice;
+use crate::protocol::{CodeHostChoice, ProjectCodeHost, ProjectPull, PullChecks};
 use crate::server::names::project_of;
 use crate::server::plugins::{self, Failure};
 use crate::server::Core;
@@ -17,6 +17,8 @@ use crate::server::Core;
 struct Host {
     id: &'static str,
     label: &'static str,
+    /// What the host calls its CI.
+    ci_name: &'static str,
     /// The ways to merge, tried in order while the repository refuses one;
     /// none is the repository's own default.
     merges: &'static [Option<&'static str>],
@@ -29,6 +31,7 @@ struct Host {
 const HOSTS: [Host; 3] = [
     Host {
         id: "github",
+        ci_name: "Actions",
         label: "GitHub",
         merges: &[Some("squash"), Some("merge"), Some("rebase")],
         run_path: "/actions/runs/",
@@ -36,6 +39,7 @@ const HOSTS: [Host; 3] = [
     },
     Host {
         id: "bitbucket",
+        ci_name: "Pipelines",
         label: "Bitbucket",
         merges: &[None],
         run_path: "/pipelines/results/",
@@ -43,6 +47,7 @@ const HOSTS: [Host; 3] = [
     },
     Host {
         id: "gitlab",
+        ci_name: "Pipelines",
         label: "GitLab",
         merges: &[None],
         run_path: "/-/pipelines/",
@@ -127,12 +132,12 @@ pub(crate) fn picks(core: &Core, dir: &Path) -> BTreeMap<String, CodeHostChoice>
         .unwrap_or_default()
 }
 
-/// The code host the remote `url` is on, with an account signed in to it,
-/// or the repository and account in `picks` for it.
-pub(crate) async fn find(
+/// Where the remote `url` is on a code host, or the repository `picks`
+/// names there in its place, signed in to or not.
+async fn locate(
     url: &str,
     picks: &BTreeMap<String, CodeHostChoice>,
-) -> Result<Repo, String> {
+) -> Option<(&'static Host, String, String)> {
     for host in &HOSTS {
         let Ok(found) = plugins::call(&host.plugin(), "resolveRemote", json!({ "url": url })).await
         else {
@@ -145,43 +150,115 @@ pub(crate) async fn find(
         if found["sameHost"] != Value::Bool(true) {
             continue;
         }
-        let pick = picks.get(&host.plugin()).cloned().unwrap_or_default();
-        let (owner, name) = pick
-            .repo
-            .as_deref()
-            .and_then(|slug| slug.split_once('/'))
-            .map_or((owner, name), |(owner, name)| {
-                (owner.to_owned(), name.to_owned())
-            });
-        let account = match pick.account {
-            Some(account) => Some(account),
-            None => plugins::call(
-                &host.plugin(),
-                "accountFor",
-                json!({ "owner": owner, "name": name }),
-            )
-            .await
-            .ok()
-            .and_then(|account| account.as_str().map(str::to_owned)),
-        };
-        if account.is_none() {
-            return Err(format!(
-                "sign in to {} in Sikemux with an account that can reach {owner}/{name}",
-                host.label
-            ));
-        }
-        return Ok(Repo {
-            host,
-            owner,
-            name,
-            account,
+        let picked = picks
+            .get(&host.plugin())
+            .and_then(|pick| pick.repo.as_deref())
+            .and_then(|slug| slug.split_once('/'));
+        return Some(match picked {
+            Some((owner, name)) => (host, owner.to_owned(), name.to_owned()),
+            None => (host, owner, name),
         });
     }
-    let labels: Vec<&str> = HOSTS.iter().map(|host| host.label).collect();
-    Err(format!(
-        "this project's origin is on none of {}",
-        labels.join(", ")
-    ))
+    None
+}
+
+/// The code host the remote `url` is on, with an account signed in to it,
+/// or the repository and account in `picks` for it.
+pub(crate) async fn find(
+    url: &str,
+    picks: &BTreeMap<String, CodeHostChoice>,
+) -> Result<Repo, String> {
+    let Some((host, owner, name)) = locate(url, picks).await else {
+        let labels: Vec<&str> = HOSTS.iter().map(|host| host.label).collect();
+        return Err(format!(
+            "this project's origin is on none of {}",
+            labels.join(", ")
+        ));
+    };
+    let pick = picks.get(&host.plugin()).cloned().unwrap_or_default();
+    let account = match pick.account {
+        Some(account) => Some(account),
+        None => plugins::call(
+            &host.plugin(),
+            "accountFor",
+            json!({ "owner": owner, "name": name }),
+        )
+        .await
+        .ok()
+        .and_then(|account| account.as_str().map(str::to_owned)),
+    };
+    if account.is_none() {
+        return Err(format!(
+            "sign in to {} in Sikemux with an account that can reach {owner}/{name}",
+            host.label
+        ));
+    }
+    Ok(Repo {
+        host,
+        owner,
+        name,
+        account,
+    })
+}
+
+/// What clients show of the code host the remote `url` is on.
+pub(crate) async fn shown(
+    url: &str,
+    picks: &BTreeMap<String, CodeHostChoice>,
+) -> Option<ProjectCodeHost> {
+    let (host, owner, name) = locate(url, picks).await?;
+    Some(ProjectCodeHost {
+        host: host.id.to_owned(),
+        repo: format!("{owner}/{name}"),
+        ci_name: host.ci_name.to_owned(),
+        sections: ["pulls", "actions", "issues", "releases"]
+            .map(str::to_owned)
+            .to_vec(),
+    })
+}
+
+/// The open pull request `branch` is the head of, with how the checks on its
+/// latest commit stand.
+pub(crate) async fn branch_pull(repo: &Repo, branch: &str) -> Result<Option<ProjectPull>, String> {
+    let open = repo.call("pulls", json!({ "state": "open" })).await?;
+    let Some(found) = open
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|pull| text(pull, "head").as_deref() == Some(branch))
+    else {
+        return Ok(None);
+    };
+    let pull = pull_of(repo, found)?;
+    let checks = match text(found, "headSha") {
+        Some(sha) => match checks(&pull, branch, &sha).await? {
+            Checks::None => None,
+            Checks::Running => Some(PullChecks::Pending),
+            Checks::Passed => Some(PullChecks::Passing),
+            Checks::Failed(_) => Some(PullChecks::Failing),
+        },
+        None => None,
+    };
+    Ok(Some(ProjectPull {
+        number: pull.number,
+        title: text(found, "title").unwrap_or_default(),
+        draft: found["draft"].as_bool().unwrap_or(false),
+        url: pull.url,
+        checks,
+    }))
+}
+
+impl Repo {
+    /// The repository as the CI watch names it.
+    pub(crate) fn watched(&self) -> super::super::ci::Shown {
+        super::super::ci::Shown {
+            provider: self.host.plugin(),
+            owner: self.owner.clone(),
+            name: self.name.clone(),
+            account: self.account.clone(),
+            host: None,
+        }
+    }
 }
 
 /// The pull requests the commit `sha` came in through, the merged one first,

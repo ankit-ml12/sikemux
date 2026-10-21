@@ -348,6 +348,8 @@ pub(crate) struct Core {
     pub(crate) git_watches: crate::git::watch::Watches,
     /// Each project's branch chip, by project folder.
     pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
+    /// Each project's code host and branch pull request, by project folder.
+    pub(crate) code_hosts: Mutex<HashMap<String, git::Hosted>>,
     pub(crate) usage: agent_accounts::UsageWatch,
     pub(crate) layouts: layout::Layouts,
     /// Watches the SSH config once a client has listed its hosts.
@@ -431,6 +433,7 @@ impl Core {
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
             git_chips: Default::default(),
+            code_hosts: Default::default(),
             usage: Default::default(),
             layouts: layout::Layouts::new(data_dir),
             ssh_watch: OnceLock::new(),
@@ -765,8 +768,17 @@ impl Core {
         let mut workspace = self.workspaces.view();
         self.names.fill(&mut workspace.agents);
         let chips = self.git_chips.locked();
+        let hosts = self.code_hosts.locked();
         for project in &mut workspace.projects {
-            project.git = chips.get(&*project.path.to_string_lossy()).cloned();
+            let folder = project.path.to_string_lossy();
+            let hosted = hosts.get(&*folder);
+            project.code_host = hosted.and_then(|hosted| hosted.shown.clone());
+            project.git = chips.get(&*folder).cloned().map(|mut chip| {
+                chip.pull = hosted
+                    .filter(|hosted| hosted.branch.as_deref() == Some(chip.branch.as_str()))
+                    .and_then(|hosted| hosted.pull.clone());
+                chip
+            });
         }
         workspace
     }

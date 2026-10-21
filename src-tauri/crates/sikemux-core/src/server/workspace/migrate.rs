@@ -152,6 +152,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 identity: None,
                 git: None,
                 launcher: None,
+                code_host: None,
             })
         })
         .filter(|project| project.path.is_absolute())

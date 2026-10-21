@@ -519,6 +519,7 @@ impl Workspaces {
                 identity: None,
                 git: None,
                 launcher: None,
+                code_host: None,
             };
             check_project(&project, saved)?;
             saved.projects.push(project.clone());
@@ -1766,7 +1767,11 @@ pub(crate) struct UpdateProjectParams {
 
 /// Renames, pins or moves a project to a space.
 pub(crate) fn update_project(core: &Core, params: UpdateProjectParams) -> CoreResult<ProjectInfo> {
+    let picks_changed = params.patch.contains_key("codeHosts");
     let project = core.workspaces.update_project(&params.id, params.patch)?;
+    if let (true, Some(core)) = (picks_changed, core.arc()) {
+        super::git::read_hosts(&core, vec![project.path.to_string_lossy().into_owned()]);
+    }
     core.view_changed();
     Ok(project)
 }
@@ -2053,6 +2058,7 @@ mod tests {
             identity: None,
             git: None,
             launcher: None,
+            code_host: None,
         }
     }
 

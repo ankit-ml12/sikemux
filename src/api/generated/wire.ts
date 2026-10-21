@@ -63,6 +63,11 @@ export interface ProjectInfo {
      * started here, else the first offered. The core fills it in.
      */
     launcher?: string;
+    /**
+     * Where its repository is on a code host, while its origin is on one.
+     * The core fills it in.
+     */
+    codeHost?: ProjectCodeHost;
 }
 
 /** A repository or account picked for a project on one code host. */
@@ -80,6 +85,38 @@ export interface ProjectGit {
     behind: number;
     /** Something in it changed since its last commit. */
     dirty: boolean;
+    /**
+     * The open pull request the branch is the head of, as its code host
+     * last said.
+     */
+    pull?: ProjectPull;
+}
+
+/** The open pull request a project's branch is the head of. */
+export interface ProjectPull {
+    number: number;
+    title: string;
+    draft: boolean;
+    url: string;
+    /** How the checks on its latest commit stand; none before any ran. */
+    checks: PullChecks | null;
+}
+
+export type PullChecks = "pending" | "passing" | "failing";
+
+/** A project's repository on a code host, and what Sikemux shows of it. */
+export interface ProjectCodeHost {
+    /** The host's plugin, such as `github`. */
+    host: string;
+    /** `owner/name`. */
+    repo: string;
+    /** What the host calls its CI, such as Actions or Pipelines. */
+    ciName: string;
+    /**
+     * The sections clients list for it: `pulls`, `actions`, `issues` and
+     * `releases`, in order.
+     */
+    sections: string[];
 }
 
 /** A set of projects the person shows on their own. */

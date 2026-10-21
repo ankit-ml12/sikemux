@@ -885,6 +885,45 @@ pub struct ProjectInfo {
     /// started here, else the first offered. The core fills it in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launcher: Option<String>,
+    /// Where its repository is on a code host, while its origin is on one.
+    /// The core fills it in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_host: Option<ProjectCodeHost>,
+}
+
+/// A project's repository on a code host, and what Sikemux shows of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCodeHost {
+    /// The host's plugin, such as `github`.
+    pub host: String,
+    /// `owner/name`.
+    pub repo: String,
+    /// What the host calls its CI, such as Actions or Pipelines.
+    pub ci_name: String,
+    /// The sections clients list for it: `pulls`, `actions`, `issues` and
+    /// `releases`, in order.
+    pub sections: Vec<String>,
+}
+
+/// The open pull request a project's branch is the head of.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectPull {
+    pub number: u64,
+    pub title: String,
+    pub draft: bool,
+    pub url: String,
+    /// How the checks on its latest commit stand; none before any ran.
+    pub checks: Option<PullChecks>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PullChecks {
+    Pending,
+    Passing,
+    Failing,
 }
 
 /// A project's branch as its chip shows it.
@@ -897,6 +936,10 @@ pub struct ProjectGit {
     pub behind: u32,
     /// Something in it changed since its last commit.
     pub dirty: bool,
+    /// The open pull request the branch is the head of, as its code host
+    /// last said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull: Option<ProjectPull>,
 }
 
 /// A repository or account picked for a project on one code host.
