@@ -10,6 +10,7 @@ mod about;
 mod appearance;
 mod cli;
 mod cloud;
+mod general;
 mod plugins;
 
 /// What the pages keep while settings are open: what the core last answered
@@ -18,6 +19,7 @@ mod plugins;
 pub struct State {
     pub appearance: Option<appearance::Fields>,
     pub cloud: Option<cloud::Fields>,
+    pub general: Option<general::Fields>,
     /// The command line's install, as the core last said.
     pub cli: Option<Value>,
     pub cli_busy: bool,
@@ -26,7 +28,7 @@ pub struct State {
 /// The sections of a page in the order it shows them, as searches name them.
 pub fn sections(page: Page) -> &'static [&'static str] {
     match page {
-        Page::General => &["Project folders"],
+        Page::General => general::SECTIONS,
         Page::Appearance => appearance::SECTIONS,
         Page::Keybindings => &["Shortcuts"],
         Page::Activity => &["Overview", "Calendar", "By model", "By agent", "By project"],
@@ -71,6 +73,7 @@ pub fn render(
         Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cloud => cloud::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Plugins => plugins::render(bench, &lit, this, cx),
+        Page::General => general::render(bench, &settings.pages, &lit, this, window, cx),
         _ => Vec::new(),
     }
 }
