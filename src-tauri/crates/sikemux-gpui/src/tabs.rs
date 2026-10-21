@@ -12,21 +12,21 @@ use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui::{self, IconButton, Tab};
-use crate::workbench::Workbench;
+use crate::workbench::{Strip, Workbench};
 
 /// The bar over the stage: the project's tabs, then the clock.
 pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let tabs: Vec<_> = bench
-        .project()
-        .map(|project| {
+        .strip()
+        .map(|strip| {
             let front = bench.tab().map(|tab| tab.id.clone());
             bench
-                .tabs(&project.id)
+                .tabs(&strip)
                 .iter()
                 .map(|tab| {
                     strip_tab(
                         bench,
-                        &project.id,
+                        &strip,
                         tab,
                         front.as_deref() == Some(tab.id.as_str()),
                         cx,
@@ -500,29 +500,34 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
 
 fn strip_tab(
     bench: &Workbench,
-    project: &str,
+    strip: &Strip,
     tab: &LayoutTab,
     active: bool,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let (project_id, tab_id) = (project.to_owned(), tab.id.clone());
+    let tab_id = tab.id.clone();
     let base = Tab::new(
         SharedString::from(format!("tab-{}", tab.id)),
         label(bench, tab),
     )
     .active(active)
     .on_click(cx.listener({
-        let (project, tab) = (project_id.clone(), tab_id.clone());
-        move |bench, _, _, _| bench.activate_tab(&project, &tab)
+        let (strip, tab) = (strip.clone(), tab_id.clone());
+        move |bench, _, _, _| bench.activate_tab(&strip, &tab)
     }))
-    .on_close(cx.listener(move |bench, _, _, _| bench.close_tab(&project_id, &tab_id)));
+    .on_close(cx.listener({
+        let strip = strip.clone();
+        move |bench, _, _, _| bench.close_tab(&strip, &tab_id)
+    }));
     let view = first_view(&tab.pane);
     match view {
-        Some((PaneKind::Agent, target)) => match bench
-            .agents_of(project)
-            .into_iter()
-            .find(|agent| &agent.id == target)
+        Some((PaneKind::Agent, target)) => match match strip {
+            Strip::Project(project) => bench.agents_of(project),
+            Strip::Host(_) => Vec::new(),
+        }
+        .into_iter()
+        .find(|agent| &agent.id == target)
         {
             Some(agent) => base
                 .mark(ui::agent_mark(&agent, 19., cx))

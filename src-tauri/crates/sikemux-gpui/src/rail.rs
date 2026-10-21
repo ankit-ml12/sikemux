@@ -15,7 +15,7 @@ use crate::keymap;
 use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, Group, IconButton, Menu, MenuItem, Row, Tone, Variant};
-use crate::workbench::{AgentRow, Edge, Workbench};
+use crate::workbench::{AgentRow, Edge, Strip, Workbench};
 
 pub const SIDE_RAIL_WIDTH: f32 = 258.;
 
@@ -105,7 +105,7 @@ fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
 }
 
 /// The account's other hosts, then the SSH hosts a terminal is open to.
-fn hosts(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
+fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
     let t = Tokens::get(cx).clone();
     rows(bench.read("hosts"))
         .map(|host| {
@@ -123,7 +123,13 @@ fn hosts(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
                 "connecting" if linked => Some("connecting"),
                 _ => None,
             };
+            let alias = host["ssh"].as_str().filter(|_| !linked).map(str::to_owned);
+            let front = alias.is_some() && bench.strip() == alias.clone().map(Strip::Host);
             Row::new(SharedString::from(format!("host-{name}")), name)
+                .chosen(front)
+                .when_some(alias, |row, alias| {
+                    row.on_click(cx.listener(move |bench, _, _, _| bench.open_ssh_terminal(&alias)))
+                })
                 .mark(
                     16.,
                     ui::icon(Icon::Server, 14.).text_color(if linked { t.host } else { t.ssh }),
@@ -280,7 +286,7 @@ fn project_tree(
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let active = bench.project().is_some_and(|front| front.id == project.id);
+    let active = bench.strip() == Some(Strip::Project(project.id.clone()));
     let agents = bench.agents_of(&project.id);
     let id = project.id.clone();
     div()

@@ -16,7 +16,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
-    Preferences, ProjectInfo, RecentInfo, SessionInfo, Tab,
+    Preferences, ProjectInfo, ProjectLayout, RecentInfo, SessionInfo, Tab,
 };
 use tokio::sync::mpsc;
 
@@ -90,6 +90,25 @@ pub struct CiRepo {
     pub name: String,
     pub account: Option<String>,
     pub branch: String,
+}
+
+/// Whose tabs a strip holds: a project's, or those of an SSH host shown instead of one.
+#[derive(Clone, PartialEq, Eq)]
+pub enum Strip {
+    Project(String),
+    Host(String),
+}
+
+impl Strip {
+    /// `params` naming this strip, as the core's tab calls take it.
+    fn with(&self, mut params: Value) -> Value {
+        let (key, id) = match self {
+            Strip::Project(id) => ("project", id),
+            Strip::Host(alias) => ("host", alias),
+        };
+        params[key] = json!(id);
+        params
+    }
 }
 
 /// A side of the window a rail lives on.
@@ -933,11 +952,11 @@ impl Workbench {
     /// Brings forward the tab `by` places from the one in front, among those `same`
     /// accepts, going round the strip.
     fn step_tab(&self, by: isize, same: impl Fn(&Tab, &Tab) -> bool) {
-        let (Some(project), Some(front)) = (self.project(), self.tab()) else {
+        let (Some(strip), Some(front)) = (self.strip(), self.tab()) else {
             return;
         };
         let tabs: Vec<&Tab> = self
-            .tabs(&project.id)
+            .tabs(&strip)
             .iter()
             .filter(|tab| same(tab, front))
             .collect();
@@ -945,23 +964,23 @@ impl Workbench {
             return;
         };
         let to = (at as isize + by).rem_euclid(tabs.len() as isize) as usize;
-        self.activate_tab(&project.id, &tabs[to].id);
+        self.activate_tab(&strip, &tabs[to].id);
     }
 
     /// Brings forward the tab at `place` in the strip, counting from one, or the last tab.
     fn go_to_tab(&self, place: Option<usize>) {
-        let Some(project) = self.project() else {
+        let Some(strip) = self.strip() else {
             return;
         };
-        let tabs = self.tabs(&project.id);
+        let tabs = self.tabs(&strip);
         if let Some(tab) = place.map_or(tabs.last(), |place| tabs.get(place - 1)) {
-            self.activate_tab(&project.id, &tab.id);
+            self.activate_tab(&strip, &tab.id);
         }
     }
 
     fn close_front_tab(&self) {
-        if let (Some(project), Some(tab)) = (self.project(), self.tab()) {
-            self.close_tab(&project.id, &tab.id);
+        if let (Some(strip), Some(tab)) = (self.strip(), self.tab()) {
+            self.close_tab(&strip, &tab.id);
         }
     }
 
@@ -975,17 +994,37 @@ impl Workbench {
         self.call("activateProject", json!({ "project": id }));
     }
 
-    pub fn tabs(&self, project: &str) -> &[Tab] {
-        self.view
+    /// The strip in front: the SSH host shown instead of a project, else the project in front.
+    pub fn strip(&self) -> Option<Strip> {
+        let layout = &self.view.as_ref()?.layout;
+        match layout
+            .active_host
             .as_ref()
-            .and_then(|view| view.layout.projects.get(project))
+            .filter(|host| layout.hosts.contains_key(*host))
+        {
+            Some(host) => Some(Strip::Host(host.clone())),
+            None => self
+                .project()
+                .map(|project| Strip::Project(project.id.clone())),
+        }
+    }
+
+    fn layout_of(&self, strip: &Strip) -> Option<&ProjectLayout> {
+        let layout = &self.view.as_ref()?.layout;
+        match strip {
+            Strip::Project(id) => layout.projects.get(id),
+            Strip::Host(alias) => layout.hosts.get(alias),
+        }
+    }
+
+    pub fn tabs(&self, strip: &Strip) -> &[Tab] {
+        self.layout_of(strip)
             .map_or(&[], |layout| layout.tabs.as_slice())
     }
 
-    /// The tab in front in the project in front.
+    /// The tab in front in the strip in front.
     pub fn tab(&self) -> Option<&Tab> {
-        let project = self.project()?;
-        let layout = self.view.as_ref()?.layout.projects.get(&project.id)?;
+        let layout = self.layout_of(&self.strip()?)?;
         let tabs = layout.tabs.as_slice();
         layout
             .active
@@ -994,23 +1033,29 @@ impl Workbench {
             .or(tabs.first())
     }
 
-    pub fn activate_tab(&self, project: &str, tab: &str) {
-        self.call("activateTab", json!({ "project": project, "tab": tab }));
+    pub fn activate_tab(&self, strip: &Strip, tab: &str) {
+        self.call("activateTab", strip.with(json!({ "tab": tab })));
     }
 
-    pub fn close_tab(&self, project: &str, tab: &str) {
-        self.call("closeTab", json!({ "project": project, "tab": tab }));
+    pub fn close_tab(&self, strip: &Strip, tab: &str) {
+        self.call("closeTab", strip.with(json!({ "tab": tab })));
+    }
+
+    /// Opens a terminal to an SSH host, in that host's strip.
+    pub fn open_ssh_terminal(&self, alias: &str) {
+        self.call("openSshTerminal", json!({ "host": alias }));
     }
 
     /// Brings an agent's tab to the front.
     pub fn activate_agent(&self, agent: &AgentRow) {
+        let strip = Strip::Project(agent.project.clone());
         if let Some(tab) = self
-            .tabs(&agent.project)
+            .tabs(&strip)
             .iter()
             .find(|tab| shows(tab, PaneKind::Agent) == Some(&agent.id))
         {
             self.activate_project(&agent.project);
-            self.activate_tab(&agent.project, &tab.id);
+            self.activate_tab(&strip, &tab.id);
         }
     }
 

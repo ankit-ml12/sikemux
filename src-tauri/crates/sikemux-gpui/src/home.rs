@@ -39,7 +39,10 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
         return div().flex_1().min_w_0().child(pane).into_any_element();
     }
     let project = bench.project();
-    if project.is_some_and(|project| bench.tabs(&project.id).is_empty()) {
+    if bench
+        .strip()
+        .is_some_and(|strip| bench.tabs(&strip).is_empty())
+    {
         return div()
             .flex_1()
             .min_w_0()
