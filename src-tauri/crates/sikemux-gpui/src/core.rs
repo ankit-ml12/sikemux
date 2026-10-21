@@ -213,6 +213,8 @@ pub enum Ask {
         agent: String,
         account: ChatAccount,
     },
+    /// Reads the agent detection rules from disk again, answering what went wrong.
+    ReloadManifests(oneshot::Sender<Result<(), String>>),
     /// Starts a terminal running `spawn` outside any tab, answering its id.
     Spawn {
         spawn: Box<TerminalSpawn>,
@@ -765,6 +767,13 @@ async fn run(
                                     if let Err(error) = client.acp_switch_account(agent, account).await {
                                         eprintln!("sikemux: the chat stayed on its account: {error}");
                                     }
+                                });
+                            }
+                            Some(Ask::ReloadManifests(reloaded)) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    let reload = client.reload_manifests().await;
+                                    let _ = reloaded.send(reload.map(|_| ()).map_err(|error| error.to_string()));
                                 });
                             }
                             Some(Ask::Spawn { spawn, started }) => {

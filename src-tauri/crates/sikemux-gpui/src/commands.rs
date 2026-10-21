@@ -4,6 +4,8 @@
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{Context, SharedString, Window};
 use serde_json::json;
+use sikemux_wire::protocol::PaneKind;
+use tokio::sync::oneshot;
 
 use crate::core;
 use crate::keymap;
@@ -17,6 +19,10 @@ pub struct OpenCommands;
 const REMEMBERED: usize = 20;
 const BUILTIN: &str = "builtin:";
 const CUSTOM: &str = "custom:";
+const STANDALONE: &str = "standalone:";
+
+/// A command no shortcut does: its id, name, what it does and its category.
+type Standalone = (&'static str, &'static str, &'static str, &'static str);
 
 impl Workbench {
     pub fn toggle_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -33,6 +39,16 @@ impl Workbench {
                     .also(shortcut.id)
             })
             .collect();
+        rows.extend(
+            self.standalone()
+                .into_iter()
+                .map(|(id, title, detail, category)| {
+                    Row::new(format!("{STANDALONE}{id}"), title)
+                        .meta(category)
+                        .also(detail)
+                        .also(category)
+                }),
+        );
         if let Some(Strip::Project(_)) = self.strip() {
             let custom = self
                 .preferences()
@@ -66,11 +82,120 @@ impl Workbench {
                     keymap::dispatch(id, window, cx);
                 } else if let Some(id) = row.key.strip_prefix(CUSTOM) {
                     bench.run_custom_command(id, cx);
+                } else if let Some(id) = row.key.strip_prefix(STANDALONE) {
+                    bench.run_standalone(id, window, cx);
                 }
             },
         )
         .empty("no commands match");
         self.toggle_palette(spec, window, cx);
+    }
+
+    fn standalone(&self) -> Vec<Standalone> {
+        let mut commands = Vec::new();
+        if let Some(project) = self.project() {
+            let path = project.path.to_string_lossy();
+            commands.push(match crate::editor::language_servers_allowed(self, &path) {
+                true => (
+                    "project.language-servers.stop",
+                    "Stop language servers for this project",
+                    "Stop them now and do not start them again",
+                    "Project · Language servers",
+                ),
+                false => (
+                    "project.language-servers.allow",
+                    "Allow language servers for this project",
+                    "Start them when you open a file here",
+                    "Project · Language servers",
+                ),
+            });
+        }
+        commands.extend([
+            (
+                "support.whats-new",
+                "Open What’s New",
+                "Review the latest Sikemux release notes",
+                "Support",
+            ),
+            (
+                "support.onboarding",
+                "Show welcome",
+                "Open the first-run screen",
+                "Support",
+            ),
+        ]);
+        if self.terminal_in_front().is_some() {
+            commands.push((
+                "window.duplicate",
+                "Duplicate active terminal",
+                "Clone the active window into a new terminal tab",
+                "Window",
+            ));
+        }
+        commands.extend([
+            (
+                "app.quit-and-stop-everything",
+                "Quit and Stop Everything",
+                "Stop every terminal, terminal agent and task, then quit. Plain Quit leaves them running.",
+                "Application",
+            ),
+            (
+                "agents.reload-manifests",
+                "Reload agent manifests",
+                "Reload agent-state detection rules from disk",
+                "Agents",
+            ),
+        ]);
+        commands
+    }
+
+    fn run_standalone(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        match id {
+            "project.language-servers.allow" | "project.language-servers.stop" => {
+                if let Some(project) = self.project() {
+                    let path = project.path.to_string_lossy().into_owned();
+                    crate::editor::allow_language_servers(self, path, id.ends_with("allow"));
+                }
+            }
+            "support.whats-new" => crate::experience::open_whats_new(self, cx),
+            "support.onboarding" => crate::experience::open_welcome(self, cx),
+            "window.duplicate" => {
+                if let Some((strip, tab)) = self.terminal_in_front() {
+                    self.duplicate_tab(&strip, &tab);
+                }
+            }
+            "app.quit-and-stop-everything" => {
+                keymap::dispatch("app.quitAndStopEverything", window, cx)
+            }
+            "agents.reload-manifests" => self.reload_manifests(cx),
+            _ => {}
+        }
+    }
+
+    /// The tab in front, when it is a project's terminal.
+    fn terminal_in_front(&self) -> Option<(Strip, String)> {
+        let strip @ Strip::Project(_) = self.strip()? else {
+            return None;
+        };
+        let tab = self.tab()?;
+        let (kind, _) = crate::tabs::first_view(&tab.pane)?;
+        (kind == PaneKind::Terminal).then(|| (strip, tab.id.clone()))
+    }
+
+    fn reload_manifests(&self, cx: &mut Context<Self>) {
+        let (reloaded, reload) = oneshot::channel();
+        let _ = self.asks.send(core::Ask::ReloadManifests(reloaded));
+        cx.spawn(async move |this, cx| {
+            if let Ok(Err(error)) = reload.await {
+                let _ = this.update(cx, |bench, cx| {
+                    bench.notify(
+                        Notification::error(format!("Agent manifests: {error}")).autohide(false),
+                        cx,
+                    )
+                });
+            }
+        })
+        .detach();
     }
 
     fn remember_command(&mut self, key: SharedString) {

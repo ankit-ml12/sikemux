@@ -223,6 +223,16 @@ pub(super) fn trust(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
+    remember_trust(bench, project, allowed);
+    if let Some(document) = bench.editors.open.get_mut(&path) {
+        document.notice = None;
+    }
+    if allowed {
+        attach(bench, path, window, cx);
+    }
+}
+
+fn remember_trust(bench: &Workbench, project: String, allowed: bool) {
     let mut trusted = bench
         .read("preferences")
         .and_then(|preferences| preferences["languageServerTrust"].as_object().cloned())
@@ -232,12 +242,26 @@ pub(super) fn trust(
         method: "setPreference",
         params: json!({ "key": "languageServerTrust", "value": trusted }),
     });
-    if let Some(document) = bench.editors.open.get_mut(&path) {
-        document.notice = None;
+}
+
+/// Whether the person let `project`'s language servers run.
+pub(crate) fn allowed(bench: &Workbench, project: &str) -> bool {
+    bench
+        .read("preferences")
+        .and_then(|preferences| preferences["languageServerTrust"][project].as_bool())
+        == Some(true)
+}
+
+/// Lets `project`'s language servers start when a file there opens, or stops them now and
+/// keeps them stopped.
+pub(crate) fn allow(bench: &Workbench, project: String, allowed: bool) {
+    if !allowed {
+        let _ = bench.asks.send(Ask::Call {
+            method: "lsp.stop",
+            params: json!({ "project": project }),
+        });
     }
-    if allowed {
-        attach(bench, path, window, cx);
-    }
+    remember_trust(bench, project, allowed);
 }
 
 /// Opens a definition through editor.openAt, so ⌘[ comes back from it.

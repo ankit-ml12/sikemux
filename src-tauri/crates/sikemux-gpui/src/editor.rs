@@ -28,6 +28,8 @@ mod blame;
 mod gutter;
 mod insights;
 mod lsp;
+
+pub(crate) use lsp::{allow as allow_language_servers, allowed as language_servers_allowed};
 pub(crate) mod preview;
 mod viewer;
 
