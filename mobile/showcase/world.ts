@@ -203,9 +203,10 @@ export const QUESTIONS = [
     assumption: null,
     secret: false,
     at: Date.now() - 120_000,
-    lead: null,
-    via: null,
-    passed: false,
+    state: 'open',
+    viaNote: null,
+    secretNote: null,
+    answer: null,
     ticket: 'SITE-41',
   },
   {
@@ -221,9 +222,10 @@ export const QUESTIONS = [
     assumption: '320, 375 and 430 points cover the phones we support',
     secret: false,
     at: Date.now() - 60_000,
-    lead: null,
-    via: null,
-    passed: false,
+    state: 'assumed',
+    viaNote: null,
+    secretNote: null,
+    answer: null,
   },
 ];
 

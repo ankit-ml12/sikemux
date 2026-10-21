@@ -18,7 +18,8 @@ import { AgentIcon, Icon } from '@/ui/Icon';
 import { Track } from '@/ui/controls';
 import { useKeyboardShown } from '@/ui/screen';
 import { Sheet } from '@/ui/Sheet';
-import { brand, fonts, type Palette, useColors, useStyles } from '@/ui/theme';
+import { useAgentBrand } from '@mac/agents/catalog';
+import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { ComposerAttachments } from './Attachments';
 import { ComposerInput } from './ComposerInput';
 import { AttachSheet } from './AttachSheet';
@@ -174,11 +175,11 @@ function Commands({ matches, onPick }: { matches: AcpAvailableCommand[]; onPick:
 }
 
 /** The Mac's colour for how full the context is: the agent's own, then warm, then hot. */
-function usageColor(usage: ContextUsage, provider: string, colors: Palette): string {
+function usageColor(usage: ContextUsage, provider: string, brand: string | undefined, colors: Palette): string {
   const tone = contextTone(usage);
   if (tone === 'hot') return colors.danger;
   if (tone === 'warm') return colors.warn;
-  return provider === 'claude' || provider === 'codex' ? brand[provider] : colors.accent;
+  return (provider === 'claude' || provider === 'codex') && brand ? brand : colors.accent;
 }
 
 const RING = 14;
@@ -187,6 +188,7 @@ const RING_STROKE = 1.8;
 /** How much of the context window the chat has used, as the Mac's composer rings it. A tap opens the settings sheet. */
 function ContextRing({ usage, provider, onPress }: { usage: ContextUsage; provider: string; onPress: () => void }) {
   const colors = useColors();
+  const brand = useAgentBrand(provider);
   const styles = useStyles(makeStyles);
   const radius = (RING - RING_STROKE) / 2;
   const around = 2 * Math.PI * radius;
@@ -203,7 +205,7 @@ function ContextRing({ usage, provider, onPress }: { usage: ContextUsage; provid
           cx={RING / 2}
           cy={RING / 2}
           r={radius}
-          stroke={usageColor(usage, provider, colors)}
+          stroke={usageColor(usage, provider, brand, colors)}
           strokeWidth={RING_STROKE}
           strokeDasharray={`${share * around} ${around}`}
           strokeLinecap="round"
@@ -303,7 +305,8 @@ function ConfigSheet({
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const slots = pickerSlots(configs, provider as never);
+  const brand = useAgentBrand(provider);
+  const slots = pickerSlots(configs, provider);
   const model = slots[0]?.config;
   const effort = slots[1]?.config;
   return (
@@ -354,7 +357,7 @@ function ConfigSheet({
           </View>
           <View style={styles.contextBar}>
             <View
-              style={[styles.contextFill, { width: `${contextShare(usage) * 100}%`, backgroundColor: usageColor(usage, provider, colors) }]}
+              style={[styles.contextFill, { width: `${contextShare(usage) * 100}%`, backgroundColor: usageColor(usage, provider, brand, colors) }]}
             />
           </View>
           {usage.cost ? <Text style={styles.cost}>Session cost {money(usage.cost)}</Text> : null}
@@ -459,7 +462,7 @@ export const Composer = memo(function Composer({
   const [sheet, setSheet] = useState(false);
   const typing = useKeyboardShown();
   const configs = sessionConfigs(setup);
-  const slots = pickerSlots(configs, provider as never);
+  const slots = pickerSlots(configs, provider);
   const model = currentLabel(slots[0]?.config);
   const effort = currentLabel(slots[1]?.config);
   const pulls = !draft && onRecent !== undefined;

@@ -3,7 +3,7 @@ import { onCoreChanged } from "./coreChanged";
 import { invokeCommand as invoke } from "./invoke";
 import type { IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
-import type { AccountAgentType } from "../agents/catalog";
+import type { CatalogAgent } from "../agents/catalog";
 import type { AgentEffort, AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
 
 /** Whether an agent can be used right now; `unknown` when its CLI has no way to say if it is signed in. */
@@ -86,7 +86,7 @@ export interface AgentAccountBook {
     profiles: ProviderProfile[];
     selected: ProviderProfileSelection;
     /** Whether a chat moves to the next signed-in account at a usage limit, by provider. */
-    autoSwitch: Partial<Record<AccountAgentType, boolean>>;
+    autoSwitch: Partial<Record<AgentType, boolean>>;
 }
 
 const inflight = new Map<string, Promise<AgentSession[]>>();
@@ -138,6 +138,8 @@ export interface AgentSignInPage {
 
 export const agentApi = {
     available: fetchAvailable,
+    /** The agents the core can run, which every view names and offers them from. */
+    catalog: (): Promise<CatalogAgent[]> => coreCall("agentCatalog"),
     /** The accounts the core keeps; `null` until the app first gives it some. */
     accounts: (): Promise<AgentAccountBook | null> => accountCall("agentAccounts"),
     /** Keeps the account, in place of the one with its id; each of these answers with the accounts as they are now. */

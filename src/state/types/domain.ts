@@ -1,4 +1,4 @@
-import { ACCOUNT_AGENT_TYPES, agentBrand, agentLabel, type AccountAgentType, type AgentType } from "../../agents/catalog";
+import { accountAgentTypes, agentBrand, agentLabel, type AgentType } from "../../agents/catalog";
 import type { PluginKind } from "../../plugins/kinds";
 import type { SpaceIcon } from "../projectSpaces";
 
@@ -76,7 +76,7 @@ export type AgentEffort = (typeof AGENT_EFFORTS)[number];
 export interface ProviderProfile {
     id: string;
     name: string;
-    provider: AccountAgentType;
+    provider: AgentType;
     accent: string;
     executablePath?: string;
     configPath?: string;
@@ -85,18 +85,19 @@ export interface ProviderProfile {
 
 export type ProviderProfileSelection = Partial<Record<AgentType, string>>;
 
-const builtinProfileId = (type: AccountAgentType): string => `builtin-${type}`;
+const builtinProfileId = (type: AgentType): string => `builtin-${type}`;
 
-export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = ACCOUNT_AGENT_TYPES.map((type) => ({
-    id: builtinProfileId(type),
-    name: agentLabel(type),
-    provider: type,
-    accent: agentBrand(type),
-}));
+/** The account each agent that keeps accounts starts with. */
+export const defaultProviderProfiles = (): ProviderProfile[] =>
+    accountAgentTypes().map((type) => ({
+        id: builtinProfileId(type),
+        name: agentLabel(type),
+        provider: type,
+        accent: agentBrand(type),
+    }));
 
-export const DEFAULT_PROVIDER_PROFILE_SELECTION: Readonly<ProviderProfileSelection> = Object.fromEntries(
-    ACCOUNT_AGENT_TYPES.map((type) => [type, builtinProfileId(type)]),
-);
+export const defaultProviderProfileSelection = (): ProviderProfileSelection =>
+    Object.fromEntries(accountAgentTypes().map((type) => [type, builtinProfileId(type)]));
 
 export interface Agent {
     id: string;

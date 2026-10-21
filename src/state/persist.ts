@@ -12,7 +12,7 @@ import type { ProjectInfo, Workspace } from "../api/generated/wire";
 import { normaliseKeybindingOverrides } from "../commands/keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
-import { ACCOUNT_AGENT_TYPES, AGENT_TYPES, hasAccounts, isAgentType, type AccountAgentType } from "../agents/catalog";
+import { accountAgentTypes, agentTypes, hasAccounts, isAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
 import { clampPaneStrength } from "./commands/settings";
@@ -326,7 +326,7 @@ function normaliseProviderProfiles(value: unknown, fallback: ProviderProfile[]):
         const profile: ProviderProfile = {
             id,
             name: row.name.trim().slice(0, 100),
-            provider: row.provider as AccountAgentType,
+            provider: row.provider as string,
             accent: row.accent.toLowerCase(),
         };
         const executablePath = boundedOptionalString(row.executablePath, 4096);
@@ -352,7 +352,7 @@ function normaliseProviderProfiles(value: unknown, fallback: ProviderProfile[]):
 function normaliseAccountAutoSwitch(value: unknown): StoreState["accountAutoSwitch"] {
     const saved = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
     const result: StoreState["accountAutoSwitch"] = {};
-    for (const provider of ACCOUNT_AGENT_TYPES) if (saved[provider] === true) result[provider] = true;
+    for (const provider of accountAgentTypes()) if (saved[provider] === true) result[provider] = true;
     return result;
 }
 
@@ -364,7 +364,7 @@ function normaliseProviderProfileSelection(
     if (!isRecord(value)) return { ...fallback };
     const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
     const selection: ProviderProfileSelection = {};
-    for (const type of AGENT_TYPES) {
+    for (const type of agentTypes()) {
         const selected = value[type];
         if (typeof selected !== "string") continue;
         const profile = profilesById.get(selected);

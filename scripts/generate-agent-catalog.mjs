@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Writes the agent catalog in src/agents/catalog.json out for every place that
-// names an agent or asks what it can do: the app's TypeScript and stylesheet,
-// the core's Rust and the notch's Swift. `--check` fails when one is out of date
-// instead of writing it.
+// Writes the agent catalog in src/agents/catalog.json out as the core's Rust,
+// which every client reads the catalog from, and the app's stylesheet, which
+// paints the agent logos the app ships before the core has answered. Tests and
+// the showcase get the clients' view of it as a fixture. `--check` fails when
+// one is out of date instead of writing it.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -10,15 +11,11 @@ import { format, resolveConfig } from "prettier";
 
 const root = resolve(import.meta.dirname, "..");
 const sourcePath = resolve(root, "src/agents/catalog.json");
-const tsPath = resolve(root, "src/agents/generated/catalog.ts");
+const fixturePath = resolve(root, "src/test/agentCatalog.generated.json");
 const cssPath = resolve(root, "src/styles/generated/agent-brands.css");
 const rustPath = resolve(
   root,
   "src-tauri/crates/sikemux-core/src/agent_catalog.rs",
-);
-const swiftPath = resolve(
-  root,
-  "src-tauri/notch/Sources/NotchKit/AgentCatalog.generated.swift",
 );
 const check = process.argv.includes("--check");
 const banner =
@@ -191,6 +188,7 @@ async function pretty(path, source) {
   return format(source, { ...(await resolveConfig(path)), filepath: path });
 }
 
+/** What the core's `agentCatalog` call answers with, in `src-tauri/crates/sikemux-core/src/server/catalog.rs`. */
 const entries = agents.map((agent) => ({
   type: agent.type,
   label: agent.label,
@@ -206,15 +204,7 @@ const entries = agents.map((agent) => ({
   chat: agent.chat?.driver ?? null,
 }));
 
-await emit(
-  tsPath,
-  await pretty(
-    tsPath,
-    `// ${banner}
-export const AGENT_CATALOG = ${JSON.stringify(entries)} as const;
-`,
-  ),
-);
+await emit(fixturePath, await pretty(fixturePath, JSON.stringify(entries)));
 
 await emit(
   cssPath,
@@ -308,12 +298,15 @@ ${privateField}
   return `    AgentEntry {
         kind: ${rustString(agent.type)},
         label: ${rustString(agent.label)},
+        about: ${rustString(agent.about)},
         command: ${rustString(agent.command)},
         brand: ${rustString(agent.brand)},
 ${FLAGS.map((flag) => `        ${snake(flag)}: ${agent[flag]},`).join("\n")}
         bypass: ${terminal.bypass !== null},
         commit_model: ${rustOption(agent.commitMessages?.model, rustString)},
 ${rustList(8, "efforts", agent.efforts)}
+        install: ${rustOption(agent.install, rustString)},
+        login: ${rustOption(agent.login, (login) => `&[${login.map(rustString).join(", ")}]`)},
 ${rustList(8, "probe", agent.probe)}
 ${rustList(8, "install_paths", agent.installPaths)}
 ${rustList(8, "git_shim_args", agent.gitShimArgs)}
@@ -414,6 +407,8 @@ pub enum ProviderUse {
 pub struct AgentEntry {
     pub kind: &'static str,
     pub label: &'static str,
+    /// One line on what the agent is, for someone choosing which to install.
+    pub about: &'static str,
     pub command: &'static str,
     pub brand: &'static str,
 ${FLAGS.map((flag) => `    pub ${snake(flag)}: bool,`).join("\n")}
@@ -422,6 +417,10 @@ ${FLAGS.map((flag) => `    pub ${snake(flag)}: bool,`).join("\n")}
     pub commit_model: Option<&'static str>,
     /// The reasoning efforts the CLI's own flag takes.
     pub efforts: &'static [&'static str],
+    /// Its official install command, which puts it where its own updater expects.
+    pub install: Option<&'static str>,
+    /// The arguments that start its own sign-in.
+    pub login: Option<&'static [&'static str]>,
     /// Arguments that answer whether the CLI runs, without side effects.
     pub probe: &'static [&'static str],
     /// Where its installers put the CLI off PATH.
@@ -459,18 +458,6 @@ ${agents.map((agent) => `        AgentKind::${pascal(agent.type)},`).join("\n")}
 pub fn agent(name: &str) -> Option<&'static AgentEntry> {
     AGENTS.iter().find(|entry| entry.kind == name)
 }
-`,
-);
-
-const swiftString = (value) => JSON.stringify(value);
-
-await emit(
-  swiftPath,
-  `// ${banner}
-
-let agentNames: [String: String] = [
-${agents.map((agent) => `    ${swiftString(agent.type)}: ${swiftString(agent.label)},`).join("\n")}
-]
 `,
 );
 

@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "rea
 import type { AgentInfo } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
-import { hasUsage, USAGE_AGENT_TYPES, type UsageAgentType } from "../agents/catalog";
+import { hasUsage, usageAgentTypes } from "../agents/catalog";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled, type ResourceHandle } from "../state/resources";
@@ -115,7 +115,7 @@ export function TabRailBody() {
     const usages = useAgentUsages(availableAgents);
     const usageRefreshRef = useRef(usages);
     usageRefreshRef.current = usages;
-    const usageDetected = USAGE_AGENT_TYPES.some((usageType) => usages[usageType].detected);
+    const usageDetected = usageAgentTypes().some((usageType) => usages[usageType].detected);
 
     const [type, setType] = useState<AgentType | null>(null);
     const allAgents = useStore((s) => s.tabRailAllAgents);
@@ -161,7 +161,7 @@ export function TabRailBody() {
 
     const selectedProvider = availableAgents.find((agent) => agent.type === selectedType);
     const selectedUsage = hasUsage(selectedType) ? usages[selectedType].handle : null;
-    const usagePeaks = Object.fromEntries(USAGE_AGENT_TYPES.map((usageType) => [usageType, usagePeak(usages[usageType].handle.data)]));
+    const usagePeaks = Object.fromEntries(usageAgentTypes().map((usageType) => [usageType, usagePeak(usages[usageType].handle.data)]));
 
     const projectCwds = useMemo(
         () =>
@@ -476,16 +476,16 @@ export function TabRailBody() {
 }
 
 /** How much of each plan is used, for the agents found on this machine. */
-function useAgentUsages(available: readonly AgentInfo[]): Record<UsageAgentType, { detected: boolean; handle: ResourceHandle<AgentUsage> }> {
+function useAgentUsages(available: readonly AgentInfo[]): Record<AgentType, { detected: boolean; handle: ResourceHandle<AgentUsage> }> {
     return Object.fromEntries(
-        USAGE_AGENT_TYPES.map((type) => {
+        usageAgentTypes().map((type) => {
             const provider = available.find((agent) => agent.type === type);
-            // USAGE_AGENT_TYPES is a module constant, so these hooks run in the same order every render.
+            // The app reads the catalog once, before it first draws, so these hooks run in the same order every render.
             // eslint-disable-next-line react-hooks/rules-of-hooks
             const handle = useResourceEnabled(!!provider, agentUsageR, type, provider?.configPath ?? undefined);
             return [type, { detected: !!provider, handle }];
         }),
-    ) as Record<UsageAgentType, { detected: boolean; handle: ResourceHandle<AgentUsage> }>;
+    ) as Record<AgentType, { detected: boolean; handle: ResourceHandle<AgentUsage> }>;
 }
 
 function AgentHeader({
@@ -503,7 +503,7 @@ function AgentHeader({
     setType: (t: AgentType) => void;
     searchOpen: boolean;
     onToggleSearch: () => void;
-    usagePeaks: Partial<Record<UsageAgentType, number | undefined>>;
+    usagePeaks: Partial<Record<AgentType, number | undefined>>;
     canOpenPalette: boolean;
     allAgents: boolean;
 }) {
@@ -555,7 +555,7 @@ function AgentHeader({
                         checkAtEnd
                         onChange={(value) => {
                             if (value === ALL_AGENTS) return cmd.setTabRailAllAgents(true);
-                            setType(value as AgentType);
+                            setType(value);
                             cmd.setTabRailAllAgents(false);
                         }}
                     />

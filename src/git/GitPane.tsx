@@ -84,7 +84,7 @@ import type { Notification } from "../codehost/api";
 import { SkeletonRows } from "../ui/Skeleton";
 import { EmptyState } from "../ui/Panel";
 import { AI_MODELS, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPaneConstants";
-import { agentLabel, type CommitMessageAgentType } from "../agents/catalog";
+import { agentLabel, type AgentType } from "../agents/catalog";
 import { filterByQuery, isInRange } from "./gitPaneLogic";
 import { basename as basenameOf, dirname, joinPath } from "../lib/paths";
 import { openUrl } from "../api/system";
@@ -475,7 +475,7 @@ function GitWorkbench({
     const openAgentMenu = (anchor: HTMLElement) =>
         openMenuAt(
             anchor,
-            (Object.keys(AI_MODELS) as CommitMessageAgentType[]).flatMap((provider, i) => [
+            (Object.keys(AI_MODELS) as AgentType[]).flatMap((provider, i) => [
                 ...(i > 0 ? [{ sep: true }] : []),
                 ...AI_MODELS[provider].map((model) => ({
                     label: `${agentLabel(provider)} · ${model}`,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentUsage } from "../api/agents";
 import { accountName, accountsOf, openAccountDialog, signOut, switchAccount } from "../agents/accounts";
 import { selectedProviderProfile } from "../agents/agentProfiles";
-import { agentLabel, type AccountAgentType } from "../agents/catalog";
+import { agentLabel, type AgentType } from "../agents/catalog";
 import { fetchResource, invalidate, peekResource, type ResourceHandle, useResource } from "../state/resources";
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
@@ -24,7 +24,7 @@ export function AgentAccountsPanel({
     provider,
     usage,
 }: {
-    provider: AccountAgentType;
+    provider: AgentType;
     /** The limits of the account new chats start on, which the rail already reads. */
     usage: ResourceHandle<AgentUsage>;
 }) {
@@ -117,12 +117,7 @@ export function AgentAccountsPanel({
 
 /* Which signed-in account new chats use, and a new one to sign in. Accounts
    signed out of wait in the sign-in dialog, where they can be removed. */
-function accountMenu(
-    provider: AccountAgentType,
-    accounts: ProviderProfile[],
-    current: ProviderProfile,
-    currentUsage: AgentUsage | undefined,
-): CtxItem[] {
+function accountMenu(provider: AgentType, accounts: ProviderProfile[], current: ProviderProfile, currentUsage: AgentUsage | undefined): CtxItem[] {
     const shown = accounts.filter(
         (account) => account.id === current.id || peekResource(agentAccountR, provider, account.configPath)?.signedIn !== false,
     );

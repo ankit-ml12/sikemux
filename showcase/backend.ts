@@ -44,6 +44,7 @@ import { terminalReplay } from "./world/terminals";
 import { PtyOutput, type PtyChannel } from "./ptyOutput";
 import { AGENTS, demoSnapshot, demoWorkspace } from "./world/workspace";
 import { DEMO_BOARD, DEMO_MESSAGES } from "./world/board";
+import AGENT_CATALOG from "../src/test/agentCatalog.generated.json";
 import type { BoardCard } from "../src/agents/agentBoard";
 
 type Args = Record<string, unknown>;
@@ -617,6 +618,7 @@ export class ShowcaseBackend implements IpcTransport {
     );
     const spareNames = ["Lark", "Fern", "Quartz", "Dune", "Pika", "Aster"];
     this.on("agent_name_call", constant(null));
+    this.onCore(["agentCatalog"], constant(AGENT_CATALOG));
     this.onCore(["chatStates", "questions", "shares"], constant([]));
     this.onCore(["answerQuestion", "answerQuestions"], constant({ answered: true }));
     this.onCore(["stopChatIfIdle"], constant({ stopped: false }));

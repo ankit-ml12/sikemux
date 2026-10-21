@@ -274,3 +274,10 @@ struct AgentQuestion: Codable, Hashable {
 struct QuestionChoice: Codable, Hashable {
     let label: String
 }
+
+/// An agent in the catalog, as clients read it.
+struct CatalogAgent: Codable, Hashable {
+    /// Its id, such as `claude`.
+    let type: String
+    let label: String
+}

@@ -56,7 +56,7 @@ import { PaneField } from "../ui/ShaderField";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import type { ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";
-import { ACCOUNT_AGENT_TYPES, agentBrand, agentLabel, hasAccounts, type AccountAgentType } from "../agents/catalog";
+import { accountAgentTypes, agentBrand, agentLabel, hasAccounts } from "../agents/catalog";
 import {
     searchSettings,
     SETTINGS_GROUPS,
@@ -596,10 +596,8 @@ function AgentsPage() {
                                     label="provider"
                                     value={draft.provider}
                                     disabled={draft.id.startsWith("builtin-")}
-                                    options={ACCOUNT_AGENT_TYPES.map((type) => ({ value: type, label: agentLabel(type) }))}
-                                    onChange={(value) =>
-                                        setDraft({ ...draft, provider: value as AccountAgentType, accent: agentBrand(value as AccountAgentType) })
-                                    }
+                                    options={accountAgentTypes().map((type) => ({ value: type, label: agentLabel(type) }))}
+                                    onChange={(value) => setDraft({ ...draft, provider: value, accent: agentBrand(value) })}
                                 />
                             </SettingsRow>
                             <SettingsRow label="Executable path" desc="Empty uses PATH." wide>

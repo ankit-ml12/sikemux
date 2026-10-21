@@ -88,8 +88,13 @@ struct Entry: Identifiable, Equatable {
     }
 }
 
+/// What the core calls each agent, from the catalog it sends once the island connects.
+enum AgentCatalog {
+    static var names: [String: String] = [:]
+}
+
 func agentName(_ provider: String) -> String {
-    agentNames[provider] ?? provider.capitalized
+    AgentCatalog.names[provider] ?? provider.capitalized
 }
 
 extension DeviceView {

@@ -21,6 +21,7 @@ const SOURCES = [
   `${WIRE}/accounts/protocol.rs`,
   `${CORE}/server/inbox.rs`,
   `${CORE}/server/questions.rs`,
+  `${CORE}/server/catalog.rs`,
   `${CORE}/server/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
@@ -60,6 +61,7 @@ const RENAMES = {
     View: "AgentQuestion",
     Choice: "QuestionChoice",
   },
+  [`${CORE}/server/catalog.rs`]: { Driver: "ChatDriver" },
   [`${CORE}/server/workspace.rs`]: { Buddies: "PublishedBuddies" },
   [`${CORE}/server/changed.rs`]: { Topic: "CoreChangeTopic" },
   [`${CORE}/server/board.rs`]: {
@@ -100,6 +102,7 @@ const TS_ROOTS = [
   "NetworkChange",
   "Inbox",
   "AgentQuestion",
+  "CatalogAgent",
   "GitOverview",
   "DiscoveredRepo",
   "GitCompare",
@@ -165,12 +168,14 @@ const SWIFT_FIELDS = {
   PendingDevice: "id name platform expiresAt",
   AgentQuestion: "id text choices viaNote",
   QuestionChoice: "label",
+  CatalogAgent: "type label",
 };
 const SWIFT_ROOTS = [
   "DeviceView",
   "RemoteStatus",
   "DeviceAccess",
   "AgentQuestion",
+  "CatalogAgent",
 ];
 
 /** Limits the clients check before they send, read from where the core enforces them. */

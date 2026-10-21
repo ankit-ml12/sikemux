@@ -12,8 +12,7 @@ import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
 import { DEFAULT_BUDDY_STYLE } from "../buddies/style";
-import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
-import type { AccountAgentType } from "../agents/catalog";
+import { defaultProviderProfiles, defaultProviderProfileSelection } from "./types";
 
 enableMapSet();
 import { makePane, newId } from "./layout";
@@ -115,7 +114,7 @@ export interface DomainState {
     /** The tab rail shows every CLI's chats instead of one provider's. */
     tabRailAllAgents: boolean;
     /** Providers whose chats move to the next signed-in account when one runs out of usage. */
-    accountAutoSwitch: Partial<Record<AccountAgentType, boolean>>;
+    accountAutoSwitch: Partial<Record<AgentType, boolean>>;
     tabRailScope: TabRailScope;
     tabRailPage: TabRailPage;
     pinnedChats: PinnedChat[];
@@ -337,8 +336,8 @@ export const useStore = create<StoreState>(() => {
         shareUsageData: true,
         lastReleaseNotes: null,
         recentCommandKeys: [],
-        providerProfiles: DEFAULT_PROVIDER_PROFILES.map((profile) => ({ ...profile })),
-        selectedProviderProfileIds: { ...DEFAULT_PROVIDER_PROFILE_SELECTION },
+        providerProfiles: defaultProviderProfiles(),
+        selectedProviderProfileIds: defaultProviderProfileSelection(),
         defaultAgentPermissionMode: "bypass",
         lastAgentType: null,
         languageServerTrust: {},

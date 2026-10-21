@@ -4,20 +4,28 @@ import { acpAccount } from "../../agents/accounts";
 import { coreCall } from "../../api/core";
 import { agentNamesApi } from "../../api/agentNames";
 import type { AgentQuestion } from "../../api/agentQuestions";
-import { agentSupportsChat, canBypassPermissions, hasRelocatableSessions, type ChatAgentType } from "../../agents/catalog";
+import { agentSupportsChat, canBypassPermissions, hasRelocatableSessions, setAgentCatalog, type CatalogAgent } from "../../agents/catalog";
 import { effectiveMode, isResumeId, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
 import { confirmDialog } from "../dialog";
 import { invalidate, peekResource } from "../resources";
 import { agentCatalogR } from "../resources.defs";
-import { getState, mutate, type StoreState } from "../store";
+import { getState, mutate, setState, type StoreState } from "../store";
 import { notify, reportError, swallow } from "../toast";
 import { agentExecutablePath, profileOf } from "./agentLaunchCommand";
 import { activeAgentId, agentForChat, agentIdsOf, agentWindowId, ownerSessionId, projectSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
-import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree } from "../types";
+import {
+    defaultProviderProfiles,
+    defaultProviderProfileSelection,
+    type Agent,
+    type AgentEffort,
+    type AgentPermissionMode,
+    type AgentType,
+    type AgentWorktree,
+} from "../types";
 import { selectSession } from "./sessions";
 import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
@@ -34,7 +42,7 @@ function detectedExecutablePath(state: StoreState, type: AgentType): string | un
     return peekResource(agentCatalogR, runtime)?.find((agent) => agent.type === type && agent.available !== false)?.command;
 }
 
-export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string): void {
+export function configureEmptyAgent(id: string, type: AgentType, profileId?: string, model?: string, modelProvider?: string): void {
     const before = getState().agents[id];
     const account = profileId ? profileOf(getState(), { profileId, type }) : undefined;
     /* Its pane starts it again for another agent; another account of the same agent is the core's to move it to. */
@@ -498,6 +506,12 @@ export function setAgentStatus(inbox: Pick<Inbox, "agents" | "projects">): void 
         d.agentStatus = agentStatus;
         d.projectStatus = projectStatus;
     });
+}
+
+/** Takes the agents the core can run, and the account each starts with until the core's accounts are read. */
+export function takeAgentCatalog(agents: readonly CatalogAgent[]): void {
+    setAgentCatalog(agents);
+    setState({ providerProfiles: defaultProviderProfiles(), selectedProviderProfileIds: defaultProviderProfileSelection() });
 }
 
 /** Takes the open questions the core sent. */

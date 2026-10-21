@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { AGENT_BRANDS, type AgentType } from '@mac/agents/catalog';
+import type { AgentType } from '@mac/agents/catalog';
 import type { PaletteName } from '@mac/remote/palette';
 import { Platform, type TextStyle } from 'react-native';
 
@@ -118,8 +118,6 @@ export function useStyles<T>(make: (colors: Palette) => T): T {
   if (!built.has(make)) built.set(make, make(colors));
   return built.get(make) as T;
 }
-
-export const brand = AGENT_BRANDS;
 
 export type Provider = AgentType;
 

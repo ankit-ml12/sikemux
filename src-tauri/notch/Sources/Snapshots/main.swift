@@ -113,6 +113,7 @@ let dated = try! NSRegularExpression(pattern: #"AGO\((\d+)\)"#).matches(in: sour
         return (text as NSString).replacingCharacters(in: match.range, with: String(now - seconds * 1000))
     }
 let decoded = try! JSONDecoder().decode(DeviceView.self, from: Data(dated.utf8))
+AgentCatalog.names = ["claude": "Claude", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok"]
 let buddies = arguments.contains("--buddies")
     ? PublishedBuddies(on: true, pack: "all", shape: "mixed", motion: true, agents: [:], boxes: [:])
     : decoded.inbox.buddies

@@ -13,7 +13,6 @@ import { calendarColumns, dayDate, levelOf, levelThresholds, localDay, streaks }
 import { basename, prettyPath } from "../lib/paths";
 import { agentLabel } from "../agents/catalog";
 import { useStore } from "../state/store";
-import type { AgentType } from "../state/types";
 import { AgentIcon, IconFolder } from "../ui/Icons";
 import { SettingsPage, SettingsSection } from "../settings/SettingsLayout";
 import { onCoreChanged } from "../api/coreChanged";
@@ -287,7 +286,7 @@ function ShareList({ shares, kind, metric }: { shares?: ActivityShare[]; kind: "
     return (
         <div className="activity-shares">
             {shares.map((share) => {
-                const agent = kind === "agent" ? (share.name as AgentType) : null;
+                const agent = kind === "agent" ? share.name : null;
                 const details = [
                     metric !== "sessions" && share.sessions > 0 && plural(share.sessions, "session"),
                     metric !== "tokens" && share.tokens > 0 && `${COMPACT.format(share.tokens)} tokens`,

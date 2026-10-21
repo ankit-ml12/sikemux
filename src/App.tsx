@@ -634,9 +634,10 @@ export default function App() {
         void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
         let accounts: AgentAccountBook | null | undefined;
         let workspace: SharedWorkspace | undefined;
-        Promise.all([invoke<BootInfo>("boot_init"), agentApi.accounts().catch(() => undefined), fetchCoreWorkspace()])
-            .then(([boot, book, shared]) => {
+        Promise.all([invoke<BootInfo>("boot_init"), agentApi.accounts().catch(() => undefined), fetchCoreWorkspace(), agentApi.catalog()])
+            .then(([boot, book, shared, catalog]) => {
                 if (disposed) return;
+                cmd.takeAgentCatalog(catalog);
                 accounts = book;
                 workspace = shared;
                 const hydrateSpan = performanceTelemetry.startSpan(bootSpan, "startup.hydrate");

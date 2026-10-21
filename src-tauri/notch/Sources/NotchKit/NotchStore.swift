@@ -48,7 +48,15 @@ final class NotchStore {
         guard link == nil, waitForCore() else { return }
         let link = CoreLink(socket: options.socket, protocolVersion: options.protocolVersion)
         link.onReady = { [weak self, weak link] in
-            link?.request(["op": "watchView"])
+            link?.request(["op": "call", "method": "agentCatalog", "params": [String: Any]()]) { result in
+                if case .success(let response) = result, let raw = response["result"],
+                   let data = try? JSONSerialization.data(withJSONObject: raw),
+                   let agents = try? JSONDecoder().decode([CatalogAgent].self, from: data)
+                {
+                    AgentCatalog.names = Dictionary(agents.map { ($0.type, $0.label) }, uniquingKeysWith: { _, last in last })
+                }
+                link?.request(["op": "watchView"])
+            }
             link?.request(["op": "remoteStatus"]) { result in
                 if case .success(let response) = result { self?.receiveRemote(response["status"]) }
             }

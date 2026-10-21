@@ -3,6 +3,8 @@
  * showcase: one Mac is already paired and answers from the demo world instead
  * of the network.
  */
+import AGENT_CATALOG from '../../src/test/agentCatalog.generated.json';
+
 import { ChatAttachment, CoreEvent, MobileError } from '../app/test/mocks/sikemux-native';
 import {
   BOARDS,
@@ -264,6 +266,7 @@ class Connection {
       return JSON.stringify(board ?? { ...BOARDS[0], project, cards: [] });
     }
     if (method === 'questions') return JSON.stringify(QUESTIONS);
+    if (method === 'agentCatalog') return JSON.stringify(AGENT_CATALOG);
     if (method === 'agentMessages') {
       const { project } = JSON.parse(params) as { project: string };
       return JSON.stringify({ project, entries: project === BOARDS[0].project ? MESSAGES : [] });

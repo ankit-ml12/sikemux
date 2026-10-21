@@ -825,6 +825,48 @@ export interface QuestionChoice {
 /** Where a question stands for the person. */
 export type QuestionState = "lead" | "open" | "assumed" | "answered";
 
+/** An agent in the catalog, as clients read it. */
+export interface CatalogAgent {
+    /** Its id, such as `claude`. */
+    type: string;
+    label: string;
+    /** One line on what it is, for someone choosing which to install. */
+    about: string;
+    command: string;
+    /** Its colour, as `#rrggbb`. */
+    brand: string;
+    /** Offered first, before anything else is installed. */
+    featured: boolean;
+    /**
+     * It keeps each sign-in in its own folder, so the person can hold
+     * several accounts.
+     */
+    accounts: boolean;
+    /** The app can read how much of its plan is used. */
+    usage: boolean;
+    /** The app can delete a saved chat from its own history. */
+    deletableChats: boolean;
+    /** It can also name a saved session by its transcript's path. */
+    resumesByPath: boolean;
+    /** Its saved sessions can follow its chat into another folder. */
+    relocatableSessions: boolean;
+    /** It can start without asking for permissions. */
+    bypass: boolean;
+    /** The core can ask it for a commit message. */
+    commitMessages: boolean;
+    /** The reasoning efforts its CLI takes. */
+    efforts: string[];
+    /** Its official install command; none when it has none to run. */
+    install: string | null;
+    /** The arguments that start its own sign-in; none when it has none. */
+    login: string[] | null;
+    /** The chat driver that runs it; none when it has no chat. */
+    chat: ChatDriver | null;
+}
+
+/** Which of the core's chat drivers runs an agent. */
+export type ChatDriver = "claude" | "codex" | "muse" | "acp";
+
 export interface GitOverview {
     status: GitStatus;
     branches: GitBranch[];

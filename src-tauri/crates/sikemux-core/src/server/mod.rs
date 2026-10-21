@@ -8,6 +8,7 @@ mod attachments;
 mod board;
 mod callers;
 mod calls;
+mod catalog;
 mod changed;
 mod chat;
 mod ci;

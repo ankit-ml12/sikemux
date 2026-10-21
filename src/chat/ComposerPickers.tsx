@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconChevron } from "../ui/Icons";
-import { agentLabel, hasAccounts, type ChatAgentType } from "../agents/catalog";
+import { agentLabel, hasAccounts, type AgentType } from "../agents/catalog";
 import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
 import { accountsOf, moveChat } from "../agents/accounts";
 import { fetchResource, peekResource } from "../state/resources";
@@ -285,7 +285,7 @@ export function ComposerPickers({
     /** Whether the chat cannot move to another account now, which it can while a turn runs. */
     moveDisabled?: boolean;
     agentLocked?: boolean;
-    onAgent: (type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string) => void;
+    onAgent: (type: AgentType, profileId?: string, model?: string, modelProvider?: string) => void;
     onConfig: (config: SessionConfig, value: string) => void;
 }) {
     const configs = sessionConfigs(setup);
@@ -334,7 +334,7 @@ export function ComposerPickers({
                                     profile={profile}
                                     routes={routes}
                                     onPick={(next) =>
-                                        relaunch(agent.type as ChatAgentType, profile?.id, next?.served.defaults[agent.type], next?.provider.id)
+                                        relaunch(agent.type, profile?.id, next?.served.defaults[agent.type], next?.provider.id)
                                     }
                                 />
                             ) : undefined

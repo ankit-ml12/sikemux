@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { agentLabel, type ChatAgentType } from "../agents/catalog";
+import { agentLabel, type AgentType } from "../agents/catalog";
 import { coreCall } from "../api/core";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
@@ -11,14 +11,14 @@ import "../styles/chat/pickers.css";
 
 /** An agent to start later: which one, which of the person's accounts, who pays, and on what model. */
 export interface LaunchChoice {
-    type: ChatAgentType;
+    type: AgentType;
     profileId?: string;
     provider: string | null;
     model: string | null;
 }
 
 /** The models `type` offered when a chat of it last started, since none runs here to ask. */
-function useOfferedModels(type: ChatAgentType | null): Choice[] {
+function useOfferedModels(type: AgentType | null): Choice[] {
     const [models, setModels] = useState<Choice[]>([]);
     useEffect(() => {
         if (!type) return setModels([]);

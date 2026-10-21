@@ -5,7 +5,7 @@ import { reportError } from "../toast";
 import { invalidate } from "../resources";
 import { projectRootsScanR } from "../resources.defs";
 import { getState, setState } from "../store";
-import type { AccountAgentType } from "../../agents/catalog";
+import type { AgentType } from "../../agents/catalog";
 
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
@@ -35,7 +35,7 @@ export const setDefaultAgentPermissionMode = (value: import("../types").AgentPer
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });
 /* The person's accounts are the core's; each change goes there and the accounts it answers with come back. */
 const keepAccounts = (change: Promise<AgentAccountBook>, what: string): Promise<void> => change.then(adoptAgentAccounts).catch(reportError(what));
-export const setAccountAutoSwitch = (provider: AccountAgentType, on: boolean): Promise<void> =>
+export const setAccountAutoSwitch = (provider: AgentType, on: boolean): Promise<void> =>
     keepAccounts(agentApi.setAutoSwitch(provider, on), "Switch accounts at limits");
 export const saveProviderProfile = (profile: import("../types").ProviderProfile): Promise<void> =>
     keepAccounts(agentApi.saveAccount(profile), "Save account");

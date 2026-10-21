@@ -25,6 +25,7 @@ class FakeConnection {
   host = vi.fn(async () => ({ name: 'Studio', model: 'Mac mini', version: '1', channel: 2 }));
   setForeground = vi.fn(async (_foreground: boolean) => {});
   clearNotifications = vi.fn(async () => {});
+  call = vi.fn(async (_method: string, _params: string) => '[]');
   close() {
     this.closed = true;
   }
