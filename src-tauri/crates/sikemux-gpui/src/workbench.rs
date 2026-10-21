@@ -59,6 +59,7 @@ impl Workbench {
         .detach();
         let _ = asks.send(Ask::Watch("usage", Watch::new("agentUsages", json!({}), &["usage"])));
         let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
+        let _ = asks.send(Ask::Watch("hosts", Watch::new("hosts", json!({}), &["hosts"])));
         Self {
             version: String::new(),
             view: None,
@@ -205,13 +206,10 @@ impl Workbench {
         self.view.as_ref()?.sessions.iter().find(|session| session.id.to_string() == id)
     }
 
-    /// Terminals started outside every project.
+    /// Terminals started outside every project, which the core numbers.
     pub fn loose_terminals(&self) -> Vec<&SessionInfo> {
         self.view.as_ref().map_or(Vec::new(), |view| {
-            view.sessions
-                .iter()
-                .filter(|session| session.project.is_none() && session.agent_id.is_none() && session.exit.is_none())
-                .collect()
+            view.sessions.iter().filter(|session| session.rail_name.is_some() && session.exit.is_none()).collect()
         })
     }
 

@@ -54,7 +54,8 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                             [("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"), ("add-host", Icon::Plus, "Find a host — ⌘⇧S")],
                             cx,
                         ))
-                        .child(this_host(bench, cx)),
+                        .child(this_host(bench, cx))
+                        .children(hosts(bench, cx)),
                 )
                 .child(Group::new("Plugins", "no plugins").children(plugins(bench, cx)))
                 .child(
@@ -76,6 +77,35 @@ fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
         .tag("here")
         .when(agents > 0, |row| row.child(ui::meta(format!("{agents} {}", if agents == 1 { "agent" } else { "agents" }), cx)))
         .status(Some(ui::dot(Tone::Ok, cx)))
+}
+
+/// The account's other hosts, then the SSH hosts a terminal is open to.
+fn hosts(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    rows(bench.read("hosts"))
+        .map(|host| {
+            let name = host["name"].as_str().unwrap_or_default().to_owned();
+            let linked = !host["id"].is_null();
+            let reach = host["reach"].as_str().unwrap_or_default();
+            let tone = match reach {
+                "connected" => Tone::Ok,
+                "connecting" => Tone::Pending,
+                "failed" => Tone::Failed,
+                _ => Tone::Idle,
+            };
+            let detail = match reach {
+                "away" if linked => Some("out of reach"),
+                "connecting" if linked => Some("connecting"),
+                _ => None,
+            };
+            Row::new(SharedString::from(format!("host-{name}")), name)
+                .mark(16., ui::icon(Icon::Server, 14.).text_color(if linked { t.host } else { t.ssh }))
+                .quiet()
+                .children(detail.map(|detail| ui::meta(detail, cx)))
+                .status(Some(ui::dot(tone, cx)))
+                .into_any_element()
+        })
+        .collect()
 }
 
 /// The plugins that are on and draw in the rail, signed in or not.
@@ -121,8 +151,7 @@ fn terminals(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
         .loose_terminals()
         .into_iter()
         .map(|session| {
-            let title = session.window_title.clone().or_else(|| session.title.clone()).unwrap_or_else(|| "Terminal".into());
-            Row::new(SharedString::from(format!("terminal-{}", session.id)), title)
+            Row::new(SharedString::from(format!("terminal-{}", session.id)), session.rail_name.clone().unwrap_or_default())
                 .mark(16., ui::icon(Icon::Terminal, 13.).text_color(live))
                 .quiet()
                 .into_any_element()

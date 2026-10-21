@@ -74,6 +74,8 @@ pub struct Tokens {
     pub live: Hsla,
     pub warn: Hsla,
     pub cmd: Hsla,
+    /// The mark of a host on the account.
+    pub host: Hsla,
     /// An SSH host's mark.
     pub ssh: Hsla,
     pub tree_spine: Hsla,
@@ -115,6 +117,7 @@ impl Tokens {
             live: hex(palette.live).into(),
             warn: hex(palette.warn).into(),
             cmd: hex(palette.cmd).into(),
+            host: mix_oklab(acc, hex(palette.ink_dim), 0.8).into(),
             ssh: mix_oklab(hex(palette.cmd), hex(palette.ink_dim), 0.7).into(),
             tree_spine: mix_srgb(acc, hex(palette.line), 0.52).into(),
             tree_tick: tint(acc, 0.72).into(),
