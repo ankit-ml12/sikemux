@@ -331,6 +331,8 @@ impl PtyManager {
 
     /// The page went away with every channel it held. Terminals and tasks keep
     /// running in the core, which stops sending what nobody will show.
+    /// Lets go of every terminal the page watched, and stops every stream it
+    /// started, such as a search or a plugin's, as the page goes away.
     pub fn detach_all(&self) {
         let streams = self.streams.release_all();
         let Some(client) = self.current() else {
@@ -339,6 +341,11 @@ impl PtyManager {
         for stream in streams {
             let _ = client.submit(Request::Detach { stream }, |_| ());
         }
+        let cancel = Request::Call {
+            method: "streamCancel".into(),
+            params: serde_json::json!({}),
+        };
+        let _ = client.submit(cancel, |_| ());
     }
 
     /// The app is leaving and its sessions stay with the core.

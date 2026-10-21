@@ -790,17 +790,20 @@ export class ShowcaseBackend implements IpcTransport {
         };
       return answer((params ?? {}) as Args);
     });
-    let nextStream = 1;
-    this.on("plugin_stream_start", ({ plugin, method, onEvent }) => {
-      const channel = onEvent as { onmessage: (event: unknown) => void };
+    this.onCore(["pluginStream"], ({ params }) => {
+      const { stream, plugin, method } = params as Args;
       const emit = (value: unknown) =>
-        setTimeout(() => channel.onmessage({ kind: "item", value }), 30);
+        setTimeout(
+          () =>
+            this.emit("core_stream", { stream, items: [value], done: false }),
+          30,
+        );
       if (plugin === "sikemux.rundeck") rundeckStream(method as string, emit);
       if (plugin === "sikemux.aws" && method === "tailLogs")
         for (const line of awsLogLines()) emit(line);
       if (plugin === "sikemux.signoz" && method === "tailLogs")
         emit(signozTail());
-      return nextStream++;
+      return { stream };
     });
 
     this.on(

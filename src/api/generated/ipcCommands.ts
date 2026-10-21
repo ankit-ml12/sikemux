@@ -100,8 +100,6 @@ export const IPC_COMMANDS = [
     "macos_focus_app",
     "set_window_blur",
     "plugin_call",
-    "plugin_stream_start",
-    "plugin_stream_stop",
     "harness_resolve_path",
     "harness_claim",
     "harness_reply",

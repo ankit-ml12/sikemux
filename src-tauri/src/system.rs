@@ -163,7 +163,6 @@ pub struct RuntimeDiagnostics {
     lsp_servers: usize,
     lsp_open_documents: usize,
     lsp_idle_servers: usize,
-    plugin_streams: usize,
     observability: crate::observability::ObservabilitySnapshot,
 }
 
@@ -198,7 +197,6 @@ fn current_fd_limit() -> (Option<u64>, Option<u64>) {
 #[tauri::command]
 pub async fn runtime_diagnostics(
     ptys: tauri::State<'_, PtyManager>,
-    plugins: tauri::State<'_, crate::plugins::PluginStreams>,
 ) -> AppResult<RuntimeDiagnostics> {
     // Counting /dev/fd is a directory read, so it goes to the blocking pool
     // even though everything else here is in-memory bookkeeping.
@@ -227,7 +225,6 @@ pub async fn runtime_diagnostics(
         lsp_servers: crate::lsp::server_count(),
         lsp_open_documents,
         lsp_idle_servers,
-        plugin_streams: plugins.count(),
         observability: crate::observability::global_observability().snapshot(),
     })
 }

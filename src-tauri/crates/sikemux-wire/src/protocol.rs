@@ -1632,14 +1632,15 @@ pub enum Event {
     },
     /// The next part of an answer that arrives in parts, sent only to the
     /// connection that started `stream`. The last part has `done`, and
-    /// `error` when the stream failed.
+    /// `error` when the stream failed: `{category, message}` and whatever
+    /// else its source says about the failure.
     Stream {
         stream: u64,
         items: Vec<Value>,
         #[serde(default)]
         done: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        error: Option<String>,
+        error: Option<Value>,
     },
 }
 

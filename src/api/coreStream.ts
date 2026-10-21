@@ -6,7 +6,7 @@ interface StreamPart {
     readonly stream: number;
     readonly items: unknown[];
     readonly done: boolean;
-    readonly error?: string | null;
+    readonly error?: unknown;
 }
 
 const STREAM_EVENT = "core_stream";
@@ -14,7 +14,8 @@ let nextStream = 1;
 
 /**
  * Starts the core's `method`, handing each part it sends to `onItem`. The stream is named here, so its parts are
- * listened for before the core can send any; `done` settles when the last part arrives.
+ * listened for before the core can send any; `done` settles when the last part arrives, failing with the stream's
+ * error, `{category, message}` and whatever its source adds.
  */
 export async function coreStream(
     method: string,
@@ -24,7 +25,7 @@ export async function coreStream(
     const stream = nextStream++;
     const controller = new AbortController();
     let finish: () => void = () => {};
-    let fail: (error: Error) => void = () => {};
+    let fail: (error: unknown) => void = () => {};
     const done = new Promise<void>((resolve, reject) => {
         finish = resolve;
         fail = reject;
@@ -36,7 +37,7 @@ export async function coreStream(
             for (const item of payload.items) onItem(item);
             if (!payload.done) return;
             controller.abort();
-            if (payload.error) fail(new Error(payload.error));
+            if (payload.error) fail(payload.error);
             else finish();
         },
         { signal: controller.signal },

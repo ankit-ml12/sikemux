@@ -49,12 +49,11 @@ mod voice_models;
 mod wallpaper;
 mod wheel;
 
-use sikemux_host::{build_identity, cli_client, cli_paths, install_tls_crypto, login_item};
+use sikemux_host::{build_identity, cli_paths, install_tls_crypto, login_item};
 
 use acp::AcpManager;
 use browser::BrowserManager;
 use observability::UiWatchdogState;
-use plugins::PluginStreams;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
 use sim::SimManager;
@@ -148,9 +147,6 @@ pub fn run() {
                 if let Some(browser) = window.try_state::<BrowserManager>() {
                     browser.drain("the window closed");
                 }
-                if let Some(plugins) = window.try_state::<PluginStreams>() {
-                    plugins.drain();
-                }
                 lsp::drain_all();
             }
         })
@@ -181,9 +177,6 @@ pub fn run() {
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
                     browser.drain(&format!("the window started loading {}", payload.url()));
                 }
-                if let Some(plugins) = webview.try_state::<PluginStreams>() {
-                    plugins.drain();
-                }
                 if let Some(sim) = webview.try_state::<SimManager>() {
                     sim.drop_watches();
                 }
@@ -192,7 +185,6 @@ pub fn run() {
         })
         .setup(|_app| {
             _app.manage(UiWatchdogState::start()?);
-            _app.manage(PluginStreams::default());
             let sim = SimManager::default();
             _app.manage(sim.clone());
             _app.manage(SimulatorManager::for_app(_app.handle().clone(), sim));
@@ -344,8 +336,6 @@ pub fn run() {
             external::macos_focus_app,
             transparency::set_window_blur,
             plugins::plugin_call,
-            plugins::plugin_stream_start,
-            plugins::plugin_stream_stop,
             harness::harness_resolve_path,
             harness::harness_claim,
             harness::harness_reply,
@@ -408,9 +398,6 @@ pub fn run() {
                 }
                 if let Some(browser) = app_handle.try_state::<BrowserManager>() {
                     browser.drain("Sikemux is quitting");
-                }
-                if let Some(plugins) = app_handle.try_state::<PluginStreams>() {
-                    plugins.drain();
                 }
                 if let Some(voice) = app_handle.try_state::<VoiceManager>() {
                     voice.drain();

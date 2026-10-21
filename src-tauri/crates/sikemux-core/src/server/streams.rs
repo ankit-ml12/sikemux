@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
+use tokio::runtime::RuntimeFlavor;
 use sikemux_process::sync::Locked;
 
 use super::connection::{ClientConn, ClientId};
@@ -52,11 +53,16 @@ impl Streams {
         Ok(stream)
     }
 
-    /// Stops `stream` on `client`'s connection; its producer ends it.
-    pub(crate) fn cancel(&self, client: ClientId, stream: u64) {
-        if let Some(stop) = self.open.locked().remove(&(client, stream)) {
-            stop.store(true, Ordering::Release);
-        }
+    /// Stops `stream` on `client`'s connection, or every one of its streams
+    /// when none is named; their producers end them.
+    pub(crate) fn cancel(&self, client: ClientId, stream: Option<u64>) {
+        self.open.locked().retain(|(owner, id), stop| {
+            let cancelled = *owner == client && stream.is_none_or(|stream| stream == *id);
+            if cancelled {
+                stop.store(true, Ordering::Release);
+            }
+            !cancelled
+        });
     }
 }
 
@@ -74,8 +80,7 @@ impl Stream {
     }
 
     /// Adds a part, sending the batch once it is full, and waits while the
-    /// client is behind. Answers whether to go on. Call it only from a
-    /// blocking thread.
+    /// client is behind. Answers whether to go on.
     pub(crate) fn push(&self, item: Value) -> bool {
         {
             let mut batch = self.batch.locked();
@@ -84,24 +89,38 @@ impl Stream {
                 self.send(std::mem::take(&mut *batch), false, None);
             }
         }
-        while !self.stopped() && self.client.backlog() > SLOW_BYTES {
-            std::thread::sleep(Duration::from_millis(5));
-        }
+        self.wait_for_client();
         !self.stopped()
     }
 
-    /// Sends what is left, with `last`, and ends the stream.
-    pub(crate) fn finish(&self, last: Value) {
-        self.end(Some(last), None);
+    /// Waits while the client is behind, without holding up the runtime's
+    /// other tasks when the producer runs on one of its threads.
+    fn wait_for_client(&self) {
+        let wait = || {
+            while !self.stopped() && self.client.backlog() > SLOW_BYTES {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(runtime) if runtime.runtime_flavor() == RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(wait)
+            }
+            _ => wait(),
+        }
+    }
+
+    /// Sends what is left, with `last` when there is one, and ends the stream.
+    pub(crate) fn finish(&self, last: Option<Value>) {
+        self.end(last, None);
     }
 
     /// Sends what is left and ends the stream with `error`.
-    pub(crate) fn fail(&self, error: String) {
+    pub(crate) fn fail(&self, error: Value) {
         self.end(None, Some(error));
     }
 
     /// Sends under the batch's lock, so no batch goes out after the last.
-    fn end(&self, last: Option<Value>, error: Option<String>) {
+    fn end(&self, last: Option<Value>, error: Option<Value>) {
         let mut batch = self.batch.locked();
         let mut items = std::mem::take(&mut *batch);
         items.extend(last);
@@ -117,7 +136,7 @@ impl Stream {
         }
     }
 
-    fn send(&self, items: Vec<Value>, done: bool, error: Option<String>) {
+    fn send(&self, items: Vec<Value>, done: bool, error: Option<Value>) {
         if items.is_empty() && !done {
             return;
         }

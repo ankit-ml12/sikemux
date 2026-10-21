@@ -352,10 +352,10 @@ calls! { core, client, params;
         plugins::set_disabled(&core, parse(params)?);
         answer(())
     },
-    "pluginStream": Person => answer(plugins::stream_ticket(parse(params)?)?),
+    "pluginStream": Person => answer(plugins::stream(&core, connection_of(&core, client)?, parse(params)?)?),
     "pluginSignIn": Person, any_program => {
         not_an_agent(client).await?;
-        answer(plugins::sign_in_ticket(parse(params)?)?)
+        answer(plugins::sign_in(&core, connection_of(&core, client)?, parse(params)?)?)
     },
     "signInCallback": Person, any_program => {
         not_an_agent(client).await?;
@@ -399,7 +399,8 @@ async fn not_an_agent(client: &ClientConn) -> CoreResult<()> {
 
 #[derive(Deserialize)]
 struct StreamParams {
-    stream: u64,
+    /// None stops every stream on the connection, as a reloaded page does.
+    stream: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -409,24 +410,27 @@ struct SearchStreamParams {
     search: super::search::SearchParams,
 }
 
+/// The connection a call came on, for a stream to send its parts down.
+fn connection_of(core: &Core, client: &ClientConn) -> CoreResult<Arc<ClientConn>> {
+    core.client_conn(client.id)
+        .ok_or_else(|| CoreError::from("this connection is closing"))
+}
+
 /// Starts a search whose files arrive as the client's stream `stream`.
 fn search_stream(
     core: &Core,
     client: &ClientConn,
     params: SearchStreamParams,
 ) -> CoreResult<Value> {
-    let connection = core
-        .client_conn(client.id)
-        .ok_or_else(|| CoreError::from("this connection is closing"))?;
-    let stream = core.streams.open(connection, params.stream)?;
+    let stream = core.streams.open(connection_of(core, client)?, params.stream)?;
     let owner = client.id.to_string();
     tokio::task::spawn_blocking(move || {
         let found = super::search::search(params.search, &owner, &|file| {
             stream.push(json!({ "file": file }))
         });
         match found {
-            Ok(summary) => stream.finish(json!({ "summary": summary })),
-            Err(error) => stream.fail(error),
+            Ok(summary) => stream.finish(Some(json!({ "summary": summary }))),
+            Err(message) => stream.fail(json!({ "category": "search", "message": message })),
         }
     });
     Ok(json!({ "stream": params.stream }))
