@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
         Arc::new(icons::Icons),
         gpui_platform::current_headless_renderer,
     );
-    let link = core::start(core::socket());
+    let link = core::start(core::Home::new());
     let window = cx.update(|cx| {
         gpui_kit::init(cx);
         theme::install(cx);

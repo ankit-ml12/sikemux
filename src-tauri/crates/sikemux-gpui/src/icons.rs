@@ -12,6 +12,11 @@ macro_rules! icons {
             pub fn path(self) -> &'static str {
                 match self { $(Icon::$icon => concat!("icons/", $file, ".svg")),* }
             }
+
+            /// Whether it has colours of its own, rather than drawing in the text's.
+            pub fn is_picture(self) -> bool {
+                match self { $(Icon::$icon => const { !tints(include_bytes!(concat!("../assets/icons/", $file, ".svg"))) }),* }
+            }
         }
 
         const FILES: &[(&str, &[u8])] = &[
@@ -21,38 +26,74 @@ macro_rules! icons {
 }
 
 icons!(
+    Actions => "actions",
     Agent => "agent",
     Agents => "agents",
+    Aws => "aws",
     Board => "board",
+    Bruno => "bruno",
     Check => "check",
     Chevron => "chevron",
     Claude => "claude",
     Close => "close",
     Codex => "codex",
     Command => "command",
+    Database => "database",
     Editor => "editor",
     Eye => "eye",
     File => "file",
     Focus => "focus",
     Folder => "folder",
     Git => "git",
+    Github => "github",
     Globe => "globe",
     Inbox => "inbox",
+    Issues => "issues",
+    Jira => "jira",
+    Laptop => "laptop",
+    Linear => "linear",
     LogIn => "log-in",
     Logo => "logo",
     More => "more",
     PanelLeft => "panel-left",
     PanelRight => "panel-right",
     Pencil => "pencil",
+    Plug => "plug",
     Plus => "plus",
+    PullRequest => "pull-request",
+    Refresh => "refresh",
+    Releases => "releases",
+    Run => "run",
+    Rundeck => "rundeck",
     Search => "search",
     Server => "server",
     Settings => "settings",
     Share => "share",
+    Signoz => "signoz",
+    Slack => "slack",
     Stack => "stack",
+    Stop => "stop",
     Terminal => "terminal",
+    Vercel => "vercel",
     Window => "window",
 );
+
+/// Whether an SVG draws in `currentColor`.
+const fn tints(svg: &[u8]) -> bool {
+    let needle = b"currentColor";
+    let mut start = 0;
+    while start + needle.len() <= svg.len() {
+        let mut matched = 0;
+        while matched < needle.len() && svg[start + matched] == needle[matched] {
+            matched += 1;
+        }
+        if matched == needle.len() {
+            return true;
+        }
+        start += 1;
+    }
+    false
+}
 
 /// The icons, compiled in.
 pub struct Icons;
@@ -74,12 +115,11 @@ impl AssetSource for Icons {
     }
 }
 
-/// An agent's mark, and whether it is a picture with colours of its own rather
-/// than a glyph tinted with the agent's brand colour.
-pub fn agent(provider: &str) -> (Icon, bool) {
+/// An agent's mark.
+pub fn agent(provider: &str) -> Icon {
     match provider {
-        "codex" => (Icon::Codex, true),
-        "claude" => (Icon::Claude, false),
-        _ => (Icon::Agent, false),
+        "codex" => Icon::Codex,
+        "claude" => Icon::Claude,
+        _ => Icon::Agent,
     }
 }

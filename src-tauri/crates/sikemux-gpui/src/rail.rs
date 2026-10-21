@@ -1,14 +1,15 @@
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled,
+    div, px, AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, SharedString, Styled,
 };
+use serde_json::Value;
 use sikemux_wire::protocol::ProjectInfo;
 
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
-use crate::ui::{self, Button, Group, IconButton, Row, Variant};
+use crate::ui::{self, Button, Group, IconButton, Row, Tone, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
 pub const SIDE_RAIL_WIDTH: f32 = 258.;
@@ -35,7 +36,7 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .child(
                     Group::new("Projects", "no projects")
                         .first()
-                        .actions(add_actions("add-project", "⌘O", cx))
+                        .actions(actions(Some("⌘O"), [("add-project", Icon::Plus, "Open project — ⌘O")], cx))
                         .child(
                             div()
                                 .mb(px(6.))
@@ -43,11 +44,91 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                         )
                         .children(projects),
                 )
-                .child(Group::new("SSH", "no SSH hosts").actions(add_actions("add-ssh", "⌘⇧S", cx)))
-                .child(Group::new("Plugins", "no plugins"))
-                .child(Group::new("Terminals", "no terminals")),
+                .child(
+                    Group::new("Hosts", "no hosts")
+                        .actions(actions(
+                            Some("⌘⇧S"),
+                            [("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"), ("add-host", Icon::Plus, "Find a host — ⌘⇧S")],
+                            cx,
+                        ))
+                        .child(this_host(bench, cx)),
+                )
+                .child(Group::new("Plugins", "no plugins").children(plugins(bench, cx)))
+                .child(
+                    Group::new("Terminals", "no terminals")
+                        .actions(actions(None, [("add-terminal", Icon::Plus, "New terminal")], cx))
+                        .children(terminals(bench, cx)),
+                ),
         )
-        .child(sign_in(cx))
+        .child(account(bench, cx))
+}
+
+/// The host this window runs on, where new work starts.
+fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let agents = bench.view.as_ref().map_or(0, |view| view.workspace.agents.len());
+    Row::new("this-host", "This host")
+        .mark(16., ui::icon(Icon::Laptop, 14.).text_color(t.text_secondary).group_hover(ui::ROW, move |style| style.text_color(t.text_primary)))
+        .quiet()
+        .tag("here")
+        .when(agents > 0, |row| row.child(ui::meta(format!("{agents} {}", if agents == 1 { "agent" } else { "agents" }), cx)))
+        .status(Some(ui::dot(Tone::Ok, cx)))
+}
+
+/// The plugins that are on and draw in the rail, signed in or not.
+fn plugins(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
+    let ink = Tokens::get(cx).text_secondary;
+    rows(bench.read("plugins"))
+        .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
+        .filter_map(|plugin| {
+            let mark = plugin_mark(plugin["id"].as_str()?)?;
+            let tone = plugin["signedIn"].as_bool().map(|signed_in| if signed_in { Tone::Ok } else { Tone::Idle });
+            Some(
+                Row::new(SharedString::from(format!("plugin-{}", plugin["id"].as_str()?)), plugin["name"].as_str()?.to_owned())
+                    .mark(16., ui::picture(mark, 13., ink))
+                    .quiet()
+                    .status(tone.map(|tone| ui::dot(tone, cx)))
+                    .into_any_element(),
+            )
+        })
+        .collect()
+}
+
+/// The mark of a plugin that has a place of its own in the rail; code hosts show
+/// under their projects instead.
+fn plugin_mark(id: &str) -> Option<Icon> {
+    Some(match id {
+        "aws" => Icon::Aws,
+        "bruno" => Icon::Bruno,
+        "database" => Icon::Database,
+        "jira" => Icon::Jira,
+        "linear" => Icon::Linear,
+        "rundeck" => Icon::Rundeck,
+        "signoz" => Icon::Signoz,
+        "slack" => Icon::Slack,
+        "vercel" => Icon::Vercel,
+        _ => return None,
+    })
+}
+
+/// Terminals started outside every project.
+fn terminals(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
+    let live = Tokens::get(cx).live;
+    bench
+        .loose_terminals()
+        .into_iter()
+        .map(|session| {
+            let title = session.window_title.clone().or_else(|| session.title.clone()).unwrap_or_else(|| "Terminal".into());
+            Row::new(SharedString::from(format!("terminal-{}", session.id)), title)
+                .mark(16., ui::icon(Icon::Terminal, 13.).text_color(live))
+                .quiet()
+                .into_any_element()
+        })
+        .collect()
+}
+
+fn rows(read: Option<&Value>) -> impl Iterator<Item = &Value> {
+    read.and_then(Value::as_array).into_iter().flatten()
 }
 
 fn masthead(bench: &Workbench, cx: &App) -> impl IntoElement {
@@ -94,13 +175,13 @@ fn split_version(version: &str) -> (String, Option<String>) {
     }
 }
 
-fn add_actions(id: &'static str, keys: &'static str, cx: &App) -> impl IntoElement {
+fn actions<const N: usize>(keys: Option<&'static str>, buttons: [(&'static str, Icon, &'static str); N], cx: &App) -> impl IntoElement {
     div()
         .flex()
         .items_center()
         .gap(px(6.))
-        .child(ui::kbd(keys, cx))
-        .child(IconButton::new(id, Icon::Plus, "Add").small())
+        .children(keys.map(|keys| ui::kbd(keys, cx)))
+        .children(buttons.map(|(id, glyph, label)| IconButton::new(id, glyph, label).small()))
 }
 
 fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workbench>) -> impl IntoElement {
@@ -121,7 +202,7 @@ fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workb
                 .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
                 .child(faces(&agents)),
         )
-        .when(active, |tree| tree.pb(px(4.)).child(surfaces(cx)))
+        .when(active, |tree| tree.pb(px(4.)).child(surfaces(project, cx)))
 }
 
 /// Up to five agent marks, each overlapping the one before by 6px.
@@ -139,26 +220,42 @@ fn faces(agents: &[AgentRow]) -> impl IntoElement {
         }))
 }
 
-const SURFACES: [(Icon, &str, &str); 6] = [
-    (Icon::Editor, "Files", "⌘E"),
-    (Icon::Terminal, "Terminal", "⌘⌥2"),
-    (Icon::Agent, "Agents", "⌘⌥4"),
-    (Icon::Git, "Git", "⌘⌥3"),
-    (Icon::Search, "Search", "⌘⇧F"),
-    (Icon::Board, "Agent board", "⌘⌥6"),
-];
+/// What a project opens, in the order the rail lists them: its own surfaces,
+/// with its code host's sections after Git.
+fn surface_rows(project: &ProjectInfo) -> Vec<(Icon, SharedString, &'static str)> {
+    let mut rows = vec![
+        (Icon::Editor, "Files".into(), "⌘E"),
+        (Icon::Terminal, "Terminal".into(), "⌘⌥2"),
+        (Icon::Agent, "Agents".into(), "⌘⌥4"),
+        (Icon::Git, "Git".into(), "⌘⌥3"),
+    ];
+    if let Some(host) = &project.code_host {
+        rows.extend(host.sections.iter().filter_map(|section| {
+            Some(match section.as_str() {
+                "pulls" => (Icon::PullRequest, "Pull requests".into(), ""),
+                "actions" => (Icon::Actions, host.ci_name.clone().into(), ""),
+                "issues" => (Icon::Issues, "Issues".into(), ""),
+                "releases" => (Icon::Releases, "Releases".into(), ""),
+                _ => return None,
+            })
+        }));
+    }
+    rows.extend([(Icon::Search, "Search".into(), "⌘⇧F"), (Icon::Board, "Agent board".into(), "⌘⌥6")]);
+    rows
+}
 
 /// The project's surfaces, hung off a spine with a tick to each.
-fn surfaces(cx: &App) -> impl IntoElement {
+fn surfaces(project: &ProjectInfo, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let last = SURFACES.len() - 1;
+    let rows = surface_rows(project);
+    let last = rows.len() - 1;
     div()
         .flex()
         .flex_col()
         .ml(px(20.))
         .py(px(2.))
         .pr(px(6.))
-        .children(SURFACES.iter().enumerate().map(move |(index, (glyph, label, keys))| {
+        .children(rows.into_iter().enumerate().map(move |(index, (glyph, label, keys))| {
             let tail = index == last;
             let spine = div().absolute().left_0().top_0();
             div()
@@ -177,10 +274,63 @@ fn surfaces(cx: &App) -> impl IntoElement {
                 })
                 .when(!tail, |row| row.child(div().absolute().left_0().top(px(12.)).w(px(9.)).h(px(1.)).bg(t.tree_tick)))
                 .child(div().w(px(9.)).flex_none())
-                .child(ui::mark_box(16., ui::icon(*glyph, 13.).text_color(t.text_tertiary)))
-                .child(ui::text(*label, 12.5, FontWeight::MEDIUM))
-                .child(div().ml_auto().opacity(0.5).child(ui::kbd(keys, cx)))
+                .child(ui::mark_box(16., ui::icon(glyph, 13.).text_color(t.text_tertiary)))
+                .child(ui::text(label, 12.5, FontWeight::MEDIUM))
+                .when(!keys.is_empty(), |row| row.child(div().ml_auto().opacity(0.5).child(ui::kbd(keys, cx))))
         }))
+}
+
+/// Who the host is signed in as, or the card that signs it in.
+fn account(bench: &Workbench, cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let Some(account) = bench.view.as_ref().and_then(|view| view.account.as_deref()) else {
+        return sign_in(cx).into_any_element();
+    };
+    let who = account.name.clone().or_else(|| account.email.clone()).unwrap_or_else(|| "Signed in".into());
+    let initials = initials(account.name.as_deref(), account.email.as_deref());
+    div()
+        .flex_none()
+        .px(px(10.))
+        .py(px(6.))
+        .border_t_1()
+        .border_color(t.border)
+        .child(
+            Row::new("account", who)
+                .mark(
+                    24.,
+                    div()
+                        .size(px(24.))
+                        .rounded_full()
+                        .border_1()
+                        .border_color(t.border)
+                        .bg(t.surface_raised)
+                        .overflow_hidden()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(9.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(t.text_secondary)
+                        .map(|face| match bench.picture() {
+                            Some(picture) => face.child(gpui_kit::img(picture).size_full()),
+                            None => face.child(initials),
+                        }),
+                )
+                .when_some(account.name.as_ref().and(account.email.clone()), |row, email| row.subtitle(ui::meta(email, cx)))
+                .child(IconButton::new("settings", Icon::Settings, "Settings").glyph(14.).width(28.)),
+        )
+        .into_any_element()
+}
+
+/// The first letters of the first and last words of the name, else the email's first.
+fn initials(name: Option<&str>, email: Option<&str>) -> String {
+    let words: Vec<&str> = name.unwrap_or_default().split_whitespace().collect();
+    let first = |word: &str| word.chars().next().map(|letter| letter.to_uppercase().to_string()).unwrap_or_default();
+    match words.as_slice() {
+        [] => email.map(first).unwrap_or_default(),
+        [only] => first(only),
+        [head, .., tail] => first(head) + &first(tail),
+    }
 }
 
 fn sign_in(cx: &App) -> impl IntoElement {

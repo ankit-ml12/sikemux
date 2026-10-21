@@ -5,6 +5,9 @@ use std::time::Duration;
 
 use serde_json::Value;
 use sikemux_client::client::{ClientEvent, CoreClient};
+use sikemux_host::core_start::{self, StartError};
+use sikemux_host::login_item::{self, CoreLaunch, IDENTIFIER};
+use sikemux_host::cli_paths;
 use sikemux_wire::protocol::{DeviceView, Event};
 use tokio::sync::mpsc;
 
@@ -48,15 +51,31 @@ pub struct Link {
     pub asks: mpsc::UnboundedSender<Ask>,
 }
 
-pub fn socket() -> PathBuf {
-    std::env::var_os("SIKEMUX_CORE_SOCKET")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config/sikemux/core.sock")))
-        .unwrap_or_default()
+/// Where this build's core listens, and how it is started when none does: the
+/// same core, files and identity the app has always used.
+pub struct Home {
+    pub socket: PathBuf,
+    launch: Option<CoreLaunch>,
+    manifest_dir: Option<PathBuf>,
+}
+
+impl Home {
+    pub fn new() -> Self {
+        let library = sikemux_process::paths::home().map(|home| home.join("Library"));
+        let support = library.as_ref().map(|library| library.join("Application Support").join(IDENTIFIER));
+        let socket = sikemux_core::default_socket_path().unwrap_or_default();
+        let launch = cli_paths::cli_executable_path().map(|binary| CoreLaunch {
+            binary,
+            socket: socket.clone(),
+            log: library.map_or_else(std::env::temp_dir, |library| library.join("Logs").join(IDENTIFIER)).join("core.log"),
+            args: login_item::core_args(support.clone()),
+        });
+        Self { socket, launch, manifest_dir: support.map(|support| support.join("agent-detection")) }
+    }
 }
 
 /// Talks to the core on a thread of its own, so the window's thread only draws.
-pub fn start(socket: PathBuf) -> Link {
+pub fn start(home: Home) -> Link {
     let (updates_tx, updates) = mpsc::unbounded_channel();
     let (asks, asks_rx) = mpsc::unbounded_channel();
     std::thread::Builder::new()
@@ -66,20 +85,37 @@ pub fn start(socket: PathBuf) -> Link {
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
-            runtime.block_on(run(socket, updates_tx, asks_rx));
+            runtime.block_on(run(home, updates_tx, asks_rx));
         })
         .expect("core thread");
     Link { updates, asks }
 }
 
-async fn run(socket: PathBuf, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc::UnboundedReceiver<Ask>) {
+async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc::UnboundedReceiver<Ask>) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
+    if let Some(logs) = home.launch.as_ref().and_then(|launch| launch.log.parent()) {
+        let _ = std::fs::create_dir_all(logs);
+    }
     loop {
-        match CoreClient::connect(&socket).await {
+        if let Some(launch) = &home.launch {
+            match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false).await {
+                Ok(()) | Err(StartError::Unreachable(_)) => {}
+                Err(StartError::Incompatible { reason, .. }) => {
+                    eprintln!("sikemux: the core cannot be used: {reason}");
+                    let _ = updates.send(Update::Lost(reason));
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            }
+        }
+        match CoreClient::connect(&home.socket).await {
             Ok((client, mut events)) => {
                 let client = Arc::new(client);
                 let _ = updates.send(Update::Connected(client.hello().build.version.clone()));
+                if let Err(error) = client.configure(home.manifest_dir.clone()).await {
+                    eprintln!("sikemux: the core could not read the agent manifests: {error}");
+                }
                 if let Err(error) = client.watch_view().await {
                     let _ = updates.send(Update::Lost(error.to_string()));
                 }
@@ -122,6 +158,7 @@ async fn run(socket: PathBuf, updates: mpsc::UnboundedSender<Update>, mut asks: 
                 let _ = updates.send(Update::Lost("the core closed the connection".into()));
             }
             Err(error) => {
+                eprintln!("sikemux: no core answers: {error}");
                 let _ = updates.send(Update::Lost(error.to_string()));
             }
         }
@@ -138,8 +175,9 @@ fn read(
 ) {
     let (client, updates, watch, current) = (client.clone(), updates.clone(), watch.clone(), current.clone());
     tokio::spawn(async move {
-        let Ok(value) = client.call(watch.method, watch.params).await else {
-            return;
+        let value = match client.call(watch.method, watch.params).await {
+            Ok(value) => value,
+            Err(error) => return eprintln!("sikemux: the core refused {}: {error}", watch.method),
         };
         if current.lock().expect("watch generations").get(key) == Some(&watch.generation) {
             let _ = updates.send(Update::Read(key, value));

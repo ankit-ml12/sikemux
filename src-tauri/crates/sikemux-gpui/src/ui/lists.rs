@@ -24,6 +24,7 @@ pub struct Row {
     mark: Option<AnyElement>,
     slot: f32,
     title: SharedString,
+    tag: Option<SharedString>,
     quiet: bool,
     bold: bool,
     chosen: bool,
@@ -41,6 +42,7 @@ impl Row {
             mark: None,
             slot: 22.,
             title: title.into(),
+            tag: None,
             quiet: false,
             bold: false,
             chosen: false,
@@ -57,6 +59,12 @@ impl Row {
     pub fn mark(mut self, slot: f32, mark: impl IntoElement) -> Self {
         self.slot = slot;
         self.mark = Some(mark.into_any_element());
+        self
+    }
+
+    /// A word right after the title, such as the host new work starts on.
+    pub fn tag(mut self, tag: impl Into<SharedString>) -> Self {
+        self.tag = Some(tag.into());
         self
     }
 
@@ -136,13 +144,21 @@ impl RenderOnce for Row {
                     .flex_col()
                     .child(
                         div()
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .line_height(px(18.))
-                            .font_weight(if self.bold { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
-                            .when(!self.quiet, |title| title.text_color(t.text_primary))
-                            .child(self.title),
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .whitespace_nowrap()
+                                    .line_height(px(18.))
+                                    .font_weight(if self.bold { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
+                                    .when(!self.quiet, |title| title.text_color(t.text_primary))
+                                    .child(self.title),
+                            )
+                            .children(self.tag.map(|tag| meta(tag, cx).flex_none())),
                     )
                     .children(self.subtitle),
             )

@@ -1,8 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -30 420 420" fill="currentColor">
-            <polygon points="257,72 331,29 331,114" />
-            <polygon points="98,199 172,241 98,284" />
-            <path
-                d="M108 54
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -30 420 420" fill="currentColor"><polygon points="257,72 331,29 331,114"></polygon><polygon points="98,199 172,241 98,284"></polygon><path d="M108 54
            C100 72, 96 90, 98 104
            C100 119, 106 133, 121 144
            C129 151, 139 158, 151 164
@@ -16,6 +12,4 @@
            L143 90
            C137 87, 132 84, 128 80
            C122 76, 117 71, 108 54
-           Z"
-            />
-        </svg>
+           Z"></path></svg>

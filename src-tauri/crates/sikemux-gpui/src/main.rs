@@ -2,7 +2,7 @@ use gpui_kit::{point, px, size, AppContext, Bounds, TitlebarOptions, WindowBound
 use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
-    let link = core::start(core::socket());
+    let link = core::start(core::Home::new());
     gpui_kit::application()
         .with_assets(icons::Icons)
         .run(move |cx| {

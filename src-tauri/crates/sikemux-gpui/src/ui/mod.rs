@@ -12,7 +12,7 @@ pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader};
 
 use gpui_kit::{
-    div, img, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, IntoElement,
+    div, img, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, Hsla, IntoElement,
     ParentElement, SharedString, Styled, Svg,
 };
 
@@ -25,12 +25,18 @@ pub fn icon(icon: Icon, size: f32) -> Svg {
     svg().path(icon.path()).size(px(size)).flex_none()
 }
 
+/// A mark at `size`: a picture as it is drawn, or a glyph in `tint`.
+pub fn picture(glyph: Icon, size: f32, tint: Hsla) -> AnyElement {
+    if glyph.is_picture() {
+        img(glyph.path()).size(px(size)).flex_none().into_any_element()
+    } else {
+        icon(glyph, size).text_color(tint).into_any_element()
+    }
+}
+
 /// An agent's mark at `size`, in its brand colour.
 pub fn mark(provider: &str, size: f32) -> AnyElement {
-    match icons::agent(provider) {
-        (icon, true) => img(icon.path()).size(px(size)).flex_none().into_any_element(),
-        (glyph, false) => icon(glyph, size).text_color(theme::brand(provider)).into_any_element(),
-    }
+    picture(icons::agent(provider), size, theme::brand(provider))
 }
 
 /// A square that centres what it holds, so marks of any drawing line up.
@@ -115,5 +121,31 @@ pub fn status_mark(status: AgentStatus, cx: &App) -> Option<Div> {
         AgentStatus::Blocked => dot(t.warn),
         AgentStatus::Done => dot(t.accent),
         _ => None,
+    }
+}
+
+/// How something reachable stands, as its 7px dot says.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    Ok,
+    Pending,
+    /// A hollow ring: there, but not connected or not signed in.
+    Idle,
+    Failed,
+}
+
+pub fn dot(tone: Tone, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    let dot = div().size(px(7.)).rounded_full();
+    match tone {
+        Tone::Ok => dot.bg(t.live),
+        Tone::Pending => dot.bg(t.warn),
+        Tone::Idle => {
+            let mut ring = dot.border_color(t.text_tertiary);
+            let width = Some(px(1.5).into());
+            ring.style().border_widths = gpui_kit::EdgesRefinement { top: width, right: width, bottom: width, left: width };
+            ring
+        }
+        Tone::Failed => dot.bg(t.danger),
     }
 }

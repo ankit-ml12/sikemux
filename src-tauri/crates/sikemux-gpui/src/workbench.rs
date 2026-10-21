@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::{div, px, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
+use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{AgentStatus, DeviceView, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
 use tokio::sync::mpsc;
@@ -19,6 +20,9 @@ pub struct Workbench {
     pub lost: Option<String>,
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
+    /// The account's picture, and the hash the core named the one asked for by.
+    picture: Option<Arc<Image>>,
+    picture_hash: Option<String>,
     pub all_projects: bool,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
     pub metric: usize,
@@ -52,13 +56,15 @@ impl Workbench {
         })
         .detach();
         let _ = asks.send(Ask::Watch("usage", Watch::new("agentUsages", json!({}), &["usage"])));
-        let _ = asks.send(Ask::Watch("ssh", Watch::new("sshHosts", json!({}), &["ssh"])));
+        let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
         Self {
             version: String::new(),
             view: None,
             reads: HashMap::new(),
             lost: None,
             watched_project: None,
+            picture: None,
+            picture_hash: None,
             all_projects: false,
             metric: 0,
             filter: None,
@@ -77,7 +83,9 @@ impl Workbench {
             Update::View(view) => {
                 self.view = Some(*view);
                 self.watch_project();
+                self.watch_picture();
             }
+            Update::Read("picture", value) => self.picture = decode_picture(&value),
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
             }
@@ -96,6 +104,23 @@ impl Workbench {
         let _ = self.asks.send(Ask::Watch("activity", Watch::new("activitySummary", activity, &["activity"])));
         let _ = self.asks.send(Ask::Watch("tasks", Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"])));
         self.watched_project = path;
+    }
+
+    /// Asks for the account's picture when it is one this window has not got.
+    fn watch_picture(&mut self) {
+        let hash = self.view.as_ref().and_then(|view| view.account.as_ref()?.picture_hash.clone());
+        if hash == self.picture_hash {
+            return;
+        }
+        self.picture = None;
+        if let Some(hash) = &hash {
+            let _ = self.asks.send(Ask::Watch("picture", Watch::new("accountPicture", json!({ "hash": hash }), &[])));
+        }
+        self.picture_hash = hash;
+    }
+
+    pub fn picture(&self) -> Option<Arc<Image>> {
+        self.picture.clone()
     }
 
     pub fn read(&self, key: &str) -> Option<&Value> {
@@ -249,6 +274,20 @@ impl Workbench {
         filter.update(cx, |state, cx| state.focus(window, cx));
         self.filter = Some(filter);
     }
+}
+
+/// The image bytes `accountPicture` answers with, in base64, as the format they start like.
+fn decode_picture(value: &Value) -> Option<Arc<Image>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(value.as_str()?).ok()?;
+    let format = match bytes.as_slice() {
+        [0x89, b'P', b'N', b'G', ..] => ImageFormat::Png,
+        [0xff, 0xd8, ..] => ImageFormat::Jpeg,
+        [b'G', b'I', b'F', ..] => ImageFormat::Gif,
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => ImageFormat::Webp,
+        _ => return None,
+    };
+    Some(Arc::new(Image::from_bytes(format, bytes)))
 }
 
 /// What a tab's pane shows when it is one view of `kind`.

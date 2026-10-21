@@ -1,81 +1,98 @@
 #!/usr/bin/env node
-// Writes the icons the GPUI screens draw as SVG files, from the app's own in
-// src/ui/Icons.tsx and src/assets/agent-logos.
+// Writes the icons the GPUI screens draw as SVG files, by rendering the app's own
+// React icon components, so each file is exactly what the app draws.
 
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createServer } from "vite";
 
 const crate = import.meta.dirname;
 const root = resolve(crate, "../../..");
 const out = resolve(crate, "assets/icons");
-const source = await readFile(resolve(root, "src/ui/Icons.tsx"), "utf8");
 
-const ICONS = {
-  logo: "Logo",
-  plus: "IconPlus",
-  folder: "IconFolder",
-  "panel-left": "IconPanelLeft",
-  "panel-right": "IconPanelRight",
-  search: "IconSearch",
-  terminal: "IconTerminal",
-  globe: "IconGlobe",
-  stack: "IconStack",
-  agent: "IconAgent",
-  agents: "IconAgents",
-  file: "IconFile",
-  editor: "IconEditor",
-  git: "IconGit",
-  board: "IconBoard",
-  check: "IconCheck",
-  share: "IconShare",
-  more: "IconMore",
-  eye: "IconEye",
-  close: "IconClose",
-  chevron: "IconChevron",
-  inbox: "IconInbox",
-  "log-in": "IconLogIn",
-  settings: "IconSettings",
-  command: "IconCommand",
-  focus: "IconFocus",
-  pencil: "IconPencil",
-  server: "IconServer",
-  window: "IconWindow",
-  claude: "IconClaude",
+const ICONS = "/src/ui/Icons.tsx";
+const SECTIONS = "/src/codehost/components/ActionsIcon.tsx";
+
+/** File name → the module, its export and the props it is drawn with. */
+const DRAWN = {
+  logo: [ICONS, "Logo"],
+  plus: [ICONS, "IconPlus"],
+  folder: [ICONS, "IconFolder"],
+  "panel-left": [ICONS, "IconPanelLeft"],
+  "panel-right": [ICONS, "IconPanelRight"],
+  search: [ICONS, "IconSearch"],
+  terminal: [ICONS, "IconTerminal"],
+  globe: [ICONS, "IconGlobe"],
+  stack: [ICONS, "IconStack"],
+  agent: [ICONS, "IconAgent"],
+  agents: [ICONS, "IconAgents"],
+  file: [ICONS, "IconFile"],
+  editor: [ICONS, "IconEditor"],
+  git: [ICONS, "IconGit"],
+  board: [ICONS, "IconBoard"],
+  check: [ICONS, "IconCheck"],
+  share: [ICONS, "IconShare"],
+  more: [ICONS, "IconMore"],
+  eye: [ICONS, "IconEye"],
+  close: [ICONS, "IconClose"],
+  chevron: [ICONS, "IconChevron"],
+  inbox: [ICONS, "IconInbox"],
+  "log-in": [ICONS, "IconLogIn"],
+  settings: [ICONS, "IconSettings"],
+  command: [ICONS, "IconCommand"],
+  focus: [ICONS, "IconFocus"],
+  pencil: [ICONS, "IconPencil"],
+  server: [ICONS, "IconServer"],
+  window: [ICONS, "IconWindow"],
+  claude: [ICONS, "IconClaude"],
+  run: [ICONS, "IconRun"],
+  stop: [ICONS, "IconStop"],
+  refresh: [ICONS, "IconRefresh"],
+  laptop: [ICONS, "IconLaptop"],
+  plug: [ICONS, "IconPlug"],
+  "pull-request": [ICONS, "IconPullRequest"],
+  actions: [SECTIONS, "SectionIcon", { section: "actions" }],
+  issues: [SECTIONS, "SectionIcon", { section: "issues" }],
+  releases: [SECTIONS, "SectionIcon", { section: "releases" }],
+  github: ["/src/plugins/github/components/GithubMark.tsx", "GithubMark"],
+  aws: [ICONS, "IconAws"],
+  rundeck: [ICONS, "IconRundeck"],
+  database: ["/src/plugins/database/components/DatabaseMark.tsx", "DatabaseMark"],
+  jira: ["/src/plugins/jira/components/JiraMark.tsx", "JiraMark"],
+  linear: ["/src/plugins/linear/components/LinearMark.tsx", "LinearMark"],
+  slack: ["/src/plugins/slack/components/SlackMark.tsx", "SlackMark"],
+  vercel: ["/src/plugins/vercel/components/VercelMark.tsx", "VercelMark"],
 };
-const LOGOS = { codex: "codex.svg" };
+/** Marks the app draws as pictures of their own, copied as they are. */
+const PICTURES = {
+  codex: "src/assets/agent-logos/codex.svg",
+  bruno: "src/assets/bruno.svg",
+  signoz: "src/plugins/signoz/signoz.svg",
+};
+/** Marks with colours of their own beside a part in the text's colour, which a
+ * picture cannot follow, so that part takes the rail's body ink. */
+const MIXED = { aws: "#acabb4" };
 
-const jsx = (text) =>
-  text
-    .replace(/<\/?>/g, "")
-    .replace(/([a-z]+[A-Z][a-zA-Z]*)=/g, (_, name) =>
-      name === "viewBox" ? "viewBox=" : `${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}=`,
-    )
-    .replace(/=\{([^}]*)\}/g, (_, value) => `="${value.replace(/^"|"$/g, "")}"`)
-    .trim();
-
-function svg(name) {
-  const made = source.match(new RegExp(`export const ${name} = makeSvgIcon(24)?\\(\\n?([\\s\\S]*?)\\);\\n`));
-  if (made) {
-    const [, grid24, body] = made;
-    const [, children, options = ""] = body.match(/^([\s\S]*?>)\s*,?\s*(\{[^}]*\})?,?\s*$/);
-    const viewBox = grid24 ? "0 0 24 24" : (options.match(/viewBox: "([^"]+)"/)?.[1] ?? "0 0 16 16");
-    const fill = options.match(/fill: "([^"]+)"/)?.[1] ?? "none";
-    const inner = grid24 ? `<g stroke-width="2.1">${jsx(children)}</g>` : jsx(children);
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" fill="${fill}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>\n`;
+const server = await createServer({
+  root,
+  logLevel: "error",
+  server: { middlewareMode: true, hmr: false },
+  appType: "custom",
+  optimizeDeps: { noDiscovery: true, include: [] },
+});
+try {
+  await mkdir(out, { recursive: true });
+  for (const [file, [module, name, props = {}]] of Object.entries(DRAWN)) {
+    const component = (await server.ssrLoadModule(module))[name];
+    const markup = renderToStaticMarkup(createElement(component, { size: 16, ...props }))
+      .replace(/^<svg[^>]*>/, (root) => root.replace(/ (width|height|class|aria-hidden)="[^"]*"/g, ""))
+      .replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"')
+      .replaceAll("currentColor", MIXED[file] ?? "currentColor");
+    await writeFile(resolve(out, `${file}.svg`), `${markup}\n`);
   }
-  const [, body] = source.match(new RegExp(`export function ${name}\\([\\s\\S]*?return \\(([\\s\\S]*?)\\);\\n\\}`));
-  return `${jsx(body)
-    .replace(/<Svg\b([^>]*)>/, (_, attributes) => {
-      const viewBox = attributes.match(/viewBox="([^"]+)"/)?.[1] ?? "0 0 16 16";
-      const fill = attributes.match(/fill="([^"]+)"/)?.[1] ?? "none";
-      return `<svg viewBox="${viewBox}" fill="${fill}" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">`;
-    })
-    .replace("</Svg>", "</svg>")
-    .replace(/ (width|height|class-name|aria-hidden)="[^"]*"/g, "")
-    .replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ')}\n`;
+  for (const [file, path] of Object.entries(PICTURES)) await copyFile(resolve(root, path), resolve(out, `${file}.svg`));
+} finally {
+  await server.close();
 }
-
-await mkdir(out, { recursive: true });
-for (const [file, name] of Object.entries(ICONS)) await writeFile(resolve(out, `${file}.svg`), svg(name));
-for (const [file, logo] of Object.entries(LOGOS))
-  await copyFile(resolve(root, "src/assets/agent-logos", logo), resolve(out, `${file}.svg`));

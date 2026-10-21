@@ -9,7 +9,13 @@ description = "The desktop UI on GPUI, a client of the core"
 [workspace]
 members = ["crates/*"]
 
+# The core trusts the program named this beside it as its app.
+[[bin]]
+name = "sikemux"
+path = "src/main.rs"
+
 [dependencies]
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # The same GPUI as GPUI Kit's, named `gpui` for the macros that expand to it.
 gpui = { package = "gpui-pre", version = "=0.3.9" }
@@ -17,6 +23,9 @@ gpui-kit = { version = "=0.8.0", default-features = false, features = ["componen
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = "1"
+sikemux-core = { path = "../sikemux-core" }
+sikemux-host = { path = "../sikemux-host", default-features = false }
+sikemux-process = { path = "../sikemux-process" }
 sikemux-client = { path = "../sikemux-client" }
 sikemux-wire = { path = "../sikemux-wire" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
