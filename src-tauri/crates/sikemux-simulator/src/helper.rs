@@ -397,7 +397,8 @@ pub async fn executable(host: &dyn Host) -> SimResult<PathBuf> {
                 );
             }
         })
-        .await?;
+        .await
+        .map_err(|error| error.to_string())?;
     }
     *known = Some(destination.clone());
     Ok(destination)

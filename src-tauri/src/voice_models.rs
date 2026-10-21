@@ -140,9 +140,7 @@ pub async fn ensure(dir: &Path, with_helper: bool, mut progress: impl FnMut(f64)
                     "https://huggingface.co/{}/resolve/{}/{}",
                     model.repo, model.revision, file.path
                 );
-                download::download(&url, &destination, file, |bytes| report(done + bytes))
-                    .await
-                    .map_err(AppError::Http)?;
+                download::download(&url, &destination, file, |bytes| report(done + bytes)).await?;
             }
             done += file.size;
             report(done);
@@ -156,8 +154,7 @@ pub async fn ensure(dir: &Path, with_helper: bool, mut progress: impl FnMut(f64)
         download::download(&helper_url(helper), &destination, helper, |bytes| {
             report(done + bytes)
         })
-        .await
-        .map_err(AppError::Http)?;
+        .await?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

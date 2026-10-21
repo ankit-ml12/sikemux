@@ -76,6 +76,15 @@ impl From<reqwest::Error> for AppError {
     }
 }
 
+impl From<sikemux_core::download::DownloadError> for AppError {
+    fn from(e: sikemux_core::download::DownloadError) -> Self {
+        match e {
+            sikemux_core::download::DownloadError::Request(e) => e.into(),
+            sikemux_core::download::DownloadError::Failed(message) => AppError::Http(message),
+        }
+    }
+}
+
 impl From<sikemux_pty::error::PtyError> for AppError {
     fn from(e: sikemux_pty::error::PtyError) -> Self {
         match e {

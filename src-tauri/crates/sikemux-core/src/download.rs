@@ -13,6 +13,35 @@ use sha2::{Digest, Sha256};
 
 use crate::http::client;
 
+/// Why a download stopped: the request itself failed, which the caller can tell a
+/// lost network from, or the file came wrong or could not be kept.
+#[derive(Debug)]
+pub enum DownloadError {
+    Request(reqwest::Error),
+    Failed(String),
+}
+
+impl std::fmt::Display for DownloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DownloadError::Request(error) => error.fmt(f),
+            DownloadError::Failed(message) => f.write_str(message),
+        }
+    }
+}
+
+impl From<reqwest::Error> for DownloadError {
+    fn from(error: reqwest::Error) -> Self {
+        DownloadError::Request(error)
+    }
+}
+
+impl From<std::io::Error> for DownloadError {
+    fn from(error: std::io::Error) -> Self {
+        DownloadError::Failed(error.to_string())
+    }
+}
+
 /// A file as the build recorded it: where it is published, its size and its SHA-256.
 #[derive(Clone, Debug, Deserialize)]
 pub struct PinnedFile {
@@ -53,7 +82,7 @@ pub async fn download(
     destination: &Path,
     file: &PinnedFile,
     progress: impl FnMut(u64),
-) -> Result<(), String> {
+) -> Result<(), DownloadError> {
     download_as(url, destination, file, progress, false).await
 }
 
@@ -63,7 +92,7 @@ pub async fn download_executable(
     destination: &Path,
     file: &PinnedFile,
     progress: impl FnMut(u64),
-) -> Result<(), String> {
+) -> Result<(), DownloadError> {
     download_as(url, destination, file, progress, true).await
 }
 
@@ -73,22 +102,21 @@ async fn download_as(
     file: &PinnedFile,
     mut progress: impl FnMut(u64),
     executable: bool,
-) -> Result<(), String> {
+) -> Result<(), DownloadError> {
     let parent = destination
         .parent()
-        .ok_or_else(|| format!("{} has no parent", destination.display()))?;
-    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        .ok_or_else(|| DownloadError::Failed(format!("{} has no parent", destination.display())))?;
+    std::fs::create_dir_all(parent)?;
     let partial = PathBuf::from(format!("{}.partial", destination.display()));
     write_verified(url, &partial, file, &mut progress).await?;
     #[cfg(unix)]
     if executable {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o755))
-            .map_err(|error| error.to_string())?;
+        std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o755))?;
     }
     #[cfg(not(unix))]
     let _ = executable;
-    std::fs::rename(&partial, destination).map_err(|error| error.to_string())
+    Ok(std::fs::rename(&partial, destination)?)
 }
 
 /// Downloads into `partial`, carrying on from whatever an earlier try left
@@ -98,54 +126,56 @@ async fn write_verified(
     partial: &Path,
     file: &PinnedFile,
     progress: &mut impl FnMut(u64),
-) -> Result<(), String> {
-    let failed = |error: std::io::Error| error.to_string();
+) -> Result<(), DownloadError> {
     let kept = std::fs::metadata(partial)
         .map(|meta| meta.len())
         .unwrap_or(0);
-    let mut request = client().map_err(|error| error.to_string())?.get(url);
+    let mut request = client()?.get(url);
     if kept > 0 && kept < file.size {
         request = request.header(reqwest::header::RANGE, format!("bytes={kept}-"));
     }
-    let response = request.send().await.map_err(|error| error.to_string())?;
+    let response = request.send().await?;
     let resumed = kept > 0 && response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
-    let response = response
-        .error_for_status()
-        .map_err(|error| error.to_string())?;
+    let response = response.error_for_status()?;
     let (mut out, mut hasher, mut written) = if resumed {
         let earlier = partial.to_path_buf();
         let hasher = tokio::task::spawn_blocking(move || hasher_over(&earlier))
             .await
-            .map_err(|error| error.to_string())?
-            .map_err(failed)?;
-        let out = std::fs::OpenOptions::new()
-            .append(true)
-            .open(partial)
-            .map_err(failed)?;
+            .map_err(|error| DownloadError::Failed(error.to_string()))??;
+        let out = std::fs::OpenOptions::new().append(true).open(partial)?;
         (out, hasher, kept)
     } else {
-        (File::create(partial).map_err(failed)?, Sha256::new(), 0)
+        (File::create(partial)?, Sha256::new(), 0)
     };
     progress(written);
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| error.to_string())?;
+        let chunk = chunk?;
         written += chunk.len() as u64;
         if written > file.size {
             let _ = std::fs::remove_file(partial);
-            return Err(format!("{} is larger than expected", file.path));
+            return Err(DownloadError::Failed(format!(
+                "{} is larger than expected",
+                file.path
+            )));
         }
         hasher.update(&chunk);
-        out.write_all(&chunk).map_err(failed)?;
+        out.write_all(&chunk)?;
         progress(written);
     }
-    out.sync_all().map_err(failed)?;
+    out.sync_all()?;
     if written < file.size {
-        return Err(format!("{} stopped downloading early", file.path));
+        return Err(DownloadError::Failed(format!(
+            "{} stopped downloading early",
+            file.path
+        )));
     }
     if hex::encode(hasher.finalize()) != file.sha256 {
         let _ = std::fs::remove_file(partial);
-        return Err(format!("{} did not match the expected hash", file.path));
+        return Err(DownloadError::Failed(format!(
+            "{} did not match the expected hash",
+            file.path
+        )));
     }
     Ok(())
 }
