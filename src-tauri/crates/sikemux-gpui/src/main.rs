@@ -1,14 +1,5 @@
-mod agents;
-mod core;
-mod home;
-mod icons;
-mod rail;
-mod tabs;
-mod theme;
-mod ui;
-mod workbench;
-
 use gpui_kit::{point, px, size, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
+use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
     let link = core::start(core::socket());
@@ -16,8 +7,8 @@ fn main() {
         .with_assets(icons::Icons)
         .run(move |cx| {
             gpui_kit::init(cx);
-            theme::load_fonts(cx);
-            let bounds = Bounds::centered(None, size(px(1340.), px(880.)), cx);
+            theme::install(cx);
+            let bounds = Bounds::centered(None, size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(860.), px(540.))),

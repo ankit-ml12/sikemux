@@ -1,20 +1,29 @@
-use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{
-    div, px, rgba, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, WindowControlArea,
-};
+use gpui_kit::{div, px, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, WindowControlArea};
 
-use crate::theme;
-use crate::ui::{agent_mark, icon, slot, status_mark};
+use crate::icons::Icon;
+use crate::theme::Tokens;
+use crate::ui::{self, IconButton, Tab};
 use crate::workbench::Workbench;
 
 /// The bar over the stage: the project's tabs, then the clock.
 pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
-    let agents = bench
-        .project
-        .as_deref()
-        .map(|project| bench.agents_of(project))
-        .unwrap_or_default();
+    let agents = bench.project.as_deref().map(|project| bench.agents_of(project)).unwrap_or_default();
+    let tabs: Vec<_> = agents
+        .into_iter()
+        .map(|agent| {
+            let id = agent.id.clone();
+            Tab::new(SharedString::from(format!("tab-{}", agent.id)), agent.title.clone())
+                .mark(ui::mark(&agent.provider, 19.))
+                .note(agent.name.as_ref().map(|name| SharedString::from(format!("@{name}"))))
+                .tail(ui::status_mark(agent.status, cx))
+                .active(bench.agent.as_deref() == Some(agent.id.as_str()))
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench.agent = Some(id.clone());
+                    cx.notify();
+                }))
+                .into_any_element()
+        })
+        .collect();
     div()
         .id("top-bar")
         .flex()
@@ -33,96 +42,19 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .flex()
                 .items_center()
                 .overflow_hidden()
-                .child(
-                    div()
-                        .h_full()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .px(px(4.))
-                        .flex()
-                        .items_center()
-                        .gap(px(4.))
-                        .children(agents.into_iter().map(|agent| {
-                            let active = bench.agent.as_deref() == Some(agent.id.as_str());
-                            let id = agent.id.clone();
-                            div()
-                                .id(SharedString::from(format!("tab-{}", agent.id)))
-                                .h(px(26.))
-                                .min_w(px(120.))
-                                .pl(px(8.))
-                                .flex()
-                                .items_center()
-                                .gap(px(8.))
-                                .rounded(theme::RADIUS_2)
-                                .bg(if active { rgba(0x232328ff) } else { theme::surface() })
-                                .when(!active, |tab| {
-                                    tab.border_1().border_color(rgba(0xe7e5ef0f))
-                                })
-                                .text_color(if active { theme::primary() } else { theme::tertiary() })
-                                .hover(|tab| tab.bg(rgba(0x1c1c20ff)))
-                                .on_click(cx.listener(move |bench, _, _, cx| {
-                                    bench.agent = Some(id.clone());
-                                    cx.notify();
-                                }))
-                                .child(slot(22., agent_mark(&agent.provider, 19.)))
-                                .child(
-                                    div()
-                                        .max_w(px(160.))
-                                        .overflow_hidden()
-                                        .text_ellipsis()
-                                        .whitespace_nowrap()
-                                        .text_size(px(12.))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(agent.title.clone()),
-                                )
-                                .children(agent.name.clone().map(|name| {
-                                    div()
-                                        .text_size(px(11.))
-                                        .text_color(theme::tertiary())
-                                        .child(format!("@{name}"))
-                                }))
-                                .child(div().size(px(20.)).mr(px(8.)).flex_none().children(status_mark(agent.status)))
-                        }))
-                        .child(
-                            div()
-                                .h_full()
-                                .px(px(12.))
-                                .flex()
-                                .items_center()
-                                .child(icon("icons/plus.svg", 13., theme::tertiary())),
-                        ),
-                ),
+                .child(div().h_full().min_w_0().overflow_hidden().px(px(4.)).flex().items_center().gap(px(4.)).children(tabs))
+                .child(IconButton::new("new-tab", Icon::Plus, "New tab").glyph(13.)),
         )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .pr(px(16.))
-                .child(clock())
-                .child(slot(30., icon("icons/focus.svg", 15., theme::tertiary()))),
-        )
+        .child(div().flex().items_center().gap(px(8.)).pr(px(16.)).child(clock(cx)).child(IconButton::new("focus", Icon::Focus, "Focus").width(30.)))
 }
 
-fn clock() -> impl IntoElement {
+fn clock(cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx);
     let now = chrono::Local::now();
     div()
         .flex()
         .items_baseline()
-        .font_features(theme::tabular())
-        .child(
-            div()
-                .text_size(px(12.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme::secondary())
-                .child(now.format("%-I:%M").to_string()),
-        )
-        .child(
-            div()
-                .ml(px(4.))
-                .text_size(px(10.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme::tertiary())
-                .child(now.format("%p").to_string()),
-        )
+        .font_features(crate::theme::tabular())
+        .child(ui::text(now.format("%-I:%M").to_string(), 12., FontWeight::SEMIBOLD).text_color(t.text_secondary))
+        .child(ui::text(now.format("%p").to_string(), 10., FontWeight::SEMIBOLD).ml(px(4.)).text_color(t.text_tertiary))
 }

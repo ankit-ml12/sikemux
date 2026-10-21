@@ -1,0 +1,116 @@
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{div, px, AnyElement, App, Div, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window};
+use smallvec::SmallVec;
+
+use super::{mark_box, meta, text};
+use crate::theme::{Tokens, RADIUS_3};
+
+/// A pane's frame. Panes paint no ground of their own: the shell's shows through.
+pub fn pane(cx: &App) -> Div {
+    div()
+        .relative()
+        .size_full()
+        .overflow_hidden()
+        .border_1()
+        .border_color(Tokens::get(cx).border)
+        .rounded(RADIUS_3)
+}
+
+/// The blurred pill a pane's header is made of.
+pub fn pill(cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .h(px(32.))
+        .flex()
+        .items_center()
+        .border_1()
+        .border_color(t.border)
+        .rounded_full()
+        .bg(Hsla { a: 0.62, ..t.surface_sunken })
+        .backdrop_blur(px(14.))
+}
+
+/// An agent pane's header, two pills floating over what the pane shows: what it
+/// is with its actions, then its controls and anything beside them.
+#[derive(IntoElement)]
+pub struct PaneHeader {
+    mark: Option<AnyElement>,
+    title: SharedString,
+    name: Option<SharedString>,
+    actions: SmallVec<[AnyElement; 2]>,
+    controls: Option<AnyElement>,
+    side: Option<AnyElement>,
+}
+
+impl PaneHeader {
+    pub fn new(title: impl Into<SharedString>) -> Self {
+        Self {
+            mark: None,
+            title: title.into(),
+            name: None,
+            actions: SmallVec::new(),
+            controls: None,
+            side: None,
+        }
+    }
+
+    pub fn mark(mut self, mark: impl IntoElement) -> Self {
+        self.mark = Some(mark.into_any_element());
+        self
+    }
+
+    pub fn name(mut self, name: Option<SharedString>) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn action(mut self, action: impl IntoElement) -> Self {
+        self.actions.push(action.into_any_element());
+        self
+    }
+
+    pub fn controls(mut self, controls: impl IntoElement) -> Self {
+        self.controls = Some(controls.into_any_element());
+        self
+    }
+
+    /// What sits beside the controls in a circle of its own, as the desk toggle.
+    pub fn side(mut self, side: impl IntoElement) -> Self {
+        self.side = Some(side.into_any_element());
+        self
+    }
+}
+
+impl RenderOnce for PaneHeader {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let primary = Tokens::get(cx).text_primary;
+        div()
+            .absolute()
+            .top(px(2.))
+            .left(px(6.))
+            .right(px(4.))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(12.))
+            .child(
+                pill(cx)
+                    .min_w_0()
+                    .pl(px(8.))
+                    .pr(px(4.))
+                    .gap(px(8.))
+                    .children(self.mark.map(|mark| mark_box(18., mark)))
+                    .child(text(self.title, 13., FontWeight::MEDIUM).overflow_hidden().text_ellipsis().text_color(primary))
+                    .children(self.name.map(|name| meta(name, cx).text_size(px(12.))))
+                    .children(self.actions),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .children(self.controls.map(|controls| pill(cx).px(px(3.)).gap(px(6.)).child(controls)))
+                    .when_some(self.side, |end, side| end.child(pill(cx).size(px(32.)).justify_center().child(side))),
+            )
+    }
+}

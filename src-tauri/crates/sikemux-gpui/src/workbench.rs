@@ -8,7 +8,8 @@ use sikemux_wire::protocol::{AgentStatus, DeviceView, ProjectInfo, RecentInfo};
 use tokio::sync::mpsc;
 
 use crate::core::{Ask, Link, Update};
-use crate::{agents, home, rail, tabs, theme};
+use crate::theme::{self, Tokens};
+use crate::{agents, home, rail, tabs};
 
 pub struct Workbench {
     pub version: String,
@@ -18,9 +19,11 @@ pub struct Workbench {
     pub project: Option<String>,
     pub agent: Option<String>,
     pub all_projects: bool,
+    /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
+    pub metric: usize,
     pub filter: Option<Entity<InputState>>,
     pub filter_text: String,
-    asks: mpsc::UnboundedSender<Ask>,
+    pub asks: mpsc::UnboundedSender<Ask>,
     _filtering: Option<Subscription>,
 }
 
@@ -55,6 +58,7 @@ impl Workbench {
             project: None,
             agent: None,
             all_projects: false,
+            metric: 0,
             filter: None,
             filter_text: String::new(),
             asks,
@@ -159,8 +163,10 @@ impl Workbench {
                     id: agent.id.clone(),
                     provider: agent.provider.clone(),
                     title: agent.title.clone(),
-                    name: chat
-                        .and_then(|chat| chat.name.clone())
+                    name: agent
+                        .name
+                        .clone()
+                        .or_else(|| chat.and_then(|chat| chat.name.clone()))
                         .or_else(|| session.and_then(|session| session.agent_name.clone())),
                     status: chat
                         .map(|chat| chat.status)
@@ -204,11 +210,11 @@ impl Render for Workbench {
             .flex()
             .flex_col()
             .pt(px(6.))
-            .bg(theme::sunken())
+            .bg(Tokens::get(cx).surface_sunken)
             .font_family(theme::UI)
             .text_size(px(13.))
             .line_height(px(13. * 1.45))
-            .text_color(theme::secondary())
+            .text_color(Tokens::get(cx).text_secondary)
             .child(tabs::top_bar(self, cx))
             .child(
                 div()

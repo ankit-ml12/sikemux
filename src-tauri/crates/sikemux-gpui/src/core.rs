@@ -18,6 +18,9 @@ pub enum Update {
 /// What the client asks of the core beyond the view it is sent.
 pub enum Ask {
     Activity { project: Option<String> },
+    /// One of the core's methods, for something the person did. What it changes
+    /// comes back with the next view.
+    Call { method: &'static str, params: Value },
 }
 
 pub struct Link {
@@ -80,6 +83,14 @@ async fn run(
                             Some(Ask::Activity { project: asked }) => {
                                 project = asked;
                                 read_activity(&client, &project, &updates);
+                            }
+                            Some(Ask::Call { method, params }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    if let Err(error) = client.call(method, params).await {
+                                        eprintln!("sikemux: the core refused {method}: {error}");
+                                    }
+                                });
                             }
                             None => return,
                         },

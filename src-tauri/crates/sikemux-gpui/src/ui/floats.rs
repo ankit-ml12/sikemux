@@ -1,0 +1,210 @@
+use std::rc::Rc;
+
+use gpui_kit::base::Button as BaseButton;
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
+    div, px, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div, ElementId,
+    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
+    SharedString, Styled, Window,
+};
+use smallvec::SmallVec;
+
+use super::{icon, text};
+use crate::icons::Icon;
+use crate::theme::{Tokens, RADIUS_2, RADIUS_4};
+
+/// What floats over everything else: menus, pickers, palettes.
+pub fn float(cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .bg(Hsla { a: 0.94, ..t.surface_overlay })
+        .border_1()
+        .border_color(t.border)
+        .rounded(RADIUS_4)
+        .shadow(t.shadow_float())
+        .backdrop_blur(px(20.))
+}
+
+/// A float of choices.
+#[derive(IntoElement)]
+pub struct Menu {
+    items: SmallVec<[AnyElement; 8]>,
+}
+
+impl Menu {
+    pub fn new() -> Self {
+        Self { items: SmallVec::new() }
+    }
+
+    /// A hairline between groups of items.
+    pub fn separator(mut self, cx: &App) -> Self {
+        self.items.push(div().h(px(1.)).mx(px(2.)).my(px(4.)).bg(Tokens::get(cx).border).into_any_element());
+        self
+    }
+}
+
+impl ParentElement for Menu {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.items.extend(elements);
+    }
+}
+
+impl RenderOnce for Menu {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        float(cx)
+            .min_w(px(196.))
+            .max_w(px(340.))
+            .p(px(4.))
+            .flex()
+            .flex_col()
+            .gap(px(1.))
+            .children(self.items)
+    }
+}
+
+/// One of a menu's choices: an icon, its label, an optional line under it and
+/// a hint at the end, ticked when it is the current choice.
+#[derive(IntoElement)]
+pub struct MenuItem {
+    id: ElementId,
+    label: SharedString,
+    icon: Option<Icon>,
+    detail: Option<SharedString>,
+    hint: Option<SharedString>,
+    checked: bool,
+    danger: bool,
+    disabled: bool,
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+}
+
+impl MenuItem {
+    pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            icon: None,
+            detail: None,
+            hint: None,
+            checked: false,
+            danger: false,
+            disabled: false,
+            on_click: None,
+        }
+    }
+
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+
+    pub fn hint(mut self, hint: impl Into<SharedString>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.checked = checked;
+        self
+    }
+
+    pub fn danger(mut self) -> Self {
+        self.danger = true;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for MenuItem {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let t = Tokens::get(cx).clone();
+        let (rest, hover, wash) = if self.danger {
+            (Hsla { a: 0.92, ..t.danger }, t.danger, Hsla { a: 0.12, ..t.danger })
+        } else {
+            (t.text_secondary, t.text_primary, t.surface_hover)
+        };
+        let on_click = self.on_click.filter(|_| !self.disabled);
+        BaseButton::new(self.id)
+            .group(GROUP)
+            .disabled(self.disabled)
+            .accessibility_label(self.label.clone())
+            .w_full()
+            .px(px(10.))
+            .py(px(5.))
+            .flex()
+            .items_center()
+            .justify_start()
+            .gap(px(10.))
+            .rounded(RADIUS_2)
+            .text_size(px(12.))
+            .line_height(px(17.))
+            .text_color(if self.disabled { t.text_tertiary } else { rest })
+            .when(!self.disabled, |item| item.hover(move |style| style.bg(wash).text_color(hover)))
+            .when_some(on_click, |item, handler| item.on_click(move |event, window, cx| handler(event, window, cx)))
+            .children(self.icon.map(|glyph| {
+                div().min_w(px(14.)).mr(px(-2.)).child(
+                    icon(glyph, 13.)
+                        .text_color(t.text_tertiary)
+                        .group_hover(GROUP, move |style| style.text_color(hover)),
+                )
+            }))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(div().overflow_hidden().text_ellipsis().whitespace_nowrap().child(self.label))
+                    .children(self.detail.map(|detail| {
+                        text(detail, 10., FontWeight::NORMAL).text_color(t.text_tertiary)
+                    })),
+            )
+            .children(self.hint.map(|hint| text(hint, 10.5, FontWeight::NORMAL).text_color(t.text_tertiary)))
+            .when(self.checked, |item| item.child(icon(Icon::Check, 11.).text_color(t.text_primary)))
+    }
+}
+
+/// The hover group a menu item puts its icon in, so the icon follows its text.
+const GROUP: &str = "menu-item";
+
+/// A short label that appears after a pointer rests on its anchor.
+pub struct TooltipView {
+    text: SharedString,
+}
+
+impl Render for TooltipView {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Tokens::get(cx);
+        div()
+            .max_w(px(360.))
+            .px(px(9.))
+            .py(px(5.))
+            .rounded(RADIUS_2)
+            .bg(t.surface_tooltip)
+            .border_1()
+            .border_color(Hsla { a: 0.72, ..t.border_strong })
+            .text_size(px(11.5))
+            .line_height(px(16.))
+            .text_color(t.text_primary)
+            .child(self.text.clone())
+    }
+}
+
+/// What `.tooltip()` takes, for a tooltip that says `text`.
+pub fn tooltip(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView {
+    let text = text.into();
+    move |_, cx| cx.new(|_| TooltipView { text: text.clone() }).into()
+}
