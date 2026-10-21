@@ -8,6 +8,7 @@ use gpui_kit::component::attachment::{
     Attachment, AttachmentContent, AttachmentMedia, AttachmentTitle,
 };
 use gpui_kit::component::Sizable;
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, App, Axis, ClipboardEntry, ClipboardItem, Context, Div, ExternalPaths, FontWeight,
     Hsla, InteractiveElement, IntoElement, ParentElement, PathPromptOptions, SharedString, Styled,
@@ -449,6 +450,7 @@ pub fn tiles(
     earlier: &[(String, String)],
     remove: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
     forget: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
+    open: impl Fn(PathBuf, &mut Window, &mut App) + Clone + 'static,
     cx: &App,
 ) -> Option<impl IntoElement> {
     if attachments.is_empty() && earlier.is_empty() {
@@ -487,8 +489,15 @@ pub fn tiles(
                 .child(ui::mono(format!("#{}", index + 1), 9.5, cx).text_color(t.text_primary)),
         );
         let remove = remove.clone();
+        let opens = is_image(path).then(|| {
+            let (open, path) = (open.clone(), path.clone());
+            move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut App| {
+                open(path.clone(), window, cx)
+            }
+        });
         Attachment::new()
             .id(SharedString::from(format!("attachment-{index}")))
+            .when_some(opens, |tile, opens| tile.on_click(opens))
             .axis(Axis::Vertical)
             .with_size(gpui_kit::component::Size::Size(px(16.6)))
             .tooltip(path.to_string_lossy().into_owned())

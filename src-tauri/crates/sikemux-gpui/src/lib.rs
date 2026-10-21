@@ -15,6 +15,7 @@ pub mod git;
 mod home;
 pub mod icons;
 mod keymap;
+mod picture;
 mod rail;
 pub mod syntax;
 mod tabs;

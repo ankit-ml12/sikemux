@@ -2080,11 +2080,19 @@ fn composer(
                 .ok();
         }
     };
+    let open = {
+        let this = this.clone();
+        move |path: PathBuf, window: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| bench.show_picture(path, window, cx))
+                .ok();
+        }
+    };
     let tiles = attach::tiles(
         &composing.attachments,
         &composing.earlier,
         remove,
         forget,
+        open,
         cx,
     )
     .map(IntoElement::into_any_element);
