@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getState, setState } from "../state/store";
 import { MemoryIpcTransport, installIpcTransportForTests, resetIpcTransportForTests } from "./transport";
 import { reportActive } from "./usage";
+import { testPreferences } from "../test/preferences";
 
 const initial = getState();
 let transport: MemoryIpcTransport;
@@ -11,6 +12,7 @@ beforeEach(() => {
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
     setState(initial, true);
+    setState({ preferences: testPreferences() });
 });
 
 afterEach(() => {
@@ -22,7 +24,7 @@ describe("usage report", () => {
     it("sends nothing once the person opts out", async () => {
         const handler = vi.fn(() => Promise.resolve(null));
         transport.register("usage_report_active", handler);
-        setState({ shareUsageData: false });
+        setState({ preferences: testPreferences({ shareUsageData: false }) });
 
         await reportActive();
 

@@ -66,7 +66,6 @@ let persistenceReady = false;
 type Read<T> = (saved: unknown, current: T) => T;
 
 const flag: Read<boolean> = (saved, current) => (typeof saved === "boolean" ? saved : current);
-const text: Read<string> = (saved, current) => (typeof saved === "string" ? saved : current);
 const finite =
     (clamp: (value: number) => number = (value) => value): Read<number> =>
     (saved, current) =>
@@ -100,16 +99,10 @@ const PREFS = {
     tabRailWidth: finite((width) => clampRailWidth("end", width)),
     activeSpaceId: (saved, current) => (typeof saved === "string" ? saved : current),
     simulatorFrame: flag,
-    notificationsIntroduced: flag,
-    keptRunningNoticeShown: flag,
     railDensity: oneOf("comfortable", "compact"),
     tabRailAllAgents: flag,
     tabRailScope: oneOf("project", "all"),
     tabRailPage: oneOf("agents", "terminals", "files"),
-    onboardingComplete: flag,
-    lastSeenVersion: text,
-    updateChannel: oneOf("stable", "nightly"),
-    shareUsageData: flag,
     lastReleaseNotes: (saved) => readReleaseNotes(saved),
     recentCommandKeys: (saved, current) =>
         Array.isArray(saved) ? saved.filter((value): value is string => typeof value === "string").slice(0, 20) : current,

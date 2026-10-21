@@ -12,6 +12,8 @@ import { invalidate } from "../../plugin-api/resources";
 import { hostSettings, resetView, updateView, useHostView, viewOf } from "../state";
 import { ciCore, InHost, registerTestHost, TEST_HOST } from "../testHost";
 import { RunsList } from "./RunsList";
+import { setState } from "../../state/store";
+import { testPreferences } from "../../test/preferences";
 
 const host = registerTestHost(api);
 const core = ciCore();
@@ -89,6 +91,7 @@ async function renderList(props: Parameters<typeof Harness>[0] = {}) {
 }
 
 beforeEach(() => {
+    setState({ preferences: testPreferences() });
     invalidate(() => true);
     resetView("pane");
     hostSettings(TEST_HOST).update((settings) => ({ ...settings, followBranch: true }));

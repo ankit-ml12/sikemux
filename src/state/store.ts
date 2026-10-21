@@ -79,9 +79,6 @@ export interface DomainState {
     activeSpaceId: string | null;
     /** The simulator tab draws the device's frame and side buttons around its screen. */
     simulatorFrame: boolean;
-    notificationsIntroduced: boolean;
-    /** The person was told once that terminals keep running after Sikemux quits. */
-    keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
     /** How the person wants Sikemux to behave, as the core keeps it; null until read. */
     preferences: Preferences | null;
@@ -92,10 +89,6 @@ export interface DomainState {
     tabRailScope: TabRailScope;
     tabRailPage: TabRailPage;
     pinnedChats: PinnedChat[];
-    onboardingComplete: boolean;
-    lastSeenVersion: string;
-    updateChannel: "stable" | "nightly";
-    shareUsageData: boolean;
     lastReleaseNotes: HeldRelease | null;
     recentCommandKeys: string[];
     /** Non-secret launch profiles and the per-agent defaults that reference them. */
@@ -272,8 +265,6 @@ export const useStore = create<StoreState>(() => {
         projectSpaces: {},
         activeSpaceId: null,
         simulatorFrame: true,
-        notificationsIntroduced: false,
-        keptRunningNoticeShown: false,
         railDensity: "comfortable",
         preferences: null,
         tabRailAllAgents: false,
@@ -281,10 +272,6 @@ export const useStore = create<StoreState>(() => {
         tabRailScope: "project",
         tabRailPage: "agents",
         pinnedChats: [],
-        onboardingComplete: false,
-        lastSeenVersion: "",
-        updateChannel: "stable",
-        shareUsageData: true,
         lastReleaseNotes: null,
         recentCommandKeys: [],
         providerProfiles: defaultProviderProfiles(),

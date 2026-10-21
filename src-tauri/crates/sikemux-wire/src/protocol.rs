@@ -1182,6 +1182,26 @@ pub struct Preferences {
     pub notch: crate::notch::NotchSettings,
     /// Holding right Option dictates; the speech model downloads once it is on.
     pub voice_dictation: bool,
+    /// Which releases updates come from.
+    pub update_channel: UpdateChannel,
+    /// Anonymous usage is reported.
+    pub share_usage_data: bool,
+    /// The person went through the first-run introduction.
+    pub onboarding_complete: bool,
+    /// The release whose notes the person last saw.
+    pub last_seen_version: String,
+    /// The first launch already asked macOS to let Sikemux notify.
+    pub notifications_introduced: bool,
+    /// The person was told once that terminals keep running after Sikemux quits.
+    pub kept_running_notice_shown: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateChannel {
+    #[default]
+    Stable,
+    Nightly,
 }
 
 impl Default for Preferences {
@@ -1208,6 +1228,12 @@ impl Default for Preferences {
             ios_simulator: true,
             notch: crate::notch::NotchSettings::default(),
             voice_dictation: false,
+            update_channel: UpdateChannel::default(),
+            share_usage_data: true,
+            onboarding_complete: false,
+            last_seen_version: String::new(),
+            notifications_introduced: false,
+            kept_running_notice_shown: false,
         }
     }
 }

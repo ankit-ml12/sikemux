@@ -25,23 +25,21 @@ const { installAgent, signInAgent } = vi.hoisted(() => ({ installAgent: vi.fn(),
 vi.mock("../agents/AgentInstall", () => ({ installAgent, signInAgent }));
 
 import { keybindingLabel } from "../commands/keybindings";
-import { flushPersist, resetPersistenceForTests } from "../state/persist";
+import { resetPersistenceForTests } from "../state/persist";
 import { getState, setState } from "../state/store";
 import { Onboarding } from "./ExperienceOverlays";
+import { testPreferences } from "../test/preferences";
 
 const initial = getState();
 const health = { git: true };
 
 function openOnboarding(overrides = {}) {
-    setState({ onboardingOpen: true, onboardingComplete: false, keybindingOverrides: overrides });
+    setState({ onboardingOpen: true, preferences: testPreferences({ onboardingComplete: false }), keybindingOverrides: overrides });
     return render(<Onboarding />);
 }
 
-async function expectPersistedComplete() {
-    expect(await flushPersist()).toBe(true);
-    const save = invoke.mock.calls.find(([command]) => command === "state_save");
-    expect(save).toBeDefined();
-    expect(JSON.parse(save![1].data as string).prefs.onboardingComplete).toBe(true);
+function expectPersistedComplete() {
+    expect(invoke).toHaveBeenCalledWith("core_call", { method: "setPreference", params: { key: "onboardingComplete", value: true } });
 }
 
 beforeEach(() => {
@@ -49,7 +47,7 @@ beforeEach(() => {
     invoke.mockImplementation(async (command: string) => (command === "integration_health" ? health : undefined));
     resetPersistenceForTests();
     setState(initial, true);
-    setState({ onboardingOpen: false, onboardingComplete: false, keybindingOverrides: {} });
+    setState({ onboardingOpen: false, preferences: testPreferences({ onboardingComplete: false }), keybindingOverrides: {} });
 });
 
 afterEach(() => {
@@ -113,9 +111,10 @@ describe("Onboarding", () => {
 
         await user.click(screen.getByRole("button", { name: /Open a project/ }));
 
-        expect(getState()).toMatchObject({ onboardingOpen: false, onboardingComplete: true, pickerOpen: true, pickerMode: "projects" });
+        expect(getState()).toMatchObject({ onboardingOpen: false, pickerOpen: true, pickerMode: "projects" });
+        expect(getState().preferences?.onboardingComplete).toBe(true);
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-        await expectPersistedComplete();
+        expectPersistedComplete();
     });
 
     it("answers the shortcut shown beside a move", async () => {
@@ -133,12 +132,14 @@ describe("Onboarding", () => {
         openOnboarding();
 
         fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-        expect(getState()).toMatchObject({ onboardingOpen: false, onboardingComplete: true });
+        expect(getState().onboardingOpen).toBe(false);
+        expect(getState().preferences?.onboardingComplete).toBe(true);
 
-        act(() => setState({ onboardingOpen: true, onboardingComplete: false }));
+        act(() => setState({ onboardingOpen: true, preferences: testPreferences({ onboardingComplete: false }) }));
         await user.click(await screen.findByRole("button", { name: "Close welcome" }));
-        expect(getState()).toMatchObject({ onboardingOpen: false, onboardingComplete: true });
-        await expectPersistedComplete();
+        expect(getState().onboardingOpen).toBe(false);
+        expect(getState().preferences?.onboardingComplete).toBe(true);
+        expectPersistedComplete();
     });
 
     it("restores the previously focused control when it closes", async () => {
@@ -152,7 +153,7 @@ describe("Onboarding", () => {
         const trigger = screen.getByRole("button", { name: "Reopen trigger" });
         trigger.focus();
 
-        act(() => setState({ onboardingOpen: true, onboardingComplete: true }));
+        act(() => setState({ onboardingOpen: true, preferences: testPreferences() }));
         await waitFor(() => expect(screen.getByRole("button", { name: /Open a project/ })).toHaveFocus());
         await user.click(screen.getByRole("button", { name: "Close welcome" }));
         await waitFor(() => expect(trigger).toHaveFocus());

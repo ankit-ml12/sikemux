@@ -598,10 +598,7 @@ function baseSnapshot(): PersistedSnapshot {
       windowBlur: 0,
       sideRailOpen: true,
       tabRailOpen: true,
-      onboardingComplete: true,
-      notificationsIntroduced: true,
       lastReleaseNotes: null,
-      lastSeenVersion: "0.5.3",
       activeSpaceId: null,
     },
     itemStates: {

@@ -25,7 +25,7 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { customCommandsOf, setPreference, usePreference, projectRootsOf } from "../state/preferences";
+import { customCommandsOf, setPreference, updateChannelOf, usePreference, projectRootsOf } from "../state/preferences";
 import type { MidTurnSend } from "../api/generated/wire";
 import {
     cloneTheme,
@@ -815,10 +815,10 @@ function CliPage() {
 }
 
 function AboutPage() {
-    const updateChannel = useStore((s) => s.updateChannel);
+    const updateChannel = useStore(updateChannelOf);
     const lastUpdateCheck = useStore((s) => s.lastUpdateCheck);
     const pendingUpdate = useStore((s) => s.pendingUpdate);
-    const shareUsageData = useStore((s) => s.shareUsageData);
+    const shareUsageData = usePreference("shareUsageData") === true;
     return (
         <SettingsPage>
             <SettingsSection title="Updates">

@@ -3,7 +3,7 @@ import { getState } from "../state/store";
 import { swallow } from "../state/toast";
 
 export function reportActive(): Promise<void> {
-    const { shareUsageData, updateChannel } = getState();
-    if (!shareUsageData) return Promise.resolve();
-    return invoke<void>("usage_report_active", { channel: updateChannel }).catch(swallow("usage report"));
+    const preferences = getState().preferences;
+    if (!preferences?.shareUsageData) return Promise.resolve();
+    return invoke<void>("usage_report_active", { channel: preferences.updateChannel }).catch(swallow("usage report"));
 }

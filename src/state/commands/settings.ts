@@ -6,7 +6,7 @@ import { adoptAgentAccounts } from "../persist";
 import { reportError } from "../toast";
 import { invalidate } from "../resources";
 import { projectRootsScanR } from "../resources.defs";
-import { projectRootsOf, setPreference } from "../preferences";
+import { projectRootsOf, setPreference, updateChannelOf } from "../preferences";
 import { MAX_PROJECT_DEPTH, type NotchSettings, type ProjectRoot } from "../../api/generated/wire";
 import { getState, setState } from "../store";
 import type { AgentType } from "../../agents/catalog";
@@ -58,14 +58,15 @@ export function deleteProviderProfile(id: string): Promise<void> {
 export const checkForUpdates = (): Promise<void> => checkForUpdateNow();
 
 export const setUpdateChannel = (value: "stable" | "nightly"): void => {
-    if (getState().updateChannel === value) return;
+    if (updateChannelOf(getState()) === value) return;
     // The other channel's result says nothing about this one, and waiting out
     // the 30-minute poll to learn what the new channel offers reads as broken.
-    setState({ updateChannel: value, pendingUpdate: null, lastUpdateCheck: null });
+    setPreference("updateChannel", value);
+    setState({ pendingUpdate: null, lastUpdateCheck: null });
     void checkForUpdateNow();
 };
 
-export const setShareUsageData = (value: boolean): void => setState({ shareUsageData: value });
+export const setShareUsageData = (value: boolean): void => setPreference("shareUsageData", value);
 
 export const setLanguageServerTrust = (project: string, allowed: boolean): void =>
     setPreference("languageServerTrust", { ...getState().preferences?.languageServerTrust, [project]: allowed });

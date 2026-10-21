@@ -1,6 +1,6 @@
 import { coreCall } from "../api/core";
 import { onCoreChanged } from "../api/coreChanged";
-import type { CustomCommand, Preferences, ProjectRoot } from "../api/generated/wire";
+import type { CustomCommand, Preferences, ProjectRoot, UpdateChannel } from "../api/generated/wire";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { swallow } from "./toast";
 
@@ -37,6 +37,9 @@ export const customCommandsOf = (s: StoreState): CustomCommand[] => s.preference
 const NO_PLUGIN_SETTINGS: Readonly<Record<string, unknown>> = {};
 export const pluginSettingsOf = (s: StoreState): Readonly<Record<string, unknown>> => s.preferences?.pluginSettings ?? NO_PLUGIN_SETTINGS;
 
+/** The channel updates come from; stable until the core has said. */
+export const updateChannelOf = (s: StoreState): UpdateChannel => s.preferences?.updateChannel ?? "stable";
+
 /** A preference's value, or undefined until the core has said. */
 export function usePreference<K extends keyof Preferences>(key: K): Preferences[K] | undefined {
     return useStore((s) => s.preferences?.[key]);
@@ -59,7 +62,7 @@ function send(key: keyof Preferences): void {
     coreCall<Preferences>("setPreference", { key, value })
         .then((preferences) => {
             settled();
-            showPreferences(preferences);
+            if (preferences) showPreferences(preferences);
         })
         .catch((error: unknown) => {
             settled();

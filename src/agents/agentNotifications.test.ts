@@ -127,7 +127,7 @@ describe("the first launch", () => {
         await vi.waitFor(() => expect(notification.sent).toHaveBeenCalledTimes(1));
         expect(notification.sent.mock.calls[0][0].title).toBe("Sikemux notifications are on");
         expect(notification.bips).toHaveBeenCalledTimes(1);
-        expect(getState().notificationsIntroduced).toBe(true);
+        expect(getState().preferences?.notificationsIntroduced).toBe(true);
     });
 
     it("stays quiet for someone who switched notifications off", () => {
@@ -135,6 +135,6 @@ describe("the first launch", () => {
         introduceNotifications();
         expect(notification.sent).not.toHaveBeenCalled();
         expect(notification.bips).not.toHaveBeenCalled();
-        expect(getState().notificationsIntroduced).toBe(false);
+        expect(getState().preferences?.notificationsIntroduced).toBe(false);
     });
 });

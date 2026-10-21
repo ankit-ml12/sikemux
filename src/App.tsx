@@ -714,8 +714,9 @@ export default function App() {
                     cmd.setWindowBlur(st.windowBlur);
                     if (hydrationAllowsPersistence(hydrationResult)) {
                         offerSavedSessions();
-                        if (!st.onboardingComplete) cmd.openOnboarding();
-                        else if (st.lastReleaseNotes && st.lastSeenVersion !== st.lastReleaseNotes.version) cmd.openWhatsNew();
+                        if (preferences && !preferences.onboardingComplete) cmd.openOnboarding();
+                        else if (preferences && st.lastReleaseNotes && preferences.lastSeenVersion !== st.lastReleaseNotes.version)
+                            cmd.openWhatsNew();
                         performanceTelemetry.endSpan(hydrateSpan, { outcome: "success" });
                     } else {
                         setBootIssue(

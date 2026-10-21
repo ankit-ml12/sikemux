@@ -354,6 +354,12 @@ export class ShowcaseBackend implements IpcTransport {
           yieldToDev: true,
         },
         voiceDictation: false,
+        updateChannel: "stable",
+        shareUsageData: false,
+        onboardingComplete: true,
+        lastSeenVersion: "0.5.3",
+        notificationsIntroduced: true,
+        keptRunningNoticeShown: true,
       }),
     );
     this.onCore(

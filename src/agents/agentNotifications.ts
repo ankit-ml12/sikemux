@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { getIpcTransport } from "../api/transport";
 import { swallow } from "../state/toast";
-import { getState, setState, useStore, type StoreState } from "../state/store";
+import { getState, useStore, type StoreState } from "../state/store";
+import { setPreference } from "../state/preferences";
 
 let audio: AudioContext | null = null;
 const audioContext = (): AudioContext => (audio ??= new AudioContext());
@@ -42,8 +43,8 @@ export function sendTestNotification(): void {
  */
 export function introduceNotifications(): void {
     const state = getState();
-    if (!state.preferences?.agentNotifications || state.notificationsIntroduced) return;
-    setState({ notificationsIntroduced: true });
+    if (!state.preferences?.agentNotifications || state.preferences.notificationsIntroduced) return;
+    setPreference("notificationsIntroduced", true);
     sendTestNotification();
 }
 

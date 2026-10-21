@@ -34,6 +34,12 @@ export function testPreferences(changes: Partial<Preferences> = {}): Preferences
             yieldToDev: true,
         },
         voiceDictation: false,
+        updateChannel: "stable",
+        shareUsageData: true,
+        onboardingComplete: true,
+        lastSeenVersion: "",
+        notificationsIntroduced: false,
+        keptRunningNoticeShown: false,
         ...changes,
     };
 }

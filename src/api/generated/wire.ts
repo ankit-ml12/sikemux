@@ -1252,6 +1252,18 @@ export interface Preferences {
     notch: NotchSettings;
     /** Holding right Option dictates; the speech model downloads once it is on. */
     voiceDictation: boolean;
+    /** Which releases updates come from. */
+    updateChannel: UpdateChannel;
+    /** Anonymous usage is reported. */
+    shareUsageData: boolean;
+    /** The person went through the first-run introduction. */
+    onboardingComplete: boolean;
+    /** The release whose notes the person last saw. */
+    lastSeenVersion: string;
+    /** The first launch already asked macOS to let Sikemux notify. */
+    notificationsIntroduced: boolean;
+    /** The person was told once that terminals keep running after Sikemux quits. */
+    keptRunningNoticeShown: boolean;
 }
 
 export type MidTurnSend = "steer" | "queue";
@@ -1378,6 +1390,8 @@ export type NotchOpenWith = "hover" | "click";
 export type NotchFullScreen = "needsYou" | "always" | "never";
 
 export type NotchPeeks = "all" | "needsYou" | "never";
+
+export type UpdateChannel = "stable" | "nightly";
 
 /**
  * The picked theme with the colours every app works out from it, nudged

@@ -5,6 +5,7 @@ import type { ReleaseCredits } from "./releases";
 import { getState, setState, type PendingUpdate, type UpdateBlocker, type UpdateCheckOutcome, type UpdateOperationState } from "../state/store";
 import { notify, reportError, swallow } from "../state/toast";
 import { errorCategory, errorText, formatBytes } from "../lib/format";
+import { updateChannelOf } from "../state/preferences";
 
 export const RELEASES_URL = "https://github.com/nodelike/sikemux/releases";
 // The update feed only lists macOS builds, so Linux installs update by downloading the next release.
@@ -124,7 +125,7 @@ function isOffline(error: unknown): boolean {
 // being up to date.
 async function runUpdateCheck(announce: boolean): Promise<void> {
     if (isUpdateUnderway(getState().pendingUpdate?.state)) return;
-    const channel = getState().updateChannel;
+    const channel = updateChannelOf(getState());
     try {
         const update = await invoke<UpdateInfo | null>("update_check", { channel });
         setState({ lastUpdateCheck: { at: Date.now(), channel, error: null } });
@@ -248,7 +249,7 @@ async function installPendingUpdateOnce(force: boolean): Promise<void> {
     if (!getState().pendingUpdate) await checkForUpdate();
     const pending = getState().pendingUpdate;
     if (!pending || isUpdateBusy(pending.state)) return;
-    const channel = getState().updateChannel;
+    const channel = updateChannelOf(getState());
 
     if (installedAwaitingRestart) {
         try {
