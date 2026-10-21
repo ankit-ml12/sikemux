@@ -10,6 +10,7 @@ import type { WorktreeSwitchState } from "./worktreeSwitch";
 import { handleVoiceEvent, toggleDictation, useVoice } from "../voice/dictation";
 import { setState } from "../state/store";
 import { draftOf, typeDraft } from "../test/draft";
+import { testPreferences } from "../test/preferences";
 
 const repo = { provider: "github", owner: "o", name: "r", account: null };
 
@@ -202,7 +203,7 @@ describe("sending while dictating", () => {
         const pane = document.createElement("div");
         document.body.append(pane);
         const paneRef = { current: pane };
-        setState({ voiceDictation: true });
+        setState({ preferences: testPreferences({ voiceDictation: true }) });
         useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0, target: null, partial: "" });
         const editor = renderComposer(undefined, paneRef);
         type(editor, "fix the");
@@ -221,7 +222,7 @@ describe("sending while dictating", () => {
     it("lets a message that is only spoken be sent", () => {
         const pane = document.createElement("div");
         document.body.append(pane);
-        setState({ voiceDictation: true });
+        setState({ preferences: testPreferences({ voiceDictation: true }) });
         useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0, target: null, partial: "" });
         renderComposer(undefined, { current: pane });
         expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();

@@ -22,6 +22,18 @@ export function testPreferences(changes: Partial<Preferences> = {}): Preferences
         cloudBrowser: "",
         cloudBrowserShortcut: "",
         iosSimulator: true,
+        notch: {
+            enabled: true,
+            displays: "all",
+            openWith: "hover",
+            fullScreen: "needsYou",
+            peeks: "all",
+            answerInNotch: true,
+            sound: true,
+            haptics: true,
+            yieldToDev: true,
+        },
+        voiceDictation: false,
         ...changes,
     };
 }

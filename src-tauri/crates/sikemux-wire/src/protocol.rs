@@ -1178,6 +1178,10 @@ pub struct Preferences {
     pub cloud_browser_shortcut: String,
     /// Agents may drive the iOS Simulator.
     pub ios_simulator: bool,
+    /// How the island over the MacBook notch behaves.
+    pub notch: crate::notch::NotchSettings,
+    /// Holding right Option dictates; the speech model downloads once it is on.
+    pub voice_dictation: bool,
 }
 
 impl Default for Preferences {
@@ -1202,6 +1206,8 @@ impl Default for Preferences {
             cloud_browser: String::new(),
             cloud_browser_shortcut: String::new(),
             ios_simulator: true,
+            notch: crate::notch::NotchSettings::default(),
+            voice_dictation: false,
         }
     }
 }

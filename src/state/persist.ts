@@ -1,4 +1,3 @@
-import { normaliseNotchSettings } from "../notch/notchSettings";
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
@@ -100,8 +99,6 @@ const PREFS = {
     sideRailWidth: finite((width) => clampRailWidth("start", width)),
     tabRailWidth: finite((width) => clampRailWidth("end", width)),
     activeSpaceId: (saved, current) => (typeof saved === "string" ? saved : current),
-    notch: (saved) => normaliseNotchSettings(saved),
-    voiceDictation: flag,
     simulatorFrame: flag,
     notificationsIntroduced: flag,
     keptRunningNoticeShown: flag,

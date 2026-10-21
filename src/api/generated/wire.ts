@@ -1248,6 +1248,10 @@ export interface Preferences {
     cloudBrowserShortcut: string;
     /** Agents may drive the iOS Simulator. */
     iosSimulator: boolean;
+    /** How the island over the MacBook notch behaves. */
+    notch: NotchSettings;
+    /** Holding right Option dictates; the speech model downloads once it is on. */
+    voiceDictation: boolean;
 }
 
 export type MidTurnSend = "steer" | "queue";
@@ -1352,6 +1356,28 @@ export interface CustomCommand {
 
 /** Where a custom command's output goes. */
 export type CustomCommandPlacement = "background" | "terminal" | "split" | "popup" | "replace";
+
+/** The Notch section of the person's preferences, which the island reads. */
+export interface NotchSettings {
+    enabled: boolean;
+    displays: NotchDisplays;
+    openWith: NotchOpenWith;
+    fullScreen: NotchFullScreen;
+    peeks: NotchPeeks;
+    answerInNotch: boolean;
+    sound: boolean;
+    haptics: boolean;
+    /** Only a stable or nightly build reads this: whether it steps aside while Sikemux Dev runs. */
+    yieldToDev: boolean;
+}
+
+export type NotchDisplays = "all" | "builtIn" | "pointer";
+
+export type NotchOpenWith = "hover" | "click";
+
+export type NotchFullScreen = "needsYou" | "always" | "never";
+
+export type NotchPeeks = "all" | "needsYou" | "never";
 
 /**
  * The picked theme with the colours every app works out from it, nudged

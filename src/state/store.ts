@@ -1,4 +1,3 @@
-import { DEFAULT_NOTCH_SETTINGS } from "../notch/notchSettings";
 import type { CodeHostChoice, Preferences } from "../api/generated/wire";
 import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
@@ -78,8 +77,6 @@ export interface DomainState {
     projectSpaces: Readonly<Record<string, string>>;
     /** The space the rail shows, or null for every project. */
     activeSpaceId: string | null;
-    notch: import("../notch/notchSettings").NotchSettings;
-    voiceDictation: boolean;
     /** The simulator tab draws the device's frame and side buttons around its screen. */
     simulatorFrame: boolean;
     notificationsIntroduced: boolean;
@@ -274,8 +271,6 @@ export const useStore = create<StoreState>(() => {
         spaces: [],
         projectSpaces: {},
         activeSpaceId: null,
-        notch: DEFAULT_NOTCH_SETTINGS,
-        voiceDictation: false,
         simulatorFrame: true,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,

@@ -3,33 +3,24 @@
 //! `start` runs the core as the app would. It keeps running after the app
 //! quits, as the core does.
 
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
 use crate::error::AppResult;
 use crate::pty::PtyManager;
 
-/// The Notch section of the settings, named in `src/notch/settings.json`.
-/// The app only starts or stops the helper; the helper reads the rest.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NotchSettings {
-    enabled: bool,
-    #[serde(flatten)]
-    helper: serde_json::Map<String, serde_json::Value>,
-}
-
-/// Writes the settings the helper reads, then starts or stops it to match.
+/// Starts or stops the helper, as the person's Notch preferences say; the
+/// helper reads the rest of them from the core.
 #[tauri::command]
 pub async fn notch_configure(
     app: AppHandle,
     manager: State<'_, PtyManager>,
-    settings: NotchSettings,
+    enabled: bool,
 ) -> AppResult<()> {
     #[cfg(target_os = "macos")]
-    return mac::configure(&app, &manager, &settings);
+    return mac::configure(&app, &manager, enabled);
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, manager, settings);
+        let _ = (app, manager, enabled);
         Ok(())
     }
 }
@@ -45,7 +36,6 @@ mod mac {
 
     use tauri::{AppHandle, Manager};
 
-    use super::NotchSettings;
     use crate::error::{AppError, AppResult};
     use crate::login_item::CoreLaunch;
     use crate::pty::PtyManager;
@@ -63,14 +53,6 @@ mod mac {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(std::env::temp_dir)
-    }
-
-    fn settings_path(state_dir: &Path) -> PathBuf {
-        state_dir.join(if dev() {
-            "notch.dev.json"
-        } else {
-            "notch.json"
-        })
     }
 
     fn lock_path(state_dir: &Path) -> PathBuf {
@@ -159,8 +141,6 @@ mod mac {
             .arg(&launch.socket)
             .arg("--protocol-version")
             .arg(sikemux_core::protocol::PROTOCOL_VERSION.to_string())
-            .arg("--settings")
-            .arg(settings_path(&state_dir))
             .arg("--state-dir")
             .arg(&state_dir)
             .arg("--core-binary")
@@ -198,7 +178,6 @@ mod mac {
         Ok(())
     }
 
-    /// Writes the settings the helper reads, then starts or stops it to match.
     /// The helper is SwiftUI for macOS 14, while the app runs on older systems.
     fn supported() -> bool {
         objc2_foundation::NSProcessInfo::processInfo()
@@ -210,7 +189,7 @@ mod mac {
     pub(super) fn configure(
         app: &AppHandle,
         manager: &PtyManager,
-        settings: &NotchSettings,
+        enabled: bool,
     ) -> AppResult<()> {
         if !supported() {
             return Ok(());
@@ -219,12 +198,7 @@ mod mac {
             .core_launch()
             .ok_or_else(|| AppError::Other("the terminal core is not configured yet".into()))?;
         let state_dir = state_dir(&launch.socket);
-        sikemux_process::files::write_atomic(
-            &settings_path(&state_dir),
-            &serde_json::to_vec_pretty(settings)?,
-            false,
-        )?;
-        if !settings.enabled {
+        if !enabled {
             stop(&state_dir);
             return Ok(());
         }

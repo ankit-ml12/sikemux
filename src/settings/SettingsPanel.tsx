@@ -1686,7 +1686,7 @@ function voiceModelStatus(voice: VoiceState, enabled: boolean): string {
 }
 
 function VoiceSection() {
-    const enabled = useStore((s) => s.voiceDictation);
+    const enabled = usePreference("voiceDictation") === true;
     const voice = useVoice();
     return (
         <SettingsSection title="Voice">
@@ -1711,11 +1711,12 @@ function VoiceSection() {
 }
 
 function NotchSection() {
-    const notch = useStore((s) => s.notch);
+    const notch = usePreference("notch");
+    if (!notch) return null;
     const choice =
         <K extends "displays" | "openWith" | "fullScreen" | "peeks">(key: K) =>
         (value: string) =>
-            cmd.setNotch({ [key]: value } as Partial<typeof notch>);
+            cmd.setNotch({ [key]: value });
     return (
         <SettingsSection
             title="Notch"

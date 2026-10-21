@@ -342,6 +342,18 @@ export class ShowcaseBackend implements IpcTransport {
         cloudBrowser: "",
         cloudBrowserShortcut: "",
         iosSimulator: true,
+        notch: {
+          enabled: false,
+          displays: "all",
+          openWith: "hover",
+          fullScreen: "needsYou",
+          peeks: "all",
+          answerInNotch: true,
+          sound: true,
+          haptics: true,
+          yieldToDev: true,
+        },
+        voiceDictation: false,
       }),
     );
     this.onCore(

@@ -23,6 +23,7 @@ final class NotchStore {
     @ObservationIgnored private var heard = false
     @ObservationIgnored private var errorTimer: DispatchWorkItem?
     @ObservationIgnored var onPeek: ((Peek) -> Void)?
+    @ObservationIgnored var onSettings: (() -> Void)?
 
     enum Peek {
         case ask(String)
@@ -32,14 +33,19 @@ final class NotchStore {
 
     init(options: Options) {
         self.options = options
-        settings = NotchSettings.load(options.settings)
+        settings = NotchSettings()
         Haptics.enabled = settings.haptics
     }
 
-    func reloadSettings() {
-        let fresh = NotchSettings.load(options.settings)
-        Haptics.enabled = fresh.haptics
-        if fresh != settings { settings = fresh }
+    private func readSettings() {
+        link?.request(["op": "call", "method": "preferences", "params": [String: Any]()]) { [weak self] result in
+            guard let self, case .success(let response) = result else { return }
+            let fresh = NotchSettings.of(preferences: response["result"])
+            Haptics.enabled = fresh.haptics
+            guard fresh != self.settings else { return }
+            self.settings = fresh
+            self.onSettings?()
+        }
     }
 
     // MARK: Connection
@@ -57,6 +63,7 @@ final class NotchStore {
                 }
                 link?.request(["op": "watchView"])
             }
+            self?.readSettings()
             link?.request(["op": "remoteStatus"]) { result in
                 if case .success(let response) = result { self?.receiveRemote(response["status"]) }
             }
@@ -92,6 +99,10 @@ final class NotchStore {
     }
 
     private func receive(_ event: [String: Any]) {
+        if event["kind"] as? String == "changed", event["topic"] as? String == "preferences" {
+            readSettings()
+            return
+        }
         if event["kind"] as? String == "remote" {
             receiveRemote(event["status"])
             return
