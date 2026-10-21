@@ -1,9 +1,11 @@
 //! A simulator's screen as its helper streams it: H.264 frames, each a run of
 //! units after start codes, decoded by VideoToolbox into pictures GPUI draws
-//! with `surface`, on the GPU and without copying them.
+//! with `surface`, on the GPU and without copying them. The helper always sends
+//! the screen upright, so a turned device's pictures are turned here, on the GPU too.
 
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use core_foundation::base::{CFType, TCFType};
@@ -114,6 +116,22 @@ extern "C" {
         info: *mut u32,
     ) -> OsStatus;
     fn VTDecompressionSessionInvalidate(session: *mut c_void);
+    static kVTPixelRotationPropertyKey_Rotation: CFStringRef;
+    static kVTRotation_CW90: CFStringRef;
+    static kVTRotation_180: CFStringRef;
+    static kVTRotation_CCW90: CFStringRef;
+    fn VTPixelRotationSessionCreate(allocator: *const c_void, out: *mut *mut c_void) -> OsStatus;
+    fn VTPixelRotationSessionRotateImage(
+        session: *mut c_void,
+        source: *mut c_void,
+        destination: *mut c_void,
+    ) -> OsStatus;
+    fn VTPixelRotationSessionInvalidate(session: *mut c_void);
+    fn VTSessionSetProperty(
+        session: *mut c_void,
+        key: CFStringRef,
+        value: *const c_void,
+    ) -> OsStatus;
 }
 
 #[link(name = "CoreVideo", kind = "framework")]
@@ -121,6 +139,21 @@ extern "C" {
     static kCVPixelBufferPixelFormatTypeKey: CFStringRef;
     static kCVPixelBufferIOSurfacePropertiesKey: CFStringRef;
     static kCVPixelBufferMetalCompatibilityKey: CFStringRef;
+    static kCVPixelBufferWidthKey: CFStringRef;
+    static kCVPixelBufferHeightKey: CFStringRef;
+    fn CVPixelBufferGetWidth(buffer: *const c_void) -> usize;
+    fn CVPixelBufferGetHeight(buffer: *const c_void) -> usize;
+    fn CVPixelBufferPoolCreate(
+        allocator: *const c_void,
+        pool_attributes: *const c_void,
+        buffer_attributes: *const c_void,
+        out: *mut *mut c_void,
+    ) -> i32;
+    fn CVPixelBufferPoolCreatePixelBuffer(
+        allocator: *const c_void,
+        pool: *mut c_void,
+        out: *mut *mut c_void,
+    ) -> i32;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -131,6 +164,9 @@ extern "C" {
 
 /// The newest picture the decoder made, which the window draws next.
 pub type Picture = Arc<Mutex<Option<Frame>>>;
+
+/// How far clockwise, in degrees, the device is turned, which its pictures turn by.
+pub type Turn = Arc<AtomicI32>;
 
 /// One decoded picture, held for the window's thread.
 pub struct Frame(NonNull<CVPixelBuffer>);
@@ -158,7 +194,14 @@ pub struct Decoder {
     sps: Vec<u8>,
     pps: Vec<u8>,
     session: Option<Session>,
+    sink: Arc<Sink>,
+}
+
+/// Where the session's callback puts pictures, turning them first when the device is turned.
+struct Sink {
     picture: Picture,
+    turn: Turn,
+    rotator: Mutex<Option<Rotator>>,
 }
 
 // SAFETY: the session is used from one thread at a time, as the decoder is moved, never
@@ -170,7 +213,7 @@ struct Session {
     session: *mut c_void,
     format: *const c_void,
     /// The callback's own pointer to where pictures go, freed with the session.
-    picture: *mut Picture,
+    sink: *const Sink,
 }
 
 impl Drop for Session {
@@ -181,18 +224,22 @@ impl Drop for Session {
             VTDecompressionSessionInvalidate(self.session);
             CFRelease(self.session.cast_const());
             CFRelease(self.format);
-            drop(Box::from_raw(self.picture));
+            drop(Arc::from_raw(self.sink));
         }
     }
 }
 
 impl Decoder {
-    pub fn new(picture: Picture) -> Self {
+    pub fn new(picture: Picture, turn: Turn) -> Self {
         Self {
             sps: Vec::new(),
             pps: Vec::new(),
             session: None,
-            picture,
+            sink: Arc::new(Sink {
+                picture,
+                turn,
+                rotator: Mutex::new(None),
+            }),
         }
     }
 
@@ -339,10 +386,10 @@ impl Decoder {
             (surface, none.as_CFType()),
             (metal, CFBoolean::true_value().as_CFType()),
         ]);
-        let picture = Box::into_raw(Box::new(Arc::clone(&self.picture)));
+        let sink = Arc::into_raw(Arc::clone(&self.sink));
         let callback = DecompressionCallback {
             decoded,
-            refcon: picture.cast(),
+            refcon: sink.cast_mut().cast(),
         };
         let mut session = ptr::null_mut();
         // SAFETY: `format` and the attributes are live; the session copies the callback
@@ -361,7 +408,7 @@ impl Decoder {
             // SAFETY: made above and not handed to anything else.
             unsafe {
                 CFRelease(format);
-                drop(Box::from_raw(picture));
+                drop(Arc::from_raw(sink));
             }
             return Err(format!(
                 "the screen's stream could not be decoded ({status})"
@@ -370,7 +417,7 @@ impl Decoder {
         Ok(Session {
             session,
             format,
-            picture,
+            sink,
         })
     }
 }
@@ -387,13 +434,152 @@ extern "C" fn decoded(
     let Some(image) = NonNull::new(image.cast::<CVPixelBuffer>()).filter(|_| status == 0) else {
         return;
     };
-    // SAFETY: `refcon` is the session's own `Picture` box, alive while the session is,
-    // and VideoToolbox lends a live pixel buffer for the length of the call, which is retained.
-    unsafe {
-        CFRetain(image.as_ptr().cast_const().cast());
-        let picture = &*refcon.cast::<Picture>();
-        *picture.locked() = Some(Frame(image));
+    // SAFETY: `refcon` is the session's own `Sink`, alive while the session is, and
+    // VideoToolbox lends a live pixel buffer for the length of the call.
+    let sink = unsafe { &*refcon.cast_const().cast::<Sink>() };
+    let degrees = sink.turn.load(Ordering::Relaxed).rem_euclid(360);
+    let turned = match degrees {
+        0 => None,
+        _ => {
+            let mut rotator = sink.rotator.locked();
+            rotator.take_if(|rotator| rotator.degrees != degrees);
+            if rotator.is_none() {
+                *rotator = Rotator::new(degrees);
+            }
+            rotator.as_mut().and_then(|rotator| rotator.turn(image))
+        }
+    };
+    let frame = turned.unwrap_or_else(|| {
+        // SAFETY: the lent buffer is retained for the frame that keeps it.
+        unsafe { CFRetain(image.as_ptr().cast_const().cast()) };
+        Frame(image)
+    });
+    *sink.picture.locked() = Some(frame);
+}
+
+/// Turns upright pictures by a quarter or half turn into buffers of a pool kept for their size.
+struct Rotator {
+    degrees: i32,
+    session: *mut c_void,
+    /// The pool for the turned size it was made for, made with the first picture.
+    pool: Option<(usize, usize, *mut c_void)>,
+}
+
+// SAFETY: the session and pool are only used behind the sink's mutex.
+unsafe impl Send for Rotator {}
+
+impl Rotator {
+    fn new(degrees: i32) -> Option<Rotator> {
+        let mut session = ptr::null_mut();
+        // SAFETY: the session is made fresh and released once, in `drop`; the rotation
+        // constants are VideoToolbox's own immortal strings.
+        unsafe {
+            if VTPixelRotationSessionCreate(ptr::null(), &mut session) != 0 || session.is_null() {
+                return None;
+            }
+            let rotation = match degrees {
+                90 => kVTRotation_CW90,
+                180 => kVTRotation_180,
+                _ => kVTRotation_CCW90,
+            };
+            VTSessionSetProperty(
+                session,
+                kVTPixelRotationPropertyKey_Rotation,
+                rotation.cast(),
+            );
+        }
+        Some(Rotator {
+            degrees,
+            session,
+            pool: None,
+        })
     }
+
+    fn turn(&mut self, image: NonNull<CVPixelBuffer>) -> Option<Frame> {
+        let source = image.as_ptr().cast::<c_void>();
+        // SAFETY: `image` is a live pixel buffer for the call.
+        let (wide, high) = unsafe {
+            (
+                CVPixelBufferGetWidth(source),
+                CVPixelBufferGetHeight(source),
+            )
+        };
+        let size = match self.degrees {
+            180 => (wide, high),
+            _ => (high, wide),
+        };
+        if self.pool.is_none_or(|(w, h, _)| (w, h) != size) {
+            self.release_pool();
+            self.pool = Some((size.0, size.1, pool(size)?));
+        }
+        let (_, _, pool) = self.pool?;
+        let mut turned = ptr::null_mut();
+        // SAFETY: the pool and session are this rotator's own and live; the new buffer is
+        // owned by the frame that takes it, or released when the rotation fails.
+        unsafe {
+            if CVPixelBufferPoolCreatePixelBuffer(ptr::null(), pool, &mut turned) != 0
+                || turned.is_null()
+            {
+                return None;
+            }
+            if VTPixelRotationSessionRotateImage(self.session, source, turned) != 0 {
+                CFRelease(turned.cast_const());
+                return None;
+            }
+        }
+        NonNull::new(turned.cast::<CVPixelBuffer>()).map(Frame)
+    }
+
+    fn release_pool(&mut self) {
+        if let Some((_, _, pool)) = self.pool.take() {
+            // SAFETY: the pool was made by `pool` and is released once.
+            unsafe { CFRelease(pool.cast_const()) };
+        }
+    }
+}
+
+impl Drop for Rotator {
+    fn drop(&mut self) {
+        self.release_pool();
+        // SAFETY: made by `Rotator::new` and released once, here.
+        unsafe {
+            VTPixelRotationSessionInvalidate(self.session);
+            CFRelease(self.session.cast_const());
+        }
+    }
+}
+
+/// A pool of IOSurface buffers `size` pixels across, in the format GPUI's surfaces draw.
+fn pool(size: (usize, usize)) -> Option<*mut c_void> {
+    // SAFETY: CoreVideo's keys are immortal constants, borrowed here.
+    let (pixel_format, surface, metal, width, height) = unsafe {
+        (
+            CFString::wrap_under_get_rule(kCVPixelBufferPixelFormatTypeKey),
+            CFString::wrap_under_get_rule(kCVPixelBufferIOSurfacePropertiesKey),
+            CFString::wrap_under_get_rule(kCVPixelBufferMetalCompatibilityKey),
+            CFString::wrap_under_get_rule(kCVPixelBufferWidthKey),
+            CFString::wrap_under_get_rule(kCVPixelBufferHeightKey),
+        )
+    };
+    let none: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&[]);
+    let attributes: CFDictionary<CFString, CFType> = CFDictionary::from_CFType_pairs(&[
+        (pixel_format, CFNumber::from(PIXEL_FORMAT).as_CFType()),
+        (surface, none.as_CFType()),
+        (metal, CFBoolean::true_value().as_CFType()),
+        (width, CFNumber::from(size.0 as i64).as_CFType()),
+        (height, CFNumber::from(size.1 as i64).as_CFType()),
+    ]);
+    let mut pool = ptr::null_mut();
+    // SAFETY: the attributes are live for the call, which copies them.
+    let status = unsafe {
+        CVPixelBufferPoolCreate(
+            ptr::null(),
+            ptr::null(),
+            attributes.as_concrete_TypeRef().cast(),
+            &mut pool,
+        )
+    };
+    (status == 0 && !pool.is_null()).then_some(pool)
 }
 
 /// The units of one frame, each after a 00 00 01 or 00 00 00 01 start code.

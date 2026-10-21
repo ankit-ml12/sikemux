@@ -4,12 +4,14 @@ use std::sync::{Arc, Mutex};
 
 pub type Picture = Arc<Mutex<Option<Frame>>>;
 
+pub type Turn = Arc<std::sync::atomic::AtomicI32>;
+
 pub enum Frame {}
 
 pub struct Decoder;
 
 impl Decoder {
-    pub fn new(_: Picture) -> Self {
+    pub fn new(_: Picture, _: Turn) -> Self {
         Self
     }
 

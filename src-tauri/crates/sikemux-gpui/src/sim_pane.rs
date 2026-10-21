@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 
 use crate::icons::Icon;
 use crate::sim_frame::{self, Chrome, Rect};
-use crate::sim_screen::{Decoder, Picture};
+use crate::sim_screen::{Decoder, Picture, Turn};
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
 
@@ -68,6 +68,8 @@ struct Screen {
     size: Option<(f32, f32)>,
     /// Which way the device is held, as the helper names it.
     orientation: String,
+    /// The same, as the degrees the decoder turns its upright pictures by.
+    turn: Turn,
     /// The device's own frame, once the helper has drawn it.
     chrome: Option<Rc<Chrome>>,
     /// The side button the person is holding down.
@@ -296,18 +298,20 @@ impl Workbench {
             });
         }
         let fresh = Arc::new(AtomicBool::new(false));
+        let turn = Turn::default();
         {
-            let (engine, watch, picture, udid) = (
+            let (engine, watch, picture, turning, udid) = (
                 Arc::clone(&engine),
                 Arc::clone(&watch),
                 Arc::clone(&picture),
+                Arc::clone(&turn),
                 device.udid.clone(),
             );
             let (fresh, heard) = (Arc::clone(&fresh), self.sims.heard.clone());
             crate::desk::spawn(async move {
                 let host = Arc::clone(engine.host());
                 let sim = engine.sim().clone();
-                let mut decoder = Decoder::new(picture);
+                let mut decoder = Decoder::new(picture, turning);
                 let mut frames = 0u64;
                 let (reading, reader) = (Arc::clone(&watch), sim.clone());
                 let started = sim
@@ -365,6 +369,7 @@ impl Workbench {
                 watch,
                 size: None,
                 orientation: String::new(),
+                turn,
                 chrome: None,
                 held: None,
                 drawn: Rc::new(Cell::new(Bounds::default())),
@@ -401,6 +406,9 @@ impl Workbench {
                 if let Some(screen) = bench.sims.screens.get_mut(&agent) {
                     screen.size =
                         Some(measured).filter(|(width, height)| *width > 0. && *height > 0.);
+                    screen
+                        .turn
+                        .store(sim_frame::turn_degrees(&orientation), Ordering::Relaxed);
                     screen.orientation = orientation;
                 }
                 bench.parts.redraw(&bench.parts.stage, cx);
