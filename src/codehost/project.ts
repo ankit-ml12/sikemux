@@ -105,13 +105,6 @@ export function pullState(pull: Pick<Pull, "state" | "draft" | "mergedAt">): str
     return pull.draft && pull.state === "open" ? "draft" : pull.state;
 }
 
-const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#(\d+)/giu;
-
-/** The issues a pull request's description says it closes, as GitHub links them: "Fixes #12", "closes owner/repo#3". */
-export function closedIssues(body: string | null | undefined): number[] {
-    return [...new Set([...(body ?? "").matchAll(CLOSING)].map((match) => Number(match[1])))];
-}
-
 export const PULL_STATE_LABEL: Readonly<Record<string, string>> = { open: "Open", closed: "Closed", merged: "Merged", draft: "Draft" };
 
 const NO_PULL_LIST: readonly Pull[] = [];

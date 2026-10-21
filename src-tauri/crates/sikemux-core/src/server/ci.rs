@@ -37,7 +37,7 @@ pub(crate) struct Shown {
 
 impl Shown {
     /// What a `ci` change names it by.
-    fn key(&self) -> String {
+    pub(crate) fn key(&self) -> String {
         format!("{}:{}/{}", self.provider, self.owner, self.name)
     }
 }
@@ -161,5 +161,6 @@ async fn check(core: &Arc<Core>, repo: Shown) {
             .changed(Topic::Ci, None, Some(vec![repo.key()]));
         super::board::ci_moved(core, &repo);
         super::git::ci_moved(core, &repo);
+        super::codehost::ci_moved(core, &repo.key());
     }
 }

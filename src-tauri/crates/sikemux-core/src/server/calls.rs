@@ -313,6 +313,10 @@ calls! { core, client, params;
         let theme = super::themes::from_colours(&params.name, &params.colours, params.accent.as_deref());
         answer(theme.ok_or("a theme needs 21 colours, each #rrggbb, the selection's may be empty")?)
     },
+    "codeHostPulls": Watch => answer(super::codehost::pulls(&core, client.id, parse(params)?).await),
+    "codeHostRuns": Watch => answer(super::codehost::runs(&core, client.id, parse(params)?).await),
+    "codeHostIssues": Watch => answer(super::codehost::issues(&core, client.id, parse(params)?).await),
+    "codeHostReleases": Watch => answer(super::codehost::releases(&core, client.id, parse(params)?).await),
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -63,6 +64,7 @@ fn host(id: &str) -> Result<&'static Host, String> {
 }
 
 /// A repository on a code host, and the account that reaches it.
+#[derive(Clone)]
 pub(crate) struct Repo {
     host: &'static Host,
     owner: String,
@@ -99,7 +101,7 @@ impl Host {
 
 impl Repo {
     /// Calls `method` of the host's plugin about this repository, with `more`.
-    async fn call(&self, method: &str, more: Value) -> Result<Value, Failure> {
+    pub(crate) async fn call(&self, method: &str, more: Value) -> Result<Value, Failure> {
         plugins::call(&self.host.plugin(), method, self.params(more)).await
     }
 }
@@ -199,6 +201,36 @@ pub(crate) async fn find(
         name,
         account,
     })
+}
+
+/// The repository the project at `project` is on, and the account that
+/// reaches it, as a failure its client reads when there is none.
+pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, Failure> {
+    let found = {
+        let folder = PathBuf::from(project);
+        let core = core.clone();
+        crate::server::connection::blocking(move || {
+            Ok((super::git::origin(&folder), picks(&core, &folder)))
+        })
+        .await
+    };
+    let unsupported = |message: &str| Failure::new("codehost", "unsupported", message);
+    let (Some(origin), picks) = found.map_err(|error| unsupported(&error.to_string()))? else {
+        return Err(unsupported("this project has no origin remote"));
+    };
+    let Some((host, _, _)) = locate(&origin, &picks).await else {
+        return Err(unsupported("this project's origin is on no code host Sikemux knows"));
+    };
+    find(&origin, &picks)
+        .await
+        .map_err(|message| Failure::new(&host.plugin(), "unconfigured", message))
+}
+
+impl Repo {
+    /// What a `ci` change names the repository by.
+    pub(crate) fn key(&self) -> String {
+        format!("{}:{}/{}", self.host.plugin(), self.owner, self.name)
+    }
 }
 
 /// What clients show of the code host the remote `url` is on.

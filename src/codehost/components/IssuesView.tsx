@@ -8,7 +8,8 @@ import { SectionIcon } from "./ActionsIcon";
 import { GitColumns } from "../../git/GitColumns";
 import { hostApi, type Issue, type RepoRef } from "../api";
 import { errorText } from "../../lib/format";
-import { issueCountsR, issueR, issuesR, timelineR } from "../resources";
+import { issueR, timelineR } from "../resources";
+import { issueListR } from "../lists";
 import { compose, setListState, showItem, updateView } from "../state";
 import { Comments, Labels, ListTitle, ShellAccount, StateMark } from "./Bits";
 import { CommentThread, Face } from "./CommentThread";
@@ -248,6 +249,7 @@ export function IssueDetail({ repo, number, active, cwd = null }: { repo: RepoRe
 interface Props {
     paneId: string;
     repo: RepoRef;
+    project: string;
     listState: string;
     item: number | null;
     composing: boolean;
@@ -257,10 +259,10 @@ interface Props {
     active: boolean;
 }
 
-export function IssuesView({ paneId, repo, listState, item, composing, page, cwd, active }: Props) {
-    const issues = useResourceEnabled(active && !composing, issuesR, repo, listState, page);
+export function IssuesView({ paneId, repo, project, listState, item, composing, page, cwd, active }: Props) {
+    const issues = useResourceEnabled(active && !composing, issueListR, project, listState, page);
     const [sidePage, setSidePage] = useState("facts");
-    const counts = useResourceEnabled(active && !composing && item === null, issueCountsR, repo).data;
+    const counts = issues.data?.counts;
     const now = useNow(false);
 
     if (composing) return <NewIssueForm repo={repo} onCreated={(number) => showItem(paneId, number)} onCancel={() => compose(paneId, null)} />;

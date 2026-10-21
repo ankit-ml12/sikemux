@@ -52,6 +52,8 @@ pub(crate) enum Topic {
     Lsp,
     /// How the person wants Sikemux to behave.
     Preferences,
+    /// A project's pull requests, runs, issues or releases on its code host.
+    CodeHost,
 }
 
 /// Paths by topic and project; none means anything may have changed.

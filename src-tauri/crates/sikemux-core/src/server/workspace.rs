@@ -1702,6 +1702,7 @@ pub(crate) fn update_project(core: &Core, params: UpdateProjectParams) -> CoreRe
     let project = core.workspaces.update_project(&params.id, params.patch)?;
     if let (true, Some(core)) = (picks_changed, core.arc()) {
         super::git::read_hosts(&core, vec![project.path.to_string_lossy().into_owned()]);
+        super::codehost::picked(&core, &project.path.to_string_lossy());
     }
     core.view_changed();
     Ok(project)

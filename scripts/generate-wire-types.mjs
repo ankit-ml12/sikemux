@@ -43,7 +43,7 @@ const SOURCES = [
     "blame",
     "diff",
   ].map((file) => `${CORE}/git/${file}.rs`),
-  `${PLUGIN_API}/codehost.rs`,
+  `${WIRE}/codehost.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
 ];
 
@@ -126,6 +126,10 @@ const TS_ROOTS = [
 
 /** What the code-host plugins hand the Git pane. */
 const CODEHOST_ROOTS = [
+  "PullList",
+  "RunList",
+  "IssueList",
+  "ReleaseList",
   "RateLimit",
   "Resolved",
   "RepoListing",

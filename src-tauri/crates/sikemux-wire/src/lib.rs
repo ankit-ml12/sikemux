@@ -4,6 +4,7 @@
 
 pub mod accounts;
 pub mod chat;
+pub mod codehost;
 pub mod grid;
 pub mod notch;
 pub mod protocol;

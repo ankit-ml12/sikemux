@@ -13,6 +13,7 @@ mod catalog;
 mod changed;
 mod chat;
 mod ci;
+mod codehost;
 mod collisions;
 mod connection;
 mod custom_command;
@@ -360,6 +361,8 @@ pub(crate) struct Core {
     pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
     /// Each project's code host and branch pull request, by project folder.
     pub(crate) code_hosts: Mutex<HashMap<String, git::Hosted>>,
+    /// The code-host lists clients look at, kept and read again while they do.
+    pub(crate) code_host_lists: codehost::Lists,
     pub(crate) usage: agent_accounts::UsageWatch,
     pub(crate) layouts: layout::Layouts,
     /// Who this host is signed in to Sikemux as.
@@ -456,6 +459,7 @@ impl Core {
             git_watches: Default::default(),
             git_chips: Default::default(),
             code_hosts: Default::default(),
+            code_host_lists: Default::default(),
             usage: Default::default(),
             layouts: layout::Layouts::new(data_dir),
             account: Default::default(),

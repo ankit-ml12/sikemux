@@ -13,10 +13,11 @@ vi.mock("../workOnIssue", () => work);
 
 import { invalidate } from "../../plugin-api/resources";
 import { resetView, useHostView } from "../state";
-import { InHost, registerTestHost, TEST_HOST } from "../testHost";
+import { ciCore, InHost, registerTestHost, TEST_HOST } from "../testHost";
 import { IssuesView } from "./IssuesView";
 
 const host = registerTestHost(api);
+ciCore(api);
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const makeIssue = (overrides: Partial<Issue> = {}): Issue => ({
@@ -45,6 +46,7 @@ function Pane({ cwd = null }: { cwd?: string | null }) {
         <IssuesView
             paneId="pane"
             repo={repo}
+            project="/repo"
             listState={view.issueState}
             item={view.item}
             composing={view.composing === "issue"}

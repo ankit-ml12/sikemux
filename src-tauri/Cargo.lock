@@ -6002,6 +6002,7 @@ dependencies = [
  "sikemux-keychain",
  "sikemux-loopback",
  "sikemux-process",
+ "sikemux-wire",
  "tokio",
  "url",
  "workspace-hack",

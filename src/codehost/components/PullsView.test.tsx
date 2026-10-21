@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Pull, Run } from "../api";
+import type { CheckTally, Pull, Run } from "../api";
 
 const api = vi.hoisted(() => ({
     pulls: vi.fn(),
@@ -43,10 +43,12 @@ import { acceptDialog, resetDialogsForTests, useDialogs } from "../../state/dial
 import { useToasts } from "../../state/toast";
 import type { CodeHost } from "../registry";
 import { resetView, showItem } from "../state";
-import { InHost, registerTestHost, TEST_HOST } from "../testHost";
+import { ciCore, InHost, registerTestHost, TEST_HOST } from "../testHost";
 import { PullsView } from "./PullsView";
 
 const host = registerTestHost(api);
+const checks = new Map<number, CheckTally>();
+ciCore(api, (listed) => checks.get(listed.number) ?? null);
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const pull: Pull = {
@@ -101,6 +103,7 @@ const view = (item: number | null, composing = false, projectBranch = "main") =>
         <PullsView
             paneId="p-git"
             repo={repo}
+            project="/repo"
             listState="open"
             item={item}
             composing={composing}
@@ -201,6 +204,7 @@ function detail(extra: Partial<Pull> = {}, { on = host as CodeHost, cwd = "/repo
             <PullsView
                 paneId="p-git"
                 repo={repo}
+                project="/repo"
                 listState="open"
                 item={31}
                 composing={false}
@@ -220,45 +224,28 @@ describe("the list", () => {
         resetView("p-git");
     });
 
-    it("shows how CI went on each one's head commit, asking for an older one's own runs", async () => {
-        const run = (sha: string, conclusion: string): Run => ({
-            id: `${sha}-${conclusion}`,
-            name: "CI",
-            title: "",
-            workflowId: "1",
-            path: null,
-            runNumber: 1,
-            attempt: 1,
-            event: "pull_request",
-            status: "completed",
-            conclusion,
-            outcome: conclusion === "success" ? "success" : "failure",
-            branch: null,
-            sha,
-            shortSha: sha,
-            actor: null,
-            avatarUrl: null,
-            createdAt: pull.createdAt,
-            startedAt: null,
-            updatedAt: pull.updatedAt,
-            pullRequests: [],
-            url: "",
+    it("shows how CI went on each one's head commit, as the core counted it", async () => {
+        const tally = (outcome: CheckTally["outcome"], passed: number, failing: number): CheckTally => ({
+            outcome,
+            total: passed + failing,
+            passed,
+            failing,
+            running: 0,
+            queued: 0,
+            waiting: 0,
+            cancelled: 0,
+            unknown: 0,
         });
-        api.pulls.mockResolvedValue([
-            { ...pull, headSha: "abc" },
-            { ...pull, number: 32, title: "untested", headSha: "def" },
-        ]);
-        api.runs.mockImplementation(((query: { headSha?: string }) =>
-            Promise.resolve(
-                query.headSha === "def"
-                    ? { runs: [run("def", "success")], total: 1 }
-                    : { runs: [run("abc", "success"), run("abc", "failure"), run("zzz", "success")], total: 3 },
-            )) as unknown as () => Promise<{ runs: Run[]; total: number }>);
+        checks.set(31, tally("failure", 1, 1));
+        checks.set(32, tally("success", 1, 0));
+        api.pulls.mockResolvedValue([pull, { ...pull, number: 32, title: "untested" }]);
         render(view(null));
         await screen.findByText("the run page");
         const ciOf = (title: string) => screen.getByText(title).closest(".pr-row")?.querySelector(".pr-ci");
         await waitFor(() => expect(ciOf("the run page")).toHaveAttribute("data-outcome", "failure"));
-        await waitFor(() => expect(ciOf("untested")).toHaveAttribute("data-outcome", "success"));
+        expect(ciOf("the run page")).toHaveTextContent("1/2");
+        expect(ciOf("untested")).toHaveAttribute("data-outcome", "success");
+        checks.clear();
     });
 });
 

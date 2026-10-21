@@ -1,4 +1,4 @@
-import type { Job, Outcome, Run, RunStatus, Step } from "./api";
+import type { CheckTally, Job, Outcome, Run, RunStatus, Step } from "./api";
 import type { StatusFilter } from "./state";
 
 export type { Outcome };
@@ -28,6 +28,23 @@ export function checksSummary(runs: readonly Pick<Run, "outcome">[]): string {
         [tally.cancelled, "cancelled"],
         [tally.unknown, "unknown"],
         [passed, "passed"],
+    ];
+    return parts
+        .filter(([count]) => count > 0)
+        .map(([count, word]) => `${count} ${word}`)
+        .join(", ");
+}
+
+/** A commit's runs, counted by the core, in words. */
+export function tallySummary(tally: CheckTally): string {
+    if (tally.passed === tally.total) return "all passed";
+    const parts: [number, string][] = [
+        [tally.failing, "failing"],
+        [tally.running + tally.queued, "running"],
+        [tally.waiting, "waiting"],
+        [tally.cancelled, "cancelled"],
+        [tally.unknown, "unknown"],
+        [tally.passed, "passed"],
     ];
     return parts
         .filter(([count]) => count > 0)

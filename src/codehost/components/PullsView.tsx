@@ -31,15 +31,16 @@ import { FileIcon } from "../../ui/FileIcon";
 import { SwipePages } from "../../ui/SwipePages";
 import { basename, dirname } from "../../lib/paths";
 import { requestOpenFile } from "../../state/commands";
-import { hostApi, type MergeMethod, type Pull, type RepoRef, type Run } from "../api";
+import { hostApi, type CheckTally, type ListedPull, type MergeMethod, type Pull, type RepoRef } from "../api";
 import { errorText } from "../../lib/format";
-import { pullCommitsR, pullCountsR, pullFilesR, pullR, pullReviewsR, pullsR, runsR, timelineR } from "../resources";
-import { checksSummary, outcomeOf, overallOutcome, type Outcome } from "../runStatus";
+import { pullCommitsR, pullFilesR, pullR, pullReviewsR, timelineR } from "../resources";
+import { pullListR } from "../lists";
+import { tallySummary, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
 import { CommentThread, Face } from "./CommentThread";
 import { SectionIcon, StatusMark } from "./ActionsIcon";
-import { closedIssues, pullState } from "../project";
+import { pullState } from "../project";
 import { Branch, Comments, Labels, ListTitle, ShellAccount, StateMark, Who } from "./Bits";
 import { useBusy } from "./hooks";
 import { useNow } from "../../plugin-api/hooks";
@@ -72,6 +73,7 @@ function PullHeadline({
     trailing,
     meta,
     labels = false,
+    state: listed,
 }: {
     pull: Pull;
     now: number;
@@ -81,8 +83,10 @@ function PullHeadline({
     meta?: ReactNode;
     /** The open pull request's header: when it last changed and its labels, rather than the list's opened and updated. */
     labels?: boolean;
+    /** Its state as the core listed it, with a draft and a merge told apart. */
+    state?: string;
 }) {
-    const state = pullState(pull);
+    const state = listed ?? pullState(pull);
     return (
         <>
             <span className="pr-face">
@@ -115,49 +119,28 @@ function PullHeadline({
     );
 }
 
-function PullCi({ runs }: { runs: readonly Run[] }) {
-    const overall = overallOutcome(runs);
-    // Nothing started yet reads apart from something running.
-    const outcome = overall === "running" && !runs.some((run) => outcomeOf(run) === "running") ? "queued" : overall;
-    const summary = checksSummary(runs);
-    const passed = runs.filter((run) => ["success", "skipped"].includes(outcomeOf(run))).length;
+function PullCi({ tally }: { tally: CheckTally }) {
+    const summary = tallySummary(tally);
     return (
         <Tooltip label={summary === "all passed" ? "All checks passed" : `Checks: ${summary}`}>
-            <span className="pr-ci" data-outcome={outcome}>
-                <StatusMark outcome={outcome} size={13} />
+            <span className="pr-ci" data-outcome={tally.outcome}>
+                <StatusMark outcome={tally.outcome} size={13} />
                 <span className="pr-ci-count">
-                    {passed}/{runs.length}
+                    {tally.passed}/{tally.total}
                 </span>
             </span>
         </Tooltip>
     );
 }
 
-function PullRow({
-    repo,
-    pull,
-    recent,
-    active,
-    now,
-    onOpen,
-}: {
-    repo: RepoRef;
-    pull: Pull;
-    /** Its commit's runs among the repository's latest, when they are there. */
-    recent: readonly Run[] | undefined;
-    active: boolean;
-    now: number;
-    onOpen: () => void;
-}) {
-    // An older pull request's commit is past the repository's latest runs, so it asks for its own, as its page does.
-    const own = useResourceEnabled(active && !recent && !!pull.headSha, runsR, { ...repo, headSha: pull.headSha ?? "", perPage: 30 });
-    const runs = recent ?? own.data?.runs;
-    const ci = runs?.length ? <PullCi runs={runs} /> : null;
-    const issues = useMemo(() => closedIssues(pull.body), [pull.body]);
+function PullRow({ listed, now, onOpen }: { listed: ListedPull; now: number; onOpen: () => void }) {
+    const { pull, closes: issues } = listed;
+    const ci = listed.checks ? <PullCi tally={listed.checks} /> : null;
     return (
         <button type="button" className="pr-row pr-headline" onClick={onOpen}>
             <PullHeadline
                 pull={pull}
+                state={listed.state}
                 now={now}
                 title={<span className="pr-headline-title">{pull.title}</span>}
                 meta={ci && <span className="pr-ci-meta">{ci}</span>}
@@ -774,6 +757,7 @@ function PullColumn({
 interface Props {
     paneId: string;
     repo: RepoRef;
+    project: string;
     listState: string;
     item: number | null;
     composing: boolean;
@@ -784,17 +768,11 @@ interface Props {
     active: boolean;
 }
 
-export function PullsView({ paneId, repo, listState, item, composing, projectBranch, cwd, login, active }: Props) {
+export function PullsView({ paneId, repo, project, listState, item, composing, projectBranch, cwd, login, active }: Props) {
     const listing = item === null && !composing;
-    const pulls = useResourceEnabled(active, pullsR, repo, listState);
-    const counts = useResourceEnabled(active && item === null, pullCountsR, repo).data;
-    const open = useResourceEnabled(active && listing && !!projectBranch, pullsR, repo, "open");
-    const recentRuns = useResourceEnabled(active && listing, runsR, { ...repo, perPage: 100 });
-    const runsBySha = useMemo(() => {
-        const bySha = new Map<string, Run[]>();
-        for (const run of recentRuns.data?.runs ?? []) bySha.set(run.sha, [...(bySha.get(run.sha) ?? []), run]);
-        return bySha;
-    }, [recentRuns.data]);
+    const pulls = useResourceEnabled(active, pullListR, project, listState);
+    const counts = pulls.data?.counts;
+    const open = useResourceEnabled(active && listing && !!projectBranch, pullListR, project, "open");
     useCiWatch(repo, active && listing);
     const now = useNow(false);
     const [commit, setCommit] = useState<{ pull: number; sha: string } | null>(null);
@@ -818,8 +796,14 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
         );
     }
 
-    const rows = pulls.data ?? [];
-    const offer = !!open.data && needsPull(projectBranch, open.data, []);
+    const rows = pulls.data?.pulls ?? [];
+    const offer =
+        !!open.data &&
+        needsPull(
+            projectBranch,
+            open.data.pulls.map(({ pull }) => pull),
+            [],
+        );
     const list =
         pulls.status === "loading" && !pulls.data ? (
             <SkeletonRows rows={8} label="Loading pull requests" />
@@ -867,16 +851,8 @@ export function PullsView({ paneId, repo, listState, item, composing, projectBra
                     <EmptyState icon={<IconPullRequest size={20} />} message={`No ${listState === "all" ? "" : listState} pull requests.`} />
                 ) : (
                     <div className="pr-rows">
-                        {rows.map((pull) => (
-                            <PullRow
-                                key={pull.number}
-                                repo={repo}
-                                pull={pull}
-                                recent={pull.headSha ? runsBySha.get(pull.headSha) : undefined}
-                                active={active}
-                                now={now}
-                                onOpen={() => showItem(paneId, pull.number)}
-                            />
+                        {rows.map((listed) => (
+                            <PullRow key={listed.pull.number} listed={listed} now={now} onOpen={() => showItem(paneId, listed.pull.number)} />
                         ))}
                     </div>
                 )}

@@ -128,6 +128,7 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
                                             section={standalone}
                                             repo={repo}
                                             branch={found.branch}
+                                            project={cwd}
                                             cwd={sameRepo(found.remote, repo) ? cwd : null}
                                             active={active}
                                         />

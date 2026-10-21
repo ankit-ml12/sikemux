@@ -1,6 +1,7 @@
 //! The shapes every code host hands the Git pane: pull requests, CI runs,
 //! issues, releases and the rest. A host's plugin maps its own API onto these,
-//! and src/codehost/types.generated.ts is written from them. Statuses and
+//! the core reads them back to work out what clients show, and
+//! src/codehost/types.generated.ts is written from them. Statuses and
 //! conclusions use GitHub's words, which other hosts map onto. Ids a host may
 //! keep as text are strings everywhere, so a client never tells hosts apart.
 
@@ -34,7 +35,7 @@ pub struct Repo {
     pub name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Resolved {
     pub repo: Option<Repo>,
@@ -43,7 +44,7 @@ pub struct Resolved {
     pub same_host: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoListing {
     pub owner: String,
@@ -56,7 +57,7 @@ pub struct RepoListing {
     pub url: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Workflow {
     pub id: String,
@@ -69,7 +70,7 @@ pub struct Workflow {
 }
 
 /// How a run, job or check stands, whichever host it ran on.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Outcome {
     Running,
@@ -80,6 +81,7 @@ pub enum Outcome {
     Skipped,
     /// Waiting on someone's approval.
     Blocked,
+    #[default]
     Unknown,
 }
 
@@ -105,7 +107,7 @@ impl Outcome {
     }
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {
     pub id: String,
@@ -135,7 +137,7 @@ pub struct Run {
     pub url: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunPage {
     pub runs: Vec<Run>,
@@ -143,7 +145,7 @@ pub struct RunPage {
     pub next_page: Option<u32>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Step {
     pub number: u64,
@@ -155,7 +157,7 @@ pub struct Step {
     pub completed_at: Option<String>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
     pub id: String,
@@ -172,14 +174,14 @@ pub struct Job {
     pub steps: Vec<Step>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RunDetail {
     pub run: Run,
     pub jobs: Vec<Job>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Billable {
     /// The runner it ran on: `UBUNTU`, `MACOS`, `WINDOWS`.
@@ -190,14 +192,14 @@ pub struct Billable {
 
 /// What a run took on the clock, and what it is billed for. A run on a
 /// private repository costs minutes; a public one is free and reports none.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RunTiming {
     pub run_duration_ms: Option<u64>,
     pub billable: Vec<Billable>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogLine {
     pub number: u64,
@@ -205,7 +207,7 @@ pub struct LogLine {
     pub text: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobLog {
     pub lines: Vec<LogLine>,
@@ -215,14 +217,14 @@ pub struct JobLog {
     pub truncated: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogExcerpt {
     pub lines: Vec<LogLine>,
     pub truncated: bool,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Annotation {
     /// The file it points at, relative to the repository root. `.github` when
@@ -239,7 +241,7 @@ pub struct Annotation {
 
 /// What a job wrote to be read rather than dug out of the log: the test
 /// report, the coverage table.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct JobSummary {
     pub title: String,
@@ -247,14 +249,14 @@ pub struct JobSummary {
     pub body: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowFile {
     pub path: String,
     pub text: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
     pub id: String,
@@ -266,14 +268,14 @@ pub struct Artifact {
     pub expires_at: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedArtifact {
     pub path: String,
     pub bytes: u64,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingApproval {
     pub environment_id: u64,
@@ -285,7 +287,7 @@ pub struct PendingApproval {
     pub reviewers: Vec<String>,
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Label {
     pub name: String,
@@ -293,7 +295,7 @@ pub struct Label {
     pub color: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Comment {
     pub id: u64,
@@ -306,7 +308,7 @@ pub struct Comment {
     pub url: Option<String>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Pull {
     pub number: u64,
@@ -349,14 +351,14 @@ pub struct Pull {
     pub url: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct PullCounts {
     pub open: u64,
     pub closed: u64,
 }
 
 /// The issue or pull request that mentioned another, for a cross-reference.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Mention {
     pub number: u64,
@@ -369,7 +371,7 @@ pub struct Mention {
 
 /// One thing in a pull request's or issue's history: a comment, a review, a
 /// commit, a merge or anything else the host records, in one shape.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineItem {
     /// GitHub's event name, such as `commented`, `reviewed` or `committed`.
@@ -392,7 +394,7 @@ pub struct TimelineItem {
 }
 
 /// Who wrote a commit, by the email in it, and the account the host matched that email to.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitAuthor {
     pub email: String,
@@ -400,7 +402,7 @@ pub struct CommitAuthor {
     pub avatar_url: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PullCommit {
     pub sha: String,
@@ -411,7 +413,7 @@ pub struct PullCommit {
     pub date: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangedFile {
     pub path: String,
@@ -429,7 +431,7 @@ pub struct ChangedFile {
     pub note: Option<String>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Review {
     pub author: Option<String>,
@@ -442,7 +444,7 @@ pub struct Review {
 
 /// One thing a reviewer asked of a pull request, general or on a line, for an
 /// agent to answer in its own thread.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewFeedback {
     /// `comment/`, `inline/` or `review/` and what names it on the host, which
@@ -459,7 +461,7 @@ pub struct ReviewFeedback {
     pub url: Option<String>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Issue {
     pub number: u64,
@@ -479,7 +481,7 @@ pub struct Issue {
     pub url: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssuePage {
     pub issues: Vec<Issue>,
@@ -487,7 +489,7 @@ pub struct IssuePage {
     pub next_page: Option<u32>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseAsset {
     pub id: u64,
@@ -496,7 +498,7 @@ pub struct ReleaseAsset {
     pub downloads: u64,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Release {
     pub id: u64,
@@ -515,7 +517,7 @@ pub struct Release {
     pub url: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     /// What marking it read needs.
@@ -532,6 +534,91 @@ pub struct Notification {
     pub updated_at: String,
     /// Where a person would go to read it, or nothing when the host gave no address.
     pub url: Option<String>,
+}
+
+/// A pull request as a list shows it, with what the core works out from it.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ListedPull {
+    pub pull: Pull,
+    pub state: PullState,
+    /// The issues its description says it closes, such as "Fixes #12".
+    pub closes: Vec<u64>,
+    /// How the runs on its head commit stand, once any have run.
+    pub checks: Option<CheckTally>,
+}
+
+/// A pull request's state, with a draft and a merge told apart.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PullState {
+    Open,
+    Draft,
+    Closed,
+    Merged,
+}
+
+/// How many of a commit's runs stand each way, and what they come to.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckTally {
+    /// Any failure fails them; then any still going keeps them running, or
+    /// queued while none has started; then any waiting on approval.
+    pub outcome: Outcome,
+    pub total: u32,
+    /// Passed or skipped, which count as passing.
+    pub passed: u32,
+    pub failing: u32,
+    pub running: u32,
+    pub queued: u32,
+    /// Waiting on someone's approval.
+    pub waiting: u32,
+    pub cancelled: u32,
+    pub unknown: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PullList {
+    pub pulls: Vec<ListedPull>,
+    /// How many are open and closed, from hosts that count them cheaply.
+    pub counts: Option<PullCounts>,
+}
+
+/// A run as a list shows it.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ListedRun {
+    pub run: Run,
+    /// Still going, including held for approval: it can be cancelled but not
+    /// run again.
+    pub unfinished: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RunList {
+    pub runs: Vec<ListedRun>,
+    pub total: u64,
+    pub next_page: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueList {
+    pub issues: Vec<Issue>,
+    pub total: u64,
+    pub next_page: Option<u32>,
+    /// How many are open and closed, from hosts that count them cheaply.
+    pub counts: Option<PullCounts>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseList {
+    pub releases: Vec<Release>,
+    /// The newest published release that is not a pre-release.
+    pub latest: Option<u64>,
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 //! same plugin can later run in its own process without changing.
 
 pub mod account;
-pub mod codehost;
+pub use sikemux_wire::codehost;
 mod error;
 pub mod http;
 pub mod images;

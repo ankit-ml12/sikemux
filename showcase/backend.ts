@@ -858,6 +858,98 @@ export class ShowcaseBackend implements IpcTransport {
         }),
       },
     };
+    type Listed = { outcome: string; sha: string; status: string };
+    const tally = (runs: Listed[]) => {
+      const count = (...outcomes: string[]) =>
+        runs.filter((run) => outcomes.includes(run.outcome)).length;
+      const [failing, running, queued, waiting] = [
+        count("failure"),
+        count("running"),
+        count("queued"),
+        count("blocked"),
+      ];
+      return {
+        outcome: failing
+          ? "failure"
+          : running
+            ? "running"
+            : queued
+              ? "queued"
+              : waiting
+                ? "blocked"
+                : "success",
+        total: runs.length,
+        passed: count("success", "skipped"),
+        failing,
+        running,
+        queued,
+        waiting,
+        cancelled: count("cancelled"),
+        unknown: count("unknown"),
+      };
+    };
+    const listed = <T>(value: T) => ({ value });
+    this.onCore(["codeHostPulls"], ({ params }) => {
+      const pulls = GITHUB.pulls(params as Args) as {
+        number: number;
+        state: string;
+        draft: boolean;
+        mergedAt: string | null;
+        headSha: string | null;
+      }[];
+      return listed({
+        pulls: pulls.map((pull) => {
+          const runs = pull.headSha
+            ? (GITHUB.runs({ headSha: pull.headSha }) as { runs: Listed[] })
+                .runs
+            : [];
+          return {
+            pull,
+            state: pull.mergedAt
+              ? "merged"
+              : pull.state === "open" && pull.draft
+                ? "draft"
+                : pull.state,
+            closes: [],
+            checks: runs.length ? tally(runs) : null,
+          };
+        }),
+        counts: GITHUB.pullCounts({}),
+      });
+    });
+    this.onCore(["codeHostRuns"], ({ params }) => {
+      const page = GITHUB.runs(params as Args) as {
+        runs: Listed[];
+        total: number;
+        nextPage: number | null;
+      };
+      return listed({
+        ...page,
+        runs: page.runs.map((run) => ({
+          run,
+          unfinished: run.status !== "completed",
+        })),
+      });
+    });
+    this.onCore(["codeHostIssues"], ({ params }) =>
+      listed({
+        ...(GITHUB.issues(params as Args) as object),
+        counts: GITHUB.issueCounts({}),
+      }),
+    );
+    this.onCore(["codeHostReleases"], () => {
+      const releases = GITHUB.releases({}) as {
+        id: number;
+        draft: boolean;
+        prerelease: boolean;
+      }[];
+      return listed({
+        releases,
+        latest:
+          releases.find((release) => !release.draft && !release.prerelease)
+            ?.id ?? null,
+      });
+    });
     this.on("plugin_call", ({ plugin, method, params }) => {
       const answer = plugins[plugin as string]?.[method as string];
       if (!answer)
