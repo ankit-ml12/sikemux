@@ -1453,6 +1453,7 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
         if !crate::sessions::is_session_id(agent, resume_id) {
             return Err(format!("{resume_id:?} is not a {} session id", launch.provider).into());
         }
+        reopened_in_tryout(launch, agent, resume_id)?;
     }
     if launch.program.as_os_str().is_empty() {
         return Err("ACP agent program is missing".into());
@@ -1461,6 +1462,39 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
         validate_account(account)?;
     }
     Ok(())
+}
+
+/// A try-out core shares the agents' saved sessions with the person's own core, so it
+/// reopens only the sessions it began after it was set up, and never one the other could
+/// be driving.
+fn reopened_in_tryout(
+    launch: &ChatLaunch,
+    agent: Option<crate::agent_catalog::AgentKind>,
+    resume_id: &str,
+) -> CoreResult<()> {
+    let Some(seeded) = std::env::var(sikemux_process::vars::TRYOUT_SEEDED_AT)
+        .ok()
+        .and_then(|seconds| seconds.trim().parse::<u64>().ok())
+    else {
+        return Ok(());
+    };
+    let mut env = launch.env.clone();
+    env.extend(
+        launch
+            .account
+            .iter()
+            .flat_map(|account| account.env.clone()),
+    );
+    let made = agent
+        .and_then(|agent| {
+            let root = crate::sessions::roots::account_root(agent, None, &env)?;
+            crate::sessions::transcript::find(agent, &root, launch.cwd.to_str(), resume_id)
+        })
+        .and_then(|path| std::fs::metadata(path).ok()?.created().ok());
+    match made {
+        Some(made) if made > std::time::UNIX_EPOCH + Duration::from_secs(seeded) => Ok(()),
+        _ => Err("this try-out reopens only the chats it started".into()),
+    }
 }
 
 /// Starts the chat's connection. The task ends the chat however the
