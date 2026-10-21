@@ -343,6 +343,8 @@ pub(crate) struct Core {
     pub(crate) ports: ports::Ports,
     pub(crate) tasks: tasks::Tasks,
     pub(crate) git_watches: crate::git::watch::Watches,
+    /// Each project's branch chip, by project folder.
+    pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
     pub(crate) ci: ci::Ci,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
@@ -421,6 +423,7 @@ impl Core {
             ports: ports::Ports::default(),
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
+            git_chips: Default::default(),
             ci: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
@@ -689,6 +692,7 @@ impl Core {
     pub(crate) fn session_infos(&self) -> Vec<crate::protocol::SessionInfo> {
         let mut sessions: Vec<_> = self.all_sessions().iter().map(|s| s.info()).collect();
         sessions.sort_by_key(|info| info.id);
+        self.workspaces.place(&mut sessions);
         for info in &mut sessions {
             if let Some(agent_id) = &info.agent_id {
                 info.agent_name = self.names.name(agent_id);
@@ -741,6 +745,10 @@ impl Core {
     pub(crate) fn workspace_view(&self) -> crate::protocol::Workspace {
         let mut workspace = self.workspaces.view();
         self.names.fill(&mut workspace.agents);
+        let chips = self.git_chips.locked();
+        for project in &mut workspace.projects {
+            project.git = chips.get(&*project.path.to_string_lossy()).cloned();
+        }
         workspace
     }
 

@@ -494,7 +494,11 @@ fn agents(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Agen
             id: agent_id.clone(),
             name: session.agent_name.clone(),
             cli: session.agent_type.clone(),
-            project: project(agent_id).or_else(|| session.project.clone()),
+            project: project(agent_id).or_else(|| {
+                let id = session.project.as_deref()?;
+                let folder = core.workspaces.project_info(id)?.path;
+                Some(folder.to_string_lossy().into_owned())
+            }),
             title: session.title.clone(),
             session: Some(session.id),
             group,

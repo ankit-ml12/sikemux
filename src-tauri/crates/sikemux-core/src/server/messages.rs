@@ -705,8 +705,12 @@ pub(crate) fn listed(core: &Core) -> Vec<Listed> {
         else {
             continue;
         };
-        let cwd = session.project.as_deref().map(std::path::Path::new);
-        let (project, parent) = place(&agent_id, cwd);
+        let folder = session
+            .project
+            .as_deref()
+            .and_then(|id| core.workspaces.project_info(id))
+            .map(|project| project.path);
+        let (project, parent) = place(&agent_id, folder.as_deref());
         agents.push(Listed {
             name: session.agent_name,
             project,

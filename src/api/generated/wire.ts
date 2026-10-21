@@ -51,6 +51,11 @@ export interface ProjectInfo {
      * has none. The core keeps it; clients only read it.
      */
     identity?: string;
+    /**
+     * Where its repository stands, while the folder is one. The core fills
+     * it in; clients only read it.
+     */
+    git?: ProjectGit;
 }
 
 /** A repository or account picked for a project on one code host. */
@@ -58,6 +63,16 @@ export interface CodeHostChoice {
     /** `owner/name`. */
     repo?: string;
     account?: string;
+}
+
+/** A project's branch as its chip shows it. */
+export interface ProjectGit {
+    branch: string;
+    /** Commits it has that its upstream lacks, and the other way round. */
+    ahead: number;
+    behind: number;
+    /** Something in it changed since its last commit. */
+    dirty: boolean;
 }
 
 /** A set of projects the person shows on their own. */
@@ -167,6 +182,10 @@ export interface SessionInfo {
     cols: number;
     rows: number;
     attached: number;
+    /**
+     * The workspace project it runs in, by id; none for a terminal outside
+     * every project.
+     */
     project: string | null;
     paneId: string | null;
     agentId: string | null;

@@ -877,6 +877,22 @@ pub struct ProjectInfo {
     /// has none. The core keeps it; clients only read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
+    /// Where its repository stands, while the folder is one. The core fills
+    /// it in; clients only read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<ProjectGit>,
+}
+
+/// A project's branch as its chip shows it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectGit {
+    pub branch: String,
+    /// Commits it has that its upstream lacks, and the other way round.
+    pub ahead: u32,
+    pub behind: u32,
+    /// Something in it changed since its last commit.
+    pub dirty: bool,
 }
 
 /// A repository or account picked for a project on one code host.
@@ -1320,6 +1336,8 @@ pub struct SessionInfo {
     pub cols: u16,
     pub rows: u16,
     pub attached: usize,
+    /// The workspace project it runs in, by id; none for a terminal outside
+    /// every project.
     pub project: Option<String>,
     pub pane_id: Option<String>,
     pub agent_id: Option<String>,

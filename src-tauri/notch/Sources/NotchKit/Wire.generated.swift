@@ -51,6 +51,8 @@ struct ConfigChoice: Codable, Hashable {
 
 struct SessionInfo: Codable, Hashable {
     let id: Int
+    /// The workspace project it runs in, by id; none for a terminal outside
+    /// every project.
     let project: String?
     let agentId: String?
     /// What the core calls an agent terminal's agent, such as Otter.

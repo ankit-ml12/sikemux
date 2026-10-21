@@ -333,9 +333,7 @@ export function ComposerPickers({
                                     modelProvider={agent.modelProvider}
                                     profile={profile}
                                     routes={routes}
-                                    onPick={(next) =>
-                                        relaunch(agent.type, profile?.id, next?.served.defaults[agent.type], next?.provider.id)
-                                    }
+                                    onPick={(next) => relaunch(agent.type, profile?.id, next?.served.defaults[agent.type], next?.provider.id)}
                                 />
                             ) : undefined
                         }

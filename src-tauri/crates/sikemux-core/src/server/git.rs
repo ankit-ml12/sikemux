@@ -1,12 +1,14 @@
 //! The git panel's methods, `git.*`, for every client, and the watch on each
 //! project that tells them all when to read again.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use git2::Repository;
 use serde::Deserialize;
 use serde_json::Value;
+use sikemux_process::sync::Locked;
 
 use super::changed::Topic;
 use crate::git::{
@@ -164,6 +166,42 @@ fn unfit(error: serde_json::Error) -> CoreError {
     format!("the call's params do not fit: {error}").into()
 }
 
+/// Reads the branch chips of the projects at `folders` again, forgetting
+/// those of folders that are no longer projects, and sends devices the view
+/// when one changed.
+fn read_chips(core: &Arc<Core>, folders: Vec<String>) {
+    let core = core.clone();
+    tokio::spawn(async move {
+        let mut read = Vec::with_capacity(folders.len());
+        for folder in folders {
+            let chip = crate::git::status::git_chip(folder.clone()).await.ok();
+            read.push((folder, chip));
+        }
+        let projects: HashSet<String> = core
+            .workspaces
+            .project_paths()
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        let changed = {
+            let mut chips = core.git_chips.locked();
+            let before = chips.len();
+            chips.retain(|folder, _| projects.contains(folder));
+            let mut changed = chips.len() != before;
+            for (folder, chip) in read {
+                changed |= match chip.filter(|_| projects.contains(&folder)) {
+                    Some(chip) => chips.insert(folder, chip.clone()) != Some(chip),
+                    None => chips.remove(&folder).is_some(),
+                };
+            }
+            changed
+        };
+        if changed {
+            core.view_changed();
+        }
+    });
+}
+
 /// Watches the workspace's projects as they are now, telling every client
 /// when one moves.
 pub(crate) fn follow_projects(core: &Core) {
@@ -176,6 +214,7 @@ pub(crate) fn follow_projects(core: &Core) {
         let state_moved = paths
             .as_ref()
             .is_none_or(|paths| paths.iter().any(|path| path == watch::GIT_STATE));
+        read_chips(&core, projects.to_vec());
         for project in projects {
             core.changes
                 .changed(Topic::Git, Some(project), paths.clone());

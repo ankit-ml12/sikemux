@@ -70,7 +70,7 @@ export function chatsIn(copy: RemoteCopy): ChatInfo[] {
 /** The plain terminals running in a copy. */
 export function terminalsIn(copy: RemoteCopy): SessionInfo[] {
     return copy.view.sessions.filter(
-        (session) => session.kind === "terminal" && session.running && !session.agentId && inFolder(session.project, copy.project.path),
+        (session) => session.kind === "terminal" && session.running && !session.agentId && session.project === copy.project.id,
     );
 }
 

@@ -25,7 +25,7 @@ use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec, PermissionMode};
 use crate::protocol::{
     Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, LauncherInfo,
-    PinnedChat, ProjectInfo, RecentInfo, SpaceInfo, Workspace, WorkspaceAgent,
+    PinnedChat, ProjectInfo, RecentInfo, SessionInfo, SpaceInfo, Workspace, WorkspaceAgent,
 };
 use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRequest};
 
@@ -508,6 +508,7 @@ impl Workspaces {
                 space: None,
                 code_hosts: Default::default(),
                 identity: None,
+                git: None,
             };
             check_project(&project, saved)?;
             saved.projects.push(project.clone());
@@ -779,6 +780,27 @@ impl Workspaces {
             .iter()
             .map(|kept| kept.agent.id.clone())
             .collect()
+    }
+
+    /// Names each session's project by id: an agent's own project, else the
+    /// deepest project folder holding the folder it started in.
+    pub(crate) fn place(&self, sessions: &mut [SessionInfo]) {
+        let published = self.published.locked();
+        let saved = &published.saved;
+        for session in sessions {
+            let agent = session.agent_id.as_deref().and_then(|id| saved.kept(id));
+            session.project = match agent {
+                Some(kept) => Some(kept.agent.project.clone()),
+                None => session.project.as_deref().and_then(|folder| {
+                    saved
+                        .projects
+                        .iter()
+                        .filter(|project| Path::new(folder).starts_with(&project.path))
+                        .max_by_key(|project| project.path.components().count())
+                        .map(|project| project.id.clone())
+                }),
+            };
+        }
     }
 
     /// The project of every agent in the workspace, by agent id.
@@ -1966,6 +1988,7 @@ mod tests {
             space: None,
             code_hosts: Default::default(),
             identity: None,
+            git: None,
         }
     }
 

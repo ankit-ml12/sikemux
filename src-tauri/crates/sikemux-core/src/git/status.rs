@@ -413,6 +413,17 @@ pub async fn git_discover_repos(root: String) -> Result<Vec<DiscoveredRepo>, Str
     .await
 }
 
+/// The repository's branch chip, read from the same cached walk as its status.
+pub(crate) async fn git_chip(repo: String) -> Result<crate::protocol::ProjectGit, String> {
+    let status = git_status(repo).await?;
+    Ok(crate::protocol::ProjectGit {
+        branch: status.branch,
+        ahead: u32::try_from(status.ahead).unwrap_or(0),
+        behind: u32::try_from(status.behind).unwrap_or(0),
+        dirty: !status.files.is_empty(),
+    })
+}
+
 pub async fn git_status(repo: String) -> Result<GitStatus, String> {
     let watched = watched_generation(&repo);
     if let Some((key, generation)) = &watched {

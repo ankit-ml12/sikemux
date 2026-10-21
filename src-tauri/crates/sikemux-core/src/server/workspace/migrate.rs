@@ -150,6 +150,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 path: cwd.into(),
                 pinned: session["pinned"].as_bool().unwrap_or(false),
                 identity: None,
+                git: None,
             })
         })
         .filter(|project| project.path.is_absolute())
