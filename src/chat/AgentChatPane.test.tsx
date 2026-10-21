@@ -140,9 +140,12 @@ const text = (id: string, said: string): ChatPart => ({ kind: "text", id, text: 
 const toolPart = (id: string, tool: Partial<ToolCall>, summary: Partial<Extract<ChatPart, { kind: "tool" }>> = {}): ChatPart => ({
     kind: "tool",
     id,
-    tool: { toolCallId: id, title: "", status: "pending", ...tool },
+    tool: { toolCallId: id, title: "", status: "pending", row: { action: "other", target: "" }, ...tool },
     ...summary,
 });
+
+const listIssues = { action: "mcp", target: "list issues", server: "github", activity: "list issues" } as const;
+const searchPty = { action: "search", target: "usePty" } as const;
 
 const subagentPart = (card: SubagentCard): ChatPart => ({ kind: "subagent", id: `sub-${card.sessionId}`, subagent: card });
 
@@ -767,12 +770,15 @@ describe("AgentChatPane", () => {
         showPromptBack();
 
         send(
-            putRow(message("a1", [toolPart("tool-1", { title: "mcp__github__list_issues", status: "in_progress" })])),
+            putRow(message("a1", [toolPart("tool-1", { title: "mcp__github__list_issues", status: "in_progress", row: listIssues })])),
             head({ activeTool: "tool-1" }),
         );
         await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("list issues"));
 
-        send(putPart("a1", toolPart("tool-1", { title: "mcp__github__list_issues", status: "completed" })), head({ activeTool: null }));
+        send(
+            putPart("a1", toolPart("tool-1", { title: "mcp__github__list_issues", status: "completed", row: listIssues })),
+            head({ activeTool: null }),
+        );
         await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Thinking…"));
 
         send(head({ running: false, stopReason: "end_turn" }));
@@ -801,6 +807,7 @@ describe("AgentChatPane", () => {
                         kind: "execute",
                         title: 'grep -n "is-transparent" -A12 src/styles/base.css | head -40',
                         status: "in_progress",
+                        row: { action: "execute", target: 'grep -n "is-transparent" -A12 src/styles/base.css | head -40' },
                     }),
                 ]),
             ),
@@ -812,14 +819,10 @@ describe("AgentChatPane", () => {
 
     it("holds a run of tool calls open through the gaps between them, and folds it once the turn ends", async () => {
         await openTranscript();
-        const read = (id: string, title: string, status: string) => toolPart(id, { kind: "read", title, status });
+        const read = (id: string, file: string, status: string) =>
+            toolPart(id, { kind: "read", title: `src/styles/${file}`, status, row: { action: "read", target: file, path: `src/styles/${file}` } });
         send(
-            putRow(
-                message("a1", [
-                    { kind: "thought", id: "a1.0", text: "Weighing the two options" },
-                    read("tool-1", "src/styles/chat.css", "in_progress"),
-                ]),
-            ),
+            putRow(message("a1", [{ kind: "thought", id: "a1.0", text: "Weighing the two options" }, read("tool-1", "chat.css", "in_progress")])),
             head({ activeTool: "tool-1" }),
         );
 
@@ -828,11 +831,11 @@ describe("AgentChatPane", () => {
         expect(run).toHaveAttribute("aria-expanded", "true");
 
         // The turn is still going, so the wait for the next call is not a fold.
-        send(putPart("a1", read("tool-1", "src/styles/chat.css", "completed")), head({ activeTool: null }));
+        send(putPart("a1", read("tool-1", "chat.css", "completed")), head({ activeTool: null }));
         expect(run).toHaveAttribute("aria-expanded", "true");
 
-        send(putPart("a1", read("tool-2", "src/styles/base.css", "in_progress")), head({ activeTool: "tool-2" }));
-        send(putPart("a1", read("tool-2", "src/styles/base.css", "completed")), head({ activeTool: null }));
+        send(putPart("a1", read("tool-2", "base.css", "in_progress")), head({ activeTool: "tool-2" }));
+        send(putPart("a1", read("tool-2", "base.css", "completed")), head({ activeTool: null }));
         const finished = await screen.findByRole("button", { name: /2 tool calls/ });
         expect(finished).toHaveAttribute("aria-expanded", "true");
         expect(document.querySelectorAll(".chat-tool")).toHaveLength(2);
@@ -855,6 +858,7 @@ describe("AgentChatPane", () => {
                         kind: "fetch",
                         title: "Fetch https://docs.livekit.io/home/self-hosting/deployment/",
                         status: "in_progress",
+                        row: { action: "fetch", target: "Fetch https://docs.livekit.io/home/self-hosting/deployment/" },
                     }),
                 ]),
             ),
@@ -915,7 +919,18 @@ describe("AgentChatPane", () => {
 
     it("folds a finished run away when the agent moves on to something else in the same turn", async () => {
         await openTranscript();
-        send(putRow(message("a1", [toolPart("tool-1", { kind: "read", title: "src/styles/chat.css", status: "completed" })])));
+        send(
+            putRow(
+                message("a1", [
+                    toolPart("tool-1", {
+                        kind: "read",
+                        title: "src/styles/chat.css",
+                        status: "completed",
+                        row: { action: "read", target: "chat.css", path: "src/styles/chat.css" },
+                    }),
+                ]),
+            ),
+        );
         const run = await screen.findByRole("button", { name: /1 tool call/ });
         expect(run).toHaveAttribute("aria-expanded", "true");
 
@@ -928,8 +943,18 @@ describe("AgentChatPane", () => {
         send(
             putRow(
                 message("a1", [
-                    toolPart("tool-1", { kind: "execute", title: "pnpm vitest run src/lib/shaderField.test.ts", status: "in_progress" }),
-                    toolPart("tool-2", { kind: "read", title: "src/components/browser/BrowserPane.tsx", status: "completed" }),
+                    toolPart("tool-1", {
+                        kind: "execute",
+                        title: "pnpm vitest run src/lib/shaderField.test.ts",
+                        status: "in_progress",
+                        row: { action: "execute", target: "pnpm vitest run src/lib/shaderField.test.ts" },
+                    }),
+                    toolPart("tool-2", {
+                        kind: "read",
+                        title: "src/components/browser/BrowserPane.tsx",
+                        status: "completed",
+                        row: { action: "read", target: "BrowserPane.tsx", path: "src/components/browser/BrowserPane.tsx" },
+                    }),
                 ]),
             ),
         );
@@ -954,7 +979,13 @@ describe("AgentChatPane", () => {
                 message("a1", [
                     toolPart(
                         "tool-1",
-                        { kind: "edit", title: "src/styles/stage.css", status: "completed", path: "/repo/src/styles/stage.css:2" },
+                        {
+                            kind: "edit",
+                            title: "src/styles/stage.css",
+                            status: "completed",
+                            path: "/repo/src/styles/stage.css:2",
+                            row: { action: "edit", target: "stage.css", path: "/repo/src/styles/stage.css:2" },
+                        },
                         { diff: { path: "src/styles/stage.css", adds: 1, dels: 1 } },
                     ),
                 ]),
@@ -990,12 +1021,17 @@ describe("AgentChatPane", () => {
                 message("a1", [
                     toolPart(
                         "tool-1",
-                        { kind: "edit", title: "src/styles/stage.css", status: "completed" },
+                        {
+                            kind: "edit",
+                            title: "src/styles/stage.css",
+                            status: "completed",
+                            row: { action: "edit", target: "stage.css", path: "src/styles/stage.css" },
+                        },
                         { diff: { path: "src/styles/stage.css", adds: 1, dels: 1 } },
                     ),
                     toolPart(
                         "tool-2",
-                        { kind: "execute", title: "pnpm vitest run", status: "failed" },
+                        { kind: "execute", title: "pnpm vitest run", status: "failed", row: { action: "execute", target: "pnpm vitest run" } },
                         { output: { lines: 1, cut: false, image: false } },
                     ),
                 ]),
@@ -1021,7 +1057,14 @@ describe("AgentChatPane", () => {
     it("says what a running command is for while it runs, and counts the run again once it ends", async () => {
         await openTranscript();
         const build = (status: string) =>
-            toolPart("tool-1", { kind: "execute", title: "pnpm build", status, rawInput: { command: "pnpm build" }, description: "Build the site" });
+            toolPart("tool-1", {
+                kind: "execute",
+                title: "pnpm build",
+                status,
+                rawInput: { command: "pnpm build" },
+                description: "Build the site",
+                row: { action: "execute", target: "pnpm build" },
+            });
         send(putRow(message("a1", [build("in_progress")])), head({ activeTool: "tool-1" }));
 
         const header = await screen.findByRole("button", { name: /Build the site/ });
@@ -1043,7 +1086,12 @@ describe("AgentChatPane", () => {
                 message("a1", [
                     toolPart(
                         "tool-1",
-                        { kind: "execute", title: "python3 - <<'EOF'\nprint('hi')\nEOF", status: "completed" },
+                        {
+                            kind: "execute",
+                            title: "python3 - <<'EOF'\nprint('hi')\nEOF",
+                            status: "completed",
+                            row: { action: "execute", target: "python3 - <<'EOF'" },
+                        },
                         { output: { lines: 20, cut: false, image: false } },
                     ),
                 ]),
@@ -1128,11 +1176,11 @@ describe("AgentChatPane", () => {
             task: "You are implementing performance fixes\nin the sikemux desktop app repo",
             state: "running",
             calls: 1,
-            lastTool: { toolCallId: "tool-1", kind: "search", title: "usePty", status: "in_progress" },
+            lastTool: { toolCallId: "tool-1", kind: "search", title: "usePty", status: "in_progress", row: searchPty },
         };
         send(
             putRow(message("a1", [subagentPart(explorer)])),
-            putRow(message("s1", [toolPart("tool-1", { kind: "search", title: "usePty", status: "in_progress" })]), "subagent-1"),
+            putRow(message("s1", [toolPart("tool-1", { kind: "search", title: "usePty", status: "in_progress", row: searchPty })]), "subagent-1"),
             head({ runningSubagents: [explorer] }),
         );
 
@@ -1153,7 +1201,7 @@ describe("AgentChatPane", () => {
         const stopped: SubagentCard = { ...explorer, state: "cancelled" };
         send(
             putPart("a1", subagentPart(stopped)),
-            putPart("s1", toolPart("tool-1", { kind: "search", title: "usePty", status: "cancelled" })),
+            putPart("s1", toolPart("tool-1", { kind: "search", title: "usePty", status: "cancelled", row: searchPty })),
             head({ runningSubagents: [] }),
         );
 

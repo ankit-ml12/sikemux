@@ -3,7 +3,11 @@ import { copyText, rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import type { ChatMessage, ChatPart } from "./types";
 
 const text = (id: string, value: string): ChatPart => ({ kind: "text", id, text: value });
-const toolPart = (id: string, title: string): ChatPart => ({ kind: "tool", id, tool: { toolCallId: id, title, status: "completed" } });
+const toolPart = (id: string, title: string): ChatPart => ({
+    kind: "tool",
+    id,
+    tool: { toolCallId: id, title, status: "completed", row: { action: "other", target: title } },
+});
 
 it("spells a slow rate out to a decimal and a fast one whole", () => {
     expect(rateLabel(4.27)).toBe("~4.3 tok/s");

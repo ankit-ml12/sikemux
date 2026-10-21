@@ -19,6 +19,7 @@ export type {
     SentContext,
     SubagentCard,
     TaskNotice,
+    ToolAction,
     ToolCall,
     ToolDetail,
     ToolDiff,

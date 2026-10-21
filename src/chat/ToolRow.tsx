@@ -71,7 +71,6 @@ import { LiveSeconds } from "./LiveSeconds";
 import { Shimmer } from "./Shimmer";
 import { useCutOff } from "./useCutOff";
 import { toolDetail, toolKind, toolPath, toolRunning, toolTarget, toolUrl } from "./toolLabels";
-import { sikemuxToolRow } from "./toolRows";
 import { toolElapsed, toolIconName, toolRowKind, type ToolIconName } from "./toolView";
 import { attachmentName } from "./transcript";
 import type { ChatPart, ToolCall, ToolDetail, ToolOutput } from "./types";
@@ -138,7 +137,7 @@ const TOOL_ICONS: Record<ToolIconName, ComponentType<{ size?: number }>> = {
 };
 
 function ToolKindIcon({ tool }: { tool: ToolCall }) {
-    const plugin = tool.status === "failed" ? null : sikemuxToolRow(tool)?.plugin;
+    const plugin = tool.status === "failed" ? null : tool.row.plugin;
     const mark = plugin ? frontendPlugin(plugin)?.mark : undefined;
     if (mark) return mark(11);
     const Icon = TOOL_ICONS[toolIconName(tool)];

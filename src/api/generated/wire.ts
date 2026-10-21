@@ -776,7 +776,37 @@ export interface ToolCall {
     path?: string;
     /** What the agent said a command is for. */
     description?: string;
+    /** What its row shows, worked out from the rest. */
+    row: ToolRow;
 }
+
+/**
+ * What a tool call's row shows. Each client words, marks and colours the
+ * action its own way; the rest is shown as it is.
+ */
+export interface ToolRow {
+    action: ToolAction;
+    /** What the call was about: a file by its name, a command as typed, a page. */
+    target: string;
+    detail?: string;
+    /** The MCP server it went to. */
+    server?: string;
+    /** The plugin whose tool it is, whose mark the row wears. */
+    plugin?: string;
+    /** The file the row opens, with its line when the call said. */
+    path?: string;
+    /**
+     * The call's own word where the tool gives one: our tools' verbs, or
+     * another tool's name.
+     */
+    verb?: string;
+    /** Our tools' own icon, by name. */
+    icon?: string;
+    /** What it is doing while it runs, for a call whose action does not say. */
+    activity?: string;
+}
+
+export type ToolAction = "read" | "edit" | "delete" | "move" | "search" | "execute" | "think" | "fetch" | "switch_mode" | "mcp" | "other";
 
 /** The change a call made, counted. `chatToolDetail` sends its lines. */
 export interface DiffSummary {

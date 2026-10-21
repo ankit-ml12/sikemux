@@ -3,7 +3,11 @@ import { attachmentName, decodedFenceName, formatDetail, groupParts, groupTasks,
 import type { AsyncTask, SubagentCard, ChatPart } from "./types";
 
 const text = (id: string): ChatPart => ({ id, kind: "text", text: id });
-const tool = (id: string, title = "cargo test", kind?: string): ChatPart => ({ id, kind: "tool", tool: { toolCallId: id, title, kind } });
+const tool = (id: string): ChatPart => ({
+    id,
+    kind: "tool",
+    tool: { toolCallId: id, title: "cargo test", row: { action: "other", target: "cargo test" } },
+});
 const subagent = (overrides: Partial<SubagentCard> = {}): SubagentCard => ({
     sessionId: "s1",
     name: "explorer",
@@ -65,7 +69,7 @@ describe("groupParts", () => {
         const shown: ChatPart = {
             id: "p",
             kind: "tool",
-            tool: { toolCallId: "p", title: "mcp__sikemux-tools__page_show" },
+            tool: { toolCallId: "p", title: "mcp__sikemux-tools__page_show", row: { action: "other", target: "Chart", verb: "show" } },
             page: { id: "0".repeat(32), title: "Chart" },
         };
         const groups = groupParts([tool("a"), shown, tool("b")]);
@@ -75,7 +79,10 @@ describe("groupParts", () => {
 
 describe("subagentActivity", () => {
     it("reports the last tool the subagent called", () => {
-        const agent = subagent({ calls: 2, lastTool: { toolCallId: "b", title: "/src/two.ts", kind: "read" } });
+        const agent = subagent({
+            calls: 2,
+            lastTool: { toolCallId: "b", title: "/src/two.ts", kind: "read", row: { action: "read", target: "two.ts", path: "/src/two.ts" } },
+        });
         expect(subagentActivity(agent)).toBe("read two.ts");
     });
 

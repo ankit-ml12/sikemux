@@ -33,7 +33,7 @@ const headSet = (set: Record<string, unknown>): ChatChange => ({ op: 'head', set
 const asking = (requestId: string): PermissionAsk => ({
   requestId,
   sessionId: 's',
-  toolCall: { toolCallId: `t-${requestId}`, title: 'rm -rf build', kind: 'execute' },
+  toolCall: { toolCallId: `t-${requestId}`, title: 'rm -rf build', kind: 'execute', row: { action: 'execute', target: 'rm -rf build' } },
   options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
 });
 

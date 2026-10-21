@@ -499,6 +499,20 @@ pub(super) fn call(raw: &Map<String, Value>) -> ToolCall {
         path: location(raw.get("locations")),
         description: description(kind.as_deref(), raw.get("rawInput")),
         kind,
+        row: Default::default(),
+    }
+    .with_row()
+}
+
+pub(super) trait WithRow {
+    /// The call with its row worked out again from the rest of it.
+    fn with_row(self) -> Self;
+}
+
+impl WithRow for ToolCall {
+    fn with_row(mut self) -> Self {
+        self.row = Box::new(super::row::row(&self));
+        self
     }
 }
 

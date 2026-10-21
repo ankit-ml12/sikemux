@@ -3,7 +3,6 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import { durationLabel } from '@mac/chat/durationLabel';
 import { toolDetail, toolKind, toolPath, toolRunning, toolTarget, toolUrl } from '@mac/chat/toolLabels';
-import { sikemuxToolRow } from '@mac/chat/toolRows';
 import { attachmentName } from '@mac/chat/transcript';
 import {
   callCount,
@@ -142,7 +141,7 @@ const KIND_COLORS: Readonly<Record<string, keyof Palette>> = {
 
 /** The icon and colour of a call, as the Mac's tool rows draw them. */
 function look(tool: ToolCall, colors: Palette): { icon: IconName; color: string } {
-  const plugin = tool.status === 'failed' ? undefined : sikemuxToolRow(tool)?.plugin;
+  const plugin = tool.status === 'failed' ? undefined : tool.row.plugin;
   const icon = (plugin && PLUGIN_MARKS[plugin]) || TOOL_ICONS[toolIconName(tool)];
   if (tool.status === 'failed') return { icon, color: colors.danger };
   const kind = toolRowKind(tool);

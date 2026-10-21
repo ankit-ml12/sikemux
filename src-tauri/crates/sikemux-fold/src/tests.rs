@@ -866,7 +866,8 @@ mod reducer {
                     tool_call_id: "t1".into(),
                     title: "Run tests".into(),
                     ..ToolCall::default()
-                },
+                }
+                .with_row(),
                 diff: None,
                 options: vec![PermissionOption {
                     option_id: "allow".into(),
@@ -1012,6 +1013,7 @@ mod reducer {
                 status: Some("in_progress".into()),
                 ..ToolCall::default()
             }
+            .with_row()
         );
     }
 
@@ -1609,7 +1611,8 @@ mod acp_events {
                     title: "Run cargo test".into(),
                     kind: Some("execute".into()),
                     ..ToolCall::default()
-                },
+                }
+                .with_row(),
                 diff: None,
                 options: vec![
                     option("allow", "Allow", "allow_once"),
@@ -2516,4 +2519,203 @@ mod tool_labels {
             Some(json!({ "url": "https://a.dev" }))
         );
     }
+}
+
+fn row_of(title: &str, kind: Option<&str>, input: Value) -> sikemux_wire::chat::ToolRow {
+    let mut raw = json!({ "toolCallId": "t1", "title": title, "rawInput": input });
+    if let Some(kind) = kind {
+        raw["kind"] = json!(kind);
+    }
+    *tools::call(raw.as_object().unwrap()).row
+}
+
+fn titled(title: &str) -> sikemux_wire::chat::ToolRow {
+    row_of(title, None, json!({}))
+}
+
+#[test]
+fn an_mcp_call_is_named_for_its_server_and_reads_its_tool_as_words() {
+    let row = row_of(
+        "mcp__linear__create_issue",
+        Some("fetch_custom"),
+        json!({ "title": "Rows use underscores", "body": "a\nb" }),
+    );
+    assert_eq!(row.action, sikemux_wire::chat::ToolAction::Mcp);
+    assert_eq!(row.server.as_deref(), Some("linear"));
+    assert_eq!(row.target, "create issue");
+    assert_eq!(row.detail.as_deref(), Some("Rows use underscores"));
+    assert_eq!(titled("mcp__server__nested__tool").target, "nested  tool");
+    assert_eq!(titled("mcp__half").server, None);
+}
+
+#[test]
+fn a_running_call_says_what_it_does_while_that_fits_its_line() {
+    assert_eq!(
+        titled("mcp__github__list_pulls\nmore").activity.as_deref(),
+        Some("list pulls")
+    );
+    assert_eq!(titled("   ").activity, None);
+    assert_eq!(titled(&"a".repeat(41)).activity, None);
+    assert_eq!(titled(&"a".repeat(40)).activity, Some("a".repeat(40)));
+    assert_eq!(row_of("cat x", Some("read"), json!({})).activity, None);
+}
+
+#[test]
+fn an_unknown_tool_is_called_by_the_first_word_of_its_title() {
+    assert_eq!(
+        titled("WebSearch(query)").verb.as_deref(),
+        Some("websearch")
+    );
+    assert_eq!(
+        titled("Averyveryverylongtoolname").verb.as_deref(),
+        Some("averyveryver")
+    );
+    assert_eq!(titled("ToolSearch").icon.as_deref(), Some("wrench"));
+    assert_eq!(row_of("Read", Some("read"), json!({})).verb, None);
+}
+
+#[test]
+fn a_target_shortens_a_path_and_keeps_commands_pages_and_words() {
+    assert_eq!(titled("/work/demo/src/main.rs").target, "main.rs");
+    assert_eq!(titled("cat src/main.rs").target, "cat src/main.rs");
+    assert_eq!(
+        titled("https://example.com/a/b").target,
+        "https://example.com/a/b"
+    );
+    assert_eq!(titled("Read").target, "Read");
+    assert_eq!(titled("  src/lib.rs  \nsecond").target, "lib.rs");
+    assert_eq!(titled("/").target, "/");
+}
+
+#[test]
+fn our_tools_say_what_they_did_to_what() {
+    let navigate = |input: Value, title: &str| row_of(title, Some("other"), input);
+    let title = "mcp__sikemux-tools__browser_navigate";
+    let row = navigate(
+        json!({ "url": "https://github.com/nodelike/sikemux" }),
+        title,
+    );
+    assert_eq!(row.verb.as_deref(), Some("open"));
+    assert_eq!(row.target, "https://github.com/nodelike/sikemux");
+    assert_eq!(row.detail, None);
+    assert_eq!(row.path, None);
+    assert_eq!(navigate(json!({ "go": "back" }), title).target, "back");
+
+    let click = |input: Value| row_of("mcp__sikemux-tools__browser_click", None, input);
+    let row = click(json!({ "text": "Sign in", "role": "button" }));
+    assert_eq!(
+        (row.target.as_str(), row.detail.as_deref()),
+        ("“Sign in”", Some("button"))
+    );
+    assert_eq!(click(json!({ "index": 0 })).target, "element 0");
+    assert_eq!(click(json!({})).target, "");
+
+    for title in [
+        "sikemux-tools.browser_navigate",
+        "sikemux-tools/browser_navigate",
+        "browser_navigate",
+    ] {
+        assert_eq!(
+            navigate(json!({ "url": "https://a.dev" }), title)
+                .verb
+                .as_deref(),
+            Some("open")
+        );
+    }
+    let nested = json!({ "server": "sikemux-tools", "tool": "browser_navigate", "arguments": { "url": "https://a.dev" } });
+    assert_eq!(navigate(nested, title).target, "https://a.dev");
+    assert_eq!(
+        navigate(
+            json!({ "url": "https://a.dev" }),
+            "sikemux-tools/browser_navigate"
+        )
+        .path,
+        None
+    );
+}
+
+#[test]
+fn our_tools_show_paths_by_name_lists_joined_or_counted_and_waits_as_durations() {
+    let upload = row_of(
+        "mcp__sikemux-tools__browser_upload",
+        None,
+        json!({ "paths": ["/tmp/a.png", "/tmp/b.pdf"] }),
+    );
+    assert_eq!(upload.target, "a.png, b.pdf");
+    let act = row_of(
+        "mcp__sikemux-tools__browser_act",
+        None,
+        json!({ "steps": [{ "action": "click" }, { "action": "press" }] }),
+    );
+    assert_eq!(act.target, "2-step sequence");
+    assert_eq!(
+        row_of("mcp__sikemux-tools__browser_screenshot", None, json!({})).target,
+        ""
+    );
+    assert_eq!(
+        row_of(
+            "mcp__sikemux-tools__browser_wait",
+            None,
+            json!({ "ms": 4000 })
+        )
+        .target,
+        "4s"
+    );
+}
+
+#[test]
+fn our_tools_say_what_they_are_doing_while_they_run() {
+    let navigate = |url: String| {
+        row_of(
+            "mcp__sikemux-tools__browser_navigate",
+            None,
+            json!({ "url": url }),
+        )
+    };
+    assert_eq!(
+        navigate("https://a.dev".into()).activity.as_deref(),
+        Some("open https://a.dev")
+    );
+    assert_eq!(
+        navigate(format!("https://a.dev/{}", "x".repeat(40)))
+            .activity
+            .as_deref(),
+        Some("open")
+    );
+}
+
+#[test]
+fn a_plugins_tool_wears_its_plugin() {
+    let logs = row_of(
+        "mcp__sikemux-tools__signoz_logs",
+        None,
+        json!({ "service": "api", "text": "timeout" }),
+    );
+    assert_eq!(
+        (
+            logs.verb.as_deref(),
+            logs.target.as_str(),
+            logs.detail.as_deref(),
+            logs.plugin.as_deref()
+        ),
+        (
+            Some("logs"),
+            "api",
+            Some("“timeout”"),
+            Some("sikemux.signoz")
+        )
+    );
+}
+
+#[test]
+fn a_row_opens_the_file_the_call_reported_or_the_one_its_title_names() {
+    let reported = |path: &str| {
+        let raw = json!({ "toolCallId": "t1", "title": "Read", "locations": [{ "path": path, "line": 12 }] });
+        tools::call(raw.as_object().unwrap()).row.path.clone()
+    };
+    assert_eq!(reported("/a/b.ts").as_deref(), Some("/a/b.ts:12"));
+    assert_eq!(titled("src/app.tsx").path.as_deref(), Some("src/app.tsx"));
+    assert_eq!(titled("cat src/app.tsx").path, None);
+    assert_eq!(titled("https://example.com/x").path, None);
+    assert_eq!(titled("Read").path, None);
 }

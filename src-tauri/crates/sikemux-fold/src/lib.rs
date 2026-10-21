@@ -6,9 +6,11 @@
 mod event;
 pub mod pickers;
 mod prompt;
+mod row;
 mod send;
 #[cfg(test)]
 mod tests;
+mod tool_rows;
 mod tools;
 mod turns;
 
@@ -24,6 +26,7 @@ use sikemux_wire::chat::{
     SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage, ToolDetail,
     TurnStart, UsageCost, WorkflowAgent,
 };
+use tools::WithRow;
 
 pub use event::{ChatEvent, ChatEventKind};
 pub use send::TAIL_TURNS;
@@ -399,6 +402,7 @@ fn permission_ask(payload: &Value) -> Option<PermissionAsk> {
     let mut call = tools::call(tool_call);
     if call.title.is_empty() {
         call.title = "Agent tool".into();
+        call = call.with_row();
     }
     let options = payload
         .get("options")?
@@ -1496,6 +1500,7 @@ impl Fold {
                 tool.raw_input = restated.raw_input;
                 tool.description = restated.description;
             }
+            *tool = std::mem::take(tool).with_row();
         });
     }
 

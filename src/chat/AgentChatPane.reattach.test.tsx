@@ -81,7 +81,7 @@ const keptChat: ChatView = {
             {
                 requestId: "request-1",
                 sessionId: "session-kept",
-                toolCall: { toolCallId: "call-1", title: "Touch a file" },
+                toolCall: { toolCallId: "call-1", title: "Touch a file", row: { action: "other", target: "Touch a file" } },
                 options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
             },
         ],

@@ -545,6 +545,57 @@ pub struct ToolCall {
     /// What the agent said a command is for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// What its row shows, worked out from the rest.
+    #[serde(default)]
+    pub row: Box<ToolRow>,
+}
+
+/// What a tool call's row shows. Each client words, marks and colours the
+/// action its own way; the rest is shown as it is.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRow {
+    pub action: ToolAction,
+    /// What the call was about: a file by its name, a command as typed, a page.
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The MCP server it went to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    /// The plugin whose tool it is, whose mark the row wears.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
+    /// The file the row opens, with its line when the call said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The call's own word where the tool gives one: our tools' verbs, or
+    /// another tool's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verb: Option<String>,
+    /// Our tools' own icon, by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// What it is doing while it runs, for a call whose action does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolAction {
+    Read,
+    Edit,
+    Delete,
+    Move,
+    Search,
+    Execute,
+    Think,
+    Fetch,
+    SwitchMode,
+    Mcp,
+    #[default]
+    Other,
 }
 
 /// The change a call made, counted. `chatToolDetail` sends its lines.

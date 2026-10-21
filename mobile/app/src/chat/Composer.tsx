@@ -7,7 +7,7 @@ import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { unknownCommand } from '@mac/chat/composerInput';
 import { contextShare, contextTone, money, tokenCount } from '@mac/chat/contextUsage';
 import { currentLabel } from '@mac/chat/sessionConfig';
-import { toolKind, toolLabel, toolPath } from '@mac/chat/toolLabels';
+import { toolKind, toolPath } from '@mac/chat/toolLabels';
 import type { ChatRows } from '@mac/chat/rows';
 import type { ChatCommandInfo, ContextUsage, PermissionAsk, ToolCall } from '@mac/chat/types';
 import { canSwitchMode, isYolo } from '@mac/agents/agentLaunch';
@@ -42,7 +42,7 @@ function asked(tool: ToolCall): string {
   const command = (tool.rawInput as { command?: unknown } | undefined)?.command;
   if (typeof command === 'string' && command.trim()) return command.trim();
   if (Array.isArray(command) && command.every((word) => typeof word === 'string')) return command.join(' ');
-  return toolPath(tool) ?? toolLabel(tool.title).name.trim();
+  return toolPath(tool) ?? tool.row.target;
 }
 
 /**

@@ -5,7 +5,12 @@ import type { Agent } from "../state/types";
 import type { PermissionAsk, ChatMessage, ChatRows } from "./types";
 
 const agent = (overrides: Partial<Agent>) => ({ id: "a1", type: "claude", ...overrides }) as Agent;
-const request: PermissionAsk = { requestId: "r", sessionId: "s", toolCall: { toolCallId: "t", title: "Run" }, options: [] };
+const request: PermissionAsk = {
+    requestId: "r",
+    sessionId: "s",
+    toolCall: { toolCallId: "t", title: "Run", row: { action: "other", target: "Run" } },
+    options: [],
+};
 const message: ChatMessage = { id: "m1", role: "user", parts: [] };
 
 describe("permissionModeOf", () => {

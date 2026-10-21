@@ -3,7 +3,7 @@
  * terminals and chats, written to read well in a screenshot.
  */
 
-import type { ChatMessage, ChatPart, ChatView, PermissionAsk } from '../../src/chat/types';
+import type { ChatMessage, ChatPart, ChatView, PermissionAsk, ToolAction, ToolCall } from '../../src/chat/types';
 
 export const CORE = 'showcase0000000000000000000000000000000000000000000000000000core';
 export const HOST = { name: 'MacBook Pro', model: 'MacBook Pro' };
@@ -32,9 +32,14 @@ const next = (prefix: string) => `${prefix}-${++ids}`;
 const user = (text: string): Step => ({ ask: text });
 const say = (text: string): Step => ({ part: { kind: 'text', id: next('part'), text } });
 const think = (text: string): Step => ({ part: { kind: 'thought', id: next('part'), text } });
-const tool = (kind: string, title: string, status = 'completed'): Step => ({
-  part: { kind: 'tool', id: next('part'), tool: { toolCallId: next('tool'), kind, title, status } },
+const tool = (kind: ToolAction, title: string, status = 'completed', row: Partial<ToolCall['row']> = {}): Step => ({
+  part: {
+    kind: 'tool',
+    id: next('part'),
+    tool: { toolCallId: next('tool'), kind, title, status, row: { action: kind, target: title, ...row } },
+  },
 });
+const file = (kind: ToolAction, path: string, name: string): Step => tool(kind, path, 'completed', { target: name, path });
 
 type Pickers = Pick<ChatView['head'], 'model' | 'effort'>;
 
@@ -104,11 +109,11 @@ export const CHATS: DemoChat[] = [
     history: [
       user('Add a dark mode switch to the settings page. It should remember the choice.'),
       think('The theme lives in ThemeProvider. I need a toggle in Settings and a saved preference.'),
-      tool('read', 'src/settings/SettingsPage.tsx'),
-      tool('read', 'src/theme/ThemeProvider.tsx'),
+      file('read', 'src/settings/SettingsPage.tsx', 'SettingsPage.tsx'),
+      file('read', 'src/theme/ThemeProvider.tsx', 'ThemeProvider.tsx'),
       say('I added a **Dark mode** switch under Appearance. It saves the choice, so the page opens the same way next time.'),
-      tool('edit', 'src/settings/SettingsPage.tsx'),
-      tool('edit', 'src/theme/ThemeProvider.tsx'),
+      file('edit', 'src/settings/SettingsPage.tsx', 'SettingsPage.tsx'),
+      file('edit', 'src/theme/ThemeProvider.tsx', 'ThemeProvider.tsx'),
       say('Now I want to run the settings tests to make sure nothing else broke.'),
     ],
   },
@@ -125,7 +130,7 @@ export const CHATS: DemoChat[] = [
       think('The form uses a fixed width. Switching it to fill the screen should fix it.'),
       tool('search', 'Find the login form styles'),
       say('The form had a fixed width of 480px, so it overflowed on phones. I changed it to fill the screen with some padding.'),
-      tool('edit', 'src/auth/LoginForm.css'),
+      file('edit', 'src/auth/LoginForm.css', 'LoginForm.css'),
       tool('fetch', 'Open the login page at phone size'),
       say('The button fits now on a 375px wide screen. Running the tests before I commit.'),
       user('Great, commit it when the tests pass.'),
@@ -435,7 +440,12 @@ export function permissionPayload(chat: DemoChat): PermissionAsk | undefined {
   return {
     requestId: `ask-${chat.agentId}`,
     sessionId: `session-${chat.agentId}`,
-    toolCall: { toolCallId: `ask-tool-${chat.agentId}`, title: chat.asking.command, kind: 'execute' },
+    toolCall: {
+      toolCallId: `ask-tool-${chat.agentId}`,
+      title: chat.asking.command,
+      kind: 'execute',
+      row: { action: 'execute', target: chat.asking.command },
+    },
     options: [
       { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
       { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
