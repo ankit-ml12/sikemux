@@ -308,8 +308,23 @@ function openCore(path) {
         hello: control(hello),
         request,
         attach,
-        async attachReplay(id) {
-          return (await attach(id)) ? shown(id) : "";
+        // What the terminal shows, drawn from one stream per terminal that
+        // stays attached, as a pane's does, however often it is asked.
+        async screen(id) {
+          const attached = [...screens.values()].some(
+            (screen) => screen.id === id,
+          );
+          if (!attached && !(await attach(id))) return "";
+          for (;;) {
+            const frame = await next(
+              (candidate) =>
+                candidate.kind === CORE_FRAME.output &&
+                screens.get(candidate.payload.readUInt32BE(0))?.id === id,
+              0,
+            );
+            if (!frame) return shown(id);
+            draw(frame.payload.readUInt32BE(0), frame.payload.subarray(4));
+          }
         },
         write(id, text) {
           const header = Buffer.alloc(16);
@@ -941,7 +956,7 @@ async function exerciseQuitKeepsTerminals() {
       `the pane started ${panes.length - 1} new terminal(s) instead of taking its own back`,
       desktopLog,
     );
-  const replay = await watcher.attachReplay(shell.id);
+  const replay = await watcher.screen(shell.id);
   if (!replay.includes("kept-45"))
     fail("the reattached terminal lost its earlier output", desktopLog);
   watcher.close();
@@ -1143,7 +1158,7 @@ async function expectTerminalKept(shell, corePid, build, marker) {
   const session = await coreSession(watcher, shell.id);
   if (session.pid !== shell.pid || !processAlive(shell.pid))
     fail("the shell did not survive the update", desktopLog);
-  const replay = await watcher.attachReplay(shell.id);
+  const replay = await watcher.screen(shell.id);
   if (!replay.includes(marker))
     fail("the updated core lost the terminal's earlier output", desktopLog);
   watcher.write(shell.id, "echo after-$((9*9))\r");
@@ -1254,7 +1269,7 @@ async function expectTuiAgentResumed(core, previous, runs) {
     "the resumed agent to print below its old screen",
     10_000,
     async () => {
-      replay = await core.attachReplay(resumed.id);
+      replay = await core.screen(resumed.id);
       return count(replay, FAKE_PI_SESSION_LINE) === runs;
     },
   );
@@ -1297,7 +1312,7 @@ async function exerciseTerminalAgentResumes() {
   });
   let screen = "";
   await waitFor("the terminal agent to print", 10_000, async () => {
-    screen = await core.attachReplay(first.id);
+    screen = await core.screen(first.id);
     return screen.includes(FAKE_PI_SESSION_LINE);
   }).catch(() =>
     fail(
