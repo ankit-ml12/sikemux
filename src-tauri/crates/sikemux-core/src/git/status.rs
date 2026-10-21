@@ -4,25 +4,25 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use git2::{BranchType, Repository, Status, StatusOptions};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sikemux_process::sync::Locked;
 
 use super::{flight_key, git_walk_permit, open_repo, run_blocking, shared, Flights};
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct GitFile {
-    path: String,
-    index: String,
-    worktree: String,
+    pub path: String,
+    pub index: String,
+    pub worktree: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GitStatus {
-    branch: String,
-    upstream: Option<String>,
-    ahead: i32,
-    behind: i32,
-    files: Vec<GitFile>,
+    pub branch: String,
+    pub upstream: Option<String>,
+    pub ahead: i32,
+    pub behind: i32,
+    pub files: Vec<GitFile>,
 }
 
 impl GitStatus {
