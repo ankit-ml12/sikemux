@@ -346,11 +346,11 @@ export class ChatSession {
     });
   };
 
-  /** Ends the chat's agent on the host. Answers whether it did. */
+  /** Ends the chat's agent on the host and closes it in every app. Answers whether it did. */
   stopChat = async (): Promise<boolean> => {
     let stopped = false;
     await this.ask(
-      (connection) => connection.stopChat(this.agentId),
+      (connection) => connection.call('closeChat', JSON.stringify({ agentId: this.agentId })),
       'Could not stop the chat',
       () => {
         stopped = true;

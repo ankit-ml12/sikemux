@@ -1045,6 +1045,8 @@
   </div>
 </section>
 
+<!-- ================================================================ -->
+<section class="flow">
   <h2>The lock</h2>
   <p>Off until the person turns on Lock Sikemux in the account sheet. Then a signed-in phone shows no host, chat or device, and opens no link or notification, until the person passes Face ID, Touch ID or the phone's passcode. Signing in on the phone counts; nothing is asked of a phone that is signed out.</p>
   <div class="phones">
@@ -1644,7 +1646,17 @@
             <div class="row"><span class="mark">{{IconClock:18}}</span><div class="body"><div class="t">Asked 2m ago</div></div></div>
             <div class="row"><span class="mark">{{IconGlobe:18}}</span><div class="body"><div class="t">From Germany · Hetzner Online</div><div class="s">203.0.113.7</div></div></div>
           </div>
+          <div class="btn primary">Add host</div>
+          <div class="btn danger">Not mine</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
       <figcaption><b>Check the host</b><div class="note">The host behind the code, as it named itself, with its system and channel, and a one-line warning. Under it, when the host asked and from where: the country and network the server's address book places it in, then its address. When the server knows neither it says "From an unknown place". Add host puts it on the account, after a sign-in from the last ten minutes: when the last is older, Confirm it's you comes first, the same screen as deleting the account, its button reading Add host, and the host is added once it is done. The host finishes signing in on its next ask and shows up in Devices to connect to. Not mine stops its sign-in. Either way the screen says what happened, and Done goes back to Devices.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
         <div class="prompt">
           <div class="prompt-glyph">{{IconDesktop:34}}</div>
@@ -2953,7 +2965,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>The chat's menu</b><div class="note">The ⋮ in the header: Recent prompts, Copy link, which opens this chat on any phone paired with the host, and Stop chat, which asks once more and then ends the agent on the host, with anything it still has running, and goes back. A phone that can only watch has no Stop.</div></figcaption>
+      <figcaption><b>The chat's menu</b><div class="note">The ⋮ in the header: Recent prompts, Copy link, which opens this chat on any phone paired with the host, and Stop chat, which asks once more and then ends the agent on the host, with anything it still has running, closes it there and in every app, and goes back. A phone that can only watch has no Stop.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

@@ -127,6 +127,10 @@ calls! { core, client, params;
     "createAgent": Person => answer(workspace::create_agent(&core, parse(params)?)?),
     "updateAgent": Person => answer(workspace::update_agent(&core, parse(params)?)?),
     "closeAgents": Person => answer(workspace::close_agents(&core, parse(params)?)?),
+    "closeChat": Full => {
+        let params: AgentParams = parse(params)?;
+        answer(workspace::close_agent(&core, params.agent_id)?)
+    },
     "createAgentWorktree": Person => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
     "agentWorktreeAt": Full => answer(super::sandbox::at(parse(params)?).await?),
     "savedSessions": Full, any_program => answer(saved_sessions::list(parse(params)?).await?),
