@@ -10,7 +10,8 @@
 //! with a permission request, `stream N` with N words, and anything else by
 //! echoing it, markdown and all. `FAKE_PROVIDER=claude` with
 //! `sikemux-fake-claude` in its place also answers `question` with three
-//! questions for the person, one of them secret. `FAKE_MODE=workspace-write`
+//! questions for the person, one of them secret, and `delegate` with a
+//! subagent that reads a file. `FAKE_MODE=workspace-write`
 //! has the agent ask before it acts.
 
 use std::path::PathBuf;

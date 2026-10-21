@@ -272,6 +272,43 @@ impl Claude {
                 self.say(&message_id, "asked");
                 self.finish(uuid, None);
             }
+            "delegate" => {
+                let (spawner, task, read) = (
+                    format!("toolu-task-{uuid}"),
+                    format!("task-{uuid}"),
+                    format!("toolu-read-{uuid}"),
+                );
+                let assistant = |id: String, parent: Option<&str>, content: Value| {
+                    json!({ "type": "assistant", "uuid": uuid::Uuid::new_v4().to_string(), "parent_tool_use_id": parent,
+                        "message": { "id": id, "model": "fake", "role": "assistant", "content": content } })
+                };
+                let result = |parent: Option<&str>, tool: &str, said: &str| {
+                    json!({ "type": "user", "uuid": uuid::Uuid::new_v4().to_string(), "parent_tool_use_id": parent,
+                        "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": tool, "content": said }] } })
+                };
+                let input = json!({ "description": "Find the adapter", "prompt": "Find where the chat adapter starts\nThen report back", "subagent_type": "Explore" });
+                self.send(assistant(
+                    format!("{message_id}-task"),
+                    None,
+                    json!([{ "type": "tool_use", "id": spawner, "name": "Task", "input": input }]),
+                ));
+                self.send(json!({ "type": "system", "subtype": "task_started", "task_id": task, "tool_use_id": spawner, "description": "Find the adapter", "subagent_type": "Explore", "task_type": "local_agent" }));
+                let looking = json!([{ "type": "text", "text": "Looking at the adapter." }, { "type": "tool_use", "id": read, "name": "Read", "input": { "file_path": "/tmp/src/adapter.ts" } }]);
+                self.send(assistant(
+                    format!("{message_id}-sub"),
+                    Some(&spawner),
+                    looking,
+                ));
+                self.send(result(Some(&spawner), &read, "export function start() {}"));
+                self.send(json!({ "type": "system", "subtype": "task_notification", "task_id": task, "status": "completed", "summary": "Found it" }));
+                self.send(result(
+                    None,
+                    &spawner,
+                    "The adapter starts in src/adapter.ts",
+                ));
+                self.say(&message_id, "It starts in src/adapter.ts.");
+                self.finish(uuid, None);
+            }
             "hold" => {
                 let ms: u64 = words.next().and_then(|n| n.parse().ok()).unwrap_or(1000);
                 self.say(&format!("{message_id}-a"), "holding");

@@ -18,7 +18,7 @@ use gpui_transcript::{Change, Markdown, Pen, Row, Style, Transcript};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::chat::{
-    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, PermissionAsk, SubagentState,
+    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, PermissionAsk, SubagentCard, SubagentState,
     WorkFold,
 };
 use sikemux_wire::protocol::{ChatAttachment, ChatMark};
@@ -173,6 +173,9 @@ fn merge(on: &mut Value, fields: &Value) {
     }
 }
 
+/// Each subagent's rows, by its session.
+type Subagents = Rc<RefCell<HashMap<String, Vec<ChatRow>>>>;
+
 /// A chat the window shows: its rows in a transcript, how it stands, its
 /// subagents' rows, and where in the core's changes it has got to.
 pub struct Chat {
@@ -184,7 +187,7 @@ pub struct Chat {
     running: Rc<Cell<bool>>,
     /// Opened calls whose detail is older than the call, to ask the core for again.
     wanted: Vec<String>,
-    subagents: HashMap<String, Vec<ChatRow>>,
+    subagents: Subagents,
     pub mark: Option<ChatMark>,
     older_before: Option<u64>,
     asked_earlier: bool,
@@ -264,7 +267,7 @@ struct Pick {
 impl Chat {
     pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
         let looks = Looks::new(Tokens::get(cx), provider, bench.clone(), agent.clone());
-        let (tools, running) = (looks.tools.clone(), looks.running.clone());
+        let (tools, running, subagents) = (looks.tools.clone(), looks.running.clone(), looks.subagents.clone());
         let transcript = cx.new(|cx| {
             Transcript::new(Vec::new(), looks.text.clone(), move |rows, ix, pen, window, cx| row(rows, ix, pen, &looks, window, cx), cx)
                 .on_reach_top(move |_, cx| {
@@ -278,7 +281,7 @@ impl Chat {
             tools,
             running,
             wanted: Vec::new(),
-            subagents: HashMap::new(),
+            subagents,
             mark: None,
             older_before: None,
             asked_earlier: false,
@@ -328,7 +331,7 @@ impl Chat {
         self.head = serde_json::to_value(&view.head).ok().and_then(|head| head.as_object().cloned()).unwrap_or_default();
         self.running.set(view.head.running);
         self.state = Some(view.head);
-        self.subagents = rows_by_session(view.subagents);
+        *self.subagents.borrow_mut() = rows_by_session(view.subagents);
         self.older_before = view.older_before;
         self.asked_earlier = false;
         let rows = view.rows.into_iter().map(ChatRow::new).collect();
@@ -373,7 +376,7 @@ impl Chat {
         };
         self.older_before = page.older_before;
         for (session, rows) in rows_by_session(page.subagents) {
-            self.subagents.entry(session).or_insert(rows);
+            self.subagents.borrow_mut().entry(session).or_insert(rows);
         }
         let rows = page.rows.into_iter().map(ChatRow::new).collect();
         self.transcript.update(cx, |transcript, cx| transcript.push(Change::Prepend(rows), cx));
@@ -399,7 +402,8 @@ impl Chat {
                     self.show(*view, cx);
                 }
                 ChatChange::Row { row, within: Some(session) } => {
-                    let held = self.subagents.entry(session).or_default();
+                    let mut subagents = self.subagents.borrow_mut();
+                    let held = subagents.entry(session).or_default();
                     match held.iter_mut().find(|held| held.message.id == row.id) {
                         Some(held) => *held = ChatRow::new(row),
                         None => held.push(ChatRow::new(row)),
@@ -431,7 +435,8 @@ impl Chat {
     ) {
         match within {
             Some(session) => {
-                let held = self.subagents.get_mut(&session).and_then(|held| held.iter_mut().find(|held| held.message.id == row));
+                let mut subagents = self.subagents.borrow_mut();
+                let held = subagents.get_mut(&session).and_then(|held| held.iter_mut().find(|held| held.message.id == row));
                 if let Some(held) = held {
                     change(held);
                 }
@@ -1076,6 +1081,7 @@ struct Looks {
     /// The finished turns the reader opened, by their first row.
     opened: Rc<RefCell<HashSet<String>>>,
     tools: Rc<RefCell<tools::Opened>>,
+    subagents: Subagents,
     /// A turn is running, so the last row's run of calls stays open.
     running: Rc<Cell<bool>>,
     tints: Tints,
@@ -1162,6 +1168,7 @@ impl Looks {
             provider: provider.to_owned(),
             opened: Rc::default(),
             tools: Rc::default(),
+            subagents: Rc::default(),
             running: Rc::default(),
             tints: Tints::new(t),
             bench,
@@ -1305,6 +1312,109 @@ fn work(fold: &WorkFold, open: bool, looks: &Looks) -> AnyElement {
     div().mt(px(3.)).flex().flex_col().gap(px(4.)).child(div().flex().child(toggle)).child(div().h(px(1.)).bg(looks.rule)).into_any_element()
 }
 
+/// A subagent the agent started: its name, its task and how it stands, opening onto
+/// what it did. A closed card draws none of its rows, though they keep arriving.
+fn subagent(card: &SubagentCard, pen: &Pen, looks: &Looks, window: &mut Window, cx: &mut App) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let key = format!("subagent:{}", card.session_id);
+    let open = looks.opened.borrow().contains(&key);
+    let (tint, mark, word) = match card.state {
+        SubagentState::Running => (theme::mix(t.accent, t.text_disabled, 0.62), Icon::Hourglass, "working"),
+        SubagentState::Completed => (theme::mix(t.live, t.text_disabled, 0.58), Icon::Check, "done"),
+        SubagentState::Failed => (t.danger, Icon::Warning, "failed"),
+        SubagentState::Disconnected => (t.danger, Icon::Plug, "lost"),
+        SubagentState::Cancelled => (t.text_disabled, Icon::Close, "stopped"),
+    };
+    let tokens = card.tokens.map(|tokens| format!("{} tokens", crate::home::compact(tokens as f64)));
+    let calls = (card.calls > 0).then(|| format!("{} {}", card.calls, if card.calls == 1 { "call" } else { "calls" }));
+    let cost = [tokens, calls].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+    let task = card.task.split('\n').next().unwrap_or_default().trim().to_owned();
+    let (opened, toggled, hover) = (looks.opened.clone(), key.clone(), theme::mix(t.text_primary, t.surface_raised, 0.05));
+    let summary = div()
+        .id(SharedString::from(key.clone()))
+        .min_h(px(24.))
+        .py(px(4.))
+        .pl(px(11.))
+        .pr(px(12.))
+        .flex()
+        .items_center()
+        .gap(px(7.))
+        .border_1()
+        .border_color(t.border)
+        .rounded(theme::RADIUS_2)
+        .when(open, |summary| summary.rounded_b_none())
+        .bg(t.surface_raised)
+        .text_size(px(11.))
+        .cursor_pointer()
+        .hover(move |summary| summary.bg(hover))
+        .on_click(move |_, window, _| {
+            let mut opened = opened.borrow_mut();
+            if !opened.remove(&toggled) {
+                opened.insert(toggled.clone());
+            }
+            window.refresh();
+        })
+        .child(
+            div()
+                .flex_none()
+                .opacity(if open { 1. } else { 0.5 })
+                .child(ui::icon(Icon::Chevron, 9.).text_color(looks.quiet).when(open, |chevron| chevron.with_transformation(Transformation::rotate(Radians(FRAC_PI_2))))),
+        )
+        .child(div().flex_none().child(ui::mark(&looks.provider, 18.)))
+        .child(div().flex_none().font_family(theme::MONO).text_size(px(10.5)).text_color(looks.ink).child(card.name.clone()))
+        .child(div().flex_1().min_w_0().truncate().text_size(px(10.5)).text_color(looks.faint).child(task))
+        .child(
+            div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(7.))
+                .font_family(theme::MONO)
+                .text_size(px(9.5))
+                .text_color(Hsla { a: 0.8, ..looks.faint })
+                .when(!cost.is_empty(), |end| end.child(cost))
+                .child(div().id(SharedString::from(format!("{key}:state"))).tooltip(ui::tooltip(word)).child(ui::icon(mark, 12.).text_color(tint))),
+        );
+    let body = open.then(|| {
+        let subagents = looks.subagents.borrow();
+        let rows = subagents.get(&card.session_id).map_or(&[][..], Vec::as_slice);
+        let live = card.state == SubagentState::Running;
+        let mut drawn = Vec::new();
+        for (ix, row) in rows.iter().enumerate() {
+            let groups = runs(row.message.parts.iter());
+            let count = groups.len();
+            for (at, group) in groups.into_iter().enumerate() {
+                drawn.push(match group {
+                    Shown::Part(part) => self::part(row, part, false, pen, looks, window, cx),
+                    Shown::Run(calls) => tools::run(&calls, live && ix + 1 == rows.len() && at + 1 == count, looks),
+                });
+            }
+        }
+        if drawn.is_empty() {
+            drawn.push(div().text_size(px(10.5)).text_color(looks.faint).child("No output yet.").into_any_element());
+        }
+        div()
+            .id(SharedString::from(format!("{key}:body")))
+            .mx(px(12.))
+            .max_h(px(420.))
+            .overflow_y_scroll()
+            .pt(px(4.))
+            .pb(px(8.))
+            .pl(px(13.))
+            .pr(px(10.))
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .border_1()
+            .border_t_0()
+            .border_color(t.border)
+            .rounded_b(theme::RADIUS_2)
+            .bg(Hsla { a: 0.45, ..t.surface_raised })
+            .children(drawn)
+    });
+    div().my(px(6.)).flex().flex_col().child(summary).children(body).into_any_element()
+}
+
 /// How long something took, as the app says it: milliseconds under a second, then seconds, minutes and hours.
 fn duration(ms: u64) -> String {
     let seconds = (ms + 500) / 1000;
@@ -1346,7 +1456,7 @@ fn part(row: &ChatRow, part: &ChatPart, user: bool, pen: &Pen, looks: &Looks, wi
             let tint = if failure.is_some() { Tokens::get(cx).danger } else { looks.quiet };
             line(Icon::Run, tool.title.clone(), tint)
         }
-        ChatPart::Subagent { subagent, .. } => line(Icon::Agents, format!("{} · {}", subagent.name, subagent.task), looks.quiet),
+        ChatPart::Subagent { subagent, .. } => self::subagent(subagent, pen, looks, window, cx),
         ChatPart::Notice { notice, .. } => line(Icon::Run, notice.name.clone(), looks.faint),
         ChatPart::AgentNotice { notice, .. } => line(Icon::Inbox, notice.title.clone(), looks.faint),
         ChatPart::Account { moved, .. } => line(Icon::LogIn, format!("Moved to {}", moved.label), looks.faint),

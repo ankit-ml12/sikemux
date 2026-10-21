@@ -311,7 +311,10 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
                 "agent_thought_chunk",
                 "Reading the test before changing anything.",
             );
-            let printed: Vec<String> = (1..=14).map(|n| format!("✓ src/app.test.ts > case {n}")).chain(["3 passed".into()]).collect();
+            let printed: Vec<String> = (1..=14)
+                .map(|n| format!("✓ src/app.test.ts > case {n}"))
+                .chain(["3 passed".into()])
+                .collect();
             let calls = [
                 ("read-1", "read", "Read src/app.ts", json!([]), Value::Null),
                 (
