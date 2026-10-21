@@ -108,7 +108,6 @@ export const IPC_COMMANDS = [
     "project_search_cancel",
     "project_search_replace",
     "read_file_window",
-    "ssh_hosts",
     "ssh_config_ensure",
     "open_url",
     "macos_focus_app",

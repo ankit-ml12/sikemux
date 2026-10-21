@@ -50,6 +50,7 @@ mod session_watch;
 mod share;
 mod skill_library;
 mod spawn;
+mod ssh;
 mod tasks;
 mod tools;
 mod transcript;
@@ -346,6 +347,8 @@ pub(crate) struct Core {
     /// Each project's branch chip, by project folder.
     pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
     pub(crate) usage: agent_accounts::UsageWatch,
+    /// Watches the SSH config once a client has listed its hosts.
+    pub(crate) ssh_watch: OnceLock<Option<::notify::RecommendedWatcher>>,
     pub(crate) ci: ci::Ci,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
@@ -426,6 +429,7 @@ impl Core {
             git_watches: Default::default(),
             git_chips: Default::default(),
             usage: Default::default(),
+            ssh_watch: OnceLock::new(),
             ci: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
@@ -577,6 +581,15 @@ impl Core {
             self.view_changed();
         }
         named
+    }
+
+    /// Each ssh terminal's config host and how it reaches it.
+    pub(crate) fn ssh_links(&self) -> Vec<(String, sikemux_pty::shell_protocol::SshLink)> {
+        self.all_sessions()
+            .iter()
+            .filter(|session| session.is_running())
+            .filter_map(|session| session.ssh_link())
+            .collect()
     }
 
     pub(crate) fn agent_session(&self, agent_id: &str) -> Option<Arc<Session>> {

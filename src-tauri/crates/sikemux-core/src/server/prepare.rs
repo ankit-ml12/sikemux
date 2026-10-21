@@ -36,6 +36,8 @@ pub(crate) struct Owner {
     /// The folder an agent keeps its account and sessions in, when the
     /// launch named one rather than leaving it to the CLI's default.
     pub account_home: Option<PathBuf>,
+    /// The SSH config host an ssh terminal connects to.
+    pub ssh_host: Option<String>,
 }
 
 impl Owner {
@@ -53,6 +55,8 @@ impl Owner {
             task: None,
             started_by: None,
             account_home: None,
+            ssh_host: (context.session_kind == "ssh" && !context.session_name.is_empty())
+                .then(|| context.session_name.clone()),
         }
     }
 }

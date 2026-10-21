@@ -356,7 +356,6 @@ pub fn run() {
             search::project_search_cancel,
             search::project_search_replace,
             search::read_file_window,
-            ssh::ssh_hosts,
             ssh::ssh_config_ensure,
             external::open_url,
             external::macos_focus_app,

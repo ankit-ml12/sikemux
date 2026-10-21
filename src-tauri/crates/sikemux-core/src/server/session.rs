@@ -26,6 +26,7 @@ use crate::protocol::{
 };
 
 use super::agent::{self, AgentActivity};
+use super::changed::Topic;
 use super::connection::ClientConn;
 use super::prepare::{Owner, PreparedLaunch};
 use super::{uptime_ms, CapacityPermit, Core, CoreError, CoreResult};
@@ -231,6 +232,13 @@ impl Session {
 
     pub(crate) fn has_subscribers(&self) -> bool {
         !self.subscribers.locked().is_empty()
+    }
+
+    /// The SSH config host an ssh terminal connects to, and how it reaches it.
+    pub(crate) fn ssh_link(&self) -> Option<(String, sikemux_pty::shell_protocol::SshLink)> {
+        let host = self.owner.ssh_host.clone()?;
+        let link = self.screen.locked().shell.as_ref()?.ssh()?;
+        Some((host, link))
     }
 
     pub(crate) fn info(&self) -> SessionInfo {
@@ -814,6 +822,9 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
             id: session.id,
             link,
         });
+        if session.owner.ssh_host.is_some() {
+            core.changes.changed(Topic::Ssh, None, None);
+        }
     }
 }
 

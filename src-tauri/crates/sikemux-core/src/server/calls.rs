@@ -175,6 +175,10 @@ calls! { core, client, params;
     },
     "agentUsage": Full, any_program => answer(agent_accounts::usage(&core, parse(params)?).await?),
     "agentUsages": Watch, any_program => answer(agent_accounts::usages(&core).await),
+    "sshHosts": Watch, any_program => {
+        let core = core.clone();
+        answer(blocking(move || Ok(super::ssh::hosts(&core))).await?)
+    },
     "cancelResume": Full => {
         agent_accounts::cancel_resume(&core, parse(params)?);
         answer(())

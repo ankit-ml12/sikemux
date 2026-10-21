@@ -125,7 +125,6 @@
     "allow-project-search-cancel",
     "allow-project-search-replace",
     "allow-read-file-window",
-    "allow-ssh-hosts",
     "allow-ssh-config-ensure",
     "allow-open-url",
     "allow-macos-focus-app",

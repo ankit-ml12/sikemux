@@ -1,0 +1,125 @@
+//! The hosts in the person's SSH config, each with how its terminals are
+//! reaching it, and a watch on the config that tells clients when it changes.
+
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Weak;
+
+use notify::{RecursiveMode, Watcher};
+use serde::Serialize;
+use sikemux_pty::shell_protocol::SshLink;
+
+use super::changed::Topic;
+use super::Core;
+
+/// How a host's terminals reach it, the best of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Reach {
+    /// No terminal is open to it.
+    Idle,
+    Failed,
+    Connecting,
+    Ok,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SshHost {
+    /// What `ssh` is given, and what the host is called.
+    alias: String,
+    hostname: Option<String>,
+    user: Option<String>,
+    port: Option<u16>,
+    status: Reach,
+}
+
+fn config_path() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".ssh/config"))
+}
+
+/// The hosts in the config, wildcard patterns left out since nothing
+/// connects to them. `Include` is not followed.
+pub(crate) fn hosts(core: &Core) -> Vec<SshHost> {
+    watch(core);
+    let content = config_path()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .unwrap_or_default();
+    let reach = |alias: &str| {
+        core.ssh_links()
+            .into_iter()
+            .filter(|(host, _)| host == alias)
+            .map(|(_, link)| match link {
+                SshLink::Connected => Reach::Ok,
+                SshLink::Connecting => Reach::Connecting,
+                SshLink::Disconnected => Reach::Failed,
+            })
+            .max()
+            .unwrap_or(Reach::Idle)
+    };
+    let mut hosts = Vec::new();
+    let mut aliases: Vec<String> = Vec::new();
+    let (mut hostname, mut user, mut port) = (None, None, None);
+    let mut flush = |aliases: &[String], hostname: &Option<String>, user: &Option<String>, port| {
+        for alias in aliases.iter().filter(|alias| !alias.contains(['*', '?'])) {
+            hosts.push(SshHost {
+                alias: alias.clone(),
+                hostname: hostname.clone(),
+                user: user.clone(),
+                port,
+                status: reach(alias),
+            });
+        }
+    };
+    for line in content.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        let mut split = line.splitn(2, |c: char| c.is_whitespace() || c == '=');
+        let key = split.next().unwrap_or("").to_ascii_lowercase();
+        let value = split
+            .next()
+            .unwrap_or("")
+            .trim_start_matches(|c: char| c.is_whitespace() || c == '=')
+            .trim();
+        if value.is_empty() {
+            continue;
+        }
+        match key.as_str() {
+            "host" => {
+                flush(&aliases, &hostname, &user, port);
+                aliases = value.split_whitespace().map(String::from).collect();
+                (hostname, user, port) = (None, None, None);
+            }
+            "hostname" => hostname = Some(value.to_owned()),
+            "user" => user = Some(value.to_owned()),
+            "port" => port = value.parse().ok(),
+            _ => {}
+        }
+    }
+    flush(&aliases, &hostname, &user, port);
+    hosts
+}
+
+/// Starts watching the config once, the first time a client lists the hosts.
+fn watch(core: &Core) {
+    let Some(folder) = config_path().and_then(|path| path.parent().map(PathBuf::from)) else {
+        return;
+    };
+    let weak: Weak<Core> = core.me.clone();
+    core.ssh_watch.get_or_init(|| {
+        let mut watcher =
+            notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                let touches_config = event.is_ok_and(|event| {
+                    event
+                        .paths
+                        .iter()
+                        .any(|path| path.file_name().is_some_and(|name| name == "config"))
+                });
+                if let (true, Some(core)) = (touches_config, weak.upgrade()) {
+                    core.changes.changed(Topic::Ssh, None, None);
+                }
+            })
+            .ok()?;
+        watcher.watch(&folder, RecursiveMode::NonRecursive).ok()?;
+        Some(watcher)
+    });
+}

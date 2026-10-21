@@ -37,6 +37,8 @@ pub(crate) enum Topic {
     Trust,
     /// How much of their plans the agent accounts have used.
     Usage,
+    /// The SSH config's hosts, or how a terminal reaches one.
+    Ssh,
 }
 
 /// Paths by topic and project; none means anything may have changed.

@@ -1037,7 +1037,8 @@ export type CoreChangeTopic =
   | 'skills'
   | 'tasks'
   | 'trust'
-  | 'usage';
+  | 'usage'
+  | 'ssh';
 
 /** A board as the app and devices read it. */
 export interface ProjectBoard {
