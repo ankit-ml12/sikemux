@@ -260,6 +260,7 @@ impl Workbench {
         let activity = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": path });
         let _ = self.asks.send(Ask::Watch("activity", Watch::new("activitySummary", activity, &["activity"])));
         let _ = self.asks.send(Ask::Watch("tasks", Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"])));
+        let _ = self.asks.send(Ask::Watch("ports", Watch::new("ports", json!({ "project": path }), &["ports"])));
         self.watched_project = path;
     }
 

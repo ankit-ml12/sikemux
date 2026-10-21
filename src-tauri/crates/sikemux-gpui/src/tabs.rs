@@ -56,6 +56,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .pr(px(16.))
                 .children(git_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
                 .children(run_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
+                .children(ports_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
                 .children(ci_glyph(bench, cx))
                 .child(clock(cx))
                 .child(IconButton::new("focus", Icon::Focus, "Focus mode — hide rails — ⌘B").width(30.)),
@@ -104,6 +105,34 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .when(git.ahead > 0 || git.behind > 0, |chip| {
                 chip.child(div().flex().gap(px(4.)).children(count("↑", git.ahead, t.live)).children(count("↓", git.behind, t.warn)))
             })
+            .into_any_element(),
+    )
+}
+
+/// How many ports the project's terminals, tasks and agents listen on.
+fn ports_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    let count = bench.read("ports")?.as_array()?.len();
+    if count == 0 {
+        return None;
+    }
+    let about = if count == 1 { "1 listening port".to_owned() } else { format!("{count} listening ports") };
+    Some(
+        div()
+            .id("ports-chip")
+            .h(px(24.))
+            .px(px(4.))
+            .flex()
+            .items_center()
+            .gap(px(5.))
+            .rounded(crate::theme::RADIUS_1)
+            .font_family(crate::theme::MONO)
+            .text_size(px(11.))
+            .text_color(t.text_tertiary)
+            .hover(move |style| style.text_color(t.text_primary))
+            .tooltip(ui::tooltip(about))
+            .child(ui::icon(Icon::Plug, 12.).text_color(t.text_tertiary))
+            .child(div().text_color(t.text_primary).child(count.to_string()))
             .into_any_element(),
     )
 }
