@@ -6,7 +6,8 @@ import { adoptAgentAccounts } from "../persist";
 import { reportError } from "../toast";
 import { invalidate } from "../resources";
 import { projectRootsScanR } from "../resources.defs";
-import { setPreference } from "../preferences";
+import { projectRootsOf, setPreference } from "../preferences";
+import { MAX_PROJECT_DEPTH, type ProjectRoot } from "../../api/generated/wire";
 import { getState, setState } from "../store";
 import type { AgentType } from "../../agents/catalog";
 
@@ -65,17 +66,15 @@ export const setUpdateChannel = (value: "stable" | "nightly"): void => {
 export const setShareUsageData = (value: boolean): void => setState({ shareUsageData: value });
 
 export const setLanguageServerTrust = (project: string, allowed: boolean): void =>
-    setState((s) => ({ languageServerTrust: { ...s.languageServerTrust, [project]: allowed } }));
+    setPreference("languageServerTrust", { ...getState().preferences?.languageServerTrust, [project]: allowed });
 
 export const setAgentWorktreeDefault = (project: string, on: boolean): void =>
     setPreference("agentWorktreeDefaults", { ...getState().preferences?.agentWorktreeDefaults, [project]: on });
 
 /** Null clears it, so the project's Git views go back to asking. */
 export function setDefaultGitRepo(project: string, repo: string | null): void {
-    setState((s) => {
-        const { [project]: _cleared, ...rest } = s.defaultGitRepos;
-        return { defaultGitRepos: repo ? { ...rest, [project]: repo } : rest };
-    });
+    const { [project]: _cleared, ...rest } = getState().preferences?.defaultGitRepos ?? {};
+    setPreference("defaultGitRepos", repo ? { ...rest, [project]: repo } : rest);
 }
 
 export function setKeybinding(id: import("../../commands/keybindings").KeybindingActionId, binding: string | null): void {
@@ -92,35 +91,28 @@ export function resetKeybinding(id: import("../../commands/keybindings").Keybind
 
 export const resetAllKeybindings = (): void => setState({ keybindingOverrides: {} });
 
-export function addProjectRoot(path: string, depth = 1, selfIndex = false): void {
-    const boundedDepth = Math.max(0, Math.min(8, Math.round(Number.isFinite(depth) ? depth : 1)));
-    setState((s) =>
-        s.projectRoots.some((r) => r.path === path) ? {} : { projectRoots: [...s.projectRoots, { path, depth: boundedDepth, selfIndex }] },
-    );
+const boundedDepth = (depth: number): number => Math.max(0, Math.min(MAX_PROJECT_DEPTH, Math.round(Number.isFinite(depth) ? depth : 1)));
+
+function setProjectRoots(change: (roots: ProjectRoot[]) => ProjectRoot[]): void {
+    setPreference("projectRoots", change(projectRootsOf(getState())));
     invalidate((kind) => kind === projectRootsScanR.kind);
+}
+
+export function addProjectRoot(path: string, depth = 1, selfIndex = false): void {
+    setProjectRoots((roots) => (roots.some((r) => r.path === path) ? roots : [...roots, { path, depth: boundedDepth(depth), selfIndex }]));
 }
 
 /** Index the folder itself as a project, on top of whatever its depth finds. */
 export function setProjectRootSelfIndex(path: string, selfIndex: boolean): void {
-    setState((s) => ({
-        projectRoots: s.projectRoots.map((r) => (r.path === path ? { ...r, selfIndex } : r)),
-    }));
-    invalidate((kind) => kind === projectRootsScanR.kind);
+    setProjectRoots((roots) => roots.map((r) => (r.path === path ? { ...r, selfIndex } : r)));
 }
 
 export function removeProjectRoot(path: string): void {
-    setState((s) => ({
-        projectRoots: s.projectRoots.filter((r) => r.path !== path),
-    }));
-    invalidate((kind) => kind === projectRootsScanR.kind);
+    setProjectRoots((roots) => roots.filter((r) => r.path !== path));
 }
 
 export function setProjectRootDepth(path: string, depth: number): void {
-    const d = Math.max(0, Math.min(8, Math.round(Number.isFinite(depth) ? depth : 1)));
-    setState((s) => ({
-        projectRoots: s.projectRoots.map((r) => (r.path === path ? { ...r, depth: d } : r)),
-    }));
-    invalidate((kind) => kind === projectRootsScanR.kind);
+    setProjectRoots((roots) => roots.map((r) => (r.path === path ? { ...r, depth: boundedDepth(depth) } : r)));
 }
 
 const samePin = (pin: import("../types").PinnedChat, agent: string, id: string) => pin.agent === agent && pin.id === id;

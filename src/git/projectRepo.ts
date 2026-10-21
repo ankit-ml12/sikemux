@@ -29,7 +29,7 @@ export function useProjectRepo(cwd: string, enabled = true): ProjectRepo {
     const overview = useCachedResourceEnabled(enabled && !!cwd, gitOverviewR, cwd);
     const missing = overview.status === "error" && !overview.data && isMissingRepository(overview.error);
     const discovered = useCachedResourceEnabled(enabled && missing, gitDiscoveredReposR, cwd);
-    const chosen = useStore((s) => s.defaultGitRepos[cwd]);
+    const chosen = useStore((s) => s.preferences?.defaultGitRepos[cwd]);
     if (!missing) return { repo: cwd || null, repos: null };
     const repos = discovered.data ?? null;
     return { repo: repos ? defaultRepoAmong(chosen, repos) : (chosen ?? null), repos };

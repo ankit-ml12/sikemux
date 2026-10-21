@@ -328,6 +328,11 @@ export class ShowcaseBackend implements IpcTransport {
         agentWorktreeDefaults: {},
         restoreAgentTabs: true,
         agentNotifications: false,
+        projectRoots: [{ path: `${DEMO_HOME}/code`, depth: 1, selfIndex: false }],
+        defaultGitRepos: {},
+        languageServerTrust: Object.fromEntries(
+          DEMO_PROJECTS.map((project) => [project.path, true]),
+        ),
       }),
     );
     this.onCore(

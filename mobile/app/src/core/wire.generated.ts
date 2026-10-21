@@ -7,6 +7,7 @@ export const MAX_TERMINAL_FONT_SIZE = 32;
 export const DEFAULT_TEXT_SCALE = 1;
 export const MIN_TEXT_SCALE = 0.7;
 export const MAX_TEXT_SCALE = 2;
+export const MAX_PROJECT_DEPTH = 8;
 export const MAX_ATTACHMENTS = 32;
 
 export interface DeviceView {
@@ -1226,6 +1227,18 @@ export interface Preferences {
   restoreAgentTabs: boolean;
   /** The desktop says when an agent needs the person. */
   agentNotifications: boolean;
+  /** The folders the person keeps projects in. */
+  projectRoots: ProjectRoot[];
+  /**
+   * The repository a project's Git views open on, by the project's folder,
+   * for a project holding more than one.
+   */
+  defaultGitRepos: Record<string, string>;
+  /**
+   * Whether a project's language servers may run, by its folder, once the
+   * person said.
+   */
+  languageServerTrust: Record<string, boolean>;
 }
 
 export type MidTurnSend = 'steer' | 'queue';
@@ -1306,6 +1319,15 @@ export interface ThemeTerminal {
   brightMagenta: string;
   brightCyan: string;
   brightWhite: string;
+}
+
+/** A folder the person keeps projects in. */
+export interface ProjectRoot {
+  path: string;
+  /** How many folders below it git repositories count as projects. */
+  depth: number;
+  /** The folder is a project itself, whether or not it is a git repository. */
+  selfIndex?: boolean;
 }
 
 /**

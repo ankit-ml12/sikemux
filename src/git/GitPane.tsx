@@ -1890,7 +1890,7 @@ function MoreButton({
 function GitRepoPicker({ paneId, root, active }: { paneId: string; root: string; active: boolean }) {
     const discovered = useCachedResourceEnabled(active && !!root, gitDiscoveredReposR, root || "");
     const repos = discovered.data ?? [];
-    const chosen = useStore((s) => s.defaultGitRepos[root]);
+    const chosen = useStore((s) => s.preferences?.defaultGitRepos[root]);
 
     if (discovered.status === "loading" && !discovered.data) {
         return (
@@ -1981,7 +1981,7 @@ export function GitPane({ paneId, cwd, active, visible }: { paneId: string; cwd:
     const fetching = useSettled(visible);
     const selectedRepo = useStore((s) => s.gitViews[paneId]?.repo ?? null);
     const listing = useStore((s) => s.gitViews[paneId]?.listing ?? false);
-    const chosen = useStore((s) => s.defaultGitRepos[cwd]);
+    const chosen = useStore((s) => s.preferences?.defaultGitRepos[cwd]);
     const rootOverview = useCachedResourceEnabled(fetching && !!cwd && !selectedRepo, gitOverviewR, cwd || "");
     const settledRoot = useRef<{ cwd: string; missing: boolean } | null>(null);
     if (rootOverview.status !== "loading") {

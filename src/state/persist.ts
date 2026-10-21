@@ -78,16 +78,6 @@ const oneOf =
     (saved, current) =>
         values.includes(saved as T) ? (saved as T) : current;
 
-function booleansByPath(value: unknown): Record<string, boolean> {
-    if (!isRecord(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"));
-}
-
-function stringsByPath(value: unknown): Record<string, string> {
-    if (!isRecord(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
-}
-
 function normalisePluginSettings(value: unknown): Record<string, unknown> {
     if (!isRecord(value)) return {};
     return Object.fromEntries(Object.entries(value).filter(([id]) => isPluginId(id)));
@@ -105,7 +95,6 @@ function readReleaseNotes(saved: unknown): StoreState["lastReleaseNotes"] {
 
 /** Each setting this window saves, and how a saved value reads back: one it cannot read keeps the store's default. */
 const PREFS = {
-    projectRoots: (saved, current) => (Array.isArray(saved) ? normaliseProjectRoots(saved) : current),
     paneShader: flag,
     paneImage: (saved, current) => (typeof saved === "string" || saved === null ? saved : current),
     paneStrength: finite(clampPaneStrength),
@@ -138,8 +127,6 @@ const PREFS = {
     lastReleaseNotes: (saved) => readReleaseNotes(saved),
     recentCommandKeys: (saved, current) =>
         Array.isArray(saved) ? saved.filter((value): value is string => typeof value === "string").slice(0, 20) : current,
-    languageServerTrust: (saved) => booleansByPath(saved),
-    defaultGitRepos: (saved) => stringsByPath(saved),
 } satisfies { [K in keyof StoreState]?: Read<StoreState[K]> };
 
 type PrefKey = keyof typeof PREFS;

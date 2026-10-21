@@ -14,6 +14,9 @@ export function testPreferences(changes: Partial<Preferences> = {}): Preferences
         agentWorktreeDefaults: {},
         restoreAgentTabs: true,
         agentNotifications: true,
+        projectRoots: [],
+        defaultGitRepos: {},
+        languageServerTrust: {},
         ...changes,
     };
 }

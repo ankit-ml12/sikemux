@@ -246,15 +246,7 @@ export interface RecentEntry {
     cwd: string;
 }
 
-export interface ProjectRoot {
-    path: string;
-    depth: number;
-    /**
-     * Index the root itself as a project, git repo or not, on top of whatever
-     * `depth` finds beneath it. Replaces the separate pinned-projects list.
-     */
-    selfIndex?: boolean;
-}
+export type { ProjectRoot } from "../../api/generated/wire";
 
 export interface Rect {
     x: number;

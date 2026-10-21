@@ -1,7 +1,7 @@
 import { coreCall } from "../api/core";
 import { onCoreChanged } from "../api/coreChanged";
-import type { Preferences } from "../api/generated/wire";
-import { getState, setState, useStore } from "./store";
+import type { Preferences, ProjectRoot } from "../api/generated/wire";
+import { getState, setState, useStore, type StoreState } from "./store";
 import { swallow } from "./toast";
 
 /* Values set here that the core has not confirmed yet, laid over what it says until it does. */
@@ -29,6 +29,9 @@ export function watchPreferences(): () => void {
         stop();
     };
 }
+
+const NO_PROJECT_ROOTS: ProjectRoot[] = [];
+export const projectRootsOf = (s: StoreState): ProjectRoot[] => s.preferences?.projectRoots ?? NO_PROJECT_ROOTS;
 
 /** A preference's value, or undefined until the core has said. */
 export function usePreference<K extends keyof Preferences>(key: K): Preferences[K] | undefined {

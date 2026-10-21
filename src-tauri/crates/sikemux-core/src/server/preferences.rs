@@ -11,7 +11,7 @@ use sikemux_process::sync::Locked;
 use super::kept::Kept;
 use super::{CoreError, CoreResult};
 use crate::protocol::{
-    Preferences, MAX_TERMINAL_FONT_SIZE, MAX_TEXT_SCALE, MIN_TERMINAL_FONT_SIZE, MIN_TEXT_SCALE,
+    Preferences, MAX_PROJECT_DEPTH, MAX_TERMINAL_FONT_SIZE, MAX_TEXT_SCALE, MIN_TERMINAL_FONT_SIZE, MIN_TEXT_SCALE,
     UI_TEXT_SCALES,
 };
 
@@ -122,6 +122,9 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
                 .total_cmp(&(b - preferences.ui_text_scale).abs())
         })
         .unwrap_or(UI_TEXT_SCALES[0]);
+    for root in &mut preferences.project_roots {
+        root.depth = root.depth.min(MAX_PROJECT_DEPTH);
+    }
     preferences.last_agent_type = preferences
         .last_agent_type
         .filter(|agent| crate::agent_catalog::agent(agent).is_some());

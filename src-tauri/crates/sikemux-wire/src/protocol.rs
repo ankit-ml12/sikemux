@@ -1095,6 +1095,20 @@ pub const MAX_TEXT_SCALE: f64 = 2.0;
 /// The sizes the whole interface's text may be drawn at.
 pub const UI_TEXT_SCALES: [f64; 3] = [1.0, 1.1, 1.25];
 pub const DEFAULT_THEME_ID: &str = "aura-noir";
+/// How many folders below a project root projects are looked for, at most.
+pub const MAX_PROJECT_DEPTH: u32 = 8;
+
+/// A folder the person keeps projects in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRoot {
+    pub path: String,
+    /// How many folders below it git repositories count as projects.
+    pub depth: u32,
+    /// The folder is a project itself, whether or not it is a git repository.
+    #[serde(default)]
+    pub self_index: bool,
+}
 
 /// How the person wants Sikemux to behave, the same in every app. A field
 /// left out reads as its default.
@@ -1120,6 +1134,14 @@ pub struct Preferences {
     pub restore_agent_tabs: bool,
     /// The desktop says when an agent needs the person.
     pub agent_notifications: bool,
+    /// The folders the person keeps projects in.
+    pub project_roots: Vec<ProjectRoot>,
+    /// The repository a project's Git views open on, by the project's folder,
+    /// for a project holding more than one.
+    pub default_git_repos: BTreeMap<String, String>,
+    /// Whether a project's language servers may run, by its folder, once the
+    /// person said.
+    pub language_server_trust: BTreeMap<String, bool>,
 }
 
 impl Default for Preferences {
@@ -1136,6 +1158,9 @@ impl Default for Preferences {
             agent_worktree_defaults: BTreeMap::new(),
             restore_agent_tabs: true,
             agent_notifications: true,
+            project_roots: Vec::new(),
+            default_git_repos: BTreeMap::new(),
+            language_server_trust: BTreeMap::new(),
         }
     }
 }

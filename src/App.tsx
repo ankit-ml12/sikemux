@@ -306,7 +306,7 @@ function ApplicationCommandPalette() {
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
     const activeProjectCwd = useStore(activeProjectCwdOf);
-    const languageServersAllowedHere = useStore((s) => (activeProjectCwd ? s.languageServerTrust[activeProjectCwd] === true : false));
+    const languageServersAllowedHere = useStore((s) => (activeProjectCwd ? s.preferences?.languageServerTrust[activeProjectCwd] === true : false));
     const activeTerminalWindowId = useStore((s) => {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
         return id && s.windows[id]?.role === "term" ? id : null;

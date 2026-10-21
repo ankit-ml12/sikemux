@@ -223,20 +223,6 @@ describe("frontend persistence", () => {
         expect(getState()).toMatchObject({ sideRailOpen: false, tabRailOpen: true });
     });
 
-    it("remembers which projects may start language servers", async () => {
-        setState({ languageServerTrust: { "/trusted": true, "/refused": false } });
-        invoke.mockResolvedValue(undefined);
-
-        await expect(flushPersist()).resolves.toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.prefs.languageServerTrust).toEqual({ "/trusted": true, "/refused": false });
-
-        setState({ languageServerTrust: {} });
-        saved.prefs.languageServerTrust["/odd"] = "yes";
-        applyHydrate(JSON.stringify(saved));
-        expect(getState().languageServerTrust).toEqual({ "/trusted": true, "/refused": false });
-    });
-
     it("takes the spaces and each project's space from the core, and remembers which space is shown", async () => {
         const work = cmd.createSpace("Work", "briefcase")!;
         const side = cmd.createSpace("Side projects", "")!;

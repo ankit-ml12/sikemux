@@ -10,8 +10,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sikemux_process::paths::expand_home;
 
+pub(crate) use crate::protocol::ProjectRoot;
+use crate::protocol::MAX_PROJECT_DEPTH;
+
 const MAX_PROJECT_ROOTS: usize = 32;
-const MAX_PROJECT_DEPTH: i64 = 8;
 const MAX_VISITED_DIRECTORIES: usize = 50_000;
 const MAX_DISCOVERED_PROJECTS: usize = 4_096;
 
@@ -21,22 +23,6 @@ pub(crate) struct ProjectEntry {
     path: String,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ProjectRoot {
-    path: String,
-    #[serde(default = "default_depth")]
-    depth: i64,
-    /// Emit the root itself as a project, whether or not it is a git repo.
-    /// This is what a "pinned project" used to be: a root with depth 0 and
-    /// this set is exactly the old behaviour.
-    #[serde(default)]
-    self_index: bool,
-}
-
-fn default_depth() -> i64 {
-    1
-}
 
 fn name_of(p: &Path) -> String {
     p.file_name()
@@ -202,7 +188,7 @@ fn scan_project_roots_sync(roots: Vec<ProjectRoot>) -> Result<Vec<ProjectEntry>,
         }
         walk(
             &root,
-            r.depth.clamp(0, MAX_PROJECT_DEPTH),
+            i64::from(r.depth.min(MAX_PROJECT_DEPTH)),
             &mut out,
             &mut seen,
             &mut visited,

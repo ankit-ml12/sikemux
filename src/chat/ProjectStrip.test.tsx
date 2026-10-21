@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetResourcesForTests } from "../state/resources";
 import { getState, setState } from "../state/store";
 import { ProjectStrip } from "./ProjectStrip";
+import { testPreferences } from "../test/preferences";
 
 const mocks = vi.hoisted(() => ({
     move: vi.fn(),
@@ -30,7 +31,7 @@ beforeEach(() => {
         {
             ...initial,
             home: "/home/me",
-            projectRoots: [{ path: "/work", depth: 1 }],
+            preferences: testPreferences({ projectRoots: [{ path: "/work", depth: 1, selfIndex: false }] }),
             sessions: {
                 a: { id: "a", name: "app", kind: "project", cwd: "/work/app", pinned: false, activeWindowId: "" },
                 s: { id: "s", name: "site", kind: "project", cwd: "/work/site", pinned: false, activeWindowId: "" },

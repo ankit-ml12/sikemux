@@ -591,10 +591,6 @@ function baseSnapshot(): PersistedSnapshot {
     activeSessionId: "s-sikemux",
     recent: [],
     prefs: {
-      projectRoots: [{ path: `${DEMO_HOME}/code`, depth: 1 }],
-      languageServerTrust: Object.fromEntries(
-        DEMO_PROJECTS.map((project) => [project.path, true]),
-      ),
       windowOpacity: 0.81,
       paneShader: true,
       sideRailWidth: 258,

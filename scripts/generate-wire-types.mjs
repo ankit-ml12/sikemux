@@ -195,6 +195,7 @@ const LIMITS = [
   [`${WIRE}/protocol.rs`, "DEFAULT_TEXT_SCALE"],
   [`${WIRE}/protocol.rs`, "MIN_TEXT_SCALE"],
   [`${WIRE}/protocol.rs`, "MAX_TEXT_SCALE"],
+  [`${WIRE}/protocol.rs`, "MAX_PROJECT_DEPTH"],
   [`${CORE}/acp/mod.rs`, "MAX_ATTACHMENTS"],
 ];
 

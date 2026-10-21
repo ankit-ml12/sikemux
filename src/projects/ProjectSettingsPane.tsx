@@ -355,7 +355,7 @@ function CheckSection({
 
 function GitSection({ project, visible }: { project: string; visible: boolean }) {
     const { repo, repos } = useProjectRepo(project, visible);
-    const chosen = useStore((s) => s.defaultGitRepos[project]);
+    const chosen = useStore((s) => s.preferences?.defaultGitRepos[project]);
     return (
         <SettingsSection
             title="Default git repository"
@@ -398,7 +398,7 @@ function GitSection({ project, visible }: { project: string; visible: boolean })
 
 function GeneralPage({ project }: { project: string }) {
     const worktree = usePreference("agentWorktreeDefaults")?.[project] === true;
-    const languageServers = useStore((s) => s.languageServerTrust[project] === true);
+    const languageServers = useStore((s) => s.preferences?.languageServerTrust[project] === true);
     const spaces = useStore((s) => s.spaces);
     const space = useStore((s) => s.projectSpaces[project] ?? "");
     return (

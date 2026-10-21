@@ -26,7 +26,6 @@ import type {
     GitPaneView,
     GlobalSearchView,
     PickerMode,
-    ProjectRoot,
     ProjectSpace,
     ProviderProfile,
     ProviderProfileSelection,
@@ -52,8 +51,6 @@ export interface DomainState {
     activeSessionId: string;
 
     recent: RecentEntry[];
-
-    projectRoots: ProjectRoot[];
     paneShader: boolean;
     /** Agents show a character in place of their harness logo. */
     /** How agents' faces look, as the core keeps it. */
@@ -116,10 +113,6 @@ export interface DomainState {
     providerProfiles: ProviderProfile[];
     selectedProviderProfileIds: ProviderProfileSelection;
     defaultAgentPermissionMode: AgentPermissionMode;
-    /** Whether each project, by root path, may start its language servers. A project absent here has not been asked. */
-    languageServerTrust: Record<string, boolean>;
-    /** For a project folder that holds several repositories, by root path, the one its Git views open. */
-    defaultGitRepos: Record<string, string>;
 }
 
 export type UpdateOperationState = "available" | "waiting" | "preparing" | "downloading" | "installing" | "restarting" | "error";
@@ -271,7 +264,6 @@ export const useStore = create<StoreState>(() => {
         windowsBySession: { [session.id]: [window.id] },
         activeSessionId: session.id,
         recent: [],
-        projectRoots: [],
         paneShader: true,
         faceStyle: { on: false, pack: DEFAULT_BUDDY_STYLE.pack, shape: DEFAULT_BUDDY_STYLE.shape, motion: true },
         faces: {},
@@ -316,8 +308,6 @@ export const useStore = create<StoreState>(() => {
         providerProfiles: defaultProviderProfiles(),
         selectedProviderProfileIds: defaultProviderProfileSelection(),
         defaultAgentPermissionMode: "bypass",
-        languageServerTrust: {},
-        defaultGitRepos: {},
 
         home: "",
         pluginManifests: [],

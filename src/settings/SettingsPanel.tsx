@@ -25,7 +25,7 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { setPreference, usePreference } from "../state/preferences";
+import { setPreference, usePreference, projectRootsOf } from "../state/preferences";
 import type { MidTurnSend } from "../api/generated/wire";
 import {
     cloneTheme,
@@ -122,7 +122,7 @@ function isFindShortcut(event: KeyboardEvent): boolean {
 }
 
 export function SettingsPanel() {
-    const projectRoots = useStore((s) => s.projectRoots);
+    const projectRoots = useStore(projectRootsOf);
     const themeId = usePreference("themeId") ?? DEFAULT_THEME_ID;
     const windowOpacity = useStore((s) => s.windowOpacity);
     const windowBlur = useStore((s) => s.windowBlur);

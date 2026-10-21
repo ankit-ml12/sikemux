@@ -11,6 +11,7 @@ import { IconChevron, IconFolder, IconGit } from "../ui/Icons";
 import { WorktreeToggle } from "./ChatWorktree";
 import type { WorktreeSwitchState } from "./worktreeSwitch";
 import "../styles/chat/project-strip.css";
+import { projectRootsOf } from "../state/preferences";
 
 interface Choice {
     path: string;
@@ -26,7 +27,7 @@ function ProjectSwitcher({ agentId, cwd, onClose }: { agentId: string; cwd: stri
     const home = useStore((s) => s.home);
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const projectRoots = useStore((s) => s.projectRoots);
+    const projectRoots = useStore(projectRootsOf);
     const scanned = useResourceEnabled(projectRoots.length > 0, projectRootsScanR, projectRoots).data;
     const [query, setQuery] = useState("");
     const [selected, setSelected] = useState(0);
