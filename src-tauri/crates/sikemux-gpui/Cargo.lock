@@ -3523,6 +3523,14 @@ version = "0.3.9"
 source = "git+https://github.com/sikemux/gpui?rev=bd0747139ec6b0f824ca159a38c6319fce4eb0e1#bd0747139ec6b0f824ca159a38c6319fce4eb0e1"
 
 [[package]]
+name = "gpui-terminal-grid"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
+ "gpui-pre-platform",
+]
+
+[[package]]
 name = "gpui-transcript"
 version = "0.1.0"
 dependencies = [
@@ -8249,6 +8257,7 @@ dependencies = [
  "sikemux-client",
  "sikemux-fold",
  "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-markdown",
  "sikemux-process",
  "sikemux-pty",
