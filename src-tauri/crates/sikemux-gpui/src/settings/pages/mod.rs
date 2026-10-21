@@ -17,6 +17,7 @@ mod devices;
 mod general;
 mod keybindings;
 mod plugins;
+pub mod theme_editor;
 
 /// What the pages keep while settings are open: what the core last answered
 /// for them, and the fields being typed in.

@@ -34,6 +34,9 @@ pub struct Fields {
     strength: Entity<SliderState>,
     opacity: Entity<SliderState>,
     blur: Entity<SliderState>,
+    /// The theme being edited, when one is.
+    pub editor: Option<super::theme_editor::Editor>,
+    pub reading_wallpaper: bool,
     _watching: Vec<Subscription>,
 }
 
@@ -121,6 +124,8 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             strength,
             opacity,
             blur,
+            editor: None,
+            reading_wallpaper: false,
             _watching: vec![typing, moved_strength, moved_opacity, moved_blur],
         });
     }
@@ -219,84 +224,205 @@ pub fn render(
     };
     let listed = Rc::new(lines(&themes, &fields.query, fields.tone));
     let picked = preferences.theme_id.clone();
-    let list =
-        {
-            let (listed, this, t) = (listed.clone(), this.clone(), t.clone());
-            uniform_list("theme-list", listed.len(), move |range, _, _| {
-                range
-                    .map(|at| match &listed[at] {
-                        Line::Group(label, count) => div()
-                            .id(("theme-group", at))
+    let list = {
+        let (listed, this, t) = (listed.clone(), this.clone(), t.clone());
+        uniform_list("theme-list", listed.len(), move |range, _, _| {
+            range
+                .map(|at| match &listed[at] {
+                    Line::Group(label, count) => div()
+                        .id(("theme-group", at))
+                        .flex()
+                        .items_end()
+                        .gap(px(6.))
+                        .h(px(THEME_ROW))
+                        .px(px(12.))
+                        .pb(px(4.))
+                        .text_size(px(10.5))
+                        .text_color(t.text_tertiary)
+                        .child(*label)
+                        .child(count.to_string()),
+                    Line::Theme(summary) => {
+                        let chosen = summary.id == picked;
+                        let (pick, id) = (this.clone(), summary.id.clone());
+                        div()
+                            .id(("theme", at))
+                            .w_full()
                             .flex()
-                            .items_end()
-                            .gap(px(6.))
+                            .items_center()
+                            .gap(px(10.))
                             .h(px(THEME_ROW))
                             .px(px(12.))
-                            .pb(px(4.))
-                            .text_size(px(10.5))
-                            .text_color(t.text_tertiary)
-                            .child(*label)
-                            .child(count.to_string()),
-                        Line::Theme(summary) => {
-                            let chosen = summary.id == picked;
-                            let (this, id) = (this.clone(), summary.id.clone());
-                            div()
-                                .id(("theme", at))
-                                .flex()
-                                .items_center()
-                                .gap(px(10.))
-                                .h(px(THEME_ROW))
-                                .px(px(12.))
-                                .cursor_pointer()
-                                .when(chosen, |row| row.bg(t.surface_chosen))
-                                .when(!chosen, |row| row.hover(|style| style.bg(t.surface_hover)))
-                                .on_click(move |_, _, cx| {
+                            .cursor_pointer()
+                            .when(chosen, |row| row.bg(t.surface_chosen))
+                            .when(!chosen, |row| row.hover(|style| style.bg(t.surface_hover)))
+                            .on_click(move |_, _, cx| {
+                                let id = id.clone();
+                                pick.update(cx, |bench, _| {
+                                    crate::settings::set(bench, "themeId", id)
+                                })
+                            })
+                            .child(
+                                div()
+                                    .size(px(18.))
+                                    .rounded(theme::RADIUS_2)
+                                    .border_1()
+                                    .border_color(theme::color(&summary.line))
+                                    .bg(theme::color(&summary.bg))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(
+                                        div()
+                                            .size(px(6.))
+                                            .rounded_full()
+                                            .bg(theme::color(&summary.acc)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(12.5))
+                                    .text_color(t.text_primary)
+                                    .child(summary.name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(px(2.))
+                                    .children(summary.swatches.iter().map(|swatch| {
+                                        div().size(px(8.)).rounded(px(2.)).bg(theme::color(swatch))
+                                    })),
+                            )
+                            .child({
+                                let (this, id, custom) = (
+                                    this.clone(),
+                                    summary.id.clone(),
+                                    summary.source == ThemeSource::Custom,
+                                );
+                                ui::IconButton::new(
+                                    SharedString::from(format!("theme-edit-{}", summary.id)),
+                                    Icon::Pencil,
+                                    if custom {
+                                        "Edit theme"
+                                    } else {
+                                        "Customize a copy"
+                                    },
+                                )
+                                .small()
+                                .on_click(move |_, window, cx| {
                                     let id = id.clone();
-                                    this.update(cx, |bench, _| {
-                                        crate::settings::set(bench, "themeId", id)
+                                    this.update(cx, |bench, cx| match custom {
+                                        true => super::theme_editor::edit(bench, &id, window, cx),
+                                        false => {
+                                            super::theme_editor::customize(bench, id, window, cx)
+                                        }
                                     })
                                 })
-                                .child(
-                                    div()
-                                        .size(px(18.))
-                                        .rounded(theme::RADIUS_2)
-                                        .border_1()
-                                        .border_color(theme::color(&summary.line))
-                                        .bg(theme::color(&summary.bg))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .child(
-                                            div()
-                                                .size(px(6.))
-                                                .rounded_full()
-                                                .bg(theme::color(&summary.acc)),
-                                        ),
+                            })
+                            .when(summary.source == ThemeSource::Custom, |row| {
+                                let (this, id) = (this.clone(), summary.id.clone());
+                                row.child(
+                                    ui::IconButton::new(
+                                        SharedString::from(format!("theme-delete-{}", summary.id)),
+                                        Icon::Trash,
+                                        "Delete theme",
+                                    )
+                                    .small()
+                                    .on_click(
+                                        move |_, _, cx| {
+                                            let id = id.clone();
+                                            this.update(cx, |bench, _| {
+                                                super::theme_editor::delete(bench, &id)
+                                            })
+                                        },
+                                    ),
                                 )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_size(px(12.5))
-                                        .text_color(t.text_primary)
-                                        .child(summary.name.clone()),
-                                )
-                                .child(div().flex().gap(px(2.)).children(
-                                    summary.swatches.iter().map(|swatch| {
-                                        div().size(px(8.)).rounded(px(2.)).bg(theme::color(swatch))
-                                    }),
-                                ))
-                                .when(chosen, |row| {
-                                    row.child(ui::icon(Icon::Check, 12.).text_color(t.accent))
-                                })
-                        }
+                            })
+                            .when(chosen, |row| {
+                                row.child(ui::icon(Icon::Check, 12.).text_color(t.accent))
+                            })
+                    }
+                })
+                .collect()
+        })
+        .h(px(THEMES_SHOWN))
+    };
+    let worn = themes
+        .iter()
+        .find(|summary| summary.id == preferences.theme_id);
+    let current = worn.map(|worn| {
+        let custom = worn.source == ThemeSource::Custom;
+        let (from, change, id) = (this.clone(), this.clone(), worn.id.clone());
+        div()
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .p(px(10.))
+            .border_b_1()
+            .border_color(t.line_soft)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .child(
+                        div()
+                            .text_size(px(10.5))
+                            .text_color(t.text_tertiary)
+                            .child("Wearing"),
+                    )
+                    .child(
+                        div()
+                            .truncate()
+                            .text_size(px(13.))
+                            .text_color(t.text_primary)
+                            .child(worn.name.clone()),
+                    ),
+            )
+            .child(
+                ui::Button::new(
+                    "theme-from-wallpaper",
+                    if fields.reading_wallpaper {
+                        "Reading…"
+                    } else {
+                        "From wallpaper"
+                    },
+                    ui::Variant::Outline,
+                )
+                .icon(Icon::Image)
+                .disabled(fields.reading_wallpaper)
+                .on_click(move |_, window, cx| {
+                    from.update(cx, |bench, cx| {
+                        super::theme_editor::from_wallpaper(bench, window, cx)
                     })
-                    .collect()
-            })
-            .h(px(THEMES_SHOWN))
-        };
+                }),
+            )
+            .child(
+                ui::Button::new(
+                    "theme-change",
+                    if custom { "Edit" } else { "Customize" },
+                    ui::Variant::Outline,
+                )
+                .icon(Icon::Pencil)
+                .on_click(move |_, window, cx| {
+                    let id = id.clone();
+                    change.update(cx, |bench, cx| match custom {
+                        true => super::theme_editor::edit(bench, &id, window, cx),
+                        false => super::theme_editor::customize(bench, id, window, cx),
+                    })
+                }),
+            )
+    });
+    let editing = fields
+        .editor
+        .as_ref()
+        .map(|editor| super::theme_editor::view(editor, this, cx));
     let theme_body = div()
+        .children(current)
         .child(
             div()
                 .flex()
@@ -312,7 +438,8 @@ pub fn render(
                 )
                 .child(tone),
         )
-        .child(list);
+        .child(list)
+        .children(editing);
 
     let text_size = {
         let this = this.clone();

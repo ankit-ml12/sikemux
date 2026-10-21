@@ -111,6 +111,14 @@ pub fn toggle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workb
 }
 
 pub fn close(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
+    let editing = bench
+        .settings
+        .as_ref()
+        .and_then(|settings| settings.pages.appearance.as_ref())
+        .is_some_and(|appearance| appearance.editor.is_some());
+    if editing {
+        pages::theme_editor::wear_picked(bench);
+    }
     bench.settings = None;
     bench.focus.focus(window, cx);
     cx.notify();

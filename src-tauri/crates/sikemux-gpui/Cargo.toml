@@ -17,6 +17,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
+tempfile = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 flate2 = "1"
 # The same GPUI as GPUI Kit's, named `gpui` for the macros that expand to it.
@@ -47,8 +49,8 @@ core-foundation = "0.10"
 objc2 = "0.6"
 objc2-core-foundation = "0.3"
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSDockTile"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSDockTile", "NSScreen", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL"] }
 mac-notification-sys = "0.6"
 
 [dev-dependencies]

@@ -8894,6 +8894,7 @@ dependencies = [
  "gpui-pre-platform",
  "gpui-terminal-grid",
  "gpui-transcript",
+ "image",
  "libc",
  "lsp-types",
  "mac-notification-sys",
@@ -8916,6 +8917,7 @@ dependencies = [
  "sikemux-simulator",
  "sikemux-wire",
  "smallvec",
+ "tempfile",
  "textmate-highlight",
  "tokio",
 ]
