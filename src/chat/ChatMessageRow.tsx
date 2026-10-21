@@ -302,6 +302,7 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
                         </Fragment>
                     ),
                 )}
+                <div className="chat-letter-end" aria-hidden="true" />
                 <div className="chat-message-meta">
                     <CopyButton value={letters.map((letter) => letter.text).join("\n\n")} label="message" size={15} />
                     {at !== null && <SentTime at={at} took={null} />}
