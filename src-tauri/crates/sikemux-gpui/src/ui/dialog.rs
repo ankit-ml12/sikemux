@@ -5,7 +5,8 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, Div, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, RenderOnce, SharedString, Styled, Window,
+    KeyDownEvent, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Window,
 };
 
 use super::text;
@@ -17,6 +18,18 @@ type Typed = Rc<dyn Fn(String, &mut Window, &mut App)>;
 /// The sheet every dialog is drawn on: a title, what it says, then its buttons on a
 /// sunken foot. Escape calls `no`, Enter `yes`.
 fn sheet(
+    title: SharedString,
+    body: AnyElement,
+    foot: Div,
+    yes: Answer,
+    no: Answer,
+    cx: &mut App,
+) -> AlertDialog {
+    sheet_of(px(440.), title, body, foot, yes, no, cx)
+}
+
+fn sheet_of(
+    width: Pixels,
     title: SharedString,
     body: AnyElement,
     foot: Div,
@@ -45,7 +58,7 @@ fn sheet(
         .popup(
             div()
                 .id("dialog")
-                .w(px(440.))
+                .w(width)
                 .flex()
                 .flex_col()
                 .overflow_hidden()
@@ -442,6 +455,95 @@ impl RenderOnce for Choices {
                 .child("esc  cancel"),
             no.clone(),
             no,
+            cx,
+        )
+    }
+}
+
+/// The keys a place answers to, in sections, as a wide sheet Escape closes.
+#[derive(IntoElement)]
+pub struct Cheatsheet {
+    title: SharedString,
+    sections: &'static [Section],
+    on_close: Answer,
+}
+
+/// A cheatsheet's section: its name, then each key with what it does.
+pub type Section = (&'static str, &'static [(&'static str, &'static str)]);
+
+impl Cheatsheet {
+    pub fn new(title: impl Into<SharedString>, sections: &'static [Section]) -> Self {
+        Self {
+            title: title.into(),
+            sections,
+            on_close: Rc::new(|_, _| {}),
+        }
+    }
+
+    pub fn on_close(mut self, close: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_close = Rc::new(close);
+        self
+    }
+}
+
+impl RenderOnce for Cheatsheet {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let t = Tokens::get(cx).clone();
+        let count = self.sections.len();
+        let sections = self
+            .sections
+            .iter()
+            .enumerate()
+            .map(|(index, (title, rows))| {
+                div()
+                    .px(px(16.))
+                    .pt(px(8.))
+                    .pb(px(12.))
+                    .when(index + 1 < count, |section| {
+                        section.border_b_1().border_color(t.border)
+                    })
+                    .child(
+                        div()
+                            .mb(px(6.))
+                            .text_size(px(10.))
+                            .text_color(t.text_tertiary)
+                            .child(title.to_uppercase()),
+                    )
+                    .children(rows.iter().map(|(keys, label)| {
+                        div()
+                            .flex()
+                            .gap(px(12.))
+                            .py(px(2.))
+                            .text_size(px(11.5))
+                            .child(
+                                div()
+                                    .w(px(180.))
+                                    .flex_none()
+                                    .text_color(t.accent)
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(*keys),
+                            )
+                            .child(div().text_color(t.text_secondary).child(*label))
+                    }))
+            });
+        let close = self.on_close.clone();
+        sheet_of(
+            px(560.),
+            self.title,
+            div()
+                .id("cheatsheet")
+                .py(px(4.))
+                .max_h(px(560.))
+                .overflow_y_scroll()
+                .font_family(theme::MONO)
+                .children(sections)
+                .into_any_element(),
+            div()
+                .text_size(px(11.))
+                .text_color(t.text_tertiary)
+                .child("esc  close"),
+            close.clone(),
+            close,
             cx,
         )
     }

@@ -9,7 +9,7 @@ mod lists;
 mod pane;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
-pub use dialog::{Choice, Choices, Confirm, Prompt};
+pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
 pub use dock::{DockMenu, DockRow};
 pub use floats::{float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};

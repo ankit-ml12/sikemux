@@ -230,10 +230,6 @@ impl Workbench {
             "preferences",
             Watch::new("preferences", json!({}), &["preferences"]),
         ));
-        let _ = asks.send(Ask::Watch(
-            "drafts",
-            Watch::new("drafts", json!({}), &["drafts"]),
-        ));
         let _ = asks.send(Ask::Follow("git"));
         let _ = asks.send(Ask::Follow("files"));
         let _ = asks.send(Ask::Follow("lsp"));
@@ -847,6 +843,11 @@ impl Workbench {
             "git-overview",
             Watch::new("git.overview", json!({ "repo": path }), &["git"]),
         ));
+        let drafts: Vec<String> = path.iter().map(|path| format!("git:{path}")).collect();
+        let _ = self.asks.send(Ask::Watch(
+            "drafts",
+            Watch::new("drafts", json!({ "keys": drafts }), &["drafts"]),
+        ));
         self.files.show(path.clone().map(PathBuf::from), &self.asks);
         self.watched_project = path;
     }
@@ -1229,7 +1230,8 @@ impl Workbench {
             return;
         }
         let asks = self.asks.clone();
-        let pane = cx.new(|cx| GitPane::new(asks, repo, window, cx));
+        let bench = cx.entity().downgrade();
+        let pane = cx.new(|cx| GitPane::new(asks, repo, bench, window, cx));
         if let Some(overview) = self.reads.get("git-overview") {
             pane.update(cx, |pane, cx| pane.overview(overview, cx));
         }

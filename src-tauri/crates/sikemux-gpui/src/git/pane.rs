@@ -14,7 +14,8 @@ use gpui_kit::{
     div, img, list, px, radians, relative, Action, Anchor, AnyElement, App, AppContext,
     ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, IntoElement, KeyDownEvent, ListAlignment, ListState, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Transformation, Window,
+    SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Transformation,
+    WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_core::git::log::{GitCommit, GitOverview};
@@ -32,7 +33,8 @@ use crate::core::{request, Ask};
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
-use crate::ui::{self, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
+use crate::ui::{self, Cheatsheet, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
+use crate::workbench::{AgentRow, Workbench};
 
 /// Brings the project's Git tab to the front, opening one when it has none.
 #[derive(Clone, Default, PartialEq, gpui::Action)]
@@ -40,6 +42,63 @@ use crate::ui::{self, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
 pub struct FocusGit;
 
 const ROW_HEIGHT: f32 = 26.;
+/// The pane's keys, by page, as its cheatsheet lists them.
+const KEYS: [ui::Section; 4] = [
+    (
+        "Global",
+        &[
+            ("1 2 3", "Changes, History, Branches"),
+            ("h", "switch between Changes and History"),
+            ("?", "open this cheatsheet"),
+            ("/", "filter the list"),
+            ("r", "refresh repo state"),
+            ("F", "fetch all remotes"),
+            ("P / p", "push / pull"),
+            ("^P", "open pull-request page"),
+            ("esc", "close modal / clear filter or range"),
+        ],
+    ),
+    (
+        "Changes",
+        &[
+            ("space", "stage / unstage selected (or range)"),
+            ("v", "toggle range select"),
+            ("a", "toggle stage all"),
+            ("c", "focus commit message"),
+            ("C", "commit the typed message"),
+            ("g", "generate commit message (AI)"),
+            ("⌘⏎", "commit (from message box)"),
+            ("d", "discard menu"),
+            ("s", "stash menu"),
+        ],
+    ),
+    (
+        "History",
+        &[
+            ("enter / space", "actions menu"),
+            ("b", "create branch from commit"),
+            ("r", "reset to commit menu"),
+            ("v", "revert commit"),
+        ],
+    ),
+    (
+        "Branches",
+        &[
+            (
+                "enter / space",
+                "checkout (a remote branch gets a local one)",
+            ),
+            ("n / N", "new branch (from selected / from HEAD)"),
+            ("M", "merge menu"),
+            ("d", "delete menu"),
+            ("R", "rename branch"),
+            ("c", "checkout by name"),
+            ("f", "fetch the selected remote"),
+            ("u", "set remote branch as upstream"),
+        ],
+    ),
+];
+
 /// How long typing rests before the commit message is kept as the draft.
 const DRAFT_PAUSE: Duration = Duration::from_millis(300);
 /// How long a failed operation's message stays in the head.
@@ -184,6 +243,8 @@ enum Asking {
         title: SharedString,
         choices: Vec<Pick>,
     },
+    /// The pane's keys.
+    Keys,
 }
 
 /// One choice of a menu the pane asks with.
@@ -266,6 +327,10 @@ pub struct GitPane {
     draft: Entity<TextareaState>,
     /// A message written into the draft from outside the window's turn, set when it next draws.
     written: Option<String>,
+    /// The store, for the agents whose faces the changed files show.
+    bench: WeakEntity<Workbench>,
+    /// Who wrote the uncommitted lines, as the core's `changeOwners` answers.
+    owners: Value,
     /// The commit message as the core last kept it.
     synced: String,
     _keeping: Task<()>,
@@ -282,6 +347,7 @@ impl GitPane {
     pub fn new(
         asks: UnboundedSender<Ask>,
         repo: String,
+        bench: WeakEntity<Workbench>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -328,6 +394,8 @@ impl GitPane {
             branch_rows: ListState::new(0, ListAlignment::Top, px(400.)),
             draft,
             written: None,
+            bench,
+            owners: Value::Null,
             synced: String::new(),
             _keeping: Task::ready(()),
             generating: false,
@@ -355,6 +423,7 @@ impl GitPane {
             self.read_remotes(cx);
         }
         self.read_stashes(cx);
+        self.read_owners(cx);
         self.list(cx);
     }
 
@@ -1006,6 +1075,9 @@ impl GitPane {
                     .on_no(done(&pane))
                     .into_any_element()
             }
+            Asking::Keys => Cheatsheet::new("Git pane keybindings", &KEYS)
+                .on_close(done(&pane))
+                .into_any_element(),
             Asking::Menu { title, choices } => {
                 let choices = choices
                     .iter()
@@ -1223,6 +1295,70 @@ impl GitPane {
                 .into_iter()
                 .collect(),
         }
+    }
+
+    fn read_owners(&mut self, cx: &mut Context<Self>) {
+        let params = json!({ "dir": self.repo, "staged": false });
+        let answer = request(&self.asks, "changeOwners", params);
+        cx.spawn(async move |pane, cx| {
+            let owners = answer.await.unwrap_or(Value::Null);
+            pane.update(cx, |pane, cx| {
+                pane.owners = owners;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// The agents that wrote some of `path`'s uncommitted lines, by agent id, with the
+    /// agent they ran on, in the order they first appear; and every writer's name.
+    fn writers(&self, path: &str) -> (Vec<(String, String)>, Vec<String>) {
+        let authors = self.owners["authors"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice);
+        let Some(file) = self.owners["files"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|file| file["path"] == path)
+        else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut seen = Vec::new();
+        for run in ["lines", "removed"]
+            .iter()
+            .flat_map(|field| file[*field].as_array().into_iter().flatten())
+        {
+            if let Some(author) = run["author"].as_u64().map(|at| at as usize) {
+                if !seen.contains(&author) {
+                    seen.push(author);
+                }
+            }
+        }
+        let mut faces: Vec<(String, String)> = Vec::new();
+        let mut names = Vec::new();
+        for author in seen.iter().filter_map(|at| authors.get(*at)) {
+            names.push(author["name"].as_str().unwrap_or_default().to_owned());
+            let cli = author["cli"].as_str().unwrap_or_default().to_owned();
+            let shared: Vec<&str> = author["shared"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let ids = if shared.is_empty() {
+                vec![author["agentId"].as_str().unwrap_or_default()]
+            } else {
+                shared
+            };
+            for id in ids {
+                if !faces.iter().any(|(known, _)| known == id) {
+                    faces.push((id.to_owned(), cli.clone()));
+                }
+            }
+        }
+        (faces, names)
     }
 
     fn read_stashes(&mut self, cx: &mut Context<Self>) {
@@ -1669,6 +1805,10 @@ impl GitPane {
         let history = self.page == Page::History;
         match typed {
             "/" => self.find(window, cx),
+            "?" => {
+                self.asking = Some(Asking::Keys);
+                cx.notify();
+            }
             "escape" if self.range.is_some() => {
                 self.range = None;
                 cx.notify();
@@ -2507,6 +2647,45 @@ fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
         )
 }
 
+/// The most faces a changed file shows of the agents that wrote it.
+const MAX_FACES: usize = 4;
+
+/// The faces of the agents that wrote some of `path`'s changes: each agent's own face,
+/// else its agent's mark.
+fn faces(pane: &GitPane, path: &str, cx: &App) -> Option<AnyElement> {
+    let (writers, names) = pane.writers(path);
+    if writers.is_empty() {
+        return None;
+    }
+    let rows: Vec<AgentRow> = pane.bench.upgrade().map_or_else(Vec::new, |bench| {
+        let bench = bench.read(cx);
+        bench
+            .projects()
+            .iter()
+            .flat_map(|project| bench.agents_of(&project.id))
+            .collect()
+    });
+    let marks: Vec<AnyElement> = writers
+        .iter()
+        .take(MAX_FACES)
+        .map(|(id, cli)| match rows.iter().find(|row| &row.id == id) {
+            Some(row) => ui::agent_mark(row, 14., cx),
+            None => ui::mark(cli, 14.),
+        })
+        .collect();
+    Some(
+        div()
+            .id(SharedString::from(format!("faces:{path}")))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(2.))
+            .tooltip(ui::tooltip(format!("Written by {}", names.join(", "))))
+            .children(marks)
+            .into_any_element(),
+    )
+}
+
 /// A glyph a row shows while the pointer is on it.
 fn row_button(
     id: impl Into<SharedString>,
@@ -2716,6 +2895,9 @@ fn entry_row(
                                 .child(dir)
                         })),
                 )
+                .when(pane.hovered.as_ref() != Some(&key), |row| {
+                    row.children(faces(pane, &file.path, cx))
+                })
                 .when(pane.hovered.as_ref() == Some(&key), |row| {
                     row.child(div().flex().gap(px(2.)).children(file_actions(
                         view,
