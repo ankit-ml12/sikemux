@@ -861,6 +861,8 @@ export const THEMES: Theme[] = [
 export const THEMES_BY_ID: Record<string, Theme> = Object.fromEntries(THEMES.map((t) => [t.id, t]));
 
 export const DEFAULT_THEME_ID = "aura-noir";
+/** No custom themes, kept as one array so readers see the same one each time. */
+export const NO_THEMES: readonly Theme[] = [];
 
 export function themeById(id: string): Theme {
     return THEMES_BY_ID[id] ?? THEMES_BY_ID[DEFAULT_THEME_ID];

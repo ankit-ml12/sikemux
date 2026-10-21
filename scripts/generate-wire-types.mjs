@@ -17,6 +17,7 @@ const PLUGIN_API = "src-tauri/crates/sikemux-plugin-api/src";
 const SOURCES = [
   `${WIRE}/protocol.rs`,
   `${WIRE}/chat.rs`,
+  `${WIRE}/theme.rs`,
   `${WIRE}/pty/shell_protocol.rs`,
   `${WIRE}/pty/task.rs`,
   `${WIRE}/accounts/protocol.rs`,

@@ -2,13 +2,11 @@ import { normaliseNotchSettings } from "../notch/notchSettings";
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
 import { sshStartup } from "../terminal/sshStartup";
-import { isTheme } from "../themes";
 import { parseReleaseCredits } from "../api/releases";
 import type { AgentAccountBook } from "../api/agents";
 import type { ProjectInfo, Workspace } from "../api/generated/wire";
 import { normaliseKeybindingOverrides } from "../commands/keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
-import { registerCustomThemes } from "../themes/bus";
 import { accountAgentTypes, agentTypes, hasAccounts, isAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
@@ -108,8 +106,6 @@ function readReleaseNotes(saved: unknown): StoreState["lastReleaseNotes"] {
 /** Each setting this window saves, and how a saved value reads back: one it cannot read keeps the store's default. */
 const PREFS = {
     projectRoots: (saved, current) => (Array.isArray(saved) ? normaliseProjectRoots(saved) : current),
-    themeId: text,
-    customThemes: (saved, current) => (Array.isArray(saved) ? saved.filter(isTheme) : current),
     paneShader: flag,
     paneImage: (saved, current) => (typeof saved === "string" || saved === null ? saved : current),
     paneStrength: finite(clampPaneStrength),
@@ -999,7 +995,6 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
         disabledPlugins: [...new Set((workspace?.disabledPlugins ?? []).filter(isPluginId))],
     });
     pruneOnDemandWindows();
-    registerCustomThemes(getState().customThemes);
     // The disk still holds `raw`, so the first save after a migration rewrites it in the current form.
     lastSaved = raw;
     lastSlices = takeSlices(getState());

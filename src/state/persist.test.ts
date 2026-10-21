@@ -126,7 +126,7 @@ describe("frontend persistence", () => {
     });
 
     it("classifies hydration before persistence can overwrite protected state", () => {
-        setState({ themeId: "unchanged" });
+        setState({ cloudBrowser: "unchanged" });
 
         expect(applyHydrate("")).toBe("empty");
         expect(hydrationAllowsPersistence("empty")).toBe(true);
@@ -142,7 +142,7 @@ describe("frontend persistence", () => {
             ),
         ).toBe("unsupported-future");
         expect(hydrationAllowsPersistence("unsupported-future")).toBe(false);
-        expect(getState().themeId).toBe("unchanged");
+        expect(getState().cloudBrowser).toBe("unchanged");
         expect(invoke).not.toHaveBeenCalled();
     });
 
@@ -747,12 +747,12 @@ describe("frontend persistence", () => {
         const first = deferred<void>();
         invoke.mockImplementationOnce(() => first.promise).mockResolvedValue(undefined);
 
-        setState({ themeId: "first" });
+        setState({ cloudBrowser: "first" });
         const firstFlush = flushPersist();
         await Promise.resolve();
         expect(invoke).toHaveBeenCalledTimes(1);
 
-        setState({ themeId: "latest" });
+        setState({ cloudBrowser: "latest" });
         const secondFlush = flushPersist();
         await Promise.resolve();
         expect(invoke).toHaveBeenCalledTimes(1);
@@ -761,19 +761,19 @@ describe("frontend persistence", () => {
         await expect(firstFlush).resolves.toBe(true);
         await expect(secondFlush).resolves.toBe(true);
         expect(invoke).toHaveBeenCalledTimes(2);
-        expect(JSON.parse(invoke.mock.calls[1][1].data).prefs.themeId).toBe("latest");
+        expect(JSON.parse(invoke.mock.calls[1][1].data).prefs.cloudBrowser).toBe("latest");
     });
 
     it("drops an obsolete queued snapshot when state returns to the active write", async () => {
         const first = deferred<void>();
         invoke.mockImplementationOnce(() => first.promise).mockResolvedValue(undefined);
 
-        setState({ themeId: "active" });
+        setState({ cloudBrowser: "active" });
         const activeFlush = flushPersist();
         await Promise.resolve();
-        setState({ themeId: "obsolete" });
+        setState({ cloudBrowser: "obsolete" });
         void flushPersist();
-        setState({ themeId: "active" });
+        setState({ cloudBrowser: "active" });
         void flushPersist();
 
         first.resolve();
@@ -784,13 +784,13 @@ describe("frontend persistence", () => {
     it("surfaces failed saves and retries the unsaved snapshot", async () => {
         vi.useFakeTimers();
         invoke.mockRejectedValueOnce(new Error("disk full")).mockResolvedValue(undefined);
-        setState({ themeId: "retry-me" });
+        setState({ cloudBrowser: "retry-me" });
 
         await expect(flushPersist()).resolves.toBe(false);
         expect(useToasts.getState().toasts.at(-1)?.text).toContain("disk full");
         await vi.advanceTimersByTimeAsync(1600);
         expect(invoke).toHaveBeenCalledTimes(2);
-        expect(JSON.parse(invoke.mock.calls[1][1].data).prefs.themeId).toBe("retry-me");
+        expect(JSON.parse(invoke.mock.calls[1][1].data).prefs.cloudBrowser).toBe("retry-me");
     });
 
     it("hydrates supported old snapshots safely, scrubs legacy Bruno credentials, and ignores malformed records", () => {

@@ -12,6 +12,7 @@ import { useKeymap } from "./keymap";
 import { getKeybindingAction, type CoreKeybindingActionId } from "./keybindings";
 import { activeAgentId, agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
+import { testPreferences } from "../test/preferences";
 
 vi.mock("../projects/projectState", () => ({ activeProject: vi.fn(() => null) }));
 vi.mock("../state/commands", async (importOriginal) => ({
@@ -409,7 +410,7 @@ describe("text size shortcuts", () => {
     }
 
     beforeEach(() => {
-        setState({ preferences: { midTurnSend: "steer", uiTextScale: 1, terminalFontSize: 13, chatTextScale: 1, editorTextScale: 1 } });
+        setState({ preferences: testPreferences() });
     });
 
     it("resizes the terminal when the press lands outside a chat", () => {

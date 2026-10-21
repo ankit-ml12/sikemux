@@ -27,7 +27,17 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { setPreference, usePreference } from "../state/preferences";
 import type { MidTurnSend } from "../api/generated/wire";
-import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
+import {
+    cloneTheme,
+    DEFAULT_THEME_ID,
+    newCustomThemeId,
+    NO_THEMES,
+    THEME_GROUPS,
+    THEMES,
+    themeFromColours,
+    type Theme,
+    type ThemeGroupKey,
+} from "../themes";
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
 import { useLeaveSettingsOnNavigation } from "./leaveSettings";
@@ -113,7 +123,7 @@ function isFindShortcut(event: KeyboardEvent): boolean {
 
 export function SettingsPanel() {
     const projectRoots = useStore((s) => s.projectRoots);
-    const themeId = useStore((s) => s.themeId);
+    const themeId = usePreference("themeId") ?? DEFAULT_THEME_ID;
     const windowOpacity = useStore((s) => s.windowOpacity);
     const windowBlur = useStore((s) => s.windowBlur);
     const cloudBrowser = useStore((s) => s.cloudBrowser);
@@ -1238,7 +1248,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
     const paneImage = useStore((state) => state.paneImage);
     const paneStrength = useStore((state) => state.paneStrength);
     const home = useStore((state) => state.home);
-    const customThemes = useStore((s) => s.customThemes);
+    const customThemes = usePreference("customThemes") ?? NO_THEMES;
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
 

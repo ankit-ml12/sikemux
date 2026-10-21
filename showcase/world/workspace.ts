@@ -595,7 +595,6 @@ function baseSnapshot(): PersistedSnapshot {
       languageServerTrust: Object.fromEntries(
         DEMO_PROJECTS.map((project) => [project.path, true]),
       ),
-      themeId: "aura-noir",
       windowOpacity: 0.81,
       paneShader: true,
       sideRailWidth: 258,

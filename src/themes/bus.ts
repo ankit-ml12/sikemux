@@ -202,13 +202,23 @@ function applyThemeObject(next: Theme): void {
     });
 }
 
+/* The colours on screen now, so putting the same ones on again does nothing. */
+let worn = "";
+
+function wear(theme: Theme): void {
+    const colours = JSON.stringify(theme);
+    if (colours === worn) return;
+    worn = colours;
+    applyThemeObject(theme);
+}
+
 export function applyTheme(id: string): void {
-    applyThemeObject(resolveTheme(id));
+    wear(resolveTheme(id));
 }
 
 /** Apply a theme object directly without touching the persisted selection — used for live editing previews. */
 export function previewTheme(theme: Theme): void {
-    applyThemeObject(theme);
+    wear(theme);
 }
 
 export function applyWindowOpacity(opacity: number): void {

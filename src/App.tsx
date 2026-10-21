@@ -88,6 +88,7 @@ import { notify, reportError, swallow } from "./state/toast";
 import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
+import { DEFAULT_THEME_ID } from "./themes";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
 import { startPageTheme } from "./chat/pageTheme";
 import { applyTerminalFontSize, currentTerminalFontSize } from "./terminal/fontSize";
@@ -615,6 +616,13 @@ export default function App() {
     useEffect(() => {
         if (uiTextScale !== undefined) document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
     }, [uiTextScale]);
+    const themeId = usePreference("themeId");
+    const customThemes = usePreference("customThemes");
+    useEffect(() => {
+        if (themeId === undefined || !customThemes) return;
+        registerCustomThemes(customThemes);
+        applyTheme(themeId);
+    }, [themeId, customThemes]);
     const terminalFontSize = usePreference("terminalFontSize");
     useEffect(() => {
         if (terminalFontSize !== undefined && terminalFontSize !== currentTerminalFontSize()) applyTerminalFontSize(terminalFontSize);
@@ -693,8 +701,8 @@ export default function App() {
                     cmd.setHome(boot.home);
                     hydrationResult = applyHydrate(boot.state, accounts, workspace);
                     const st = getState();
-                    registerCustomThemes(st.customThemes);
-                    applyTheme(st.themeId);
+                    registerCustomThemes(preferences?.customThemes ?? []);
+                    applyTheme(preferences?.themeId ?? DEFAULT_THEME_ID);
                     startPageTheme();
                     applyWindowOpacity(st.windowOpacity);
                     if (preferences) {

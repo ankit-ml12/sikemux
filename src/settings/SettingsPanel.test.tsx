@@ -10,6 +10,7 @@ import { SETTINGS_INDEX, SETTINGS_PAGE_ORDER } from "./settingsIndex";
 import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { SettingsPanel } from "./SettingsPanel";
+import { testPreferences } from "../test/preferences";
 
 vi.mock("../themes/wallpaper", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../themes/wallpaper")>()),
@@ -86,20 +87,22 @@ describe("SettingsPanel keybindings", () => {
     it("drafts a theme from the wallpaper and keeps it once saved", async () => {
         const user = userEvent.setup();
         vi.spyOn(settingsApi, "wallpaperImage").mockResolvedValue({ name: "Neon", dataUrl: "data:image/png;base64," });
+        setState({ preferences: testPreferences() });
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "Appearance" }));
 
         await user.click(screen.getByRole("button", { name: /From wallpaper/ }));
         expect(await screen.findByDisplayValue("Neon wallpaper")).toBeInTheDocument();
-        expect(getState().customThemes).toHaveLength(0);
+        expect(getState().preferences?.customThemes).toHaveLength(0);
 
         await user.click(screen.getByRole("button", { name: "Save theme" }));
-        expect(getState().customThemes.map((theme) => theme.name)).toEqual(["Neon wallpaper"]);
-        expect(getState().themeId).toBe(getState().customThemes[0].id);
+        expect(getState().preferences?.customThemes.map((theme) => theme.name)).toEqual(["Neon wallpaper"]);
+        expect(getState().preferences?.themeId).toBe(getState().preferences?.customThemes[0].id);
     });
 
     it("searches Ghostty's themes and applies them from the keyboard", async () => {
         const user = userEvent.setup();
+        setState({ preferences: testPreferences() });
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "Appearance" }));
 
@@ -116,7 +119,7 @@ describe("SettingsPanel keybindings", () => {
         expect(within(themes).getAllByRole("option")).toHaveLength(1);
 
         await user.type(search, "{ArrowDown}");
-        expect(getState().themeId).toBe("ghostty-rose-pine-dawn");
+        expect(getState().preferences?.themeId).toBe("ghostty-rose-pine-dawn");
         expect(within(themes).getByRole("option", { selected: true })).toHaveTextContent("Rose Pine Dawn");
     });
 });

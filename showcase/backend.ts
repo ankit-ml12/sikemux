@@ -322,6 +322,8 @@ export class ShowcaseBackend implements IpcTransport {
         terminalFontSize: 13,
         chatTextScale: 1,
         editorTextScale: 1,
+        themeId: "aura-noir",
+        customThemes: [],
       }),
     );
     this.onCore(

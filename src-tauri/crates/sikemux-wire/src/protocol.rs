@@ -1094,6 +1094,7 @@ pub const MIN_TEXT_SCALE: f64 = 0.7;
 pub const MAX_TEXT_SCALE: f64 = 2.0;
 /// The sizes the whole interface's text may be drawn at.
 pub const UI_TEXT_SCALES: [f64; 3] = [1.0, 1.1, 1.25];
+pub const DEFAULT_THEME_ID: &str = "aura-noir";
 
 /// How the person wants Sikemux to behave, the same in every app. A field
 /// left out reads as its default.
@@ -1107,6 +1108,10 @@ pub struct Preferences {
     pub terminal_font_size: u32,
     pub chat_text_scale: f64,
     pub editor_text_scale: f64,
+    /// The theme the person picked, one of the curated, Ghostty or their own.
+    pub theme_id: String,
+    /// The themes the person made.
+    pub custom_themes: Vec<crate::theme::Theme>,
 }
 
 impl Default for Preferences {
@@ -1117,6 +1122,8 @@ impl Default for Preferences {
             terminal_font_size: DEFAULT_TERMINAL_FONT_SIZE,
             chat_text_scale: DEFAULT_TEXT_SCALE,
             editor_text_scale: DEFAULT_TEXT_SCALE,
+            theme_id: DEFAULT_THEME_ID.to_owned(),
+            custom_themes: Vec::new(),
         }
     }
 }

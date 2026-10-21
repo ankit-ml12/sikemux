@@ -1214,9 +1214,91 @@ export interface Preferences {
   terminalFontSize: number;
   chatTextScale: number;
   editorTextScale: number;
+  /** The theme the person picked, one of the curated, Ghostty or their own. */
+  themeId: string;
+  /** The themes the person made. */
+  customThemes: Theme[];
 }
 
 export type MidTurnSend = 'steer' | 'queue';
+
+export interface Theme {
+  id: string;
+  name: string;
+  dark: boolean;
+  chrome: ThemeChrome;
+  editor: ThemeEditor;
+  highlight: ThemeHighlight;
+  terminal: ThemeTerminal;
+}
+
+export interface ThemeChrome {
+  bg: string;
+  bgDim: string;
+  bgRaised: string;
+  ink: string;
+  inkDim: string;
+  inkMuted: string;
+  acc: string;
+  accLine: string;
+  accDim: string;
+  line: string;
+  hl: string;
+  danger: string;
+}
+
+export interface ThemeEditor {
+  fg: string;
+  bg: string;
+  caret: string;
+  selection: string;
+  activeLine: string;
+  gutter: string;
+  gutterActive: string;
+  indent: string;
+  indentActive: string;
+}
+
+export interface ThemeHighlight {
+  keyword: string;
+  string: string;
+  comment: string;
+  number: string;
+  function: string;
+  type: string;
+  variable: string;
+  property: string;
+  tag: string;
+  operator: string;
+  link: string;
+  invalid: string;
+  meta: string;
+  heading: string;
+}
+
+export interface ThemeTerminal {
+  background: string;
+  foreground: string;
+  cursor: string;
+  cursorAccent: string;
+  selectionBackground: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+}
 
 /** A board as the app and devices read it. */
 export interface ProjectBoard {

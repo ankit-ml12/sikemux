@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installPinchZoom, PINCH_IDLE_MS } from "./pinchZoom";
 import { getState, setState } from "../state/store";
+import { testPreferences } from "../test/preferences";
 
 const initial = getState();
 let uninstall: () => void;
@@ -30,7 +31,7 @@ function pinchWheel(target: Element, deltaY: number, ctrlKey = true): WheelEvent
 beforeEach(() => {
     vi.useFakeTimers();
     setState(initial, true);
-    setState({ preferences: { midTurnSend: "steer", uiTextScale: 1, terminalFontSize: 13, chatTextScale: 1, editorTextScale: 1 } });
+    setState({ preferences: testPreferences() });
     uninstall = installPinchZoom();
 });
 

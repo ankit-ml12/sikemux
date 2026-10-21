@@ -3,15 +3,15 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { useMouseActive } from "../hooks/useMouseActive";
 import { rankBy } from "../lib/fuzzy";
 import { leavingOverlay } from "../lib/motion";
-import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
-import { THEMES, type Theme } from "../themes";
+import { DEFAULT_THEME_ID, NO_THEMES, THEMES, type Theme } from "../themes";
+import { usePreference } from "../state/preferences";
 import { IconSearch } from "../ui/Icons";
 
 /** Every theme by name. Moving through the list wears each one; Enter keeps it and Escape puts the old one back. */
 export function ThemePalette() {
-    const customThemes = useStore((s) => s.customThemes);
-    const keptId = useStore((s) => s.themeId);
+    const customThemes = usePreference("customThemes") ?? NO_THEMES;
+    const keptId = usePreference("themeId") ?? DEFAULT_THEME_ID;
     const themes = useMemo(() => [...customThemes, ...THEMES], [customThemes]);
     const [query, setQuery] = useState("");
     const entries = useMemo(() => rankBy(query, themes, (theme) => theme.name), [query, themes]);

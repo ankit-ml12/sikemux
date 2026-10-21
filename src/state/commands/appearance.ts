@@ -8,9 +8,12 @@ import { setPreference } from "../preferences";
 import { getState, setState } from "../store";
 import { swallow } from "../toast";
 
+export const themeIdNow = (): string => getState().preferences?.themeId ?? DEFAULT_THEME_ID;
+const customThemesNow = (): Theme[] => getState().preferences?.customThemes ?? [];
+
 export function setThemeId(id: string): void {
     applyTheme(id);
-    setState({ themeId: id });
+    setPreference("themeId", id);
 }
 
 /** Live-apply a draft theme to the whole UI without persisting it — drives the theme editor preview. */
@@ -20,24 +23,23 @@ export function previewThemeDraft(theme: Theme): void {
 
 /** Discard any active preview and re-apply the persisted theme selection. */
 export function cancelThemePreview(): void {
-    applyTheme(getState().themeId);
+    applyTheme(themeIdNow());
 }
 
 /** Insert or overwrite a custom theme (matched by id), register it, and make it the active theme. */
 export function saveCustomTheme(theme: Theme): void {
-    setState((s) => {
-        const idx = s.customThemes.findIndex((t) => t.id === theme.id);
-        const customThemes = idx >= 0 ? s.customThemes.map((t, i) => (i === idx ? theme : t)) : [...s.customThemes, theme];
-        return { customThemes };
-    });
-    registerCustomThemes(getState().customThemes);
+    const kept = customThemesNow();
+    const customThemes = kept.some((t) => t.id === theme.id) ? kept.map((t) => (t.id === theme.id ? theme : t)) : [...kept, theme];
+    registerCustomThemes(customThemes);
+    setPreference("customThemes", customThemes);
     setThemeId(theme.id);
 }
 
 export function deleteCustomTheme(id: string): void {
-    setState((s) => ({ customThemes: s.customThemes.filter((t) => t.id !== id) }));
-    registerCustomThemes(getState().customThemes);
-    if (getState().themeId === id) setThemeId(DEFAULT_THEME_ID);
+    const customThemes = customThemesNow().filter((t) => t.id !== id);
+    registerCustomThemes(customThemes);
+    setPreference("customThemes", customThemes);
+    if (themeIdNow() === id) setThemeId(DEFAULT_THEME_ID);
 }
 
 export function setTerminalFontSize(v: number): void {
