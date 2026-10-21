@@ -2,7 +2,6 @@
 //! photographed several times a second and the pictures are encoded as H.264.
 //! Only the photographs are taken on the main thread; encoding has its own.
 
-use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,7 +11,7 @@ use std::time::{Duration, Instant};
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::MainThreadMarker;
+use objc2::{MainThreadMarker, Message};
 use objc2_app_kit::NSImage;
 use objc2_av_foundation::{
     AVAssetWriter, AVAssetWriterInput, AVAssetWriterInputPixelBufferAdaptor, AVAssetWriterStatus,
@@ -106,20 +105,10 @@ pub async fn start(app: &AppHandle, agent_id: &str, path: Option<String>) -> Res
     if let Some(folder) = path.parent() {
         std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
     }
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    view.with_webview(move |platform| {
-        // SAFETY: `with_webview` runs this on the main thread, where `platform.inner()` is
-        // the tab's live WKWebView.
-        let size = unsafe { Retained::retain(platform.inner().cast::<WKWebView>()) }
-            .map(|webview| webview.frame().size);
-        let _ = sender.send(size);
-    })
-    .map_err(|error| error.to_string())?;
-    let size = receiver
+    let size = view
+        .ask(|webview| webview.frame().size)
         .await
-        .ok()
-        .flatten()
-        .ok_or("the tab has no size to record")?;
+        .map_err(|_| "the tab has no size to record")?;
     let (width, height) = (even(size.width), even(size.height));
     let encoder = open(&path, width, height)?;
     let stop = Arc::new(AtomicBool::new(false));
@@ -186,9 +175,9 @@ async fn film(
             break;
         };
         let frames = frames.clone();
-        let _ = view.with_webview(move |platform| {
+        view.run(move |webview| {
             capture(
-                platform.inner(),
+                webview,
                 width,
                 Box::new(move |image| {
                     if let Some(image) = image {
@@ -474,16 +463,12 @@ fn describe(error: &NSError) -> String {
 
 /// Photographs the tab at `width` CSS pixels across and hands the picture over.
 fn capture(
-    pointer: *mut c_void,
+    webview: &WKWebView,
     width: f64,
     done: Box<dyn FnOnce(Option<CFRetained<CGImage>>) + Send>,
 ) {
-    let (Some(webview), Some(mtm)) = (
-        // SAFETY: `capture` is only called inside `with_webview`, on the main thread, with
-        // the tab's live WKWebView.
-        unsafe { Retained::retain(pointer.cast::<WKWebView>()) },
-        MainThreadMarker::new(),
-    ) else {
+    let webview = webview.retain();
+    let Some(mtm) = MainThreadMarker::new() else {
         done(None);
         return;
     };

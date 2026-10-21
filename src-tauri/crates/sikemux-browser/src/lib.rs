@@ -12,14 +12,23 @@ pub mod local_files;
 #[cfg(target_os = "macos")]
 pub mod macos;
 mod runtime;
+mod tab;
 pub mod viewport;
 
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
+
+pub use documents::DocumentEvent;
+pub use tab::{ParentView, Tab, TabSpec};
 
 pub use runtime::set_runtime;
 pub(crate) use runtime::spawn;
 
 pub const BLANK_URL: &str = "about:blank";
+/// Parked pages sit outside the window, since a hidden view still takes file
+/// drops over the spot it last covered. They are hidden too once they are idle.
+pub const PARKED_ORIGIN: f64 = -100_000.0;
 /// Injected into every document before its own scripts, so a page's calls are
 /// already recorded by the time an agent asks about them.
 pub const RECORDER_SCRIPT: &str = include_str!("recorder.js");
@@ -155,4 +164,35 @@ pub struct PageDialog {
     pub kind: &'static str,
     pub message: String,
     pub default_text: Option<String>,
+}
+
+/// A page finished starting or loading, and where its history can go.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageLoad {
+    pub started: bool,
+    pub url: String,
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+}
+
+/// What a tab's page tells whoever holds the tab. Every call comes on the main
+/// thread, while WebKit waits for the answer where there is one.
+pub trait TabEvents: Send + Sync + 'static {
+    /// Whether the page may go to `url`.
+    fn may_load(&self, url: &str) -> bool;
+    fn loaded(&self, load: PageLoad);
+    fn titled(&self, title: String);
+    /// The page changed its address without loading a new document.
+    fn moved(&self, url: String, can_go_back: bool, can_go_forward: bool);
+    /// The page asked for a window of its own; it never gets one.
+    fn new_window(&self, url: String);
+    /// Where a file the page saves goes, or None to refuse it. `suggested` is
+    /// the name the page or the server gave it.
+    fn download_started(&self, url: String, suggested: &Path) -> Option<PathBuf>;
+    fn download_finished(&self, url: String, saved: bool);
+    fn dialog(&self, dialog: Option<PageDialog>);
+    /// Files an agent picked for the page's next file chooser.
+    fn upload(&self) -> Option<Vec<PathBuf>>;
+    fn document(&self, event: DocumentEvent);
+    fn health(&self, stall: Option<TabStall>);
 }

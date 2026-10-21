@@ -1,0 +1,251 @@
+//! A tab's page. The engine makes its WKWebView and keeps it on the main
+//! thread; the handle can be held and cloned on any thread, and everything it
+//! does to the page runs on the main one.
+
+use std::sync::Arc;
+
+#[cfg(target_os = "macos")]
+use objc2::rc::Retained;
+#[cfg(target_os = "macos")]
+use objc2::MainThreadMarker;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSView;
+#[cfg(target_os = "macos")]
+use objc2_web_kit::WKWebView;
+
+use crate::TabEvents;
+
+/// The window view tabs are added to: an `NSView` on macOS.
+#[derive(Clone, Copy)]
+pub struct ParentView(pub *mut std::ffi::c_void);
+
+// SAFETY: only the pointer value crosses threads; it is used on the main thread alone.
+unsafe impl Send for ParentView {}
+
+pub struct TabSpec<'a> {
+    pub agent_id: &'a str,
+    pub tab_id: &'a str,
+    pub url: &'a str,
+    pub user_agent: &'a str,
+    /// The size the page lays out at while it waits off screen to be shown.
+    pub size: (f64, f64),
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone)]
+pub struct Tab {
+    id: Arc<str>,
+    view: Arc<Held>,
+}
+
+/// The page's view, released on the main thread whichever thread lets go last.
+#[cfg(target_os = "macos")]
+struct Held(Option<Retained<WKWebView>>);
+
+// SAFETY: the view inside is only touched on the main thread: through `on_main`, and
+// in `Drop`, which sends it there.
+#[cfg(target_os = "macos")]
+unsafe impl Send for Held {}
+#[cfg(target_os = "macos")]
+unsafe impl Sync for Held {}
+
+#[cfg(target_os = "macos")]
+impl Drop for Held {
+    fn drop(&mut self) {
+        let Some(view) = self.0.take() else {
+            return;
+        };
+        if MainThreadMarker::new().is_some() {
+            drop(view);
+        } else {
+            let held = Held(Some(view));
+            dispatch2::DispatchQueue::main().exec_async(move || drop(held));
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn on_main(work: impl FnOnce() + Send + 'static) {
+    if MainThreadMarker::new().is_some() {
+        work();
+    } else {
+        dispatch2::DispatchQueue::main().exec_async(work);
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Tab {
+    /// Adds the tab's page to `parent`, hidden and parked off screen, and
+    /// starts loading `spec.url`. Waits for the main thread when called off it.
+    pub fn open(
+        parent: ParentView,
+        spec: TabSpec<'_>,
+        events: Arc<dyn TabEvents>,
+    ) -> Result<Tab, String> {
+        let id: Arc<str> = spec.tab_id.into();
+        let (agent_id, url, user_agent, size) = (
+            spec.agent_id.to_owned(),
+            spec.url.to_owned(),
+            spec.user_agent.to_owned(),
+            spec.size,
+        );
+        let tab_id = id.to_string();
+        let make = move || {
+            let parent = parent;
+            MainThreadMarker::new()?;
+            // SAFETY: the caller hands over a live NSView of an open window, and this
+            // runs on the main thread.
+            let parent = unsafe { parent.0.cast::<NSView>().as_ref() }?;
+            Some(Held(Some(crate::macos::open(
+                parent,
+                agent_id,
+                tab_id,
+                &url,
+                &user_agent,
+                size,
+                events,
+            ))))
+        };
+        let held = if MainThreadMarker::new().is_some() {
+            make()
+        } else {
+            let mut made = None;
+            dispatch2::DispatchQueue::main().exec_sync(|| made = make());
+            made
+        };
+        let view = held.ok_or("the window cannot take a browser tab")?;
+        Ok(Tab {
+            id,
+            view: Arc::new(view),
+        })
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Runs `act` on the page on the main thread, at once when called there.
+    pub fn run(&self, act: impl FnOnce(&WKWebView) + Send + 'static) {
+        let view = self.view.clone();
+        on_main(move || {
+            if let Some(webview) = view.0.as_deref() {
+                act(webview);
+            }
+        });
+    }
+
+    /// Runs `act` on the page on the main thread and hands back its answer.
+    pub async fn ask<T: Send + 'static>(
+        &self,
+        act: impl FnOnce(&WKWebView) -> T + Send + 'static,
+    ) -> Result<T, String> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.run(move |webview| {
+            let _ = sender.send(act(webview));
+        });
+        receiver.await.map_err(|_| "the tab went away".to_string())
+    }
+
+    pub fn show(&self) {
+        self.run(|webview| webview.setHidden(false));
+    }
+
+    pub fn hide(&self) {
+        self.run(|webview| webview.setHidden(true));
+    }
+
+    /// Takes the page out of its window and lets go of what watched it.
+    pub fn close(&self) {
+        let id = self.id.clone();
+        self.run(move |webview| {
+            crate::macos::forget(&id);
+            webview.removeFromSuperview();
+        });
+    }
+
+    pub fn set_zoom(&self, zoom: f64) {
+        // SAFETY: `run` calls this on the main thread with the live webview.
+        self.run(move |webview| unsafe { webview.setPageZoom(zoom) });
+    }
+
+    pub fn reload(&self) {
+        // SAFETY: as above.
+        self.run(|webview| {
+            let _ = unsafe { webview.reload() };
+        });
+    }
+
+    pub fn navigate(&self, url: &str) {
+        let url = url.to_owned();
+        self.run(move |webview| crate::macos::load(webview, &url));
+    }
+
+    /// Runs `script` in the page and hands back its value as JSON, or an empty
+    /// string when it has none.
+    pub async fn eval(&self, script: &str) -> Result<String, String> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let script = script.to_owned();
+        self.run(move |webview| {
+            crate::macos::evaluate(
+                webview,
+                &script,
+                Box::new(move |json| {
+                    let _ = sender.send(json);
+                }),
+            )
+        });
+        receiver.await.map_err(|_| "the tab went away".to_string())
+    }
+}
+
+/// Elsewhere there is no browser engine yet, so no tab can be made.
+#[cfg(not(target_os = "macos"))]
+#[derive(Clone)]
+pub struct Tab(Never);
+
+#[cfg(not(target_os = "macos"))]
+#[derive(Clone)]
+enum Never {}
+
+#[cfg(not(target_os = "macos"))]
+impl Tab {
+    pub fn open(
+        _parent: ParentView,
+        _spec: TabSpec<'_>,
+        _events: Arc<dyn TabEvents>,
+    ) -> Result<Tab, String> {
+        Err("browser tabs need macOS".into())
+    }
+
+    pub fn id(&self) -> &str {
+        match self.0 {}
+    }
+
+    pub fn show(&self) {
+        match self.0 {}
+    }
+
+    pub fn hide(&self) {
+        match self.0 {}
+    }
+
+    pub fn close(&self) {
+        match self.0 {}
+    }
+
+    pub fn set_zoom(&self, _zoom: f64) {
+        match self.0 {}
+    }
+
+    pub fn reload(&self) {
+        match self.0 {}
+    }
+
+    pub fn navigate(&self, _url: &str) {
+        match self.0 {}
+    }
+
+    pub async fn eval(&self, _script: &str) -> Result<String, String> {
+        match self.0 {}
+    }
+}

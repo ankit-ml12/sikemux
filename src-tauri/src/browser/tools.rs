@@ -4,8 +4,9 @@
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
+use sikemux_browser::Tab;
 use sikemux_process::sync::Locked;
-use tauri::{AppHandle, Manager, Webview};
+use tauri::{AppHandle, Manager};
 
 use super::viewport::Viewport;
 use super::{BrowserManager, DownloadState, BLANK_URL};
@@ -42,7 +43,7 @@ use native::Mouse;
 
 /// Runs `body` in the tab's helper world, which sees the page's DOM but none
 /// of its scripts.
-pub(super) async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+pub(super) async fn run_helper(view: &Tab, body: &str) -> Result<String, String> {
     native::run_helper(view, body).await
 }
 
@@ -943,7 +944,7 @@ async fn wait_for(
     }
 }
 
-async fn pending_requests(view: &Webview) -> Option<u64> {
+async fn pending_requests(view: &Tab) -> Option<u64> {
     read_records(view, "pending", &[])
         .await
         .ok()
@@ -1048,7 +1049,7 @@ try {{
 
 /// Draws the agent's pointer where it is about to act, so the person, and any
 /// recording, can follow along. A page that refuses the drawing still acts.
-async fn show_pointer(view: &Webview, x: f64, y: f64, ripple: bool) {
+async fn show_pointer(view: &Tab, x: f64, y: f64, ripple: bool) {
     let _ = call(view, "mark", &[json!(x), json!(y), json!(ripple)]).await;
 }
 
@@ -1056,7 +1057,7 @@ async fn show_pointer(view: &Webview, x: f64, y: f64, ripple: bool) {
 /// or `selector`, scrolled into view, or CSS pixel coordinates in the tab's
 /// viewport along with what lies under them.
 async fn target(
-    view: &Webview,
+    view: &Tab,
     params: &Value,
     index_key: &str,
     x_key: &str,
@@ -1107,7 +1108,7 @@ fn element_target(params: &Value, index_key: &str) -> Value {
 
 /// The centre of the element `named` picks out, refused when `expected` no
 /// longer matches its label.
-async fn point(view: &Webview, named: Value, expected: Value) -> Result<(f64, f64, Value), String> {
+async fn point(view: &Tab, named: Value, expected: Value) -> Result<(f64, f64, Value), String> {
     let point = call(view, "point", &[named, expected]).await?;
     let coordinate = |key: &str| {
         point
@@ -1120,7 +1121,7 @@ async fn point(view: &Webview, named: Value, expected: Value) -> Result<(f64, f6
 
 /// Input that reaches the page the way a person's does, as trusted events.
 mod native {
-    use tauri::Webview;
+    use sikemux_browser::Tab;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Mouse {
@@ -1136,10 +1137,10 @@ mod native {
         use super::super::super::macos::World;
         use super::super::on_tab;
         use super::Mouse;
-        use tauri::Webview;
+        use sikemux_browser::Tab;
 
         pub async fn mouse(
-            view: &Webview,
+            view: &Tab,
             kind: Mouse,
             x: f64,
             y: f64,
@@ -1154,12 +1155,12 @@ mod native {
             on_tab(view, move |tab| input::mouse(tab, kind, x, y, clicks)).await
         }
 
-        pub async fn key(view: &Webview, name: &str) -> Result<(), String> {
+        pub async fn key(view: &Tab, name: &str) -> Result<(), String> {
             let stroke = input::parse_key(name)?;
             on_tab(view, move |tab| input::key(tab, &stroke)).await
         }
 
-        pub async fn insert_text(view: &Webview, text: &str) -> Result<(), String> {
+        pub async fn insert_text(view: &Tab, text: &str) -> Result<(), String> {
             let text = text.to_owned();
             on_tab(view, move |tab| input::insert_text(tab, &text)).await
         }
@@ -1181,7 +1182,7 @@ mod native {
 
         /// An empty error means the script ran out of time.
         pub async fn run_script(
-            view: &Webview,
+            view: &Tab,
             body: &str,
             limit: std::time::Duration,
         ) -> Result<String, String> {
@@ -1190,23 +1191,20 @@ mod native {
                 .map_err(Option::unwrap_or_default)
         }
 
-        pub async fn probe_responsiveness(view: &Webview) -> Result<(), String> {
+        pub async fn probe_responsiveness(view: &Tab) -> Result<(), String> {
             on_tab(view, input::probe_responsiveness).await
         }
 
-        pub async fn reload_from_origin(view: &Webview) -> Result<(), String> {
-            on_tab(view, |tab| {
-                // SAFETY: `on_tab` hands over the tab's WKWebView from inside
-                // `with_webview`, on the main thread, while the view is alive.
-                let webview = unsafe { &*tab.cast::<objc2_web_kit::WKWebView>() };
-                // SAFETY: main thread, and `webview` outlives this call.
+        pub async fn reload_from_origin(view: &Tab) -> Result<(), String> {
+            on_tab(view, |webview| {
+                // SAFETY: `on_tab` runs this on the main thread with the live webview.
                 let _ = unsafe { webview.reloadFromOrigin() };
                 Ok(())
             })
             .await
         }
 
-        pub async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+        pub async fn run_helper(view: &Tab, body: &str) -> Result<String, String> {
             match run_in(view, body, World::Helper, super::super::EVAL_TIMEOUT).await {
                 Err(None) => Err("the page took too long to answer".into()),
                 other => other.map_err(Option::unwrap_or_default),
@@ -1215,24 +1213,23 @@ mod native {
 
         /// `Err(None)` when the script ran out of time.
         async fn run_in(
-            view: &Webview,
+            view: &Tab,
             body: &str,
             world: World,
             limit: std::time::Duration,
         ) -> Result<String, Option<String>> {
             let (sender, receiver) = tokio::sync::oneshot::channel();
             let body = body.to_owned();
-            view.with_webview(move |platform| {
+            view.run(move |webview| {
                 super::super::super::macos::call_async(
-                    platform.inner(),
+                    webview,
                     &body,
                     world,
                     Box::new(move |result| {
                         let _ = sender.send(result);
                     }),
                 );
-            })
-            .map_err(|error| Some(error.to_string()))?;
+            });
             let mut receiver = receiver;
             match tokio::time::timeout(super::super::SLOW_ANSWER.min(limit), &mut receiver).await {
                 Ok(Ok(result)) => return result.map_err(Some),
@@ -1251,7 +1248,7 @@ mod native {
         }
 
         pub async fn answer_dialog(
-            view: &Webview,
+            view: &Tab,
             tab_id: &str,
             accept: bool,
             text: Option<String>,
@@ -1267,39 +1264,39 @@ mod native {
     #[cfg(not(target_os = "macos"))]
     mod platform {
         use super::Mouse;
-        use tauri::Webview;
+        use sikemux_browser::Tab;
 
         const UNSUPPORTED: &str = "browser input is not available on this platform yet";
 
-        pub async fn mouse(_: &Webview, _: Mouse, _: f64, _: f64, _: isize) -> Result<(), String> {
+        pub async fn mouse(_: &Tab, _: Mouse, _: f64, _: f64, _: isize) -> Result<(), String> {
             Err(UNSUPPORTED.into())
         }
 
-        pub async fn key(_: &Webview, _: &str) -> Result<(), String> {
+        pub async fn key(_: &Tab, _: &str) -> Result<(), String> {
             Err(UNSUPPORTED.into())
         }
 
-        pub async fn insert_text(_: &Webview, _: &str) -> Result<(), String> {
+        pub async fn insert_text(_: &Tab, _: &str) -> Result<(), String> {
             Err(UNSUPPORTED.into())
         }
 
         pub async fn run_script(
-            _: &Webview,
+            _: &Tab,
             _: &str,
             _: std::time::Duration,
         ) -> Result<String, String> {
             Err(UNSUPPORTED.into())
         }
 
-        pub async fn reload_from_origin(_: &Webview) -> Result<(), String> {
+        pub async fn reload_from_origin(_: &Tab) -> Result<(), String> {
             Err(UNSUPPORTED.into())
         }
 
-        pub async fn probe_responsiveness(_: &Webview) -> Result<(), String> {
+        pub async fn probe_responsiveness(_: &Tab) -> Result<(), String> {
             Ok(())
         }
 
-        pub async fn run_helper(_: &Webview, _: &str) -> Result<String, String> {
+        pub async fn run_helper(_: &Tab, _: &str) -> Result<String, String> {
             Err(UNSUPPORTED.into())
         }
 
@@ -1319,7 +1316,7 @@ mod native {
         }
 
         pub async fn answer_dialog(
-            _: &Webview,
+            _: &Tab,
             _: &str,
             _: bool,
             _: Option<String>,
@@ -1329,7 +1326,7 @@ mod native {
     }
 
     pub async fn mouse(
-        view: &Webview,
+        view: &Tab,
         kind: Mouse,
         x: f64,
         y: f64,
@@ -1338,16 +1335,16 @@ mod native {
         platform::mouse(view, kind, x, y, clicks).await
     }
 
-    pub async fn key(view: &Webview, name: &str) -> Result<(), String> {
+    pub async fn key(view: &Tab, name: &str) -> Result<(), String> {
         platform::key(view, name).await
     }
 
-    pub async fn insert_text(view: &Webview, text: &str) -> Result<(), String> {
+    pub async fn insert_text(view: &Tab, text: &str) -> Result<(), String> {
         platform::insert_text(view, text).await
     }
 
     pub async fn run_script(
-        view: &Webview,
+        view: &Tab,
         body: &str,
         limit: std::time::Duration,
     ) -> Result<String, String> {
@@ -1355,17 +1352,17 @@ mod native {
     }
 
     /// Nudges WebKit into checking whether the tab's page still answers.
-    pub async fn probe_responsiveness(view: &Webview) -> Result<(), String> {
+    pub async fn probe_responsiveness(view: &Tab) -> Result<(), String> {
         platform::probe_responsiveness(view).await
     }
 
     /// Reloads skipping the cache, so a stale script or stylesheet is fetched again.
-    pub async fn reload_from_origin(view: &Webview) -> Result<(), String> {
+    pub async fn reload_from_origin(view: &Tab) -> Result<(), String> {
         platform::reload_from_origin(view).await
     }
 
     /// Runs `body` where the page's scripts cannot reach it.
-    pub async fn run_helper(view: &Webview, body: &str) -> Result<String, String> {
+    pub async fn run_helper(view: &Tab, body: &str) -> Result<String, String> {
         platform::run_helper(view, body).await
     }
 
@@ -1385,7 +1382,7 @@ mod native {
     }
 
     pub async fn answer_dialog(
-        view: &Webview,
+        view: &Tab,
         tab_id: &str,
         accept: bool,
         text: Option<String>,
@@ -1397,24 +1394,19 @@ mod native {
 /// Runs `act` against the tab's native view on the main thread.
 #[cfg(target_os = "macos")]
 async fn on_tab<T: Send + 'static>(
-    view: &Webview,
-    act: impl FnOnce(*mut std::ffi::c_void) -> Result<T, String> + Send + 'static,
+    view: &Tab,
+    act: impl FnOnce(&objc2_web_kit::WKWebView) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    view.with_webview(move |platform| {
-        let _ = sender.send(act(platform.inner()));
-    })
-    .map_err(|error| error.to_string())?;
-    match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
+    match tokio::time::timeout(EVAL_TIMEOUT, view.ask(act)).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err("the tab went away".into()),
+        Ok(Err(error)) => Err(error),
         Err(_) => Err("the tab took too long to answer".into()),
     }
 }
 
 /// The tab the agent is on, unless a dialog has frozen its page: a page
 /// waiting on an alert answers nothing, so calling into it would only time out.
-fn active(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview), String> {
+fn active(manager: &BrowserManager, agent_id: &str) -> Result<(String, Tab), String> {
     let (tab_id, view) = active_tab(manager, agent_id)?;
     if let Some(stall) = manager.stalled(&tab_id) {
         return Err(stall.message().into());
@@ -1428,7 +1420,7 @@ fn active(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview),
     }
 }
 
-fn active_tab(manager: &BrowserManager, agent_id: &str) -> Result<(String, Webview), String> {
+fn active_tab(manager: &BrowserManager, agent_id: &str) -> Result<(String, Tab), String> {
     manager
         .active_view(agent_id)
         .map_err(|_| {
@@ -1576,7 +1568,7 @@ async fn settle(manager: &BrowserManager, agent_id: &str, tab_id: &str) {
 /// Call one of the page script's functions and parse what it returns. The
 /// script always answers with a JSON string, because WebKit refuses to hand
 /// back anything it cannot serialize.
-async fn call(view: &Webview, function: &str, args: &[Value]) -> Result<Value, String> {
+async fn call(view: &Tab, function: &str, args: &[Value]) -> Result<Value, String> {
     let answer = answer_of("window.__sikemux", function, args);
     let raw = native::run_helper(view, &format!("{PAGE_SCRIPT}\nreturn {answer};")).await?;
     let inner = serde_json::from_str::<Value>(&raw)
@@ -1585,7 +1577,7 @@ async fn call(view: &Webview, function: &str, args: &[Value]) -> Result<Value, S
 }
 
 /// Read what the recorder kept for `function` ("network" or "console").
-async fn read_records(view: &Webview, function: &str, args: &[Value]) -> Result<Value, String> {
+async fn read_records(view: &Tab, function: &str, args: &[Value]) -> Result<Value, String> {
     let raw = eval(view, &answer_of(RECORDS_SCRIPT.trim(), function, args)).await?;
     let outer: Value =
         serde_json::from_str(&raw).map_err(|_| "the page returned no answer".to_string())?;
@@ -1618,16 +1610,8 @@ fn unwrap_answer(inner: Value) -> Result<Value, String> {
         .ok_or_else(|| "the page returned no answer".to_string())
 }
 
-pub(super) async fn eval(view: &Webview, script: &str) -> Result<String, String> {
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    let sender = std::sync::Mutex::new(Some(sender));
-    view.eval_with_callback(script, move |result| {
-        if let Some(sender) = sender.locked().take() {
-            let _ = sender.send(result);
-        }
-    })
-    .map_err(|error| error.to_string())?;
-    match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
+pub(super) async fn eval(view: &Tab, script: &str) -> Result<String, String> {
+    match tokio::time::timeout(EVAL_TIMEOUT, view.eval(script)).await {
         Ok(Ok(result)) if !result.is_empty() => Ok(result),
         Ok(_) => Err("the page did not answer, so it may not have loaded; browser_network's documents show whether its load failed".into()),
         Err(_) => Err("the page took too long to answer".into()),
@@ -1642,7 +1626,7 @@ fn area_rect(area: &Value) -> (f64, f64, f64, f64) {
 /// The visible part of the tab, only `area` of it, or with `height` the
 /// whole page down to it.
 async fn screenshot(
-    view: &Webview,
+    view: &Tab,
     height: Option<f64>,
     area: Option<(f64, f64, f64, f64)>,
 ) -> Result<Vec<u8>, String> {
@@ -1650,7 +1634,7 @@ async fn screenshot(
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let sender = std::sync::Mutex::new(Some(sender));
-        view.with_webview(move |platform| {
+        view.run(move |webview| {
             let done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send> = Box::new(move |result| {
                 if let Some(sender) = sender.locked().take() {
                     let _ = sender.send(result);
@@ -1658,12 +1642,11 @@ async fn screenshot(
             });
             match height {
                 Some(height) => {
-                    super::macos::full_page_jpeg(platform.inner(), height, MAX_PAGE_HEIGHT, done)
+                    super::macos::full_page_jpeg(webview, height, MAX_PAGE_HEIGHT, done)
                 }
-                None => super::macos::snapshot_jpeg(platform.inner(), area, done),
+                None => super::macos::snapshot_jpeg(webview, area, done),
             }
-        })
-        .map_err(|error| error.to_string())?;
+        });
         match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err("screenshot was abandoned".into()),

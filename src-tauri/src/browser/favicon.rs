@@ -10,7 +10,8 @@ use reqwest::redirect::Policy;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::{AppHandle, Manager, Url, Webview};
+use sikemux_browser::Tab;
+use tauri::{AppHandle, Manager, Url};
 
 use super::{BrowserManager, BLANK_URL, USER_AGENT};
 use sikemux_core::http::{
@@ -48,7 +49,7 @@ struct IconLink {
 /// Asks the tab which icon it declares, fetches it, and tells the strip.
 /// Nothing is reported when the page has no usable icon — the pane draws a
 /// globe until one arrives.
-pub(super) async fn refresh(app: AppHandle, agent_id: String, tab_id: String, view: Webview) {
+pub(super) async fn refresh(app: AppHandle, agent_id: String, tab_id: String, view: Tab) {
     let Some(page) = app
         .state::<BrowserManager>()
         .page(&agent_id, &tab_id)
@@ -99,7 +100,7 @@ pub(super) fn same_site(a: &str, b: &str) -> bool {
     }
 }
 
-async fn declared(view: &Webview) -> Vec<IconLink> {
+async fn declared(view: &Tab) -> Vec<IconLink> {
     let Ok(raw) = super::tools::eval(view, LINKS).await else {
         return Vec::new();
     };

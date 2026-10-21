@@ -7,44 +7,46 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Once, OnceLock};
+use std::sync::{Arc, Once, OnceLock};
 use std::time::{Duration, Instant};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
 use objc2::{
-    define_class, msg_send, sel, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly,
+    define_class, msg_send, sel, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, Message,
 };
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAutoresizingMaskOptions,
     NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags,
-    NSEventPhase, NSEventType, NSImage, NSImageCompressionFactor, NSModalResponse, NSTextField,
-    NSView,
+    NSEventPhase, NSEventType, NSImage, NSImageCompressionFactor, NSModalResponse,
+    NSModalResponseOK, NSOpenPanel, NSTextField, NSView,
 };
 use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{
-    NSData, NSDictionary, NSError, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSNumber,
-    NSObject, NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize,
-    NSString,
+    NSData, NSDictionary, NSError, NSJSONSerialization, NSJSONWritingOptions, NSKeyValueChangeKey,
+    NSKeyValueObservingOptions, NSNumber, NSObject, NSObjectNSKeyValueCoding,
+    NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    NSURLRequest, NSURLResponse, NSURL,
 };
 use objc2_quartz_core::{kCAFillRuleEvenOdd, CALayer, CAShapeLayer, CATransaction};
 use objc2_web_kit::{
-    WKContentWorld, WKFrameInfo, WKMediaCaptureType, WKNavigation, WKNavigationAction,
-    WKNavigationDelegate, WKNavigationResponse, WKNavigationResponsePolicy, WKOpenPanelParameters,
-    WKPDFConfiguration, WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration,
-    WKUIDelegate, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
+    WKContentWorld, WKDownload, WKDownloadDelegate, WKFrameInfo, WKMediaCaptureType, WKNavigation,
+    WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationResponse,
+    WKNavigationResponsePolicy, WKOpenPanelParameters, WKPDFConfiguration, WKPermissionDecision,
+    WKSecurityOrigin, WKSnapshotConfiguration, WKUIDelegate, WKUserScript,
+    WKUserScriptInjectionTime, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
 };
 use sikemux_process::sync::Locked;
 
 use crate::burst::Burst;
 use crate::documents::DocumentEvent;
-use crate::{BrowserShortcut, PageDialog, TabStall};
+use crate::{BrowserShortcut, PageDialog, PageLoad, TabEvents, TabStall};
 
 /// The property the tab watches to hear about a page that moved on its own.
 const URL_KEY_PATH: &str = "URL";
+const TITLE_KEY_PATH: &str = "title";
 /// WebKit's own verdict on whether the page's process still answers input.
 const RESPONSIVE_KEY_PATH: &str = "_webProcessIsResponsive";
 /// Past this many dialogs in `DIALOG_WINDOW`, a page's dialogs are answered
@@ -61,12 +63,36 @@ struct NativeTab {
     watches_responsiveness: bool,
 }
 
+define_class!(
+    /// A tab's page as a child of the app's window. App chords go on to the
+    /// window's menu rather than stopping in the page, and the first click on
+    /// a page in a window that is not key reaches the page.
+    // SAFETY: WKWebView subclassed with no ivars and no dealloc, used on the main thread.
+    #[unsafe(super(WKWebView))]
+    #[thread_kind = MainThreadOnly]
+    struct TabWebView;
+
+    impl TabWebView {
+        // SAFETY: matches NSView's `performKeyEquivalent:`: an event in, a BOOL out.
+        #[unsafe(method(performKeyEquivalent:))]
+        fn perform_key_equivalent(&self, _event: &NSEvent) -> Bool {
+            Bool::NO
+        }
+
+        // SAFETY: matches NSView's `acceptsFirstMouse:`: an event in, a BOOL out.
+        #[unsafe(method(acceptsFirstMouse:))]
+        fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> Bool {
+            Bool::YES
+        }
+    }
+);
+
 /* AppKit throws if a view is freed while anything is still watching it, so the
 tab lets go of what it watches before it lets go of either of them. */
 impl Drop for NativeTab {
     fn drop(&mut self) {
-        let watched = [URL_KEY_PATH, RESPONSIVE_KEY_PATH];
-        let count = if self.watches_responsiveness { 2 } else { 1 };
+        let watched = [URL_KEY_PATH, TITLE_KEY_PATH, RESPONSIVE_KEY_PATH];
+        let count = if self.watches_responsiveness { 3 } else { 2 };
         for key_path in &watched[..count] {
             // SAFETY: `adopt` registered this observer for this key path, and the tab
             // still retains both the observer and the webview. Tabs live only on the
@@ -110,81 +136,97 @@ struct OpenDialog {
     field: Option<Retained<NSTextField>>,
 }
 
-fn webview_from(pointer: *mut c_void) -> Option<Retained<WKWebView>> {
-    // SAFETY: every caller passes `platform.inner()` from inside Tauri's `with_webview`,
-    // which runs on the main thread while that WKWebView is alive.
-    unsafe { Retained::retain(pointer.cast::<WKWebView>()) }
-}
-
-/// Take over the tab's UI delegate so page dialogs get a sheet, watch where the
-/// page says it is, and remember the view so shortcuts can tell which tab has
-/// focus. `moved` hears the new address and whether history can go either way;
-/// `dialog` hears a page dialog open and close; `upload` hands over files the
-/// agent picked for the next file chooser, which then never shows; `document`
-/// hears each top-level load start, get its answer, and finish or fail;
-/// `health` hears the page's process stop answering, crash, and recover.
-#[allow(clippy::too_many_arguments)]
-pub fn adopt(
-    pointer: *mut c_void,
+/// Makes the tab's page as a child of `parent`, hidden and laid out at `size`
+/// off screen, and starts loading `url`. Page dialogs get a sheet, the page's
+/// address, title, loads and downloads go to `events`, and the view is
+/// remembered so shortcuts can tell which tab has focus.
+pub fn open(
+    parent: &NSView,
     agent_id: String,
     tab_id: String,
-    moved: impl Fn(String, bool, bool) + 'static,
-    dialog: impl Fn(Option<PageDialog>) + 'static,
-    upload: impl Fn() -> Option<Vec<std::path::PathBuf>> + 'static,
-    document: impl Fn(DocumentEvent) + 'static,
-    health: impl Fn(Option<TabStall>) + 'static,
-) {
-    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
-        return;
-    };
-    // SAFETY: main thread (checked just above), and `webview` is retained.
-    let inner = unsafe { webview.UIDelegate() };
-    let delegate = TabUiDelegate::new(
-        mtm,
-        inner,
-        tab_id.clone(),
-        Rc::new(dialog),
-        Box::new(upload),
+    url: &str,
+    user_agent: &str,
+    size: (f64, f64),
+    events: Arc<dyn TabEvents>,
+) -> Retained<WKWebView> {
+    let mtm = parent.mtm();
+    // SAFETY: main thread, as `mtm` proves; the configuration is fresh and only ours.
+    let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
+    let yes = NSNumber::numberWithBool(true);
+    // SAFETY: main thread, and every value set is one WebKit reads with that type.
+    unsafe {
+        let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+            WKUserScript::alloc(mtm),
+            &NSString::from_str(crate::RECORDER_SCRIPT),
+            WKUserScriptInjectionTime::AtDocumentStart,
+            true,
+        );
+        configuration.userContentController().addUserScript(&script);
+        let preferences = configuration.preferences();
+        preferences.setElementFullscreenEnabled(true);
+        preferences.setValue_forKey(Some(&yes), &NSString::from_str("tabFocusesLinks"));
+        preferences.setValue_forKey(
+            Some(&yes),
+            &NSString::from_str("allowsPictureInPictureMediaPlayback"),
+        );
+        if cfg!(debug_assertions) {
+            preferences.setValue_forKey(Some(&yes), &NSString::from_str("developerExtrasEnabled"));
+        }
+    }
+    let frame = NSRect::new(
+        NSPoint::new(crate::PARKED_ORIGIN, crate::PARKED_ORIGIN),
+        NSSize::new(size.0, size.1),
     );
-    let health: Rc<dyn Fn(Option<TabStall>)> = Rc::new(health);
-    let navigation = TabNavigationDelegate::new(
-        mtm,
-        // SAFETY: main thread, and `webview` is retained.
-        unsafe { webview.navigationDelegate() },
-        Box::new(document),
-        health.clone(),
-    );
-    let address_observer = AddressObserver::new(mtm, Box::new(moved), health);
+    let webview: Retained<WKWebView> = without_activating(|| {
+        // SAFETY: a fresh TabWebView, initialised as WKWebView documents, on the main thread.
+        let view: Retained<TabWebView> = unsafe {
+            msg_send![super(TabWebView::alloc(mtm).set_ivars(())), initWithFrame: frame, configuration: &*configuration]
+        };
+        Retained::into_super(view)
+    });
+    webview.setHidden(true);
+    webview.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin);
+    // SAFETY: main thread, and `webview` is retained.
+    unsafe {
+        webview.setCustomUserAgent(Some(&NSString::from_str(user_agent)));
+        if cfg!(debug_assertions) && webview.respondsToSelector(sel!(setInspectable:)) {
+            webview.setInspectable(true);
+        }
+    }
+    let delegate = TabUiDelegate::new(mtm, tab_id.clone(), events.clone());
+    let download = TabDownloadDelegate::new(mtm, events.clone());
+    let navigation = TabNavigationDelegate::new(mtm, events.clone(), download);
+    let address_observer = AddressObserver::new(mtm, events);
     let watches_responsiveness = webview.respondsToSelector(sel!(_webProcessIsResponsive));
     // SAFETY: main thread. WebKit holds delegates and observers weakly, so the tab keeps
-    // them alive in TABS, and `Drop` removes the observer before letting go.
+    // them alive in TABS, and `Drop` removes the observers before letting go.
     unsafe {
         webview.setUIDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         webview.setNavigationDelegate(Some(ProtocolObject::from_ref(&*navigation)));
         webview.setAllowsBackForwardNavigationGestures(true);
         webview.setAllowsMagnification(true);
-        webview.addObserver_forKeyPath_options_context(
-            &address_observer,
-            &NSString::from_str(URL_KEY_PATH),
-            NSKeyValueObservingOptions::empty(),
-            std::ptr::null_mut(),
-        );
-        if watches_responsiveness {
+        let watched: &[&str] = if watches_responsiveness {
+            &[URL_KEY_PATH, TITLE_KEY_PATH, RESPONSIVE_KEY_PATH]
+        } else {
+            &[URL_KEY_PATH, TITLE_KEY_PATH]
+        };
+        for key_path in watched {
             webview.addObserver_forKeyPath_options_context(
                 &address_observer,
-                &NSString::from_str(RESPONSIVE_KEY_PATH),
+                &NSString::from_str(key_path),
                 NSKeyValueObservingOptions::empty(),
                 std::ptr::null_mut(),
             );
         }
     }
+    parent.addSubview(&webview);
     let _ = hand_unused_swipes_to_the_stage(&webview);
     TABS.with(|tabs| {
         tabs.borrow_mut().insert(
             tab_id,
             NativeTab {
                 agent_id,
-                webview,
+                webview: webview.clone(),
                 _delegate: delegate,
                 _navigation: navigation,
                 address_observer,
@@ -192,14 +234,56 @@ pub fn adopt(
             },
         );
     });
+    load(&webview, url);
+    webview
+}
+
+/// Runs `script` in the page's own world and hands back its value as JSON, or
+/// nothing when it has none or throws.
+pub fn evaluate(webview: &WKWebView, script: &str, done: Box<dyn FnOnce(String) + Send>) {
+    let done = std::sync::Mutex::new(Some(done));
+    let block = RcBlock::new(move |value: *mut AnyObject, _error: *mut NSError| {
+        let Some(done) = done.locked().take() else {
+            return;
+        };
+        // SAFETY: WebKit passes a live result or nil, valid until the block returns.
+        let json = unsafe { value.as_ref() }
+            .and_then(|value| {
+                // SAFETY: WebKit only hands back values JSON can hold: strings, numbers,
+                // booleans, arrays, dictionaries and null.
+                unsafe {
+                    NSJSONSerialization::dataWithJSONObject_options_error(
+                        value,
+                        NSJSONWritingOptions::FragmentsAllowed,
+                    )
+                }
+                .ok()
+            })
+            .map(|data| String::from_utf8_lossy(&data.to_vec()).into_owned())
+            .unwrap_or_default();
+        done(json);
+    });
+    // SAFETY: main thread, where `Tab` runs every call; WebKit copies the block.
+    unsafe {
+        webview.evaluateJavaScript_completionHandler(&NSString::from_str(script), Some(&block));
+    }
+}
+
+/// Starts loading `url` in the tab, if it is one.
+pub fn load(webview: &WKWebView, url: &str) {
+    let Some(address) = NSURL::URLWithString(&NSString::from_str(url)) else {
+        return;
+    };
+    // SAFETY: main thread, where `Tab` runs every call, and `webview` is alive.
+    unsafe {
+        let _ = webview.loadRequest(&NSURLRequest::requestWithURL(&address));
+    }
 }
 
 /// WebKit stops a page's animation frames while another app covers the
 /// window. A tab that is loading or being driven must keep them running.
-pub fn keep_running_when_covered(pointer: *mut c_void, keep_running: bool) {
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
+pub fn keep_running_when_covered(webview: &WKWebView, keep_running: bool) {
+    let webview = webview.retain();
     let selector = sel!(_setWindowOcclusionDetectionEnabled:);
     if webview.respondsToSelector(selector) {
         let enabled = Bool::new(!keep_running);
@@ -211,11 +295,9 @@ pub fn keep_running_when_covered(pointer: *mut c_void, keep_running: bool) {
 
 /// Keeps a page already on screen running while other windows cover it. WebKit
 /// only looks again at whether a page shows when its view is hidden or shown.
-pub fn keep_shown_page_running_when_covered(pointer: *mut c_void) {
-    keep_running_when_covered(pointer, true);
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
+pub fn keep_shown_page_running_when_covered(webview: &WKWebView) {
+    keep_running_when_covered(webview, true);
+    let webview = webview.retain();
     webview.setHidden(true);
     webview.setHidden(false);
 }
@@ -232,8 +314,7 @@ pub fn forget(tab_id: &str) {
 }
 
 struct AddressObserverIvars {
-    moved: Box<dyn Fn(String, bool, bool)>,
-    health: Rc<dyn Fn(Option<TabStall>)>,
+    events: Arc<dyn TabEvents>,
 }
 
 define_class!(
@@ -269,7 +350,13 @@ define_class!(
                 // SAFETY: `adopt` only watches this key path on a webview that answers
                 // `_webProcessIsResponsive`, which takes nothing and returns a BOOL.
                 let responsive: bool = unsafe { msg_send![webview, _webProcessIsResponsive] };
-                (self.ivars().health)((!responsive).then_some(TabStall::Unresponsive));
+                self.ivars().events.health((!responsive).then_some(TabStall::Unresponsive));
+                return;
+            }
+            if key_path.is_some_and(|path| path.to_string() == TITLE_KEY_PATH) {
+                // SAFETY: `webview` is the observed view, alive for this call on the main thread.
+                let title = unsafe { webview.title() }.map(|title| title.to_string());
+                self.ivars().events.titled(title.unwrap_or_default());
                 return;
             }
             /* A page that is fetching a document reports that address itself
@@ -288,7 +375,7 @@ define_class!(
                 return;
             };
             // SAFETY: same live webview, same thread.
-            (self.ivars().moved)(address.to_string(), unsafe { webview.canGoBack() }, unsafe {
+            self.ivars().events.moved(address.to_string(), unsafe { webview.canGoBack() }, unsafe {
                 webview.canGoForward()
             });
         }
@@ -296,25 +383,19 @@ define_class!(
 );
 
 impl AddressObserver {
-    fn new(
-        mtm: MainThreadMarker,
-        moved: Box<dyn Fn(String, bool, bool)>,
-        health: Rc<dyn Fn(Option<TabStall>)>,
-    ) -> Retained<Self> {
+    fn new(mtm: MainThreadMarker, events: Arc<dyn TabEvents>) -> Retained<Self> {
         let observer = mtm
             .alloc::<AddressObserver>()
-            .set_ivars(AddressObserverIvars { moved, health });
+            .set_ivars(AddressObserverIvars { events });
         // SAFETY: `observer` is freshly allocated with its ivars set, and NSObject's `init`
         // takes nothing and returns that same object.
         unsafe { msg_send![super(observer), init] }
     }
 }
 
-pub fn history(pointer: *mut c_void, delta: i32) {
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
-    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
+pub fn history(webview: &WKWebView, delta: i32) {
+    let webview = webview.retain();
+    // SAFETY: main thread (where `Tab` runs every call), and `webview` is retained.
     unsafe {
         if delta < 0 {
             webview.goBack();
@@ -325,11 +406,9 @@ pub fn history(pointer: *mut c_void, delta: i32) {
 }
 
 /// Send `agent` as the tab's agent string, reloading so the site sees the change.
-pub fn introduce_as(pointer: *mut c_void, agent: &str) {
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
-    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
+pub fn introduce_as(webview: &WKWebView, agent: &str) {
+    let webview = webview.retain();
+    // SAFETY: main thread (where `Tab` runs every call), and `webview` is retained.
     unsafe {
         if webview
             .customUserAgent()
@@ -346,12 +425,10 @@ pub fn introduce_as(pointer: *mut c_void, agent: &str) {
 /// view. With `page`, the page lays out at that size and the view draws it
 /// scaled into `frame`: its bounds take the page's size, so AppKit scales the
 /// drawing and maps every event point back into page pixels on its own.
-pub fn place(pointer: *mut c_void, frame: NSRect, page: Option<NSSize>) {
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
+pub fn place(webview: &WKWebView, frame: NSRect, page: Option<NSSize>) {
+    let webview = webview.retain();
     let view: &NSView = &webview;
-    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
+    // SAFETY: main thread (where `Tab` runs every call), and `webview` is retained.
     let Some(parent) = (unsafe { view.superview() }) else {
         return;
     };
@@ -394,10 +471,8 @@ pub fn place(pointer: *mut c_void, frame: NSRect, page: Option<NSSize>) {
 /// `holes`, all in the page's own top-down pixels. A native view is not cut
 /// off by the DOM around it, so a swipe would carry the page over the rails
 /// and it would cover any toast.
-pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(NSRect, f64)>) {
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
+pub fn clip(webview: &WKWebView, clip_left: f64, clip_right: f64, holes: Vec<(NSRect, f64)>) {
+    let webview = webview.retain();
     let view: &NSView = &webview;
     // SAFETY: every NSView answers `layer` with a CALayer or nil, and the result is retained.
     let Some(layer): Option<Retained<CALayer>> = (unsafe { msg_send![view, layer] }) else {
@@ -508,10 +583,8 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
 }
 
 /// Fade the whole page, so it goes with the pane it sits in when that fades.
-pub fn fade(pointer: *mut c_void, opacity: f64) {
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
+pub fn fade(webview: &WKWebView, opacity: f64) {
+    let webview = webview.retain();
     let view: &NSView = &webview;
     // SAFETY: `setAlphaValue:` is an NSView method taking a CGFloat.
     let _: () = unsafe { msg_send![view, setAlphaValue: opacity] };
@@ -520,10 +593,8 @@ pub fn fade(pointer: *mut c_void, opacity: f64) {
 /// Lay a black shade of `alpha` over the page, or take it off at zero, so an
 /// app panel floating on the page stands apart from it. The shade lives in the
 /// page's own layer, so the mask `clip` sets cuts it where the panel is.
-pub fn dim(pointer: *mut c_void, alpha: f64) {
-    let Some(webview) = webview_from(pointer) else {
-        return;
-    };
+pub fn dim(webview: &WKWebView, alpha: f64) {
+    let webview = webview.retain();
     let view: &NSView = &webview;
     // SAFETY: every NSView answers `layer` with a CALayer or nil, and the result is retained.
     let Some(layer): Option<Retained<CALayer>> = (unsafe { msg_send![view, layer] }) else {
@@ -785,22 +856,21 @@ unsafe extern "C-unwind" fn hit_test_outside_holes(
     unsafe { inherited(view, selector, point) }
 }
 
-pub fn history_state(pointer: *mut c_void) -> (bool, bool) {
-    webview_from(pointer)
-        // SAFETY: main thread (see `webview_from`), and `webview` is retained.
-        .map(|webview| unsafe { (webview.canGoBack(), webview.canGoForward()) })
-        .unwrap_or((false, false))
+pub fn history_state(webview: &WKWebView) -> (bool, bool) {
+    // SAFETY: main thread, where `Tab` runs every call, and `webview` is alive.
+    unsafe { (webview.canGoBack(), webview.canGoForward()) }
 }
 
 /// The visible page as a JPEG at 1x: plenty for a model to read at a fraction
 /// of the bytes of a Retina PNG.
 /// `area` is a part of the viewport in CSS pixels: left, top, width, height.
 pub fn snapshot_jpeg(
-    pointer: *mut c_void,
+    webview: &WKWebView,
     area: Option<(f64, f64, f64, f64)>,
     done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send>,
 ) {
-    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+    let webview = webview.retain();
+    let Some(mtm) = MainThreadMarker::new() else {
         done(Err("the tab is gone".into()));
         return;
     };
@@ -861,8 +931,9 @@ pub fn snapshot_jpeg(
 /// The page as it stands, as a JPEG at the screen's own resolution, for the app
 /// to slide in its place while the stage moves. The image is taken off the main
 /// thread before it is compressed, so the capture costs the window no frame.
-pub fn still_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Option<Vec<u8>>) + Send>) {
-    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+pub fn still_jpeg(webview: &WKWebView, done: Box<dyn FnOnce(Option<Vec<u8>>) + Send>) {
+    let webview = webview.retain();
+    let Some(mtm) = MainThreadMarker::new() else {
         done(None);
         return;
     };
@@ -921,12 +992,13 @@ pub enum World {
 /// Runs `body` as the body of an async function in the page, awaiting any
 /// promise it returns. The body must return a string.
 pub fn call_async(
-    pointer: *mut c_void,
+    webview: &WKWebView,
     body: &str,
     world: World,
     done: Box<dyn FnOnce(Result<String, String>) + Send>,
 ) {
-    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+    let webview = webview.retain();
+    let Some(mtm) = MainThreadMarker::new() else {
         done(Err("the tab is gone".into()));
         return;
     };
@@ -985,12 +1057,13 @@ fn script_error(error: &NSError) -> String {
 /// lays it out as one tall PDF page, which is then drawn as a picture. A page
 /// taller than `most` is cut at that height.
 pub fn full_page_jpeg(
-    pointer: *mut c_void,
+    webview: &WKWebView,
     height: f64,
     most: f64,
     done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send>,
 ) {
-    let (Some(webview), Some(mtm)) = (webview_from(pointer), MainThreadMarker::new()) else {
+    let webview = webview.retain();
+    let Some(mtm) = MainThreadMarker::new() else {
         done(Err("the tab is gone".into()));
         return;
     };
@@ -1049,14 +1122,12 @@ fn jpeg_bytes(image: &[u8]) -> Option<Vec<u8>> {
 }
 
 struct TabNavigationDelegateIvars {
-    inner: Option<Retained<ProtocolObject<dyn WKNavigationDelegate>>>,
-    document: Box<dyn Fn(DocumentEvent)>,
-    health: Rc<dyn Fn(Option<TabStall>)>,
+    events: Arc<dyn TabEvents>,
+    download: Retained<TabDownloadDelegate>,
 }
 
 define_class!(
-    /// Sits in front of the navigation delegate the webview came with, hearing
-    /// how each top-level load goes and passing every call on to it.
+    /// Decides where the page may go and hears how each top-level load goes.
     // SAFETY: a plain NSObject subclass that adds no dealloc and is only used on the
     // main thread.
     #[unsafe(super(NSObject))]
@@ -1067,52 +1138,52 @@ define_class!(
     // SAFETY: every NSObject subclass already conforms to NSObjectProtocol.
     unsafe impl NSObjectProtocol for TabNavigationDelegate {}
 
-    impl TabNavigationDelegate {
-        // SAFETY: matches NSObject's `respondsToSelector:`: a selector in, a BOOL out.
-        #[unsafe(method(respondsToSelector:))]
-        fn responds_to_selector(&self, selector: Sel) -> bool {
-            // SAFETY: asks NSObject's own answer for the selector we were given.
-            let own: bool = unsafe { msg_send![super(self), respondsToSelector: selector] };
-            own || self.inner_responds(selector)
-        }
-
-        // SAFETY: matches `forwardingTargetForSelector:`. The returned object is not retained
-        // for the caller, as the method requires, and our ivars keep it alive.
-        #[unsafe(method(forwardingTargetForSelector:))]
-        fn forwarding_target(&self, _selector: Sel) -> *mut AnyObject {
-            self.ivars()
-                .inner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |inner| {
-                    Retained::as_ptr(inner) as *mut AnyObject
-                })
-        }
-    }
-
     // SAFETY: each method below has the signature WebKit declares for its selector, and
     // WebKit calls them on the main thread with a live webview and arguments.
     unsafe impl WKNavigationDelegate for TabNavigationDelegate {
+        #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
+        unsafe fn decide(
+            &self,
+            _webview: &WKWebView,
+            action: &WKNavigationAction,
+            handler: &block2::DynBlock<dyn Fn(WKNavigationActionPolicy)>,
+        ) {
+            // SAFETY: main thread, and WebKit keeps `action` alive for the callback.
+            let (download, url) = unsafe {
+                (
+                    action.shouldPerformDownload(),
+                    action
+                        .request()
+                        .URL()
+                        .and_then(|url| url.absoluteString())
+                        .map(|url| url.to_string())
+                        .unwrap_or_default(),
+                )
+            };
+            let policy = if download {
+                WKNavigationActionPolicy::Download
+            } else if self.ivars().events.may_load(&url) {
+                WKNavigationActionPolicy::Allow
+            } else {
+                WKNavigationActionPolicy::Cancel
+            };
+            handler.call((policy,));
+        }
+
         #[unsafe(method(webView:didStartProvisionalNavigation:))]
         unsafe fn started(&self, webview: &WKWebView, navigation: Option<&WKNavigation>) {
-            // SAFETY: main thread, and WebKit keeps `webview` alive for the callback.
-            let url = unsafe { webview.URL() }
-                .and_then(|url| url.absoluteString())
-                .map(|url| url.to_string())
-                .unwrap_or_default();
-            (self.ivars().health)(None);
-            (self.ivars().document)(DocumentEvent::Started {
+            let events = &self.ivars().events;
+            events.health(None);
+            events.document(DocumentEvent::Started {
                 navigation: navigation_id(navigation),
-                url,
+                url: address_of(webview),
             });
-            if let Some(inner) = self.forward_to(sel!(webView:didStartProvisionalNavigation:)) {
-                let _: () = msg_send![inner, webView: webview, didStartProvisionalNavigation: navigation];
-            }
         }
 
         #[unsafe(method(webView:decidePolicyForNavigationResponse:decisionHandler:))]
         unsafe fn responded(
             &self,
-            webview: &WKWebView,
+            _webview: &WKWebView,
             response: &WKNavigationResponse,
             handler: &block2::DynBlock<dyn Fn(WKNavigationResponsePolicy)>,
         ) {
@@ -1123,88 +1194,97 @@ define_class!(
                 let status = answer
                     .downcast_ref::<objc2_foundation::NSHTTPURLResponse>()
                     .and_then(|http| u16::try_from(http.statusCode()).ok());
-                (self.ivars().document)(DocumentEvent::Responded {
-                    url: answer.URL()
+                self.ivars().events.document(DocumentEvent::Responded {
+                    url: answer
+                        .URL()
                         .and_then(|url| url.absoluteString())
                         .map(|url| url.to_string())
                         .unwrap_or_default(),
                     status,
-                    mime_type: answer.MIMEType()
+                    mime_type: answer
+                        .MIMEType()
                         .map(|mime| mime.to_string())
                         .unwrap_or_default(),
                 });
             }
-            match self.forward_to(sel!(webView:decidePolicyForNavigationResponse:decisionHandler:)) {
-                Some(inner) => {
-                    let _: () = msg_send![
-                        inner,
-                        webView: webview,
-                        decidePolicyForNavigationResponse: response,
-                        decisionHandler: handler
-                    ];
-                }
-                None => handler.call((WKNavigationResponsePolicy::Allow,)),
-            }
+            // SAFETY: same live response, same thread.
+            let policy = if unsafe { response.canShowMIMEType() } {
+                WKNavigationResponsePolicy::Allow
+            } else {
+                WKNavigationResponsePolicy::Download
+            };
+            handler.call((policy,));
+        }
+
+        #[unsafe(method(webView:didCommitNavigation:))]
+        unsafe fn committed(&self, webview: &WKWebView, _navigation: Option<&WKNavigation>) {
+            self.ivars().events.loaded(page_load(webview, true));
         }
 
         #[unsafe(method(webView:didFinishNavigation:))]
         unsafe fn finished(&self, webview: &WKWebView, navigation: Option<&WKNavigation>) {
-            (self.ivars().document)(DocumentEvent::Finished {
+            let events = &self.ivars().events;
+            events.document(DocumentEvent::Finished {
                 navigation: navigation_id(navigation),
             });
-            if let Some(inner) = self.forward_to(sel!(webView:didFinishNavigation:)) {
-                let _: () = msg_send![inner, webView: webview, didFinishNavigation: navigation];
-            }
+            events.loaded(page_load(webview, false));
+        }
+
+        #[unsafe(method(webView:navigationAction:didBecomeDownload:))]
+        unsafe fn action_downloads(
+            &self,
+            _webview: &WKWebView,
+            _action: &WKNavigationAction,
+            download: &WKDownload,
+        ) {
+            // SAFETY: main thread; the tab keeps the download delegate alive.
+            unsafe {
+                download.setDelegate(Some(ProtocolObject::from_ref(&*self.ivars().download)))
+            };
+        }
+
+        #[unsafe(method(webView:navigationResponse:didBecomeDownload:))]
+        unsafe fn response_downloads(
+            &self,
+            _webview: &WKWebView,
+            _response: &WKNavigationResponse,
+            download: &WKDownload,
+        ) {
+            // SAFETY: as above.
+            unsafe {
+                download.setDelegate(Some(ProtocolObject::from_ref(&*self.ivars().download)))
+            };
         }
 
         #[unsafe(method(webViewWebContentProcessDidTerminate:))]
-        unsafe fn crashed(&self, webview: &WKWebView) {
-            (self.ivars().health)(Some(TabStall::Crashed));
-            if let Some(inner) = self.forward_to(sel!(webViewWebContentProcessDidTerminate:)) {
-                let _: () = msg_send![inner, webViewWebContentProcessDidTerminate: webview];
-            }
+        unsafe fn crashed(&self, _webview: &WKWebView) {
+            self.ivars().events.health(Some(TabStall::Crashed));
         }
 
         #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
         unsafe fn failed_before_commit(
             &self,
-            webview: &WKWebView,
+            _webview: &WKWebView,
             navigation: Option<&WKNavigation>,
             error: &NSError,
         ) {
-            (self.ivars().document)(DocumentEvent::Failed {
+            self.ivars().events.document(DocumentEvent::Failed {
                 navigation: navigation_id(navigation),
                 error: load_error(error),
             });
-            if let Some(inner) = self.forward_to(sel!(webView:didFailProvisionalNavigation:withError:)) {
-                let _: () = msg_send![
-                    inner,
-                    webView: webview,
-                    didFailProvisionalNavigation: navigation,
-                    withError: error
-                ];
-            }
         }
 
         #[unsafe(method(webView:didFailNavigation:withError:))]
         unsafe fn failed(
             &self,
-            webview: &WKWebView,
+            _webview: &WKWebView,
             navigation: Option<&WKNavigation>,
             error: &NSError,
         ) {
-            (self.ivars().document)(DocumentEvent::Failed {
+            self.ivars().events.document(DocumentEvent::Failed {
                 navigation: navigation_id(navigation),
                 error: load_error(error),
             });
-            if let Some(inner) = self.forward_to(sel!(webView:didFailNavigation:withError:)) {
-                let _: () = msg_send![
-                    inner,
-                    webView: webview,
-                    didFailNavigation: navigation,
-                    withError: error
-                ];
-            }
         }
     }
 );
@@ -1212,34 +1292,113 @@ define_class!(
 impl TabNavigationDelegate {
     fn new(
         mtm: MainThreadMarker,
-        inner: Option<Retained<ProtocolObject<dyn WKNavigationDelegate>>>,
-        document: Box<dyn Fn(DocumentEvent)>,
-        health: Rc<dyn Fn(Option<TabStall>)>,
+        events: Arc<dyn TabEvents>,
+        download: Retained<TabDownloadDelegate>,
     ) -> Retained<Self> {
         let delegate = mtm
             .alloc::<TabNavigationDelegate>()
-            .set_ivars(TabNavigationDelegateIvars {
-                inner,
-                document,
-                health,
-            });
+            .set_ivars(TabNavigationDelegateIvars { events, download });
         // SAFETY: `delegate` is freshly allocated with its ivars set, and NSObject's `init`
         // takes nothing and returns that same object.
         unsafe { msg_send![super(delegate), init] }
     }
+}
 
-    fn inner_responds(&self, selector: Sel) -> bool {
-        self.ivars().inner.as_ref().is_some_and(|inner| {
-            // SAFETY: our ivars retain `inner`, and any object may be asked `respondsToSelector:`.
-            let responds: bool = unsafe { msg_send![&**inner, respondsToSelector: selector] };
-            responds
-        })
+struct TabDownloadDelegateIvars {
+    events: Arc<dyn TabEvents>,
+}
+
+define_class!(
+    /// Asks where each file a page saves goes, and says when it is done.
+    // SAFETY: a plain NSObject subclass that adds no dealloc and is only used on the
+    // main thread.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = TabDownloadDelegateIvars]
+    struct TabDownloadDelegate;
+
+    // SAFETY: every NSObject subclass already conforms to NSObjectProtocol.
+    unsafe impl NSObjectProtocol for TabDownloadDelegate {}
+
+    // SAFETY: each method below has the signature WebKit declares for its selector, and
+    // WebKit calls them on the main thread with a live download.
+    unsafe impl WKDownloadDelegate for TabDownloadDelegate {
+        #[unsafe(method(download:decideDestinationUsingResponse:suggestedFilename:completionHandler:))]
+        unsafe fn destination(
+            &self,
+            download: &WKDownload,
+            _response: &NSURLResponse,
+            suggested: &NSString,
+            handler: &block2::DynBlock<dyn Fn(*mut NSURL)>,
+        ) {
+            let suggested = std::path::PathBuf::from(suggested.to_string());
+            match self
+                .ivars()
+                .events
+                .download_started(download_address(download), &suggested)
+            {
+                Some(path) => {
+                    let file = NSURL::fileURLWithPath_isDirectory(
+                        &NSString::from_str(&path.to_string_lossy()),
+                        false,
+                    );
+                    handler.call((Retained::as_ptr(&file) as *mut NSURL,));
+                }
+                None => handler.call((std::ptr::null_mut(),)),
+            }
+        }
+
+        #[unsafe(method(downloadDidFinish:))]
+        unsafe fn finished(&self, download: &WKDownload) {
+            self.ivars()
+                .events
+                .download_finished(download_address(download), true);
+        }
+
+        #[unsafe(method(download:didFailWithError:resumeData:))]
+        unsafe fn failed(&self, download: &WKDownload, _error: &NSError, _resume: Option<&NSData>) {
+            self.ivars()
+                .events
+                .download_finished(download_address(download), false);
+        }
     }
+);
 
-    fn forward_to(&self, selector: Sel) -> Option<&ProtocolObject<dyn WKNavigationDelegate>> {
-        self.inner_responds(selector)
-            .then(|| self.ivars().inner.as_deref())
-            .flatten()
+impl TabDownloadDelegate {
+    fn new(mtm: MainThreadMarker, events: Arc<dyn TabEvents>) -> Retained<Self> {
+        let delegate = mtm
+            .alloc::<TabDownloadDelegate>()
+            .set_ivars(TabDownloadDelegateIvars { events });
+        // SAFETY: `delegate` is freshly allocated with its ivars set, and NSObject's `init`
+        // takes nothing and returns that same object.
+        unsafe { msg_send![super(delegate), init] }
+    }
+}
+
+fn download_address(download: &WKDownload) -> String {
+    // SAFETY: main thread, and WebKit keeps `download` alive for the callback.
+    unsafe { download.originalRequest() }
+        .and_then(|request| request.URL())
+        .and_then(|url| url.absoluteString())
+        .map(|url| url.to_string())
+        .unwrap_or_default()
+}
+
+fn address_of(webview: &WKWebView) -> String {
+    // SAFETY: main thread, and WebKit keeps `webview` alive for the callback.
+    unsafe { webview.URL() }
+        .and_then(|url| url.absoluteString())
+        .map(|url| url.to_string())
+        .unwrap_or_default()
+}
+
+fn page_load(webview: &WKWebView, started: bool) -> PageLoad {
+    let (can_go_back, can_go_forward) = history_state(webview);
+    PageLoad {
+        started,
+        url: address_of(webview),
+        can_go_back,
+        can_go_forward,
     }
 }
 
@@ -1258,11 +1417,9 @@ fn load_error(error: &NSError) -> String {
 }
 
 struct TabUiDelegateIvars {
-    inner: Option<Retained<ProtocolObject<dyn WKUIDelegate>>>,
     tab_id: String,
     dialogs: RefCell<Burst>,
-    dialog: Rc<dyn Fn(Option<PageDialog>)>,
-    upload: Box<dyn Fn() -> Option<Vec<std::path::PathBuf>>>,
+    events: Arc<dyn TabEvents>,
 }
 
 define_class!(
@@ -1373,7 +1530,7 @@ define_class!(
                 dyn Fn(*const objc2_foundation::NSArray<objc2_foundation::NSURL>),
             >,
         ) {
-            if let Some(mut paths) = (self.ivars().upload)() {
+            if let Some(mut paths) = self.ivars().events.upload() {
                 if !parameters.allowsMultipleSelection() {
                     paths.truncate(1);
                 }
@@ -1395,64 +1552,45 @@ define_class!(
                 handler.call((std::ptr::null(),));
                 return;
             }
-            match self.ivars().inner.as_ref().filter(|inner| {
-                inner.respondsToSelector(sel!(
-                    webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:
-                ))
-            }) {
-                Some(inner) => {
-                    let _: () = msg_send![
-                        &**inner,
-                        webView: webview,
-                        runOpenPanelWithParameters: parameters,
-                        initiatedByFrame: frame,
-                        completionHandler: handler
-                    ];
-                }
-                None => handler.call((std::ptr::null(),)),
+            let panel = NSOpenPanel::openPanel(webview.mtm());
+            panel.setCanChooseFiles(true);
+            panel.setAllowsMultipleSelection(parameters.allowsMultipleSelection());
+            panel.setCanChooseDirectories(parameters.allowsDirectories());
+            if panel.runModal() == NSModalResponseOK {
+                let chosen = panel.URLs();
+                handler.call((Retained::as_ptr(&chosen),));
+            } else {
+                handler.call((std::ptr::null(),));
             }
         }
 
         #[unsafe(method_id(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:))]
         unsafe fn create_web_view(
             &self,
-            webview: &WKWebView,
-            configuration: &WKWebViewConfiguration,
+            _webview: &WKWebView,
+            _configuration: &WKWebViewConfiguration,
             action: &WKNavigationAction,
-            features: &WKWindowFeatures,
+            _features: &WKWindowFeatures,
         ) -> Option<Retained<WKWebView>> {
-            match self.ivars().inner.as_ref().filter(|inner| {
-                inner.respondsToSelector(sel!(
-                    webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:
-                ))
-            }) {
-                Some(inner) => msg_send![
-                    &**inner,
-                    webView: webview,
-                    createWebViewWithConfiguration: configuration,
-                    forNavigationAction: action,
-                    windowFeatures: features
-                ],
-                None => None,
+            // SAFETY: main thread, and WebKit keeps `action` alive for the callback.
+            let url = unsafe { action.request() }
+                .URL()
+                .and_then(|url| url.absoluteString())
+                .map(|url| url.to_string());
+            if let Some(url) = url {
+                self.ivars().events.new_window(url);
             }
+            None
         }
     }
 );
 
 impl TabUiDelegate {
-    fn new(
-        mtm: MainThreadMarker,
-        inner: Option<Retained<ProtocolObject<dyn WKUIDelegate>>>,
-        tab_id: String,
-        dialog: Rc<dyn Fn(Option<PageDialog>)>,
-        upload: Box<dyn Fn() -> Option<Vec<std::path::PathBuf>>>,
-    ) -> Retained<Self> {
+    fn new(mtm: MainThreadMarker, tab_id: String, events: Arc<dyn TabEvents>) -> Retained<Self> {
         let delegate = mtm.alloc::<TabUiDelegate>().set_ivars(TabUiDelegateIvars {
-            inner,
             tab_id,
             dialogs: RefCell::new(Burst::new(DIALOG_LIMIT, DIALOG_WINDOW)),
-            dialog,
-            upload,
+            events,
         });
         // SAFETY: `delegate` is freshly allocated with its ivars set, and NSObject's `init`
         // takes nothing and returns that same object.
@@ -1534,11 +1672,11 @@ fn present_sheet(
             },
         );
     });
-    (tab.dialog)(Some(described));
-    let (tab_id, closed) = (tab.tab_id.clone(), tab.dialog.clone());
+    tab.events.dialog(Some(described));
+    let (tab_id, closed) = (tab.tab_id.clone(), tab.events.clone());
     let block = RcBlock::new(move |response: NSModalResponse| {
         OPEN_DIALOGS.with(|open| open.borrow_mut().remove(&tab_id));
-        closed(None);
+        closed.dialog(None);
         let accepted = response == NSAlertFirstButtonReturn;
         let text = field
             .as_ref()

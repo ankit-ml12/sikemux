@@ -209,7 +209,14 @@ pub fn run() {
                 if std::env::var_os("SIKEMUX_RUN_WHEN_COVERED").is_some() {
                     if let Some(webview) = _app.get_webview("main") {
                         let _ = webview.with_webview(|platform| {
-                            browser::macos::keep_shown_page_running_when_covered(platform.inner())
+                            // SAFETY: Tauri runs this on the main thread with the main
+                            // window's live WKWebView.
+                            let main = unsafe {
+                                platform.inner().cast::<objc2_web_kit::WKWebView>().as_ref()
+                            };
+                            if let Some(main) = main {
+                                browser::macos::keep_shown_page_running_when_covered(main);
+                            }
                         });
                     }
                 }

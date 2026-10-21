@@ -1,11 +1,7 @@
-//! Each agent owns a strip of browser tabs. A tab is a native child webview of
-//! the main window (WKWebView on macOS), so pages get real input, real pixels,
-//! and the system cookie jar. The React pane only draws the chrome around it
-//! and tells this module where the page area is.
-//!
-//! Once a window has a child webview, Tauri stops treating it as a "webview
-//! window": `get_webview_window("main")` returns `None` and commands taking a
-//! `WebviewWindow` fail. The app reaches the main window with `get_window`.
+//! Each agent owns a strip of browser tabs. A tab is a WKWebView the browser
+//! engine adds to the main window, so pages get real input, real pixels, and
+//! the system cookie jar. The React pane only draws the chrome around it and
+//! tells this module where the page area is.
 
 mod discard;
 mod favicon;
@@ -18,23 +14,21 @@ pub mod tools;
 pub use sikemux_browser::{
     address, burst, documents, downloads, history, local_files, viewport, BrowserBounds,
     BrowserDownload, BrowserSnapshot, BrowserTab, DownloadState, PageDialog, TabStall, BLANK_URL,
-    RECORDER_SCRIPT, USER_AGENT,
+    PARKED_ORIGIN, USER_AGENT,
 };
 #[cfg(target_os = "macos")]
 pub(crate) use sikemux_browser::{input, macos};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use std::path::{Path, PathBuf};
 
+use sikemux_browser::{DocumentEvent, PageLoad, ParentView, Tab, TabEvents, TabSpec};
 use sikemux_process::sync::Locked;
-use tauri::webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder};
-use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, Webview, WebviewUrl,
-};
+use tauri::{AppHandle, Emitter, Manager, State, Url};
 
 use crate::error::{AppError, AppResult};
 pub use handover::SavedStrip;
@@ -52,9 +46,6 @@ const DOWNLOAD_LIMIT: usize = 8;
 const DOWNLOAD_WINDOW: Duration = Duration::from_secs(30);
 /// Files the person never kept are cleared from the holding folder after this long.
 const HELD_DOWNLOAD_LIFETIME: Duration = Duration::from_secs(7 * 24 * 3600);
-// Parked pages sit outside the window, since a hidden view still takes file
-// drops over the spot it last covered. They are hidden too once they are idle.
-const PARKED_ORIGIN: f64 = -100_000.0;
 /// What a parked page lays out at before its pane has ever shown one.
 const PARKED_SIZE: (f64, f64) = (1200.0, 800.0);
 
@@ -205,7 +196,7 @@ impl TabStrip {
 #[derive(Default)]
 struct AgentBrowser {
     strip: TabStrip,
-    views: HashMap<String, Webview>,
+    views: HashMap<String, Tab>,
     bounds: Option<BrowserBounds>,
     /// The size of the page area the last time it showed a page.
     seen: Option<(f64, f64)>,
@@ -333,98 +324,45 @@ impl BrowserManager {
         tab_id: &str,
         url: Url,
         user_agent: &str,
-    ) -> AppResult<Webview> {
+    ) -> AppResult<Tab> {
         self.adopt_app(app);
         let window = app
             .get_window("main")
             .ok_or_else(|| AppError::Window("main window is not open".into()))?;
-        let (width, height) = self
+        let size = self
             .agents
             .locked()
             .get(agent_id)
             .and_then(|agent| agent.seen)
             .unwrap_or(PARKED_SIZE);
-
-        let builder = self.tab_builder(app, agent_id, tab_id, url, user_agent);
-        let add = || {
-            window.add_child(
-                builder,
-                LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN),
-                LogicalSize::new(width, height),
-            )
-        };
         #[cfg(target_os = "macos")]
-        let webview = macos::without_activating(add);
+        let parent = ParentView(window.ns_view().map_err(window_error)?);
         #[cfg(not(target_os = "macos"))]
-        let webview = add();
-        let webview = webview.map_err(window_error)?;
-        let _ = webview.hide();
-        #[cfg(target_os = "macos")]
-        {
-            let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.to_owned());
-            let _ = webview.with_webview(move |platform| {
-                let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
-                let (dialog_app, dialog_tab) = (app_handle.clone(), tab.clone());
-                let (upload_app, upload_tab) = (app_handle.clone(), tab.clone());
-                let (document_app, document_agent, document_tab) =
-                    (app_handle.clone(), agent.clone(), tab.clone());
-                let (health_app, health_tab) = (app_handle.clone(), tab.clone());
-                macos::adopt(
-                    platform.inner(),
-                    agent,
-                    tab,
-                    move |url, back, forward| {
-                        let manager = app_handle.state::<BrowserManager>();
-                        manager.note_page(&app_handle, &moved_agent, &moved_tab, |page| {
-                            page.url = url;
-                            page.can_go_back = back;
-                            page.can_go_forward = forward;
-                        });
-                    },
-                    move |dialog| {
-                        let manager = dialog_app.state::<BrowserManager>();
-                        let mut dialogs = manager.dialogs.locked();
-                        match dialog {
-                            Some(dialog) => dialogs.insert(dialog_tab.clone(), dialog),
-                            None => dialogs.remove(&dialog_tab),
-                        };
-                    },
-                    move || {
-                        let manager = upload_app.state::<BrowserManager>();
-                        manager.take_upload(&upload_tab)
-                    },
-                    move |event| {
-                        let manager = document_app.state::<BrowserManager>();
-                        let failed = manager
-                            .documents
-                            .locked()
-                            .entry(document_tab.clone())
-                            .or_default()
-                            .note(event);
-                        if failed {
-                            manager.note_page(
-                                &document_app,
-                                &document_agent,
-                                &document_tab,
-                                |page| {
-                                    page.loading = false;
-                                },
-                            );
-                        }
-                    },
-                    move |stall| {
-                        let manager = health_app.state::<BrowserManager>();
-                        let mut stalls = manager.stalls.locked();
-                        match stall {
-                            Some(stall) => stalls.insert(health_tab.clone(), stall),
-                            None => stalls.remove(&health_tab),
-                        };
-                    },
-                );
-            });
-        }
+        let parent = {
+            let _ = window;
+            ParentView(std::ptr::null_mut())
+        };
+        let events = Arc::new(TabListener {
+            app: app.clone(),
+            agent_id: agent_id.to_owned(),
+            tab_id: tab_id.to_owned(),
+            popups: Mutex::new(burst::Burst::new(POPUP_LIMIT, POPUP_WINDOW)),
+            downloads: Mutex::new(burst::Burst::new(DOWNLOAD_LIMIT, DOWNLOAD_WINDOW)),
+        });
+        let tab = Tab::open(
+            parent,
+            TabSpec {
+                agent_id,
+                tab_id,
+                url: url.as_str(),
+                user_agent,
+                size,
+            },
+            events,
+        )
+        .map_err(AppError::Window)?;
         self.install_shortcuts(app);
-        Ok(webview)
+        Ok(tab)
     }
 
     fn adopt_app(&self, app: &AppHandle) {
@@ -435,7 +373,7 @@ impl BrowserManager {
 
     /// Builds an unloaded tab's view again at the address it was on. The
     /// back and forward history went with the old page.
-    fn restore(&self, agent_id: &str, tab_id: &str) -> Option<Webview> {
+    fn restore(&self, agent_id: &str, tab_id: &str) -> Option<Tab> {
         let app = self.app.get()?;
         let (url, user_agent) = {
             let mut agents = self.agents.locked();
@@ -487,7 +425,7 @@ impl BrowserManager {
             }
         };
         if !kept {
-            drop_view(view);
+            view.close();
             return None;
         }
         self.announce(app);
@@ -517,84 +455,48 @@ impl BrowserManager {
         })
     }
 
-    fn tab_builder(
+    /// Where a file a page in `tab_id` saves waits, or None to refuse it.
+    fn download_started(
         &self,
         app: &AppHandle,
         agent_id: &str,
         tab_id: &str,
-        url: Url,
-        user_agent: &str,
-    ) -> WebviewBuilder<tauri::Wry> {
-        let builder = WebviewBuilder::new(tab_id, WebviewUrl::External(url))
-            .accept_first_mouse(true)
-            .focused(false)
-            .zoom_hotkeys_enabled(true)
-            .initialization_script(RECORDER_SCRIPT)
-            .on_navigation(tab_may_load);
-        #[cfg(target_os = "macos")]
-        let builder = builder.user_agent(user_agent);
-        #[cfg(not(target_os = "macos"))]
-        let _ = user_agent;
+        url: &str,
+        suggested: &Path,
+    ) -> Option<PathBuf> {
+        let parsed = Url::parse(url).ok()?;
+        let folder = held_downloads_dir(app)?;
+        let path = unique_download_path(&folder, &download_file_name(&parsed, suggested));
+        self.downloads
+            .locked()
+            .insert((tab_id.to_owned(), url.to_owned()), path.clone());
+        self.note_download(app, agent_id, tab_id, url, &path, DownloadState::Started);
+        Some(path)
+    }
 
-        let (load_app, load_agent, load_tab) =
-            (app.clone(), agent_id.to_owned(), tab_id.to_owned());
-        let (title_app, title_agent, title_tab) =
-            (app.clone(), agent_id.to_owned(), tab_id.to_owned());
-        let (popup_app, popup_agent) = (app.clone(), agent_id.to_owned());
-        let popups = Mutex::new(burst::Burst::new(POPUP_LIMIT, POPUP_WINDOW));
-        let (download_app, download_agent, download_tab) =
-            (app.clone(), agent_id.to_owned(), tab_id.to_owned());
-        let downloads = Mutex::new(burst::Burst::new(DOWNLOAD_LIMIT, DOWNLOAD_WINDOW));
-        builder
-            .on_download(move |_, event| {
-                if matches!(event, DownloadEvent::Requested { .. })
-                    && !downloads.locked().admit(Instant::now())
-                {
-                    return false;
-                }
-                let manager = download_app.state::<BrowserManager>();
-                manager.note_download(&download_app, &download_agent, &download_tab, event)
-            })
-            .on_page_load(move |webview, payload| {
-                let loading = payload.event() == PageLoadEvent::Started;
-                let url = payload.url().to_string();
-                let history = history_state(&webview);
-                let manager = load_app.state::<BrowserManager>();
-                manager.note_page(&load_app, &load_agent, &load_tab, |page| {
-                    if !favicon::same_site(&page.url, &url) {
-                        page.favicon = None;
-                    }
-                    page.loading = loading;
-                    page.url = url;
-                    if let Some((back, forward)) = history {
-                        page.can_go_back = back;
-                        page.can_go_forward = forward;
-                    }
-                });
-                if !loading {
-                    let (app, agent, tab) =
-                        (load_app.clone(), load_agent.clone(), load_tab.clone());
-                    tauri::async_runtime::spawn(favicon::refresh(app, agent, tab, webview));
-                }
-            })
-            .on_document_title_changed(move |_, title| {
-                let manager = title_app.state::<BrowserManager>();
-                manager.note_page(&title_app, &title_agent, &title_tab, |page| {
-                    page.title = title;
-                });
-            })
-            .on_new_window(move |url, _| {
-                let admitted = popups.locked().admit(Instant::now());
-                if !admitted {
-                    return NewWindowResponse::Deny;
-                }
-                let (app, agent) = (popup_app.clone(), popup_agent.clone());
-                tauri::async_runtime::spawn(async move {
-                    let manager = app.state::<BrowserManager>();
-                    let _ = manager.open_tab(&app, &agent, Some(url.as_str())).await;
-                });
-                NewWindowResponse::Deny
-            })
+    fn download_finished(
+        &self,
+        app: &AppHandle,
+        agent_id: &str,
+        tab_id: &str,
+        url: &str,
+        saved: bool,
+    ) {
+        let path = self
+            .downloads
+            .locked()
+            .remove(&(tab_id.to_owned(), url.to_owned()))
+            .unwrap_or_default();
+        #[cfg(target_os = "macos")]
+        if saved {
+            quarantine(&path);
+        }
+        let state = if saved {
+            DownloadState::Finished
+        } else {
+            DownloadState::Failed
+        };
+        self.note_download(app, agent_id, tab_id, url, &path, state);
     }
 
     fn note_download(
@@ -602,45 +504,17 @@ impl BrowserManager {
         app: &AppHandle,
         agent_id: &str,
         tab_id: &str,
-        event: DownloadEvent<'_>,
-    ) -> bool {
-        let key = |url: &Url| (tab_id.to_owned(), url.to_string());
-        let (url, path, state) = match event {
-            DownloadEvent::Requested { url, destination } => {
-                let Some(folder) = held_downloads_dir(app) else {
-                    return false;
-                };
-                let path = unique_download_path(&folder, &download_file_name(&url, destination));
-                *destination = path.clone();
-                self.downloads.locked().insert(key(&url), path.clone());
-                (url, path, DownloadState::Started)
-            }
-            DownloadEvent::Finished { url, path, success } => {
-                let chosen = self.downloads.locked().remove(&key(&url));
-                let path = path.or(chosen).unwrap_or_default();
-                #[cfg(target_os = "macos")]
-                if success {
-                    quarantine(&path);
-                }
-                (
-                    url,
-                    path,
-                    if success {
-                        DownloadState::Finished
-                    } else {
-                        DownloadState::Failed
-                    },
-                )
-            }
-            _ => return true,
-        };
+        url: &str,
+        path: &Path,
+        state: DownloadState,
+    ) {
         let bytes = (state == DownloadState::Finished)
-            .then(|| std::fs::metadata(&path).ok().map(|meta| meta.len()))
+            .then(|| std::fs::metadata(path).ok().map(|meta| meta.len()))
             .flatten();
         let download = BrowserDownload {
             agent_id: agent_id.to_owned(),
             tab_id: tab_id.to_owned(),
-            url: url.to_string(),
+            url: url.to_owned(),
             path: path.to_string_lossy().into_owned(),
             state,
         };
@@ -648,7 +522,6 @@ impl BrowserManager {
             agent.downloads.note(&download, bytes);
         }
         let _ = app.emit(BROWSER_DOWNLOAD_EVENT, download);
-        true
     }
 
     /// The number the agent's next download will get, to find later which
@@ -796,7 +669,7 @@ impl BrowserManager {
             view
         };
         if let Some(view) = view {
-            drop_view(view);
+            view.close();
         }
         self.relayout(agent_id);
         self.announce(app);
@@ -813,7 +686,7 @@ impl BrowserManager {
             .remove(agent_id)
             .map(|agent| agent.views.into_iter().collect::<Vec<_>>())
             .unwrap_or_default();
-        let views: Vec<Webview> = {
+        let views: Vec<Tab> = {
             let mut documents = self.documents.locked();
             views
                 .into_iter()
@@ -831,7 +704,7 @@ impl BrowserManager {
             );
         }
         for view in views {
-            drop_view(view);
+            view.close();
         }
         self.announce(app);
         Ok(())
@@ -895,7 +768,7 @@ impl BrowserManager {
         validate_url(&url)?;
         let parsed = Url::parse(&url).map_err(|_| AppError::BadArg("invalid browser url"))?;
         let (tab_id, view) = self.active_view(agent_id)?;
-        view.navigate(parsed).map_err(window_error)?;
+        view.navigate(parsed.as_str());
         self.note_page(app, agent_id, &tab_id, |page| {
             page.url = url.clone();
             page.loading = true;
@@ -905,25 +778,17 @@ impl BrowserManager {
 
     pub fn reload(&self, agent_id: &str) -> AppResult<()> {
         let (_, view) = self.active_view(agent_id)?;
-        view.reload().map_err(window_error)
+        view.reload();
+        Ok(())
     }
 
     pub fn history(&self, agent_id: &str, delta: i32) -> AppResult<()> {
         let (_, view) = self.active_view(agent_id)?;
         #[cfg(target_os = "macos")]
-        {
-            view.with_webview(move |platform| macos::history(platform.inner(), delta))
-                .map_err(window_error)
-        }
+        view.run(move |webview| macos::history(webview, delta));
         #[cfg(not(target_os = "macos"))]
-        {
-            view.eval(if delta < 0 {
-                "history.back()"
-            } else {
-                "history.forward()"
-            })
-            .map_err(window_error)
-        }
+        let _ = (view, delta);
+        Ok(())
     }
 
     /// Holds the tab at `fixed`, or with `None` lets it follow the pane again.
@@ -949,13 +814,13 @@ impl BrowserManager {
             };
             view
         };
-        let _ = view.set_zoom(1.0);
+        view.set_zoom(1.0);
         #[cfg(target_os = "macos")]
         {
             let agent = fixed
                 .and_then(|fixed| fixed.user_agent())
                 .unwrap_or(USER_AGENT);
-            let _ = view.with_webview(move |platform| macos::introduce_as(platform.inner(), agent));
+            view.run(move |webview| macos::introduce_as(webview, agent));
         }
         self.relayout(agent_id);
         Ok(())
@@ -969,7 +834,7 @@ impl BrowserManager {
     }
 
     /// The agent's shown tab, with its page loading again if it was unloaded.
-    pub fn active_view(&self, agent_id: &str) -> AppResult<(String, Webview)> {
+    pub fn active_view(&self, agent_id: &str) -> AppResult<(String, Tab)> {
         validate_agent_id(agent_id)?;
         let no_tab = || AppError::BadArg("this agent has no open browser tab");
         let (id, view) = self
@@ -1002,12 +867,12 @@ impl BrowserManager {
             self.restore(agent_id, &tab_id);
         }
         let now = Instant::now();
-        let plan: Vec<(Webview, viewport::Layout, bool)> = {
+        let plan: Vec<(Tab, viewport::Layout, bool)> = {
             let mut agents = self.agents.locked();
             let Some(agent) = agents.get_mut(agent_id) else {
                 return;
             };
-            let wanted: Vec<(String, Webview, viewport::Layout, bool)> = agent
+            let wanted: Vec<(String, Tab, viewport::Layout, bool)> = agent
                 .views
                 .iter()
                 .map(|(id, view)| {
@@ -1039,11 +904,11 @@ impl BrowserManager {
         for (view, layout, awake) in plan {
             let shown = matches!(layout, viewport::Layout::Shown { .. });
             place(&view, layout, awake);
-            let _ = if shown || awake {
-                view.show()
+            if shown || awake {
+                view.show();
             } else {
-                view.hide()
-            };
+                view.hide();
+            }
         }
     }
 
@@ -1117,7 +982,7 @@ impl BrowserManager {
     }
 
     pub fn drain(&self, why: &str) {
-        let views: Vec<Webview> = self
+        let views: Vec<Tab> = self
             .agents
             .locked()
             .drain()
@@ -1127,37 +992,136 @@ impl BrowserManager {
             eprintln!("Sikemux closed {} browser tab(s): {why}", views.len());
         }
         for view in views {
-            drop_view(view);
+            view.close();
         }
     }
 }
 
-fn drop_view(view: Webview) {
-    #[cfg(target_os = "macos")]
-    {
-        let label = view.label().to_owned();
-        let _ = view.with_webview(move |_| macos::forget(&label));
-    }
-    let _ = view.close();
+/// What one tab's page tells the manager.
+struct TabListener {
+    app: AppHandle,
+    agent_id: String,
+    tab_id: String,
+    popups: Mutex<burst::Burst>,
+    downloads: Mutex<burst::Burst>,
 }
 
-/// Back/forward availability straight from the page's own history. `None`
-/// where the platform gives no answer, so the last known state stands.
-fn history_state(webview: &Webview) -> Option<(bool, bool)> {
-    #[cfg(target_os = "macos")]
-    {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        webview
-            .with_webview(move |platform| {
-                let _ = sender.send(macos::history_state(platform.inner()));
-            })
-            .ok()?;
-        receiver.try_recv().ok()
+impl TabListener {
+    fn manager(&self) -> tauri::State<'_, BrowserManager> {
+        self.app.state::<BrowserManager>()
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = webview;
-        None
+
+    fn note(&self, update: impl FnOnce(&mut TabPage)) {
+        self.manager()
+            .note_page(&self.app, &self.agent_id, &self.tab_id, update);
+    }
+}
+
+impl TabEvents for TabListener {
+    fn may_load(&self, url: &str) -> bool {
+        Url::parse(url).is_ok_and(|url| tab_may_load(&url))
+    }
+
+    fn loaded(&self, load: PageLoad) {
+        let PageLoad {
+            started,
+            url,
+            can_go_back,
+            can_go_forward,
+        } = load;
+        self.note(|page| {
+            if !favicon::same_site(&page.url, &url) {
+                page.favicon = None;
+            }
+            page.loading = started;
+            page.url = url;
+            page.can_go_back = can_go_back;
+            page.can_go_forward = can_go_forward;
+        });
+        if !started {
+            let view = self
+                .manager()
+                .agents
+                .locked()
+                .get(&self.agent_id)
+                .and_then(|agent| agent.views.get(&self.tab_id).cloned());
+            if let Some(view) = view {
+                let (app, agent, tab) =
+                    (self.app.clone(), self.agent_id.clone(), self.tab_id.clone());
+                tauri::async_runtime::spawn(favicon::refresh(app, agent, tab, view));
+            }
+        }
+    }
+
+    fn titled(&self, title: String) {
+        self.note(|page| page.title = title);
+    }
+
+    fn moved(&self, url: String, can_go_back: bool, can_go_forward: bool) {
+        self.note(|page| {
+            page.url = url;
+            page.can_go_back = can_go_back;
+            page.can_go_forward = can_go_forward;
+        });
+    }
+
+    fn new_window(&self, url: String) {
+        if !self.popups.locked().admit(Instant::now()) {
+            return;
+        }
+        let (app, agent) = (self.app.clone(), self.agent_id.clone());
+        tauri::async_runtime::spawn(async move {
+            let manager = app.state::<BrowserManager>();
+            let _ = manager.open_tab(&app, &agent, Some(url.as_str())).await;
+        });
+    }
+
+    fn download_started(&self, url: String, suggested: &Path) -> Option<PathBuf> {
+        if !self.downloads.locked().admit(Instant::now()) {
+            return None;
+        }
+        self.manager()
+            .download_started(&self.app, &self.agent_id, &self.tab_id, &url, suggested)
+    }
+
+    fn download_finished(&self, url: String, saved: bool) {
+        self.manager()
+            .download_finished(&self.app, &self.agent_id, &self.tab_id, &url, saved);
+    }
+
+    fn dialog(&self, dialog: Option<PageDialog>) {
+        let manager = self.manager();
+        let mut dialogs = manager.dialogs.locked();
+        match dialog {
+            Some(dialog) => dialogs.insert(self.tab_id.clone(), dialog),
+            None => dialogs.remove(&self.tab_id),
+        };
+    }
+
+    fn upload(&self) -> Option<Vec<PathBuf>> {
+        self.manager().take_upload(&self.tab_id)
+    }
+
+    fn document(&self, event: DocumentEvent) {
+        let failed = self
+            .manager()
+            .documents
+            .locked()
+            .entry(self.tab_id.clone())
+            .or_default()
+            .note(event);
+        if failed {
+            self.note(|page| page.loading = false);
+        }
+    }
+
+    fn health(&self, stall: Option<TabStall>) {
+        let manager = self.manager();
+        let mut stalls = manager.stalls.locked();
+        match stall {
+            Some(stall) => stalls.insert(self.tab_id.clone(), stall),
+            None => stalls.remove(&self.tab_id),
+        };
     }
 }
 
@@ -1264,10 +1228,9 @@ fn tab_may_load(url: &Url) -> bool {
 
 /// Puts the tab's view where `layout` says, laid out at the page size it names.
 #[cfg(target_os = "macos")]
-fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
+fn place(view: &Tab, layout: viewport::Layout, awake: bool) {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
-    let _ = view.with_webview(move |platform| {
-        let tab = platform.inner();
+    view.run(move |tab| {
         macos::keep_running_when_covered(tab, awake);
         match layout {
             viewport::Layout::Shown { frame, page } => {
@@ -1314,27 +1277,9 @@ fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
     });
 }
 
-/// Elsewhere a fixed viewport can only be had by zooming the page.
 #[cfg(not(target_os = "macos"))]
-fn place(view: &Webview, layout: viewport::Layout, _awake: bool) {
-    use tauri::{Position, Rect, Size};
-    let (x, y, width, height, zoom) = match layout {
-        viewport::Layout::Shown { frame, page } => (
-            frame.x,
-            frame.y,
-            frame.width,
-            frame.height,
-            page.map_or(1.0, |(page_width, _)| frame.width / page_width),
-        ),
-        viewport::Layout::Parked {
-            page: (width, height),
-        } => (PARKED_ORIGIN, PARKED_ORIGIN, width, height, 1.0),
-    };
-    let _ = view.set_zoom(zoom);
-    let _ = view.set_bounds(Rect {
-        position: Position::Logical(LogicalPosition::new(x, y)),
-        size: Size::Logical(LogicalSize::new(width, height)),
-    });
+fn place(view: &Tab, layout: viewport::Layout, awake: bool) {
+    let _ = (view, layout, awake);
 }
 
 const MAX_HOLES: usize = 32;
@@ -1558,15 +1503,14 @@ pub async fn browser_page_still(
     #[cfg(target_os = "macos")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        view.with_webview(move |platform| {
+        view.run(move |webview| {
             macos::still_jpeg(
-                platform.inner(),
+                webview,
                 Box::new(move |jpeg| {
                     let _ = sender.send(jpeg);
                 }),
             )
-        })
-        .map_err(window_error)?;
+        });
         match tokio::time::timeout(STILL_TIMEOUT, receiver).await {
             Ok(Ok(Some(jpeg))) => Ok(tauri::ipc::Response::new(jpeg)),
             _ => Err(AppError::Window("the page could not be captured".into())),

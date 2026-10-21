@@ -107,7 +107,7 @@ impl BrowserManager {
         &self,
         now: Instant,
         pressure: Pressure,
-    ) -> Vec<(String, String, tauri::Webview)> {
+    ) -> Vec<(String, String, sikemux_browser::Tab)> {
         let agents = self.agents.locked();
         agents
             .iter()
@@ -175,7 +175,7 @@ impl BrowserManager {
             view
         };
         self.stalls.locked().remove(tab_id);
-        super::drop_view(view);
+        view.close();
         self.announce(app);
     }
 }

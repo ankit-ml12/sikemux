@@ -10,7 +10,6 @@
 //! either page.
 
 use std::cell::{Cell, RefCell};
-use std::ffi::c_void;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -82,12 +81,6 @@ pub struct KeyStroke {
     pub flags: NSEventModifierFlags,
 }
 
-fn webview_from(pointer: *mut c_void) -> Result<Retained<WKWebView>, String> {
-    // SAFETY: every caller passes `platform.inner()` from inside Tauri's `with_webview`,
-    // which runs on the main thread while that WKWebView is alive.
-    unsafe { Retained::retain(pointer.cast::<WKWebView>()) }.ok_or_else(|| "the tab is gone".into())
-}
-
 fn now() -> f64 {
     NSProcessInfo::processInfo().systemUptime()
 }
@@ -96,16 +89,16 @@ fn now() -> f64 {
 /// view's bounds are in page pixels even while it is drawn scaled, so only
 /// the page's own zoom stands between the two.
 pub fn mouse(
-    pointer: *mut c_void,
+    webview: &WKWebView,
     kind: Mouse,
     x: f64,
     y: f64,
     clicks: isize,
 ) -> Result<(), String> {
-    let webview = webview_from(pointer)?;
+    let webview = webview.retain();
     let window = webview.window().ok_or("the tab is not in a window")?;
     note(|last| last.agent_pointer = Some(Instant::now()));
-    // SAFETY: main thread (see `webview_from`), and `webview` is retained.
+    // SAFETY: main thread (where `Tab` runs every call), and `webview` is retained.
     let zoom = unsafe { webview.pageZoom() }.max(0.01);
     let height = webview.bounds().size.height;
     let local = if webview.isFlipped() {
@@ -141,8 +134,8 @@ pub fn mouse(
     Ok(())
 }
 
-pub fn key(pointer: *mut c_void, stroke: &KeyStroke) -> Result<(), String> {
-    let webview = webview_from(pointer)?;
+pub fn key(webview: &WKWebView, stroke: &KeyStroke) -> Result<(), String> {
+    let webview = webview.retain();
     let window = webview.window().ok_or("the tab is not in a window")?;
     note(|last| last.agent_key = Some(Instant::now()));
     let event = |kind: NSEventType| {
@@ -572,8 +565,8 @@ pub fn guard_cursor() {
 /// WebKit only notices a hung page when input it sent goes unanswered for a
 /// few seconds, and a script call is not input. This sends a key release no
 /// key matches, which pages ignore, so `BrowserManager::stalled` can tell.
-pub fn probe_responsiveness(pointer: *mut c_void) -> Result<(), String> {
-    let webview = webview_from(pointer)?;
+pub fn probe_responsiveness(webview: &WKWebView) -> Result<(), String> {
+    let webview = webview.retain();
     let window = webview.window().ok_or("the tab is not in a window")?;
     let release = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
         NSEventType::KeyUp,
@@ -595,8 +588,8 @@ pub fn probe_responsiveness(pointer: *mut c_void) -> Result<(), String> {
 /// Inserts text at the page's caret the way a keyboard or input method would,
 /// so editors that keep their own model of the document see it arrive. Unlike
 /// a key, this reaches the page without the window's keyboard.
-pub fn insert_text(pointer: *mut c_void, text: &str) -> Result<(), String> {
-    let webview = webview_from(pointer)?;
+pub fn insert_text(webview: &WKWebView, text: &str) -> Result<(), String> {
+    let webview = webview.retain();
     note(|last| last.agent_key = Some(Instant::now()));
     let text = NSString::from_str(text);
     // SAFETY: WKWebView implements NSTextInputClient's `insertText:`, which takes one
