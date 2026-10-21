@@ -34,7 +34,6 @@ mod pty;
 mod relaunch;
 mod release_credits;
 mod remote;
-mod search;
 mod settings;
 mod share;
 mod sim;
@@ -340,10 +339,6 @@ pub fn run() {
             agent_notification::focus_claim,
             dialogs::pick_paths,
             dialogs::pick_save_path,
-            search::project_search,
-            search::project_search_cancel,
-            search::project_search_replace,
-            search::read_file_window,
             ssh::ssh_config_ensure,
             external::open_url,
             external::macos_focus_app,

@@ -221,6 +221,15 @@ impl EventSink for AppSink {
                     serde_json::json!({ "topic": topic, "project": project, "paths": paths }),
                 );
             }
+            Event::Stream {
+                stream,
+                items,
+                done,
+                error,
+            } => self.emit(
+                "core_stream",
+                serde_json::json!({ "stream": stream, "items": items, "done": done, "error": error }),
+            ),
             Event::Attention { .. } | Event::AttentionCleared { .. } => {}
         }
     }

@@ -43,6 +43,8 @@ pub mod plugins;
 mod ports;
 mod project_files;
 mod faces;
+mod search;
+mod streams;
 mod prepare;
 mod questions;
 mod remote;
@@ -370,6 +372,8 @@ pub(crate) struct Core {
     pub(crate) hosts: hosts::Hosts,
     /// The faces agents wear, and the style the person picked for them.
     pub(crate) faces: faces::Faces,
+    /// Answers in parts on the connections that asked for them.
+    pub(crate) streams: streams::Streams,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
     /// The app's terminal theme, which programs asking for colours are told.
@@ -455,6 +459,7 @@ impl Core {
             inbox: inbox::Inbox::default(),
             hosts,
             faces: faces::Faces::new(data_dir),
+            streams: streams::Streams::default(),
             device_view: Mutex::new(Vec::new()),
             terminal_colors: Mutex::default(),
         }))
@@ -690,6 +695,10 @@ impl Core {
             && self.running_sessions() == 0
             && self.chats.count() == 0
             && !board::auto_has_work(self)
+    }
+
+    pub(crate) fn client_conn(&self, id: ClientId) -> Option<Arc<ClientConn>> {
+        self.clients.locked().get(&id).cloned()
     }
 
     fn register_client(&self, client: Arc<ClientConn>) {

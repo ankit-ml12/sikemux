@@ -1630,6 +1630,17 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         paths: Option<Vec<String>>,
     },
+    /// The next part of an answer that arrives in parts, sent only to the
+    /// connection that started `stream`. The last part has `done`, and
+    /// `error` when the stream failed.
+    Stream {
+        stream: u64,
+        items: Vec<Value>,
+        #[serde(default)]
+        done: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

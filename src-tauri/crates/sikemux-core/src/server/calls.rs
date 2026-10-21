@@ -259,6 +259,20 @@ calls! { core, client, params;
         let params = parse(params)?;
         answer(blocking(move || super::project_files::read(params).map_err(CoreError::from)).await?)
     },
+    "searchStream": Full => answer(search_stream(&core, client, parse(params)?)?),
+    "searchReplace": Full => {
+        let params = parse(params)?;
+        answer(blocking(move || super::search::replace(params).map_err(CoreError::from)).await?)
+    },
+    "fileWindow": Full => {
+        let params = parse(params)?;
+        answer(blocking(move || super::search::window(params).map_err(CoreError::from)).await?)
+    },
+    "streamCancel": Watch => {
+        let params: StreamParams = parse(params)?;
+        core.streams.cancel(client.id, params.stream);
+        answer(Value::Null)
+    },
     "faceStyle": Watch => answer(core.faces.style()),
     "setFaceStyle": Person => {
         let style = core.faces.set_style(parse(params)?)?;
@@ -381,6 +395,41 @@ async fn not_an_agent(client: &ClientConn) -> CoreResult<()> {
         }
         None => Ok(()),
     }
+}
+
+#[derive(Deserialize)]
+struct StreamParams {
+    stream: u64,
+}
+
+#[derive(Deserialize)]
+struct SearchStreamParams {
+    stream: u64,
+    #[serde(flatten)]
+    search: super::search::SearchParams,
+}
+
+/// Starts a search whose files arrive as the client's stream `stream`.
+fn search_stream(
+    core: &Core,
+    client: &ClientConn,
+    params: SearchStreamParams,
+) -> CoreResult<Value> {
+    let connection = core
+        .client_conn(client.id)
+        .ok_or_else(|| CoreError::from("this connection is closing"))?;
+    let stream = core.streams.open(connection, params.stream)?;
+    let owner = client.id.to_string();
+    tokio::task::spawn_blocking(move || {
+        let found = super::search::search(params.search, &owner, &|file| {
+            stream.push(json!({ "file": file }))
+        });
+        match found {
+            Ok(summary) => stream.finish(json!({ "summary": summary })),
+            Err(error) => stream.fail(error),
+        }
+    });
+    Ok(json!({ "stream": params.stream }))
 }
 
 pub(super) fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {

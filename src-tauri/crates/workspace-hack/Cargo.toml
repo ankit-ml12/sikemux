@@ -17,7 +17,6 @@ publish = false
 [dependencies]
 aho-corasick = { version = "1" }
 bitflags = { version = "2", default-features = false, features = ["serde"] }
-bstr = { version = "1" }
 crc32fast = { version = "1" }
 crossbeam-utils = { version = "0.8" }
 derive_more = { version = "2", features = ["display", "from"] }
@@ -122,7 +121,6 @@ rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "
 security-framework = { version = "3", features = ["OSX_10_15"] }
 security-framework-sys = { version = "2", features = ["OSX_10_15"] }
 simd-adler32 = { version = "0.3" }
-simdutf8 = { version = "0.1", default-features = false, features = ["aarch64_neon", "public_imp", "std"] }
 slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }

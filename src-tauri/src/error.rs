@@ -46,9 +46,6 @@ pub enum AppError {
     #[error("pty: {0}")]
     Pty(String),
 
-    #[error("search: {0}")]
-    Search(String),
-
     #[error("fs: {0}")]
     Fs(String),
 
@@ -143,7 +140,6 @@ impl AppError {
             AppError::Plugin { .. } => "plugin",
             AppError::BadArg(_) | AppError::BadArgText(_) => "bad-arg",
             AppError::Pty(_) => "pty",
-            AppError::Search(_) => "search",
             AppError::Fs(_) => "fs",
             AppError::FileConflict(_) => "file-conflict",
             AppError::NotText(_) => "not-text",

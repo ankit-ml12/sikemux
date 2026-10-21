@@ -1,16 +1,6 @@
-// Project-scoped global search backing the Cmd+Shift+F panel.
-//
-// Built on `grep-searcher` (the same engine ripgrep uses). The walker runs
-// in PARALLEL (one worker per logical core) and matched files stream back
-// to the frontend through a Tauri `Channel<SearchFile>` as they're found —
-// the UI starts painting before the walk finishes.
-//
-// Cancellation: a monotonic generation counter is bumped on every new
-// search; in-flight searches check it between files and bail. This means
-// fast-typing on a slow repo doesn't pile up N concurrent walks.
-//
-// All blocking work happens inside `tauri::async_runtime::spawn_blocking`
-// so the Tauri command thread pool stays free for unrelated IPC.
+//! Project-wide search and replace, with ripgrep's engine. The walk runs on
+//! every core and matching files stream to the client as they are found. A
+//! newer search of the same project, or the client hanging up, stops it.
 
 use globset::{Candidate, Glob, GlobMatcher};
 use grep_matcher::{Match, Matcher};
@@ -28,7 +18,10 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::error::{AppError, AppResult};
+type SearchResult<T> = Result<T, String>;
+
+/// Takes each file a search finds, answering whether to go on.
+pub(crate) type OnFile<'a> = dyn Fn(SearchFile) -> bool + Sync + 'a;
 
 // ---- caps ---------------------------------------------------------------
 
@@ -57,7 +50,7 @@ fn read_replace_file(path: &Path) -> std::io::Result<Vec<u8>> {
 
 // ---- wire types --------------------------------------------------------
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchOptions {
     #[serde(default)]
@@ -81,6 +74,7 @@ pub struct SearchRange {
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchHit {
     pub line: u32,
     pub text: String,
@@ -96,12 +90,10 @@ pub struct SearchFile {
     pub matches: Vec<SearchHit>,
 }
 
+/// How a search went, sent after every file it found.
 #[derive(Serialize)]
-pub struct SearchResults {
-    /// Always empty: every matching file was already sent down the `on_file`
-    /// channel as the walk found it. Returning them a second time doubled the
-    /// IPC payload of a large search.
-    pub files: Vec<SearchFile>,
+#[serde(rename_all = "camelCase")]
+pub struct SearchSummary {
     pub file_count: usize,
     pub match_count: usize,
     pub truncated: bool,
@@ -113,6 +105,7 @@ pub struct SearchResults {
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplaceFile {
     pub path: String,
     pub match_count: usize,
@@ -125,6 +118,7 @@ pub struct ReplaceError {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplaceResults {
     pub files: Vec<ReplaceFile>,
     pub file_count: usize,
@@ -271,7 +265,7 @@ fn floor_char_boundary(bytes: &[u8], mut idx: usize) -> usize {
 
 // ---- matcher construction ---------------------------------------------
 
-fn build_matcher(query: &str, opts: &SearchOptions) -> AppResult<grep_regex::RegexMatcher> {
+fn build_matcher(query: &str, opts: &SearchOptions) -> SearchResult<grep_regex::RegexMatcher> {
     let raw = if opts.is_regex {
         query.to_string()
     } else {
@@ -285,20 +279,20 @@ fn build_matcher(query: &str, opts: &SearchOptions) -> AppResult<grep_regex::Reg
     RegexMatcherBuilder::new()
         .case_insensitive(!opts.case_sensitive)
         .build(&pattern)
-        .map_err(|e| AppError::Search(e.to_string()))
+        .map_err(|e| e.to_string())
 }
 
-fn build_glob(pat: &str) -> AppResult<Option<GlobMatcher>> {
+fn build_glob(pat: &str) -> SearchResult<Option<GlobMatcher>> {
     let trimmed = pat.trim();
     if trimmed.is_empty() {
         return Ok(None);
     }
     Glob::new(trimmed)
         .map(|g| Some(g.compile_matcher()))
-        .map_err(|e| AppError::Search(e.to_string()))
+        .map_err(|e| e.to_string())
 }
 
-fn build_bytes_regex(query: &str, opts: &SearchOptions) -> AppResult<regex::bytes::Regex> {
+fn build_bytes_regex(query: &str, opts: &SearchOptions) -> SearchResult<regex::bytes::Regex> {
     let raw = if opts.is_regex {
         query.to_string()
     } else {
@@ -313,7 +307,7 @@ fn build_bytes_regex(query: &str, opts: &SearchOptions) -> AppResult<regex::byte
         .case_insensitive(!opts.case_sensitive)
         .multi_line(true)
         .build()
-        .map_err(|e| AppError::Search(e.to_string()))
+        .map_err(|e| e.to_string())
 }
 
 // ---- cancellation -------------------------------------------------------
@@ -357,13 +351,6 @@ fn clear_generation(repo: &str, generation: &Generation) {
     }
 }
 
-#[tauri::command]
-pub fn project_search_cancel(repo: String) {
-    if let Some(counter) = generations().locked().remove(&repo) {
-        counter.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
 // ---- walker construction (shared by search + replace) ------------------
 
 fn build_walker(repo: &str) -> ignore::WalkParallel {
@@ -385,7 +372,7 @@ fn build_walker(repo: &str) -> ignore::WalkParallel {
                 return true;
             }
             let name = entry.file_name().to_string_lossy();
-            !sikemux_core::git::watch::should_skip_dir(&name)
+            !crate::git::watch::should_skip_dir(&name)
         })
         .build_parallel()
 }
@@ -404,47 +391,51 @@ fn repo_relative(repo: &str, path: &Path) -> Option<String> {
 
 // ---- search command (streaming) ----------------------------------------
 
-#[tauri::command]
-pub async fn project_search(
-    repo: String,
+/// What `searchStream` is asked to find.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SearchParams {
+    project: String,
     query: String,
+    #[serde(default)]
     options: SearchOptions,
-    on_file: tauri::ipc::Channel<SearchFile>,
-) -> AppResult<SearchResults> {
-    let generation = bump_generation(&repo);
+}
 
-    if query.is_empty() {
-        clear_generation(&repo, &generation);
-        return Ok(SearchResults {
-            files: vec![],
+/// Searches the project, handing each matching file to `on_file` as the
+/// walk finds it, until the walk ends, `owner` starts a newer search of the
+/// project, or `on_file` says to stop. Runs on a blocking thread.
+pub(crate) fn search(
+    params: SearchParams,
+    owner: &str,
+    on_file: &OnFile<'_>,
+) -> SearchResult<SearchSummary> {
+    let repo = crate::git::watch::repo_key(&params.project)?;
+    let scope = format!("{owner}\0{repo}");
+    let generation = bump_generation(&scope);
+    let summary = if params.query.is_empty() {
+        Ok(SearchSummary {
             file_count: 0,
             match_count: 0,
             truncated: false,
             cancelled: false,
             elapsed_ms: 0,
-        });
-    }
-
-    let cleanup_repo = repo.clone();
-    let (result, generation) = tauri::async_runtime::spawn_blocking(move || {
-        let result = run_search(repo, query, options, on_file, &generation);
-        (result, generation)
-    })
-    .await
-    .map_err(|e| AppError::Search(format!("join: {e}")))?;
-    clear_generation(&cleanup_repo, &generation);
-    result
+        })
+    } else {
+        run_search(&repo, &params.query, &params.options, on_file, &generation)
+    };
+    clear_generation(&scope, &generation);
+    summary
 }
 
 fn run_search(
-    repo: String,
-    query: String,
-    options: SearchOptions,
-    on_file: tauri::ipc::Channel<SearchFile>,
+    repo: &str,
+    query: &str,
+    options: &SearchOptions,
+    on_file: &OnFile<'_>,
     generation: &Generation,
-) -> AppResult<SearchResults> {
+) -> SearchResult<SearchSummary> {
     let started = std::time::Instant::now();
-    let matcher = build_matcher(&query, &options)?;
+    let matcher = build_matcher(query, options)?;
     let include = build_glob(&options.include)?;
     let exclude = build_glob(&options.exclude)?;
 
@@ -458,7 +449,7 @@ fn run_search(
         include: &'a Option<GlobMatcher>,
         exclude: &'a Option<GlobMatcher>,
         repo: &'a str,
-        on_file: &'a tauri::ipc::Channel<SearchFile>,
+        on_file: &'a OnFile<'a>,
         total_matches: &'a AtomicU64,
         file_count: &'a AtomicU64,
         truncated: &'a std::sync::atomic::AtomicBool,
@@ -493,7 +484,7 @@ fn run_search(
         include: &'a Option<GlobMatcher>,
         exclude: &'a Option<GlobMatcher>,
         repo: &'a str,
-        on_file: &'a tauri::ipc::Channel<SearchFile>,
+        on_file: &'a OnFile<'a>,
         total_matches: &'a AtomicU64,
         file_count: &'a AtomicU64,
         truncated: &'a std::sync::atomic::AtomicBool,
@@ -577,7 +568,10 @@ fn run_search(
                 .fetch_add(matches.len() as u64, Ordering::Relaxed);
             self.file_count.fetch_add(1, Ordering::Relaxed);
 
-            let _ = self.on_file.send(SearchFile { path: rel, matches });
+            if !(self.on_file)(SearchFile { path: rel, matches }) {
+                self.cancelled.store(true, Ordering::Relaxed);
+                return WalkState::Quit;
+            }
             WalkState::Continue
         }
     }
@@ -586,18 +580,17 @@ fn run_search(
         matcher: &matcher,
         include: &include,
         exclude: &exclude,
-        repo: &repo,
-        on_file: &on_file,
+        repo,
+        on_file,
         total_matches: &total_matches,
         file_count: &file_count,
         truncated: &truncated,
         cancelled: &cancelled,
         generation,
     };
-    build_walker(&repo).visit(&mut builder);
+    build_walker(repo).visit(&mut builder);
 
-    Ok(SearchResults {
-        files: Vec::new(),
+    Ok(SearchSummary {
         file_count: file_count.load(Ordering::Relaxed) as usize,
         match_count: total_matches.load(Ordering::Relaxed) as usize,
         truncated: truncated.load(Ordering::Relaxed),
@@ -613,30 +606,40 @@ fn run_search(
 // atomically via tempfile. dry_run skips step 2's write/rename so the UI
 // can preview the destructive op.
 
-#[tauri::command]
-pub async fn project_search_replace(
-    repo: String,
+/// What `searchReplace` is asked to change.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReplaceParams {
+    project: String,
     query: String,
     replace: String,
+    #[serde(default)]
     options: SearchOptions,
+    #[serde(default)]
     dry_run: bool,
-) -> AppResult<ReplaceResults> {
-    if query.is_empty() {
+}
+
+/// Replaces every match in the project, or with `dry_run` only says where it
+/// would. Runs on a blocking thread.
+pub(crate) fn replace(params: ReplaceParams) -> SearchResult<ReplaceResults> {
+    if params.query.is_empty() {
         return Ok(ReplaceResults {
             files: vec![],
             file_count: 0,
             match_count: 0,
             errors: vec![],
-            dry_run,
+            dry_run: params.dry_run,
             elapsed_ms: 0,
         });
     }
-
-    tauri::async_runtime::spawn_blocking(move || {
-        run_replace(repo, query, replace, options, dry_run)
-    })
-    .await
-    .map_err(|e| AppError::Search(format!("join: {e}")))?
+    let repo = crate::git::watch::repo_key(&params.project)?;
+    run_replace(
+        repo,
+        params.query,
+        params.replace,
+        params.options,
+        params.dry_run,
+    )
 }
 
 fn run_replace(
@@ -645,7 +648,7 @@ fn run_replace(
     replace: String,
     options: SearchOptions,
     dry_run: bool,
-) -> AppResult<ReplaceResults> {
+) -> SearchResult<ReplaceResults> {
     let started = std::time::Instant::now();
     let rewrite_re = build_bytes_regex(&query, &options)?;
     let include = build_glob(&options.include)?;
@@ -748,9 +751,9 @@ fn run_replace(
     build_walker(&repo).visit(&mut b);
 
     if limit_exceeded.load(Ordering::Acquire) {
-        return Err(AppError::Search(format!(
+        return Err(format!(
             "replace scope exceeds the safety limit of {MAX_REPLACE_SCANNED_FILES} scanned files or {MAX_REPLACE_CANDIDATES} matching files; narrow the path or glob"
-        )));
+        ));
     }
 
     let candidates = candidates.into_inner().unwrap_or_default();
@@ -899,6 +902,7 @@ fn persist_rewrite(
 // starting line number for the snippet.
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileWindow {
     pub doc: String,
     /// 1-based line number of the first line in `doc`.
@@ -910,47 +914,53 @@ pub struct FileWindow {
     pub clipped_tail: bool,
 }
 
-#[tauri::command]
-pub async fn read_file_window(
+/// Where `fileWindow` looks: `before` and `after` lines around `line`.
+#[derive(Deserialize)]
+pub(crate) struct WindowParams {
     path: String,
     line: u32,
     before: u32,
     after: u32,
-) -> AppResult<FileWindow> {
+}
+
+/// The lines around one line of a file, for a search result's preview. Runs
+/// on a blocking thread.
+pub(crate) fn window(params: WindowParams) -> SearchResult<FileWindow> {
+    let WindowParams {
+        path,
+        line,
+        before,
+        after,
+    } = params;
     if before > MAX_WINDOW_CONTEXT_LINES || after > MAX_WINDOW_CONTEXT_LINES {
-        return Err(AppError::Search(format!(
+        return Err(format!(
             "file window context is limited to {MAX_WINDOW_CONTEXT_LINES} lines per side"
-        )));
+        ));
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        let bytes = crate::fs::read_bounded(Path::new(&path), MAX_FILE_BYTES)?;
-        let text = String::from_utf8_lossy(&bytes).into_owned();
-        let lines: Vec<&str> = text.lines().collect();
-        let total = lines.len() as u32;
-        if total == 0 {
-            return Ok(FileWindow {
-                doc: String::new(),
-                start_line: 1,
-                total_lines: 0,
-                clipped_head: false,
-                clipped_tail: false,
-            });
-        }
-        let center = line.saturating_sub(1).min(total.saturating_sub(1));
-        let start = center.saturating_sub(before);
-        let end = (center + after + 1).min(total);
-        let slice = &lines[start as usize..end as usize];
-        let doc = slice.join("\n");
-        Ok(FileWindow {
-            doc,
-            start_line: start + 1,
-            total_lines: total,
-            clipped_head: start > 0,
-            clipped_tail: end < total,
-        })
+    let bytes = read_replace_file(Path::new(&path)).map_err(|error| format!("{path}: {error}"))?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let lines: Vec<&str> = text.lines().collect();
+    let total = lines.len() as u32;
+    if total == 0 {
+        return Ok(FileWindow {
+            doc: String::new(),
+            start_line: 1,
+            total_lines: 0,
+            clipped_head: false,
+            clipped_tail: false,
+        });
+    }
+    let center = line.saturating_sub(1).min(total.saturating_sub(1));
+    let start = center.saturating_sub(before);
+    let end = (center + after + 1).min(total);
+    let doc = lines[start as usize..end as usize].join("\n");
+    Ok(FileWindow {
+        doc,
+        start_line: start + 1,
+        total_lines: total,
+        clipped_head: start > 0,
+        clipped_tail: end < total,
     })
-    .await
-    .map_err(|e| AppError::Search(format!("join: {e}")))?
 }
 
 #[cfg(test)]

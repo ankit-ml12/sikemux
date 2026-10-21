@@ -89,6 +89,15 @@ impl EventSink for RemoteSink {
                 "agent_notice",
                 json!({ "title": title, "body": body, "agentId": agent_id }),
             ),
+            Event::Stream {
+                stream,
+                items,
+                done,
+                error,
+            } => self.emit(
+                "core_stream",
+                json!({ "stream": stream, "items": items, "done": done, "error": error }),
+            ),
             Event::SshLink { .. }
             | Event::AccountDevice { .. }
             | Event::TaskOutput { .. }
