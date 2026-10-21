@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { chooseHost, THIS_HOST, type HostChoice } from "../hosts/hosts";
+import { chooseHost, setUpOverSsh, sshSetUp, THIS_HOST, type HostChoice } from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
-import { IconChevron, IconFolder, IconLaptop, IconServer } from "../ui/Icons";
+import { IconChevron, IconDownload, IconFolder, IconLaptop, IconLogIn, IconServer } from "../ui/Icons";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const keyOf = (choice: HostChoice) => (choice.kind === "core" ? `core:${choice.host ?? ""}` : `ssh:${choice.alias}`);
@@ -29,6 +29,31 @@ const PROJECT_MARK = (
         <IconFolder size={13} />
     </span>
 );
+
+/** Where an SSH host without Sikemux has no projects: the offer to install it, or to sign in the Sikemux it has (ADR 0019). */
+function SetUpOffer({ alias }: { alias: string }) {
+    const setUp = useStore((s) => sshSetUp(s, alias));
+    const work = useStore((s) => s.sshWork[alias]);
+    if (!setUp) return null;
+    const label = work
+        ? `${work === "installing" ? "Installing Sikemux on" : "Signing in"} ${alias}…`
+        : setUp === "installing"
+          ? `Install Sikemux on ${alias}`
+          : `Sign in ${alias}`;
+    return (
+        <>
+            <span className="tb-place-sep" aria-hidden="true">
+                <IconChevron size={11} />
+            </span>
+            <button type="button" className="dd-btn tb-place-btn" disabled={!!work} onClick={() => setUpOverSsh(alias, setUp)}>
+                <span className="dd-icon" aria-hidden="true">
+                    {setUp === "installing" ? <IconDownload size={13} /> : <IconLogIn size={13} />}
+                </span>
+                <span className="dd-val">{label}</span>
+            </button>
+        </>
+    );
+}
 
 /** Where the window is: the chosen host, then the project in front, each a picker, in the middle of the top bar. */
 export function TopBarPlace() {
@@ -83,21 +108,25 @@ export function TopBarPlace() {
                 icon={hostMark(chosen)}
                 onChange={(key) => chooseHost(choiceOf(key))}
             />
-            {inProject && (
-                <>
-                    <span className="tb-place-sep" aria-hidden="true">
-                        <IconChevron size={11} />
-                    </span>
-                    <Dropdown
-                        className="tb-place-btn"
-                        label="Project"
-                        value={activeId}
-                        options={projectOptions}
-                        icon={PROJECT_MARK}
-                        search={projectOptions.length > 8 ? "Find a project" : undefined}
-                        onChange={cmd.selectSession}
-                    />
-                </>
+            {chosen.kind === "ssh" ? (
+                <SetUpOffer alias={chosen.alias} />
+            ) : (
+                inProject && (
+                    <>
+                        <span className="tb-place-sep" aria-hidden="true">
+                            <IconChevron size={11} />
+                        </span>
+                        <Dropdown
+                            className="tb-place-btn"
+                            label="Project"
+                            value={activeId}
+                            options={projectOptions}
+                            icon={PROJECT_MARK}
+                            search={projectOptions.length > 8 ? "Find a project" : undefined}
+                            onChange={cmd.selectSession}
+                        />
+                    </>
+                )
             )}
         </div>
     );

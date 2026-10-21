@@ -23,7 +23,7 @@ import { selectSession } from "./sessions";
 import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
-import { bringForward, hostTitle, newWorkHost, projectOnHost, startRemoteChat, type HostChoice } from "../../hosts/hosts";
+import { bringForward, hostTitle, newWorkHost, openInstallPane, projectOnHost, startRemoteChat, type HostChoice } from "../../hosts/hosts";
 
 /** Providers list a session under at most this many characters. */
 const SESSION_TITLE_MAX = 72;
@@ -119,7 +119,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
     const target = st.sessions[options.sessionId ?? st.activeSessionId];
     const here = chatHost(st, target);
     if (here.kind === "ssh") {
-        notify("info", `${here.alias} is reached over SSH only; Install Sikemux there to start chats on it`);
+        openInstallPane(here.alias);
         return false;
     }
     if (here.host) {

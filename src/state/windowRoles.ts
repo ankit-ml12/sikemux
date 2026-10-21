@@ -14,6 +14,7 @@ export const CORE_WINDOW_ROLES = {
     shared: "Shared chat",
     board: "Agent board",
     "project-settings": "Project settings",
+    install: "Install Sikemux",
 } as const;
 
 export type CoreWindowRole = keyof typeof CORE_WINDOW_ROLES;
@@ -32,6 +33,7 @@ export const CORE_PANE_KINDS = {
     shared: { role: "shared", title: CORE_WINDOW_ROLES.shared },
     board: { role: "board", title: CORE_WINDOW_ROLES.board },
     "project-settings": { role: "project-settings", title: CORE_WINDOW_ROLES["project-settings"] },
+    "install-sikemux": { role: "install", title: CORE_WINDOW_ROLES.install },
 } as const satisfies Record<string, { role: CoreWindowRole; title: string }>;
 
 export type CorePaneKind = keyof typeof CORE_PANE_KINDS;

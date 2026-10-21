@@ -24,6 +24,7 @@ const DiffPane = lazy(() => import("../git/DiffPane").then((module) => ({ defaul
 const SearchPane = lazy(() => import("../workspace/SearchPane").then((module) => ({ default: module.SearchPane })));
 const SharedChatPane = lazy(() => import("../share/SharedChatPane").then((module) => ({ default: module.SharedChatPane })));
 const ProjectSettingsPane = lazy(() => import("../projects/ProjectSettingsPane").then((module) => ({ default: module.ProjectSettingsPane })));
+const InstallSikemuxPane = lazy(() => import("../hosts/InstallSikemuxPane").then((module) => ({ default: module.InstallSikemuxPane })));
 const BoardPane = lazy(() => import("../board/BoardPane").then((module) => ({ default: module.BoardPane })));
 
 const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
@@ -71,6 +72,11 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
     board: ({ pane, session, visible }) => (
         <Suspense fallback={<ItemFallback />}>
             <BoardPane folder={paneCwd(pane, session)} visible={visible} />
+        </Suspense>
+    ),
+    "install-sikemux": ({ session }) => (
+        <Suspense fallback={<ItemFallback />}>
+            <InstallSikemuxPane alias={session.name} />
         </Suspense>
     ),
     "project-settings": ({ pane, session, visible }) => (

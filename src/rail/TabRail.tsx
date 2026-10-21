@@ -11,7 +11,7 @@ import type { AgentUsage } from "../api/agents";
 import { useStore } from "../state/store";
 import { activeAgentId, agentDisplayOf, agentIdsOf, chatKey, hasChat } from "../state/selectors";
 import { type Agent, type AgentType, type PinnedChat } from "../state/types";
-import { AgentIcon, IconAgent, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconDownload, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { inTeams, type TeamLink } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
@@ -37,7 +37,7 @@ import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
 import { NewOnHost, remoteChatRows, useHostProject } from "./RemoteRows";
-import { hostName } from "../hosts/hosts";
+import { hostName, openInstallPane } from "../hosts/hosts";
 import { HostTerminals } from "./HostLists";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
@@ -312,7 +312,16 @@ export function TabRailBody() {
             <>
                 {header}
                 <div className="tab-rail-top">
-                    {actions}
+                    <div className="agent-actions">
+                        <NewOnHost />
+                        <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
+                        <NewRow
+                            icon={<IconDownload size={15} />}
+                            title="Install Sikemux"
+                            shortcut="agent.new"
+                            onClick={() => openInstallPane(host.alias)}
+                        />
+                    </div>
                     {session?.kind === "project" && <ScopeTabs scope={scope} name={session.name} onChange={cmd.setTabRailScope} />}
                 </div>
                 <div className="rail-scroll">

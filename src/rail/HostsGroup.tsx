@@ -4,12 +4,11 @@ import { coreCall } from "../api/core";
 import {
     approvalItem,
     chooseHost,
-    installHere,
     openHostTerminal,
     projectOnHost,
     sameHost,
     THIS_HOST,
-    signInHere,
+    setUpOverSsh,
     startRemoteChat,
     type HostChoice,
     type HostEntry,
@@ -71,20 +70,13 @@ function useHostLoad(host: string, connected: boolean): string | null {
     return connected ? load : null;
 }
 
-/** Installing Sikemux on an SSH host, or signing in one that has it, while either runs. */
+/** Installing Sikemux on an SSH host, or signing in one that has it, and which of them runs now. */
 function useOverSsh(alias: string | null) {
-    const [busy, setBusy] = useState<"installing" | "signing in" | null>(null);
-    const run = (doing: "installing" | "signing in", action: (alias: string) => Promise<void>, failed: string) => {
-        if (!alias) return;
-        setBusy(doing);
-        action(alias)
-            .catch(reportError(failed))
-            .finally(() => setBusy(null));
-    };
+    const busy = useStore((s) => (alias ? s.sshWork[alias] : undefined)) ?? null;
     return {
         busy,
-        install: () => run("installing", installHere, `Install Sikemux on ${alias}`),
-        signIn: () => run("signing in", signInHere, `Sign in ${alias}`),
+        install: () => alias && setUpOverSsh(alias, "installing"),
+        signIn: () => alias && setUpOverSsh(alias, "signing in"),
     };
 }
 

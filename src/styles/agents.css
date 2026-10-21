@@ -109,6 +109,16 @@
     font-size: var(--text-2xs);
     font-weight: var(--weight-normal);
 }
+/* An SSH host's offer to install Sikemux, in the middle of its pane. */
+.install-sikemux-pane {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    padding: var(--space-6);
+}
+.install-sikemux-pane .empty-state {
+    max-width: 420px;
+}
 /* Which host the new rows start on, above them, only when it is not this one. */
 .agent-actions-host {
     padding: var(--space-1) var(--space-2) var(--space-0);

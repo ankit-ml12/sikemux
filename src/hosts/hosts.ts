@@ -78,13 +78,46 @@ async function signInOverSsh(alias: string, command: "host_install" | "host_sign
     await done;
 }
 
-/** Installs Sikemux on the SSH host `alias` and signs it in to the account. */
-export const installHere = (alias: string): Promise<void> => signInOverSsh(alias, "host_install", "Install Sikemux");
+/** Setting an SSH host up: installing Sikemux there, or signing in the Sikemux it has. */
+export type SshWork = "installing" | "signing in";
 
-/** Signs the SSH host `alias`, which runs Sikemux but is off the account, in to it. */
-export async function signInHere(alias: string): Promise<void> {
-    await signInOverSsh(alias, "host_sign_in", "Sign in");
-    await probeSshHost(alias);
+/** What setting up the SSH host `alias` takes, from what asking it found; nothing for a host on another account. */
+export function sshSetUp(state: Pick<StoreState, "sshProbes">, alias: string): SshWork | null {
+    const probe = state.sshProbes[alias];
+    if (!probe) return "installing";
+    return probe.account === "signedOut" ? "signing in" : null;
+}
+
+/** Installs Sikemux on the SSH host `alias`, or signs in the one it has, once at a time, for every place that offers it. */
+export function setUpOverSsh(alias: string, work: SshWork): void {
+    if (getState().sshWork[alias]) return;
+    setState({ sshWork: { ...getState().sshWork, [alias]: work } });
+    const done =
+        work === "installing"
+            ? signInOverSsh(alias, "host_install", "Install Sikemux")
+            : signInOverSsh(alias, "host_sign_in", "Sign in").then(() => probeSshHost(alias));
+    void done.catch(reportError(work === "installing" ? `Install Sikemux on ${alias}` : `Sign in ${alias}`)).finally(() => {
+        const { [alias]: _, ...others } = getState().sshWork;
+        setState({ sshWork: others });
+    });
+}
+
+/** The Install Sikemux pane for the SSH host `alias`, a tab of its SSH session (ADR 0019). */
+export function openInstallPane(alias: string): void {
+    createSshSession(alias);
+    mutate((d) => {
+        const session = d.sessions[d.activeSessionId];
+        if (session?.kind !== "ssh") return;
+        const open = (d.windowsBySession[session.id] ?? []).find((id) => d.windows[id]?.role === "install");
+        if (open) {
+            session.activeWindowId = open;
+            return;
+        }
+        const window = makeWindow("", "Install Sikemux", { kind: "install-sikemux", role: "install" });
+        d.windows[window.id] = window;
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
+        session.activeWindowId = window.id;
+    });
 }
 
 /** Asks the SSH host `alias` whether it runs Sikemux and which host it is, keeping the answer for its row. */
@@ -183,6 +216,8 @@ export function chooseHost(choice: HostChoice): void {
     const state = getState();
     const last = state.lastOnHost[hostKey(choice)];
     const back = last && state.sessions[last] ? last : firstOn(state, choice);
+    // An SSH host without Sikemux is a shell: choosing it shows a terminal there, opening one when none is.
+    if (choice.kind === "ssh" && !back) return createSshSession(choice.alias);
     mutate((d) => {
         d.chosenHost = choice;
         d.activeSessionId = back ?? "";
@@ -190,6 +225,7 @@ export function chooseHost(choice: HostChoice): void {
         d.settingsOpen = false;
         d.pickerOpen = false;
     });
+    if (choice.kind === "ssh" && back && (state.windowsBySession[back] ?? []).length === 0) newSshTerminalOn(choice.alias);
 }
 
 /** The chosen host follows the session in front, which that host then keeps as the one last in front there. */
@@ -222,6 +258,8 @@ export function hostOf(host: string | undefined): HostChoice {
 /** The chosen host while its row is there, else this host: an account host taken off it, or an SSH host closed. */
 function settleChosenHost(): void {
     const { chosenHost, hosts, sessions } = getState();
+    const installed = chosenHost.kind === "ssh" && hosts.find((host) => host.ssh === chosenHost.alias);
+    if (installed) return chooseHost({ kind: "core", host: installed.id });
     const there =
         chosenHost.kind === "core"
             ? !chosenHost.host || hosts.some((host) => host.id === chosenHost.host)

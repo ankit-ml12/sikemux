@@ -12,14 +12,15 @@ import { makeWindow, withActiveSession } from "./shared";
 import { takeSpareShell, type SpareShell } from "../../terminal/spareShell";
 import type { PaneNode } from "../types";
 import { openAgentPalette, openPicker } from "./ui";
-import { hostProjectOf, newRemoteTerminal, newSshTerminalOn, newWorkHost } from "../../hosts/hosts";
+import { hostProjectOf, newRemoteTerminal, newSshTerminalOn, newWorkHost, openInstallPane } from "../../hosts/hosts";
 
 /** Starts the agent launched last, or the first one installed, in the project in front. */
 export async function startAgent(): Promise<void> {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     const here = newWorkHost(st);
-    if (session?.kind !== "project" && !(here.kind === "core" && here.host)) {
+    if (here.kind === "ssh") return openInstallPane(here.alias);
+    if (session?.kind !== "project" && !here.host) {
         continueInPickedProject(() => void startAgent());
         return;
     }
@@ -42,7 +43,9 @@ export async function startAgent(): Promise<void> {
 /** The agent picker, after a project to hold it when there is none in front. */
 export function chooseAgent(): void {
     const st = getState();
-    if (st.sessions[st.activeSessionId]?.kind === "project") openAgentPalette();
+    const here = newWorkHost(st);
+    if (here.kind === "ssh") openInstallPane(here.alias);
+    else if (st.sessions[st.activeSessionId]?.kind === "project") openAgentPalette();
     else continueInPickedProject(openAgentPalette);
 }
 

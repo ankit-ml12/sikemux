@@ -5,7 +5,8 @@ import { nearestAgentId } from "../state/selectors";
 import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { useMouseActive } from "../hooks/useMouseActive";
-import { IconAgent, IconGlobe, IconPhone, IconTerminal, WindowIcon } from "../ui/Icons";
+import { IconAgent, IconDownload, IconGlobe, IconPhone, IconTerminal, WindowIcon } from "../ui/Icons";
+import { openInstallPane } from "../hosts/hosts";
 import { PROJECT_SURFACES } from "../workbench/surfaces";
 import { simUsable, useSimStatus } from "../sim/simStatus";
 import { leavingOverlay } from "../lib/motion";
@@ -42,7 +43,8 @@ export function NewTabPalette() {
     const modalRef = useRef<HTMLDivElement>(null);
     useModalFocus(modalRef);
     const mouseActive = useMouseActive();
-    const choices: TabChoice[] = [
+    const sshHost = useStore((state) => (state.chosenHost.kind === "ssh" ? state.chosenHost.alias : null));
+    const everyChoice: TabChoice[] = [
         {
             id: "terminal",
             label: "Terminal",
@@ -118,6 +120,20 @@ export function NewTabPalette() {
             disabled: !project,
         },
     ];
+    // An SSH host without Sikemux is a shell: a login there, or installing Sikemux (ADR 0019).
+    const choices: TabChoice[] = sshHost
+        ? [
+              everyChoice[0],
+              {
+                  id: "install",
+                  label: "Install Sikemux",
+                  detail: `What Sikemux adds on ${sshHost}, and the installer`,
+                  icon: <IconDownload size={14} />,
+                  shortcut: shortcuts.agent,
+                  open: () => openInstallPane(sshHost),
+              },
+          ]
+        : everyChoice;
     const choose = (choice: TabChoice | undefined) => {
         if (!choice || choice.disabled) return;
         cmd.closeNewTabPalette();
