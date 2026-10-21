@@ -12,6 +12,7 @@ mod backoff;
 pub mod cli;
 #[cfg(unix)]
 pub mod client;
+pub mod download;
 #[cfg(unix)]
 pub mod files;
 pub mod frozen;

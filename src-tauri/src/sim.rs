@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
 use crate::error::{AppError, AppResult};
-use crate::voice_models::{self, ModelFile};
+use sikemux_core::download::{self, PinnedFile};
 
 pub const SIM_EVENT: &str = "sim";
 /// Tells the page a screen it was watching stopped, and why, unless it asked for that itself.
@@ -329,8 +329,8 @@ pub(crate) fn local_helper() -> Option<PathBuf> {
 }
 
 /// The helper published beside this release, which the app downloads the first time it is needed.
-pub(crate) fn published_helper() -> Option<ModelFile> {
-    Some(ModelFile {
+pub(crate) fn published_helper() -> Option<PinnedFile> {
+    Some(PinnedFile {
         path: option_env!("SIKEMUX_SIM_HELPER_ASSET")?.into(),
         size: option_env!("SIKEMUX_SIM_HELPER_SIZE")?.parse().ok()?,
         sha256: option_env!("SIKEMUX_SIM_HELPER_SHA256")?.into(),
@@ -348,7 +348,7 @@ fn downloaded_helper(app: &AppHandle) -> AppResult<PathBuf> {
 
 fn matches(path: &Path, size: u64, sha256: &str) -> bool {
     std::fs::metadata(path).is_ok_and(|meta| meta.len() == size)
-        && voice_models::hash_file(path).is_ok_and(|hash| hash == sha256)
+        && download::hash_file(path).is_ok_and(|hash| hash == sha256)
 }
 
 /// The downloaded helper once its hash was checked. Holding the lock also keeps
@@ -398,7 +398,7 @@ pub(crate) async fn executable(app: &AppHandle) -> AppResult<PathBuf> {
             helper.path
         );
         let mut reported = 0.0;
-        voice_models::download_executable(&url, &destination, &helper, |bytes| {
+        download::download_executable(&url, &destination, &helper, |bytes| {
             let fraction = bytes as f64 / helper.size as f64;
             if fraction - reported >= 0.01 || fraction >= 1.0 {
                 reported = fraction;
@@ -409,7 +409,8 @@ pub(crate) async fn executable(app: &AppHandle) -> AppResult<PathBuf> {
                 );
             }
         })
-        .await?;
+        .await
+        .map_err(AppError::Http)?;
     }
     *known = Some(destination.clone());
     Ok(destination)
