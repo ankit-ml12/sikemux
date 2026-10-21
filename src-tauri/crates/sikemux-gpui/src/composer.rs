@@ -64,6 +64,8 @@ pub struct Composer {
     /// The mic, and what it has heard so far.
     dictation: Option<AnyView>,
     heard: Option<SharedString>,
+    /// The chat's text size, as a share of its designed size.
+    text_scale: f32,
     on_send: Act,
     on_stop: Act,
 }
@@ -93,6 +95,7 @@ impl Composer {
             refusal: None,
             dictation: None,
             heard: None,
+            text_scale: 1.,
             on_send,
             on_stop,
         }
@@ -156,6 +159,11 @@ impl Composer {
 
     pub fn dictation(mut self, mic: impl Into<AnyView>, heard: Option<SharedString>) -> Self {
         (self.dictation, self.heard) = (Some(mic.into()), heard);
+        self
+    }
+
+    pub fn text_scale(mut self, scale: f32) -> Self {
+        self.text_scale = scale;
         self
     }
 
@@ -274,7 +282,7 @@ impl RenderOnce for Composer {
                         div().px(px(12.)).py(px(10.)).child(
                             Textarea::new(&self.draft)
                                 .appearance(false)
-                                .text_size(px(14.5))
+                                .text_size(px(14.5 * self.text_scale))
                                 .when_some(on_paste, |draft, on_paste| {
                                     draft.on_paste(move |item, window, cx| {
                                         on_paste(item, window, cx)
@@ -289,7 +297,7 @@ impl RenderOnce for Composer {
                         div()
                             .px(px(4.))
                             .pb(px(4.))
-                            .text_size(px(14.5))
+                            .text_size(px(14.5 * self.text_scale))
                             .text_color(t.text_disabled)
                             .child(heard)
                     }))

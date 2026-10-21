@@ -68,6 +68,20 @@ pub struct Style {
     pub numbered_sections: bool,
 }
 
+impl Style {
+    /// The same look with its text, code, tables and the gaps between blocks `scale` times
+    /// their size.
+    pub fn scaled(&self, scale: f32) -> Style {
+        Style {
+            text_size: self.text_size * scale,
+            code_size: self.code_size * scale,
+            table_size: self.table_size * scale,
+            gap: self.gap * scale,
+            ..self.clone()
+        }
+    }
+}
+
 impl Default for Style {
     fn default() -> Self {
         Style {

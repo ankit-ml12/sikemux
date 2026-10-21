@@ -27,11 +27,15 @@ use sikemux_wire::chat::{
     ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView,
     LetterKind, PartTree, PermissionAsk, SubagentCard, SubagentState, WorkFold,
 };
-use sikemux_wire::protocol::{ChatAttachment, ChatContext, ChatMark, MidTurnSend};
+use sikemux_wire::protocol::{
+    ChatAttachment, ChatContext, ChatMark, MidTurnSend, DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE,
+    MIN_TEXT_SCALE,
+};
 
 use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk};
 use crate::icons::Icon;
+use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset, ToggleYolo};
 use crate::picture::Picture;
 use crate::syntax;
 use crate::theme::{self, Tokens};
@@ -349,6 +353,9 @@ impl Reading {
 /// subagents' rows, and where in the core's changes it has got to.
 pub struct Chat {
     pub transcript: Entity<Transcript<ChatRow>>,
+    looks: Rc<Looks>,
+    /// The chat's text size, as a share of its designed size.
+    scale: f32,
     /// The stage draws the welcome in an empty chat's place, so it hears when that changes.
     _emptied: Subscription,
     /// The stage draws the find bar's count, so it hears when what was found changes.
@@ -483,18 +490,19 @@ impl Chat {
     ) -> Chat {
         let reader = cx.new(|_| Reading::default());
         let stage = bench.clone();
-        let looks = Looks::new(
+        let looks = Rc::new(Looks::new(
             Tokens::get(cx),
             provider,
             reader.clone(),
             (bench.clone(), asks),
             agent.clone(),
-        );
+        ));
+        let (kept_looks, text) = (looks.clone(), looks.styles.borrow().text.clone());
         let transcript = cx.new(|cx| {
             cx.observe(&reader, |_, _, cx| cx.notify()).detach();
             Transcript::new(
                 Vec::new(),
-                looks.text.clone(),
+                text,
                 move |rows, ix, pen, window, cx| {
                     looks.reader.clone().update(cx, |reading, cx| {
                         row(
@@ -531,6 +539,8 @@ impl Chat {
         });
         Chat {
             transcript,
+            looks: kept_looks,
+            scale: 1.,
             _found: found,
             finding: None,
             activity_line: cx.new(|_| status::Activity::new(provider)),
@@ -647,6 +657,17 @@ impl Chat {
     /// Whether the head changed since this was last asked.
     pub fn take_head_moved(&mut self) -> bool {
         std::mem::take(&mut self.head_moved)
+    }
+
+    /// Draws the chat's text at `scale` times its designed size.
+    pub fn rescale(&mut self, scale: f32, cx: &mut App) {
+        if scale == self.scale {
+            return;
+        }
+        self.scale = scale;
+        let style = self.looks.rescale(scale);
+        self.transcript
+            .update(cx, |transcript, cx| transcript.restyle(style, cx));
     }
 
     /// What the messages waiting behind the running turn say.
@@ -1352,11 +1373,48 @@ pub fn pane(
     div()
         .size_full()
         .key_context("Chat")
-        .on_action(move |_: &FindInChat, window, cx| {
-            this.update(cx, |bench, cx| bench.open_find(&agent, window, cx))
-                .ok();
+        .on_action({
+            let this = this.clone();
+            move |_: &FindInChat, window, cx| {
+                this.update(cx, |bench, cx| bench.open_find(&agent, window, cx))
+                    .ok();
+            }
+        })
+        .on_action(text_size::<TextSizeIncrease>(&this, Some(TEXT_SCALE_STEP)))
+        .on_action(text_size::<TextSizeDecrease>(&this, Some(-TEXT_SCALE_STEP)))
+        .on_action(text_size::<TextSizeReset>(&this, None))
+        .on_action({
+            let (this, agent) = (this.clone(), id.to_owned());
+            move |_: &ToggleYolo, _, cx| {
+                this.update(cx, |bench, _| bench.toggle_yolo(&agent)).ok();
+            }
         })
         .child(pane)
+}
+
+/// How much one press of ⌘= or ⌘− changes the chat's text size.
+const TEXT_SCALE_STEP: f64 = 0.1;
+
+/// Makes the chat's text bigger or smaller by `step`, or back to its designed size without
+/// one, for every chat.
+fn text_size<A: gpui_kit::Action>(
+    this: &WeakEntity<Workbench>,
+    step: Option<f64>,
+) -> impl Fn(&A, &mut Window, &mut App) + use<A> {
+    let this = this.clone();
+    move |_, _, cx| {
+        this.update(cx, |bench, _| {
+            let scale = step.map_or(DEFAULT_TEXT_SCALE, |step| {
+                ((bench.preferences().chat_text_scale + step) * 100.).round() / 100.
+            });
+            crate::settings::set(
+                bench,
+                "chatTextScale",
+                scale.clamp(MIN_TEXT_SCALE, MAX_TEXT_SCALE),
+            );
+        })
+        .ok();
+    }
 }
 
 /// The composer's mic: it listens and then types what was said, and the first click turns
@@ -2219,6 +2277,7 @@ fn composer(
     .map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
         .refusal(composing.refusal.clone())
+        .text_scale(chat.scale)
         .attachments(
             tiles,
             on_add,
@@ -2298,14 +2357,37 @@ fn composer(
         composer = composer.yolo(
             on,
             Rc::new(move |_, cx| {
-                this.update(cx, |bench, _| {
-                    bench.switch_mode(&agent, if on { "workspace-write" } else { "bypass" })
-                })
-                .ok();
+                this.update(cx, |bench, _| bench.toggle_yolo(&agent)).ok();
             }),
         );
     }
     Some((composer.menu(dock), offering))
+}
+
+impl Workbench {
+    /// Lets `agent` run without asking, or has it ask again, when its kind of agent can.
+    pub fn toggle_yolo(&self, agent: &str) {
+        let Some(saved) = self
+            .view
+            .as_ref()
+            .and_then(|view| view.workspace.agents.iter().find(|saved| saved.id == agent))
+        else {
+            return;
+        };
+        let can = self
+            .read("catalog")
+            .and_then(Value::as_array)
+            .and_then(|kinds| {
+                kinds
+                    .iter()
+                    .find(|kind| kind["type"] == saved.provider.as_str())
+            })
+            .is_some_and(|kind| kind["bypass"] == true);
+        if can {
+            let on = saved.permission_mode == "bypass";
+            self.switch_mode(agent, if on { "workspace-write" } else { "bypass" });
+        }
+    }
 }
 
 pub(crate) fn tilde(path: &std::path::Path) -> String {
@@ -2321,9 +2403,10 @@ pub(crate) fn tilde(path: &std::path::Path) -> String {
 
 /// How the chat's markdown looks: an answer, a thought, and what the person wrote.
 struct Looks {
-    text: Rc<Style>,
-    thought: Rc<Style>,
-    user: Rc<Style>,
+    /// The prose of replies, of thoughts and of the person's messages, at the size they
+    /// were designed, and at the chat's text size.
+    designed: Styles,
+    styles: RefCell<Styles>,
     line: Hsla,
     bubble: Hsla,
     quiet: Hsla,
@@ -2338,6 +2421,28 @@ struct Looks {
     agent: String,
     /// The pictures in the chat's replies, read from their bytes once, by part.
     pictures: RefCell<HashMap<SharedString, Option<Picture>>>,
+}
+
+#[derive(Clone)]
+struct Styles {
+    text: Rc<Style>,
+    thought: Rc<Style>,
+    user: Rc<Style>,
+}
+
+impl Looks {
+    /// Sets the prose to `scale` times its designed size, and answers the replies' style.
+    fn rescale(&self, scale: f32) -> Rc<Style> {
+        let scaled = |style: &Rc<Style>| Rc::new(style.scaled(scale));
+        let styles = Styles {
+            text: scaled(&self.designed.text),
+            thought: scaled(&self.designed.thought),
+            user: scaled(&self.designed.user),
+        };
+        let text = styles.text.clone();
+        *self.styles.borrow_mut() = styles;
+        text
+    }
 }
 
 /// The colours a run of tool calls is drawn in, mixed once.
@@ -2504,10 +2609,14 @@ impl Looks {
             text_size: px(13.5),
             ..text.clone()
         };
-        Looks {
+        let designed = Styles {
             text: Rc::new(text),
             thought: Rc::new(thought),
             user: Rc::new(user),
+        };
+        Looks {
+            styles: RefCell::new(designed.clone()),
+            designed,
             line: Hsla { a: 0.8, ..t.line },
             bubble: Hsla {
                 a: 0.72,
@@ -2768,9 +2877,10 @@ fn letters(
                     )
                     .child(rule());
                 let id = SharedString::from(format!("{}:{}", row.message.id, letter_doc(ix)));
-                let text = row
-                    .doc(&letter_doc(ix))
-                    .map(|doc| pen.markdown_with(&looks.text, id, &doc.markdown, window, cx));
+                let text = row.doc(&letter_doc(ix)).map(|doc| {
+                    let look = looks.styles.borrow().text.clone();
+                    pen.markdown_with(&look, id, &doc.markdown, window, cx)
+                });
                 div()
                     .flex()
                     .flex_col()
@@ -3100,12 +3210,14 @@ fn part(
             let Some(doc) = row.doc(part.id()) else {
                 return div().into_any_element();
             };
+            let styles = looks.styles.borrow();
             let look = match (part, user) {
-                (ChatPart::Thought { .. }, _) => &looks.thought,
-                (_, true) => &looks.user,
-                _ => &looks.text,
+                (ChatPart::Thought { .. }, _) => styles.thought.clone(),
+                (_, true) => styles.user.clone(),
+                _ => styles.text.clone(),
             };
-            pen.markdown_with(look, id, &doc.markdown, window, cx)
+            drop(styles);
+            pen.markdown_with(&look, id, &doc.markdown, window, cx)
         }
         ChatPart::Tool {
             page: Some(page), ..

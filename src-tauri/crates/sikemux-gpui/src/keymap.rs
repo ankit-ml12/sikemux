@@ -64,6 +64,8 @@ commands! {
     TextSizeIncrease = "text.sizeIncrease",
     TextSizeDecrease = "text.sizeDecrease",
     TextSizeReset = "text.sizeReset",
+    /// Lets the agent in front run without asking, or has it ask again.
+    ToggleYolo = "agent.permissions",
 }
 
 actions!(

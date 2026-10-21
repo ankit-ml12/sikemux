@@ -229,6 +229,13 @@ impl<R: Row> Transcript<R> {
     }
 
     /// The rows as of the last frame drawn; changes pushed since are not in them yet.
+    /// Draws every row in `style` from now on, measured again.
+    pub fn restyle(&mut self, style: Rc<Style>, cx: &mut Context<Self>) {
+        self.style = style;
+        self.list.remeasure();
+        cx.notify();
+    }
+
     pub fn rows(&self) -> &[R] {
         &self.rows
     }

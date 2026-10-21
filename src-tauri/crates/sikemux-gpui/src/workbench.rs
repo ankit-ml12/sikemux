@@ -638,6 +638,10 @@ impl Workbench {
                     self.sims.offer_to_agents(preferences.ios_simulator);
                     let on = preferences.voice_dictation;
                     self.voice.update(cx, |voice, cx| voice.follow(on, cx));
+                    let scale = preferences.chat_text_scale as f32;
+                    for chat in self.chats.values_mut() {
+                        chat.rescale(scale, cx);
+                    }
                     crate::ui::grain::set(&preferences, cx);
                     crate::experience::preferences_read(self, &preferences, cx);
                 }
@@ -754,13 +758,14 @@ impl Workbench {
         if self.chats.contains_key(&agent) {
             return;
         }
-        let chat = Chat::new(
+        let mut chat = Chat::new(
             agent.clone(),
             &provider,
             cx.weak_entity(),
             self.asks.clone(),
             cx,
         );
+        chat.rescale(self.preferences().chat_text_scale as f32, cx);
         self.chats.insert(agent.clone(), chat);
         self.ask_chat(ChatAsk::Attach { agent, since: None });
     }
