@@ -34,6 +34,7 @@ mod palette;
 mod panes;
 mod picker;
 mod picture;
+mod places;
 mod ports;
 pub mod project_switcher;
 mod rail;

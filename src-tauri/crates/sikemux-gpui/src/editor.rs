@@ -149,6 +149,14 @@ impl Editors {
         self.open.get(path).is_some_and(|document| document.dirty)
     }
 
+    /// How many files under `root` have changes not saved.
+    pub fn dirty_under(&self, root: &Path) -> usize {
+        self.open
+            .iter()
+            .filter(|(path, document)| document.dirty && path.starts_with(root))
+            .count()
+    }
+
     /// The files the core keeps watching for changes on disk.
     fn watched(&self) -> Vec<String> {
         self.open

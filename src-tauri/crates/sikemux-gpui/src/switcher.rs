@@ -71,7 +71,7 @@ pub struct Switcher {
 
 impl Workbench {
     /// Every project in the rail's order, then the SSH hosts with a strip open.
-    fn strips_in_order(&self) -> Vec<Strip> {
+    pub(crate) fn strips_in_order(&self) -> Vec<Strip> {
         let projects = self
             .projects()
             .iter()

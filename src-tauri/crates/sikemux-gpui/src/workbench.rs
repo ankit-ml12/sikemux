@@ -77,6 +77,9 @@ pub struct Workbench {
     pub badge: usize,
     /// A tab being dragged along its strip, and where it would land.
     pub reorder: Option<crate::drag::Reorder>,
+    /// The project or host in front, and the one in front before it.
+    pub place: Option<Strip>,
+    pub last_place: Option<Strip>,
     pub all_projects: bool,
     /// The task each project's Run button starts, when the person chose one, by project path.
     pub picked_tasks: HashMap<String, String>,
@@ -404,6 +407,8 @@ impl Workbench {
             accounts: Default::default(),
             badge: 0,
             reorder: None,
+            place: None,
+            last_place: None,
             all_projects: false,
             picked_tasks: HashMap::new(),
             space: None,
@@ -493,6 +498,7 @@ impl Workbench {
                 );
                 crate::editor::keep(self);
                 crate::notifications::badge(self);
+                self.note_place();
                 self.watch_project();
                 self.watch_picture();
                 self.watch_ci();
@@ -1933,12 +1939,6 @@ impl Workbench {
         }
     }
 
-    fn close_front_tab(&self) {
-        if let (Some(strip), Some(tab)) = (self.strip(), self.tab()) {
-            self.close_tab(&strip, &tab.id);
-        }
-    }
-
     /// Brings forward the first terminal tab in the strip in front, else opens a terminal.
     fn focus_terminal(&self) {
         let terminal = self.strip().and_then(|strip| {
@@ -2519,6 +2519,17 @@ impl Render for Workbench {
                 cx.listener(|bench, event, _, cx| bench.modifiers_changed(event, cx)),
             )
             .capture_key_down(cx.listener(|bench, event, _, cx| bench.switcher_key(event, cx)))
+            .on_action(cx.listener(|bench, _: &crate::places::ClosePlace, _, cx| bench.close_place(cx)))
+            .on_action(cx.listener(|bench, _: &crate::places::LastPlace, _, _| bench.go_to_last_place()))
+            .on_action(cx.listener(|bench, _: &crate::places::NextGroup, _, _| bench.next_group()))
+            .on_action(cx.listener(|bench, _: &crate::places::FocusTerminals, _, cx| {
+                bench.show_rail_page(RailPage::Terminals, cx)
+            }))
+            .on_action(cx.listener(|bench, _: &crate::places::FocusFiles, _, cx| bench.focus_files(cx)))
+            .on_action(cx.listener(|bench, _: &crate::places::FocusAgents, window, cx| {
+                bench.focus_agents(window, cx)
+            }))
+            .on_action(cx.listener(|bench, _: &crate::places::FocusBoard, _, _| bench.focus_board()))
             .on_action(
                 cx.listener(|bench, _: &crate::switcher::NextPlace, window, cx| {
                     bench.step_place(1, window, cx);
@@ -2611,7 +2622,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &GoToTab7, _, _| bench.go_to_tab(Some(7))))
             .on_action(cx.listener(|bench, _: &GoToTab8, _, _| bench.go_to_tab(Some(8))))
             .on_action(cx.listener(|bench, _: &GoToLastTab, _, _| bench.go_to_tab(None)))
-            .on_action(cx.listener(|bench, _: &CloseTab, _, _| bench.close_front_tab()))
+            .on_action(cx.listener(|bench, _: &CloseTab, _, cx| bench.close_front(cx)))
             .on_action(cx.listener(|bench, _: &FocusMode, _, cx| bench.toggle_focus_mode(cx)))
             .on_action(cx.listener(|bench, _: &QuitAndStopEverything, _, _| {
                 let _ = bench.asks.send(Ask::Shutdown);
