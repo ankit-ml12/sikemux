@@ -1864,6 +1864,18 @@ pub(crate) fn close_agents(core: &Core, params: CloseAgentsParams) -> CoreResult
     close(core, &params.agent_ids)
 }
 
+/// Closes every agent left from before a fresh start, unless the person keeps their tabs
+/// open across one. Their chats stay in Recent.
+pub(crate) fn restore(core: &Core) {
+    if core.preferences.get().restore_agent_tabs {
+        return;
+    }
+    let agents: Vec<String> = core.workspaces.agent_ids().into_iter().collect();
+    if let Err(error) = close(core, &agents) {
+        eprintln!("sikemux core: the agents from before stayed open: {error}");
+    }
+}
+
 /// Stops the agent and takes it out of the workspace, so every app closes it.
 pub(crate) fn close_agent(core: &Core, agent_id: String) -> CoreResult<()> {
     close(core, &[agent_id])

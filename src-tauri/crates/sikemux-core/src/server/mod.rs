@@ -1239,6 +1239,7 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
         .map_err(std::io::Error::other)??;
     let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
     chat::restore(&core);
+    workspace::restore(&core);
     core.chats.clear_history();
     if let Some(path) = config.cli_endpoint.clone() {
         match tools::ToolEndpoint::start(core.clone(), path).await {
