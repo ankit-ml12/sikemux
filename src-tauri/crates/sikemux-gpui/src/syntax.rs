@@ -190,6 +190,8 @@ pub fn highlighters(cx: &App) -> InputHighlighterFactory {
 struct Model {
     text: Rope,
     document: Option<Document>,
+    /// Whether the grammar is loading, so later updates leave the document to the load.
+    loading: bool,
     folds: Vec<FoldRange>,
 }
 
@@ -234,6 +236,7 @@ impl Highlighter {
             model: Arc::new(Mutex::new(Model {
                 text: Rope::new(),
                 document: None,
+                loading: false,
                 folds: Vec::new(),
             })),
             palette,
@@ -260,10 +263,11 @@ impl Highlighter {
             let folds = cx
                 .background_executor()
                 .spawn(async move {
-                    if lock(&model).document.is_none() {
-                        let session = shared().library.session(&language)?;
-                        let mut document = Document::new(session, Some(MAX_LINE_LENGTH));
+                    if lock(&model).loading {
+                        let session = shared().library.session(&language);
                         let mut model = lock(&model);
+                        model.loading = false;
+                        let mut document = Document::new(session?, Some(MAX_LINE_LENGTH));
                         document.reset(model.text.lines_len());
                         model.document = Some(document);
                     }
@@ -314,6 +318,12 @@ impl InputHighlighter for Highlighter {
             }
             (None, _) => false,
         };
+        if !loaded {
+            if model.loading {
+                return;
+            }
+            model.loading = true;
+        }
         if loaded && text.len() <= SYNC_MAX_BYTES {
             self.task = None;
             model.tokenize(usize::MAX);
