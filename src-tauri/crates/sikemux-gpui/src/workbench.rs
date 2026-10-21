@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::path::{Path, PathBuf};
@@ -7,7 +8,7 @@ use chrono::Timelike;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::{
-    div, px, AppContext, Context, Entity, FocusHandle, Focusable, Image, ImageFormat, InteractiveElement, IntoElement, Keystroke, ParentElement, Render,
+    div, px, AppContext, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render,
     SharedString, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
@@ -65,7 +66,6 @@ pub struct Workbench {
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     _filtering: Option<Subscription>,
-    _question_keys: Subscription,
 }
 
 #[derive(Clone, PartialEq)]
@@ -105,6 +105,7 @@ impl Workbench {
         crate::file_icons::install(cx);
         crate::syntax::install(cx);
         crate::finder::install(cx);
+        crate::chat::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -178,15 +179,6 @@ impl Workbench {
             terminals: terminal::Terminals::default(),
             focus: cx.focus_handle(),
             _filtering: None,
-            _question_keys: {
-                let this = cx.weak_entity();
-                cx.intercept_keystrokes(move |event, window, cx| {
-                    let taken = this.update(cx, |bench, cx| bench.question_key(&event.keystroke, window, cx)).unwrap_or(false);
-                    if taken {
-                        cx.stop_propagation();
-                    }
-                })
-            },
         };
         bench.focus.focus(window, cx);
         bench.read_usage();
@@ -326,10 +318,16 @@ impl Workbench {
         let secret = cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("Type the answer"));
         let sending = {
             let agent = agent.clone();
-            cx.subscribe_in(&draft, window, move |bench, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { shift: false, secondary } = event {
-                    bench.send(&agent, *secondary, window, cx);
+            let was_empty = Cell::new(true);
+            cx.subscribe_in(&draft, window, move |bench, draft, event: &InputEvent, window, cx| match event {
+                InputEvent::PressEnter { shift: false, secondary } => bench.send(&agent, *secondary, window, cx),
+                InputEvent::Change => {
+                    let empty = draft.read(cx).value().is_empty();
+                    if was_empty.replace(empty) != empty {
+                        cx.notify();
+                    }
                 }
+                _ => {}
             })
         };
         let keeping = cx.subscribe_in(&secret, window, move |bench, _, event: &InputEvent, window, cx| {
@@ -390,38 +388,6 @@ impl Workbench {
         self.answer(agent, |chat, open| chat.keep_secret(text, open));
         field.update(cx, |field, cx| field.set_value("", window, cx));
         cx.notify();
-    }
-
-    /// Hands the open question in front a key pressed while the draft is empty and has the
-    /// focus, or nothing does, so other fields keep their keys. Says whether it took it.
-    fn question_key(&mut self, keystroke: &Keystroke, window: &Window, cx: &mut Context<Self>) -> bool {
-        let held = &keystroke.modifiers;
-        if held.platform || held.control || held.alt || held.shift {
-            return false;
-        }
-        let Some(agent) = self.agent().map(|agent| agent.id) else {
-            return false;
-        };
-        let Some(composing) = self.chats.get(&agent).and_then(|chat| chat.composer.as_ref()) else {
-            return false;
-        };
-        let draft = &composing.draft;
-        let focused = draft.focus_handle(cx).is_focused(window) || window.focused(cx).is_none();
-        if !focused || !draft.read(cx).value().is_empty() {
-            return false;
-        }
-        let open: Vec<&Question> = self.questions.iter().filter(|question| question.of(&agent, "open")).collect();
-        let Some(chat) = self.chats.get_mut(&agent) else {
-            return false;
-        };
-        let (taken, ask) = chat.key(&keystroke.key, &open);
-        if let Some(ask) = ask {
-            let _ = self.asks.send(ask);
-        }
-        if taken {
-            cx.notify();
-        }
-        taken
     }
 
     /// Changes the chat of `agent` with its open questions to hand, and asks the core what that asks.

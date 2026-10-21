@@ -10,7 +10,7 @@ use gpui_kit::base::{Button as BaseButton, Scrollbar};
 use gpui_kit::component::input::{Input, InputState, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, AnyElement, App, AppContext, Context, Entity, Focusable, FontWeight, HighlightStyle, Hsla,
+    actions, div, px, relative, AnyElement, App, AppContext, Context, Entity, Focusable, FontWeight, HighlightStyle, Hsla, KeyBinding,
     InteractiveElement, IntoElement, ParentElement, Radians, SharedString, StatefulInteractiveElement, Styled, StyledText,
     Subscription, Transformation, WeakEntity, Window,
 };
@@ -184,6 +184,43 @@ fn merge(on: &mut Value, fields: &Value) {
             on.insert(key.clone(), value.clone());
         }
     }
+}
+
+actions!(questions, [PreviousChoice, NextChoice, PreviousQuestion, NextQuestion, Tick, Confirm]);
+
+/// Picks the choice at this index of the question on show, from its number key.
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(name = "questions.choose", no_json)]
+pub struct Choose(pub usize);
+
+/// The open question in front takes these keys while the draft is empty, whether the draft
+/// or something else in the chat holds the focus.
+pub fn install(cx: &mut App) {
+    let mut bindings = Vec::new();
+    for context in ["QuestionDock > Input", "QuestionDock"] {
+        bindings.extend((1..=9).map(|n| KeyBinding::new(&n.to_string(), Choose(n - 1), Some(context))));
+        bindings.extend([
+            KeyBinding::new("up", PreviousChoice, Some(context)),
+            KeyBinding::new("down", NextChoice, Some(context)),
+            KeyBinding::new("left", PreviousQuestion, Some(context)),
+            KeyBinding::new("right", NextQuestion, Some(context)),
+            KeyBinding::new("space", Tick, Some(context)),
+            KeyBinding::new("enter", Confirm, Some(context)),
+        ]);
+    }
+    cx.bind_keys(bindings);
+}
+
+/// What a key asks of the question on show.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Press {
+    Choose(usize),
+    Up,
+    Down,
+    Left,
+    Right,
+    Tick,
+    Pick,
 }
 
 /// Each subagent's rows, by its session.
@@ -547,35 +584,35 @@ impl Chat {
         }
     }
 
-    /// A key pressed while nothing is written: a number picks, the arrows move, Space ticks,
-    /// Enter picks, moves on or sends. Says whether the question took it.
-    pub fn key(&mut self, key: &str, open: &[&Question]) -> (bool, Option<Ask>) {
+    /// A key the question on show takes while nothing is written: a number picks, the
+    /// arrows move, Space ticks, Enter picks, moves on or sends. Says whether it took it.
+    pub fn press(&mut self, press: Press, open: &[&Question]) -> (bool, Option<Ask>) {
         let Some(current) = self.current(open).filter(|_| !self.is_folded(open)) else {
             return (false, None);
         };
         let (id, count, multi, cursor) = (current.id.clone(), current.choices.len(), current.multi, self.cursor_at(current));
         let ready = open.iter().all(|question| self.picks.contains_key(&question.id));
-        match key {
-            "up" | "down" if count > 0 => {
-                let step = if key == "up" { count - 1 } else { 1 };
+        match press {
+            Press::Up | Press::Down if count > 0 => {
+                let step = if press == Press::Up { count - 1 } else { 1 };
                 self.cursor = Some((id, (cursor + step) % count));
                 (true, None)
             }
-            "left" | "right" if open.len() > 1 => {
+            Press::Left | Press::Right if open.len() > 1 => {
                 let at = open.iter().position(|question| question.id == id).unwrap_or(0);
-                let step = if key == "left" { open.len() - 1 } else { 1 };
+                let step = if press == Press::Left { open.len() - 1 } else { 1 };
                 self.shown = Some(open[(at + step) % open.len()].id.clone());
                 self.cursor = None;
                 (true, None)
             }
-            "space" if multi && count > 0 => (true, self.choose(&id, cursor, open)),
-            "enter" if multi => match self.picks.contains_key(&id) {
+            Press::Tick if multi && count > 0 => (true, self.choose(&id, cursor, open)),
+            Press::Pick if multi => match self.picks.contains_key(&id) {
                 false if count > 0 => (true, self.choose(&id, cursor, open)),
                 false => (false, None),
                 true if ready => (true, self.send_answers(open)),
                 true => (true, self.move_on(&id, open)),
             },
-            "enter" => {
+            Press::Pick => {
                 let already = matches!(self.picks.get(&id).map(|pick| &pick.answer), Some(Answer::Choice(choice)) if *choice == cursor);
                 if ready && (already || count == 0) {
                     (true, self.send_answers(open))
@@ -585,13 +622,11 @@ impl Chat {
                     (false, None)
                 }
             }
-            digit => match digit.parse::<usize>() {
-                Ok(n @ 1..=9) if n <= count => {
-                    self.cursor = Some((id.clone(), n - 1));
-                    (true, self.choose(&id, n - 1, open))
-                }
-                _ => (false, None),
-            },
+            Press::Choose(ix) if ix < count => {
+                self.cursor = Some((id.clone(), ix));
+                (true, self.choose(&id, ix, open))
+            }
+            _ => (false, None),
         }
     }
 
@@ -711,15 +746,51 @@ pub fn pane(bench: &Workbench, agent: &AgentRow, chat: &Chat, welcome: Option<An
     groups.extend(live::tasks(agent, chat, cx));
     groups.extend(live::queued(&agent.id, chat, cx));
     let stack = live::stack(groups, Tokens::get(cx));
+    let empty = chat.composer.as_ref().is_some_and(|composing| composing.draft.read(cx).value().is_empty());
+    let asking = empty && chat.current(&open).is_some_and(|question| !question.secret) && !chat.is_folded(&open);
+    let id = &agent.id;
     div()
         .size_full()
         .flex()
         .flex_col()
+        .when(asking, |pane| {
+            pane.key_context("QuestionDock")
+                .on_action(pressed(id, |choose: &Choose| Press::Choose(choose.0), cx))
+                .on_action(pressed(id, |_: &PreviousChoice| Press::Up, cx))
+                .on_action(pressed(id, |_: &NextChoice| Press::Down, cx))
+                .on_action(pressed(id, |_: &PreviousQuestion| Press::Left, cx))
+                .on_action(pressed(id, |_: &NextQuestion| Press::Right, cx))
+                .on_action(pressed(id, |_: &Tick| Press::Tick, cx))
+                .on_action(pressed(id, |_: &Confirm| Press::Pick, cx))
+        })
         .child(rows)
         .children(permissions)
         .children(assumed)
         .children(stack)
         .children(composer(bench, agent, chat, cx))
+}
+
+/// Hands a key's action to the question on show; one it does not take goes on to the draft.
+fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
+    agent: &str,
+    press: F,
+    cx: &mut Context<Workbench>,
+) -> impl Fn(&A, &mut Window, &mut App) + use<A, F> {
+    let (agent, this) = (agent.to_owned(), cx.weak_entity());
+    move |action: &A, _: &mut Window, cx: &mut App| {
+        let taken = this.update(cx, |bench, cx| {
+            let open: Vec<&Question> = bench.questions.iter().filter(|question| question.of(&agent, "open")).collect();
+            let chat = bench.chats.get_mut(&agent)?;
+            let (taken, ask) = chat.press(press(action), &open);
+            if let Some(ask) = ask {
+                let _ = bench.asks.send(ask);
+            }
+            taken.then(|| cx.notify())
+        });
+        if !matches!(taken, Ok(Some(()))) {
+            cx.propagate();
+        }
+    }
 }
 
 /// Centred on the transcript's column.
