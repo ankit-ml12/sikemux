@@ -1,5 +1,6 @@
 import { coreCall, coreRequest } from "../api/core";
-import type { ChatInfo, DeviceView, ProjectInfo, SessionInfo } from "../api/generated/wire";
+import type { ChatInfo, DeviceView, ProjectInfo, SessionInfo, SshLink } from "../api/generated/wire";
+import { coreSessionsApi } from "../api/coreSessions";
 import { invokeCommand as invoke } from "../api/invoke";
 import { getIpcTransport } from "../api/transport";
 import { agentLabel, isAgentType } from "../agents/catalog";
@@ -440,11 +441,52 @@ function noticeNewDevices(signal: AbortSignal): void {
         .catch(swallow("follow new devices on the account"));
 }
 
+/** The SSH host a terminal runs on, by the session it is a tab of. */
+function sshAliasOf(state: Pick<StoreState, "sessionOrder" | "sessions" | "windowsBySession" | "windows">, ptyId: number): string | undefined {
+    const holds = (windowId: string) => {
+        const window = state.windows[windowId];
+        return !!window && collectPanes(window.root).some((pane) => pane.ptyId === ptyId);
+    };
+    return state.sessionOrder
+        .map((id) => state.sessions[id])
+        .find((session) => session?.kind === "ssh" && (state.windowsBySession[session.id] ?? []).some(holds))?.name;
+}
+
+/**
+ * Asks each SSH host once, as a terminal on it connects, whether it runs Sikemux and which host it is, so a host on
+ * the account shows as one row (ADR 0018).
+ */
+function probeSshHosts(signal: AbortSignal): void {
+    const asked = new Set<string>();
+    const probe = (ptyId: number) => {
+        const alias = sshAliasOf(getState(), ptyId);
+        if (!alias || asked.has(alias)) return;
+        asked.add(alias);
+        void invoke("host_probe", { alias }).catch(swallow(`ask ${alias} which host it is`));
+    };
+    void getIpcTransport()
+        .subscribe<{ id: number; link: SshLink }>(
+            "pty_ssh_link",
+            ({ payload }) => {
+                if (payload.link === "connected") probe(payload.id);
+            },
+            { signal },
+        )
+        .catch(swallow("follow SSH terminals connecting"));
+    void coreSessionsApi
+        .list()
+        .then((sessions) => {
+            for (const session of sessions) if (session.ssh === "connected") probe(session.id);
+        })
+        .catch(swallow("list SSH terminals"));
+}
+
 /** Keeps the store's hosts and their views as the app reaches them. */
 export function startHosts(): () => void {
     const controller = new AbortController();
     const transport = getIpcTransport();
     noticeNewDevices(controller.signal);
+    probeSshHosts(controller.signal);
     const setHosts = (hosts: HostEntry[]) => {
         const ids = new Set(hosts.map((host) => host.id));
         setState({

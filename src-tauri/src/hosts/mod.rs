@@ -8,6 +8,7 @@
 //! keys by stays unique and this host's own sessions keep their ids.
 
 pub(crate) mod install;
+pub(crate) mod probe;
 mod sink;
 
 use std::collections::BTreeMap;

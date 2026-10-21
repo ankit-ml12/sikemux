@@ -80,7 +80,7 @@ pub(crate) fn ended(id: SessionId) {
 }
 
 /// An alias from ~/.ssh/config, never something ssh would read as an option.
-fn checked_alias(alias: &str) -> AppResult<&str> {
+pub(super) fn checked_alias(alias: &str) -> AppResult<&str> {
     let plain = !alias.is_empty()
         && !alias.starts_with('-')
         && alias
