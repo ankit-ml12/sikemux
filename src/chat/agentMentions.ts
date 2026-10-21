@@ -60,7 +60,7 @@ export function mateNote(mate: Mate, status: string, earlier?: string, keptName 
     ].join("\n");
 }
 
-/** What the agent is told of each agent the message names with `@`, so it knows who is meant. */
+/** Each agent the message names with `@`, by id; the core writes what the agent is told of it. */
 export function mentionContext(text: string, mates: readonly Mate[]): PromptContext[] {
     const named = new Set([...text.matchAll(/(?:^|\s)@([\p{L}][\p{L}\p{N}]*)/gu)].map((match) => match[1].toLowerCase()));
     const seen = new Set<string>();
@@ -71,5 +71,5 @@ export function mentionContext(text: string, mates: readonly Mate[]): PromptCont
             seen.add(name);
             return true;
         })
-        .map((mate) => ({ uri: `${MENTION_URI}${mate.id}`, title: `@${mate.name}`, text: mateNote(mate, mate.display?.label ?? "Asleep") }));
+        .map((mate) => ({ uri: `${MENTION_URI}${mate.id}`, title: `@${mate.name}`, text: "" }));
 }

@@ -5,6 +5,7 @@
 pub(crate) mod feed;
 mod history;
 mod kept;
+mod mentions;
 mod native;
 pub(crate) mod offered;
 pub(crate) mod queue;
@@ -1960,11 +1961,12 @@ pub(crate) fn prompt(
     message_id: Option<String>,
     text: String,
     paths: Vec<String>,
-    context: Vec<ChatContext>,
+    mut context: Vec<ChatContext>,
 ) -> CoreResult<()> {
     if let Some(message_id) = message_id.as_deref() {
         bounded_text("message id", message_id, 256)?;
     }
+    mentions::fill(core, agent_id, &mut context);
     super::messages::worked(core, agent_id);
     let words = context.first().map(|context| context.title.as_str());
     let title = feed::title(if text.trim().is_empty() {
@@ -1987,9 +1989,10 @@ pub(crate) async fn edit(
     message_id: String,
     text: String,
     paths: Vec<String>,
-    context: Vec<ChatContext>,
+    mut context: Vec<ChatContext>,
 ) -> CoreResult<()> {
     bounded_text("message id", &message_id, 256)?;
+    mentions::fill(core, agent_id, &mut context);
     let (reply, answer) = oneshot::channel();
     core.chats.running(agent_id)?.send(ChatCommand::Edit {
         message_id,
@@ -2009,8 +2012,9 @@ pub(crate) async fn steer(
     agent_id: &str,
     text: String,
     paths: Vec<String>,
-    context: Vec<ChatContext>,
+    mut context: Vec<ChatContext>,
 ) -> CoreResult<String> {
+    mentions::fill(core, agent_id, &mut context);
     let (reply, answer) = oneshot::channel();
     core.chats.running(agent_id)?.send(ChatCommand::Steer {
         text,

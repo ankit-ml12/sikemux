@@ -150,9 +150,10 @@ pub(crate) async fn steer(
 ) -> CoreResult<()> {
     let chat = core.chats.running(agent_id)?;
     let mut taken = chat.feed.take_queued(Some(&ids));
-    taken.extend(
-        message.map(|message| Queued::new(None, message.text, message.paths, message.context)),
-    );
+    taken.extend(message.map(|mut message| {
+        super::mentions::fill(core, agent_id, &mut message.context);
+        Queued::new(None, message.text, message.paths, message.context)
+    }));
     if taken.is_empty() {
         return Ok(());
     }
