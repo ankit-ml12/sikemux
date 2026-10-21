@@ -62,8 +62,9 @@ textarea:focus,
     background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
+/* Its chips centre on the line macOS puts the window buttons on, 23px down, with as much room under them as over them. */
 .top-bar {
-    height: 34px;
+    height: 46px;
 }
 
 .tb-right {
@@ -1466,11 +1467,8 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
     overflow: hidden;
 }
 
-/* The shell keeps the darkest tone so the gutter always reads as a recess,
- * and carries the top edge of the frame so the gutter runs all the way round
- * rather than stopping where the bar meets the window. */
+/* The shell keeps the darkest tone so the gutter always reads as a recess. */
 .shell {
-    padding-top: var(--space-1h);
     background: color-mix(in srgb, var(--surface-sunken) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
