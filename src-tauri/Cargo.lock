@@ -5752,6 +5752,7 @@ dependencies = [
  "base64 0.23.1",
  "block2",
  "futures",
+ "gtk",
  "hex",
  "libc",
  "mac-notification-sys",
@@ -5808,6 +5809,7 @@ version = "0.1.0"
 dependencies = [
  "block2",
  "dispatch2",
+ "gtk",
  "objc2",
  "objc2-app-kit",
  "objc2-core-graphics",
@@ -5823,6 +5825,7 @@ dependencies = [
  "url",
  "uuid",
  "workspace-hack",
+ "wry",
 ]
 
 [[package]]

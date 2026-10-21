@@ -84,8 +84,65 @@ define_class!(
         fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> Bool {
             Bool::YES
         }
+
+        // SAFETY: matches NSResponder's `otherMouseDown:`: an event in, nothing out.
+        #[unsafe(method(otherMouseDown:))]
+        fn other_mouse_down(&self, event: &NSEvent) {
+            if !history_button(self, event, true) {
+                // SAFETY: hands the event on to WKWebView's own handler, on the main thread.
+                let _: () = unsafe { msg_send![super(self), otherMouseDown: event] };
+            }
+        }
+
+        // SAFETY: matches NSResponder's `otherMouseUp:`: an event in, nothing out.
+        #[unsafe(method(otherMouseUp:))]
+        fn other_mouse_up(&self, event: &NSEvent) {
+            if !history_button(self, event, false) {
+                // SAFETY: as above.
+                let _: () = unsafe { msg_send![super(self), otherMouseUp: event] };
+            }
+        }
     }
 );
+
+/// WebKit gives a mouse's back and forward buttons to nobody, so the page hears
+/// them as DOM events, and one it leaves alone goes back or forward on release.
+fn history_button(view: &TabWebView, event: &NSEvent, down: bool) -> bool {
+    let button = match event.buttonNumber() {
+        3 => 3,
+        4 => 4,
+        _ => return false,
+    };
+    let flags = event.modifierFlags();
+    let point = view.convertPoint_fromView(event.locationInWindow(), None);
+    let (x, y) = (point.x.round() as i64, point.y.round() as i64);
+    let name = if down { "mousedown" } else { "mouseup" };
+    let script = format!(
+        r#"(() => {{
+  const target = document.elementFromPoint({x}, {y}) || document.body || document.documentElement;
+  const event = new MouseEvent("{name}", {{
+    view: window, bubbles: true, cancelable: true, composed: true,
+    button: {button}, buttons: {buttons}, detail: {clicks},
+    clientX: {x}, clientY: {y}, screenX: window.screenX + {x}, screenY: window.screenY + {y},
+    ctrlKey: {ctrl}, metaKey: {meta}, shiftKey: {shift}, altKey: {alt},
+  }});
+  target.dispatchEvent(event);
+  if (!event.defaultPrevented && "{name}" === "mouseup") {{
+    if ({button} === 3) history.back();
+    if ({button} === 4) history.forward();
+  }}
+}})()"#,
+        buttons = NSEvent::pressedMouseButtons(),
+        clicks = event.clickCount(),
+        ctrl = flags.contains(NSEventModifierFlags::Control),
+        meta = flags.contains(NSEventModifierFlags::Command),
+        shift = flags.contains(NSEventModifierFlags::Shift),
+        alt = flags.contains(NSEventModifierFlags::Option),
+    );
+    // SAFETY: main thread, where AppKit delivers mouse events, and the view is alive.
+    unsafe { view.evaluateJavaScript_completionHandler(&NSString::from_str(&script), None) };
+    true
+}
 
 /* AppKit throws if a view is freed while anything is still watching it, so the
 tab lets go of what it watches before it lets go of either of them. */

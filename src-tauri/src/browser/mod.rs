@@ -337,7 +337,14 @@ impl BrowserManager {
             .unwrap_or(PARKED_SIZE);
         #[cfg(target_os = "macos")]
         let parent = ParentView(window.ns_view().map_err(window_error)?);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        let parent = {
+            use gtk::glib::translate::ToGlibPtr;
+            let container = window.default_vbox().map_err(window_error)?;
+            let pointer: *mut gtk::ffi::GtkBox = container.to_glib_none().0;
+            ParentView(pointer.cast())
+        };
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let parent = {
             let _ = window;
             ParentView(std::ptr::null_mut())
@@ -787,7 +794,14 @@ impl BrowserManager {
         #[cfg(target_os = "macos")]
         view.run(move |webview| macos::history(webview, delta));
         #[cfg(not(target_os = "macos"))]
-        let _ = (view, delta);
+        tauri::async_runtime::spawn(async move {
+            let script = if delta < 0 {
+                "history.back()"
+            } else {
+                "history.forward()"
+            };
+            let _ = view.eval(script).await;
+        });
         Ok(())
     }
 
@@ -1277,9 +1291,20 @@ fn place(view: &Tab, layout: viewport::Layout, awake: bool) {
     });
 }
 
+/// Elsewhere a fixed viewport can only be had by zooming the page.
 #[cfg(not(target_os = "macos"))]
-fn place(view: &Tab, layout: viewport::Layout, awake: bool) {
-    let _ = (view, layout, awake);
+fn place(view: &Tab, layout: viewport::Layout, _awake: bool) {
+    let (frame, zoom) = match layout {
+        viewport::Layout::Shown { frame, page } => (
+            (frame.x, frame.y, frame.width, frame.height),
+            page.map_or(1.0, |(page_width, _)| frame.width / page_width),
+        ),
+        viewport::Layout::Parked {
+            page: (width, height),
+        } => ((PARKED_ORIGIN, PARKED_ORIGIN, width, height), 1.0),
+    };
+    view.set_zoom(zoom);
+    view.set_bounds(frame);
 }
 
 const MAX_HOLES: usize = 32;

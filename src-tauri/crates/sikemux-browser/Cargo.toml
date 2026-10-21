@@ -28,3 +28,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["NSD
 objc2-web-kit = { version = "0.3", default-features = false, features = ["WKContentWorld", "WKDownload", "WKDownloadDelegate", "WKFrameInfo", "WKNavigation", "WKNavigationAction", "WKNavigationDelegate", "WKNavigationResponse", "WKOpenPanelParameters", "WKPDFConfiguration", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKPreferences", "WKUIDelegate", "WKUserContentController", "WKUserScript", "WKWebView", "WKWebViewConfiguration", "WKWindowFeatures", "block2", "objc2-app-kit"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGBitmapContext", "CGColor", "CGColorSpace", "CGContext", "CGImage", "CGPath"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAShapeLayer", "CATransaction", "objc2-core-foundation", "objc2-core-graphics"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+wry = { version = "0.57", default-features = false, features = ["os-webview", "linux-body"] }
