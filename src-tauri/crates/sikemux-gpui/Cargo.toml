@@ -31,6 +31,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = "1"
 sikemux-browser = { path = "../sikemux-browser" }
+sikemux-simulator = { path = "../sikemux-simulator" }
 sikemux-core = { path = "../sikemux-core" }
 sikemux-host = { path = "../sikemux-host", default-features = false }
 sikemux-markdown = { path = "../sikemux-markdown" }
@@ -42,6 +43,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
+objc2-core-foundation = "0.3"
+objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer"] }
 
 [dev-dependencies]
 sikemux-fold = { path = "../sikemux-fold" }

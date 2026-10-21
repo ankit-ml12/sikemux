@@ -17,7 +17,7 @@ use sikemux_browser::{
     BrowserBounds, BrowserDownload, BrowserManager, BrowserShortcut, BrowserSnapshot, Host,
     ParentView,
 };
-use sikemux_core::cli::protocol::{is_browser_method, HarnessRequest};
+use sikemux_core::cli::protocol::{is_browser_method, is_sim_method, HarnessRequest};
 use sikemux_wire::protocol::{CallId, Pane, PaneKind, WindowAnswer, WindowCall};
 use tokio::sync::mpsc;
 
@@ -35,6 +35,10 @@ pub struct ToggleDesk;
 #[action(name = "browser.tabNew")]
 pub struct NewPage;
 
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "simulator.new")]
+pub struct NewSimulator;
+
 /// The browser engine and what the desks show of it.
 pub struct Desks {
     engine: Option<Arc<BrowserManager>>,
@@ -42,8 +46,17 @@ pub struct Desks {
     pages: HashMap<String, Page>,
     /// Each agent's tabs as last heard, so only a tab it newly opened brings its desk out.
     known: HashMap<String, HashSet<String>>,
+    /// What each agent's desk shows: its pages, or its simulator.
+    kinds: HashMap<String, DeskKind>,
     _hearing: Option<gpui_kit::Task<()>>,
     _activation: Subscription,
+}
+
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum DeskKind {
+    #[default]
+    Pages,
+    Simulator,
 }
 
 /// One desk's page area and address bar.
@@ -64,8 +77,8 @@ enum Heard {
 impl Desks {
     pub fn new(window: &mut Window, cx: &mut Context<Workbench>) -> Self {
         let (heard, mut hearing) = mpsc::unbounded_channel();
+        sikemux_core::runtime::set(runtime().handle().clone());
         let engine = window_pointer(window).map(|view| {
-            sikemux_core::runtime::set(runtime().handle().clone());
             BrowserManager::new(Arc::new(DeskHost {
                 view,
                 heard,
@@ -93,22 +106,35 @@ impl Desks {
             strips: HashMap::new(),
             pages: HashMap::new(),
             known: HashMap::new(),
+            kinds: HashMap::new(),
             _hearing: task,
             _activation: activation,
         }
     }
 }
 
+/// The browser's and the simulator's work, off the window's thread.
 fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
-            .thread_name("browser")
+            .thread_name("engines")
             .enable_all()
             .build()
             .expect("the browser's runtime starts")
     })
+}
+
+pub fn spawn(work: impl std::future::Future<Output = ()> + Send + 'static) {
+    runtime().spawn(work);
+}
+
+/// Runs `work` on the engines' threads and waits for it, from the window's.
+pub async fn run<T: Send + 'static>(
+    work: impl std::future::Future<Output = T> + Send + 'static,
+) -> Option<T> {
+    runtime().spawn(work).await.ok()
 }
 
 #[cfg(target_os = "macos")]
@@ -276,6 +302,20 @@ impl Workbench {
         }
     }
 
+    /// Turns the agent's desk to its simulator, bringing the desk out if it is closed.
+    pub(crate) fn show_simulator(&mut self, agent: &str) {
+        self.desks
+            .kinds
+            .insert(agent.to_owned(), DeskKind::Simulator);
+        if !self.desk_open_anywhere(agent) {
+            self.reveal_desk(agent);
+        }
+    }
+
+    fn show_kind(&mut self, agent: &str, kind: DeskKind) {
+        self.desks.kinds.insert(agent.to_owned(), kind);
+    }
+
     /// The desk view of `agent` in `tab`, by id.
     pub fn desk_of(&self, tab: &str, agent: &str) -> Option<String> {
         let strip = self.strip()?;
@@ -316,6 +356,13 @@ impl Workbench {
     pub fn toggle_front_desk(&mut self) {
         if let Some((tab, view, agent)) = self.front_agent() {
             self.toggle_desk(&tab, &view, &agent);
+        }
+    }
+
+    /// The front agent's desk, turned to its simulator.
+    pub fn front_simulator(&mut self) {
+        if let Some((_, _, agent)) = self.front_agent() {
+            self.show_simulator(&agent);
         }
     }
 
@@ -400,13 +447,18 @@ impl Workbench {
 
 /// Makes the page areas and address bars of the desks the tab in front shows.
 pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
-    let Some(engine) = bench.desks.engine.clone() else {
-        return;
-    };
     let mut agents = Vec::new();
     if let Some(tab) = bench.tab() {
         desks_in(&tab.pane, &mut agents);
     }
+    for agent in &agents {
+        if bench.desks.kinds.get(agent) == Some(&DeskKind::Simulator) && bench.sims.holds(agent) {
+            bench.start_screen(agent, cx);
+        }
+    }
+    let Some(engine) = bench.desks.engine.clone() else {
+        return;
+    };
     for agent in agents {
         if bench.desks.pages.contains_key(&agent) {
             continue;
@@ -522,6 +574,10 @@ pub fn pane(
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
+    let kind = bench.desks.kinds.get(agent).copied().unwrap_or_default();
+    if kind == DeskKind::Simulator {
+        return simulator_desk(bench, tab, view, agent, cx);
+    }
     let strip = bench.desks.strips.get(agent);
     let front = strip.and_then(|strip| {
         strip
@@ -537,7 +593,8 @@ pub fn pane(
         .gap(px(4.))
         .px(px(6.))
         .border_b_1()
-        .border_color(t.border);
+        .border_color(t.border)
+        .child(kinds(agent, kind, cx));
     for page in strip.map(|strip| strip.tabs.as_slice()).unwrap_or_default() {
         let label = if !page.title.is_empty() {
             page.title.clone()
@@ -593,7 +650,7 @@ pub fn pane(
                 ),
         );
     }
-    let (new_agent, close_view, close_tab) = (agent.to_owned(), view.to_owned(), tab.to_owned());
+    let new_agent = agent.to_owned();
     head = head
         .child(
             IconButton::new("desk-new-page", Icon::Plus, "New page")
@@ -601,15 +658,7 @@ pub fn pane(
                 .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
         )
         .child(div().flex_1())
-        .child(
-            IconButton::new("desk-close", Icon::PanelRight, "Close the desk")
-                .glyph(13.)
-                .on_click(cx.listener(move |bench, _, _, _| {
-                    if let Some(strip) = bench.strip() {
-                        bench.close_pane(&strip, &close_tab, &close_view);
-                    }
-                })),
-        );
+        .child(close_desk(tab, view, cx));
     let page = bench.desks.pages.get(agent);
     let (back, forward, reload) = (agent.to_owned(), agent.to_owned(), agent.to_owned());
     let bar = div()
@@ -687,6 +736,93 @@ pub fn pane(
         .into_any_element()
 }
 
+/// The desk's switch between its pages and its simulator.
+fn kinds(agent: &str, shown: DeskKind, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let choice = |id: &'static str,
+                  icon: Icon,
+                  label: &'static str,
+                  kind: DeskKind,
+                  cx: &mut Context<Workbench>| {
+        let agent = agent.to_owned();
+        IconButton::new(id, icon, label)
+            .glyph(13.)
+            .pressed(shown == kind)
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench.show_kind(&agent, kind);
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }))
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(2.))
+        .pr(px(6.))
+        .child(choice(
+            "desk-pages",
+            Icon::Globe,
+            "Pages",
+            DeskKind::Pages,
+            cx,
+        ))
+        .child(choice(
+            "desk-simulator",
+            Icon::Phone,
+            "iOS Simulator",
+            DeskKind::Simulator,
+            cx,
+        ))
+}
+
+fn close_desk(tab: &str, view: &str, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let (tab, view) = (tab.to_owned(), view.to_owned());
+    IconButton::new("desk-close", Icon::PanelRight, "Close the desk")
+        .glyph(13.)
+        .on_click(cx.listener(move |bench, _, _, _| {
+            if let Some(strip) = bench.strip() {
+                bench.close_pane(&strip, &tab, &view);
+            }
+        }))
+}
+
+fn simulator_desk(
+    bench: &Workbench,
+    tab: &str,
+    view: &str,
+    agent: &str,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let head = div()
+        .h(px(36.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .px(px(6.))
+        .border_b_1()
+        .border_color(t.border)
+        .child(kinds(agent, DeskKind::Simulator, cx))
+        .children(bench.sims.device_name(agent).map(|name| {
+            ui::text(name.to_owned(), 12., FontWeight::MEDIUM).text_color(t.text_secondary)
+        }))
+        .when(bench.sims.acting(agent), |head| {
+            head.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))
+        })
+        .child(crate::sim_pane::tools(bench, agent, cx))
+        .child(div().flex_1())
+        .child(close_desk(tab, view, cx));
+    ui::pane(cx)
+        .child(
+            div().size_full().flex().flex_col().child(head).child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(crate::sim_pane::body(bench, agent, cx)),
+            ),
+        )
+        .into_any_element()
+}
+
 impl Workbench {
     /// Answers a call the core hands this window: an agent's browser tools run on the
     /// engine, on a thread of their own, since most answers wait on a page.
@@ -706,20 +842,26 @@ impl Workbench {
                 )))
             }
         };
-        let Some(engine) = self
-            .desks
-            .engine
-            .clone()
-            .filter(|_| is_browser_method(&request.method))
-        else {
-            return answer(Err(format!(
-                "this window cannot answer {} yet",
-                request.method
-            )));
-        };
+        let run: Box<dyn FnOnce() -> Result<Value, String> + Send> =
+            if is_sim_method(&request.method) {
+                let engine = Arc::clone(self.sims.engine());
+                Box::new(move || sikemux_simulator::tools::execute(&engine, &request))
+            } else if let Some(engine) = self
+                .desks
+                .engine
+                .clone()
+                .filter(|_| is_browser_method(&request.method))
+            {
+                Box::new(move || sikemux_browser::tools::execute(&engine, &request))
+            } else {
+                return answer(Err(format!(
+                    "this window cannot answer {} yet",
+                    request.method
+                )));
+            };
         let spawned = std::thread::Builder::new()
             .name("sikemux-window-call".into())
-            .spawn(move || answer(sikemux_browser::tools::execute(&engine, &request)));
+            .spawn(move || answer(run()));
         if let Err(error) = spawned {
             eprintln!("sikemux: a tool call could not start: {error}");
         }

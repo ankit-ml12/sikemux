@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question, Sent};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
-use crate::desk::{NewPage, ToggleDesk};
+use crate::desk::{NewPage, NewSimulator, ToggleDesk};
 use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
@@ -97,6 +97,7 @@ pub struct Workbench {
     pub parts: Parts,
     pub panes: crate::panes::Panes,
     pub desks: crate::desk::Desks,
+    pub sims: crate::sim_pane::Simulators,
     _filtering: Option<Subscription>,
 }
 
@@ -286,6 +287,7 @@ impl Workbench {
             parts: Parts::new(cx),
             panes: crate::panes::Panes::default(),
             desks: crate::desk::Desks::new(window, cx),
+            sims: crate::sim_pane::Simulators::new(cx),
             _filtering: None,
         };
         bench.focus.focus(window, cx);
@@ -1676,6 +1678,10 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
             .on_action(cx.listener(|bench, _: &ToggleDesk, _, _| bench.toggle_front_desk()))
             .on_action(cx.listener(|bench, _: &NewPage, _, _| bench.new_front_page()))
+            .on_action(cx.listener(|bench, _: &NewSimulator, _, cx| {
+                bench.front_simulator();
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }))
             .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
             .on_action(cx.listener(|bench, _: &NextTab, _, _| bench.step_tab(1, |_, _| true)))
             .on_action(cx.listener(|bench, _: &PreviousOfKind, _, _| bench.step_tab(-1, same_kind)))

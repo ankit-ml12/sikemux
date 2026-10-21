@@ -22,6 +22,12 @@ mod picture;
 mod rail;
 pub mod settings;
 mod share;
+mod sim_pane;
+#[cfg(target_os = "macos")]
+mod sim_screen;
+#[cfg(not(target_os = "macos"))]
+#[path = "sim_screen_elsewhere.rs"]
+mod sim_screen;
 pub mod syntax;
 mod tabs;
 pub mod terminal;

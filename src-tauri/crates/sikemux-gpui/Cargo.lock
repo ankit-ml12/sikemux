@@ -8890,6 +8890,8 @@ dependencies = [
  "libc",
  "lsp-types",
  "memchr",
+ "objc2-core-foundation",
+ "objc2-core-video",
  "serde",
  "serde_json",
  "sikemux-browser",
@@ -8899,6 +8901,7 @@ dependencies = [
  "sikemux-host",
  "sikemux-markdown",
  "sikemux-process",
+ "sikemux-simulator",
  "sikemux-wire",
  "smallvec",
  "textmate-highlight",
@@ -9003,6 +9006,20 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-simulator"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "sikemux-core",
+ "sikemux-process",
+ "tempfile",
+ "tokio",
  "workspace-hack",
 ]
 
