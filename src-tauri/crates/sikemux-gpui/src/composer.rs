@@ -36,6 +36,7 @@ pub struct Composer {
     strip: Option<Strip>,
     ready: bool,
     running: bool,
+    steers: bool,
     yolo: Option<(bool, Act)>,
     pickers: Option<(Option<ConfigPicker>, Option<ConfigPicker>, Pick)>,
     usage: Option<ContextUsage>,
@@ -52,6 +53,7 @@ impl Composer {
             strip: None,
             ready: false,
             running: false,
+            steers: true,
             yolo: None,
             pickers: None,
             usage: None,
@@ -73,6 +75,12 @@ impl Composer {
 
     pub fn running(mut self, running: bool) -> Self {
         self.running = running;
+        self
+    }
+
+    /// Sending while a turn runs steers into it, else it queues behind it.
+    pub fn steers(mut self, steers: bool) -> Self {
+        self.steers = steers;
         self
     }
 
@@ -120,7 +128,7 @@ impl RenderOnce for Composer {
             .children(self.usage.map(|usage| context_meter(usage, &self.provider, cx)))
             .child(div().flex_1())
             .child(IconButton::new("composer-dictate", Icon::Mic, "Dictate — or hold right ⌥ anywhere").glyph(16.).width(31.))
-            .child(send(self.running && !drafted, drafted, self.running, self.on_send, self.on_stop, cx));
+            .child(send(self.running && !drafted, drafted, self.running.then_some(self.steers), self.on_send, self.on_stop, cx));
         div()
             .w_full()
             .px(px(16.))
@@ -328,10 +336,13 @@ fn context_meter(usage: ContextUsage, provider: &str, cx: &App) -> impl IntoElem
         .child(img(Arc::new(Image::from_bytes(ImageFormat::Svg, ring.into_bytes()))).size(px(14.)))
 }
 
-/// Send, or while a turn runs and nothing is written, Stop.
-fn send(stopping: bool, drafted: bool, running: bool, on_send: Act, on_stop: Act, cx: &App) -> impl IntoElement {
+/// Send, or while a turn runs and nothing is written, Stop. While a turn runs, `steers` tells
+/// whether sending steers into it.
+fn send(stopping: bool, drafted: bool, steers: Option<bool>, on_send: Act, on_stop: Act, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let about = (running && !stopping).then_some("Steers into this turn — ⌘↵ queues behind it");
+    let about = steers.filter(|_| !stopping).map(|steers| {
+        if steers { "Steers into this turn — ⌘↵ queues behind it" } else { "Queues behind this turn — ⌘↵ steers into it" }
+    });
     BaseButton::new("composer-send")
         .accessibility_label(if stopping { "Stop agent" } else { "Send message" })
         .disabled(!stopping && !drafted)
