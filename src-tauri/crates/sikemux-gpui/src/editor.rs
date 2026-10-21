@@ -173,7 +173,10 @@ pub fn pane(
     }
     if viewer::not_text(&path) {
         let opening = path.clone();
-        cx.defer_in(window, move |bench, _, cx| viewer::load(bench, opening, cx));
+        cx.defer_in(window, move |bench, window, cx| {
+            bench.editors.window = Some(window.window_handle());
+            viewer::load(bench, opening, cx)
+        });
         return div().size_full().into_any_element();
     }
     let Some(document) = bench.editors.open.get(&path) else {
@@ -1070,6 +1073,8 @@ pub fn diagnostics_changed(bench: &mut Workbench, paths: &[String], cx: &mut Con
 /// Files that changed on disk: clean editors take the new text, and one with
 /// unsaved edits says the disk moved on when its version did.
 pub fn changed(bench: &mut Workbench, paths: &[String], cx: &mut Context<Workbench>) {
+    let shown: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+    viewer::reopen(bench, &shown);
     let Some(window) = bench.editors.window else {
         return;
     };

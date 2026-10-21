@@ -1,6 +1,6 @@
-//! Files that are not text, shown for what they are: a picture to zoom, and
-//! anything else as the first of its bytes. A bar over each names the file
-//! and opens or reveals it.
+//! Files that are not text, shown for what they are: a picture to zoom, a document
+//! in macOS's own viewer, and anything else as the first of its bytes. A bar over
+//! each names the file and opens or reveals it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -48,6 +48,10 @@ pub(super) struct Viewer {
     zoom: Zoom,
     bytes: Option<Vec<u8>>,
     failed: Option<SharedString>,
+    /// A document's viewer, which macOS draws under the window's overlays; none inside
+    /// once macOS would not make one.
+    #[cfg(target_os = "macos")]
+    document: Option<Option<Opened>>,
 }
 
 struct About {
@@ -97,7 +101,9 @@ impl RenderOnce for Picture {
 #[derive(PartialEq)]
 enum Kind {
     Image,
-    /// What the window cannot draw yet: documents, sound and video.
+    /// A document macOS's PDF or Quick Look viewer shows.
+    Document,
+    /// What the window cannot play yet: sound and video.
     Elsewhere,
     Bytes,
 }
@@ -118,7 +124,10 @@ fn kind_of(mime: &str) -> Kind {
                 | "application/epub+zip"
                 | "image/vnd.adobe.photoshop"
         );
-    if documents || mime.starts_with("audio/") || mime.starts_with("video/") {
+    if documents {
+        return Kind::Document;
+    }
+    if mime.starts_with("audio/") || mime.starts_with("video/") {
         return Kind::Elsewhere;
     }
     if mime.starts_with("image/") {
@@ -167,16 +176,90 @@ pub(super) fn load(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbe
             }
             _ => None,
         };
+        let document = kind_of(&about.mime) == Kind::Document;
         let _ = bench.update(cx, |bench, cx| {
             if let Some(viewer) = bench.editors.viewers.get_mut(&path) {
                 viewer.about = Some(about);
                 viewer.bytes = bytes;
                 viewer.failed = None;
             }
+            if document {
+                show_document(bench, path.clone(), cx);
+            }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
     })
     .detach();
+}
+
+/// Opens the document in macOS's own viewer, which needs the window to live in.
+fn show_document(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbench>) {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(handle) = bench.editors.window else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            let _ = handle.update(cx, |_, window, cx| {
+                let _ = this.update(cx, |bench, cx| {
+                    let Some(viewer) = bench.editors.viewers.get_mut(&path) else {
+                        return;
+                    };
+                    let document = gpui_native_view::document::Document::new(&path, window)
+                        .map(std::rc::Rc::new);
+                    let focus = cx.focus_handle();
+                    viewer.document = Some(document.map(|document| {
+                        let surface = gpui_native_view::NativeSurface::new(Shown(document.clone()));
+                        (document, surface, focus)
+                    }));
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                });
+            });
+        })
+        .detach();
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (bench, path, cx);
+}
+
+/// Shows a document's viewer again after its file changed on disk.
+pub(super) fn reopen(bench: &Workbench, paths: &[PathBuf]) {
+    #[cfg(target_os = "macos")]
+    for path in paths {
+        if let Some((document, _, _)) = bench
+            .editors
+            .viewers
+            .get(path)
+            .and_then(|viewer| viewer.document.as_ref()?.as_ref())
+        {
+            document.open(path);
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (bench, paths);
+}
+
+/// A document's viewer, and the surface its element places.
+#[cfg(target_os = "macos")]
+type Opened = (
+    std::rc::Rc<gpui_native_view::document::Document>,
+    gpui_native_view::NativeSurface,
+    gpui_kit::FocusHandle,
+);
+
+/// A document the editor keeps, placed where its element is laid out.
+#[cfg(target_os = "macos")]
+struct Shown(std::rc::Rc<gpui_native_view::document::Document>);
+
+#[cfg(target_os = "macos")]
+impl gpui_native_view::Surface for Shown {
+    fn place(&self, frame: Option<gpui_native_view::Frame>) {
+        gpui_native_view::Surface::place(&*self.0, frame)
+    }
+
+    fn responder(&self) -> Option<gpui_native_view::Retained<gpui_native_view::NSView>> {
+        gpui_native_view::Surface::responder(&*self.0)
+    }
 }
 
 /// The viewer of the file at `path`.
@@ -209,6 +292,7 @@ pub(super) fn pane(
                 .child(picture)
                 .into_any_element()
         }
+        (None, Some(Kind::Document)) => document(viewer, path, &t),
         (None, Some(Kind::Elsewhere)) => message(
             "This kind of file opens in its own app from here for now.".into(),
             &t,
@@ -222,6 +306,29 @@ pub(super) fn pane(
         .child(bar(this, path, viewer, cx))
         .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
+}
+
+/// A document in macOS's own viewer, once it is open.
+fn document(viewer: &Viewer, path: &Path, t: &Tokens) -> AnyElement {
+    #[cfg(target_os = "macos")]
+    match &viewer.document {
+        Some(Some((_, surface, focus))) => {
+            return gpui_native_view::native_view(
+                SharedString::from(format!("document-{}", path.display())),
+                surface,
+            )
+            .track_focus(focus)
+            .size_full()
+            .into_any_element()
+        }
+        Some(None) => {}
+        None => return message("Opening…".into(), t),
+    }
+    let _ = (viewer, path);
+    message(
+        "This kind of file opens in its own app from here.".into(),
+        t,
+    )
 }
 
 fn message(text: SharedString, t: &Tokens) -> AnyElement {
