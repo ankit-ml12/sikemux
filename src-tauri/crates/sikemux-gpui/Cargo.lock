@@ -3051,7 +3051,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3122,7 +3122,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-apple"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "anyhow",
  "async-task",
@@ -3163,7 +3163,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-bench-metrics"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3174,7 +3174,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-collections"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "gpui-pre-util",
  "indexmap 2.14.2",
@@ -3184,7 +3184,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-derive-refineable"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3194,7 +3194,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-http-client"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3212,7 +3212,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-linux"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -3256,7 +3256,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-macos"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -3295,7 +3295,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-macros"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3306,7 +3306,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-platform"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "anyhow",
  "gpui-pre",
@@ -3319,7 +3319,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-refineable"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "gpui-pre-derive-refineable",
 ]
@@ -3377,7 +3377,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-scheduler"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "async-task",
  "backtrace",
@@ -3393,7 +3393,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-shared-string"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "schemars 1.2.3",
  "serde",
@@ -3403,7 +3403,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-sum-tree"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "gpui-pre-ztracing",
  "heapless",
@@ -3414,7 +3414,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-util"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "anyhow",
  "log",
@@ -3454,7 +3454,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-wgpu"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3482,7 +3482,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-windows"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -3511,7 +3511,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-ztracing"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 dependencies = [
  "gpui-pre-ztracing-macro",
  "tracing",
@@ -3520,7 +3520,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-ztracing-macro"
 version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=50262805ba36b5465677c8c0adbc91625bd606ab#50262805ba36b5465677c8c0adbc91625bd606ab"
+source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
 
 [[package]]
 name = "gpui-terminal-grid"
