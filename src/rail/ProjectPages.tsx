@@ -14,6 +14,7 @@ import { FileTree } from "./FileTree";
 import { RailEmpty } from "./RailEmpty";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
+import { useSessionName } from "../terminal/railNames";
 import { NewOnHost, remoteTerminalRows, useRemoteCopies } from "./RemoteRows";
 import { HostScopeTabs, ScopeTabs } from "./ScopeTabs";
 import { HostTerminals } from "./HostLists";
@@ -53,6 +54,7 @@ function useProjectSession(): Session | undefined {
 /** The terminal tabs of this project, or of every open project. */
 export function TerminalsPage() {
     const session = useProjectSession();
+    const sessionName = useSessionName(session);
     const host = useStore(chosenHostOf);
     const activeSessionId = useStore((s) => s.activeSessionId);
     const scope = useStore((s) => s.tabRailScope);
@@ -93,7 +95,7 @@ export function TerminalsPage() {
                         {host ? (
                             <HostScopeTabs host={host} />
                         ) : (
-                            session && <ScopeTabs scope={scope} name={session.name} onChange={cmd.setTabRailScope} />
+                            session && <ScopeTabs scope={scope} name={sessionName} onChange={cmd.setTabRailScope} />
                         )}
                     </div>
                     <div className="rail-scroll">

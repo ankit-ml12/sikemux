@@ -38,6 +38,10 @@ pub(crate) struct Owner {
     pub account_home: Option<PathBuf>,
     /// The SSH config host an ssh terminal connects to.
     pub ssh_host: Option<String>,
+    /// What a terminal outside every project, agent and SSH host is called
+    /// in the rail, numbered from 1.
+    #[serde(default)]
+    pub rail_number: Option<u32>,
 }
 
 impl Owner {
@@ -57,7 +61,18 @@ impl Owner {
             account_home: None,
             ssh_host: (context.session_kind == "ssh" && !context.session_name.is_empty())
                 .then(|| context.session_name.clone()),
+            rail_number: None,
         }
+    }
+
+    /// A plain terminal outside every project, agent, task and SSH host.
+    pub(crate) fn is_loose(&self, kind: SessionKind) -> bool {
+        kind == SessionKind::Terminal
+            && self.project.is_none()
+            && self.agent_id.is_none()
+            && self.task.is_none()
+            && self.task_execution_id.is_none()
+            && self.ssh_host.is_none()
     }
 }
 

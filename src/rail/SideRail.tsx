@@ -39,6 +39,7 @@ import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES, type ProjectSurfaceRole } from
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
 import type { PluginSignIn } from "../plugin-api/signInState";
 import { StatusDot, type StatusTone } from "../ui/StatusDot";
+import { useSessionName } from "../terminal/railNames";
 import { useSshTone } from "../terminal/sshLinks";
 import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
@@ -149,9 +150,10 @@ function useRail(): RailContextValue {
 }
 
 function SessionCloseButton({ session }: { session: Session }) {
+    const name = useSessionName(session);
     return (
-        <Tooltip label={`Close ${session.name}`}>
-            <button type="button" className="row-x" aria-label={`Close ${session.name}`} onClick={() => cmd.closeSession(session.id)}>
+        <Tooltip label={`Close ${name}`}>
+            <button type="button" className="row-x" aria-label={`Close ${name}`} onClick={() => cmd.closeSession(session.id)}>
                 <IconClose size={11} />
             </button>
         </Tooltip>
@@ -161,13 +163,14 @@ function SessionCloseButton({ session }: { session: Session }) {
 function SimpleRow({ s, status }: { s: Session; status?: ReactNode }) {
     const { activeSessionId } = useRail();
     const active = s.id === activeSessionId;
+    const name = useSessionName(s);
     return (
         <div className="session-row-shell">
             <button className={`sess-row${active ? " active" : ""}`} onClick={() => cmd.selectSession(s.id)}>
                 <span className={`sess-icon ${s.kind}`}>
                     <span className="sess-icon-glyph">{kindIcon(s.kind)}</span>
                 </span>
-                <span className="sess-name">{s.name}</span>
+                <span className="sess-name">{name}</span>
             </button>
             {status && <span className="row-status">{status}</span>}
             <SessionCloseButton session={s} />

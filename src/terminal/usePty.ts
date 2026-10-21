@@ -14,6 +14,7 @@ import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/pt
 import { runShownIn, taskRuns, type TaskRun } from "../tasks/coreTasks";
 import { coreSessionsApi } from "../api/coreSessions";
 import { noteSpawnedSession, takeResumableSession } from "./sessionResume";
+import { readRailNames } from "./railNames";
 import { noteTerminalSize } from "./spareShell";
 import { integrationHealth } from "../api/system";
 
@@ -95,6 +96,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
                   )
                 : await invoke<number>("pty_spawn", { ...request });
         noteSpawnedSession(id);
+        if (request.context?.sessionKind === "command") void readRailNames();
         return id;
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),

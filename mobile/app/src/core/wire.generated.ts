@@ -272,6 +272,13 @@ export interface SessionInfo {
   attentionRank?: number;
   /** For an SSH terminal, where its connection last stood. */
   ssh?: SshLink;
+  /** The SSH config host an SSH terminal connects to. */
+  sshAlias?: string;
+  /**
+   * What the rail calls a terminal outside every project, agent and SSH
+   * host: the lowest number no other running one has when it started.
+   */
+  railName?: string;
 }
 
 export type SessionKind = 'terminal' | 'task';

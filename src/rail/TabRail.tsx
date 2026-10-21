@@ -22,6 +22,7 @@ import { TreeContextMenu } from "./FileTree";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
 import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
+import { useSessionName } from "../terminal/railNames";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { RailEmpty } from "./RailEmpty";
 import { AGENT_SETUP_SECTION } from "../settings/AgentSetupSection";
@@ -99,6 +100,7 @@ export const TabRail = memo(function TabRail() {
 export function TabRailBody() {
     const pageVisible = usePageVisible();
     const session = useStore((s) => s.sessions[s.activeSessionId]);
+    const sessionName = useSessionName(session);
     const host = useStore(chosenHostOf);
     const agentStatus = useStore((s) => s.agentStatus);
     const windowsBySession = useStore((s) => s.windowsBySession);
@@ -404,7 +406,7 @@ export function TabRailBody() {
             )}
             <div className="tab-rail-top">
                 {actions}
-                <ScopeTabs scope={scope} name={session.name} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
+                <ScopeTabs scope={scope} name={sessionName} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 {scope === "all" && <AllProjectsAgents showEmpty={noRecents} />}

@@ -37,18 +37,8 @@ export function createProjectSession(cwd: string): void {
 
 export function createCommandSession(): void {
     mutate((d) => {
-        const used = new Set<number>();
-        for (const id of d.sessionOrder) {
-            const s = d.sessions[id];
-            if (s.kind === "command") {
-                const n = parseInt(s.name, 10);
-                if (Number.isFinite(n)) used.add(n);
-            }
-        }
-        let n = 1;
-        while (used.has(n)) n += 1;
-        const win = makeWindow("", String(n));
-        attachSession(d, makeSession("command", String(n), "", win.id), [win]);
+        const win = makeWindow("", "Terminal", { role: "term" });
+        attachSession(d, makeSession("command", "", "", win.id), [win]);
     });
 }
 

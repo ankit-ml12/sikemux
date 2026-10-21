@@ -256,6 +256,10 @@ impl Session {
         Some((host, link))
     }
 
+    pub(crate) fn rail_number(&self) -> Option<u32> {
+        self.owner.rail_number
+    }
+
     pub(crate) fn info(&self) -> SessionInfo {
         let ((rows, cols), ssh, window_title) = {
             let screen = self.screen.locked();
@@ -294,6 +298,8 @@ impl Session {
             status: None,
             attention_rank: None,
             ssh,
+            ssh_alias: self.owner.ssh_host.clone(),
+            rail_name: self.owner.rail_number.map(|number| number.to_string()),
         }
     }
 }
@@ -380,7 +386,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         rows,
         command,
         kind,
-        owner,
+        mut owner,
         shell_integration,
         ssh,
         initial_prompt_submitted,
@@ -437,6 +443,9 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     let io = AsyncFd::new(io_file)?;
 
     let id = core.next_session_id.fetch_add(1, Ordering::Relaxed);
+    if owner.is_loose(kind) {
+        owner.rail_number = Some(core.take_rail_number());
+    }
     let agent = AgentActivity::new(
         owner.agent_id.as_deref(),
         owner.agent_type.as_deref(),
@@ -742,6 +751,9 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
     });
     drop(screen);
     core.ports.changed();
+    if let Some(number) = session.owner.rail_number {
+        core.rail_numbers.locked().remove(&number);
+    }
     if session.owner.ssh_host.is_some() {
         super::ssh::moved(core);
     }

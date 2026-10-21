@@ -1439,6 +1439,13 @@ pub struct SessionInfo {
     /// For an SSH terminal, where its connection last stood.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<SshLink>,
+    /// The SSH config host an SSH terminal connects to.
+    #[serde(default)]
+    pub ssh_alias: Option<String>,
+    /// What the rail calls a terminal outside every project, agent and SSH
+    /// host: the lowest number no other running one has when it started.
+    #[serde(default)]
+    pub rail_name: Option<String>,
 }
 
 /// A task's launch request without its environment.

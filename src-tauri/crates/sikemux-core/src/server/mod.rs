@@ -67,7 +67,7 @@ pub use entry::main;
 pub use host::{info as host_info, PLATFORM as HOST_PLATFORM};
 pub use remote::trust_remote_file;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -355,6 +355,8 @@ pub(crate) struct Core {
     pub(crate) layouts: layout::Layouts,
     /// Who this host is signed in to Sikemux as.
     pub(crate) account: account::Account,
+    /// The rail numbers running loose terminals have.
+    rail_numbers: Mutex<BTreeSet<u32>>,
     /// Watches the SSH config once a client has listed its hosts.
     pub(crate) ssh_watch: OnceLock<Option<::notify::RecommendedWatcher>>,
     pub(crate) ci: ci::Ci,
@@ -440,6 +442,7 @@ impl Core {
             usage: Default::default(),
             layouts: layout::Layouts::new(data_dir),
             account: Default::default(),
+            rail_numbers: Mutex::default(),
             ssh_watch: OnceLock::new(),
             ci: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
@@ -620,7 +623,18 @@ impl Core {
         self.sessions.locked().values().cloned().collect()
     }
 
+    /// The lowest rail number no running loose terminal has, taken now.
+    fn take_rail_number(&self) -> u32 {
+        let mut taken = self.rail_numbers.locked();
+        let number = (1..).find(|number| !taken.contains(number)).unwrap_or(0);
+        taken.insert(number);
+        number
+    }
+
     fn insert_session(&self, session: Arc<Session>) {
+        if let Some(number) = session.rail_number() {
+            self.rail_numbers.locked().insert(number);
+        }
         let ssh = session.ssh_link().is_some();
         self.sessions.locked().insert(session.id, session);
         if ssh {
