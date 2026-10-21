@@ -194,6 +194,9 @@ calls! { core, client, params;
     "activateTab": Full => answer(super::layout::activate_tab(&core, parse(params)?)?),
     "moveTab": Full => answer(super::layout::move_tab(&core, parse(params)?)?),
     "activateProject": Full => answer(super::layout::activate_project(&core, parse(params)?)?),
+    "splitPane": Full => answer(super::layout::split_pane(&core, parse(params)?)?),
+    "closePane": Full => answer(super::layout::close_pane(&core, parse(params)?)?),
+    "resizeSplit": Full => answer(super::layout::resize_split(&core, parse(params)?)?),
     "account": Watch => answer(core.account.shown()),
     "accountPicture": Watch => {
         let params: AccountPictureParams = parse(params)?;

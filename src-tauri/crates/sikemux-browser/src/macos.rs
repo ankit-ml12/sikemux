@@ -21,7 +21,7 @@ use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAutoresizingMaskOptions,
     NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSEventMask, NSEventModifierFlags,
     NSEventPhase, NSEventType, NSImage, NSImageCompressionFactor, NSModalResponse,
-    NSModalResponseOK, NSOpenPanel, NSTextField, NSView,
+    NSModalResponseOK, NSOpenPanel, NSTextField, NSView, NSWindowOrderingMode,
 };
 use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{
@@ -197,8 +197,25 @@ struct OpenDialog {
 /// off screen, and starts loading `url`. Page dialogs get a sheet, the page's
 /// address, title, loads and downloads go to `events`, and the view is
 /// remembered so shortcuts can tell which tab has focus.
+/// The window view a tab goes into, and whether under its other children or on top.
+pub struct Parent<'a> {
+    pub view: &'a NSView,
+    pub beneath: bool,
+}
+
+impl Parent<'_> {
+    fn adopt(&self, child: &NSView) {
+        if self.beneath {
+            self.view
+                .addSubview_positioned_relativeTo(child, NSWindowOrderingMode::Below, None);
+        } else {
+            self.view.addSubview(child);
+        }
+    }
+}
+
 pub fn open(
-    parent: &NSView,
+    parent: Parent<'_>,
     agent_id: String,
     tab_id: String,
     url: &str,
@@ -206,7 +223,7 @@ pub fn open(
     size: (f64, f64),
     events: Arc<dyn TabEvents>,
 ) -> Retained<WKWebView> {
-    let mtm = parent.mtm();
+    let mtm = parent.view.mtm();
     // SAFETY: main thread, as `mtm` proves; the configuration is fresh and only ours.
     let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
     let yes = NSNumber::numberWithBool(true);
@@ -276,7 +293,7 @@ pub fn open(
             );
         }
     }
-    parent.addSubview(&webview);
+    parent.adopt(&webview);
     let _ = hand_unused_swipes_to_the_stage(&webview);
     TABS.with(|tabs| {
         tabs.borrow_mut().insert(
@@ -869,9 +886,10 @@ fn stage_for_swipe(view: &NSView, event: &NSEvent) -> Option<Retained<NSView>> {
             .collect()
     });
     let web_view_class = objc2::runtime::AnyClass::get(c"WKWebView")?;
-    parent.subviews().iter().find(|sibling| {
+    let app_page = parent.subviews().iter().find(|sibling| {
         !pages.contains(&view_key(sibling)) && sibling.isKindOfClass(web_view_class)
-    })
+    });
+    Some(app_page.unwrap_or(parent))
 }
 
 type HitTest = unsafe extern "C-unwind" fn(&NSView, Sel, NSPoint) -> *mut NSView;

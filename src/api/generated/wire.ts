@@ -638,11 +638,14 @@ export type Pane =
       }
     | {
           type: "split";
+          id: string;
           dir: SplitDir;
           panes: Pane[];
+          /** Each pane's share of the split, in thousandths. */
+          sizes: number[];
       };
 
-export type PaneKind = "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin";
+export type PaneKind = "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk";
 
 export type SplitDir = "row" | "column";
 

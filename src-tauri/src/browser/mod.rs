@@ -42,14 +42,14 @@ impl sikemux_browser::Host for AppHost {
         #[cfg(target_os = "macos")]
         {
             let view = window.ns_view().map_err(|error| error.to_string())?;
-            Ok(ParentView(view))
+            Ok(ParentView::on_top(view))
         }
         #[cfg(target_os = "linux")]
         {
             use gtk::glib::translate::ToGlibPtr;
             let container = window.default_vbox().map_err(|error| error.to_string())?;
             let pointer: *mut gtk::ffi::GtkBox = container.to_glib_none().0;
-            Ok(ParentView(pointer.cast()))
+            Ok(ParentView::on_top(pointer.cast()))
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {

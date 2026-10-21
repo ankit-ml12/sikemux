@@ -605,6 +605,7 @@ pub fn kind_icon(kind: PaneKind) -> Icon {
         PaneKind::Board => Icon::Board,
         PaneKind::Browser => Icon::Globe,
         PaneKind::Plugin => Icon::Window,
+        PaneKind::Desk => Icon::PanelRight,
     }
 }
 
@@ -618,6 +619,7 @@ fn kind_label(kind: PaneKind) -> &'static str {
         PaneKind::Board => "Agent board",
         PaneKind::Browser => "Browser",
         PaneKind::Plugin => "Plugin",
+        PaneKind::Desk => "Desk",
     }
 }
 

@@ -1926,8 +1926,11 @@ pub enum Pane {
         target: String,
     },
     Split {
+        id: String,
         dir: SplitDir,
         panes: Vec<Pane>,
+        /// Each pane's share of the split, in thousandths.
+        sizes: Vec<u16>,
     },
 }
 
@@ -1942,6 +1945,8 @@ pub enum PaneKind {
     Board,
     Browser,
     Plugin,
+    /// An agent's pages, files, task terminals and simulator; `target` is the agent.
+    Desk,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

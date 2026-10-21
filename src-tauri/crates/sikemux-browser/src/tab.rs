@@ -20,7 +20,28 @@ use crate::TabEvents;
 /// The window view tabs are added to: an `NSView` on macOS, the window's
 /// `GtkBox` on Linux.
 #[derive(Clone, Copy)]
-pub struct ParentView(pub *mut std::ffi::c_void);
+pub struct ParentView {
+    pub view: *mut std::ffi::c_void,
+    /// Tabs go under the view's other children, such as a plane drawing popovers
+    /// over them, instead of on top.
+    pub beneath: bool,
+}
+
+impl ParentView {
+    pub fn on_top(view: *mut std::ffi::c_void) -> Self {
+        Self {
+            view,
+            beneath: false,
+        }
+    }
+
+    pub fn beneath(view: *mut std::ffi::c_void) -> Self {
+        Self {
+            view,
+            beneath: true,
+        }
+    }
+}
 
 // SAFETY: only the pointer value crosses threads; it is used on the main thread alone.
 unsafe impl Send for ParentView {}
@@ -98,9 +119,12 @@ impl Tab {
             MainThreadMarker::new()?;
             // SAFETY: the caller hands over a live NSView of an open window, and this
             // runs on the main thread.
-            let parent = unsafe { parent.0.cast::<NSView>().as_ref() }?;
+            let view = unsafe { parent.view.cast::<NSView>().as_ref() }?;
             Some(Held(Some(crate::macos::open(
-                parent,
+                crate::macos::Parent {
+                    view,
+                    beneath: parent.beneath,
+                },
                 agent_id,
                 tab_id,
                 &url,
@@ -125,6 +149,12 @@ impl Tab {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The page's view, to code already on the main thread.
+    pub fn view_here(&self) -> Option<Retained<NSView>> {
+        MainThreadMarker::new()?;
+        self.view.0.clone().map(Retained::into_super)
     }
 
     /// Runs `act` on the page on the main thread, at once when called there.
@@ -279,8 +309,9 @@ mod linux {
                 let parent = parent;
                 // SAFETY: the caller hands over the live `GtkBox` of an open window, and
                 // this runs on the main thread.
-                let container: gtk::Box =
-                    unsafe { glib::translate::from_glib_none(parent.0.cast::<gtk::ffi::GtkBox>()) };
+                let container: gtk::Box = unsafe {
+                    glib::translate::from_glib_none(parent.view.cast::<gtk::ffi::GtkBox>())
+                };
                 let (load, title, popup, started, finished) = (
                     events.clone(),
                     events.clone(),
