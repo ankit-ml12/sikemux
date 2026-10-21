@@ -409,37 +409,37 @@ impl FrameWriter {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Cell {
-    /// The character and any marks combined onto it; empty for the second
-    /// column of a wide character and for a blank cell.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub style: Arc<Style>,
     pub text: String,
-    pub style: Style,
+    /// The column the span starts in.
+    pub col: u16,
+    /// Columns the span covers.
+    pub width: u16,
+    /// Each character takes two columns.
     pub wide: bool,
+    /// The whole text is one cell: a character with marks combined onto it.
+    pub cluster: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Row {
     /// The line goes on in the next row: the program wrote past the edge.
     pub wrapped: bool,
-    /// Cells from the left edge; any after the last are blank.
-    pub cells: Vec<Cell>,
+    /// Left to right; columns no span covers are blank.
+    pub spans: Vec<Span>,
 }
 
 impl Row {
     pub fn text(&self) -> String {
-        let mut text: String = self
-            .cells
-            .iter()
-            .filter(|cell| !(cell.text.is_empty() && cell.wide))
-            .map(|cell| {
-                if cell.text.is_empty() {
-                    " "
-                } else {
-                    &cell.text
-                }
-            })
-            .collect();
+        let mut text = String::new();
+        let mut col = 0;
+        for span in &self.spans {
+            text.extend(std::iter::repeat_n(' ', usize::from(span.col.saturating_sub(col))));
+            text.push_str(&span.text);
+            col = span.col + span.width;
+        }
         text.truncate(text.trim_end().len());
         text
     }
@@ -513,7 +513,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn tables(&mut self) -> Option<Vec<Style>> {
+    fn tables(&mut self) -> Option<Vec<Arc<Style>>> {
         let style_count = self.varint()? as usize;
         let mut raw = Vec::with_capacity(style_count.min(4096));
         for _ in 0..style_count {
@@ -546,7 +546,7 @@ impl<'a> Reader<'a> {
         }
         raw.into_iter()
             .map(|(flags, fg, bg, underline_color, link)| {
-                Some(Style {
+                Some(Arc::new(Style {
                     fg,
                     bg,
                     flags,
@@ -555,45 +555,37 @@ impl<'a> Reader<'a> {
                         Some(index) => Some(links.get(index)?.clone()),
                         None => None,
                     },
-                })
+                }))
             })
             .collect()
     }
 
-    fn row(&mut self, styles: &[Style]) -> Option<Row> {
+    fn row(&mut self, styles: &[Arc<Style>]) -> Option<Row> {
         let wrapped = self.byte()? & ROW_WRAPPED != 0;
-        let mut cells = Vec::new();
+        let mut spans = Vec::new();
+        let mut col = 0u16;
         loop {
             let style = self.varint()? as usize;
             if style == 0 {
-                return Some(Row { wrapped, cells });
+                return Some(Row { wrapped, spans });
             }
-            let style = styles.get(style - 1)?;
+            let style = styles.get(style - 1)?.clone();
             let flags = self.byte()?;
             let len = self.varint()? as usize;
-            let text = std::str::from_utf8(self.take(len)?).ok()?;
+            let text = std::str::from_utf8(self.take(len)?).ok()?.to_owned();
             let wide = flags & SPAN_WIDE != 0;
-            let mut push = |text: String| {
-                cells.push(Cell {
-                    text,
-                    style: style.clone(),
-                    wide,
-                });
-                if wide {
-                    cells.push(Cell {
-                        text: String::new(),
-                        style: style.clone(),
-                        wide: true,
-                    });
-                }
-            };
-            if flags & SPAN_CLUSTER != 0 {
-                push(text.to_owned());
-            } else {
-                for character in text.chars() {
-                    push(character.to_string());
-                }
-            }
+            let cluster = flags & SPAN_CLUSTER != 0;
+            let cells = if cluster { 1 } else { text.chars().count() as u16 };
+            let width = cells * if wide { 2 } else { 1 };
+            spans.push(Span {
+                style,
+                text,
+                col,
+                width,
+                wide,
+                cluster,
+            });
+            col += width;
         }
     }
 }
@@ -679,7 +671,8 @@ pub fn decode_lines(payload: &[u8]) -> Option<Lines> {
 #[derive(Clone, Debug, Default)]
 pub struct Screen {
     pub header: FrameHeader,
-    pub rows: Vec<Row>,
+    /// Shared, so a frame that moves rows does not copy them.
+    pub rows: Vec<Arc<Row>>,
 }
 
 impl Screen {
@@ -691,7 +684,7 @@ impl Screen {
             std::mem::take(&mut self.rows)
         };
         let mut rows = previous.clone();
-        rows.resize(size, Row::default());
+        rows.resize_with(size, Arc::default);
         let palette = std::mem::take(&mut self.header.palette);
         for op in frame.ops {
             match op {
@@ -709,12 +702,12 @@ impl Screen {
                         .skip(usize::from(row))
                         .take(usize::from(count))
                     {
-                        *slot = Row::default();
+                        *slot = Arc::default();
                     }
                 }
                 Op::Row { index, row } => {
                     if let Some(slot) = rows.get_mut(usize::from(index)) {
-                        *slot = row;
+                        *slot = Arc::new(row);
                     }
                 }
             }
@@ -729,7 +722,7 @@ impl Screen {
 
     /// The screen's text, one line per row, without trailing blanks.
     pub fn text(&self) -> String {
-        let lines: Vec<String> = self.rows.iter().map(Row::text).collect();
+        let lines: Vec<String> = self.rows.iter().map(|row| row.text()).collect();
         let mut text = lines.join("\n");
         text.truncate(text.trim_end().len());
         text
