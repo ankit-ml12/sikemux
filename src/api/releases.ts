@@ -56,3 +56,6 @@ export const releasesApi = {
     notes: (version: string) => coreCall<ReleaseNotes>("releaseNotes", { version }),
     avatars: (urls: string[]) => coreCall<Record<string, string>>("releaseAvatars", { urls }),
 };
+
+/** The release running here, and whether the person has yet to read its notes, as the core keeps track. */
+export const whatsNew = (): Promise<{ version: string; unseen: boolean }> => coreCall("whatsNew");

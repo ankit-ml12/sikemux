@@ -2,6 +2,8 @@ import { clampRailWidth, type RailEdge } from "../../lib/railWidths";
 import { invalidate } from "../resources";
 import { selectFocusMode } from "../selectors";
 import { getState, mutate, setState } from "../store";
+import { whatsNew } from "../../api/releases";
+import { swallow } from "../toast";
 import type { SettingsPageId } from "../../settings/settingsIndex";
 import type { PickerMode } from "../types";
 import { setPreference } from "../preferences";
@@ -44,8 +46,9 @@ export const closeDiagnostics = (): void => setState({ diagnosticsOpen: false })
 export const openWhatsNew = (): void => setState({ whatsNewOpen: true, onboardingOpen: false, diagnosticsOpen: false });
 export function closeWhatsNew(): void {
     setState({ whatsNewOpen: false });
-    const seen = getState().lastReleaseNotes?.version;
-    if (seen) setPreference("lastSeenVersion", seen);
+    void whatsNew()
+        .then(({ version }) => setPreference("lastSeenVersion", version))
+        .catch(swallow("mark the news read"));
 }
 export const openNewTabPalette = (): void =>
     setState({ newTabPaletteOpen: true, filePaletteOpen: false, agentPaletteOpen: false, pickerOpen: false });

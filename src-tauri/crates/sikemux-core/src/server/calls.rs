@@ -291,7 +291,9 @@ calls! { core, client, params;
     "preferences": Watch => answer(core.preferences.get()),
     "setPreference": Person => {
         let params: SetPreferenceParams = parse(params)?;
-        let preferences = core.preferences.set(&params.key, params.value)?;
+        core.preferences.set(&params.key, params.value)?;
+        super::about::introduced(&core, &params.key)?;
+        let preferences = core.preferences.get();
         core.theme_changed();
         core.changes.changed(Topic::Preferences, None, None);
         answer(preferences)
@@ -418,6 +420,7 @@ calls! { core, client, params;
     "releaseNotes": Watch => answer(super::about::release_notes(parse(params)?).await?),
     "releaseAvatars": Watch => answer(super::about::release_avatars(parse(params)?).await),
     "hostTools": Watch => answer(super::about::tools().await?),
+    "whatsNew": Watch => answer(super::about::whats_new(&core)),
     "cliInstall": Watch => answer(super::cli_install::status().await?),
     "installCli": Person => answer(super::cli_install::install().await?),
     "renameAccountDevice": Person => answer(super::hosts::account::rename_device(&core, parse(params)?).await?),

@@ -84,6 +84,7 @@ import {
     showPathDropHover,
 } from "./state/dropRegistry";
 import { notify, reportError, swallow } from "./state/toast";
+import { whatsNew } from "./api/releases";
 import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
@@ -715,8 +716,10 @@ export default function App() {
                     if (hydrationAllowsPersistence(hydrationResult)) {
                         offerSavedSessions();
                         if (preferences && !preferences.onboardingComplete) cmd.openOnboarding();
-                        else if (preferences && st.lastReleaseNotes && preferences.lastSeenVersion !== st.lastReleaseNotes.version)
-                            cmd.openWhatsNew();
+                        else
+                            void whatsNew()
+                                .then(({ unseen }) => unseen && cmd.openWhatsNew())
+                                .catch(swallow("ask whether there is news"));
                         performanceTelemetry.endSpan(hydrateSpan, { outcome: "success" });
                     } else {
                         setBootIssue(
