@@ -17,6 +17,8 @@ pub enum Update {
     View(Box<DeviceView>),
     /// A watched call's latest answer, under the key it was watched as.
     Read(&'static str, Value),
+    /// The core turned down what was asked under the key.
+    Refused(&'static str, String),
     Lost(String),
 }
 
@@ -44,6 +46,8 @@ pub enum Ask {
     /// One of the core's methods, for something the person did. What it changes
     /// comes back with the next view.
     Call { method: &'static str, params: Value },
+    /// A call whose answer the window waits for, sent back under `key`.
+    Answer { key: &'static str, method: &'static str, params: Value },
 }
 
 pub struct Link {
@@ -142,6 +146,15 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                                 current.lock().expect("watch generations").insert(key, watch.generation);
                                 read(&client, key, &watch, &current, &updates);
                                 watches.insert(key, watch);
+                            }
+                            Some(Ask::Answer { key, method, params }) => {
+                                let (client, updates) = (client.clone(), updates.clone());
+                                tokio::spawn(async move {
+                                    let _ = updates.send(match client.call(method, params).await {
+                                        Ok(value) => Update::Read(key, value),
+                                        Err(error) => Update::Refused(key, error.to_string()),
+                                    });
+                                });
                             }
                             Some(Ask::Call { method, params }) => {
                                 let client = client.clone();

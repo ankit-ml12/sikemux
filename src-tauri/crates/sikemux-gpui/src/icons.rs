@@ -53,6 +53,7 @@ icons!(
     Laptop => "laptop",
     Linear => "linear",
     LogIn => "log-in",
+    LogOut => "log-out",
     Logo => "logo",
     More => "more",
     PanelLeft => "panel-left",

@@ -23,6 +23,8 @@ pub struct Workbench {
     /// The account's picture, and the hash the core named the one asked for by.
     picture: Option<Arc<Image>>,
     picture_hash: Option<String>,
+    /// From asking the core to sign in until the browser is done or gives up.
+    pub signing_in: bool,
     pub all_projects: bool,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
     pub metric: usize,
@@ -65,6 +67,7 @@ impl Workbench {
             watched_project: None,
             picture: None,
             picture_hash: None,
+            signing_in: false,
             all_projects: false,
             metric: 0,
             filter: None,
@@ -86,6 +89,20 @@ impl Workbench {
                 self.watch_picture();
             }
             Update::Read("picture", value) => self.picture = decode_picture(&value),
+            Update::Read("sign-in", value) => match value["url"].as_str() {
+                Some(url) => {
+                    cx.open_url(url);
+                    let _ = self.asks.send(Ask::Answer { key: "sign-in-finished", method: "accountSignInFinish", params: json!({}) });
+                }
+                None => self.signing_in = false,
+            },
+            Update::Read("sign-in-finished", _) => self.signing_in = false,
+            Update::Refused(key, error) => {
+                eprintln!("sikemux: the core refused {key}: {error}");
+                if key.starts_with("sign-in") {
+                    self.signing_in = false;
+                }
+            }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
             }
@@ -258,6 +275,20 @@ impl Workbench {
         })
     }
 
+    pub fn sign_in(&mut self) {
+        self.signing_in = true;
+        let _ = self.asks.send(Ask::Answer { key: "sign-in", method: "accountSignIn", params: json!({}) });
+    }
+
+    /// Ends a sign-in the browser has not finished, which settles the one waiting on it.
+    pub fn cancel_sign_in(&self) {
+        self.call("accountSignInCancel", json!({}));
+    }
+
+    pub fn sign_out(&self) {
+        self.call("accountSignOut", json!({}));
+    }
+
     pub fn toggle_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.filter.take().is_some() {
             self._filtering = None;
@@ -276,17 +307,11 @@ impl Workbench {
     }
 }
 
-/// The image bytes `accountPicture` answers with, in base64, as the format they start like.
+/// The picture `accountPicture` answers with: its type, and its bytes in base64.
 fn decode_picture(value: &Value) -> Option<Arc<Image>> {
     use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(value.as_str()?).ok()?;
-    let format = match bytes.as_slice() {
-        [0x89, b'P', b'N', b'G', ..] => ImageFormat::Png,
-        [0xff, 0xd8, ..] => ImageFormat::Jpeg,
-        [b'G', b'I', b'F', ..] => ImageFormat::Gif,
-        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => ImageFormat::Webp,
-        _ => return None,
-    };
+    let format = ImageFormat::from_mime_type(value["mime"].as_str()?)?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(value["data"].as_str()?).ok()?;
     Some(Arc::new(Image::from_bytes(format, bytes)))
 }
 

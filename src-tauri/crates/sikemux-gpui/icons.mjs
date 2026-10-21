@@ -40,6 +40,7 @@ const DRAWN = {
   chevron: [ICONS, "IconChevron"],
   inbox: [ICONS, "IconInbox"],
   "log-in": [ICONS, "IconLogIn"],
+  "log-out": [ICONS, "IconLogOut"],
   settings: [ICONS, "IconSettings"],
   command: [ICONS, "IconCommand"],
   focus: [ICONS, "IconFocus"],

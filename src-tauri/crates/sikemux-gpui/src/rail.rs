@@ -1,7 +1,10 @@
+use std::rc::Rc;
+
+use gpui_kit::base::Popover;
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement,
+    div, px, Anchor, AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled,
 };
 use serde_json::Value;
@@ -9,7 +12,7 @@ use sikemux_wire::protocol::ProjectInfo;
 
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
-use crate::ui::{self, Button, Group, IconButton, Row, Tone, Variant};
+use crate::ui::{self, Button, Group, IconButton, Menu, MenuItem, Row, Tone, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
 pub const SIDE_RAIL_WIDTH: f32 = 258.;
@@ -281,21 +284,14 @@ fn surfaces(project: &ProjectInfo, cx: &App) -> impl IntoElement {
 }
 
 /// Who the host is signed in as, or the card that signs it in.
-fn account(bench: &Workbench, cx: &App) -> impl IntoElement {
+fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let Some(account) = bench.view.as_ref().and_then(|view| view.account.as_deref()) else {
-        return sign_in(cx).into_any_element();
+        return sign_in(bench, cx).into_any_element();
     };
     let who = account.name.clone().or_else(|| account.email.clone()).unwrap_or_else(|| "Signed in".into());
     let initials = initials(account.name.as_deref(), account.email.as_deref());
-    div()
-        .flex_none()
-        .px(px(10.))
-        .py(px(6.))
-        .border_t_1()
-        .border_color(t.border)
-        .child(
-            Row::new("account", who)
+    let row = Row::new("account", who)
                 .mark(
                     24.,
                     div()
@@ -316,9 +312,31 @@ fn account(bench: &Workbench, cx: &App) -> impl IntoElement {
                             None => face.child(initials),
                         }),
                 )
-                .when_some(account.name.as_ref().and(account.email.clone()), |row, email| row.subtitle(ui::meta(email, cx)))
-                .child(IconButton::new("settings", Icon::Settings, "Settings").glyph(14.).width(28.)),
-        )
+                .when_some(account.name.as_ref().and(account.email.clone()), |row, email| row.subtitle(ui::meta(email, cx)));
+    let sign_out = Rc::new(cx.listener(|bench, _, _, _| bench.sign_out()));
+    let menu = Popover::new("account-menu")
+        .anchor(Anchor::BottomLeft)
+        .offset(px(4.))
+        .trigger(row)
+        .content(move |_, _, cx| {
+            let popover = cx.entity();
+            let sign_out = sign_out.clone();
+            Menu::new().child(MenuItem::new("sign-out", "Sign out").icon(Icon::LogOut).on_click(move |event, window, cx| {
+                sign_out(event, window, cx);
+                popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+            }))
+        });
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .px(px(10.))
+        .py(px(6.))
+        .border_t_1()
+        .border_color(t.border)
+        .child(div().flex_1().min_w_0().child(menu))
+        .child(IconButton::new("settings", Icon::Settings, "Settings — ⌘,").glyph(14.).width(28.))
         .into_any_element()
 }
 
@@ -333,8 +351,22 @@ fn initials(name: Option<&str>, email: Option<&str>) -> String {
     }
 }
 
-fn sign_in(cx: &App) -> impl IntoElement {
+fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx);
+    let (copy, button) = if bench.signing_in {
+        (
+            "Finish signing in in your browser.",
+            Button::new("sign-in", "Cancel", Variant::Outline).on_click(cx.listener(|bench, _, _, _| bench.cancel_sign_in())),
+        )
+    } else {
+        (
+            "Sign in to reach this host from your phone and other devices.",
+            Button::new("sign-in", "Sign in", Variant::Primary).icon(Icon::LogIn).on_click(cx.listener(|bench, _, _, cx| {
+                bench.sign_in();
+                cx.notify();
+            })),
+        )
+    };
     div()
         .flex_none()
         .mx(px(10.))
@@ -350,7 +382,7 @@ fn sign_in(cx: &App) -> impl IntoElement {
                 .text_size(px(12.))
                 .line_height(px(12. * 1.4))
                 .text_color(t.text_secondary)
-                .child("Sign in to reach this host from your phone and other devices."),
+                .child(copy),
         )
-        .child(Button::new("sign-in", "Sign in", Variant::Primary).icon(Icon::LogIn))
+        .child(button)
 }

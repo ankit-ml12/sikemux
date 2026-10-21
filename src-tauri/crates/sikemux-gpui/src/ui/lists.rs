@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use gpui_kit::base::Button as BaseButton;
+use gpui_kit::base::{Button as BaseButton, Selectable};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
@@ -102,6 +102,16 @@ impl Row {
     pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
+    }
+}
+
+impl Selectable for Row {
+    fn selected(self, selected: bool) -> Self {
+        self.chosen(selected)
+    }
+
+    fn is_selected(&self) -> bool {
+        self.chosen
     }
 }
 
