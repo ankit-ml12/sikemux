@@ -5836,6 +5836,7 @@ dependencies = [
  "git2",
  "hashlink",
  "hex",
+ "ignore",
  "iroh",
  "libc",
  "notify",
@@ -8604,6 +8605,7 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "bitflags 2.13.2",
+ "bstr",
  "cc",
  "crc32fast",
  "crossbeam-utils",

@@ -87,7 +87,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "lsp_document_symbols",
     "diff_hunks",
     "markdown_parse",
-    "list_project_files_snapshot",
     "scan_project_roots",
     "expand_path",
     "is_directory",

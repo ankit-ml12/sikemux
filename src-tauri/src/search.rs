@@ -29,7 +29,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::{AppError, AppResult};
-use crate::files;
 
 // ---- caps ---------------------------------------------------------------
 
@@ -386,7 +385,7 @@ fn build_walker(repo: &str) -> ignore::WalkParallel {
                 return true;
             }
             let name = entry.file_name().to_string_lossy();
-            !files::should_skip_dir(&name)
+            !sikemux_core::git::watch::should_skip_dir(&name)
         })
         .build_parallel()
 }

@@ -13,6 +13,7 @@ hex = "0.4"
 quick-xml = "0.42"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
+ignore = "0.4"
 serde_json = { version = "1", features = ["preserve_order"] }
 semver = "1"
 sha2 = "0.11"

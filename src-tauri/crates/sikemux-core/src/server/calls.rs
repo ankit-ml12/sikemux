@@ -255,6 +255,10 @@ calls! { core, client, params;
     },
     "answerPairing": Person => answer(remote::answer_pairing(&core, parse(params)?)?),
     "changeDevice": Person => answer(remote::change_device(&core, parse(params)?)?),
+    "projectFiles": Full => {
+        let params = parse(params)?;
+        answer(blocking(move || super::project_files::read(params).map_err(CoreError::from)).await?)
+    },
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),

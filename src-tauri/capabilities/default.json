@@ -104,7 +104,6 @@
     "allow-lsp-document-symbols",
     "allow-diff-hunks",
     "allow-markdown-parse",
-    "allow-list-project-files-snapshot",
     "allow-scan-project-roots",
     "allow-expand-path",
     "allow-is-directory",

@@ -335,6 +335,7 @@ pub(crate) fn follow_projects(core: &Core) {
             read_hosts(&core, projects.to_vec());
         }
         for project in projects {
+            super::project_files::moved(project, paths.as_deref());
             core.changes
                 .changed(Topic::Git, Some(project), paths.clone());
             if state_moved {

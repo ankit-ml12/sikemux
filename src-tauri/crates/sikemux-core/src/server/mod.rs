@@ -41,6 +41,7 @@ mod network_watch;
 mod notify;
 pub mod plugins;
 mod ports;
+mod project_files;
 mod prepare;
 mod questions;
 mod remote;

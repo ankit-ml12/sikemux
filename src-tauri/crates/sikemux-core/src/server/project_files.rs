@@ -1,12 +1,11 @@
-// Project-wide file snapshots for the Cmd-P palette.
-//
-// Why we don't respect .gitignore:
-//   .env, local.properties, *.local.json — these are exactly the files the
-//   user often needs to jump to, but they're gitignored. Honouring gitignore
-//   would hide them. Instead we use a fixed denylist of well-known build /
-//   dependency / cache directories.
+//! Every file in a project, for Cmd-P, kept current from the watcher. A client
+//! that names the scan it holds gets only what was added and removed since.
+//!
+//! .gitignore is not honoured: .env, local.properties and *.local.json are
+//! exactly what the person jumps to, so a fixed list of build, dependency and
+//! cache folders is left out instead.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,28 +13,24 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use ignore::WalkBuilder;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sikemux_process::sync::Locked;
 
-pub(crate) use sikemux_core::git::watch::{repo_key as canonical_repo_key, should_skip_dir};
+use crate::git::watch::{repo_key, should_skip_dir, GIT_STATE};
 
-use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
-
-// Watcher deltas keep a snapshot current, while this TTL remains a periodic
-// correctness backstop for missed platform events and repos without a watcher.
+/// A full rescan backstops platform events the watcher missed.
 const TTL: Duration = Duration::from_secs(60);
 const MAX_INCREMENTAL_PATHS: usize = 512;
 const MAX_INCREMENTAL_FILES: usize = 4_096;
 const MAX_PROJECT_FILES: usize = 250_000;
-// Counts a conservative JSON-encoded upper bound for every relative path,
-// including quotes and separators. This bounds the retained cache, the clone
-// made for IPC, and the eventual command response before any of them are
-// allocated without limit.
+/// Bounds the kept list and every answer by the JSON its paths take.
 const MAX_PROJECT_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_PROJECT_ENCODED_PATH_BYTES: usize = MAX_PROJECT_SNAPSHOT_BYTES - 1024;
 const MAX_PROJECT_CACHE_ENTRIES: usize = 128;
-const FULL_SCAN_SLOW_THRESHOLD: Duration = Duration::from_millis(100);
-const INCREMENTAL_SLOW_THRESHOLD: Duration = Duration::from_millis(16);
+/// How many changes back a client may still be answered with only the change.
+const KEPT_CHANGES: usize = 16;
+/// A change bigger than this is not kept; its readers get the whole list.
+const MAX_KEPT_CHANGE_PATHS: usize = 20_000;
 
 static NEXT_SCAN_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_CACHE_ACCESS: AtomicU64 = AtomicU64::new(1);
@@ -43,20 +38,44 @@ static NEXT_CACHE_ACCESS: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone)]
 struct Entry {
     files: Arc<Vec<String>>,
-    encoded_path_bytes: usize,
     full_scan_at: Instant,
     scan_id: u64,
 }
 
+/// What the files became after scan `from`, up to the next kept change or
+/// the current list.
+struct Change {
+    from: u64,
+    added: Vec<String>,
+    removed: Vec<String>,
+}
+
+/// Paths the watcher saw move since the last read; `None` means anything may
+/// have.
+#[derive(Default)]
+enum Pending {
+    #[default]
+    Nothing,
+    Paths(Vec<String>),
+    Anything,
+}
+
+#[derive(Default)]
+struct Slot {
+    entry: Option<Entry>,
+    pending: Pending,
+    changes: VecDeque<Change>,
+}
+
 struct ProjectCache {
-    entry: Mutex<Option<Entry>>,
+    slot: Mutex<Slot>,
     last_used: AtomicU64,
 }
 
 impl ProjectCache {
     fn new() -> Self {
         Self {
-            entry: Mutex::new(None),
+            slot: Mutex::new(Slot::default()),
             last_used: AtomicU64::new(next_cache_access()),
         }
     }
@@ -115,43 +134,30 @@ fn project_cache(repo: &str) -> Result<Arc<ProjectCache>, String> {
     project_cache_from(cache(), repo, MAX_PROJECT_CACHE_ENTRIES)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+/// The answer to `projectFiles`: the whole list, only what changed since the
+/// client's scan, or neither when nothing did.
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectFilesSnapshot {
-    pub scan_id: u64,
-    pub files: Vec<String>,
+pub(crate) struct ProjectFiles {
+    scan_id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    files: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    added: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    removed: Option<Vec<String>>,
 }
 
-impl Entry {
-    fn snapshot(&self) -> ProjectFilesSnapshot {
-        ProjectFilesSnapshot {
-            scan_id: self.scan_id,
-            files: (*self.files).clone(),
-        }
-    }
-}
-
-enum FullScanReason {
-    CacheMiss,
-    Ttl,
-    WatcherFallback,
-}
-
-impl FullScanReason {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::CacheMiss => "cache_miss",
-            Self::Ttl => "ttl",
-            Self::WatcherFallback => "watcher_fallback",
-        }
-    }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectFilesParams {
+    project: String,
+    #[serde(default)]
+    since: Option<u64>,
 }
 
 enum LimitedWalk {
-    Complete {
-        files: Vec<String>,
-        encoded_path_bytes: usize,
-    },
+    Complete(Vec<String>),
     LimitExceeded,
     Unreliable,
 }
@@ -262,85 +268,27 @@ fn walk(repo_root: &Path, scan_root: &Path, limits: WalkLimits) -> LimitedWalk {
 
     files.sort_unstable();
     files.dedup();
-    LimitedWalk::Complete {
-        files,
-        encoded_path_bytes,
-    }
+    LimitedWalk::Complete(files)
 }
 
 fn next_scan_id() -> u64 {
-    loop {
-        let current = NEXT_SCAN_ID.load(Ordering::Relaxed);
-        let Some(next) = current.checked_add(1) else {
-            std::process::abort();
-        };
-        if NEXT_SCAN_ID
-            .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-        {
-            return current;
-        }
+    NEXT_SCAN_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn full_scan_with_limits(repo: &str, limits: WalkLimits) -> Result<Vec<String>, String> {
+    match walk(Path::new(repo), Path::new(repo), limits) {
+        LimitedWalk::Complete(files) => Ok(files),
+        LimitedWalk::LimitExceeded => Err(format!(
+            "project file snapshot exceeds its {}-file or {}-byte safety limit",
+            limits.max_files, limits.max_encoded_path_bytes
+        )),
+        LimitedWalk::Unreliable => Err("project file snapshot could not be read reliably".into()),
     }
 }
 
-fn full_scan_locked_with_limits(
-    repo: &str,
-    slot: &mut Option<Entry>,
-    reason: FullScanReason,
-    limits: WalkLimits,
-) -> Result<Entry, String> {
-    let observer = global_observability();
-    let mut metadata = Metadata::new();
-    metadata.insert("reason".to_owned(), ScalarValue::from(reason.label()));
-    let timer =
-        observer.slow_operation("files.full_scan", FULL_SCAN_SLOW_THRESHOLD, None, metadata);
-
-    let (files, encoded_path_bytes) = match walk(Path::new(repo), Path::new(repo), limits) {
-        LimitedWalk::Complete {
-            files,
-            encoded_path_bytes,
-        } => (files, encoded_path_bytes),
-        LimitedWalk::LimitExceeded => {
-            observer.increment_counter("files.full_scan.limit_errors", 1);
-            timer.finish(SpanOutcome::Error);
-            return Err(format!(
-                "project file snapshot exceeds its {}-file or {}-byte safety limit",
-                limits.max_files, limits.max_encoded_path_bytes
-            ));
-        }
-        LimitedWalk::Unreliable => {
-            observer.increment_counter("files.full_scan.read_errors", 1);
-            timer.finish(SpanOutcome::Error);
-            return Err("project file snapshot could not be read reliably".into());
-        }
-    };
-    let entry = Entry {
-        files: Arc::new(files),
-        encoded_path_bytes,
-        full_scan_at: Instant::now(),
-        scan_id: next_scan_id(),
-    };
-    *slot = Some(entry.clone());
-
-    observer.increment_counter("files.full_scans", 1);
-    observer.set_gauge("files.full_scan.last_file_count", entry.files.len() as f64);
-    observer.set_gauge(
-        "files.full_scan.last_encoded_path_bytes",
-        entry.encoded_path_bytes as f64,
-    );
-    timer.finish(SpanOutcome::Success);
-    Ok(entry)
-}
-
-fn full_scan_locked(
-    repo: &str,
-    slot: &mut Option<Entry>,
-    reason: FullScanReason,
-) -> Result<Entry, String> {
-    full_scan_locked_with_limits(
+fn full_scan(repo: &str) -> Result<Vec<String>, String> {
+    full_scan_with_limits(
         repo,
-        slot,
-        reason,
         WalkLimits {
             max_files: MAX_PROJECT_FILES,
             max_encoded_path_bytes: MAX_PROJECT_ENCODED_PATH_BYTES,
@@ -349,37 +297,232 @@ fn full_scan_locked(
     )
 }
 
-fn snapshot_for_key_blocking(repo: &str) -> Result<ProjectFilesSnapshot, String> {
-    let project = project_cache(repo)?;
-    let entry = {
-        let mut slot = project.entry.locked();
-        if let Some(entry) = slot.as_ref() {
-            if entry.full_scan_at.elapsed() < TTL {
-                entry.clone()
-            } else {
-                full_scan_locked(repo, &mut slot, FullScanReason::Ttl)?
+/// What `new` added to `old` and removed from it; both are sorted.
+fn difference(old: &[String], new: &[String]) -> (Vec<String>, Vec<String>) {
+    let (mut added, mut removed) = (Vec::new(), Vec::new());
+    let (mut at_old, mut at_new) = (0, 0);
+    while at_old < old.len() || at_new < new.len() {
+        match (old.get(at_old), new.get(at_new)) {
+            (Some(was), Some(is)) if was == is => {
+                at_old += 1;
+                at_new += 1;
             }
-        } else {
-            full_scan_locked(repo, &mut slot, FullScanReason::CacheMiss)?
+            (Some(was), Some(is)) if was < is => {
+                removed.push(was.clone());
+                at_old += 1;
+            }
+            (_, Some(is)) => {
+                added.push(is.clone());
+                at_new += 1;
+            }
+            (Some(was), None) => {
+                removed.push(was.clone());
+                at_old += 1;
+            }
+            (None, None) => break,
+        }
+    }
+    (added, removed)
+}
+
+impl Slot {
+    /// Takes `files` as the project's list, keeping what changed for clients
+    /// that hold the one before. An unchanged list keeps its scan.
+    fn replace(&mut self, files: Vec<String>, full_scan_at: Instant) {
+        let scan_id = next_scan_id();
+        if let Some(previous) = self.entry.take() {
+            let (added, removed) = difference(&previous.files, &files);
+            if added.is_empty() && removed.is_empty() {
+                self.entry = Some(Entry {
+                    full_scan_at,
+                    ..previous
+                });
+                return;
+            }
+            if added.len() + removed.len() <= MAX_KEPT_CHANGE_PATHS {
+                if self.changes.len() == KEPT_CHANGES {
+                    self.changes.pop_front();
+                }
+                self.changes.push_back(Change {
+                    from: previous.scan_id,
+                    added,
+                    removed,
+                });
+            } else {
+                self.changes.clear();
+            }
+        }
+        self.entry = Some(Entry {
+            files: Arc::new(files),
+            full_scan_at,
+            scan_id,
+        });
+    }
+
+    fn rescan(&mut self, repo: &str) -> Result<(), String> {
+        let files = full_scan(repo)?;
+        self.replace(files, Instant::now());
+        Ok(())
+    }
+
+    /// Brings the list up to date with what the watcher saw move. Ambiguous,
+    /// outside-root, oversized or unreadable changes fall back to a rescan.
+    fn catch_up(&mut self, repo: &str) -> Result<(), String> {
+        let Some(current) = self.entry.clone() else {
+            self.pending = Pending::Nothing;
+            return self.rescan(repo);
+        };
+        match std::mem::take(&mut self.pending) {
+            Pending::Nothing if current.full_scan_at.elapsed() < TTL => Ok(()),
+            Pending::Nothing | Pending::Anything => self.rescan(repo),
+            Pending::Paths(paths) => match updated(repo, &current.files, &paths) {
+                Some(Some(files)) => {
+                    self.replace(files, current.full_scan_at);
+                    Ok(())
+                }
+                Some(None) => Ok(()),
+                None => self.rescan(repo),
+            },
+        }
+    }
+
+    fn answer(&self, since: Option<u64>) -> ProjectFiles {
+        let entry = self.entry.as_ref().expect("caught up");
+        let whole = || ProjectFiles {
+            scan_id: entry.scan_id,
+            files: Some((*entry.files).clone()),
+            added: None,
+            removed: None,
+        };
+        let Some(since) = since else {
+            return whole();
+        };
+        if since == entry.scan_id {
+            return ProjectFiles {
+                scan_id: entry.scan_id,
+                files: None,
+                added: None,
+                removed: None,
+            };
+        }
+        let Some(start) = self.changes.iter().position(|change| change.from == since) else {
+            return whole();
+        };
+        let (mut added, mut removed) = (HashSet::new(), HashSet::new());
+        for change in self.changes.range(start..) {
+            for path in &change.removed {
+                if !added.remove(path) {
+                    removed.insert(path.clone());
+                }
+            }
+            for path in &change.added {
+                if !removed.remove(path) {
+                    added.insert(path.clone());
+                }
+            }
+        }
+        let sorted = |set: HashSet<String>| {
+            let mut paths: Vec<String> = set.into_iter().collect();
+            paths.sort_unstable();
+            paths
+        };
+        ProjectFiles {
+            scan_id: entry.scan_id,
+            files: None,
+            added: Some(sorted(added)),
+            removed: Some(sorted(removed)),
+        }
+    }
+}
+
+/// The list with `changes` applied, `Some(None)` when none of them touch it,
+/// or none when only a rescan can tell.
+fn updated(repo: &str, current: &[String], changes: &[String]) -> Option<Option<Vec<String>>> {
+    let changes: Vec<&String> = changes
+        .iter()
+        .filter(|path| path.as_str() != GIT_STATE)
+        .collect();
+    if changes.len() > MAX_INCREMENTAL_PATHS {
+        return None;
+    }
+    let repo_root = Path::new(repo);
+    let mut removals = Vec::new();
+    let mut additions = Vec::new();
+    let mut remaining_files = MAX_INCREMENTAL_FILES;
+    for change in changes {
+        let relative = match normalized_relative(repo_root, &repo_root.join(change)) {
+            Ok(Some(relative)) => relative,
+            Ok(None) => continue,
+            Err(()) => return None,
+        };
+        removals.push(relative.clone());
+        let absolute = repo_root.join(&relative);
+        let metadata = match std::fs::symlink_metadata(&absolute) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return None,
+        };
+        if metadata.file_type().is_file() {
+            remaining_files = remaining_files.checked_sub(1)?;
+            additions.push(wire_relative_path(&relative)?);
+        } else if metadata.file_type().is_dir() && !leaf_is_denied_directory(&relative) {
+            let limits = WalkLimits {
+                max_files: remaining_files,
+                max_encoded_path_bytes: MAX_PROJECT_ENCODED_PATH_BYTES,
+                strict_errors: true,
+            };
+            let LimitedWalk::Complete(mut subtree) = walk(repo_root, &absolute, limits) else {
+                return None;
+            };
+            remaining_files = remaining_files.saturating_sub(subtree.len());
+            additions.append(&mut subtree);
+        }
+    }
+    if removals.is_empty() {
+        return Some(None);
+    }
+    let removals = collapse_prefixes(removals);
+    let ranges = removal_ranges(current, &removals);
+    if ranges.is_empty() && additions.is_empty() {
+        return Some(None);
+    }
+    let files = merge_snapshot(current, &ranges, additions);
+    snapshot_encoded_path_bytes(&files)?;
+    (files.len() <= MAX_PROJECT_FILES).then_some(Some(files))
+}
+
+/// Notes that the watcher saw `paths` move in `project`, or anything when
+/// none. Only a project someone listed is kept, and it catches up when it is
+/// next read.
+pub(crate) fn moved(project: &str, paths: Option<&[String]>) {
+    let Ok(repo) = repo_key(project) else {
+        return;
+    };
+    let Some(cell) = cache().locked().get(&repo).cloned() else {
+        return;
+    };
+    let mut slot = cell.slot.locked();
+    slot.pending = match (std::mem::take(&mut slot.pending), paths) {
+        (Pending::Anything, _) | (_, None) => Pending::Anything,
+        (Pending::Nothing, Some(paths)) => Pending::Paths(paths.to_vec()),
+        (Pending::Paths(mut known), Some(paths)) => {
+            known.extend_from_slice(paths);
+            if known.len() > MAX_INCREMENTAL_PATHS {
+                Pending::Anything
+            } else {
+                Pending::Paths(known)
+            }
         }
     };
-    // The IPC-owned Vec clone can be large; do it after releasing the
-    // per-project mutation lock so watcher deltas do not wait on allocation.
-    Ok(entry.snapshot())
 }
 
-fn snapshot_blocking(repo: &str) -> Result<ProjectFilesSnapshot, String> {
-    let repo = canonical_repo_key(repo)?;
-    snapshot_for_key_blocking(&repo)
-}
-
-#[tauri::command]
-pub async fn list_project_files_snapshot(repo: String) -> Result<ProjectFilesSnapshot, String> {
-    let repo_for_blocking = repo;
-    tauri::async_runtime::spawn_blocking(move || snapshot_blocking(&repo_for_blocking))
-        .await
-        .map_err(|error| format!("walk join: {error}"))
-        .and_then(|snapshot| snapshot)
+/// Every file in the project, or what changed since the scan the client holds.
+pub(crate) fn read(params: ProjectFilesParams) -> Result<ProjectFiles, String> {
+    let repo = repo_key(&params.project)?;
+    let cell = project_cache(&repo)?;
+    let mut slot = cell.slot.locked();
+    slot.catch_up(&repo)?;
+    Ok(slot.answer(params.since))
 }
 
 fn normalized_relative(repo_root: &Path, path: &Path) -> Result<Option<PathBuf>, ()> {
@@ -525,191 +668,6 @@ fn merge_snapshot(
     out
 }
 
-fn fallback_full_scan(
-    repo: &str,
-    slot: &mut Option<Entry>,
-    timer: crate::observability::SlowOperationGuard,
-) {
-    timer.finish(SpanOutcome::Cancelled);
-    global_observability().increment_counter("files.incremental_fallbacks", 1);
-    if full_scan_locked(repo, slot, FullScanReason::WatcherFallback).is_err() {
-        // Keep the previous bounded snapshot rather than replacing it with an
-        // empty or partial view. The next explicit read retries and surfaces
-        // the stable limit/read error to the renderer.
-        global_observability().increment_counter("files.incremental_fallback_errors", 1);
-    }
-}
-
-/// Brings the snapshot of `project` up to date with what the core saw move in
-/// it, then runs `then`, so a page reading it again sees the change.
-pub(crate) fn moved(
-    project: String,
-    paths: Option<Vec<String>>,
-    then: impl FnOnce() + Send + 'static,
-) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Ok(key) = canonical_repo_key(&project) {
-            apply_moved(&key, paths.as_deref());
-        }
-        then();
-    });
-}
-
-/// Applies the paths the core's watcher saw move to a cached sorted snapshot,
-/// or none for anything. Ambiguous, outside-root, oversized, or unreadable
-/// changes fall back to one full scan. A missing cache remains missing so the
-/// next command performs its normal complete scan rather than doing duplicate
-/// work here.
-pub(crate) fn apply_moved(repo: &str, moved: Option<&[String]>) {
-    let force_full_rescan = moved.is_none();
-    let changes: Vec<&String> = moved
-        .unwrap_or_default()
-        .iter()
-        .filter(|path| path.as_str() != sikemux_core::git::watch::GIT_STATE)
-        .collect();
-    let observer = global_observability();
-    let mut metadata = Metadata::new();
-    metadata.insert("change_count".to_owned(), ScalarValue::from(changes.len()));
-    metadata.insert(
-        "forced_rescan".to_owned(),
-        ScalarValue::Bool(force_full_rescan),
-    );
-    let timer = observer.slow_operation(
-        "files.incremental_update",
-        INCREMENTAL_SLOW_THRESHOLD,
-        None,
-        metadata,
-    );
-
-    let project = match project_cache(repo) {
-        Ok(project) => project,
-        Err(_) => {
-            observer.increment_counter("files.incremental_cache_capacity_errors", 1);
-            timer.finish(SpanOutcome::Error);
-            return;
-        }
-    };
-    let mut slot = project.entry.locked();
-    let Some(current) = slot.as_ref().cloned() else {
-        observer.increment_counter("files.incremental_cache_misses", 1);
-        timer.finish(SpanOutcome::Cancelled);
-        return;
-    };
-
-    if force_full_rescan || changes.len() > MAX_INCREMENTAL_PATHS {
-        fallback_full_scan(repo, &mut slot, timer);
-        return;
-    }
-
-    let repo_root = Path::new(repo);
-    let mut removals = Vec::new();
-    let mut additions = Vec::new();
-    let mut relevant_changes = 0usize;
-    let mut remaining_files = MAX_INCREMENTAL_FILES;
-
-    for change in changes {
-        let relative = match normalized_relative(repo_root, &repo_root.join(change)) {
-            Ok(Some(relative)) => relative,
-            Ok(None) => continue,
-            Err(()) => {
-                fallback_full_scan(repo, &mut slot, timer);
-                return;
-            }
-        };
-        relevant_changes = relevant_changes.saturating_add(1);
-        removals.push(relative.clone());
-
-        let absolute = repo_root.join(&relative);
-        let metadata = match std::fs::symlink_metadata(&absolute) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(_) => {
-                fallback_full_scan(repo, &mut slot, timer);
-                return;
-            }
-        };
-
-        if metadata.file_type().is_file() {
-            if remaining_files == 0 {
-                fallback_full_scan(repo, &mut slot, timer);
-                return;
-            }
-            remaining_files -= 1;
-            let Some(relative) = wire_relative_path(&relative) else {
-                fallback_full_scan(repo, &mut slot, timer);
-                return;
-            };
-            additions.push(relative);
-        } else if metadata.file_type().is_dir() && !leaf_is_denied_directory(&relative) {
-            match walk(
-                repo_root,
-                &absolute,
-                WalkLimits {
-                    max_files: remaining_files,
-                    max_encoded_path_bytes: MAX_PROJECT_ENCODED_PATH_BYTES,
-                    strict_errors: true,
-                },
-            ) {
-                LimitedWalk::Complete {
-                    files: mut subtree, ..
-                } => {
-                    remaining_files = remaining_files.saturating_sub(subtree.len());
-                    additions.append(&mut subtree);
-                }
-                LimitedWalk::LimitExceeded | LimitedWalk::Unreliable => {
-                    fallback_full_scan(repo, &mut slot, timer);
-                    return;
-                }
-            }
-        }
-    }
-
-    if relevant_changes == 0 {
-        timer.finish(SpanOutcome::Success);
-        return;
-    }
-
-    let removals = collapse_prefixes(removals);
-    let ranges = removal_ranges(&current.files, &removals);
-    if ranges.is_empty() && additions.is_empty() {
-        timer.finish(SpanOutcome::Success);
-        return;
-    }
-    let files = merge_snapshot(&current.files, &ranges, additions);
-    let Some(encoded_path_bytes) = snapshot_encoded_path_bytes(&files) else {
-        fallback_full_scan(repo, &mut slot, timer);
-        return;
-    };
-    if files.len() > MAX_PROJECT_FILES {
-        fallback_full_scan(repo, &mut slot, timer);
-        return;
-    }
-
-    let updated = Entry {
-        files: Arc::new(files),
-        encoded_path_bytes,
-        // Incremental events do not postpone the periodic full-scan backstop.
-        full_scan_at: current.full_scan_at,
-        scan_id: next_scan_id(),
-    };
-    *slot = Some(updated.clone());
-
-    observer.increment_counter("files.incremental_updates", 1);
-    observer.set_gauge(
-        "files.incremental.last_change_count",
-        relevant_changes as f64,
-    );
-    observer.set_gauge(
-        "files.incremental.last_file_count",
-        updated.files.len() as f64,
-    );
-    observer.set_gauge(
-        "files.incremental.last_encoded_path_bytes",
-        updated.encoded_path_bytes as f64,
-    );
-    timer.finish(SpanOutcome::Success);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -722,9 +680,18 @@ mod tests {
     }
 
     fn canonical_temp_root(temp: &tempfile::TempDir) -> (String, PathBuf) {
-        let repo = canonical_repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
+        let repo = repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
         let root = PathBuf::from(&repo);
         (repo, root)
+    }
+
+    fn snapshot(repo: &str) -> (u64, Vec<String>) {
+        let answer = read(ProjectFilesParams {
+            project: repo.to_owned(),
+            since: None,
+        })
+        .unwrap();
+        (answer.scan_id, answer.files.unwrap())
     }
 
     #[test]
@@ -760,21 +727,21 @@ mod tests {
         write(&temp.path().join("target/ignored.txt"), "ignored");
         let (repo, _) = canonical_temp_root(&temp);
 
-        let first = snapshot_blocking(&repo).unwrap();
-        assert_eq!(first.files, vec!["a.txt", "z.txt"]);
-        assert_eq!(snapshot_blocking(&repo).unwrap().scan_id, first.scan_id);
+        let (first, files) = snapshot(&repo);
+        assert_eq!(files, vec!["a.txt", "z.txt"]);
+        assert_eq!(snapshot(&repo).0, first);
 
         write(&temp.path().join("b.txt"), "b");
-        apply_moved(&repo, Some(&["b.txt".to_owned()]));
-        let second = snapshot_blocking(&repo).unwrap();
-        assert!(second.scan_id > first.scan_id);
-        assert_eq!(second.files, vec!["a.txt", "b.txt", "z.txt"]);
+        moved(&repo, Some(&["b.txt".to_owned()]));
+        let (second, files) = snapshot(&repo);
+        assert!(second > first);
+        assert_eq!(files, vec!["a.txt", "b.txt", "z.txt"]);
 
         write(&temp.path().join("b.txt"), "modified");
-        apply_moved(&repo, Some(&["b.txt".to_owned()]));
-        let after_modify = snapshot_blocking(&repo).unwrap();
-        assert!(after_modify.scan_id > second.scan_id);
-        assert_eq!(after_modify.files, second.files);
+        moved(&repo, Some(&["b.txt".to_owned()]));
+        let (after_modify, unchanged) = snapshot(&repo);
+        assert_eq!(after_modify, second);
+        assert_eq!(unchanged, files);
     }
 
     #[test]
@@ -782,32 +749,32 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         write(&temp.path().join("old.txt"), "old");
         let (repo, root) = canonical_temp_root(&temp);
-        let initial = snapshot_blocking(&repo).unwrap();
+        let (initial, _) = snapshot(&repo);
 
         let directory = root.join("nested");
         write(&directory.join("one.txt"), "one");
         write(&directory.join("deep/two.txt"), "two");
-        apply_moved(&repo, Some(&["nested".to_owned()]));
-        let after_directory = snapshot_blocking(&repo).unwrap();
-        assert!(after_directory.scan_id > initial.scan_id);
+        moved(&repo, Some(&["nested".to_owned()]));
+        let (after_directory, files) = snapshot(&repo);
+        assert!(after_directory > initial);
         assert_eq!(
-            after_directory.files,
+            files,
             vec!["nested/deep/two.txt", "nested/one.txt", "old.txt"]
         );
 
         let old = root.join("old.txt");
         let renamed = root.join("renamed.txt");
         std::fs::rename(&old, &renamed).unwrap();
-        apply_moved(
+        moved(
             &repo,
             Some(&["old.txt".to_owned(), "renamed.txt".to_owned()]),
         );
         std::fs::remove_dir_all(&directory).unwrap();
-        apply_moved(&repo, Some(&["nested".to_owned()]));
+        moved(&repo, Some(&["nested".to_owned()]));
 
-        let final_snapshot = snapshot_blocking(&repo).unwrap();
-        assert!(final_snapshot.scan_id > after_directory.scan_id);
-        assert_eq!(final_snapshot.files, vec!["renamed.txt"]);
+        let (last, files) = snapshot(&repo);
+        assert!(last > after_directory);
+        assert_eq!(files, vec!["renamed.txt"]);
     }
 
     #[test]
@@ -815,22 +782,19 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         write(&temp.path().join("initial.txt"), "initial");
         let (repo, _root) = canonical_temp_root(&temp);
-        let initial = snapshot_blocking(&repo).unwrap();
+        let (initial, _) = snapshot(&repo);
 
         write(&temp.path().join("missed.txt"), "missed");
-        apply_moved(&repo, Some(&["../outside.txt".to_owned()]));
-        let after_outside = snapshot_blocking(&repo).unwrap();
-        assert!(after_outside.scan_id > initial.scan_id);
-        assert_eq!(after_outside.files, vec!["initial.txt", "missed.txt"]);
+        moved(&repo, Some(&["../outside.txt".to_owned()]));
+        let (after_outside, files) = snapshot(&repo);
+        assert!(after_outside > initial);
+        assert_eq!(files, vec!["initial.txt", "missed.txt"]);
 
         write(&temp.path().join("forced.txt"), "forced");
-        apply_moved(&repo, None);
-        let after_forced = snapshot_blocking(&repo).unwrap();
-        assert!(after_forced.scan_id > after_outside.scan_id);
-        assert_eq!(
-            after_forced.files,
-            vec!["forced.txt", "initial.txt", "missed.txt"]
-        );
+        moved(&repo, None);
+        let (after_forced, files) = snapshot(&repo);
+        assert!(after_forced > after_outside);
+        assert_eq!(files, vec!["forced.txt", "initial.txt", "missed.txt"]);
     }
 
     #[test]
@@ -839,10 +803,10 @@ mod tests {
         write(&temp.path().join("one.txt"), "one");
         let (repo, _) = canonical_temp_root(&temp);
 
-        apply_moved(&repo, Some(&["one.txt".to_owned()]));
-        let snapshot = snapshot_blocking(&repo).unwrap();
-        assert_eq!(snapshot.files, vec!["one.txt"]);
-        assert!(snapshot.scan_id > 0);
+        moved(&repo, Some(&["one.txt".to_owned()]));
+        let (scan_id, files) = snapshot(&repo);
+        assert_eq!(files, vec!["one.txt"]);
+        assert!(scan_id > 0);
     }
 
     #[test]
@@ -870,54 +834,32 @@ mod tests {
     }
 
     #[test]
-    fn full_scan_limits_file_count_and_encoded_path_bytes_without_replacing_cache() {
+    fn full_scan_limits_file_count_and_encoded_path_bytes() {
         let temp = tempfile::tempdir().unwrap();
         write(&temp.path().join("one.txt"), "one");
-        let (repo, _) = canonical_temp_root(&temp);
-        let mut slot = None;
-        let first = full_scan_locked_with_limits(
-            &repo,
-            &mut slot,
-            FullScanReason::CacheMiss,
-            WalkLimits {
-                max_files: 1,
-                max_encoded_path_bytes: 128,
-                strict_errors: false,
-            },
-        )
-        .unwrap();
-
         write(&temp.path().join("two.txt"), "two");
-        let file_limit = full_scan_locked_with_limits(
+        let (repo, _) = canonical_temp_root(&temp);
+        let file_limit = full_scan_with_limits(
             &repo,
-            &mut slot,
-            FullScanReason::Ttl,
             WalkLimits {
                 max_files: 1,
                 max_encoded_path_bytes: 128,
                 strict_errors: false,
             },
         )
-        .err()
-        .expect("file limit should reject the scan");
+        .expect_err("file limit should reject the scan");
         assert!(file_limit.contains("1-file"));
-        assert_eq!(slot.as_ref().unwrap().scan_id, first.scan_id);
-        assert_eq!(slot.as_ref().unwrap().files.as_slice(), ["one.txt"]);
 
-        let byte_limit = full_scan_locked_with_limits(
+        let byte_limit = full_scan_with_limits(
             &repo,
-            &mut slot,
-            FullScanReason::WatcherFallback,
             WalkLimits {
                 max_files: 10,
                 max_encoded_path_bytes: encoded_path_upper_bound("one.txt") - 1,
                 strict_errors: false,
             },
         )
-        .err()
-        .expect("byte limit should reject the scan");
+        .expect_err("byte limit should reject the scan");
         assert!(byte_limit.contains("byte safety limit"));
-        assert_eq!(slot.as_ref().unwrap().scan_id, first.scan_id);
     }
 
     #[test]
@@ -929,9 +871,11 @@ mod tests {
             "snowman-☃".to_owned(),
         ];
         let encoded = snapshot_encoded_path_bytes_with_limit(&files, usize::MAX).unwrap();
-        let serialized = serde_json::to_vec(&ProjectFilesSnapshot {
+        let serialized = serde_json::to_vec(&ProjectFiles {
             scan_id: u64::MAX,
-            files: files.clone(),
+            files: Some(files.clone()),
+            added: None,
+            removed: None,
         })
         .unwrap();
         assert!(serialized.len() <= encoded + 1024);

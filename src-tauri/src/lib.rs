@@ -17,7 +17,6 @@ mod document_preview;
 mod error;
 mod external;
 mod file_serving;
-mod files;
 mod frame_rate;
 mod fs;
 mod grammars;
@@ -333,7 +332,6 @@ pub fn run() {
             lsp::lsp_document_symbols,
             diff::diff_hunks,
             markdown::markdown_parse,
-            files::list_project_files_snapshot,
             settings::scan_project_roots,
             settings::expand_path,
             settings::is_directory,
@@ -504,7 +502,7 @@ mod ipc_command_boundary_tests {
         let app = mock_builder()
             .manage(UiWatchdogState::start().expect("start managed watchdog state"))
             .invoke_handler(tauri::generate_handler![
-                crate::files::list_project_files_snapshot,
+                crate::fs::read_text_file_limited,
                 crate::observability::observability_ui_heartbeat,
             ])
             .build(mock_context(noop_assets()))
@@ -513,48 +511,27 @@ mod ipc_command_boundary_tests {
             .build()
             .expect("build mock webview");
 
-        let snapshot = get_ipc_response(
+        let text = get_ipc_response(
             &webview,
             request(
-                "list_project_files_snapshot",
-                json!({ "repo": repo.path().to_string_lossy() }),
+                "read_text_file_limited",
+                json!({ "path": repo.path().join("src").join("main.rs").to_string_lossy() }),
             ),
         )
         .expect("filesystem command must cross the IPC boundary successfully")
         .deserialize::<Value>()
         .expect("filesystem response must be JSON");
-
-        let scan_id = snapshot
-            .get("scanId")
-            .and_then(Value::as_u64)
-            .expect("response must expose the frontend camelCase scanId field");
-        assert!(scan_id > 0);
-        assert!(snapshot.get("scan_id").is_none());
-        let mut files = snapshot["files"]
-            .as_array()
-            .expect("response files must be an array")
-            .iter()
-            .map(|path| {
-                path.as_str()
-                    .expect("response paths must be strings")
-                    .replace('\\', "/")
-            })
-            .collect::<Vec<_>>();
-        files.sort_unstable();
-        assert_eq!(files, ["README.md", "src/main.rs"]);
+        assert_eq!(text, json!("fn main() {}\n"));
 
         let error = get_ipc_response(
             &webview,
             request(
-                "list_project_files_snapshot",
-                json!({ "repo": "relative-path-is-rejected" }),
+                "read_text_file_limited",
+                json!({ "path": repo.path().join("missing.txt").to_string_lossy() }),
             ),
         )
         .expect_err("command errors must cross the IPC error callback");
-        assert_eq!(
-            error,
-            json!("repository path must be an absolute path of at most 4096 bytes")
-        );
+        assert!(!error.is_null());
 
         let heartbeat = get_ipc_response(
             &webview,
