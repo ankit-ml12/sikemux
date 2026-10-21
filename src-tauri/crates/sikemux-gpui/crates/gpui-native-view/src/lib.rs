@@ -6,12 +6,16 @@
 //! - [`native_view`] is the element. It lays out like any other, hands the
 //!   surface its frame whenever that changes, and puts it out of sight once
 //!   the element is no longer drawn.
+//! - [`document::Document`] is a surface for a file macOS draws itself: PDFs in
+//!   PDFKit's view, office and iWork files in Quick Look's.
 //!
 //! Native views sit above everything GPUI draws, so a window that holds them
 //! should call `Window::enable_scene_overlay` as it opens: popovers, menus and
 //! anything else drawn deferred then show above the views, and take the
 //! clicks where they sit.
 
+#[cfg(target_os = "macos")]
+pub mod document;
 #[cfg(target_os = "macos")]
 mod macos;
 

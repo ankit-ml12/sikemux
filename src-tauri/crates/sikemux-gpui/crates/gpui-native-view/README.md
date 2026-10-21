@@ -6,7 +6,8 @@ Shows a native view, such as a web page or a PDF, in a
 - `Surface` is what the element moves: anything that can be shown over a frame
   of the window and put out of sight again. `OwnedView` is one for a plain
   `NSView` of your own; a web view whose page size differs from its frame can
-  implement `Surface` itself.
+  implement `Surface` itself. `document::Document` is one for a file macOS
+  draws itself: PDFs in PDFKit's view, office and iWork files in Quick Look's.
 - `native_view(id, &surface)` is the element. It lays out like any other,
   hands the surface its frame whenever that changes, and puts the surface out
   of sight with the first frame that no longer draws it, even inside cached
